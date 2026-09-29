@@ -52,8 +52,15 @@
 </div>
 
 <div id="empty">
-  <EmptyState title="No invoices yet" description="They arrive after the first payment.">
+  <EmptyState title="No invoices yet">
+    They arrive after the first payment.
     {#snippet action()}<button type="button" id="empty-cta" on:click={() => actions++}>Add one</button>{/snippet}
+  </EmptyState>
+</div>
+
+<div id="empty-bare">
+  <EmptyState title="Nothing here">
+    {#snippet action()}<button type="button">Add one</button>{/snippet}
   </EmptyState>
 </div>
 

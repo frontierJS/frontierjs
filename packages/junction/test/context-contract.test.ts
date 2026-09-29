@@ -13,6 +13,9 @@
 //   reserved    the query keys the SERVICE declared as its own, lifted off
 //               ctx.query by callService. Same freshness and the same
 //               non-propagation; the query-side mirror of transients.
+//   madeAt      when the write was made. Always set: a replay's stated
+//               instant, corrected for the device clock, else the arrival.
+//               PROPAGATES with the request (`FJS-D469`).
 //
 // This file exists because those four rules were written in `context.ts` and
 // **one of them was false**: `auth` was documented as propagating and did not —
@@ -26,6 +29,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
+import { enterRequest }  from '../src/core/context.ts'
 
 const alice = { userId: 'alice', role: 'user' } as never
 const bob   = { userId: 'bob',   role: 'user' } as never
@@ -47,6 +51,7 @@ function harness() {
         transients: ctx.transients,
         reserved:   ctx.reserved,
         query:      { ...ctx.query },
+        madeAt:     ctx.madeAt,
       }
       return []
     },
@@ -317,5 +322,30 @@ describe('reserved — the query keys a service owns rather than filters on', ()
     expect(() => createService({
       name: 'bad', reservedQuery: ['$limit'],
     } as never)).toThrow(/directive/)
+  })
+})
+
+describe('madeAt — when the write was made, and it propagates', () => {
+  test('a call with nothing stated is dated at its arrival', async () => {
+    const { app, seen } = harness()
+    await app.service('leaf').find({ tag: 'live' })
+    expect(seen.live.madeAt).toBeInstanceOf(Date)
+    expect(Math.abs(seen.live.madeAt.getTime() - Date.now())).toBeLessThan(5_000)
+  })
+
+  test('a stated one reaches a nested call, corrected for the device clock', async () => {
+    const { app, seen } = harness()
+    app.services.register(createService({
+      name: 'root', methods: ['find'],
+      async find(ctx: any) { await ctx.app.service('leaf').find({ tag: 'replay' }); return [] },
+    } as never))
+    const made = Date.now() - 8 * 3_600_000
+    const skew = 3_600_000
+    await enterRequest({
+      origin: 'internal',
+      madeAt: new Date(made + skew).toISOString(),
+      sentAt: new Date(Date.now() + skew).toISOString(),
+    }, () => app.service('root').find({}))
+    expect(Math.abs(seen.replay.madeAt.getTime() - made)).toBeLessThan(5_000)
   })
 })

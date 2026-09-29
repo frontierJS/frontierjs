@@ -265,10 +265,30 @@ class EventEmitter {
  * The socket path builds the same name into `meta.headers`, so a rename is one
  * edit rather than two that can disagree.
  */
-const _callHeader = (opts?: CallOptions): { header?: Record<string, string>, callHeaders?: Record<string, string> } => ({
-  ...(opts?.idempotencyKey ? { header: { 'Idempotency-Key': opts.idempotencyKey } } : {}),
-  ...(opts?.callHeaders    ? { callHeaders: opts.callHeaders } : {}),
-})
+const _callHeader = (opts?: CallOptions): { header?: Record<string, string>, callHeaders?: Record<string, string> } => {
+  const header = {
+    ...(opts?.idempotencyKey ? { 'Idempotency-Key': opts.idempotencyKey } : {}),
+    ..._madeAtHeaders(opts),
+  }
+  return {
+    ...(Object.keys(header).length ? { header } : {}),
+    ...(opts?.callHeaders ? { callHeaders: opts.callHeaders } : {}),
+  }
+}
+
+/**
+ * A held write's made-at, and this device's clock as it sends (`FJS-D469`).
+ * The second is read now rather than stored with the entry: the server reads
+ * the device's offset from it, and only a reading taken at the send measures
+ * the clock the made-at was read off.
+ */
+const _madeAtHeaders = (opts?: CallOptions): Record<string, string> => {
+  if (opts?.madeAt == null) return {}
+  const made = new Date(opts.madeAt)
+  if (Number.isNaN(made.getTime()))
+    throw new TypeError(`madeAt must be an instant — a Date, epoch ms or an ISO string. Got ${String(opts.madeAt)}.`)
+  return { 'x-fjs-made-at': made.toISOString(), 'x-fjs-sent-at': new Date().toISOString() }
+}
 
 /** A custom method's call: the method rides beside the per-call header, never instead of it. */
 const _methodCall = (method: string, opts?: CallOptions) => {
@@ -286,11 +306,13 @@ const _methodCall = (method: string, opts?: CallOptions) => {
 const _envelope = (
   data: unknown,
   opts?: CallOptions,
-): { body: unknown, extra: Record<string, unknown> } =>
-  opts?.base
+): { body: unknown, extra: Record<string, unknown> } => {
+  const call = _callHeader(opts)
+  return opts?.base
     ? { body:  { data, base: opts.base },
-        extra: { ..._callHeader(opts), header: { ..._callHeader(opts).header, 'X-Fjs-Write': 'enveloped' } } }
-    : { body: data, extra: _callHeader(opts) }
+        extra: { ...call, header: { ...call.header, 'X-Fjs-Write': 'enveloped' } } }
+    : { body: data, extra: call }
+}
 
 /**
  * What a caller states about ONE call, as opposed to about the data or the
@@ -327,6 +349,14 @@ export interface CallOptions {
    * a header set since would otherwise ride a call made before it existed.
    */
   callHeaders?: Record<string, string>
+
+  /**
+   * When this write was MADE, where that is not now — a write held offline and
+   * sent after the network came back. The server dates `@default(now())` and
+   * `@updatedAt` with it rather than with the moment the call landed, having
+   * corrected it for this device's clock (`FJS-D469`).
+   */
+  madeAt?: Date | number | string
 }
 
 // ─── ServiceProxy ─────────────────────────────────────────────────────────
@@ -1750,6 +1780,42 @@ export class JunctionClient extends EventEmitter {
       return rows
     }
 
+    // ── A row the clock takes out ──────────────────────────────────────────
+    // Expiry's transition is the CLOCK, not a write, so it announces nothing:
+    // a row whose window closes while this list holds it stays for ever, the
+    // server right and the list stale with no frame that could correct it
+    // (`FJS-1274`). The list holds the rows, so it holds the clock — ONE timer,
+    // for the soonest edge, re-armed whenever the rows change (`FJS-D489`).
+    let tick: ReturnType<typeof setTimeout> | null = null
+    let dropping = false
+    const regrade = (): void => {
+      if (dropping) return
+      if (tick !== null) { clearTimeout(tick); tick = null }
+      const until = opts.until
+      if (!until || idField === null) return
+      const now = Date.now()
+      let soonest = Infinity
+      const lapsed: T[] = []
+      for (const row of store.get()) {
+        const at = until(row, lastParams)
+        if (at == null) continue
+        if (at <= now) lapsed.push(row)
+        else if (at < soonest) soonest = at
+      }
+      if (lapsed.length) {
+        // A drop notifies the subscription below; one pass drops them all and
+        // re-arms once, after.
+        dropping = true
+        try { for (const row of lapsed) drop(row, row[key]) } finally { dropping = false }
+        return regrade()
+      }
+      if (soonest !== Infinity) {
+        // setTimeout's ceiling is 2^31-1 ms; past it the timer fires at once.
+        tick = setTimeout(regrade, Math.min(soonest - now, 2 ** 31 - 1))
+      }
+    }
+    if (opts.until) store.subscribe(regrade)
+
     // ── One row, live ──────────────────────────────────────────────────────
     // A view of ONE, over the same nodes the list is a view of. It is sugar
     // rather than a second mechanism, which is the shape Meteor's cursors,
@@ -2270,6 +2336,7 @@ export class JunctionClient extends EventEmitter {
       const extraHeaders = {
         ...(opts?.callHeaders ?? this.callHeaders()),
         ...(opts?.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
+        ..._madeAtHeaders(opts),
       }
       if (Object.keys(extraHeaders).length > 0)      meta.headers = extraHeaders
       // No envelope here: a frame already has a slot for what describes a call
@@ -2748,6 +2815,15 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
    * (`FJS-D138`).
    */
   model?: string
+
+  /**
+   * When does this record leave the query by the clock alone — epoch ms, or
+   * `null` for never? The store drops it then, since no frame will (`FJS-1274`).
+   *
+   * Sierra supplies `leavesAt(x-effective, …)` from the model's own schema, for
+   * `match`'s reason: this package holds no schema.
+   */
+  until?: (record: T, params: QueryDirectives) => number | null
 }
 
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {

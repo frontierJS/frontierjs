@@ -168,7 +168,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], claims: [], claimSources: {}, tenancy: null }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], scopes: [], extends: [], claims: [], claimSources: {}, tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -213,8 +213,10 @@ class Parser {
         schema.types.push(this.parseType(comments))
       } else if (t.type === TK.IDENT && t.value === 'valueset') {
         schema.valuesets.push(this.parseValueSet(comments))
+      } else if (t.type === TK.IDENT && t.value === 'scope') {
+        schema.scopes.push(this.parseScope())
       } else {
-        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, claim, model, extend, view, enum, function, trait, type, valueset, or import`, t)
+        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, claim, model, extend, view, enum, function, trait, type, valueset, scope, or import`, t)
       }
     }
 
@@ -641,6 +643,21 @@ class Parser {
     let column = null
     if (this.check(TK.DOT)) { this.advance(); column = this.eat(TK.IDENT).value }
     return { name, source: { model, subject, column } }
+  }
+
+  // scope <name>(<field>)
+  //
+  // What a no-overlap rule serializes on, declared once for every model that
+  // shares it (`FJS-D474`): a Shift and a LeaveRequest both citing `person` is
+  // one fact, where each model listing its siblings is a fact stated on every
+  // write path and the model nobody updated is the one that lets two overlap.
+  parseScope() {
+    this.eatIdent('scope')
+    const name = this.eat(TK.IDENT).value
+    this.eat(TK.LPAREN)
+    const field = this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { name, field }
   }
 
   parseImport() {
@@ -2536,6 +2553,28 @@ class Parser {
       // a row is usually on a DIFFERENT model: a logged write in the same
       // transaction, whose trail clock lines up with this table's rowid order.
       case 'anonymous': return { kind: 'anonymous' }
+      // @@exclude(<scope>, range: [start, end]) — no two rows sharing the
+      // scope's key may overlap on the range, across every model citing the
+      // same scope (`FJS-D474`). The scope is a NAME declared at schema level,
+      // resolved in validate() so an import may carry it.
+      case 'exclude': {
+        this.eat(TK.LPAREN)
+        const scope = this.eat(TK.IDENT).value
+        let range = null
+        while (this.maybeEat(TK.COMMA)) {
+          const arg = this.eat(TK.IDENT)
+          if (arg.value !== 'range')
+            throw new ParseError(`@@exclude: unknown argument '${arg.value}' — expected 'range'`, arg)
+          this.eat(TK.COLON)
+          range = this.parseFieldList()
+        }
+        const close = this.eat(TK.RPAREN)
+        if (!range)
+          throw new ParseError(`@@exclude(${scope}): expected range: [start, end] — the pair of fields two rows may not overlap on`, close)
+        if (range.length !== 2)
+          throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
+        return { kind: 'exclude', scope, range }
+      }
       default:
         throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
     }
@@ -5281,6 +5320,82 @@ function validate(schema) {
       else if (why)   errors.push(`Model '${model.name}': @@label(${attr.field}) — ${why}`)
     }
   }
+
+  // ── Exclusion scopes ─────────────────────────────────────────────────────
+  // `scope person(employeeId)` + `@@exclude(person, range: [a, b])` (`FJS-D474`).
+  // The write path serializes on the scope field's value and compares ranges
+  // across every member, so each name below is a column that read will be
+  // built over: one that is missing, unordered or unstored is a lock that
+  // guards nothing, and it would say nothing. Members may disagree on the range
+  // KIND — a DateTime shift against a `@date` leave request is the case the
+  // ruling was asked for — so agreement is required within a model only.
+  const scopes = schema.scopes ?? []
+  const scopeByName = new Map()
+  for (const s of scopes) {
+    if (scopeByName.has(s.name)) errors.push(`scope '${s.name}' is declared twice — one scope, one field it serializes on`)
+    else scopeByName.set(s.name, s)
+  }
+  const cited = new Set()
+  const memberKinds = new Map()
+  const has = (field, k) => field.attributes.some(a => a.kind === k)
+  const unstored = (field) =>
+    ['computed', 'transient', 'from', 'derived', 'encrypted', 'secret', 'hashed'].find(k => has(field, k))
+  // What orders as a range: a number, a DateTime, or a String whose format
+  // makes its text order its value. Plain text sorts, but '10' < '9'.
+  const rangeKind = (field) => {
+    if (field.type.array || field.type.kind === 'relation' || field.type.kind === 'implicitM2M' || field.type.kind === 'backRefOne') return null
+    const t = field.type.name
+    if (t === 'Int' || t === 'Float' || t === 'DateTime') return t
+    if (t === 'String' && has(field, 'date'))     return 'String @date'
+    if (t === 'String' && has(field, 'datetime')) return 'String @datetime'
+    return null
+  }
+  for (const model of schema.models) {
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'exclude') continue
+      const at = `Model '${model.name}': @@exclude(${attr.scope}, range: [${attr.range.join(', ')}])`
+      const scope = scopeByName.get(attr.scope)
+      if (!scope) {
+        errors.push(`${at} — there is no scope '${attr.scope}'. Declare it at schema level: scope ${attr.scope}(<field>)` +
+          (scopes.length ? `. Declared: ${[...scopeByName.keys()].join(', ')}` : ''))
+      } else {
+        cited.add(scope.name)
+        const key = model.fields.find(f => f.name === scope.field)
+        if (!key)
+          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', and ${model.name} has no field '${scope.field}'`)
+        else if (key.type.array || !(SCALAR_TYPES.has(key.type.name) || enumNames.has(key.type.name)) || key.type.name === 'Json' || key.type.name === 'Bytes')
+          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', which is not one scalar value, and a lock is keyed by one`)
+        else if (unstored(key))
+          errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', which is @${unstored(key)}, so there is no plain column to match the other members' rows on`)
+      }
+      if (attr.range[0] === attr.range[1]) {
+        errors.push(`${at} — a range is two different fields, a start and an end`)
+        continue
+      }
+      const ends = attr.range.map(n => model.fields.find(f => f.name === n))
+      ends.forEach((f, i) => {
+        if (!f) errors.push(`${at} — ${model.name} has no field '${attr.range[i]}'`)
+        else if (!rangeKind(f)) errors.push(`${at} — '${f.name}' is ${f.type.name}${f.type.array ? '[]' : ''}, which does not order as a range. Use Int, Float, DateTime, or a String with @date or @datetime`)
+        else if (unstored(f)) errors.push(`${at} — '${f.name}' is @${unstored(f)}, so there is no plain column to compare ranges on`)
+      })
+      if (ends[0] && ends[1] && rangeKind(ends[0]) && rangeKind(ends[1]) && rangeKind(ends[0]) !== rangeKind(ends[1]))
+        errors.push(`${at} — '${ends[0].name}' is ${rangeKind(ends[0])} and '${ends[1].name}' is ${rangeKind(ends[1])}; a range is two fields of the same kind`)
+      else if (scope && ends[0] && rangeKind(ends[0]))
+        (memberKinds.get(scope.name) ?? memberKinds.set(scope.name, []).get(scope.name))
+          .push({ model: model.name, number: rangeKind(ends[0]) === 'Int' || rangeKind(ends[0]) === 'Float' })
+    }
+  }
+  // A day and an instant compare — a day starts at its midnight — but a number
+  // and a time share no point to compare at, so the write would grade nothing.
+  for (const [name, kinds] of memberKinds) {
+    const nums = kinds.filter(k => k.number), times = kinds.filter(k => !k.number)
+    if (nums.length && times.length)
+      errors.push(`scope '${name}' mixes a numeric range (${nums.map(k => k.model).join(', ')}) with a time range ` +
+        `(${times.map(k => k.model).join(', ')}) — every member of one scope ranges over numbers or over time`)
+  }
+  for (const s of scopeByName.values())
+    if (!cited.has(s.name))
+      warnings.push(`scope '${s.name}' is cited by no @@exclude — it serializes nothing`)
 
   // ── Value sets ───────────────────────────────────────────────────────────
   // Everything a `@values` binding needs in order to be checkable at all: the
@@ -8177,6 +8292,7 @@ export function parseFile(filePath) {
     const importedTraits    = []
     const importedTypes     = []
     const importedValuesets = []
+    const importedScopes    = []
     const importedExtends   = []
     const importedClaims    = []
     const importedSources   = {}
@@ -8220,6 +8336,7 @@ export function parseFile(filePath) {
         importedTraits.push(...(child.traits ?? []))
         importedTypes.push(...(child.types ?? []))
         importedValuesets.push(...(child.valuesets ?? []))
+        importedScopes.push(...(child.scopes ?? []))
         importedExtends.push(...(child.extends ?? []))
         importedClaims.push(...(child.claims ?? []))
         // One claim, one row it is read from. Two files naming the same claim
@@ -8253,6 +8370,7 @@ export function parseFile(filePath) {
       // the field report the set as undeclared — in the ROOT file too, since the
       // merge is what builds the schema every caller of `parseFile` validates.
       valuesets: [...importedValuesets, ...(schema.valuesets ?? [])],
+      scopes:    [...importedScopes,    ...(schema.scopes ?? [])],
       // Order does not matter: resolveExtends indexes the models by name after
       // the whole tree is merged, so a file may extend a model it is imported
       // BY as readily as one it imports.
@@ -8279,6 +8397,7 @@ export function parseFile(filePath) {
     traits:    merged.traits ?? [],
     types:     merged.types ?? [],
     valuesets: merged.valuesets ?? [],
+    scopes:    merged.scopes ?? [],
     extends:   merged.extends ?? [],
     claims:    merged.claims ?? [],
     claimSources: merged.claimSources ?? {},

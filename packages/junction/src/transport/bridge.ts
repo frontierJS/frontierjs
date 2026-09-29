@@ -19,7 +19,7 @@ import {
   type ServiceMethod, type AnyMethod, type HookType,
   type CallOptions, type RequestMeta, type QueryDirectives,
 } from '../core/context.ts'
-import { isListResult, unwrapResult } from '../core/envelope.ts'
+import { isListResult, isServiceResult, unwrapResult } from '../core/envelope.ts'
 // `RESERVED_PARAMS` comes through `../core/context.ts` above — the same kit
 // binding, re-exported there so junction has one import point for it.
 import { splitParams, unknownDirectives } from '@frontierjs/toolbelt/directives'
@@ -361,7 +361,15 @@ function boundaryOptions(ctx?: ServiceContext) {
 export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'locals' | 'model' | 'service'>): unknown {
   const fields = protectedFieldsFor(ctx as ServiceContext)
   if (!Object.keys(fields).length) return value
-  return omitBy(value, (k) => Boolean(fields[k]))
+  const omit = (v: unknown) => omitBy(v, (k) => Boolean(fields[k]))
+  // An envelope's `data` is the answer, not a column. Walked by key name, a
+  // model with a protected column called `data` answered every list with the
+  // rows removed and `total` still counting them.
+  if (isServiceResult(value)) {
+    const { data, ...envelope } = value
+    return { ...(omit(envelope) as object), data: omit(data) }
+  }
+  return omit(value)
 }
 
 /** The body `errorResponse` writes -- for a wire that is not a `Response`. */

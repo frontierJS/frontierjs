@@ -150,7 +150,9 @@ does not name is a 405.
 **A custom method takes the model's READ gate as a floor** and runs nothing for
 a caller below it. `gate: n` raises that floor for one method. A method called by
 something that is not a session (a signed webhook, an invitation link) states
-`gate: 0`.
+`gate: 0`. If that caller must hold something the principal resolver proves (a
+pass, a token), add `claims: ['passId']`: without it `gate: 0` admits every
+stranger, because a method touching no row is seen by no `@@allow`.
 
 **The hook order is `around → before → validated → method → after`, and the
 derived gate wraps all of it.** A stranger is refused before any hook an app

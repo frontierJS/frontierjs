@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-09-28 — a drive's Chrome profile is removed however the drive ends (`FJS-1531`)
+
+The 20 drives that launch Chrome take their profile from `web/test/lib/chrome-profile.mjs` instead of `mkdtempSync`, and none removes it itself. At exit or on a signal the helper kills every process holding the profile, waits, and removes it; a SIGKILLed run's profile is reaped by the next run past an hour. Before this every run left its profile in `/tmp`, green runs included, which reached 33GB and filled the disk. Probed with real Chrome under node and bun; no drive was run end to end.
+
 ## 2026-09-28 — the product page's selected thumbnail reads `--color-primary` (`FJS-1432`)
 
 `.active` in `site/src/routes/products/[slug].mesa` set `background: blue`, which `css-raw-literal` now reports. It reads the primary tone token instead, so a theme switch reaches it.

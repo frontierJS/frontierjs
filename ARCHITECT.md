@@ -53,6 +53,7 @@ Use the left column. Never the right.
 | **Event**                   | message, notification                       |
 | **Gate**                    | permission, policy, ACL                     |
 | **Gate ladder**             | roles, permissions, access levels           |
+| **Warden**                  | access control, authorization, permission system (for the whole) |
 | **Plugin**                  | middleware, extension, addon                |
 | **Context**                 | request context, state, payload             |
 |   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
@@ -128,6 +129,13 @@ Clarifications settled by the code:
   `@frontierjs/toolbelt/gate` — the scale, the comparison and the grader
   (`FJS-D197`). A gate is written as digits, `@@gate("2.4.4.6")`, four positions
   read.create.update.delete (`FJS-D239`).
+- **The Warden is the whole access system**: the principal and its claims, the
+  gate, capabilities, row policies, field protection, and the authority half of a
+  transition. `asSystem()` lifts the Warden and holds the integrity rules
+  (`FJS-D546`, `FJS-D502`). **Gate** and **policy** keep their meanings, and the
+  Warden is the umbrella over them, not a third sense of either. It is a word for
+  prose, never a package or an identifier. The Data boundary is *where* the Warden
+  enforces. `packages/litestone/docs/warden.md` is its map.
 - Model naming: **PascalCase, singular — always**; `@@external` models exempt
   (`FJS-D42`).
 - **A Hook has three tiers and a new `on*` states its tier** (`FJS-D06`). A

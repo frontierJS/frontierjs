@@ -3170,6 +3170,23 @@ describe('a styled value names a token the stylesheets define', () => {
     expect(only(root, 'css-token-undefined').findings).toEqual([])
   })
 
+  // FJS-1532: an app's theme sets a token once for every component reading it.
+  test("a token the app's own stylesheet declares is not", () => {
+    const root = tree('token-app', {
+      ...styled('letter-spacing: var(--star-tracking)'),
+      'web/src/themes/site.scss': ':root {\n  --star-tracking: 3px;\n}\n',
+    })
+    expect(only(root, 'css-token-undefined').findings).toEqual([])
+  })
+
+  test('a token only a built stylesheet declares still is', () => {
+    const root = tree('token-dist', {
+      ...styled('gap: var(--only-built)'),
+      'web/dist/assets/app.css': ':root { --only-built: 1px }\n',
+    })
+    expect(only(root, 'css-token-undefined').findings).toHaveLength(1)
+  })
+
   test('a token the file itself declares is not', () => {
     const root = tree('token-local', styled('--mine: 2px; gap: var(--mine)'))
     expect(only(root, 'css-token-undefined').findings).toEqual([])

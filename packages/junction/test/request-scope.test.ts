@@ -180,10 +180,10 @@ describe('every entry point opens the request scope', () => {
     })
     ws.send(JSON.stringify({
       type: 'service_call', id: 'c1', service: 'probe', method: 'find',
-      // A socket has no per-call headers, so the two values a header would
-      // have carried ride the frame's own `meta` — the same place it carries
-      // the id and the workspace.
-      meta: { correlationId: 'corr-ws', idempotencyKey: 'idem-ws' },
+      // A socket has no per-call headers, so the frame carries its own under
+      // `meta.headers`, where the browser client puts the Idempotency-Key
+      // (`FJS-1483`); the correlation id is stated on `meta` directly.
+      meta: { correlationId: 'corr-ws', headers: { 'idempotency-key': 'idem-ws' } },
     }))
     await done
     ws.close()

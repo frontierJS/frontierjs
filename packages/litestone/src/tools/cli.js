@@ -3,7 +3,7 @@
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
 import { applyBusyTimeout } from '../core/pragmas.js'
-import { resolve, relative, join, dirname, basename, extname } from 'path'
+import { resolve, relative, join, dirname, basename, extname, sep } from 'path'
 import { spawnSync }                                from 'child_process'
 import { openDatabase }                           from '../core/engine.js'
 
@@ -1676,11 +1676,58 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
   }))
   if (!declaresDatabases(parseResult)) declared.unshift({ name: 'main', driver: 'sqlite', path: resolve(cfg.db) })
   const wanted = t => !onlyDb || t.name === onlyDb
+  const dirs   = (await tenantStorage(parseResult, cfg)) ?? []
   return {
     sqlite: declared.filter(d => d.driver === 'sqlite' && wanted(d)).map(({ name, path }) => ({ name, path })),
     other:  declared.filter(d => d.driver !== 'sqlite' && wanted(d)),
-    dirs:   ((await tenantStorage(parseResult, cfg)) ?? []).filter(wanted),
+    dirs:   dirs.filter(wanted),
+    layout: onlyDb ? null : layoutFiles(cfg, declared, dirs),
   }
+}
+
+// What persists and no schema names: Caravan's `jobs.db`, a `local` storage
+// provider's bytes. A restore of the declared set alone brought back every row
+// and none of the pending jobs or images those rows point at (FJS-1391). The
+// schema is the wrong owner for them and a list here would be a second copy of
+// every path, so the LAYOUT is the list (`FJS-D493`): everything an app keeps
+// lives under `db/`, the one volume deploy mounts.
+//
+// Only a schema IN a `db/` directory has one. A bare litestone project keeps its
+// schema beside its source, and copying that directory would copy the project.
+//
+//   sqlite [{ name, path }]   every other `*.db`, named `db-<path>` — a hyphen no
+//                             declared database name can hold
+//   files  [{ rel, path }]    everything else, copied byte for byte
+//
+// Skipped: what the declared set already covers, a SQLite file's companions,
+// dot-entries (litestream's own state, generated output) and the backups root,
+// which would otherwise put every earlier backup inside the next.
+function layoutFiles(cfg, declared, dirs) {
+  const root = cfg.schema ? dirname(resolve(cfg.schema)) : null
+  if (!root || basename(root) !== 'db' || !existsSync(root)) return null
+
+  const coveredFile = new Set(declared.filter(d => d.driver === 'sqlite').map(d => resolve(d.path)))
+  const skipDir     = new Set([
+    ...declared.filter(d => d.driver !== 'sqlite' && d.path).map(d => resolve(d.path)),
+    resolve(defaultBackupRoot(cfg)),
+  ])
+  const byTenancy = (dir, f) => dirs.some(t => t.dir === dir && (t.pattern === '*.db' ? f.endsWith('.db') : f === t.pattern))
+
+  const sqlite = [], files = []
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) { if (!skipDir.has(path)) walk(path); continue }
+      if (!entry.isFile() || coveredFile.has(path) || byTenancy(dir, entry.name)) continue
+      if (/\.db-(wal|shm|journal)$/.test(entry.name)) continue
+      const rel = relative(root, path).split(sep).join('/')
+      if (entry.name.endsWith('.db')) sqlite.push({ name: `db-${rel.slice(0, -3).replaceAll('/', '-')}`, path })
+      else files.push({ rel, path })
+    }
+  }
+  walk(root)
+  return { root, sqlite, files }
 }
 
 // The files a directory target covers right now. The dot-prefixed entries are
@@ -6356,14 +6403,15 @@ async function cmdBackup(dest, cfg) {
   mkdirSync(resolvedDest, { recursive: true })
 
   // Each file is opened on its own path, never through a client — see copyTargets.
-  const { sqlite, other, dirs: tenantDirs } = await copyTargets(parseResult, cfg, onlyDb)
-  const targets = [...sqlite.map(t => ({ ...t, driver: 'sqlite' })), ...other]
+  const { sqlite, other, dirs: tenantDirs, layout } = await copyTargets(parseResult, cfg, onlyDb)
+  const targets = [...sqlite, ...(layout?.sqlite ?? [])].map(t => ({ ...t, driver: 'sqlite' })).concat(other)
 
   if (!targets.length && !tenantDirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
   console.log()
   console.log(`  ${dim('destination:')} ${cyan(zip ? rel(zipPath) : rel(resolvedDest))}`)
   console.log(`  ${dim('databases:')}   ${[...targets.map(t => t.name), ...tenantDirs.map(t => t.name)].join(', ')}`)
+  if (layout?.files.length) console.log(`  ${dim('files:')}       ${layout.files.length} under ${rel(layout.root)}`)
   if (zip) console.log(`  ${dim('format:')}      zip`)
   console.log()
 
@@ -6513,6 +6561,31 @@ async function cmdBackup(dest, cfg) {
     console.log()
   }
 
+  // ── The rest of db/: a stored file is a row's other half ────────────────────
+  // Copied as bytes under `db-files/`, keeping each path under `db/`, so a
+  // restore is one copy back onto the volume.
+  if (layout?.files.length) {
+    const t1      = performance.now()
+    const destDir = resolve(resolvedDest, 'db-files')
+    let dirSize = 0, copied = 0
+    for (const f of layout.files) {
+      try {
+        const to = resolve(destDir, f.rel)
+        mkdirSync(dirname(to), { recursive: true })
+        cpSync(f.path, to)
+        dirSize += statSync(to).size
+        copied++
+      } catch (e) {
+        console.log(`  ${red('✗')}  ${cyan('db-files')}/${f.rel} failed: ${e.message}`)
+        incomplete.push(`db-files/${f.rel} (${e.message})`)
+      }
+    }
+    totalSize += dirSize
+    console.log(`  ${green('✓')}  ${cyan('db-files')}  ${dim(`${copied} file${copied !== 1 ? 's' : ''} · ${(dirSize / 1024 / 1024).toFixed(2)} MB · ${(performance.now() - t1).toFixed(0)}ms`)}`)
+    console.log(`     ${dim(rel(destDir))}`)
+    console.log()
+  }
+
   // ── Zip the backup directory ────────────────────────────────────────────────
   if (zip) {
     const tZip = performance.now()
@@ -6608,15 +6681,20 @@ async function cmdReplicate(cfg) {
 
   header('litestone replicate')
 
-  const { sqlite, other: unreplicable, dirs } = await copyTargets(parseResult, cfg, onlyDb)
+  const { sqlite, other: unreplicable, dirs, layout } = await copyTargets(parseResult, cfg, onlyDb)
   if (!sqlite.length && !unreplicable.length && !dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
-  const targets = [...sqlite, ...dirs]
+  const targets = [...sqlite, ...dirs, ...(layout?.sqlite ?? [])]
 
-  if (unreplicable.length) {
+  if (unreplicable.length || layout?.files.length) {
     console.log(`  ${yellow(bold('⚠  not replicated'))}  ${dim('litestream streams SQLite WAL only')}`)
     for (const info of unreplicable)
       console.log(`     ${cyan(info.name)} ${dim(`(${info.driver})`)}  ${dim(info.path ?? 'no path')}`)
+    if (layout?.files.length) {
+      const shown = layout.files.slice(0, 5)
+      for (const f of shown) console.log(`     ${cyan(`db/${f.rel}`)}`)
+      if (layout.files.length > shown.length) console.log(`     ${dim(`…and ${layout.files.length - shown.length} more file(s) under ${layout.root}`)}`)
+    }
     console.log()
     console.log(`  ${dim(`Cover these with ${cyan('litestone backup')} on a schedule, or sync the directory to object storage.`)}`)
     console.log()

@@ -2992,6 +2992,11 @@ const CHECKS = {
   'css-token-undefined': ({ root }) => {
     const defined = shippedTokens(root)
     if (!defined.size) return { skipped: 'no dependency ships CSS' }
+    // The app's own stylesheets define tokens too: a theme that sets `--brand`
+    // once for every component reading it. Counted after the skip, so an app
+    // whose dependencies ship no CSS is still skipped rather than graded on its
+    // own sheets alone (FJS-1532).
+    for (const token of appTokens(root)) defined.add(token)
 
     const findings = []
     for (const surface of CLIENT_SURFACES) {
@@ -3496,6 +3501,28 @@ function models({ text }) {
 // `.css` file; the whole of its shipped CSS is then read, because a bundle and
 // the sources it was built from declare the same tokens and either may be the
 // one an app links.
+/**
+ * Every custom property an app's own stylesheets declare — `.css` and `.scss`
+ * under each client surface, `content/` included, with `dist/` and
+ * `node_modules/` skipped by `walk`. A declaration anywhere counts, as it does
+ * for a dependency's: which selector it sits under is the cascade's business.
+ */
+function appTokens(root) {
+  const out = new Set()
+  for (const surface of CLIENT_SURFACES) {
+    walk(join(root, surface), 6, (dir) => {
+      for (const file of safeRead(dir)) {
+        if (!file.endsWith('.css') && !file.endsWith('.scss')) continue
+        try {
+          for (const m of readFileSync(join(dir, file), 'utf8').matchAll(/(--[A-Za-z0-9_-]+)\s*:/g))
+            out.add(m[1])
+        } catch { /* unreadable is not a definition */ }
+      }
+    })
+  }
+  return out
+}
+
 function shippedTokens(root) {
   const out = new Set()
   let pkg

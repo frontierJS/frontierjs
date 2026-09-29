@@ -19,7 +19,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createTestEnv } from '../src/testing.js'
-import { parse } from '../src/index.js'
+import { parse, generateJsonSchema } from '../src/index.js'
 
 const DEADLINE = `
 model Cart {
@@ -423,5 +423,16 @@ model Hold {
   expiresAt DateTime
   @@expires(expiresAt)
 }`, /reads a model declaring @@expires/)
+  })
+})
+
+// A live store holding a Hold drops it at `expiresAt` by its own clock, since
+// the transition is the clock and no frame announces it (`FJS-1274`). It can
+// only do that if the schema tells it which column is the edge.
+describe('x-effective — the window reaches the client', () => {
+  test('an imposed window is emitted with its column and kind', () => {
+    const defs = generateJsonSchema(parse(DEADLINE).schema).$defs
+    expect(defs.Hold['x-effective']).toEqual({ from: null, to: 'expiresAt', kind: 'instant', imposed: true })
+    expect(defs.Cart['x-effective']).toBeUndefined()
   })
 })

@@ -170,8 +170,9 @@ title: Stocktake
   <EmptyState
     id="stocktake-denied"
     title="Administrators only"
-    description="A stocktake reads and writes at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request."
-  />
+  >
+    A stocktake reads and writes at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request.
+  </EmptyState>
 {:else}
   <Callout>
     A sheet and its counts are both <Mono>@@sync(server)</Mono> and both carry a key this browser made. Count the room with no signal and every row is real here the moment you enter it — the writes drain in order when a server comes back, and the counts still point at their sheet.

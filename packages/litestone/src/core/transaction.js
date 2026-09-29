@@ -54,7 +54,7 @@ const ownsTx = (state) => _txOwned.getStore()?.has(state) ?? false
 // (`FJS-D35`), so a refusal anywhere before it leaves the durable effects
 // unwritten — and a refusal part way is thrown naming what committed and what
 // rolled back, the one thing a caller cannot find out afterwards.
-export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
+export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclusions = null) {
   const db = conns[0].db
   const each = (sql) => { for (const c of conns) c.db.run(sql) }
   let spCount = 0
@@ -125,7 +125,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
     }
     else { spCount++; each(`SAVEPOINT sp_${spCount}`) }
     state.depth++
-    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, wmark: wrote.length }
+    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length }
   }
 
   function commit(frame) {
@@ -135,6 +135,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
     // grade after the decrement would take the counter negative on every
     // refusal.
     if (sp == null && ledger) { ledger.grade(db); ledger.truncate(0) }
+    if (sp == null && exclusions) { exclusions.grade(); exclusions.truncate(0) }
     state.depth--
     if (sp != null) { each(`RELEASE sp_${sp}`); return }
     const order = [...conns.slice(1), conns[0]]
@@ -162,11 +163,12 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
 
   function rollback(frame) {
     if (frame.settled) return
-    const { sp, mark, cmark, wmark } = frame
+    const { sp, mark, cmark, xmark, wmark } = frame
     state.depth--
     pending.length = mark
     wrote.length = wmark
     if (ledger) ledger.truncate(cmark)
+    if (exclusions) exclusions.truncate(xmark)
     // Every file is rolled back even when one refuses, then the first refusal
     // is thrown — stopping at it would leave the rest holding their writes.
     let failed = null
@@ -215,7 +217,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
     finally { release() }
   }
 
-  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, noteWrite, ledger, owns: () => ownsTx(state), state }
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, noteWrite, ledger, exclusions, owns: () => ownsTx(state), state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────

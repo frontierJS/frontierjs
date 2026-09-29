@@ -365,6 +365,23 @@ describe('a construct from another framework is refused by name', () => {
     expect(await threw("<script>let ok = true</script><b>{ok && '<b>'}</b>")).toBe('')
   })
 
+  // An expression is emitted verbatim, so one that is not JavaScript compiled
+  // clean and failed at import naming no file. The shape that found it: a
+  // vendor's widget snippet with CSS in a data attribute (ksite's LeadForm.md).
+  it('refuses an expression that is not JavaScript, in text and in an attribute', async () => {
+    expect(await threw('<div data-styles="main { --x: 1; --y: 2;}"></div>'))
+      .toContain('is not a JavaScript expression')
+    expect(await threw('<p>{ --x: 1 }</p>')).toContain('is not a JavaScript expression')
+    expect(await threw('<div data-x="{ a: 1 }"></div>')).toContain('is not a JavaScript expression')
+  })
+
+  it('leaves a sequence, an object literal and a template string alone', async () => {
+    expect(await threw('<script>let a = 1</script><p>{(a, 2)}</p>')).toBe('')
+    expect(await threw('<script>let a = 1</script><p>{JSON.stringify({ a })}</p>')).toBe('')
+    expect(await threw('<script>let a = 1</script><p title={`x${a}`}>{a > 0 ? `y` : `z`}</p>')).toBe('')
+    expect(await threw('<div data-styles="main &lbrace; --x: 1 }"></div>')).toBe('')
+  })
+
   it('refuses assigning a derived const', async () => {
     const { errors } = await cx(
       '<script>let a = 1; const d = a * 2; function f() { d = 3 }</script><button onclick={f}>{d}</button>')

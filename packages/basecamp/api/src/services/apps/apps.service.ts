@@ -31,7 +31,7 @@ import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
-import { parseAppSource, sourceKindOf, summarizeSource } from '../../core/app-source.ts'
+import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '../../core/app-source.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const WITH_ENV = { environment: true }
@@ -81,7 +81,9 @@ export function createAppsService(app: BasecampApp) {
   async function detail(id: string) {
     const row = await db().app.findFirst({
       where:   { id, workspaceId: ws() },
-      include: WITH_DETAIL,
+      // The project too, for the screen's breadcrumb — an app's address is
+      // project, then environment, and the list read has no use for it.
+      include: { ...WITH_DETAIL, environment: { include: { project: true } } },
     })
     if (!row) throw new NotFound(`App '${id}' not found`)
 
@@ -97,7 +99,8 @@ export function createAppsService(app: BasecampApp) {
       db().deployment.findMany({
         where:   { appId: row.id },
         select:  { id: true, status: true, trigger: true, queuedAt: true, finishedAt: true,
-                   durationMs: true, commitSha: true, builtImage: true, toImage: true },
+                   durationMs: true, commitSha: true, commitMessage: true, branch: true,
+                   author: true, builtImage: true, toImage: true, previousDeploymentId: true },
         orderBy: { queuedAt: 'desc' },
         limit:   10,
       }),
@@ -107,6 +110,7 @@ export function createAppsService(app: BasecampApp) {
     return {
       ...row,
       domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
+      sourceLabel: describeSource(row.source),
       placement,
       recent_deployments: deployments,
       jobs,
@@ -140,7 +144,7 @@ export function createAppsService(app: BasecampApp) {
       })
       // See `summarizeSource`: a list says what each app's source is, the
       // detail read says what it holds.
-      return { total, limit, offset, data: rows.map((r: any) => ({ ...r, source: summarizeSource(r.source) })) }
+      return { total, limit, offset, data: rows.map((r: any) => ({ ...r, source: summarizeSource(r.source), sourceLabel: describeSource(r.source) })) }
     },
 
     async get() {
@@ -163,10 +167,9 @@ export function createAppsService(app: BasecampApp) {
 
     async patch() {
       const current = await getScoped('app', 'App')
-      // environmentId and slug are immutable — moving an app between
-      // environments would orphan its deployment history.
-      // `status` is the deploy job's to set, never a client's.
-      const patch = narrowPatch($.data as Record<string, unknown>, ['environmentId', 'slug', 'status'])
+      // environmentId and slug are @immutable and status is @system — the
+      // schema refuses all three by name, so nothing here restates them.
+      const patch = narrowPatch($.data as Record<string, unknown>)
       checkSource(patch, current as Record<string, unknown>)
       if (!changesNothing(patch))
         await db().app.update({ where: { id: $.id as string }, data: patch })
@@ -178,7 +181,7 @@ export function createAppsService(app: BasecampApp) {
       const target = await getScoped('app', 'App')
       // Mark it stopped as well as deleted: a soft-deleted app that still reads
       // "running" would keep showing up as live in any status rollup.
-      await db().app.update({ where: { id: $.id as string }, data: { status: 'stopped' } })
+      await db().app.update({ where: { id: $.id as string }, data: { status: 'stopped' }, system: ['status'] })
 
       // A container stops when nothing restarts it. FILES do not: an inline app
       // deleted here would go on serving its last release, at its own address,

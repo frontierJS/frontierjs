@@ -31,10 +31,8 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { requireServers } from './lib/preflight.mjs'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -44,7 +42,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-values-'))
+const profile = chromeProfile('fjs-values-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
@@ -438,7 +436,6 @@ for (const r of results) {
 await send('Target.closeTarget', { targetId })
 browser.close()
 chrome.kill()
-try { rmSync(profile, { recursive: true, force: true, maxRetries: 3 }) } catch {}
 
 if (failed) { console.error(`\n${failed} assertion(s) failed`); process.exit(1) }
 console.log(`\n${results.length} assertion(s) passed`)

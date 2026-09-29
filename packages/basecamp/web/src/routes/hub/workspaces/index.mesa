@@ -130,6 +130,8 @@ title: Hub workspaces
           {#if w.status === 'active'}
             <Button variant="ghost" tone="danger" disabled={busy === w.id}
                     aria-label={`Suspend ${w.name}`}
+                    data-confirm={`Every member of ${w.name} is refused on their next request until it is reinstated.`}
+                    data-confirm-title="Suspend this workspace?" data-confirm-label="Suspend"
                     onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
           {:else}
             <Button variant="ghost" disabled={busy === w.id}

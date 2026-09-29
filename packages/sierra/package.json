@@ -8,7 +8,7 @@
     ".": "./src/index.js",
     "./scanner": "./src/scanner/index.js",
     "./build": "./src/build/index.js",
-    "./router": "./src/router/index.js",
+    "./router": "./src/router/entry.js",
     "./router/internals": "./src/router/internals.js",
     "./analytics": "./src/analytics/index.js",
     "./junction": "./src/junction/index.js",

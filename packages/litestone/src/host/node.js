@@ -24,7 +24,7 @@ export { resolve, join, dirname, basename, extname, isAbsolute } from 'path'
 export {
   existsSync, statSync, mkdirSync, mkdtempSync, readdirSync,
   readFileSync, writeFileSync, appendFileSync, rmSync, renameSync,
-  openSync, readSync, closeSync, watch,
+  openSync, readSync, writeSync, fstatSync, closeSync, watch,
 } from 'fs'
 
 export { tmpdir } from 'os'

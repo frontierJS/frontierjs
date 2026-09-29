@@ -15,10 +15,11 @@ color and never a utility class. Plain CSS, no build step required.
 src/
   index.css        the entry — @layer order is declared HERE
   foundation/      reset · tokens · tones · surface · layout · chip
-                   reset.css is ONE rule in the first layer — `a:where([class])`
-                   loses the UA underline, a bare `<a>` keeps it. The bar for
-                   adding a second: a UA default actively fights a shipped term
-                   AND the term cannot fix it itself
+                   reset.css is the first layer, and the bar for a rule in it
+                   is a UA default that fights a shipped term AND that the
+                   term cannot fix itself — `a:where([class])` loses the UA
+                   underline; Feed/Steps/Facts lose the list margin here
+                   because zeroing it in `patterns` beats a Card's flow
                    surface.css also owns the INTERACTIVE surface —
                    `:where(a, button)` on Card/Tile/Surface gets a cursor, a
                    1px lift and a tone-following border. Keyed on the element,

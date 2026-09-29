@@ -222,12 +222,12 @@ describe('the release pipeline an inline app runs', () => {
     expect(release.toImage).toBe('nginx:alpine')
   })
 
-  test('a git app still builds', async () => {
+  test('a git app is refused until something builds its image', async () => {
+    // The build steps were a command-less /exec that reported success, and the
+    // start step then pulled the app's NAME from Docker Hub.
     const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' })
-    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
-
-    expect(await stepNames(release.id)).toContain('Build image')
-    expect(release.toImage ?? null).toBeNull()
+    await expect(deployments().create({ appId: target.id, workspaceId: ws.id }))
+      .rejects.toThrow(/names no image/)
   })
 
   test('the release records the files that were live when it was queued, not the ones there now', async () => {

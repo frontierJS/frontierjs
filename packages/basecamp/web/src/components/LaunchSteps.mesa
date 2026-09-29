@@ -1,0 +1,59 @@
+<script>
+  // The home screen's wizard: from nothing to one app live on one machine.
+  //
+  // Every step is answered by `infra.launch` on load and none is stored, so
+  // the only thing a step can do is take you to the screen where the work is.
+  // The server names that screen — the app a step means lives three levels
+  // deep, and working out which one is a read of rows this component does not
+  // hold. Hidden once all six are done: the fleet is the home screen from then.
+  import { session } from '../session.js'
+  import { infra } from '../resources/Infra.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  $: session.workspaceId
+
+  let state = null
+  let error = null
+
+  async function load() {
+    error = null
+    try {
+      state = await infra.service.invoke('launch', null)
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  $: next = state?.steps.find(s => !s.done) ?? null
+</script>
+
+{#if error}
+  <article class="alert danger" id="launch-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{:else if state && next}
+  <article class="card stack" id="launch-steps">
+    <div class="section-header">
+      <h2 class="h4">Ship your first app</h2>
+      <span class="text-sm text-muted">{state.done} of {state.total}</span>
+    </div>
+    <progress class="progress" value={state.done} max={state.total}></progress>
+    <ol class="steps">
+      {#each state.steps as step (step.id)}
+        <li class={step.done ? 'step complete' : 'step'} aria-current={next.id === step.id ? 'step' : null}>
+          <span class="step-marker"></span>
+          <span class="step-label">{step.title}</span>
+          <span class="step-hint">{step.detail}</span>
+          {#if step.href && (next.id === step.id || step.done)}
+            <Button variant={next.id === step.id ? 'primary' : 'ghost'} href={step.href}>
+              {step.done ? 'Open' : 'Do this'}
+            </Button>
+          {/if}
+        </li>
+      {/each}
+    </ol>
+  </article>
+{/if}

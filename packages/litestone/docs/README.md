@@ -26,6 +26,7 @@
 - [window-functions.md](window-functions.md) — all window fns, partitionBy, frame specs, FILTER
 
 ## Security & access control
+- [warden.md](warden.md) — **the Warden, the whole access system on one page**: the layers a call passes through, what `asSystem()` lifts and holds, and the rulings behind them. Start here, then follow its links
 - [access-control.md](access-control.md) — row policies, field policies, GatePlugin levels, auth()
 - [encryption.md](encryption.md) — @encrypted, @secret, $rotateKey, searchable encryption
 

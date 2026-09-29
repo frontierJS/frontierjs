@@ -141,7 +141,7 @@ import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
 } from './field-rules.js'
@@ -203,6 +203,17 @@ function _heldData(data, policy, versionOf) {
   if (!data || typeof data !== 'object' || !(versionOf in data)) return data
   const { [versionOf]: _dropped, ...rest } = data
   return rest
+}
+
+/** A patch of a `@version` row this resource holds no read of. */
+function _versionUnread(model, id) {
+  const err = new Error(
+    `[Sierra] ${model} ${id} was read too long ago, or never read, to edit safely — reload it. ` +
+    `A change is checked against the version it was made from, and this screen has none for that row.`)
+  err.code = 'VERSION_UNREAD'
+  err.model = model
+  err.id = id
+  return err
 }
 
 /** A held write a model whose rows are only ever appended cannot express. */
@@ -398,10 +409,9 @@ function optionsOrder(order, shown) {
   return order?.length ? order.map(o => ({ [o.field]: o.dir })) : shown
 }
 
-// How many read rows one resource keeps as a patch baseline. Nothing reads more
-// than one at a time; the cap is here so a list screen paging a large table
-// cannot grow the map for the life of the tab. A miss costs a patch that
-// carries the whole record, which is what every patch carried before.
+// How many read rows no view holds one resource keeps as a patch baseline. The
+// cap is here so a `find()` paging a large table cannot grow the map for the
+// life of the tab; a row on screen is kept whatever the count (`FJS-D468`).
 const READ_CACHE_MAX = 200
 
 // ── The identity epoch ────────────────────────────────────────────────────────
@@ -844,6 +854,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // that reason; nothing can push before the first load in any case.
   const junctionResource = client.resource(serviceName, idField, {
     match: (record, query) => matchesQuery(fields, record, query),
+    // A row leaving an imposed window emits no frame, so the list drops it at
+    // its edge by the clock (`FJS-1274`). Absent where the model has none.
+    ...(modelDef?.['x-effective']?.imposed
+      ? { until: (record, params) => leavesAt(modelDef['x-effective'], record, params) }
+      : {}),
     // Which MODEL these rows are. Junction holds no schema and cannot derive it
     // from the service name, so two services over one model would otherwise be
     // two rows — the thing nodes exist to stop (`FJS-D138`).
@@ -879,22 +894,41 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   //
   // A `find()` stamps every row of every page, so this is capped: a list screen
   // paging a large table would otherwise accumulate one entry per row seen, for
-  // the life of the tab, on a map only ever read for the row being edited
-  // (`FJS-823`). Insertion-ordered eviction is the whole policy — a Map iterates
-  // in insertion order, so the oldest key is `keys().next()`. Re-reading a row
-  // re-inserts it, which is what keeps the row a form is sitting on alive
-  // across a list refresh.
-  //
-  // The cap is per resource and is generous against a form: nothing reads more
-  // than one row of this map at a time, and the failure of a miss is a patch
-  // that carries the whole record — today's behavior, which is safe.
+  // the life of the tab (`FJS-823`). **A row a view still holds is never
+  // evicted** (`FJS-D468`): a board of 300 rows forgot its first 100 under a
+  // plain insertion-ordered cap, and on a `@version` model a miss is a patch
+  // the server refuses, not a patch that merely carries the whole record
+  // (`FJS-1309`). So the cap bounds what no screen shows — a `find()` into a
+  // plain array — and what is on screen costs one entry per row on screen.
   const _read = new Map()
+  const _nodeKey = model ?? serviceName
+
+  function _held(id) {
+    return !!client?.nodes?.peek(_nodeKey, id)?.held
+  }
 
   function _remember(id, row) {
     if (_read.has(id)) _read.delete(id)
     _read.set(id, row)
-    while (_read.size > READ_CACHE_MAX) _read.delete(_read.keys().next().value)
+    if (_read.size <= READ_CACHE_MAX) return
+    for (const key of _read.keys()) {
+      if (_read.size <= READ_CACHE_MAX) break
+      if (!_held(key)) _read.delete(key)
+    }
   }
+
+  // The first sight of a row in a held view IS its read, and never replaces
+  // one (`FJS-D468`). A row that reached the screen by push was read by
+  // nobody, yet it is exactly what the person saw and edited; without this its
+  // patch went up with no version. The committed value, not the view's: an
+  // optimistic overlay is this screen's intent, and taking it as the baseline
+  // would drop it from the patch's diff and the merge's `base`.
+  function _sighted(id, row) {
+    if (!versionOf || id == null || _read.has(id)) return
+    const seen = client?.nodes?.peek(_nodeKey, id)?.committed?.() ?? row
+    if (seen && Number.isInteger(seen[versionOf])) _remember(id, seen)
+  }
+  if (versionOf) store.subscribe(list => { for (const row of list) _sighted(row?.[idField], row) })
 
   // The revision this resource last READ for a row, or null.
   function _readVersion(id) {
@@ -1108,12 +1142,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
       // @version rides along on a patch. A caller who set it explicitly wins —
       // that is someone doing their own concurrency control. With no remembered
-      // version the patch goes up without one and the server says so, which is
-      // a better failure than inventing a number that would silently win a race.
+      // version the patch is refused HERE, before the queue (`FJS-D468`): sent,
+      // the server refused it in words about `asSystem()`, and held offline it
+      // was refused at the drain where nobody hears it (`FJS-1309`). Reading
+      // the row again first is no fix — that sends a version newer than what
+      // the person edited, the silent win the column exists to stop.
       if (versionOf && method === 'patch' && ctx.data && typeof ctx.data === 'object'
           && ctx.data[versionOf] == null) {
         const known = _readVersion(ctx.id)
-        if (known != null) ctx.data = { ...ctx.data, [versionOf]: known }
+        if (known == null) throw _versionUnread(model ?? serviceName, ctx.id)
+        ctx.data = { ...ctx.data, [versionOf]: known }
       }
 
       // ── the key, if the caller is the one who makes it ───────────────────
@@ -1600,6 +1638,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   function record(id, opts = {}) {
     const composed = opts.composed === true
+    // A node another view already holds is not read again, so what it shows
+    // is this screen's first sight of the row.
+    _sighted(id, null)
     return junctionResource.record(id, {
       // The same read `service.get(id)` makes, `detailQuery` included: a
       // resource that declares the include shape a detail view needs declares

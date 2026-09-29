@@ -32,10 +32,8 @@
 //    makes it `return;` and the assertion reads back `undefined`.
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { requireServers } from './lib/preflight.mjs'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -189,7 +187,7 @@ ok('…because @@transitions already guards the column two writers contend for',
 
 section('the screen')
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-revisions-'))
+const profile = chromeProfile('fjs-revisions-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
@@ -462,7 +460,6 @@ await del(`/customers/${CID}`)
 // a temp directory left behind is not a failed drive.
 chrome.kill()
 await new Promise((r) => chrome.once('exit', r))
-try { rmSync(profile, { recursive: true, force: true, maxRetries: 3 }) } catch {}
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

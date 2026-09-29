@@ -643,11 +643,12 @@ name when it declares none.
 
 ### `infra` · model `infra`
 
-- **methods** — `graph`, `onboarding`
-- **custom methods** — `graph`, `onboarding`
+- **methods** — `graph`, `onboarding`, `launch`
+- **custom methods** — `graph`, `onboarding`, `launch`
 - **who may call** —
   - `graph` — standing 2 or above — declared `gate: 2`
   - `onboarding` — standing 2 or above — declared `gate: 2`
+  - `launch` — standing 2 or above — declared `gate: 2`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

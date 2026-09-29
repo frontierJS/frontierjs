@@ -2123,12 +2123,20 @@ describe('Deployment and Job declare their own state machines', () => {
     // Job's update gate is ADMINISTRATOR(5), not USER(4) — `@@gate("2.4.4.5")`.
     const admin = as(db, ws, 'admin')
 
-    await admin.job.update({ where: { id: job.id }, data: { status: 'running' } })
-    expect((await admin.job.update({ where: { id: job.id }, data: { status: 'pending' } })).status).toBe('pending')
+    // The run's moves are the engine's. A person with every level the gate
+    // asks for still cannot say a job is running when nothing runs it.
+    await expect(admin.job.update({ where: { id: job.id }, data: { status: 'running' } }))
+      .rejects.toThrow(/system/i)
+
+    await sys.job.update({ where: { id: job.id }, data: { status: 'running' } })
+    expect((await sys.job.update({ where: { id: job.id }, data: { status: 'pending' } })).status).toBe('pending')
 
     // pending -> failed is not a move: a job that never ran did not fail.
-    await expect(admin.job.update({ where: { id: job.id }, data: { status: 'failed' } }))
+    await expect(sys.job.update({ where: { id: job.id }, data: { status: 'failed' } }))
       .rejects.toThrow(/from 'pending' to 'failed'/)
+
+    // `cancel` is the person's move and stays theirs.
+    expect((await admin.job.update({ where: { id: job.id }, data: { status: 'cancelled' } })).status).toBe('cancelled')
 
     db.$close()
   })

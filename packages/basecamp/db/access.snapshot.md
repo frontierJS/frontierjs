@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 59 models · 1 view · 60 gated · 0 unrestricted
-45 with row policies · 13 with protected fields · 31 declared moves · 10 @system · 0 @seals
+45 with row policies · 15 with protected fields · 31 declared moves · 13 @system · 0 @seals
 ```
 
 ## Gates
@@ -500,12 +500,16 @@ rather than refusing the row.
 | --- | --- | --- |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
+| `App` | `status` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
 | `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
 | `FlowCredential` | `secret` | `@encrypted` |
 | `Invitation` | `token` | `@guarded` |
+| `Job` | `retryCount` | `@system` |
+| `Job` | `lastRunAt` | `@system` |
+| `Job` | `lastRunStatus` | `@system` |
 | `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
@@ -555,9 +559,9 @@ caller at once. Everything reachable from the target seals with it.
 | `Flow` | `status` | `pause` | active → paused | caller | — | — |
 | `Flow` | `status` | `archive` | draft, active, paused → archived | caller | — | — |
 | `Flow` | `status` | `restore` | archived → draft | caller | — | — |
-| `Job` | `status` | `start` | pending, failed → running | caller | — | — |
-| `Job` | `status` | `idle` | running → pending | caller | — | — |
-| `Job` | `status` | `fail` | running → failed | caller | — | — |
+| `Job` | `status` | `start` | pending, failed → running | **application** | — | — |
+| `Job` | `status` | `idle` | running → pending | **application** | — | — |
+| `Job` | `status` | `fail` | running → failed | **application** | — | — |
 | `Job` | `status` | `cancel` | pending, running, failed → cancelled | caller | — | — |
 | `Run` | `status` | `start` | pending → running | caller | — | — |
 | `Run` | `status` | `suspend` | pending, running → waiting | caller | — | — |

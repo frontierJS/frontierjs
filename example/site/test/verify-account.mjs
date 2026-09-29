@@ -29,15 +29,13 @@
  * TypeScript modules.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
 import { serveSite } from '@frontierjs/sierra/site/serve'
-
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
+import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -298,7 +296,7 @@ check('staff changing the same plan moves the quantity and issues the invoice fo
 
 // ─── the browser ──────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-account-'))
+const profile = chromeProfile('fjs-account-')
 start(CHROME, [
   '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu', '--no-sandbox',
   `--user-data-dir=${profile}`, 'about:blank',

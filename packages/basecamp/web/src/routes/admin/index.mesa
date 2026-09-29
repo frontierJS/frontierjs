@@ -227,7 +227,10 @@ title: Members
           <td>
             <div class="cluster">
               <Button variant="ghost" disabled={busy === row.id} onclick={() => resend(row)}>Resend</Button>
-              <Button variant="ghost" tone="danger" disabled={busy === row.id} onclick={() => revoke(row)}>Revoke</Button>
+              <Button variant="ghost" tone="danger" disabled={busy === row.id}
+                      data-confirm={`The link sent to ${row.email} stops working.`}
+                      data-confirm-title="Revoke this invitation?" data-confirm-label="Revoke"
+                      onclick={() => revoke(row)}>Revoke</Button>
             </div>
           </td>
         </tr>
@@ -258,7 +261,10 @@ title: Members
           <td class="text-sm text-muted">{day(member.acceptedAt ?? member.createdAt)}</td>
           <td>
             {#if member.userId !== session.user?.userId}
-              <Button variant="ghost" tone="danger" disabled={busy === member.id} onclick={() => remove(member)}>Remove</Button>
+              <Button variant="ghost" tone="danger" disabled={busy === member.id}
+                      data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} loses access to this workspace.`}
+                      data-confirm-title="Remove this member?" data-confirm-label="Remove"
+                      onclick={() => remove(member)}>Remove</Button>
             {:else}
               <span class="text-sm text-muted">you</span>
             {/if}

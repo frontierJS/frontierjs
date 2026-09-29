@@ -294,10 +294,16 @@ title: API keys
           <div class="cluster">
             {#if k.status === 'active'}
               <Button variant="ghost" disabled={busy === k.id}
-                      aria-label={`Revoke ${k.name}`} onclick={() => revoke(k)}>Revoke</Button>
+                      aria-label={`Revoke ${k.name}`}
+                      data-confirm={`Anything using ${k.name} is refused from its next request.`}
+                      data-confirm-title="Revoke this key?" data-confirm-label="Revoke"
+                      onclick={() => revoke(k)}>Revoke</Button>
             {/if}
             <Button variant="ghost" disabled={busy === k.id}
-                    aria-label={`Delete ${k.name}`} onclick={() => remove(k)}>Delete</Button>
+                    aria-label={`Delete ${k.name}`}
+                    data-confirm={`${k.name} is deleted, and anything still using it is refused.`}
+                    data-confirm-title="Delete this key?" data-confirm-label="Delete"
+                    onclick={() => remove(k)}>Delete</Button>
           </div>
         </td>
       </tr>

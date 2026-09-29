@@ -18,7 +18,7 @@
 import { watchProxy } from '@frontierjs/mesa/runtime'
 import {
   session, ready as sessionReady, refresh, getClient,
-  signIn as authSignIn, signOut as authSignOut,
+  signIn as authSignIn, signOut as authSignOut, submitCode as authSubmitCode,
 } from '@frontierjs/sierra/junction'
 
 export { session }
@@ -211,8 +211,18 @@ export async function acceptInvitation({ token, name, password }) {
   return result
 }
 
+// An account with a second factor answers a challenge, and then there is no
+// token yet — `/workspaces` asked now is a 401 that reads as a wrong password.
+// The workspace is loaded by `submitCode` once the code has been accepted.
 export async function signIn(email, password) {
   const result = await authSignIn(email, password)
+  if (session.awaitingCode) return result
+  await loadWorkspace()
+  return result
+}
+
+export async function submitCode(code) {
+  const result = await authSubmitCode(code)
   await loadWorkspace()
   return result
 }

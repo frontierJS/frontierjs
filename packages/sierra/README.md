@@ -952,11 +952,11 @@ Everything in `sierra.config.js`:
 | `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
 | `autoImport.modules` | `{}` | package → bindings that need no import |
 | `siteUrl` | `''` | absolute origin for the sitemap |
-| `llms` | `true` | emit `llms.txt` |
+| `llms` | `false` | `true` emits `llms.txt` unless `public/llms.txt` exists · `'auto'` always regenerates it |
 | `markdownPages` | `false` | `true` \| `'auto'` — emit `index.md` beside each page |
 | `speculationRules` | `true` | inject Speculation Rules for static routes |
 | `build.deferJS` | `false` | defer script tags in `index.html` |
-| `plugins` | `[]` | extra Vite plugins; those with `closeBundle` also run in the post-build pipeline |
+| `plugins` | `[]` | extra Vite plugins. A `closeBundle` on one is the post-build hook: Sierra calls it once, with `{ outDir, root, config, routeTable }`, after the pages are written, and Vite never calls it |
 | `vite` | `{}` | raw Vite overrides — deep-merged last, arrays concatenated |
 
 `junction.debug: true` logs every service call with payloads; `'verbose'` adds every
@@ -976,6 +976,12 @@ WebSocket-heavy app keeps every response payload alive for the tab's lifetime.
 **must** have a companion exporting `getStaticPaths()` — production builds fail loudly
 otherwise. A static build that produces no pages says so rather than silently emitting an
 SPA.
+
+A prerendered layout reads `page` as it does in the browser. Before each page renders,
+`page` holds what a navigation to it would commit: its `pathname`, `params`, load() `data`,
+and its frontmatter merged down the layout chain, spread and as `meta`. A route with
+`status: draft` or `redirect:` is not prerendered, and the build lists both under
+*Not prerendered, by their frontmatter*. A redirect is served by `_redirects`.
 
 > **A prerendered module resolves imports from the APP's tree, not Mesa's.** Mesa's
 > `renderComponent` takes a `tmpDir` and Sierra points it at
@@ -1197,7 +1203,7 @@ Runs automatically after `vite build`:
 | `public/robots.txt` → `dist/robots.txt` | always |
 | `_redirects` from routes with `redirect:` | always |
 | `sitemap.xml` from `indexed` routes | always |
-| `llms.txt` | `llms !== false` |
+| `llms.txt` | `llms` is `true` or `'auto'` |
 | per-page `index.md` | `markdownPages` |
 | Speculation Rules | `speculationRules !== false` and static routes exist |
 | `defer` on script tags | `build.deferJS` |

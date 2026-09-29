@@ -119,6 +119,45 @@ export function prepareMesaSource(source, id) {
   return { frontmatter, content }
 }
 
+// The `---` block exactly as `parseFrontmatter` finds it, kept verbatim so a
+// `.md` file can be handed back to Mesa with it.
+const FRONTMATTER_BLOCK = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/
+
+/**
+ * The source Mesa compiles for a file, in EVERY build that compiles one — the
+ * Vite transform and the `static` target's prerender. They used to prepare it
+ * separately, and only the transform injected auto-imports, so `<Hero />`
+ * rendered in `vite dev` and failed `site:build` with *Hero is not defined*
+ * (`FJS-1491`).
+ *
+ * A `.md` file keeps its frontmatter. `compileMd` turns each key into a prop,
+ * and stripping the block here meant a Markdown component's `{classes}`
+ * rendered in the prerender and was an undeclared name in dev (`FJS-1492`).
+ * Its fenced code is left to `compileMd` too, which owns fences in Markdown.
+ *
+ * @returns {string|null} null for a redirect-only route, which is never compiled
+ */
+export function prepareForCompile(source, id, autoImportMap) {
+  const md = id.endsWith('.md')
+  const content = md ? prepareMarkdownBody(source, id) : prepareMesaSource(source, id).content
+  if (content === null) return null
+
+  const injected = autoImportMap?.size > 0 ? injectAutoImports(content, autoImportMap, id) : content
+  if (!md) return injected
+
+  // Injected into the BODY, then the block goes back in front: `compileMd`
+  // reads frontmatter only at the top of the file and the component's script
+  // only directly after it.
+  return (source.match(FRONTMATTER_BLOCK)?.[0] ?? '') + injected
+}
+
+/** A `.md` body: the slot rewrite, and no fence escaping — `compileMd` owns fences. */
+function prepareMarkdownBody(source, id) {
+  const { frontmatter, content: raw } = parseFrontmatter(source)
+  if (frontmatter?.redirect && raw.trim() === '') return null
+  return isLayoutFile(id) ? rewriteLayoutSlots(raw) : rewriteMesaSlots(raw)
+}
+
 /**
  * @param {object} mesaOptions — passed through to @frontierjs/mesa/compiler
  * @param {object} sierraContext — shared state between plugins
@@ -346,18 +385,13 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
 
       // A redirect-only route never renders — the router intercepts it before
       // the component loads — so it becomes a no-op component.
-      const { content: slotRewritten } = prepareMesaSource(source, id)
-      if (slotRewritten === null) {
+      const content = prepareForCompile(source, id, sierraContext?.autoImportMap)
+      if (content === null) {
         return {
           code: `export default function Component() {}`,
           map: null,
         }
       }
-
-      // Inject auto-imports for any PascalCase components used in this file
-      const content = sierraContext?.autoImportMap?.size > 0
-        ? injectAutoImports(slotRewritten, sierraContext.autoImportMap)
-        : slotRewritten
 
       try {
         const ctx = await compiler.compileSource(content, {
@@ -390,6 +424,8 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           // one — and `test/no-module-signals.test.js` is what keeps this
           // package from quietly becoming such a package again.
           ...mesaOptions,
+          // Which file a `.md` file's `layout:` means (markdown-layouts.js).
+          ...(sierraContext?.markdownLayouts ? { layouts: sierraContext.markdownLayouts } : {}),
         })
 
         if (sierraContext) {

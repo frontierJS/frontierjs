@@ -1,5 +1,42 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-28 — `$: x = store.path` over an unwatched import is warned about (`FJS-1545`)
+
+A writable derivation re-runs when a watch fires, so `$: meta = page.meta` with no `$: page.meta` compiled to `createWritableSignal(() => (page.meta))` over the raw import and held its first value. The inert-import diagnostic read the template and each top-level `const` but not this site, so Svelte's spelling of a reactive read was the one that stayed silent, even under `externalReactivityHints: 'strict'`. `_checkExternalReactivity` now counts a `$: x =` initializer as a read site. The warning and the `staticReads` entry name it `'$: x ='`, and a function-valued one is skipped as a `const` is. Its advice, `$: page.meta`, is the fix: with the watch, the derivation reads through `$$proxy_page`. `test/import-watch.test.js`.
+
+## 2026-09-28 — A `{…}` that is not JavaScript is a compile error (`FJS-1518`)
+
+An expression is emitted verbatim as `${…}`, so `{ --x: 1 }` in text, or a vendor's CSS pasted into a `data-` attribute, compiled with no error into a module that did not parse. A prerender then failed at import and named no file. `parseText` now asks acorn whether each expression is exactly one expression (with `preserveParens`) and refuses one that is not. The message names the expression and the two spellings of a literal brace: `&lbrace;`, or `\{` in Markdown. A sweep of every `.mesa` and `.md` file in the workspace found none newly refused. `test/compile-errors.test.js`.
+
+## 2026-09-28 — A `.md` module exports its frontmatter (`FJS-1520`)
+
+`compileMd` also emits `<script module> export const frontmatter = {…}`, so a page listing a directory of Markdown files can read each file's fields as well as render its body. It is mdsvex's `metadata`, named for `ctx.frontmatter`. Each key is still a prop. `test/md-frontmatter-export.test.js`.
+
+## 2026-09-28 — `renderComponent` follows every indented import in a `<script module>` (`FJS-1519`)
+
+The compiler prints a module script as written, trimmed as a whole, and `IMPORT_RE` was anchored at `^import`, so only the first of two indented imports there was compiled and rewritten. `IMPORT_RE` now takes leading whitespace. `test/render-component.test.js`.
+
+## 2026-09-28 — A `.md` file's `layout:` wraps its body (`FJS-1493`)
+
+`compileMd` parsed `layout:` into `ctx.layout` and nothing read it. With the new
+`layouts` option (name → file), the body is wrapped in the named component. The
+component gets every frontmatter key as a prop (a parent's value wins), the
+parent's `class` and `$attributes`, and the body both as element children and as
+the `children` prop, because nothing says which a layout reads. A name the map
+does not hold is a compile error listing the names it does. `layout: false`, or
+no map at all, wraps nothing. The wrap is emitted after Markdown, because
+CommonMark cannot carry a tag line with `{...$attributes}` on it.
+`test/md-layout.test.js`.
+
+## 2026-09-28 — `renderComponent` takes the caller's source transform (`FJS-1491`)
+
+`options.transformSource(source, filename)` is applied to every file the render
+tree reads from disk, before it is compiled; the entry's own source is passed
+as given. A meta-framework whose bundler transforms Mesa sources passes the
+same transform here, so a prerender compiles what the bundle did — Sierra's
+auto-imports were missing from every static page. `test/render-component.test.js`
+§ options.transformSource, with the untransformed tree as the negative control.
+
 ## 2026-09-28 — The keyed-equality lift keeps the author's guard (`FJS-1445`)
 
 `selected && e.src !== selected.id` inside an `{#each}` lifted `selected.id`

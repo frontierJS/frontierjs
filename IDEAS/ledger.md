@@ -347,7 +347,7 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
     today's state. A's cost is a column nobody declared, and that column must be
     invisible to every generated schema, which is testable.
 
-- **Q3 — Does the entry get its before and after stamped by the engine?**
+- ~~**Q3 — Does the entry get its before and after stamped by the engine?**~~ **Answered 2026-09-29 (`FJS-D542`): B — no stamping. The balance is the parent's, and a row's before and after are a window function over the tape when somebody asks.**
   `InventoryMovement` carries `stockBefore`/`stockAfter` so a single row can be
   checked on its own and a gap between two rows is visible.
   - **A** — `@before(relation.field)` / `@after(relation.field)`, filled in the
@@ -371,7 +371,7 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
     exists to avoid today. Under A that `@@sync(field)` may become unnecessary,
     since the only other writer of the row is gone.
 
-- **Q5 — Does a balanced ENTRY (the journal) get a spelling?**
+- ~~**Q5 — Does a balanced ENTRY (the journal) get a spelling?**~~ **Answered 2026-09-29 (`FJS-D543`): A — no. `postJournal` stays the one writer, as ruled.**
   `FJS-D168` ruled that a sum over children is checked in application code,
   because its moment is the last child insert. Nothing in this paper meets its
   reopen condition.

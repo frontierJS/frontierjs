@@ -14,6 +14,7 @@ title: Volumes
   // Deleting a row is not deleting a volume, so both destructive buttons go
   // through the outpost and fail in words when nothing answers. The screen never
   // pre-empts that refusal by disabling itself: the decision is the server's.
+  import { page }    from '@frontierjs/sierra/router'
   import { session } from '../../session.js'
   import { ago }     from '../../datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
@@ -28,6 +29,7 @@ title: Volumes
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
 
   $: session.workspaceId
+  $: page.query
 
   let rows    = []
   let usage   = null
@@ -35,7 +37,13 @@ title: Volumes
   let loading = true
   let busy    = null
   let filter  = 'all'      // all | used | unused
-  let server  = ''         // '' = every server
+  let server  = queryServer()   // '' = every server
+
+  // `?serverId=` is how the cleanup screen links a machine's disks here.
+  function queryServer() {
+    const id = page.query?.serverId
+    return id === undefined || id === null ? '' : String(id)
+  }
 
   // Every load is numbered, and only the newest may write to the screen. This
   // is the one screen fed by a machine on a timer rather than by a person
@@ -68,6 +76,7 @@ title: Volumes
 
   load()
   $: session.workspaceId, () => load()
+  $: page.query, () => { server = queryServer(); load() }
 
   // A report from any outpost in the workspace lands here as a push — which is
   // the whole reason the report method publishes. Without it the picture is
@@ -122,7 +131,11 @@ title: Volumes
 
 <div class="section-header">
   <h1>Volumes</h1>
-  <Button variant="outlined" id="prune-all" disabled={busy === 'prune'} onclick={prune}>
+  <Button variant="outlined" id="prune-all" disabled={busy === 'prune'} onclick={prune}
+          data-confirm-title="Prune unused volumes?" data-confirm-label="Prune"
+          data-confirm={server
+            ? 'Every unused volume on this server is deleted from its disk.'
+            : 'Every unused volume on every server in the fleet is deleted from its disk.'}>
     Prune unused
   </Button>
 </div>
@@ -204,6 +217,8 @@ title: Volumes
         <div class="cluster">
           <Button variant="ghost" disabled={busy === v.id}
                   aria-label={`Delete ${v.name}`}
+                  data-confirm={`Deletes ${v.name} (${size(v.sizeBytes)}) from the disk on ${v.serverName ?? 'its server'}.`}
+                  data-confirm-title="Delete this volume?" data-confirm-label="Delete"
                   onclick={() => remove(v)}>Delete</Button>
         </div>
       </Card>

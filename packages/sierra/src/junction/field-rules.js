@@ -2095,5 +2095,5 @@ export function stripReadOnly(fields, data, opts = {}) {
 //
 // The `fields` table is `buildFieldRules()`'s output, passed whole: the
 // matcher reads `rule.type` and nothing else, so anything richer satisfies it.
-export { matchesQuery } from '@frontierjs/toolbelt/match'
+export { matchesQuery, leavesAt } from '@frontierjs/toolbelt/match'
 

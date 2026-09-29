@@ -246,11 +246,17 @@ title: Recipes
         <div class="cluster">
           <Button variant="primary" disabled={busy === recipe.id}
                   aria-label={`Run ${recipe.name}`}
+                  data-confirm={target
+                    ? `${recipe.name} runs on the chosen server.`
+                    : `${recipe.name} runs on EVERY server in this workspace — no server is picked.`}
+                  data-confirm-title="Run this recipe?" data-confirm-label="Run" data-confirm-tone="warning"
                   onclick={() => run(recipe)}>Run</Button>
           <Button variant="outlined" disabled={busy === recipe.id}
                   onclick={() => open(recipe)}>Script and history</Button>
           <Button variant="ghost" disabled={busy === recipe.id}
                   aria-label={`Delete ${recipe.name}`}
+                  data-confirm={`${recipe.name} and its run history are deleted.`}
+                  data-confirm-title="Delete this recipe?" data-confirm-label="Delete"
                   onclick={() => remove(recipe)}>Delete</Button>
         </div>
       </Card>

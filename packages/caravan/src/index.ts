@@ -16,6 +16,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
+import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
 import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
@@ -50,6 +51,48 @@ declare module '@frontierjs/junction' {
 }
 
 // ─── createCaravan ────────────────────────────────────────────────────────────
+
+// ─── What a payload may be (FJS-D480) ────────────────────────────────────────
+// A payload is a receipt — ids and scalars — stored as JSON and handed to the
+// handler parsed. What JSON would turn into something else is refused here,
+// where the mistake is made, rather than found by the handler as a Date typed
+// as a Date that is a string. A value too large to be a receipt belongs in a
+// row the job reads; the admin listing ships every payload whole.
+
+export const PAYLOAD_MAX_BYTES = 256 * 1024
+
+function payloadLoss(v: unknown, path: string, seen: Set<object>): [string, string] | null {
+  const kind = jsonLoss(v)
+  if (kind) return [path, kind]
+  if (v === null || typeof v !== 'object' || seen.has(v)) return null
+  seen.add(v)
+  if (Array.isArray(v)) {
+    for (let i = 0; i < v.length; i++) {
+      const hit = payloadLoss(v[i], `${path}[${i}]`, seen)
+      if (hit) return hit
+    }
+  } else {
+    for (const k of Object.keys(v)) {
+      const hit = payloadLoss((v as Record<string, unknown>)[k], `${path}.${k}`, seen)
+      if (hit) return hit
+    }
+  }
+  seen.delete(v)
+  return null
+}
+
+function encodePayload(name: string, data: unknown): string {
+  const hit = payloadLoss(data, 'data', new Set())
+  if (hit) {
+    const [path, kind] = hit
+    throw new Error(`[Caravan] cannot dispatch "${name}": ${path} is ${kind}, which JSON would not hand back — ${jsonLossAdvice(kind)}`)
+  }
+  const encoded = JSON.stringify(data)
+  const bytes = Buffer.byteLength(encoded)
+  if (bytes > PAYLOAD_MAX_BYTES)
+    throw new Error(`[Caravan] cannot dispatch "${name}": the payload is ${bytes} bytes, over the ${PAYLOAD_MAX_BYTES}-byte bound — put the value in a row and dispatch its id`)
+  return encoded
+}
 
 export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // Every option is held in a `let` and read at the moment it is first needed.
@@ -711,7 +754,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         // `NOT NULL constraint failed: jobs.data` — a SQLite message naming
         // neither the job nor the caller. `null` is left alone: it is a value
         // somebody passed, and it round-trips.
-        data:         JSON.stringify(data === undefined ? {} : data),
+        data:         encodePayload(name, data === undefined ? {} : data),
         status:       'pending',
         priority:     prio,
         max_attempts: registered?.maxAttempts ?? 3,

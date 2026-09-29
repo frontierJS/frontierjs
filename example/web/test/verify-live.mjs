@@ -37,11 +37,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { requireServers } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -70,7 +68,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-live-'))
+const profile = chromeProfile('fjs-live-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
@@ -468,7 +466,6 @@ try {
   }
   browser.close()
   chrome.kill()
-  try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch {}
 }
 
 if (process.exitCode) process.exit(1)

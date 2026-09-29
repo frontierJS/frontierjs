@@ -256,7 +256,10 @@ title: Channels
             <Button variant="ghost" disabled={busy === c.id}
                     onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
             <Button variant="ghost" disabled={busy === c.id}
-                    aria-label={`Delete ${c.name}`} onclick={() => remove(c)}>Delete</Button>
+                    aria-label={`Delete ${c.name}`}
+                    data-confirm={`Alert rules that page through ${c.name} stop reaching it.`}
+                    data-confirm-title="Delete this channel?" data-confirm-label="Delete"
+                    onclick={() => remove(c)}>Delete</Button>
           </div>
         </td>
       </tr>

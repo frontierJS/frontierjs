@@ -236,7 +236,12 @@ function sweepStaleTemp(dir) {
 // Matches: import X from './foo.mesa'
 //          import { a } from "./bar.md"
 //          import * as X from './baz.mesa'
-const IMPORT_RE = /^(import\s[\s\S]*?from\s+['"])([^'"]+)(['"])/gm
+//
+// Indented too. The compiler hoists an instance script's imports to column 0
+// but prints a `<script module>` as written, trimmed as a whole, so the second
+// indented import in one was never followed and the render died on *Cannot find
+// module* for a component the build had compiled fine.
+const IMPORT_RE = /^([ \t]*import\s[\s\S]*?from\s+['"])([^'"]+)(['"])/gm
 
 function isMesaSpecifier(spec) {
   return spec.endsWith('.mesa') || spec.endsWith('.md')
@@ -389,6 +394,13 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     } catch (err) {
       throw new Error(`[Mesa renderComponent] Cannot read file: ${canonical}\n${err.message}`)
     }
+    // A meta-framework's bundler prepares every file before Mesa sees it —
+    // Sierra injects its auto-imports there. This path reads the same files
+    // from disk, so without the same preparation a page that renders in dev
+    // fails the prerender naming a component nobody forgot (`FJS-1491`). Not
+    // applied to the entry's own source: the caller composed it and already
+    // said what it is.
+    if (opts.transformSource) source = await opts.transformSource(source, canonical)
   }
 
   // Compile
@@ -842,6 +854,14 @@ async function generateUnoCSS(html, unoConfig) {
  *                                             prerender) passes the table it is
  *                                             already using so both resolvers
  *                                             agree. Longest prefix wins.
+ * @param {Function} [options.transformSource] — `(source, filename) => string`,
+ *                                             applied to every file the tree
+ *                                             reads from disk before it is
+ *                                             compiled. A caller whose bundler
+ *                                             transforms Mesa sources (Sierra's
+ *                                             auto-imports) passes the same
+ *                                             transform, so the render compiles
+ *                                             what the bundle does.
  * @param {boolean} [options.styleTag=true]   — html target only: prepend the
  *                                             collected CSS as one <style> block.
  *                                             Set false when assembling the
@@ -885,6 +905,7 @@ export async function renderComponent(source, options = {}) {
     islands              = false,
     tmpDir               = null,
     alias                = null,
+    transformSource      = null,
     styleTag             = true,
     preserveMediaQueries = true,
   } = options
@@ -922,7 +943,7 @@ export async function renderComponent(source, options = {}) {
     const tempFiles = []
     try {
       const result = await compileTree(
-        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, noEmit: true, problems }, source
+        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, noEmit: true, problems }, source
       )
       modules     = result.modules
       css         = result.css
@@ -961,7 +982,7 @@ export async function renderComponent(source, options = {}) {
   try {
     // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk
     const visited = new Map()
-    const tree = await compileTree(rootPath, visited, tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, problems }, source)
+    const tree = await compileTree(rootPath, visited, tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, problems }, source)
     refuseCompileErrors(problems)
 
     // Temp path back to the file it was compiled from, so a stack can name a

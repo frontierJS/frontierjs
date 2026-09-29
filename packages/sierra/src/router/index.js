@@ -42,9 +42,11 @@ import {
 
 /** Programmatic prefetch — preloads route chunk + data */
 export { _prefetch as prefetch }
-// The Mesa Vite plugin compiles RouterView.mesa when it's imported
-export { default as RouterView } from '../components/RouterView.mesa'
-export { default as ChainRenderer } from '../components/ChainRenderer.mesa'
+// RouterView and ChainRenderer are NOT exported from here: they are .mesa, and
+// this module has to load natively where no Mesa loader runs — the prerender
+// imports it under Bun to fill `page` for each route, and a prerendered layout
+// that reads `page` imports it the same way. `sierra/router` is entry.js, which
+// is this module plus the two components.
 
 // Internal exports (used by RouterView.mesa only — not public API)
 export * from './internals.js'
@@ -232,6 +234,31 @@ export function _resetPage() {
   for (const k of Object.keys(page)) {
     if (!PAGE_RESERVED.includes(k)) delete page[k]
   }
+}
+
+/**
+ * Fill `page` for one prerendered route: what a navigation to it commits —
+ * the route's frontmatter spread and as `meta`, its path, params, node and
+ * load() data — with no query string, since a static file answers every query
+ * alike.
+ *
+ * Build seam, called by the prerender before each render. It resets first,
+ * because one process renders every route in turn and a page must never see
+ * the frontmatter of the route rendered before it. Without it `page` stays at
+ * its initial state, so every prerendered layout read `pathname: '/'` and an
+ * empty `meta` while `vite dev` read the real route (FJS-1530).
+ */
+export function _setStaticPage({ node, pathname, params = {}, data = null }) {
+  _resetPage()
+  const meta = node?.meta ?? {}
+  for (const [k, v] of Object.entries(meta)) {
+    if (!PAGE_RESERVED.includes(k)) _w()[k] = v
+  }
+  _w().meta     = meta
+  _w().pathname = pathname
+  _w().params   = params
+  _w().route    = node ?? null
+  _w().data     = data
 }
 
 /**

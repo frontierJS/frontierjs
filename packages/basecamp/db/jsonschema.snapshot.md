@@ -781,7 +781,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `type` | `AppType` = `"container"` | — | — | — | — |
-| `status` | `AppStatus` = `"unknown"` | — | — | — | — |
+| `status` | `AppStatus` = `"unknown"` | — | — | `x-litestone-kind` | — |
 | `source` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `port` | `integer`? | — | — | — | — |
@@ -909,7 +909,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `app` — belongsTo `App` via `appId` · optional
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `runs` — hasMany `JobRun`
-- transitions on `status` — `start`: pending|failed → running · `idle`: running → pending · `fail`: running → failed · `cancel`: pending|running|failed → cancelled
+- transitions on `status` — `start`: pending|failed → running @system · `idle`: running → pending @system · `fail`: running → failed @system · `cancel`: pending|running|failed → cancelled
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -926,9 +926,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | — | — |
 | `retryLimit` | `integer` = `3` | — | — | — | — |
-| `retryCount` | `integer` = `0` | — | — | — | — |
-| `lastRunAt` | `string`? | — | — | `format: "date-time"` | — |
-| `lastRunStatus` | `string`? | — | — | — | — |
+| `retryCount` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `lastRunAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `lastRunStatus` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name` · not accepted — `id`
 

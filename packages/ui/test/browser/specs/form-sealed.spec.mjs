@@ -75,6 +75,14 @@ export async function run(t) {
   t.ok(!await t.evaluate(`return ${isDisabled('#create [name=number]')};`),
     'a create form freezes nothing')
 
+  // The plain `@immutable` pair. A create form seeds itself from `make()`, and
+  // a seal asked of that draft froze the column on the only form allowed to
+  // write it — a scheduled job could not be made, its kind greyed out.
+  t.ok(!await t.evaluate(`return ${isDisabled('#create [name=code]')};`),
+    'a write-once column is writable while the row is being made')
+  t.ok(await t.evaluate(`return ${isDisabled('#draft [name=code]')};`),
+    'and frozen on a row that exists')
+
   /* ── the payload ──────────────────────────────────────────────────────── */
 
   // `@immutable` refuses the KEY, so the same value sent back is refused too.

@@ -4256,6 +4256,7 @@ export interface QueryEvent {
   operation: 'aggregate' | 'count' | 'create' | 'createMany' | 'delete' | 'deleteMany' | 'exists' | 'findFirst' | 'findMany' | 'findManyCursor' | 'findUnique' | 'groupBy' | 'include' | 'include:count' | 'remove' | 'removeMany' | 'restore' | 'search' | 'update' | 'updateMany' | 'upsert' | 'upsertMany'
   database:  string
   actorId:   string | number | null
+  system:    boolean
   sql:       string
   params:    unknown[]
   duration:  number

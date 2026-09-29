@@ -199,6 +199,26 @@ test('a held write replays under the call headers it was made under', async () =
   _resetPendingQueue()
 })
 
+// FJS-1278: a clock-in held at 09:46 and drained at 17:46 was dated 17:46. The
+// entry's own time is when the write was made, and the drain says so.
+test('a held write replays with the moment it was made', async () => {
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  _resetPendingQueue()
+  const q = pendingQueue()
+  await q.ready
+  await q.add(entry({ method: 'create', id: null }))
+  const [held] = q.pending()
+
+  const sent = []
+  const client = {
+    callHeaders: () => ({}),
+    service: () => ({ create: (data, params, opts) => { sent.push(opts); return Promise.resolve({ id: 1 }) } }),
+  }
+  await drainPending(client)
+  expect(sent[0]?.madeAt).toBe(held.createdAt)
+  _resetPendingQueue()
+})
+
 // The refusal at replay is the case FJS-1302 measured: parked, and nothing on
 // the device said so. It must be told and be retryable on the app's own queue.
 test('a write refused at replay is announced, and the app queue can retry it', async () => {

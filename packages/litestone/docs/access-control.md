@@ -1,6 +1,6 @@
 # Access Control
 
-Litestone has two orthogonal access control systems: **row-level policies** (`@@allow`/`@@deny`) and **level-based GatePlugin**. They can be used together or independently.
+This is the mechanics of the Warden, the access system. [warden.md](warden.md) is the map of it: the layers in order, and how they fit together. This file covers each layer in turn: row policies (`@@allow`/`@@deny`), field policies, the gate, capabilities, and how they combine.
 
 ## Row-level policies
 

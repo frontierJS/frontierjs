@@ -6,6 +6,7 @@
 // Garbage collection runs on a fixed interval, not per get() call.
 
 import { Database } from 'bun:sqlite'
+import { jsonLoss, jsonLossAdvice } from '@frontierjs/toolbelt/json'
 import { parseTtl } from '../config/index.ts'
 
 // ─── What a cache value may be ────────────────────────────────────────────
@@ -31,51 +32,6 @@ export class CacheValueError extends Error {
   }
 }
 
-// Returns the name of what cannot survive a round trip, or null.
-// Every node of the value passes through here, so the two shapes that make up
-// almost all of one — a plain object and an array — are answered by a single
-// prototype comparison, and only something else pays for a tag. Asking by tag
-// rather than `instanceof` grades a value from another realm the same as a
-// local one.
-function unrepresentable(v: unknown): string | null {
-  switch (typeof v) {
-    case 'object':   break
-    case 'string':
-    case 'boolean':  return null
-    case 'number':   return Number.isFinite(v) ? null : String(v)
-    case 'bigint':   return 'a BigInt'
-    case 'function': return 'a function'
-    case 'symbol':   return 'a symbol'
-    default:         return null
-  }
-  if (v === null) return null
-  const proto = Object.getPrototypeOf(v)
-  if (proto === Object.prototype || proto === Array.prototype || proto === null) return null
-
-  const tag = Object.prototype.toString.call(v)
-  switch (tag) {
-    case '[object Date]':   return 'a Date'
-    case '[object Map]':    return 'a Map'
-    case '[object Set]':    return 'a Set'
-    case '[object RegExp]': return 'a RegExp'
-  }
-  // A typed array serializes to {"0":…} and reads back as a plain object.
-  if (ArrayBuffer.isView(v) || tag === '[object ArrayBuffer]') return tag.slice(8, -1)
-  return null
-}
-
-const ADVICE: Record<string, string> = {
-  'a Date':   'store the ISO string (a Litestone row already carries one)',
-  'a Map':    'store a plain object or an array of entries',
-  'a Set':    'store an array',
-  'a RegExp': 'store its source string',
-  'a BigInt': 'store a string of digits, the way an `Int @big` column crosses',
-}
-
-function advise(kind: string): string {
-  return ADVICE[kind] ?? 'JSON is what a cache value may be, and this is lost by it'
-}
-
 export function encodeValue(key: string, value: unknown): string {
   // A stored `undefined` cannot be told from a miss by get(), which is also
   // what makes getOrSet's miss check sound.
@@ -85,8 +41,8 @@ export function encodeValue(key: string, value: unknown): string {
   return JSON.stringify(value, function (this: Record<string, unknown>, k: string, encoded: unknown) {
     // toJSON has already run by the time a replacer sees a value, so the
     // Date is read off the holder rather than off what arrived.
-    const kind = unrepresentable(this[k])
-    if (kind) throw new CacheValueError(key, kind, advise(kind))
+    const kind = jsonLoss(this[k])
+    if (kind) throw new CacheValueError(key, kind, jsonLossAdvice(kind))
     return encoded
   })!
 }

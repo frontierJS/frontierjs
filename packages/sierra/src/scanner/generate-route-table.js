@@ -56,9 +56,12 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
   const routeNodes = allNodes.filter(n => n.file !== null)
   const all        = routeNodes.map(n => n.path)
   const published  = routeNodes.filter(n => n.meta?.status !== 'draft').map(n => n.path)
+  // A route that redirects is not a page anyone should find: the host moves
+  // its URL, and listing it tells a crawler the opposite (FJS-1534).
   const indexed    = routeNodes
     .filter(n => n.meta?.status !== 'draft')
     .filter(n => n.meta?.robots !== 'noindex')
+    .filter(n => !n.meta?.redirect)
     .filter(n => !n.meta?.dynamic)
     .map(n => n.path)
 

@@ -216,7 +216,7 @@ title: Orders
   Placed-between. A Tag is the removable half of a Pill: the chip says a filter
   is on AND is the way to turn it off, which a Pill deliberately cannot do.
 -->
-<div class="card cluster" style="align-items: flex-end; gap: 1rem; flex-wrap: wrap">
+<div class="card cluster" style="gap: 1rem">
   <DatePicker
     isRange
     showPresets

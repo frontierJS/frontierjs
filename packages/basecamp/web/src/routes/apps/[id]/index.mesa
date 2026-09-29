@@ -16,11 +16,12 @@ title: App
   // environment, its domains, where its replicas landed, its last ten releases
   // and its jobs. The alternative was five round trips for one question.
   import { page, goto } from '@frontierjs/sierra/router'
-  import { apps } from '../../../resources/App.mesa'
+  import App, { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { deployments } from '../../../resources/Deployment.mesa'
-  import { at } from '../../../datetime.js'
+  import { session } from '../../../session.js'
+  import { at, ago } from '../../../datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -28,6 +29,10 @@ title: App
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -46,6 +51,7 @@ title: App
   let loading   = true
   let busy      = null
   let tab       = 'overview'
+  let editing   = false
   let adding    = false
   let certFor   = null                 // domain id whose upload form is open
   let draft     = domains.make()
@@ -58,6 +64,7 @@ title: App
   // module body has been evaluated.
   let files       = []
   let sourceDirty = false
+  let imageDraft  = ''
 
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
@@ -281,6 +288,35 @@ title: App
    * have to choose between losing the typing and shipping something nobody
    * asked to ship.
    */
+  /** Ship what the app already names. The service refuses an app with nothing
+   *  to ship, or no machine to ship to, in a sentence this screen shows. */
+  async function deploy() {
+    error = null; busy = 'deploy'
+    try {
+      const release = await deployments.service.create({ appId: app.id })
+      toasts.success('Deploying')
+      goto(`/deployments/${release.id}/`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  /** A container app points at an image; nothing builds one yet (FJS-1496). */
+  async function saveImage({ ship } = {}) {
+    error = null; busy = ship ? 'deploy' : 'save'
+    try {
+      app = await apps.service.patch(app.id, { source: { kind: 'image', image: (imageDraft || app.source?.image || '').trim() } })
+      if (ship) return deploy()
+      toasts.success('Image saved')
+    } catch (e) {
+      error = e.message
+    } finally {
+      if (!ship) busy = null
+    }
+  }
+
   async function saveSource({ deploy } = {}) {
     error = null; busy = deploy ? 'deploy' : 'save'
     try {
@@ -301,6 +337,58 @@ title: App
     }
   }
 
+  // ─── The app itself ─────────────────────────────────────────────────────
+
+  // The default form writes through `apps.save()`, which answers the bare row;
+  // the page shows the composed one, so it reads again rather than merging.
+  async function saved() {
+    editing = false
+    toasts.success('App saved')
+    await load()
+  }
+
+  async function removeApp() {
+    error = null; busy = 'remove'
+    // Read before the write: the row is watched, and the delete's own push
+    // empties `app` before the next line runs.
+    const { id, name, environmentId } = app
+    try {
+      await apps.service.remove(id)
+      toasts.success(`${name} deleted`)
+      goto(`/environments/${environmentId}/`)
+    } catch (e) {
+      error = e.message
+      busy  = null
+    }
+  }
+
+  /** Put back what `d` replaced — a new release of the old bytes. The service
+   *  names why when it cannot: a first release, or a predecessor that is gone. */
+  async function rollback(d) {
+    error = null; busy = d.id
+    try {
+      const replacement = await deployments.service.invoke('rollback', d.id, {})
+      toasts.success('Rolling back')
+      goto(`/deployments/${replacement.id}/`)
+    } catch (e) {
+      error = e.message
+      busy  = null
+    }
+  }
+
+  // The newest release is the only row a person acts on: a success is what is
+  // live and can be withdrawn, a failure is what a retry would replace. Older
+  // rows are history, and rolling one of them back puts back something two
+  // releases stale.
+  $: latest      = app?.recent_deployments?.[0] ?? null
+  $: rollbackIt  = latest ? deployments.transitions(latest, session.level).find(m => m.name === 'rollback') : null
+  $: canRetry    = latest && (latest.status === 'failed' || latest.status === 'cancelled')
+  $: primaryHost = app?.domains?.find(d => d.isPrimary)?.hostname ?? null
+
+  function whoShipped(d) {
+    return d.author ? ` by ${d.author}` : ''
+  }
+
   const STATUS_TONE = {
     running: 'success', deploying: 'info', starting: 'info',
     error: 'danger', stopped: 'muted', unknown: 'muted', stopping: 'warning',
@@ -318,7 +406,9 @@ title: App
     { name: 'queued',  label: 'Queued' },
     { name: 'status',  label: 'Status' },
     { name: 'commit',  label: 'Commit' },
+    { name: 'branch',  label: 'Branch' },
     { name: 'trigger', label: 'Trigger' },
+    { name: 'actions', label: '' },
   ]
 </script>
 
@@ -337,18 +427,55 @@ title: App
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if app}
-  <nav aria-label="Breadcrumb" class="cluster">
-    <a class="navlink" href={`/environments/${app.environmentId}/`}>← {app.environment?.name ?? 'Environment'}</a>
+  <nav aria-label="Breadcrumb" class="cluster" id="app-breadcrumb">
+    {#if app.environment?.project}
+      <a class="navlink" href={`/projects/${app.environment.projectId}/`}>{app.environment.project.name}</a>
+      <span class="text-muted">/</span>
+    {/if}
+    <a class="navlink" href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? 'Environment'}</a>
   </nav>
 
   <div class="section-header">
-    <h1>{app.name}</h1>
+    <div class="stack" style:gap="0.25rem">
+      <h1>{app.name}</h1>
+      <span class="cluster text-sm text-muted">
+        <code id="app-source-line">{app.sourceLabel}</code>
+        <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
+        <Badge tone="muted">{app.type}</Badge>
+        {#if app.isPublic}<Badge tone="info">public</Badge>{/if}
+      </span>
+    </div>
     <span class="cluster">
-      <Pill tone={STATUS_TONE[app.status] ?? 'muted'} id="app-status">{app.status}</Pill>
-      <Badge tone="muted">{app.type}</Badge>
-      {#if app.isPublic}<Badge tone="info">public</Badge>{/if}
+      {#if primaryHost}
+        <Button variant="outlined" href={`https://${primaryHost}`} target="_blank" rel="noopener" id="app-visit">Visit</Button>
+      {/if}
+      <Button variant="primary" id="app-deploy" disabled={!!busy} onclick={deploy}>
+        {busy === 'deploy' ? 'Deploying…' : 'Deploy'}
+      </Button>
+      <DropdownMenu placement="bottom-end">
+        {#snippet trigger()}
+          <Button variant="ghost" aria-label="More actions" id="app-more">⋯</Button>
+        {/snippet}
+        <DropdownItem id="app-edit" onclick={() => editing = true}>Edit</DropdownItem>
+        <DropdownSeparator />
+        <!-- Cascade: `@@softDelete(cascade)` stamps its releases, jobs and
+             domains with it, and an inline app is retired from its machine. -->
+        <DropdownItem tone="danger" id="app-delete" disabled={!!busy}
+                      data-confirm={`${app.name} stops serving, and its releases, jobs and domains go with it.`}
+                      data-confirm-title="Delete this app?" data-confirm-label="Delete"
+                      onclick={removeApp}>Delete app</DropdownItem>
+      </DropdownMenu>
     </span>
   </div>
+
+  <!-- The fields are the model's default form; `source` has its own editor on
+       the Source tab, which knows the three kinds and the paste box's limits. -->
+  <Drawer open={editing} title={`Edit ${app.name}`} onclose={() => editing = false}>
+    {#if editing}
+      <App record={app} except={['source']} oncancel={() => editing = false}
+           ondone={saved} submitId="app-edit-save" />
+    {/if}
+  </Drawer>
 
   <!-- Tabs as buttons with aria-selected, not links: they are one screen's
        panels rather than four routes, and a screen reader is told which is
@@ -362,7 +489,41 @@ title: App
   </div>
 
   {#if tab === 'overview'}
-    <div class="tiles" style="--tile-min: 15rem" id="app-overview">
+    <div class="split" style:align-items="start" style:flex-wrap="wrap" style:gap="1.5rem" id="app-overview">
+    <div class="stack" style:flex="1 1 32rem" style:min-width="0">
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">Deployments</h2>
+          <Button variant="ghost" onclick={() => tab = 'releases'}>All releases</Button>
+        </div>
+        {#if !latest}
+          <p class="text-sm text-muted" id="app-latest-empty">Never released. Deploy ships what the Source tab names.</p>
+        {:else}
+          <div class="split" style:flex-wrap="wrap" id="app-latest">
+            <span class="cluster">
+              <a href={`/deployments/${latest.id}/`}><Pill tone={DEPLOY_TONE[latest.status] ?? 'info'}>{latest.status}</Pill></a>
+              <code>{latest.commitSha?.slice(0, 7) ?? latest.toImage ?? '—'}</code>
+              {#if latest.commitMessage}<span class="text-sm">{latest.commitMessage}</span>{/if}
+            </span>
+            <span class="cluster text-sm text-muted">
+              {#if latest.branch}from <code>{latest.branch}</code>{/if}
+              {ago(latest.queuedAt)}{whoShipped(latest)}
+              {#if rollbackIt}
+                <!-- Drawn disabled below the move's level rather than hidden:
+                     a developer can see a rollback exists and who may make it. -->
+                <Button variant="ghost" tone="warning" id="app-rollback" disabled={!rollbackIt.allowed || busy === latest.id}
+                        data-confirm="A new release puts back the bytes and config this one replaced."
+                        data-confirm-title="Roll back this release?" data-confirm-label="Roll back"
+                        onclick={() => rollback(latest)}>Roll back</Button>
+              {/if}
+              {#if canRetry}
+                <Button variant="ghost" id="app-retry" disabled={!!busy} onclick={deploy}>Retry</Button>
+              {/if}
+            </span>
+          </div>
+        {/if}
+      </Card>
+
       <Card>
         <h2 class="h4">Placement</h2>
         <p class="text-sm text-muted">Which machines run this app. A release with no placement is refused — there is nothing to send it to.</p>
@@ -374,6 +535,8 @@ title: App
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
                 <Button variant="ghost" tone="danger" disabled={busy === p.id}
+                        data-confirm={`This replica stops running on ${p.server?.name ?? 'that server'}.`}
+                        data-confirm-title="Unplace this replica?" data-confirm-label="Unplace"
                         onclick={() => unplace(p)}>Unplace</Button>
               </li>
             {/each}
@@ -393,17 +556,6 @@ title: App
       </Card>
 
       <Card>
-        <h2 class="h4">Serving</h2>
-        <dl class="facts">
-          <dt>Port</dt><dd><code>{app.port ?? 'not set'}</code></dd>
-          <dt>Primary hostname</dt>
-          <dd><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? 'none'}</code></dd>
-          <dt>Environment</dt>
-          <dd><a href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? '—'}</a></dd>
-        </dl>
-      </Card>
-
-      <Card>
         <h2 class="h4">Scheduled work</h2>
         {#if app.jobs?.length}
           <ul class="stack">
@@ -418,6 +570,26 @@ title: App
           <p class="text-sm text-muted">No jobs belong to this app.</p>
         {/if}
       </Card>
+    </div>
+
+    <aside class="stack" style:flex="0 1 17rem" id="app-details">
+      <h2 class="h4">Details</h2>
+      <dl class="facts">
+        <dt>Type</dt><dd>{app.type}</dd>
+        <dt>Port</dt><dd><code>{app.port ?? 'not set'}</code></dd>
+        <dt>Public</dt><dd>{app.isPublic ? 'yes' : 'no'}</dd>
+        <dt>Hostname</dt><dd><code>{primaryHost ?? 'none'}</code></dd>
+        <dt>Label</dt><dd><code>{app.slug}</code></dd>
+        {#if app.environment?.project}
+          <dt>Project</dt>
+          <dd><a href={`/projects/${app.environment.projectId}/`}>{app.environment.project.name}</a></dd>
+        {/if}
+        <dt>Environment</dt>
+        <dd><a href={`/environments/${app.environmentId}/`}>{app.environment?.name ?? '—'}</a></dd>
+        <dt>Created</dt><dd>{at(app.createdAt)}</dd>
+      </dl>
+      <Button variant="outlined" onclick={() => editing = true}>Edit details</Button>
+    </aside>
     </div>
   {/if}
 
@@ -502,7 +674,10 @@ title: App
                   <Button variant="ghost" disabled={busy === d.id} onclick={() => makePrimary(d)}>Make primary</Button>
                 {/if}
                 <Button variant="ghost" disabled={busy === d.id}
-                        aria-label={`Delete ${d.hostname}`} onclick={() => removeDomain(d)}>Delete</Button>
+                        aria-label={`Delete ${d.hostname}`}
+                        data-confirm={`${d.hostname} stops routing to this app.`}
+                        data-confirm-title="Delete this domain?" data-confirm-label="Delete"
+                        onclick={() => removeDomain(d)}>Delete</Button>
               </div>
             {/if}
           </Card>
@@ -527,12 +702,10 @@ title: App
         </p>
 
         {#if !files.length}
-          <!-- The action is a SNIPPET: <EmptyState> renders `title`,
-               `description` and `action` and drops anything else between its
-               tags, so a button written as a child is a dead end with no way
-               out of it. -->
-          <EmptyState title="Nothing pasted yet" id="app-source-empty"
-                      description="Start from a blank page, or add a file and paste into it.">
+          <!-- The action is a SNIPPET: a button written as a child lands in
+               the text, not the actions row. -->
+          <EmptyState title="Nothing pasted yet" id="app-source-empty">
+            Start from a blank page, or add a file and paste into it.
             {#snippet action()}
               <Button onclick={() => addFile('index.html', STARTER)} id="app-source-starter">
                 Start from a blank page
@@ -577,9 +750,28 @@ title: App
           machine reported when it went live.
         </Callout>
       {/if}
+    {:else if app.type === 'container' || app.type === 'function'}
+      <Card>
+        <h2 class="h4">Image</h2>
+        <p class="text-sm text-muted">
+          The image the machine pulls and runs. Nothing builds one from a repository yet, so
+          name one that exists — <code>nginx:alpine</code> is a working first try.
+        </p>
+        <Input label="Image" id="app-image" value={imageDraft || app.source?.image || ''}
+               placeholder="nginx:alpine" oninput={e => imageDraft = e.target.value} />
+        <div class="cluster">
+          <Button onclick={() => saveImage({ ship: true })} id="app-image-deploy"
+                  disabled={busy || !(imageDraft || app.source?.image)}>
+            {busy === 'deploy' ? 'Deploying…' : 'Save and deploy'}
+          </Button>
+          <Button variant="outlined" onclick={() => saveImage()} id="app-image-save"
+                  disabled={busy || !imageDraft}>Save</Button>
+        </div>
+      </Card>
     {:else}
-      <EmptyState title="This app is built, not pasted" id="app-source-not-inline"
-                  description={`Its source is ${app.source?.kind ?? 'a repository or an image'}, so what ships is decided by a build rather than by an editor. The Config tab shows what it was pointed at.`} />
+      <EmptyState title="This app is built, not pasted" id="app-source-not-inline">
+        Its source is {app.source?.kind ?? 'a repository or an image'}, so what ships is decided by a build rather than by an editor. The Config tab shows what it was pointed at.
+      </EmptyState>
     {/if}
   {/if}
 
@@ -611,8 +803,20 @@ title: App
           <tr>
             <td class="text-sm text-muted">{at(d.queuedAt)}</td>
             <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
-            <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code></td>
-            <td class="text-sm text-muted">{d.trigger}</td>
+            <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code>
+              {#if d.commitMessage}<span class="text-sm"> {d.commitMessage}</span>{/if}</td>
+            <td class="text-sm text-muted">{d.branch ?? '—'}</td>
+            <td class="text-sm text-muted">{d.trigger}{whoShipped(d)}</td>
+            <td>
+              {#if d === latest && rollbackIt}
+                <Button variant="ghost" tone="warning" disabled={!rollbackIt.allowed || busy === d.id}
+                        data-confirm="A new release puts back the bytes and config this one replaced."
+                        data-confirm-title="Roll back this release?" data-confirm-label="Roll back"
+                        onclick={() => rollback(d)}>Roll back</Button>
+              {:else if d === latest && canRetry}
+                <Button variant="ghost" disabled={!!busy} onclick={deploy}>Retry</Button>
+              {/if}
+            </td>
           </tr>
         {/snippet}
       </Table>

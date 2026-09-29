@@ -227,6 +227,8 @@ title: Blueprints
           </Button>
           {#if session.user?.isSystemAdmin && !bp.deprecatedAt}
             <Button variant="ghost" aria-label={`Withdraw ${bp.name}`}
+                    data-confirm={`${bp.name} is no longer offered to any workspace. There is no button to bring it back.`}
+                    data-confirm-title="Withdraw this blueprint?" data-confirm-label="Withdraw"
                     onclick={() => withdraw(bp)}>Withdraw</Button>
           {/if}
         </div>

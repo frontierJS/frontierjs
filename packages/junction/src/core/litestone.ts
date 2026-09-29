@@ -2636,6 +2636,8 @@ export function gateAuthAround(
   accessor: string | undefined,
   /** Levels declared per method — `methods: [{ method, gate }]`. */
   declared: Record<string, number> = {},
+  /** Claims declared per method — `methods: [{ method, claims }]` (`FJS-D514`). */
+  claims:   Record<string, string[]> = {},
 ) {
   // Aliased before the returned function shadows the name. Keeping the name is
   // not cosmetic: DERIVED_HOOKS, the telemetry waterfall and every committed
@@ -2696,6 +2698,17 @@ export function gateAuthAround(
               throw new Forbidden(
                 `'${ctx.service}.${method}' requires level ${need}, caller has level ${has}`)
           }
+        }
+      }
+      const required = claims[method]
+      if (required) {
+        const held = (ctx.locals?.[HELD_CLAIMS] ?? {}) as PrincipalClaims
+        const missing = required.filter(c => held[c] == null)
+        if (missing.length) {
+          // A guest with no claim is a stranger to this method; a session
+          // lacking one is known and not entitled, and must keep its token.
+          if (!ctx.auth?.user) throw new Unauthorized('Authentication required')
+          throw new Forbidden(`'${ctx.service}.${method}' requires a claim the caller does not hold`)
         }
       }
     }
@@ -2902,6 +2915,9 @@ const IDENTITY_KEYS = ['userId', 'id'] as const
 // so; a resolver that states nothing falls to the refusal, which is the safe
 // half.
 const RESOLVED = 'principal.resolved'
+// Every claim merged this request, guest or session: a guest's never reach
+// `ctx.auth.user`, and `gateAuth` grades a method's `claims:` against them.
+const HELD_CLAIMS = 'principal.claims'
 const NO_CLAIM = 'principal.noClaim'
 
 /** Why a resolver produced no claim, and — where the request named no tenant —
@@ -2949,6 +2965,7 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   const client = db as LitestoneClient
 
   liftRowTenant(ctx, client, claims)
+  ctx.locals[HELD_CLAIMS] = { ...(ctx.locals[HELD_CLAIMS] as PrincipalClaims ?? {}), ...claims }
 
   // ── A guest ───────────────────────────────────────────────────────────────
   //
@@ -3743,6 +3760,20 @@ export function registerAuditMetrics(app: unknown, db: unknown): void {
 // Silent where the client is not a Litestone one, or is too old to have the
 // setter: this adds columns to a trail and must never be the reason an app
 // does not boot.
+// ─── installMadeAt ────────────────────────────────────────────────────────
+// Tell the Data boundary WHEN the write in progress was made, where the request
+// stated it (`FJS-D469`). A write held on a device and drained hours later
+// otherwise stamps `@default(now())` and `@updatedAt` with the moment the
+// network came back. Answers nothing on a live call, so the client's own clock
+// — an injected one in a test — keeps stamping. Silent where the client has no
+// setter, for `installLogContext`'s reason.
+export function installMadeAt(db: unknown): (() => void) | null {
+  let install: ((fn: unknown) => () => void) | undefined
+  try { install = (db as { $madeAt?: (fn: unknown) => () => void }).$madeAt } catch { return null }
+  if (typeof install !== 'function') return null
+  return install(() => requestMeta()?.madeAt ?? null)
+}
+
 export function installLogContext(db: unknown): (() => void) | null {
   let install: ((fn: unknown) => () => void) | undefined
   // Probed inside a try — a Litestone client throws on an unknown property
@@ -4233,6 +4264,7 @@ function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void 
   // to install it on, and a per-tenant trail with no correlation id is the same
   // hole one strategy over.
   installLogContext(client)
+  installMadeAt(client)
   // Same seam, same reason: `$tapQuery` is a root-client member and there is no
   // one app client to tap under `strategy database`.
   installQueryTelemetry(app as Parameters<typeof installQueryTelemetry>[0], client)

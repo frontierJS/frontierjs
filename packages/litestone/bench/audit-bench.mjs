@@ -146,7 +146,7 @@ model ApiRequest { method String; path String; status Int; createdAt DateTime @d
   const N = 2000
   t0 = performance.now()
   for (let i = 0; i < N; i++) await db.apiRequest.create({ data: { method: 'GET', path: '/y', status: 200 } })
-  report('6. JSONL create() per-row append', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'STILL OPEN — one existsSync + statSync + appendFileSync per row (jsonl.js create)')
+  report('6. JSONL create() per-row append', 'us/op', (ms(t0) / N * 1000).toFixed(0), 'fixed — one held O_APPEND fd; per row is a path stat (inode + size, survives compaction\'s rename) + write + fstat. Was ~14 us')
   db.$close()
 })
 
@@ -244,6 +244,8 @@ await run('baseline', async () => {
 // (`FJS-619`). The bare model is the floor.
 await run('field-allow-hoist', async () => {
   const model = (extra) => `
+claim id
+claim isAdmin
 model Doc {
   id      Int    @id
   ownerId Int

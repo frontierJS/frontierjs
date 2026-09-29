@@ -171,6 +171,7 @@ function mintableId(model) {
 import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor, identifyingKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
 import { buildCommitmentMap } from './core/commitment.js'
+import { buildEffectiveMap } from './core/schema-maps.js'
 
 export function generateJsonSchema(schema, options = {}) {
   const {
@@ -784,6 +785,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // which field to round-trip without scanning properties for a readOnly Int.
   const versionField = model.fields.find(f => f.attributes.some(a => a.kind === 'version'))
   if (versionField) result['x-version'] = versionField.name
+
+  // ── x-effective ────────────────────────────────────────────────────────────
+  // The window, as the Data boundary reads it. A live store needs it because a
+  // row leaving an imposed window is a move of the CLOCK, which emits no frame,
+  // so the store holding the row is the only thing that can drop it (`FJS-1274`).
+  const win = buildEffectiveMap({ models: [model] })[model.name]
+  if (win) result['x-effective'] = win
 
   // ── x-sync ─────────────────────────────────────────────────────────────────
   // May this model's rows be written with no server reachable, and under which

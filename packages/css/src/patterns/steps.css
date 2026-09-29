@@ -64,7 +64,6 @@
   gap:         var(--space-sm);
 
   list-style: none;
-  margin:     0;
   padding:    0;
 
   counter-reset: fjs-step;

@@ -272,9 +272,11 @@ function generateVirtualModule(componentMap) {
  *
  * @param {string} source          — original Mesa source
  * @param {Map<string,object>} map — name → { kind, from, imported }
+ * @param {string} [file]          — the file being compiled, which is never
+ *                                   imported into itself
  * @returns {string}               — source with auto-imports prepended
  */
-export function injectAutoImports(source, map) {
+export function injectAutoImports(source, map, file = null) {
   if (!map || map.size === 0) return source
 
   // A pre-2026-08 map held name → path. Accept it so a caller holding one is
@@ -290,8 +292,13 @@ export function injectAutoImports(source, map) {
   // parse, so a local `const page = …` must win over a registered `page`.
   const bound = collectBoundNames(source)
 
-  // Strip script blocks so tag scanning sees only the template.
-  const templateOnly = source.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+  // Strip script blocks and comments so tag scanning sees only the template. A
+  // component's doc comment shows how it is used — `<Image source="…" />` at the
+  // top of Image.mesa — and read as a tag, that imported the file into itself:
+  // *"Image" has already been declared* (`FJS-1499`).
+  const templateOnly = source
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
   // Identifier scanning sees CODE only — script blocks and {…} expressions.
   // Ordinary template text is prose, and a word in prose is not a reference:
   // `<p>Page not found</p>` must not import `page`.
@@ -306,7 +313,9 @@ export function injectAutoImports(source, map) {
     const entry = entries.get(name)
     // Only a component can be a tag. A module binding that happens to be
     // PascalCase is still matched below, as an identifier.
-    if (entry && isComponent(entry) && !bound.has(name)) needed.add(name)
+    // Never the file being compiled: Mesa names its component function after
+    // the file, so an import of itself is a redeclaration the module cannot parse.
+    if (entry && isComponent(entry) && !bound.has(name) && !isSelf(entry, file)) needed.add(name)
   }
 
   for (const [name, entry] of entries) {
@@ -352,6 +361,11 @@ export function injectAutoImports(source, map) {
 /** A component is a default import from a file path, not from a package. */
 function isComponent(entry) {
   return entry.kind === 'default' && /\.(mesa|md)$/.test(entry.from)
+}
+
+/** Is this entry the file being compiled? A Vite id may carry a `?query`. */
+function isSelf(entry, file) {
+  return !!file && resolve(entry.from) === resolve(file.split('?')[0])
 }
 
 /**

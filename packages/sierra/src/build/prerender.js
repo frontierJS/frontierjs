@@ -56,13 +56,16 @@
 import { resolve, dirname, join, relative, sep } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { pathToFileURL } from 'url'
+import { fileURLToPath } from 'url'
 import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { importAppModule }           from './app-import.js'
 import {
   installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
+
+// The router as a prerender loads it: the module, not the package entry (FJS-1530).
+const ROUTER_MODULE = fileURLToPath(new URL('../router/index.js', import.meta.url))
 
 /** Walk a route tree into a flat list. */
 function flatten(node) {
@@ -239,9 +242,23 @@ export async function pathsForRoute(node, root) {
 /**
  * Build the synthetic wrapper module that composes layouts around the page.
  * Returned as source text; the caller renders it with Mesa.
+ *
+ * `elementChildren: false` is for a render whose layouts went through Sierra's
+ * own preparation (`prepareForCompile`), which rewrites a layout's `<slot />`
+ * to `{@render children?.()}` exactly as dev does. Such a layout reads the prop
+ * alone, and element children it cannot render make Mesa warn *was given
+ * children and renders no <slot />* on every build (`FJS-1491`).
  */
-export function composeWrapper(pageFile, layoutChain) {
-  const imports = [`  import Page from ${JSON.stringify(pageFile)}`]
+export function composeWrapper(pageFile, layoutChain, { elementChildren = true } = {}) {
+  // The wrapper commits `page` before any layout renders, and does it through
+  // its own import of the router — the one the layouts share. The prerender's
+  // own import can be a different instance of the module (a test runner loads
+  // prerender.js through its own graph and the rendered modules natively), and
+  // a `page` written there is one no layout reads (FJS-1530).
+  const imports = [
+    `  import { _setStaticPage } from '@frontierjs/sierra/router'`,
+    `  import Page from ${JSON.stringify(pageFile)}`,
+  ]
   layoutChain.forEach((l, i) => imports.push(`  import L${i} from ${JSON.stringify(l)}`))
 
   // Work outward from the page. Each layout gets a snippet holding everything
@@ -255,11 +272,14 @@ export function composeWrapper(pageFile, layoutChain) {
   let body = `<Page {data} />`
   for (let i = layoutChain.length - 1; i >= 0; i--) {
     snippets.push(`{#snippet s${i}()}${body}{/snippet}`)
-    body = `<L${i} children={s${i}}>{@render s${i}()}</L${i}>`
+    body = elementChildren
+      ? `<L${i} children={s${i}}>{@render s${i}()}</L${i}>`
+      : `<L${i} children={s${i}} />`
   }
 
   const template = [...snippets, body].join('\n')
-  return `<script>\n${imports.join('\n')}\n  export let data = null\n</script>\n${template}\n`
+  return `<script>\n${imports.join('\n')}\n  export let data = null\n` +
+    `  export let staticPage = null\n  if (staticPage) _setStaticPage(staticPage)\n</script>\n${template}\n`
 }
 
 /**
@@ -354,6 +374,9 @@ export async function prerenderRoutes(opts) {
   const {
     tree, root, routesDir = 'src/routes', outDir = 'dist/client',
     warn = () => {}, renderComponent, islands = false, tmpDir = null,
+    // The build's own preparation of a Mesa source and its compile options,
+    // handed to the renderer so it compiles what the bundle did (`FJS-1491`).
+    transformSource = null, compileOptions = {},
     // The document around every page this run emits: the app's own stylesheets
     // (asset URLs from the main build) and the <body> class its index.html
     // carries. Both are per-BUILD, not per-route.
@@ -376,7 +399,14 @@ export async function prerenderRoutes(opts) {
   // a page that builds and runs in the browser dies here with "Cannot find
   // package '@'" unless the renderer is told. One base (appSrcDir), two
   // resolvers; see build/app-alias-plugin.js.
-  const alias = { '@': appSrcDir(root) }
+  const alias = {
+    '@': appSrcDir(root),
+    // A layout that reads `page` imports `@frontierjs/sierra/router`, whose
+    // package entry re-exports two .mesa components no native import can
+    // load. Here it is the router module itself, which the wrapper imports
+    // too, so the `page` it fills is the one every layout reads (FJS-1530).
+    '@frontierjs/sierra/router': ROUTER_MODULE,
+  }
   const written = []
   // The URLs those files answer at. A dynamic route's pages exist only because
   // getStaticPaths() named them, so the route TABLE cannot list them — it
@@ -403,7 +433,20 @@ export async function prerenderRoutes(opts) {
   const islandsByName = new Map()
   const islandPages   = new Map()   // output file → component names on it
 
-  const staticNodes = flatten(tree).filter(n => n.meta?.render === 'static' && n.file)
+  // Not every static route is a page to publish. A draft is what the route
+  // table leaves out of `published`, and a route declaring `redirect:` is
+  // answered by its `_redirects` line: a file at its URL publishes the old
+  // content beside the move, and on a host where a file shadows an unforced
+  // redirect it is the only thing ever served (FJS-1533, FJS-1534). Neither
+  // is written, and both are named in `omitted` rather than silently absent.
+  const omitted = []
+  const staticNodes = flatten(tree).filter(n => n.meta?.render === 'static' && n.file).filter((n) => {
+    const reason = n.meta?.status === 'draft' ? 'a draft (`status: draft`), not published'
+      : n.meta?.redirect ? `redirects to ${n.meta.redirect}, which _redirects answers`
+      : null
+    if (reason) omitted.push({ route: n.path ?? n.id, reason })
+    return !reason
+  })
 
   for (const node of staticNodes) {
     const pageFile = resolve(root, node.file)
@@ -440,7 +483,7 @@ export async function prerenderRoutes(opts) {
     }
 
     const chain    = layoutChainFor(pageFile, routesDirAbs)
-    const wrapper  = composeWrapper(pageFile, chain)
+    const wrapper  = composeWrapper(pageFile, chain, { elementChildren: !transformSource })
     const companion = node.companion ? resolve(root, node.companion) : null
     const mod      = await importCompanion(companion, node.id)
 
@@ -480,7 +523,9 @@ export async function prerenderRoutes(opts) {
         // hits disk. `filename` only steers import resolution and error
         // messages, so it points at the page's own directory.
         rendered = await bounded(`${urlPath}: render`, timeout, () => renderComponent(wrapper, {
-          data:     { data },
+          // `staticPage` is what a navigation to this URL would commit, which
+          // the wrapper writes to `page` before a layout reads it (FJS-1530).
+          data:     { data, staticPage: { node, pathname: urlPath, params, data } },
           cwd:      dirname(pageFile),
           filename: join(dirname(pageFile), '__prerender__.mesa'),
           islands,
@@ -489,6 +534,8 @@ export async function prerenderRoutes(opts) {
           // lot as one anonymous blob — that is the same CSS twice on the page.
           styleTag: false,
           alias,
+          ...(transformSource ? { transformSource } : {}),
+          compileOptions,
           // Temp modules land in the app's tree, not Mesa's package root, so a
           // rendered layout's bare imports resolve from the app's node_modules.
           // Without this, `import { page } from '@frontierjs/sierra/router'` in
@@ -663,6 +710,7 @@ export async function prerenderRoutes(opts) {
     written,
     urls,
     skipped,
+    omitted,
     islands: [...islandsByName.values()],
     islandPages,
     // What the check PROVED, not only what it rejected. A check nobody has seen

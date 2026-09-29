@@ -311,9 +311,13 @@ async function _send(client, entry) {
   // whatever the row holds by then — which is the whole of `@@sync(field)`
   // (`FJS-D334`). Absent on every other policy, and litestone refuses one it
   // was not expecting by name.
+  //
+  // `madeAt` is when the button was pressed, so a server stamping `now()` dates
+  // the write then rather than when the network came back (`FJS-D469`).
   const opts  = {
     idempotencyKey: entry.key,
-    ...(entry.base        ? { base: entry.base }               : {}),
+    madeAt:         entry.createdAt,
+    ...(entry.base       ? { base: entry.base }               : {}),
     ...(entry.callHeaders ? { callHeaders: entry.callHeaders } : {}),
   }
   switch (entry.method) {

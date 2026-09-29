@@ -123,6 +123,10 @@ export async function run(t) {
   t.ok(await t.evaluate(`
     return document.querySelector('#empty .empty-icon').getAttribute('aria-hidden') === 'true';
   `), 'with a decorative icon')
+  t.is(await t.evaluate(`return ${text('#empty .empty-text')};`), 'They arrive after the first payment.',
+    'its children are its text, not dropped')
+  t.is(await t.evaluate(`return document.querySelectorAll('#empty-bare .empty-text').length;`), 0,
+    'and an action snippet alone is not text')
   await t.clickAt('#empty-cta')
   await t.eventually(`document.querySelector('#actions').textContent`, '1',
     'and its action snippet is live, not a picture of a button')

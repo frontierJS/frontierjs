@@ -109,11 +109,17 @@ title: Deployment
     <div class="cluster">
       <span class="pill {TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       {#if cancelIt}
-        <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed} onclick={cancel}>Cancel</Button>
+        <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed}
+                data-confirm="The release stops at the step it is on."
+                data-confirm-title="Cancel this deployment?" data-confirm-label="Cancel deployment"
+                onclick={cancel}>Cancel</Button>
       {/if}
       {#if rollbackIt}
         <Button variant="ghost" tone="warning" id="deploy-rollback"
-                disabled={!rollbackIt.allowed} onclick={rollback}>Roll back</Button>
+                disabled={!rollbackIt.allowed}
+                data-confirm="A new release of the previous build replaces what is live now."
+                data-confirm-title="Roll back?" data-confirm-label="Roll back" data-confirm-tone="warning"
+                onclick={rollback}>Roll back</Button>
       {/if}
       <Button variant="ghost" href="/deployments/">All deployments</Button>
     </div>

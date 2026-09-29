@@ -673,6 +673,67 @@ export function buildCardinalityMap(schema, pluralize = false) {
            any: Object.keys(byParent).length > 0 }
 }
 
+// ─── Exclusion scopes ─────────────────────────────────────────────────────────
+//
+// `scope person(employeeId)` + `@@exclude(person, range: [a, b])` on each member
+// (`FJS-D474`). Indexed both ways because a write on ONE member is graded
+// against EVERY member: a Shift written for a person is checked against that
+// person's leave, which is the pair a per-model rule would never compare.
+//
+// The rows a member contributes are the ones a read would answer, for the
+// reason the cardinality map gives: a soft-deleted shift is not a shift, and a
+// template is not one either.
+export function buildExclusionMap(schema, pluralize = false) {
+  const byModel = {}           // member model -> [scope name], writes that dirty a key
+  const scopes  = {}           // scope name   -> { name, field, members: [member] }
+
+  const declared = new Map((schema.scopes ?? []).map(s => [s.name, s]))
+  for (const model of schema.models) {
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'exclude') continue
+      const scope = declared.get(attr.scope)
+      if (!scope) continue                       // validate() already named it
+      const cols = columnMapFor(model)
+      const col  = (f) => cols[f] ?? f
+      const field = (n) => model.fields.find(f => f.name === n)
+      const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
+
+      const htField = model.attributes.find(a => a.kind === 'hasTemplates')?.field ?? null
+      const filters = []
+      if (isSoftDelete(model)) filters.push(`"${col('deletedAt')}" IS NULL`)
+      if (htField)             filters.push(`"${col(htField)}" = 0`)
+
+      const s = (scopes[scope.name] ??= { name: scope.name, field: scope.field, members: [] })
+      s.members.push({
+        model:     model.name,
+        table:     modelToTableName(model, pluralize),
+        keyField:  scope.field,
+        keyColumn: col(scope.field),
+        idColumn:  idField ? col(idField) : null,
+        range:     attr.range,
+        columns:   attr.range.map(col),
+        kinds:     attr.range.map(n => rangePointKind(field(n))),
+        filters,
+      })
+      ;(byModel[model.name] ??= []).push(scope.name)
+    }
+  }
+  return { byModel, scopes, any: Object.keys(byModel).length > 0 }
+}
+
+// What one end of a range is as a POINT: a number, an instant, or a day. Two
+// members may differ — a DateTime shift against a `@date` leave request is the
+// case the ruling was asked for — so the grade compares points, never text.
+export function rangePointKind(field) {
+  if (!field) return null
+  const t = field.type?.name
+  if (t === 'Int' || t === 'Float') return 'number'
+  if (t === 'DateTime') return 'instant'
+  if (t === 'String' && field.attributes.some(a => a.kind === 'datetime')) return 'instant'
+  if (t === 'String' && field.attributes.some(a => a.kind === 'date'))     return 'day'
+  return null
+}
+
 export function buildComputedSet(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -937,6 +998,10 @@ export function buildRelationMap(schema) {
           hardDelete,
           keep,
           sealed,
+          // The FK's own action. `Cascade` means SQLite removes these rows
+          // inside the parent's DELETE, where no plugin and no log can see
+          // them — so the client walks it first (FJS-1497).
+          onDelete:      rel.onDelete ?? null,
         }
       }
     }

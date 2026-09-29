@@ -99,13 +99,22 @@ describe('composeWrapper', () => {
   test('passes children BOTH ways, because layouts read one protocol or the other', () => {
     // Mesa's native <slot /> reads the third argument (element children); a
     // layout written as {@render children?.()} reads the `children` prop.
-    // Nothing bridges them, and no slot-rewrite runs on the prerender path, so
-    // the wrapper cannot know which one a given layout speaks. Supplying both
+    // Nothing bridges them, and a caller that renders layouts as written runs no
+    // slot-rewrite, so the wrapper cannot know which one a layout speaks. Supplying both
     // renders correctly either way; the element children render the same
     // snippet, so the page is instantiated exactly once.
     const out = composeWrapper('/app/routes/index.mesa', ['/app/routes/_module.mesa'])
     expect(out).toContain('{#snippet s0()}')
     expect(out).toContain('<L0 children={s0}>{@render s0()}</L0>')
+  })
+
+  // Sierra's own build prepares every layout the way dev does, which rewrites
+  // `<slot />` to `{@render children?.()}`. Element children then have nowhere
+  // to render, and Mesa said so on every build (`FJS-1491`).
+  test('passes only the prop when the layouts were prepared, so nothing is dropped', () => {
+    const out = composeWrapper('/app/routes/index.mesa', ['/app/routes/_module.mesa'], { elementChildren: false })
+    expect(out).toContain('<L0 children={s0} />')
+    expect(out).not.toContain('{@render s0()}')
   })
 
   test('does not repeat the wrapped body — element children re-render the snippet', () => {

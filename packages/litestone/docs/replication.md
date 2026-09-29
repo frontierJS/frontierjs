@@ -59,9 +59,26 @@ same two names as directories under its destination. `--dir` and `--registry`
 override the block, the order the `tenant` commands use. A registry inside the
 tenant directory is one of its `*.db` files and gets no target of its own.
 
-Two things the schema cannot name are outside both commands (`FJS-1391`): a
-Caravan queue (`jobs.db`, from the app's Junction config) and a storage
-adapter's files.
+## The rest of `db/`
+
+An app keeps what the schema cannot name under `db/` as well: a Caravan queue
+(`jobs.db`) and a `local` storage adapter's files. Everything an app persists
+lives there (`FJS-D493`), so when the schema sits in a `db/` directory both
+commands cover the whole directory:
+
+```
+s3://mybucket/myapp/db-jobs        every other *.db, named db-<path under db/>
+```
+
+`backup` copies each such file hot as `db-<path>.db` and every other file byte
+for byte under `db-files/`, keeping its path. `replicate` streams the `*.db`
+files and names the rest as not replicated, the way it names a logger. Skipped:
+what a declaration or the tenancy block already covers, `-wal`/`-shm`
+companions, dot-entries, and `db/backups/`. A schema outside `db/` is a bare
+project whose directory is its source, and gets none of this.
+
+`restore` does not bring these back yet: it resolves its targets from the tree
+it is restoring into, and an empty one has no `jobs.db` to name (`FJS-1509`).
 
 ## S3-compatible storage
 

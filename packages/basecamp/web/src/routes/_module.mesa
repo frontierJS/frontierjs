@@ -17,6 +17,7 @@ siteName: Basecamp
   import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
+  import ConfirmProvider from '@frontierjs/ui/components/overlay/ConfirmProvider.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
 
   import NoticeBar from '../components/NoticeBar.mesa'
@@ -68,6 +69,7 @@ siteName: Basecamp
     { id: 'go-dashboards',  group: 'Navigate', label: 'Dashboards',  sub: 'saved views',        action: () => goto('/dashboards/') },
     { id: 'go-projects',    group: 'Navigate', label: 'Projects',    action: () => goto('/projects/') },
     { id: 'go-servers',     group: 'Navigate', label: 'Servers',     action: () => goto('/servers/') },
+    { id: 'go-apps',        group: 'Navigate', label: 'Apps',        sub: 'every app in the workspace', action: () => goto('/apps/') },
     { id: 'go-deployments', group: 'Navigate', label: 'Deployments', action: () => goto('/deployments/') },
     { id: 'go-jobs',        group: 'Navigate', label: 'Jobs',        action: () => goto('/jobs/') },
     { id: 'go-networks',    group: 'Navigate', label: 'Networking',  sub: 'private networks',   action: () => goto('/networks/') },
@@ -162,6 +164,7 @@ siteName: Basecamp
       { href: '/',            label: 'Overview', exact: true },
       { href: '/dashboards/', label: 'Dashboards'  },
       { href: '/projects/',   label: 'Projects'    },
+      { href: '/apps/',       label: 'Apps'        },
       { href: '/deployments/',label: 'Deployments' },
       { href: '/servers/',    label: 'Servers'     },
       { href: '/jobs/',       label: 'Jobs'        },
@@ -387,3 +390,7 @@ siteName: Basecamp
 
 <!-- One Toaster for the app; anything can call toasts.success(). -->
 <Toaster position="bottom-right" />
+
+<!-- A destructive button confirms itself with `data-confirm="…"`. Without this
+     mounted the attribute does nothing and the button acts on the first click. -->
+<ConfirmProvider />

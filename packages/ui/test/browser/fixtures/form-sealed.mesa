@@ -22,6 +22,9 @@
     number: { type: 'string', title: 'Number',
               'x-litestone-kind': 'immutable-until-seal', 'x-litestone-seal': SEAL },
     note:   { type: 'string', title: 'Note' },
+    // A plain `@immutable`: `readOnly` in the UPDATE schema, so frozen on every
+    // row that exists and writable on the one form that makes the row.
+    code:   { type: 'string', title: 'Code', 'x-litestone-kind': 'immutable' },
     state:  { type: 'string', title: 'State', enum: ['draft', 'issued', 'paid'] },
   }
 
@@ -33,13 +36,15 @@
     fields:  FIELDS,
     formFields: (opts) => formFieldList(FIELDS, opts),
     options: () => Promise.resolve([]),
-    make: () => ({ number: '', note: '', state: 'draft' }),
+    make: () => ({ number: '', note: '', code: '', state: 'draft' }),
     coerce: (data) => coerceToSchema(FIELDS, data),
     fieldErrors: () => ({ fields: {}, message: '' }),
-    // The same walk `createResource` does, over the same rule module.
+    // The same walk `createResource` does, over the same rule module — and,
+    // like it, a plain `@immutable` is frozen for ANY record handed in, which
+    // is why the form must not hand it a draft.
     sealedFields: (record) => {
       if (!record) return []
-      return Object.entries(FIELDS).filter(([, r]) => sealedFor(r, record)).map(([n]) => n)
+      return ['code', ...Object.entries(FIELDS).filter(([, r]) => sealedFor(r, record)).map(([n]) => n)]
     },
     save: (data, opts) => {
       sent = [...sent, { mode: opts?.mode ?? '-', keys: Object.keys(data), data }]
@@ -49,7 +54,7 @@
   }
 
   const ISSUED = { id: 'i-1', number: 'A-1', note: 'as issued', state: 'issued' }
-  const DRAFT  = { id: 'i-2', number: 'A-2', note: 'still open', state: 'draft' }
+  const DRAFT  = { id: 'i-2', number: 'A-2', note: 'still open', code: 'C-2', state: 'draft' }
 </script>
 
 <div id="issued">

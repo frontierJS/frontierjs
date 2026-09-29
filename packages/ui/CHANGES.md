@@ -1,5 +1,20 @@
 # Changes
 
+## 2026-09-29 — `EmptyState`'s text is its children
+
+`EmptyState` rendered `title`, a `description` prop and the `action` snippet,
+and dropped everything between its tags — while 25 basecamp call sites wrote
+the sentence as children, so a title shipped with nothing under it (*This app
+has no deployment history.* on the releases tab, among them). The children are
+now the text, as a Callout's are, in a `<div class="empty-text">` so a caller
+may pass a paragraph; `description` is gone and its ten callers in
+basecamp and `example` moved to children. The tail drive asserts the text
+renders and that an `action` snippet alone renders no empty text block.
+
+## 2026-09-28 — a create form freezes no `@immutable` column
+
+`<Form>` asked `sealedFields()` about the record it was OPENED on, and a create form's record is the draft it seeds from `make()`. `createResource` reports a plain `@immutable` column frozen for any record handed to it, so the one form allowed to write the column rendered it disabled: basecamp's New job drawer greyed out `kind`, and a scheduled job could not be made. A form now counts a row as opened only when it patches (`method="patch"`, or `auto` with the model's id present). `test/browser/fixtures/form-sealed.mesa` gains a plain `@immutable` column mirroring the real rule, and the spec asserts both halves: writable on create, frozen on an existing row. It was red before.
+
 ## 2026-09-25 — five `const`s nothing read are deleted
 
 [`FJS-1062`](../../ISSUES.md#fjs-1062). Mesa now warns about a derived `const` that calls something and

@@ -32,8 +32,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -368,7 +367,7 @@ console.log('\n  stock — on screen')
 // while asserting that a signed-out visitor is refused, because the browser it
 // was driving belonged to another run entirely. `--remote-debugging-port=0` and
 // read the port back off Chrome's own stderr.
-const profile = mkdtempSync(join(tmpdir(), 'fjs-stock-'))
+const profile = chromeProfile('fjs-stock-')
 const chrome = start(CHROME, [
   '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
   '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,

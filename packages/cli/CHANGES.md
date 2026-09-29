@@ -1,5 +1,13 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-28 — `css-token-undefined` counts the app's own stylesheets (`FJS-1532`)
+
+The rule counted the tokens a dependency's CSS declares and the tokens a file declares for itself, so a token an app sets once in its theme and reads from a component was an error. It now also reads every `.css` and `.scss` under the app's client surfaces, `content/` included and `dist/` excluded. An app whose dependencies ship no CSS is still skipped. Found by the ksite stressor, whose `Stars.mesa` reads `--star-tracking` from ksite's own `themes/ksite.scss`.
+
+## 2026-09-28 — `fli new` stops asking a site-only app for an encryption key
+
+The closing hint `fli keygen aes ... ENCRYPTION_KEY  # .env needs a key before the API starts` printed for every template with a blank key, including `site-only`, `widgets-only` and `extension-only`, which have no API to start. It prints only when the app has an `api/` now. Found by the ksite stressor, Phase 0.
+
 ## 2026-09-28 — `tutor:live` opens its socket with the token as a subprotocol (`FJS-D486`)
 
 Junction no longer reads `?token=` on the upgrade, so the lesson's raw socket would have connected as anonymous and the signed-in half of the lesson would have measured nothing. `openSocket` now offers `fjs` and `fjs.bearer.<token>`, and step 03 teaches that header in place of the URL.

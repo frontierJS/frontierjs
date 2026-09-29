@@ -234,8 +234,9 @@ title: Inventory
   <EmptyState
     id="inventory-denied"
     title="Administrators only"
-    description="Inventory reads at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request, so nothing below is reachable by asking for it directly."
-  />
+  >
+    Inventory reads at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request, so nothing below is reachable by asking for it directly.
+  </EmptyState>
 {:else}
   <Callout>
     <strong>Available</strong> is not a column. It is on hand less every unexpired hold an open basket is carrying, computed on each read — a stored copy would be a cached answer with nothing to invalidate it. A hold lasts {holdMinutes} minutes and expires on its own, which is why an abandoned basket costs the shop nothing.

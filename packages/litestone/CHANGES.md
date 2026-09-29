@@ -1,5 +1,41 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-28 — the verifiers' no-op patch never names an `@immutable` or `@system` column
+
+`_touch` built the update fixture that `verifyGateLadder`, `verifyRowPolicies` and the tenancy check write from the first scalar the row held. On a model whose first such column is `@immutable`, the boundary refused that write by name at every level, and the ladder reported the refusal as the gate or policy throwing on a correctly declared model. basecamp met it when `Environment.projectId` became `@immutable`. `_touch` now skips both kinds. `test/immutable.test.ts` § *the verifiers do not touch a frozen column*, red before.
+
+## 2026-09-28 — `scope <name>(<field>)` and `@@exclude(<scope>, range: [a, b])` parse and validate (`FJS-1527`, `FJS-D474`)
+
+The spelling half of the no-overlap declaration. A top-level `scope person(employeeId)` lands on `schema.scopes`, an import carries it, and a model's `@@exclude(person, range: [startsAt, endsAt])` parses to `{ kind: 'exclude', scope, range }`. `validate()` refuses an unknown or twice-declared scope, a citing model without the scope's field, a scope field that is not one stored scalar, a range field the model lacks, a range naming one field twice, a range field that does not order (Int, Float, DateTime, or a String with `@date`/`@datetime`), and a pair of two different kinds. Members may differ from each other, since a DateTime shift against a `@date` leave request is the case the ruling was asked for. Nothing enforces it on writes yet (`FJS-1528`), so every `@@exclude` warns that it is declared and not enforced, and a scope no model cites warns that it serializes nothing. Both words have catalog rows. `field:omit` no longer lists `exclude` as a synonym, because a synonym may not shadow a real word. `test/exclude-scope.test.ts`.
+
+## 2026-09-28 — the JSON Schema carries the model's window as `x-effective` (`FJS-1274`)
+
+`{ from, to, kind, imposed }`, read from `buildEffectiveMap`, on every model that declares `@@expires` or `@@effective`. A live store needs the edge column to drop a row whose window closes, since that transition emits no frame. `test/effective.test.ts`.
+
+## 2026-09-28 — `backup` and `replicate` cover every file under `db/`, not only what the schema names (`FJS-1391`, `FJS-D493`)
+
+A restore brought back every row and none of Caravan's pending jobs or the images those rows point at, because both commands read their targets from the schema and neither `jobs.db` nor a `local` storage provider's bytes is in it. Per the ruling, the layout is the list. When the schema sits in a `db/` directory, `copyTargets` now returns a third half, `layout` (`layoutFiles`): every `*.db` there that no declaration or tenancy target covers, named `db-<path>`, and every other file. `backup` copies the first kind hot and the second byte for byte under `db-files/<path>`. `replicate` streams the `*.db` files and lists the rest under *not replicated*. It skips `-wal`/`-shm` companions, dot-entries and `db/backups/`, and it scans nothing for a schema outside `db/`. On `example` a backup now holds `db-jobs.db` and all 69 stored images. Pinned by `test/cli-smoke.test.ts` § *the rest of db/*, which includes a fake litestream that prints the config it is handed. `restore` does not bring the layout back yet (`FJS-1509`).
+
+## 2026-09-28 — a row a foreign key's `onDelete: Cascade` removes reaches the plugins and the trail (`FJS-1497`)
+
+SQLite removes a cascade's rows inside the parent's own DELETE, so `onAfterDelete` and `@@log` heard only about the one row the caller named. In the jazzhr stressor, deleting 288 candidates wrote no `application.delete` line and left all 288 résumés in the file store. `delete`, `deleteMany` and the hard halves of `remove` and `removeMany` now walk the declared `Cascade` relations, any number of hops down. Each hop reads its doomed rows in the same exclusive unit as the DELETE, then hands them to that child's table, which runs `plugins.afterDelete` and its own `emitLogs('delete')` the way `deleteMany` does. The walk runs only when some model it can reach has a plugin or a log to tell, so an app with neither pays nothing. The relation map's `hasMany` entry now carries `onDelete`, and each shared table registers itself on the shared ctx as a cascade sink (`ctx.cascadeSinkFor`). Pinned by `test/cascade-seen.test.ts`: two hops across all four verbs, a trail with no plugin, and `FileStorage` deleting a cascaded row's bytes. Not covered: `SetNull` children (the log still misses the update) and the `@hardDelete` children of `@@softDelete(cascade)`.
+
+## 2026-09-28 — jsonl `create()` holds one append fd instead of opening the file per row
+
+Each row cost two `existsSync`, a `statSync`, an `appendFileSync` (which opens, writes and closes the file) and another `statSync` for the cache mtime. The table now holds an `O_APPEND` fd. Each row costs one path `statSync`, a `writeSync` and an `fstatSync`. The offset is read from the PATH, and an inode that has changed reopens the fd. Compaction replaces the file by `rename`, so an fd held without that check would append to the unlinked inode. An unindexed row now costs about 8 µs, down from about 15 (measured against a HEAD worktree). An indexed row stays at about 110 µs, spent committing the index transaction on every row. `#host` gains `writeSync` and `fstatSync`, and the browser half refuses both by name.
+
+## 2026-09-28 — `db.$madeAt(fn)`: `@default(now())` and `@updatedAt` can stamp when a write was made (`FJS-1278`, `FJS-D469`)
+
+A write held on a device and sent hours later was stamped with the time it landed. The root client now takes `$madeAt(fn)`, installed the way `$logContext` is: a closure answering an instant for the write in progress, or nothing. The two stamps read it before the client's clock: the generated-default map and `stampSets`, through `ctx.stampClock`. A predicate's `now()`, `@@expires`, the soft-delete stamp and retention stay on `now`, because they ask when the write is graded, and the audit trail keeps the landing time. Set on the root and shared by reference, so a client scoped before the install reads it too. Pinned by `test/made-at.test.ts`.
+
+## 2026-09-29 — `docs/warden.md`: the whole access system on one page (`FJS-D546`)
+
+The access system is now called the Warden, and `docs/warden.md` is its map. It shows the layers a call passes through and how each one fails, what `asSystem()` lifts (authority) and holds (integrity), and the rulings behind each layer. It also shows where Junction, Sierra and mcp read the Warden rather than restate it. `access-control.md` opened by calling the system "two orthogonal systems". It now points at the map and remains the mechanics.
+
+## 2026-09-28 — `GatePlugin` never asks an app's `getLevel` about a principal with no identity (`FJS-1462`, `FJS-D515`)
+
+Basecamp's and the example's hand-written `getLevel`s graded a claims-only guest VISITOR or USER, and every `gate: 0` method handed such a guest past the model's `@@gate`. `GatePlugin` now grades a principal with neither `id` nor `userId` — `null` included — STRANGER without calling the resolver. A test or app that `$setAuth`s a bare `{ role }` now grades 0; the six tests that did carry an `id`. Pinned in `test/elegance-fixes.test.ts`.
+
 ## 2026-09-28 — processes opening a fresh database together no longer kill one at boot (`FJS-729`)
 
 The *every indexed row points at its own line* flake was never the trail's lock: with stderr surfaced, the lost 150 of 600 rows were one writer of four dying in `createClient` with `SQLITE_BUSY` on `PRAGMA journal_mode = WAL` over a fresh `main.db`. Two connections both holding SHARED and both wanting the upgrade is a deadlock SQLite refuses at once without calling the busy handler, so the timeout-first order of `applyWal` could not help. `applyWal` now retries the switch on `SQLITE_BUSY`, with short backoff, until the same busy-timeout deadline. The test's runner exits nonzero when any writer does, so a dead writer reads as its own error. Measured: 1 of 12 four-writer boots killed a writer before, 0 of 30 after.

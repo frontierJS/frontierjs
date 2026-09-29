@@ -10,6 +10,24 @@
 .card { padding: var(--space-3xl); }
 
 /*
+ * A Card owns the space between its children, at Stack's rung.
+ *
+ * Without it every child sat flush, and the gap people saw was a UA `<p>`
+ * margin standing in — headings are zeroed, a bare `p` is not — so a card
+ * whose heading was followed by a paragraph looked spaced and one followed by
+ * a table, a code block or a row of controls did not. `card stack` was written
+ * by hand forty-odd times to get what the Card should have said.
+ *
+ * Not on a Card that also arranges its own children: a Stack's gap would
+ * double, and a margin on a Cluster's second item drops it below the first.
+ * cards.spec.js derives the list from the vocabulary and fails on a term that
+ * lays out children and is missing here.
+ */
+.card:where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > * + * {
+  margin-block-start: var(--space-2xl);
+}
+
+/*
  * Bleed sub-regions to card edges.
  *
  * The negative margin has to be the card's own padding, which is why it is

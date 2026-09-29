@@ -231,6 +231,61 @@ query.
 
 ---
 
+## No two may overlap — `scope` and `@@exclude`
+
+A booking, a shift, a leave request: *no two of these may share an instant for
+one person* is uniqueness over a RANGE, and a check written in a service guards
+only the callers that run it. Declare it instead:
+
+```prisma
+scope person(employeeId)
+
+model Shift {
+  id         Int       @id @default(autoincrement())
+  employeeId Int
+  startsAt   DateTime
+  endsAt     DateTime?
+  @@exclude(person, range: [startsAt, endsAt])
+}
+
+model LeaveRequest {
+  id         Int    @id @default(autoincrement())
+  employeeId Int
+  fromDate   String @date
+  toDate     String @date
+  @@exclude(person, range: [fromDate, toDate])
+}
+```
+
+Every `create`, `createMany`, `upsert`, `upsertMany`, `restore`, and every
+`update`/`updateMany` naming the key or an end of the range, notes the key.
+When the outermost write unit commits, every member row under that key — on
+every model citing the scope — is read and compared, and an overlap refuses the
+unit with `OverlapConflictError` (409, marked on the written model's start
+field). A delete is never graded.
+
+- **The lock is the write transaction.** The grade runs with `BEGIN IMMEDIATE`
+  held on every database file, so no other writer, in this process or another,
+  lands a row between the read and the commit. There is no `$lock` to take.
+- **It reads under the Data boundary.** A manager who cannot read an employee's
+  leave is still refused by it; the refusal names the other row by model and id
+  and quotes nothing of it.
+- **A range is `[start, end)`**, the interval `@@effective` reads by: a shift
+  ending at 17:00 and one starting at 17:00 do not overlap. A null start is
+  *always has been*, a null end is *still going*. An end before its start is
+  refused.
+- **A day meets an instant at UTC midnight**, and the range is half-open like
+  every other: leave with `fromDate: '2026-10-01', toDate: '2026-10-03'` covers
+  the 1st and the 2nd, and a shift on the 3rd is allowed. Whose midnight it is
+  has no spelling yet (`FJS-D351`).
+- **Soft-deleted and template rows occupy nothing.** Every row in the scope
+  counts otherwise — a cancelled shift or a declined leave request still
+  excludes, because `@@exclude` has no `where:`.
+- **A key is graded whole** once a write touches it, so a key that already holds
+  an overlap refuses the next write under it until the overlap is removed. A
+  raw `asSystem().sql` write goes around the rule, as it goes around a CHECK
+  litestone cannot emit.
+
 ## WAL, and what it does not fix
 
 Litestone opens main in WAL mode. WAL means **readers do not block writers and

@@ -268,6 +268,8 @@ title: Your settings
       <h2 class="h5">Where you are signed in</h2>
       {#if sessions.length > 1}
         <Button variant="outlined" id="revoke-others" disabled={busy === 'others'}
+                data-confirm="Every other browser and device signed in as you is signed out."
+                data-confirm-title="Sign out everywhere else?" data-confirm-label="Sign out" data-confirm-tone="warning"
                 onclick={revokeOthers}>Sign out everywhere else</Button>
       {/if}
     </div>

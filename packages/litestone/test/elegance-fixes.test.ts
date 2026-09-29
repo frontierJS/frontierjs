@@ -65,8 +65,16 @@ describe('default gate enforcement', () => {
     const db = await fresh({
       plugins: [new GatePlugin({ getLevel: () => LEVELS.SYSADMIN })],
     })
-    const row = await db.lead.create({ data: { name: 'Acme' } })  // anonymous but resolver says 7
+    const row = await db.$setAuth({ id: 1 }).lead.create({ data: { name: 'Acme' } })
     expect(row.name).toBe('Acme')
+  })
+
+  it('a resolver is never asked about a principal with no identity (FJS-D515)', async () => {
+    const db = await fresh({
+      plugins: [new GatePlugin({ getLevel: () => LEVELS.SYSADMIN })],
+    })
+    await expect(db.lead.create({ data: { name: 'Acme' } })).rejects.toThrow(/level 0/)
+    await expect(db.$setAuth({ cartToken: 'x' }).lead.create({ data: { name: 'Acme' } })).rejects.toThrow(/level 0/)
   })
 
   it('asSystem() still bypasses gates', async () => {

@@ -10,7 +10,7 @@
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
  * Conditional:
- *   5. llms          — generate llms.txt (if config.llms !== false)
+ *   5. llms          — generate llms.txt (when config.llms is true or 'auto')
  *   6. speculation   — inject Speculation Rules into index.html
  *   7. deferJS       — defer script tags in index.html
  *   8. theme         — the pre-paint theme script (if config.theme)
@@ -97,9 +97,12 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   const rSitemap = await generateSitemap(indexed, outDir, siteUrl, routeMetaMap)
   if (rSitemap) results.push(rSitemap)
 
-  // 5. llms.txt (conditional)
-  if (config.llms !== false) {
-    const rLlms = await generateLlms(config, routeTable, outDir, root)
+  // 5. llms.txt — off unless the app sets `llms` (generateLlms reads it).
+  if (config.llms) {
+    // `indexed` as the sitemap reads it — what the build emitted, less what
+    // the route table excluded — so llms.txt names the same pages, including
+    // the ones a dynamic route produced (FJS-1534).
+    const rLlms = await generateLlms(config, { ...routeTable, indexed }, outDir, root)
     if (rLlms) results.push(rLlms)
   }
 

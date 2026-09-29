@@ -68,7 +68,9 @@ title: Orders
   from `@frontierjs/mesa/runtime.js` there.
 - **A `---` block in a `.mesa` file is metadata the build reads** (a route's
   title, its render mode) and declares no variables. In a `.md` file the keys
-  do become props.
+  do become props, and `layout: Name` wraps the body in that component — when
+  the build names its layouts (Sierra's `markdownLayouts`); otherwise it is
+  metadata.
 - **Every non-void element closes explicitly.** `<li>a<li>b` is a parse error;
   `<br>` and `<span />` are fine.
 

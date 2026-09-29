@@ -26,12 +26,11 @@
  * requires it to FAIL — the worker must not be in that path at all.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
-import { tmpdir }              from 'node:os'
+import { writeFileSync, rmSync } from 'node:fs'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
-
 import { createNetwork } from './lib/offline.mjs'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -114,13 +113,12 @@ if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }
 // attaches to the first one's session and grades that browser's screen
 // (`FJS-740` one layer over, measured in `verify:stock`); and the default
 // profile carries the previous run's sign-in into this one.
-const profile = mkdtempSync(join(tmpdir(), 'fjs-shell-'))
+const profile = chromeProfile('fjs-shell-')
 const chrome = start(CHROME, [
   '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
   '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
   'about:blank',
 ], 'chrome')
-process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
 const wsUrl = await new Promise((resolve) => {
   let buf = ''

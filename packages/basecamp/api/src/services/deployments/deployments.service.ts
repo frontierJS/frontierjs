@@ -136,6 +136,16 @@ export function createDeploymentsService(app: BasecampApp) {
       const executor = await resolveExecutor(app, appId)
       if (!isExecutor(executor)) throw new BadRequest(executor.reason)
 
+      // Nothing builds an image yet: the build and push steps reach outpost as a
+      // command-less `/exec`, which acknowledges and does nothing, and the start
+      // step then asks docker to pull the app's NAME from a public registry.
+      // Two green steps and a pull-access error is the release that bought.
+      if ((target.type === 'container' || target.type === 'function')
+          && !isInline(target.source) && !imageOf(target.source) && !data.toImage)
+        throw new BadRequest(
+          `App '${target.name}' names no image, and nothing builds one yet — ` +
+          `set its source to an image (e.g. nginx:alpine) or to inline files`)
+
       // What the app looked like at release time. `source`/`config` are Json
       // columns, so these are already objects — the old code JSON.parse'd them.
       data.configSnapshot = { source: target.source ?? {}, config: target.config ?? {} }

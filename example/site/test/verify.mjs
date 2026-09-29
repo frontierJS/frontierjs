@@ -56,16 +56,15 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
 import { serveSite } from '@frontierjs/sierra/site/serve'
 // The storefront's own conversion, asked rather than restated. Every price
 // column is `@money(USD)`, so what the database holds and what `data-baked`
 // carries is a whole number of CENTS, and what the page prints is dollars.
 import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
+import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
@@ -210,7 +209,7 @@ t('serve.assetImmutable',  await (async () => {
 })())
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
-const profile = mkdtempSync(join(tmpdir(), 'fjs-site-'))
+const profile = chromeProfile('fjs-site-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`,
@@ -617,7 +616,6 @@ try {
   }
   chrome.kill()
   await server.close()
-  try { rmSync(profile, { recursive: true, force: true }) } catch {}
 }
 
 // ─── the claims ───────────────────────────────────────────────────────────

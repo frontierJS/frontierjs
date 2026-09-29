@@ -199,6 +199,8 @@ title: Networking
                 <code>{m.ipAddress ?? 'no address'}</code>
                 <Button variant="ghost" disabled={busy === n.id}
                         aria-label={`Detach ${m.server?.name ?? m.serverId}`}
+                        data-confirm={`${m.server?.name ?? 'This server'} leaves ${n.name}; anything reaching it over that network stops.`}
+                        data-confirm-title="Detach this server?" data-confirm-label="Detach"
                         onclick={() => detach(n, m.serverId)}>Detach</Button>
               </li>
             {/each}
@@ -219,7 +221,10 @@ title: Networking
             <Button variant="ghost" onclick={() => { attachTo = null; pickedSrv = '' }}>Cancel</Button>
           {:else}
             <Button variant="outlined" onclick={() => { attachTo = n.id; pickedSrv = '' }}>Attach a server</Button>
-            <Button variant="ghost" disabled={busy === n.id} onclick={() => remove(n)}>Delete</Button>
+            <Button variant="ghost" disabled={busy === n.id}
+                    data-confirm={`${n.name} is deleted. A network with servers still attached is refused — detach them first.`}
+                    data-confirm-title="Delete this network?" data-confirm-label="Delete"
+                    onclick={() => remove(n)}>Delete</Button>
           {/if}
         </div>
       </Card>

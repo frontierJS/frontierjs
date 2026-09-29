@@ -290,8 +290,9 @@ async function _send(client, q, entry) {
     undefined,
     // The key is the entry's, so a re-send after a timeout nobody can read
     // replays the first answer instead of uploading a second object and
-    // orphaning the first.
-    { idempotencyKey: entry.key, ...call },
+    // orphaning the first. `madeAt` dates it when the file was attached, not
+    // when it uploaded (`FJS-D469`).
+    { idempotencyKey: entry.key, madeAt: entry.createdAt, ...call },
   )
 }
 

@@ -55,7 +55,6 @@
   gap:                   var(--space-md) var(--space-3xl);
   align-items:           baseline;
 
-  margin:      0;
   font-family: var(--font-primary);
   font-size:   var(--text-md);
   line-height: 1.5;

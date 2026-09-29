@@ -25,6 +25,7 @@ import {
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
+import { createExclusionLedger } from './exclusion.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
 import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
@@ -60,7 +61,7 @@ import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
   buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
-  buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildComputedSet, buildBoolMap, buildBigMap,
+  buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
@@ -1463,6 +1464,36 @@ function makeTable(readDb, writeDb, shape, ctx) {
     for (const row of writeDb.query(sql).all(...params)) tx.ledger.noteChild(modelName, row)
   }
 
+  // ── Exclusion scopes ───────────────────────────────────────────────────────
+  //
+  // A write that lands a row, or moves its key or its range, notes the key; the
+  // grade over every member of the scope is at the outermost commit
+  // (`exclusion.js`). A delete is never noted: removing a row cannot make two
+  // overlap, and grading the key would refuse a delete for an overlap it did
+  // not cause.
+  const _exclScopes = tx.exclusions ? (ctx.exclusionMap?.byModel?.[modelName] ?? []) : []
+  const _exclNotes  = _exclScopes.length > 0
+  const _exclFields = new Set(_exclScopes.flatMap(name =>
+    ctx.exclusionMap.scopes[name].members.filter(m => m.model === modelName)
+      .flatMap(m => [m.keyField, ...m.range])))
+  // Only a write naming the key or an end of the range can move a row into
+  // another's range; every other update keeps its fast path.
+  const exclTouched = (data) => _exclNotes && data != null && Object.keys(data).some(k => _exclFields.has(k))
+  function noteExclusion(row) {
+    if (_exclNotes && row) tx.exclusions.note(modelName, row)
+  }
+  // The key a row holds BEFORE an update: a write that leaves the key alone
+  // still moves the range under it, and the payload does not name it.
+  function noteExclusionBySql(whereSql, params) {
+    if (!_exclNotes) return
+    const keys = [...new Set(_exclScopes.map(name =>
+      ctx.exclusionMap.scopes[name].members.find(m => m.model === modelName)))]
+    const sel = [...new Map(keys.map(m => [m.keyColumn, m.keyField])).entries()]
+      .map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
+    const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
+    for (const row of writeDb.query(sql).all(...params)) tx.exclusions.note(modelName, row)
+  }
+
   function fireRowEvent(event, operation, result, transition = null) {
     if (!hasAudience()) return
     fireEvent(event, {
@@ -1721,6 +1752,86 @@ function makeTable(readDb, writeDb, shape, ctx) {
         })
       }
     }
+  }
+
+  // ── What a foreign key's `onDelete: Cascade` takes with a row ─────────────
+  // SQLite removes those rows inside the parent's own DELETE, so the plugins
+  // and the trail heard of the one row the caller named and nothing under it:
+  // deleting a person wrote no `application.delete` line and left every résumé
+  // in the file store (FJS-1497). The parent reads the doomed rows in the same
+  // exclusive unit as its DELETE, then hands each child table its own.
+  ctx.registerCascadeSink?.(modelName, {
+    idField,
+    hears: !!plugins?.hasPlugins || tableHasLogWork,
+    rowsWhere(fk, keys) {
+      const out = []
+      for (let i = 0; i < keys.length; i += 500) {
+        const chunk = keys.slice(i, i + 500)
+        out.push(...readDb.query(`SELECT * FROM "${tableName}" WHERE "${col(fk)}" IN (${chunk.map(() => '?').join(',')})`).all(...chunk))
+      }
+      return readAll(out)
+    },
+    async removed(rows) {
+      if (plugins?.hasPlugins) await plugins.afterDelete(modelName, rows, ctx)
+      if (tableHasLogWork) emitLogs('delete', rows)
+    },
+  })
+
+  // null when no model the cascade can reach has a plugin or a log to tell,
+  // which is every app without one, so the walk costs those nothing.
+  let _cascadeHeard = null
+  function cascadeHeard() {
+    if (_cascadeHeard !== null) return _cascadeHeard
+    _cascadeHeard = false
+    if (!ctx.cascadeSinkFor) return false
+    const seen = new Set([modelName])
+    const queue = [modelName]
+    while (queue.length) {
+      for (const rel of Object.values(ctx.relationMap?.[queue.shift()] ?? {})) {
+        if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade' || seen.has(rel.targetModel)) continue
+        seen.add(rel.targetModel)
+        queue.push(rel.targetModel)
+        if (ctx.cascadeSinkFor(rel.targetModel)?.hears) return (_cascadeHeard = true)
+      }
+    }
+    return false
+  }
+
+  // Every row the cascade will remove under `rows`, as [sink, rows] per child
+  // model and hop. Run BEFORE the DELETE, inside its exclusive unit.
+  function cascadeDoomed(rows) {
+    if (!rows?.length || !cascadeHeard()) return null
+    const doomed = []
+    const seen = new Set()
+    let frontier = [[modelName, rows]]
+    while (frontier.length) {
+      const next = []
+      for (const [parent, parentRows] of frontier) {
+        for (const rel of Object.values(ctx.relationMap?.[parent] ?? {})) {
+          if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade') continue
+          const sink = ctx.cascadeSinkFor(rel.targetModel)
+          if (!sink) continue
+          const keys = [...new Set(parentRows.map(r => r[rel.referencedKey]).filter(v => v != null))]
+          if (!keys.length) continue
+          // A self-relation or a diamond reaches a row twice; SQLite removes it once.
+          const found = sink.rowsWhere(rel.foreignKey, keys).filter(r => {
+            const k = `${rel.targetModel}\0${r[sink.idField]}`
+            if (seen.has(k)) return false
+            seen.add(k)
+            return true
+          })
+          if (!found.length) continue
+          doomed.push([sink, found])
+          next.push([rel.targetModel, found])
+        }
+      }
+      frontier = next
+    }
+    return doomed.length ? doomed : null
+  }
+
+  async function cascadeRemoved(doomed) {
+    if (doomed) for (const [sink, rows] of doomed) await sink.removed(rows)
   }
 
   // ── Field policy helpers ──────────────────────────────────────────────────
@@ -3343,7 +3454,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // positional in one of them and not the others is the bug this avoids. The
     // text is machine-generated, never caller-supplied — but `now` IS the
     // caller's function, so its answer is escaped rather than trusted.
-    const _at = nowISO(ctx.now).replace(/'/g, "''")
+    const _at = nowISO(ctx.stampClock ?? ctx.now).replace(/'/g, "''")
     return _stampCols.filter(c => !named.includes(c)).map(c => `"${col(c)}" = '${_at}'`)
   }
 
@@ -5347,7 +5458,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // child inserted through it is never graded at all (`FJS-969`'s shape one
       // realm over: the fast paths are the ones a rule misses). Asked of the
       // MODEL, so a schema declaring no bound keeps the path (`FJS-1106`).
-      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes) {
+      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes) {
         data   = _crEdges.data
         _crOut = insertRow(false, _crEdges.edgeWrites)
       } else {
@@ -5375,6 +5486,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // parent side needs no fallback: a childless create is refused before
           // this point, and one carrying children has nested writes and a row.
           noteCardinality(inserted.row ?? data)
+          noteExclusion(inserted.row ?? data)
           if (inserted.done) return inserted
           const created = inserted.row
           // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
@@ -5512,6 +5624,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
           }
           noteCardinality(row)
+          noteExclusion(row)
           count++
         }
         // A mixed batch has no single SQL to report. Uniform — the ordinary
@@ -5613,7 +5726,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // statement without yielding — `_upJoined` below is what says so if an
       // edit ever adds an await ahead of it (`FJS-1107`).
       const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy
-        && !_tableTransitions && tx.state.depth === 0 && !_cardNotes
+        && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
       const _upBody = async () => {
         const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
         data = { ..._scalarNoEdge, ...extraFKs }
@@ -5796,6 +5909,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           `before it wrote — something in update() now yields ahead of the write. This is a defect in litestone (FJS-1107).`)
 
         updated = null
+        if (_setColsV && exclTouched(data)) {
+          noteExclusionBySql(_vWhereSql, _vWhereParams)
+          noteExclusion(data)
+        }
         if (_setColsV) {
           // select: false + no post-update side-effects → use run(), skip RETURNING entirely
           // Note: tableHasLogWork forces RETURNING even with select: false — the log needs
@@ -5990,6 +6107,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // leaves one parent as surely as it joins another, and after the
         // statement the old one is unreachable from any row.
         noteCardinalityBySql(finalWhere, _umWhereP)
+        if (exclTouched(data)) { noteExclusionBySql(finalWhere, _umWhereP); noteExclusion(data) }
         try {
           _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
           if (!_umRows) writeDb.run(_umSql, ...params)
@@ -6073,7 +6191,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // to the original read-then-write implementation below.
       fastPath: if (
         !plugins?.hasPlugins && !emitter && !ctx._eventListeners.size &&
-        !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions &&
+        !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions && !_exclNotes &&
         !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
         !ctx.sequenceMap?.[modelName]?.length &&
         !ctx.updatedByMap?.[modelName]?.length &&
@@ -6436,7 +6554,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             const refusal = sealRefusal(_usSeal?.parents, 'create')
             if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
           }
-          if (_usWrote) count++
+          if (_usWrote) { noteExclusion(row); count++ }
         }
         sql = [...stmts.values()].map(e => e.sql).join('\n')
       })
@@ -6545,8 +6663,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _rmHSql = `DELETE FROM "${tableName}" WHERE ${removeFinalSql} RETURNING *`
       const _nt = needsTiming()
       const _rmHT0 = _nt ? performance.now() : 0
-      const row = await tx.wrapExclusive(() =>
-        read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true }))
+      // The one-statement path stays one statement unless a cascade below has
+      // someone to tell, which needs the row before it is gone.
+      let _rmHDoomed = null
+      const row = await tx.wrapExclusive(() => {
+        if (cascadeHeard()) _rmHDoomed = cascadeDoomed(
+          readAll(readDb.query(`SELECT * FROM "${tableName}" WHERE ${removeFinalSql}`).all(...removeFinalParams)))
+        return read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true })
+      })
       fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
       if (!row) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
       fireRowEvent('remove', 'remove', row)
@@ -6554,6 +6678,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row], ctx)
       // ── Logging ───────────────────────────────────────────────────────────
       if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
+      await cascadeRemoved(_rmHDoomed)
       return row
     },
 
@@ -6639,8 +6764,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _rmnT0 = _nt ? performance.now() : 0
       // The lock, so a bulk write cannot be swallowed by another context's
       // open transaction and lost on its rollback (`FJS-638`).
-      let _rmnRows, count
+      let _rmnRows, count, _rmDoomed = null
       await tx.wrapExclusive(() => {
+        if (cascadeHeard()) _rmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
+          : readAll(readDb.query(`SELECT * FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`).all(...params)))
         _rmnRows = _rmNeedRows ? writeDb.query(_rmnSql).all(...params) : null
         if (!_rmnRows) writeDb.run(_rmnSql, ...params)
         count = _rmnRows ? _rmnRows.length : rowsChanged(writeDb)
@@ -6649,6 +6776,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
       if (tableHasLogWork && _rmnRows?.length) emitLogs('delete', _rmnRows)
+      await cascadeRemoved(_rmDoomed)
       announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count, rows: _rmnRows })
       return { count }
     },
@@ -6733,7 +6861,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _nt = needsTiming()
       const _rsT0 = _nt ? performance.now() : 0
       restored = writeDb.query(_rsSql).all(...params)
-      for (const r of restored) noteCardinality(read(r))
+      for (const r of restored) { noteCardinality(read(r)); noteExclusion(read(r)) }
       fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
       })
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
@@ -7278,10 +7406,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The read and the DELETE are one unit: the row is what the caller is
       // handed back and what the audit trail records, so a write landing
       // between them reports a row that is not the one that was removed.
+      let _delDoomed = null
       const row = await tx.wrapExclusive(() => {
         const r = read(readDb.query(`SELECT ${_delCols} FROM "${tableName}" WHERE ${delFinalSql}`).get(...delFinalParams))
         if (!r) return null
         noteCardinality(r)
+        _delDoomed = cascadeDoomed([r])
         writeDb.run(_delSql, ...delFinalParams)
         return r
       })
@@ -7297,6 +7427,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (row) fireRowEvent('remove', 'delete', row)
       // ── Logging ───────────────────────────────────────────────────────────
       if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
+      await cascadeRemoved(_delDoomed)
       return row
     },
 
@@ -7329,9 +7460,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _dmnT0 = _nt ? performance.now() : 0
       // The lock, so a bulk write cannot be swallowed by another context's
       // open transaction and lost on its rollback (`FJS-638`).
-      let _dmnRows, result
+      let _dmnRows, result, _dmDoomed = null
       await tx.wrapExclusive(() => {
         noteCardinalityBySql(dmFinalSql, params)
+        if (cascadeHeard()) _dmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
+          : readAll(readDb.query(`SELECT * FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`).all(...params)))
         _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
         if (!_dmnRows) writeDb.run(_dmnSql, ...params)
         result = { changes: _dmnRows ? _dmnRows.length : rowsChanged(writeDb) }
@@ -7340,6 +7473,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
       if (tableHasLogWork && _dmnRows?.length) emitLogs('delete', _dmnRows)
+      await cascadeRemoved(_dmDoomed)
       announceBulk({ mode: _dmMode, event: 'remove', operation: 'deleteMany', where, count: result.changes, rows: _dmnRows })
       return { count: result.changes }
     },
@@ -8218,7 +8352,15 @@ function makeLockPrimitive(rawWriteDb) {
   const bigMap         = buildBigMap(schema)
   const filterKindMap  = buildFilterKindMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
-  const generatedDefaultMap = buildGeneratedDefaultMap(schema, now)
+  // The clock a write is STAMPED with — `@default(now())` and `@updatedAt` —
+  // which is `now` unless `$madeAt` answers an instant for the write in
+  // progress. A write held on a device and sent hours later was made then, and
+  // stamping it when it landed dated a shift's work at the moment the network
+  // came back (`FJS-D469`). Predicates, `@@expires` and retention stay on `now`:
+  // they ask when the write is GRADED, which is at landing (`FJS-D300`).
+  const _madeAt    = { fn: null }
+  const stampClock = () => _madeAt.fn?.() ?? (typeof now === 'function' ? now() : new Date())
+  const generatedDefaultMap = buildGeneratedDefaultMap(schema, stampClock)
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
   const updatedByMap       = buildUpdatedByMap(schema)
@@ -8235,6 +8377,7 @@ function makeLockPrimitive(rawWriteDb) {
   const ftsMap        = buildFtsMap(schema)
   const validationMap  = buildValidationMap(schema)
   const cardinalityMap = buildCardinalityMap(schema, pluralizeTableNames)
+  const exclusionMap   = buildExclusionMap(schema, pluralizeTableNames)
   const fieldPolicyMap = buildFieldPolicyMap(schema)
   const secretMap      = buildSecretMap(schema)
   const claimSet       = buildClaimSet(schema, claims ?? null)
@@ -8430,6 +8573,16 @@ function makeLockPrimitive(rawWriteDb) {
         conn.query(`SELECT 1 FROM "${rule.parentTable}" WHERE ` +
                    rule.refColumns.map(c => `"${c}" = ?`).join(' AND ') + ' LIMIT 1').get(...key))
     : null
+  // Read on the WRITE handle of each member's own file: the grade runs inside
+  // the transaction, and a read handle cannot see the rows it is grading. A
+  // readonly file's rows still occupy the range, so it is read where it can be.
+  const exclusionLedger = exclusionMap.any
+    ? createExclusionLedger(exclusionMap, (model) => {
+        const conn = dbRegistry[modelDbMap[model] ?? 'main'] ?? dbRegistry.main
+        if (conn.driver === 'jsonl' || conn.driver === 'logger') return null
+        return conn.rawWriteDb ? conn.writeDb : conn.rawReadDb ? conn.readDb : null
+      })
+    : null
   // One entry per write CONNECTION a table can reach: a second declaration on
   // main's file is main's entry, and a readonly or `access: false` name has no
   // write handle to hold (`FJS-1459`).
@@ -8439,7 +8592,7 @@ function makeLockPrimitive(rawWriteDb) {
     if (txConns.some(c => c.raw === conn.rawWriteDb)) continue
     txConns.push({ name, db: conn.writeDb, raw: conn.rawWriteDb })
   }
-  const tx = makeTxManager(txConns, txState, cardinalityLedger)
+  const tx = makeTxManager(txConns, txState, cardinalityLedger, exclusionLedger)
 
   // Normalize global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
@@ -8654,6 +8807,7 @@ function makeLockPrimitive(rawWriteDb) {
   // Shared context threaded through include resolution + table ops
   const ctx = {
     now,
+    stampClock, _madeAt,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
     softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, effectiveMap, commitmentMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
@@ -8674,6 +8828,7 @@ function makeLockPrimitive(rawWriteDb) {
     allowChildFkOverride: allowChildFkOverride === true,
     transitionMap, sealMap,
     cardinalityMap,
+    exclusionMap,
     capabilityMap,
     models:        modelIndex,
     schema,
@@ -8953,6 +9108,24 @@ function makeLockPrimitive(rawWriteDb) {
       },
     })
   }
+
+  // Each shared table's answer to *these rows of yours were removed by a
+  // cascade* — the rows SQLite deletes inside a parent's DELETE, which no
+  // plugin and no log would otherwise hear of (FJS-1497). On the shared ctx
+  // only and not enumerable, so a flavor's `{ ...ctx }` and the trail's system
+  // build never register a second one.
+  const _cascadeSinks = new Map()
+  Object.defineProperty(sharedCtx, 'registerCascadeSink', {
+    configurable: true, enumerable: false,
+    value: (modelName, sink) => { _cascadeSinks.set(modelName, sink) },
+  })
+  Object.defineProperty(sharedCtx, 'cascadeSinkFor', {
+    configurable: true, enumerable: false,
+    value: (modelName) => {
+      if (!_cascadeSinks.has(modelName)) sharedTableFor(modelToAccessor(modelName))
+      return _cascadeSinks.get(modelName) ?? null
+    },
+  })
 
   // Built once per model, on first use, and never rebuilt.
   const _sharedTables = Object.create(null)
@@ -10865,7 +11038,7 @@ function makeLockPrimitive(rawWriteDb) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -10964,6 +11137,19 @@ function makeLockPrimitive(rawWriteDb) {
         const previous = ctx._logContext.fn
         ctx._logContext.fn = fn ?? null
         return () => { ctx._logContext.fn = previous }
+      }
+      // ─── $madeAt ───────────────────────────────────────────────────────
+      // WHEN the write in progress was made, where that is not now: a function
+      // answering an instant or nothing, read by `@default(now())` and
+      // `@updatedAt` in place of the clock. Installed by the realm that has a
+      // request, for `$logContext`'s reason (Invariant 1). The audit trail keeps
+      // the landing time, since what an audit records is when it happened HERE.
+      if (prop === '$madeAt')         return (fn) => {
+        if (fn != null && typeof fn !== 'function')
+          throw new Error(`$madeAt(fn): expected a function answering when the write in progress was made, got ${typeof fn}.`)
+        const previous = ctx._madeAt.fn
+        ctx._madeAt.fn = fn ?? null
+        return () => { ctx._madeAt.fn = previous }
       }
       if (prop === '$lock')           return lockPrimitive
       if (prop === '$locks')          return lockPrimitive.$locks

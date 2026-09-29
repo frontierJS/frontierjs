@@ -8408,7 +8408,7 @@ describe('GatePlugin', () => {
       }
     `, 'gate-read-ok', () => 3)   // level 3 >= read(2)
     await db.$db.run('INSERT INTO post VALUES (1)')
-    const rows = await db.post.findMany()
+    const rows = await db.$setAuth({ id: 1 }).post.findMany()
     expect(rows.length).toBe(1)
     db.$close()
   })
@@ -8531,7 +8531,7 @@ describe('GatePlugin', () => {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
     })
     await db.$db.run('INSERT INTO post VALUES (1)')
-    const userDb = db.$setAuth({ level: 4 })
+    const userDb = db.$setAuth({ id: 1, level: 4 })
     const rows = await userDb.post.findMany()
     expect(rows.length).toBe(1)
     db.$close()
@@ -8638,11 +8638,11 @@ describe('GatePlugin', () => {
     await db.$db.run('INSERT INTO secret VALUES (1)')
 
     // Regular admin (level 5) can't read — needs SYSADMIN (7)
-    const admin = db.$setAuth({ role: 'admin' })
+    const admin = db.$setAuth({ id: 1, role: 'admin' })
     await expect(admin.secret.findMany()).rejects.toThrow(AccessDeniedError)
 
     // SysAdmin (level 7) can read
-    const sysadmin = db.$setAuth({ isSystemAdmin: true })
+    const sysadmin = db.$setAuth({ id: 2, isSystemAdmin: true })
     await expect(sysadmin.secret.findMany()).resolves.toHaveLength(1)
 
     // asSystem() (level 8) can also read — 8 >= 7
@@ -8720,7 +8720,7 @@ describe('GatePlugin', () => {
     await db.$db.run('INSERT INTO post VALUES (1)')
     await db.$db.run('INSERT INTO billing VALUES (1)')
 
-    const fm = db.$setAuth({ role: 'field-manager' })
+    const fm = db.$setAuth({ id: 1, role: 'field-manager' })
 
     // field-manager can read+create+update posts (level 4)
     await expect(fm.post.findMany()).resolves.toHaveLength(1)

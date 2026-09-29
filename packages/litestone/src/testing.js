@@ -3124,11 +3124,16 @@ async function _freshParents(schema, modelName, chain) {
 // violate a `@unique`; re-stating a scalar the row already holds does neither.
 // `@version` rides along because it is read off the row, which is exactly what
 // an optimistic-concurrency update requires.
+//
+// Never an `@immutable` or `@system` column: the boundary refuses either BY
+// NAME, the same value included, so a touch landing on one reads as the gate or
+// the policy throwing at every level for a model that is correctly declared.
 function _touch(schema, modelName, row) {
   const model = schema.models.find(m => m.name === modelName)
   const patch = {}
   for (const field of model?.fields ?? []) {
     if (_shouldSkipField(field, model)) continue
+    if (field.attributes.some(a => a.kind === 'immutable' || a.kind === 'system')) continue
     if (field.type.array || field.type.kind !== 'scalar') continue
     if (row[field.name] === undefined) continue
     patch[field.name] = row[field.name]

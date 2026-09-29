@@ -427,7 +427,7 @@ describe('degrading', () => {
     registerSchemas(defs, models)              // an older build, or a hand-passed schema
     const plans = createResource('plans', { model: 'Plan' })
     expect(plans.sealedFields({ id: 1, code: 'P-1' })).toEqual([])
-    await plans.save({ id: 1, code: 'P-1', name: 'x' })
+    await plans.save({ id: 1, code: 'P-1', name: 'x', rev: 3 })
     expect(_calls.at(-1)[2]).toHaveProperty('code')
   })
 })

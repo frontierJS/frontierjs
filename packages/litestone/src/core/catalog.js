@@ -229,6 +229,19 @@ const TOP = [
   ),
 
   t(
+    'scope',
+    'schema',
+    'declare',
+    '<name>(<field>)',
+    "What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry the field. Not `@@scope`, which is a named read filter on one model.",
+    'scope person(employeeId)',
+    {
+      context: 'model Shift {\n  id         Int      @id\n  employeeId Int\n  startsAt   DateTime\n  endsAt     DateTime\n  @@exclude(person, range: [startsAt, endsAt])\n}',
+      seeAlso: ['model:exclude']
+    }
+  ),
+
+  t(
     'function',
     'schema',
     'declare',
@@ -919,6 +932,15 @@ const MODEL = [
     { kind: 'uniqueIndex', extraFields: 'accountId Int\n  number Int', seeAlso: ['index'] }
   ),
   t(
+    'exclude',
+    'model',
+    'shape',
+    '(<scope>, range: [<start>, <end>])',
+    "No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing.",
+    '@@exclude(person, range: [startsAt, endsAt])',
+    { context: 'scope person(employeeId)', extraFields: 'employeeId Int\n  startsAt DateTime\n  endsAt DateTime', seeAlso: ['schema:scope', 'model:unique'] }
+  ),
+  t(
     'check',
     'model',
     'shape',
@@ -1444,6 +1466,8 @@ export const DOCS = {
   'model:arc': 'schema.md',
   'model:relator': 'relations.md',
   'model:check': 'schema.md',
+  'model:exclude': 'concurrency.md',
+  'schema:scope': 'concurrency.md',
   'field:startsWith': 'schema.md',
   'field:endsWith': 'schema.md',
   'field:contains': 'schema.md',
@@ -1600,6 +1624,7 @@ export const TIERS = {
     'schema:extend',
     'schema:tenancy',
     'schema:claim',
+    'schema:scope',
     // field attributes
     'field:map',
     'field:sequence',
@@ -1646,6 +1671,7 @@ export const TIERS = {
     'model:sync',
     'model:fts',
     'model:check',
+    'model:exclude',
     'model:extensible'
   ]
 }
@@ -1691,7 +1717,8 @@ export const SYNONYMS = {
   'field:hashed':      ['password', 'bcrypt', 'argon'],
   'field:encrypted':   ['pii', 'at-rest'],
   'field:required':    ['not null', 'notnull', 'mandatory'],
-  'field:omit':        ['hide', 'exclude', 'private'],
+  'field:omit':        ['hide', 'private'],
+  'model:exclude':     ['no overlap', 'exclusion constraint', 'double booking'],
   'field:relation':    ['fk', 'has many', 'belongs to'],
   'field:slug':        ['permalink', 'handle'],
   'field:values':      ['dropdown', 'options', 'picklist'],

@@ -43,10 +43,9 @@
  * start an evaluated expression with `return` on its own line.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -129,7 +128,7 @@ for (const want of ['flows', 'runs', 'flowCredentials', 'customers']) {
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-automations-'))
+const profile = chromeProfile('fjs-automations-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',

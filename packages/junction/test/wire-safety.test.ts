@@ -14,6 +14,9 @@
 //   • FJS-D473 — a SUCCESS body was neither: a method returning a system write
 //     answered a stranger with the decrypted `@secret`, over HTTP and over the
 //     socket, and the socket's error frame had never been sanitized at all.
+//   • The walk that fixed it drops by KEY NAME, and a list envelope carries its
+//     rows under `data` — so a model with a protected column named `data`
+//     answered every list with the rows removed and `total` still counting them.
 //
 // The production half has to be asserted with NODE_ENV really set: the whole
 // rule is a branch on it, and a test that runs under `test` grades the dev
@@ -30,6 +33,12 @@ const SCHEMA = `
     id     Int    @id
     title  String
     secret String @secret
+  }
+
+  model Vault {
+    id   Int    @id
+    name String
+    data String @secret
   }
 `
 
@@ -52,6 +61,8 @@ async function mkApp(listen = false) {
   const sys = (db as never as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> }).asSystem()
   for (let i = 1; i <= 150; i++)
     await sys.note.create({ data: { title: `note ${i}`, secret: `hunter2-${i}` } })
+  for (const name of ['deploy-key', 'provider-token'])
+    await sys.vault.create({ data: { name, data: `hunter2-${name}` } })
 
   const app = createApp({
     db: db as never,
@@ -85,6 +96,9 @@ async function mkApp(listen = false) {
         data: { model: 'Note', field: 'version', expected: 3, actual: 4 },
       })
     },
+  }))
+  app.services.register(createService({
+    name: 'vaults', model: 'Vault', db: db as never, methods: ['find', 'get'],
   }))
   app.configure(channels())
   if (listen) await app.start()
@@ -211,12 +225,12 @@ describe('what a failure may say (FJS-686)', () => {
 
 // ─── FJS-D473 ─────────────────────────────────────────────────────────────
 
-async function socketCall(app: Awaited<ReturnType<typeof mkApp>>, method: string): Promise<string> {
+async function socketCall(app: Awaited<ReturnType<typeof mkApp>>, method: string, service = 'notes'): Promise<string> {
   const ws = new WebSocket(`ws://localhost:${(app.http as never as { port: number }).port}/ws`)
   await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
   const frame = await new Promise<string>(ok => {
     ws.onmessage = (e: MessageEvent) => { if (JSON.parse(e.data).id === 'c1') ok(e.data) }
-    ws.send(JSON.stringify({ type: 'service_call', id: 'c1', service: 'notes', method, data: {} }))
+    ws.send(JSON.stringify({ type: 'service_call', id: 'c1', service, method, data: {} }))
   })
   ws.close()
   return frame
@@ -259,6 +273,24 @@ describe('what a success may carry (FJS-D473)', () => {
     const res = await http(app, 'GET', '/notes?$limit=2')
     expect(res.body.data).toEqual([{ id: 1, title: 'note 1' }, { id: 2, title: 'note 2' }])
     expect(res.body.total).toBe(150)
+    await app.stop()
+  })
+
+  test('a protected column NAMED data drops from the rows, not the envelope', async () => {
+    const app = await mkApp()
+    const res = await http(app, 'GET', '/vaults')
+    expect(res.body.data).toEqual([{ id: 1, name: 'deploy-key' }, { id: 2, name: 'provider-token' }])
+    expect(res.body.total).toBe(2)
+    expect(res.text).not.toContain('hunter2')
+    await app.stop()
+  })
+
+  test('and the same over the socket', async () => {
+    const app   = await mkApp(true)
+    const frame = JSON.parse(await socketCall(app, 'find', 'vaults'))
+    expect(frame.type).toBe('service_result')
+    expect(frame.result.data).toEqual([{ id: 1, name: 'deploy-key' }, { id: 2, name: 'provider-token' }])
+    expect(JSON.stringify(frame)).not.toContain('hunter2')
     await app.stop()
   })
 })

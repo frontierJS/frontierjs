@@ -97,7 +97,7 @@ export interface CorsOptions {
 }
 
 /** What the browser client sends whether or not an app asked for it. */
-const PROTOCOL_HEADERS = ['X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key']
+const PROTOCOL_HEADERS = ['X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key', 'X-Fjs-Made-At', 'X-Fjs-Sent-At']
 
 /** Case-insensitive dedupe, first spelling wins — a list is header NAMES, and
  *  `content-type` and `Content-Type` are one header announced twice. */

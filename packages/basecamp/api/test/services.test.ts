@@ -2351,3 +2351,38 @@ describe('a custom method grades its caller before a system read or a guarded wr
     expect(await deleted()).toBe(false)
   })
 })
+
+describe('infra.launch walks to the screen each step happens on', () => {
+  test('an empty workspace starts at the machine; a released app on a placed machine is done', async () => {
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const o    = await sys.user.create({ data: { email: `launch-${uniq}@x.co`, accountId: (await sys.workspace.findFirst({ where: { id: ws.id } })).accountId } })
+    const w    = await sys.workspace.create({ data: { accountId: o.accountId, name: 'Launch', slug: `launch-${uniq}`, ownerId: o.id } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: w.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
+    } })
+    const me = env.as(session({ userId: o.id, workspaceId: w.id })).service('infra')
+
+    const empty = await me.call('launch')
+    expect(empty.done).toBe(0)
+    expect(empty.steps[0]).toMatchObject({ id: 'machine', href: '/servers/import/', done: false })
+
+    const srv  = await serverAt('online', { workspaceId: w.id, name: 'box', slug: `box-${uniq}` })
+    const proj = await sys.project.create({ data: { workspaceId: w.id, name: 'P', slug: `p-${uniq}` } })
+    const e    = await sys.environment.create({ data: { workspaceId: w.id, projectId: proj.id, name: 'prod', slug: 'prod' } })
+    const a    = await sys.app.create({ data: { workspaceId: w.id, environmentId: e.id, name: 'Site', slug: 'site', type: 'static' } })
+
+    const half = await me.call('launch')
+    expect(half.steps.find((s: any) => s.id === 'app')).toMatchObject({ done: true, href: `/environments/${e.id}/` })
+    expect(half.steps.find((s: any) => s.id === 'place')).toMatchObject({ done: false, href: `/apps/${a.id}/` })
+
+    await sys.appServer.create({ data: { appId: a.id, serverId: srv.id } })
+    const d = await sys.deployment.create({ data: { workspaceId: w.id, appId: a.id, environmentId: e.id, trigger: 'manual' } })
+    await sys.deployment.transition(d.id, 'build')
+    await sys.deployment.transition(d.id, 'succeed')
+
+    const all = await me.call('launch')
+    expect(all.done).toBe(all.total)
+    expect(all.app.id).toBe(a.id)
+  })
+})

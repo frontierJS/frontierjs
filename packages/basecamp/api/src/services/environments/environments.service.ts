@@ -105,9 +105,10 @@ export function createEnvironmentsService(app: BasecampApp) {
 
       refuseProtectedForDeveloper(env, ctx)
 
-      // projectId and slug are immutable — moving an environment between
-      // projects would silently reparent its apps and deployments.
-      const patch = narrowPatch($.data as Record<string, unknown>, ['projectId', 'slug', 'variables'])
+      // projectId and slug are @immutable and the schema refuses them by name.
+      // `variables` has its own methods, which edit one key and leave the rest
+      // standing; a whole-list patch from a stale form would erase them.
+      const patch = narrowPatch($.data as Record<string, unknown>, ['variables'])
       if (changesNothing(patch)) return env
       return db().environment.update({ where: { id: $.id as string }, data: patch })
     },

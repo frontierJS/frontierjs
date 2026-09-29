@@ -68,6 +68,63 @@ export function classify(value) {
   }
 }
 
+// ── What JSON would lose ──────────────────────────────────────────────────────
+
+/**
+ * The name of what cannot survive a JSON round trip, or null.
+ *
+ * One answer for every store that holds a value as JSON — a cache entry and a
+ * job payload — because each of these serializes and comes back as something
+ * else: a Date as a string, a Map or Set as `{}`, NaN as null, and a BigInt
+ * throws naming nothing. Only this node is graded; a caller walks.
+ *
+ * A plain object and an array are answered by one prototype comparison, and
+ * asking by tag rather than `instanceof` grades a value from another realm the
+ * same as a local one.
+ *
+ * @param {*} v
+ * @returns {string|null}
+ */
+export function jsonLoss(v) {
+  switch (typeof v) {
+    case 'object':   break
+    case 'string':
+    case 'boolean':  return null
+    case 'number':   return Number.isFinite(v) ? null : String(v)
+    case 'bigint':   return 'a BigInt'
+    case 'function': return 'a function'
+    case 'symbol':   return 'a symbol'
+    default:         return null
+  }
+  if (v === null) return null
+  const proto = Object.getPrototypeOf(v)
+  if (proto === Object.prototype || proto === Array.prototype || proto === null) return null
+
+  const tag = Object.prototype.toString.call(v)
+  switch (tag) {
+    case '[object Date]':   return 'a Date'
+    case '[object Map]':    return 'a Map'
+    case '[object Set]':    return 'a Set'
+    case '[object RegExp]': return 'a RegExp'
+  }
+  // A typed array serializes to {"0":…} and reads back as a plain object.
+  if (ArrayBuffer.isView(v) || tag === '[object ArrayBuffer]') return tag.slice(8, -1)
+  return null
+}
+
+const LOSS_ADVICE = {
+  'a Date':   'store the ISO string (a Litestone row already carries one)',
+  'a Map':    'store a plain object or an array of entries',
+  'a Set':    'store an array',
+  'a RegExp': 'store its source string',
+  'a BigInt': 'store a string of digits, the way an `Int @big` column crosses',
+}
+
+/** What to store instead of a `jsonLoss()` kind. */
+export function jsonLossAdvice(kind) {
+  return LOSS_ADVICE[kind] ?? 'JSON cannot carry it and would hand back something else'
+}
+
 /** True for the two kinds that contain other values. */
 export function isContainer(value) {
   const k = classify(value)

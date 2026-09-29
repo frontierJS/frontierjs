@@ -125,3 +125,36 @@ describe('what the client is told', () => {
     expect(create.$defs.Doc.properties.number.readOnly).toBeUndefined()
   })
 })
+
+// The harness writes a no-op patch to grade an update, and it took the first
+// scalar the row held — which on a model leading with an `@immutable` column
+// is refused by name at every level, and read as the gate or the policy
+// throwing on a model that is correctly declared.
+describe('the verifiers do not touch a frozen column', () => {
+  const LEADS_FROZEN = `
+model Ledger {
+  id      Int    @id @default(autoincrement())
+  ownerId Int    @immutable
+  code    String @immutable
+  note    String
+  @@gate("0")
+  @@allow('update', ownerId == auth().id)
+  @@allow('read', true)
+  @@allow('create', true)
+  @@allow('delete', true)
+}
+`
+
+  test('the gate ladder is clean', async () => {
+    const { createTestEnv } = await import('../src/testing.js')
+    const env = await createTestEnv({ schema: LEADS_FROZEN })
+    expect(await env.verifyGateLadder()).toEqual([])
+  })
+
+  test('the row-policy check grades rather than throwing', async () => {
+    const { createTestEnv } = await import('../src/testing.js')
+    const env = await createTestEnv({ schema: LEADS_FROZEN })
+    const rows = (await env.verifyRowPolicies()) as any[]
+    expect(rows.filter(r => /threw/.test(r.message ?? ''))).toEqual([])
+  })
+})

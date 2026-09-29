@@ -17,13 +17,13 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**111 words** — 12 declarations · 66 field attributes · 33 model attributes.
+**113 words** — 13 declarations · 66 field attributes · 34 model attributes.
 
 ## Index
 
 **Declarations**
 
-- *Declare* — [`import`](#import-declaration) · [`database`](#database-declaration) · [`tenancy`](#tenancy-declaration) · [`claim`](#claim-declaration) · [`model`](#model-declaration) · [`view`](#view-declaration) · [`enum`](#enum-declaration) · [`valueset`](#valueset-declaration) · [`function`](#function-declaration) · [`trait`](#trait-declaration) · [`extend`](#extend-declaration) · [`type`](#type-declaration)
+- *Declare* — [`import`](#import-declaration) · [`database`](#database-declaration) · [`tenancy`](#tenancy-declaration) · [`claim`](#claim-declaration) · [`model`](#model-declaration) · [`view`](#view-declaration) · [`enum`](#enum-declaration) · [`valueset`](#valueset-declaration) · [`scope`](#scope-declaration) · [`function`](#function-declaration) · [`trait`](#trait-declaration) · [`extend`](#extend-declaration) · [`type`](#type-declaration)
 
 **Field attributes**
 
@@ -40,7 +40,7 @@ and shows you the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -179,7 +179,26 @@ valueset TaskTag {
 ```
 
 - **Also typed** — `lookup table` · `shared enum`
-- **See also** — [`@values`](#values-field) · [`@@scope`](#scope-model)
+- **See also** — [`@values`](#values-field) · [`scope`](#scope-declaration)
+
+### `scope` `<name>(<field>)` <a id="scope-declaration"></a>
+
+What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry the field. Not `@@scope`, which is a named read filter on one model.
+
+```lite
+model Shift {
+  id         Int      @id
+  employeeId Int
+  startsAt   DateTime
+  endsAt     DateTime
+  @@exclude(person, range: [startsAt, endsAt])
+}
+
+scope person(employeeId)
+```
+
+- **Deeper** — [concurrency.md](concurrency.md)
+- **See also** — [`@@exclude`](#exclude-model)
 
 ### `function` `<name>(p: Type, …): Type { @@expr("…") }` <a id="function-declaration"></a>
 
@@ -523,7 +542,7 @@ model Example {
 ```
 
 - **`level`** — `all`
-- **Also typed** — `hide` · `exclude` · `private`
+- **Also typed** — `hide` · `private`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@system`](#system-field)
 
@@ -1336,6 +1355,26 @@ model Example {
 - **Deeper** — [performance.md](performance.md)
 - **See also** — [`@@index`](#index-model)
 
+#### `@@exclude` `(<scope>, range: [<start>, <end>])` <a id="exclude-model"></a>
+
+No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing.
+
+```lite
+scope person(employeeId)
+
+model Example {
+  id Int @id
+  employeeId Int
+  startsAt DateTime
+  endsAt DateTime
+  @@exclude(person, range: [startsAt, endsAt])
+}
+```
+
+- **Also typed** — `no overlap` · `exclusion constraint` · `double booking`
+- **Deeper** — [concurrency.md](concurrency.md)
+- **See also** — [`scope`](#scope-declaration) · [`@@unique`](#unique-model)
+
 #### `@@check` `("<sql>"[, "<message>"])` <a id="check-model"></a>
 
 A row invariant that spans more than one column, emitted as a table CHECK. The table-level half of field `@check`: a field validator sees one field, `@@unique` is about rows in a table rather than values in a row, and `@@allow` is who rather than what is valid — so a two-column rule had nowhere to live but a service hook, which a job, a migration, `asSystem()` and a seed all bypass. Repeatable. The message is the last argument and is what a form shows; without one the expression is on the error for a developer and the person sees a generic sentence, because SQL under a control reaches somebody who did not write it. A violation is a `ValidationError` — 400, with the message on the record rather than on a box, since a rule over several columns names none of them.
@@ -1639,7 +1678,7 @@ model Example {
 
 - **Also typed** — `rls` · `row level security`
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`@@scope`](#scope-model)
+- **See also** — [`@@deny`](#deny-model) · [`@@gate`](#gate-model) · [`scope`](#scope-declaration)
 
 #### `@@deny` `('read'|…, <expression>[, message])` <a id="deny-model"></a>
 

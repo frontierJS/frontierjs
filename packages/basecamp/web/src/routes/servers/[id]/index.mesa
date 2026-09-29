@@ -8,6 +8,7 @@ title: Server
   import { at } from '../../../datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
   $: page.params
@@ -102,6 +103,25 @@ title: Server
     } catch (e) {
       // 'Cannot remove an online server — drain it first' arrives here, and is
       // exactly the sort of refusal the UI should show rather than pre-empt.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Destroy asks the provider to delete the machine, and the service refuses
+  // unless the caller types the machine's name back — the thing typed is the
+  // thing destroyed, so a stale screen cannot confirm the wrong row.
+  let destroyName = ''
+
+  async function destroy() {
+    error = null; busy = 'destroy'
+    try {
+      const moved = await servers.service.invoke('destroy', server.id, { confirm: destroyName })
+      destroyName = ''
+      await loadEvents()
+      toasts.success(`${moved.name} → ${moved.status}`)
+    } catch (e) {
       error = e.message
     } finally {
       busy = null
@@ -238,6 +258,17 @@ title: Server
   // and re-derives for the wrong reason; the hub layout's nav carries the same
   // note for the same reason.
   $: moves = new Set(server ? servers.transitions(server).map(t => t.name) : [])
+
+  // A machine a cloud made is one Basecamp can ask that cloud about. `custom`
+  // is somebody's own box: Sync has no vendor to read and Destroy no vendor to
+  // tell, so both would record an event and do nothing.
+  $: cloudMade = !!server && !!server.providerKind && server.providerKind !== 'custom'
+
+  // Remove deletes the ROW. On a machine a cloud still bills for, that is the
+  // orphan `reconcile` exists to find, so the confirmation says so.
+  $: removeWarning = cloudMade && server.status !== 'destroyed'
+    ? `This removes ${server.name} from Basecamp only. The machine keeps running — and billing — at ${server.providerKind}. Destroy it instead to delete it there.`
+    : `Remove ${server?.name} from Basecamp?`
 </script>
 
 {#if loading}
@@ -319,10 +350,13 @@ title: Server
     {#if moves.has('reboot')}
       <Button variant="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
     {/if}
-    <Button variant="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
-      {busy === 'sync' ? 'Syncing…' : 'Sync from provider'}
-    </Button>
-    <Button variant="ghost" tone="danger" disabled={busy === 'remove'} onclick={remove}>Remove</Button>
+    {#if cloudMade}
+      <Button variant="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
+        {busy === 'sync' ? 'Syncing…' : 'Sync from provider'}
+      </Button>
+    {/if}
+    <Button variant="ghost" tone="danger" disabled={busy === 'remove'} onclick={remove}
+            data-confirm={removeWarning} data-confirm-title="Remove this server?" data-confirm-label="Remove">Remove</Button>
   </div>
 
   <dl class="facts">
@@ -375,6 +409,26 @@ title: Server
       {/if}
     </article>
   </div>
+
+  {#if cloudMade && moves.has('destroy')}
+    <article class="card outlined danger stack" id="server-destroy">
+      <h2 class="h4">Destroy this machine</h2>
+      <p class="text-sm">
+        Asks {server.providerKind} to delete <strong>{server.name}</strong> and everything on its disk.
+        This cannot be undone. Type the machine's name to confirm.
+      </p>
+      <form class="stack" onsubmit={e => { e.preventDefault(); destroy() }}>
+        <Input id="destroy-confirm" name="destroy-confirm" label="Machine name" autocomplete="off"
+               placeholder={server.name} bind:value={destroyName} />
+        <div class="cluster">
+          <Button type="submit" variant="primary" tone="danger"
+                  disabled={destroyName !== server.name || busy === 'destroy'}>
+            {busy === 'destroy' ? 'Destroying…' : 'Destroy'}
+          </Button>
+        </div>
+      </form>
+    </article>
+  {/if}
 
   <h2 class="h4">Events</h2>
   {#if !events.length}

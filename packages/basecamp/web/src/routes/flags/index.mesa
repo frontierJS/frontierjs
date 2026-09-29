@@ -279,6 +279,8 @@ title: Flags
                   <td>
                     <Button variant="ghost" disabled={busy === flag.id}
                             aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
+                            data-confirm={`${envLabel(o)} falls back to the flag's default.`}
+                            data-confirm-title="Clear this override?" data-confirm-label="Clear" data-confirm-tone="warning"
                             onclick={() => clear(flag, o.environmentId)}>Clear</Button>
                   </td>
                 </tr>
@@ -310,7 +312,10 @@ title: Flags
             {flag.isEnabled ? 'Turn off by default' : 'Turn on by default'}
           </Button>
           <Button variant="ghost" disabled={busy === flag.id}
-                  aria-label={`Delete ${flag.key}`} onclick={() => remove(flag)}>Delete</Button>
+                  aria-label={`Delete ${flag.key}`}
+                  data-confirm={`${flag.key} is deleted, with its overrides in every environment.`}
+                  data-confirm-title="Delete this flag?" data-confirm-label="Delete"
+                  onclick={() => remove(flag)}>Delete</Button>
         </div>
       </Card>
     {/each}

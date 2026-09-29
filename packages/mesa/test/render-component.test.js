@@ -130,6 +130,22 @@ describe('renderComponent — import resolution', () => {
     expect(result.css).toContain('background')
     expect(result.css).toContain('padding')
   })
+
+  // The compiler hoists instance imports to column 0 and prints a <script
+  // module> as written, so only the first of two indented imports there was
+  // followed and the second died on *Cannot find module*.
+  it('follows every indented import in a <script module>', async () => {
+    await fixture('Badge.mesa', `<script>export let label = 'OK'</script><span class="badge">{label}</span>`)
+    await fixture('Static.mesa', `<em class="static">static</em>`)
+
+    const result = await renderComponent(
+      `<script module>\n  import Badge from './Badge.mesa'\n  import Static from './Static.mesa'\n  const parts = [Badge, Static]\n</script>` +
+      `{#each parts as Part}<Part />{/each}`,
+      { cwd: '/tmp/mesa', target: 'html' }
+    )
+    expect(result.html).toContain('badge')
+    expect(result.html).toContain('static')
+  })
 })
 
 // ── Email target ──────────────────────────────────────────────────────────────
@@ -592,6 +608,47 @@ describe('renderComponent — options.alias', () => {
       alias: { '@': ALIAS_DIR, '@acme': '/nowhere' },
     })
     expect(out.html).toContain('$1')
+  })
+})
+
+// ── options.transformSource ──────────────────────────────────────────────────
+// A meta-framework's bundler prepares every Mesa file before it is compiled —
+// Sierra injects auto-imports there. The renderer reads the same files from
+// disk, and without the same preparation a page that renders in dev fails its
+// prerender naming a component nobody forgot (`FJS-1491`).
+describe('renderComponent — options.transformSource', () => {
+  const DIR = path.join(FIXTURES, 'transform-src')
+
+  beforeAll(async () => {
+    await mkdir(DIR, { recursive: true })
+    await writeFile(path.join(DIR, 'Leaf.mesa'), '<b>leaf</b>\n')
+    // Names <Leaf /> and imports nothing — only the transform can bind it.
+    await writeFile(path.join(DIR, 'Page.mesa'), '<p><Leaf /></p>\n')
+  })
+
+  afterAll(() => { try { rmSync(DIR, { recursive: true, force: true }) } catch {} })
+
+  const bindLeaf = (source) =>
+    source.includes('<Leaf') ? `<script>\n  import Leaf from './Leaf.mesa'\n</script>\n${source}` : source
+
+  it('prepares every file read from disk, so a dependency can use what it never imported', async () => {
+    const src = "<script>\n  import Page from './Page.mesa'\n</script>\n<Page />\n"
+    const seen = []
+    const out = await renderComponent(src, {
+      cwd: DIR, filename: path.join(DIR, 'Entry.mesa'),
+      transformSource: (source, file) => { seen.push(path.basename(file)); return bindLeaf(source) },
+    })
+    expect(out.html).toContain('<b>leaf</b>')
+    // The entry is the caller's own source and is passed as given.
+    expect(seen).toEqual(['Page.mesa', 'Leaf.mesa'])
+  })
+
+  // The negative control: the same tree with no transform is the defect.
+  it('without it, the same tree fails the render', async () => {
+    const src = "<script>\n  import Page from './Page.mesa'\n</script>\n<Page />\n"
+    await expect(renderComponent(src, {
+      cwd: DIR, filename: path.join(DIR, 'Entry2.mesa'),
+    })).rejects.toThrow(/Leaf is not defined/)
   })
 })
 

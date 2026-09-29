@@ -16,6 +16,7 @@ title: Home
   import { jobs } from '../resources/Job.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import ActionQueue from '../components/ActionQueue.mesa'
+  import LaunchSteps from '../components/LaunchSteps.mesa'
   import { computeNotices } from '../notices.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -92,6 +93,8 @@ title: Home
 <!-- The mock's Basecamp home opens with the queue, and so does this one:
      the first question an operator has is "what is broken", not "what exists". -->
 <ActionQueue notices={notices} />
+
+<LaunchSteps />
 
 <div class="tiles" style="--tile-min: 16rem">
   <article class="card stack">

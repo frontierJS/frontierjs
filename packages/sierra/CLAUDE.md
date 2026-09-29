@@ -63,6 +63,9 @@ src/
     auto-import-plugin.js  components and named bindings available in every
                          .mesa file with no import statement, from configured
                          directories and packages
+    glob-expand.js       an eager `import.meta.glob` as the static imports it
+                         stands for — the prerender's, which runs outside Vite
+                         (`FJS-1521`)
     app-import.js        importing the app's own modules at BUILD time — the
                          Litestone client `config.db` names, and a route's
                          `.meta.js` companion (`FJS-551`)

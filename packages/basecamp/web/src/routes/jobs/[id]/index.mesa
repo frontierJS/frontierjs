@@ -2,11 +2,13 @@
 title: Job
 ---
 <script>
-  import { page }       from '@frontierjs/sierra/router'
+  import { page, goto } from '@frontierjs/sierra/router'
   import { session }    from '../../../session.js'
-  import { jobs }       from '../../../resources/Job.mesa'
+  import Job, { jobs }  from '../../../resources/Job.mesa'
   import { at }         from '../../../datetime.js'
+  import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
   $: page.params
@@ -17,6 +19,7 @@ title: Job
   let loadError = null
   let loading   = true
   let busy      = null
+  let editing   = false
 
   // The job, watched rather than read (`FJS-518`). `get()` answers it WITH its
   // five most recent runs, so the history needs no second request — and that is
@@ -63,6 +66,32 @@ title: Job
     }
   }
 
+  // The composed view re-reads on the push the save causes; the drawer only
+  // has to close.
+  function saved() {
+    editing = false
+    toasts.success('Job saved')
+  }
+
+  async function removeJob() {
+    error = null; busy = 'remove'
+    // Read before the write: the row is watched, and the delete's own push
+    // empties `job` before the next line runs.
+    const { id, name } = job
+    try {
+      await jobs.service.remove(id)
+      toasts.success(`${name} deleted`)
+      goto('/jobs/')
+    } catch (e) {
+      error = e.message
+      busy  = null
+    }
+  }
+
+  /** What a run printed. `finishRun` writes `{ stdout }` on success and the
+   *  error on failure, so an empty object is a run that said nothing. */
+  const stdoutOf = run => (typeof run.output?.stdout === 'string' && run.output.stdout) || null
+
   const TONE     = { running: 'info', failed: 'danger', cancelled: 'muted' }
   const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
   const secs     = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
@@ -90,6 +119,13 @@ title: Job
     </div>
   </div>
 
+  <Drawer open={editing} title={`Edit ${job.name}`} onclose={() => editing = false}>
+    {#if editing}
+      <!-- `status` moves by the buttons above, which read the machine. -->
+      <Job record={job} except={['status']} oncancel={() => editing = false} ondone={saved} submitId="job-edit-save" />
+    {/if}
+  </Drawer>
+
   {#if error}
     <article class="alert danger">
       <div class="alert-content">{error}</div>
@@ -101,8 +137,16 @@ title: Job
       {busy === 'trigger' ? 'Queuing…' : 'Run now'}
     </Button>
     {#if cancellable}
-      <Button variant="ghost" tone="danger" disabled={busy === 'cancel'} onclick={() => act('cancel')}>Cancel</Button>
+      <Button variant="ghost" tone="danger" disabled={busy === 'cancel'}
+              data-confirm="It stops, and does not run again until somebody starts it."
+              data-confirm-title="Cancel this job?" data-confirm-label="Cancel job"
+              onclick={() => act('cancel')}>Cancel</Button>
     {/if}
+    <Button variant="outlined" id="job-edit" onclick={() => editing = true}>Edit</Button>
+    <Button variant="ghost" tone="danger" id="job-delete" disabled={busy === 'remove'}
+            data-confirm="It is cancelled, taken off the schedule, and removed."
+            data-confirm-title="Delete this job?" data-confirm-label="Delete"
+            onclick={removeJob}>Delete</Button>
   </div>
 
   <dl class="facts">
@@ -131,6 +175,12 @@ title: Job
               </div>
               {#if run.error}
                 <pre class="text-sm">{run.error}</pre>
+              {/if}
+              {#if stdoutOf(run)}
+                <details>
+                  <summary class="text-sm">Output</summary>
+                  <pre class="text-sm scroll-x">{stdoutOf(run)}</pre>
+                </details>
               {/if}
             </div>
           </article>

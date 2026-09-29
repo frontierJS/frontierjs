@@ -496,3 +496,28 @@ describe('a local binding shadows a registered module name', () => {
     expect(out).toContain("import { page } from '@frontierjs/sierra'")
   })
 })
+
+// ─── What the tag scan must not read (FJS-1499) ───────────────────────────────
+
+describe('injectAutoImports — comments and the file itself', () => {
+  const map = new Map([['Image', { kind: 'default', from: '/app/src/blocks/Image.mesa', imported: null }]])
+
+  // A component's doc comment shows how it is used. Read as a tag, Image.mesa
+  // imported itself and the module died on *"Image" has already been declared*.
+  test('a tag inside an HTML comment is not a use', () => {
+    const source = '<!--\n  Use it as <Image source="/a.jpg" />\n-->\n<picture><img src="/a.jpg" /></picture>'
+    expect(injectAutoImports(source, map)).toBe(source)
+  })
+
+  test('the file being compiled is never imported into itself', () => {
+    const source = '<picture><Image source="/nested.jpg" /></picture>'
+    expect(injectAutoImports(source, map, '/app/src/blocks/Image.mesa')).toBe(source)
+    expect(injectAutoImports(source, map, '/app/src/blocks/Image.mesa?import')).toBe(source)
+  })
+
+  // The negative control: the same tag outside a comment, in another file.
+  test('the same tag in another file is still imported', () => {
+    const out = injectAutoImports('<Image source="/a.jpg" />', map, '/app/src/routes/index.mesa')
+    expect(out).toContain("import Image from '/app/src/blocks/Image.mesa'")
+  })
+})

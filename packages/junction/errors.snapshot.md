@@ -110,6 +110,7 @@ something that will never work, or not to retry something that would.
 | `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true | — |
 | `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `OverlapConflictError` | status 409 · retryable false | `Conflict` | 409 | false | list(1) |
 | `SealedDocumentError` | status 409 · retryable false | `Conflict` | 409 | false | `model`, `parent`, `parentId`, `state`, `relation` |
 | `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual`, `move`, `to` |

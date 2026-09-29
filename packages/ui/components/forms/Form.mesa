@@ -198,7 +198,12 @@
   // `var` on either this or `_sealed` cuts the chain; it is on both because a
   // name saying *as handed in* that is really live is the next version of the
   // same defect, and neither one writes, so nothing on screen says so.
-  var _opened = record
+  //
+  // A create has opened no row, whatever it was seeded with: `make()` hands
+  // back a draft, and asking the seal of a draft freezes every `@immutable`
+  // column on the one form that is allowed to write it.
+  var _opened = method === 'patch' || (method !== 'create' && record?.[idField] != null)
+    ? record : undefined
 
   // Which columns are frozen FOR THIS ROW. `@immutable` on a model that seals
   // freezes at the seal rather than at create, so the answer is in the record

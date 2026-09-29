@@ -57,8 +57,9 @@
 
 /*
  * `reset` is first so it is the weakest thing in the cascade. A reset that
- * can beat a component has stopped being a reset — and the only rule in it
- * targets a bare element, which a `:where()` base would otherwise tie with.
+ * can beat a component has stopped being a reset — its rules target bare
+ * elements, which a `:where()` base would otherwise tie with, and remove UA
+ * margins a parent's spacing must still be able to set.
  */
 @layer reset, tokens, themes, tones, base, layout, components, patterns, utilities, a11y;
 

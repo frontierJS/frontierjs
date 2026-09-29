@@ -29,11 +29,9 @@
  * with `return` on its own line (ASI turns it into `return;`).
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { requireServers } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -61,7 +59,7 @@ await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-verify-ui-'))
+const profile = chromeProfile('fjs-verify-ui-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`,
@@ -812,13 +810,11 @@ try {
   console.error('console errors:', consoleErrors)
   chrome.kill()
   await new Promise(r => chrome.on('close', r))
-  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   process.exit(1)
 }
 
 chrome.kill()
 await new Promise(r => chrome.on('close', r))
-rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 
 // ─── assertions ───────────────────────────────────────────────────────────
 

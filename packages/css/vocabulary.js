@@ -95,7 +95,7 @@ const VOCAB = [
     "Block",
     "Self-contained units of content.",
     [
-      ["Card", "<article>", "A bounded unit of content on a surface. Write it as an <a> or a <button> and it becomes interactive — cursor, a 1px lift and a tone-following border, no modifier"],
+      ["Card", "<article>", "A bounded unit of content on a surface. Write it as an <a> or a <button> and it becomes interactive — cursor, a 1px lift and a tone-following border, no modifier. Its children flow down at Stack's gap, so a Card needs no .stack"],
       ["Tile", "<article>", "A compact metric or stat unit. Interactive as an <a>/<button>, like Card"],
       ["Item", "<li>", "A lightweight list entry"],
       ["Row", "<li> / <tr>", "A record entry with trailing actions", "list-row"],

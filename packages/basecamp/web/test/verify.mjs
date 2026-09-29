@@ -454,10 +454,13 @@ async function goto(path) {
 
 // Setting .value on an input does not notify Mesa — bind:value listens for
 // input events, so a value written without one submits as an empty string.
+// By id, or by the column's name — a resource's default form names each
+// control after its column and leaves the id to the kit.
 const fill = fields => evaluate(`
   (() => {
     ${Object.entries(fields).map(([id, v]) =>
       `{ const el = document.getElementById(${JSON.stringify(id)})
+           ?? document.querySelector('[name=' + ${JSON.stringify(JSON.stringify(id))} + ']')
          if (!el) throw new Error('no field #${id} on ' + location.pathname)
          el.value = ${JSON.stringify(v)}
          el.dispatchEvent(new Event('input', { bubbles: true })) }`).join('\n    ')}

@@ -35,6 +35,22 @@
 }
 
 /*
+ * A Cluster holding a field lines up on the CONTROL, not the box.
+ *
+ * A `.field-group` is its label stacked over its control, so centered beside
+ * a button the button sat 11px above the control, measured. Controls and
+ * buttons share a height (`--control-padding-block`), so aligning the bottoms
+ * is aligning the controls.
+ *
+ * `:where` keeps it at `.cluster`'s own weight, so an app's override wins.
+ * A field with a hint under it still lifts its control by the hint's height —
+ * a row with hints is a Form's layout, not a Cluster's.
+ */
+.cluster:where(:has(> .field-group)) {
+  align-items: flex-end;
+}
+
+/*
  * Group — a horizontal group that stays on ONE line.
  *
  * Beside Cluster because it is defined against it: wrapping is Cluster's

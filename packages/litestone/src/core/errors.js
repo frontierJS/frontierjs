@@ -384,6 +384,24 @@ export class UniqueConflictError extends Error {
   }
 }
 
+// Uniqueness over a RANGE rather than a value (`FJS-D474`): two rows sharing a
+// scope's key whose ranges overlap. A 409 for the reason a taken value is one —
+// the other row is there, and the same write fails the same way until one of
+// them moves. `with` names the other row by model and id only (`exclusion.js`).
+export class OverlapConflictError extends Error {
+  constructor(model, message, { scope = null, key = null, field = null, with: other = null } = {}) {
+    super(`${model}: ${message}.`)
+    this.name      = 'OverlapConflictError'
+    this.model     = model
+    this.scope     = scope
+    this.key       = key
+    this.with      = other
+    this.errors    = [{ path: field ? [field] : [], message }]
+    this.status    = 409
+    this.retryable = false
+  }
+}
+
 // `UNIQUE constraint failed: doc.code` / `doc.team, doc.slot` → ['code'] /
 // ['team','slot']. SQLite gives the only machine-readable account of WHICH
 // constraint fired, and it is this string.

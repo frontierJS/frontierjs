@@ -1199,6 +1199,21 @@ export declare class UniqueConflictError extends Error {
 }
 
 /**
+ * Two rows sharing a `scope`'s key overlap on their `@@exclude` range — graded
+ * when the outermost write commits, over every model citing the scope. The
+ * other row is named by model and id only; the caller may not be able to read it.
+ */
+export declare class OverlapConflictError extends Error {
+  model:     string
+  scope:     string
+  key:       unknown
+  with:      { model: string, id: unknown } | null
+  errors:    Array<{ path: string[], message: string }>
+  status:    409
+  retryable: false
+}
+
+/**
  * The caller asked this model for something its `.lite` never declared —
  * `search()` below `@@fts`, `restore()` below `@@softDelete`, `transition()`
  * below `@@transitions`, `due()` below `@@commitment`, or an `onlyDeleted`/`onlyTemplates` flag on a model

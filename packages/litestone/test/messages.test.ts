@@ -175,9 +175,10 @@ model Job {
       plugins: [new GatePlugin({ getLevel: () => 5 })],
     })
     autoMigrate(db)
-    await db.job.create({ data: {} })
+    const as = db.$setAuth({ id: 1 })
+    await as.job.create({ data: {} })
     try {
-      await db.job.transition(1, 'ship')          // pending, not paid
+      await as.job.transition(1, 'ship')          // pending, not paid
       throw new Error('should have refused')
     } catch (e) {
       expect((e as Error).name).toBe('TransitionViolationError')

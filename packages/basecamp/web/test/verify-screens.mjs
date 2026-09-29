@@ -778,12 +778,154 @@ try {
   // declaration whose `const` spelling the compiler makes lazy, and read only
   // in teardown it registered at destroy (`FJS-1062`).
   const liveHost = 'live.example.test'
+  // On the Domains tab: this app already has a primary hostname from the /dns/
+  // section above, so a second one is listed there and nowhere on the overview.
+  await evaluate(`[...document.querySelectorAll('#app-tabs [role=tab]')].find(b => b.textContent.trim() === 'domains').click()`)
+  await until(`!!document.getElementById('domain-list')`, v => v, 'the domains tab never opened')
   const madeLive = await apiPost('/domains', { appId: realId, hostname: liveHost, isPrimary: false })
   check('a hostname written behind the open screen was accepted', madeLive.status < 300,
     JSON.stringify(madeLive).slice(0, 200))
   const liveSeen = await until(`document.body.textContent.includes(${JSON.stringify(liveHost)})`, v => v,
     'the hostname never appeared', 8_000).catch(() => false)
   check('and the open app screen shows it without a reload', !!liveSeen)
+
+  // ─── The edit surfaces ─────────────────────────────────────────────────
+  // Four screens take their form from the resource file's markup half, and
+  // what the schema says about each column is the whole of what decides the
+  // box: `@immutable` frozen on an edit and writable on a create, `@system`
+  // never offered. Every check changes a value and reads it back through the
+  // API, because a drawer that closes on a refused save looks like a pass.
+  console.log('\n  the edit surfaces — each model\'s default form')
+
+  const typeIn = (sel, v) => evaluate(`
+    (() => { const el = document.querySelector(${JSON.stringify(sel)})
+             if (!el) throw new Error('no ' + ${JSON.stringify(sel)})
+             el.value = ${JSON.stringify(v)}
+             el.dispatchEvent(new Event('input',  { bubbles: true }))
+             el.dispatchEvent(new Event('change', { bubbles: true }))
+             return true })()`)
+  const frozen  = sel => evaluate(`!!document.querySelector(${JSON.stringify(sel)})?.disabled`)
+  const present = sel => evaluate(`!!document.querySelector(${JSON.stringify(sel)})`)
+  const clickText = (scope, label) => evaluate(`
+    (() => { const b = [...document.querySelectorAll(${JSON.stringify(scope + ' button')})]
+               .find(b => b.textContent.trim() === ${JSON.stringify(label)})
+             if (!b) throw new Error('no button "' + ${JSON.stringify(label)} + '" in ' + ${JSON.stringify(scope)})
+             b.click(); return true })()`)
+  // `data-confirm` stops the first click and asks; the panel's last button is
+  // the one that lets it through.
+  const confirmIt = async () => {
+    await until(`!!document.querySelector('[role=dialog][aria-modal=false]')`, v => v, 'no confirmation was asked')
+    await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  }
+
+  // App — the drawer, and what the schema froze.
+  await goto(`/apps/${realId}/`)
+  await until(`!!document.getElementById('app-breadcrumb')`, v => v, 'the app screen never rendered')
+  check('an app names its project and its environment above it',
+    await evaluate(`document.querySelectorAll('#app-breadcrumb a').length`) === 2)
+  await click('#app-more')
+  await until(`!!document.getElementById('app-edit')`, v => v, 'the app menu never opened')
+  await click('#app-edit')
+  await until(`!!document.getElementById('app-edit-save')`, v => v, 'the app form never opened')
+  check('an app\'s address is shown frozen on an edit', await frozen('dialog[open] [name=slug]'))
+  check('and so is the environment it lives in', await frozen('dialog[open] [name=environmentId]'))
+  check('and the status the machine reports is not offered at all',
+    !(await present('dialog[open] [name=status]')))
+  await typeIn('dialog[open] [name=name]', 'web-edited')
+  await typeIn('dialog[open] [name=port]', '3100')
+  await click('#app-edit-save')
+  await until(`document.querySelector('h1')?.textContent.includes('web-edited')`, v => v,
+    'the app heading never took the new name')
+  const appAfter = (await apiGet(`/apps/${realId}`)).body
+  check('and the save reached the row', appAfter?.name === 'web-edited' && appAfter?.port === 3100,
+    JSON.stringify({ name: appAfter?.name, port: appAfter?.port }))
+
+  // Environment — rename, and a variable edited where it stands.
+  const envId = appAfter?.environmentId
+  await goto(`/environments/${envId}/`)
+  await until(`!!document.getElementById('env-edit')`, v => v, 'the environment screen never rendered')
+  await click('#env-edit')
+  await until(`!!document.getElementById('env-edit-save')`, v => v, 'the environment form never opened')
+  check('an environment\'s project is frozen on an edit', await frozen('dialog[open] [name=projectId]'))
+  check('and its variables are not a box on it — they have their own editor',
+    !(await present('dialog[open] [name=variables]')))
+  await typeIn('dialog[open] [name=name]', 'Production edited')
+  await click('#env-edit-save')
+  await until(`document.querySelector('h1')?.textContent.includes('Production edited')`, v => v,
+    'the environment heading never took the new name')
+  ok('an environment is renamed from its own screen')
+
+  await typeIn('#var-key', 'SCREENS_PROBE')
+  await typeIn('#var-value', 'first')
+  await clickText('form.card', 'Set variable')
+  await until(`document.getElementById('variable-rows')?.textContent.includes('SCREENS_PROBE')`, v => v,
+    'the variable never appeared')
+  await clickText('#variable-rows', 'Edit')
+  await until(`!!document.getElementById('var-edit-SCREENS_PROBE')`, v => v, 'the value never became editable')
+  await typeIn('#var-edit-SCREENS_PROBE', 'second')
+  await clickText('#variable-rows', 'Save')
+  await until(`document.getElementById('variable-rows')?.textContent.includes('second')`, v => v,
+    'the edited value never showed')
+  const envAfter = (await apiGet(`/environments/${envId}`)).body
+  check('a variable edited in place is the one stored',
+    envAfter?.variables?.find(v => v.key === 'SCREENS_PROBE')?.value === 'second')
+
+  // Job — the create form may choose what the edit form freezes.
+  await goto('/jobs/')
+  await until(`!!document.getElementById('job-new')`, v => v, 'the jobs screen never rendered')
+  await click('#job-new')
+  await until(`!!document.getElementById('job-create-save')`, v => v, 'the job form never opened')
+  check('a new job may choose its kind', !(await frozen('dialog[open] [name=kind]')))
+  check('and is not offered a state — it is born pending', !(await present('dialog[open] [name=status]')))
+  await typeIn('dialog[open] [name=name]', 'Screens probe')
+  await typeIn('dialog[open] [name=kind]', 'scheduled')
+  await typeIn('dialog[open] [name=cronExpression]', '*/5 * * * *')
+  await click('#job-create-save')
+  await until(`document.getElementById('job-rows')?.textContent.includes('Screens probe')`, v => v,
+    'the new job never appeared in the list')
+  const probe = (await apiGet('/jobs')).body?.data?.find(j => j.name === 'Screens probe')
+  check('and it was made the kind that was chosen', probe?.kind === 'scheduled', probe?.kind)
+
+  await goto(`/jobs/${probe?.id}/`)
+  await until(`!!document.getElementById('job-edit')`, v => v, 'the job screen never rendered')
+  await click('#job-edit')
+  await until(`!!document.getElementById('job-edit-save')`, v => v, 'the job edit form never opened')
+  check('the same column is frozen once the job exists', await frozen('dialog[open] [name=kind]'))
+  await typeIn('dialog[open] [name=cronExpression]', '0 * * * *')
+  await click('#job-edit-save')
+  await until(`document.body.textContent.includes('0 * * * *')`, v => v, 'the new schedule never showed')
+  ok('a job\'s schedule is edited from its screen')
+
+  await click('#job-delete')
+  await confirmIt()
+  await until(`location.pathname`, p => p === '/jobs/', 'deleting the job never left its screen')
+  check('and a deleted job is gone from the list',
+    !(await apiGet('/jobs')).body?.data?.some(j => j.id === probe?.id))
+
+  // Alert rule — the column the old form never had.
+  await goto('/alerts/')
+  await until(`!!document.getElementById('alert-list')`, v => v, 'the alerts screen never rendered')
+  await clickText('#alert-list', 'Edit')
+  await until(`!!document.querySelector('[id^=alert-edit-save-]')`, v => v, 'the rule form never opened')
+  await typeIn('#alert-list [name=description]', 'Pages the on-call when it holds')
+  await evaluate(`document.querySelector('[id^=alert-edit-save-]').click()`)
+  await until(`document.getElementById('alert-list')?.textContent.includes('Pages the on-call')`, v => v,
+    'the description never showed on the card')
+  ok('an alert rule is edited, description included')
+
+  // Deleting from a watched screen: the delete's own push empties the record
+  // under the handler, which is how the job screen above once deleted the row
+  // and then stayed where it was.
+  await goto(`/apps/${realId}/`)
+  await until(`!!document.getElementById('app-more')`, v => v, 'the app screen never rendered')
+  await click('#app-more')
+  await until(`!!document.getElementById('app-delete')`, v => v, 'the app menu never opened')
+  await click('#app-delete')
+  await confirmIt()
+  await until(`location.pathname`, p => p === `/environments/${envId}/`,
+    'deleting the app never landed on its environment')
+  check('an app deleted from its menu lands on the environment it was in, and is gone',
+    (await apiGet(`/apps/${realId}`)).status === 404)
 
   // FAILED. The API is stopped under a page that is already signed in, and the
   // next screen is reached by CLICKING — a client-side navigation, so the

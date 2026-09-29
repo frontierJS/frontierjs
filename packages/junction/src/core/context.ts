@@ -14,6 +14,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FrameworkError } from './errors.ts'
+import { BadRequest } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
 import type { QueryDirectives, Page } from './directives.ts'
 // A value import, and outbox.ts imports only TYPES back — so the cycle is
@@ -61,6 +62,15 @@ export interface ServiceContext {
   directives: QueryDirectives
 
   data:  Record<string, unknown> | Record<string, unknown>[] | null
+
+  /**
+   * WHEN the write was made (`FJS-D469`). A write held on a device and sent
+   * later states the instant it was made off the device's clock, corrected by
+   * the device's offset from this server; a live call arrives as it is made, so
+   * this is its arrival. Always set by the time a hook runs. Litestone's
+   * `@default(now())` and `@updatedAt` resolve to it; the audit trail does not.
+   */
+  madeAt?: Date
 
   /**
    * The row as the WRITER read it, for a per-column merge (`FJS-D334`).
@@ -453,6 +463,13 @@ export interface RequestMeta {
    * which rows are in scope and nothing about who may touch them.
    */
   tenant?:         string | null
+
+  /**
+   * WHEN the work was made, where the caller stated it — a replayed write,
+   * already corrected by `resolveMadeAt`. Absent on a live call, so a client
+   * with an injected clock keeps stamping from that clock.
+   */
+  madeAt?:         Date
 }
 
 const _requestStore = new AsyncLocalStorage<RequestMeta>()
@@ -506,10 +523,47 @@ export interface RequestSource {
 
   /** WHICH TENANT, for work that has no request to resolve one from. */
   tenant?: RequestMeta['tenant']
+
+  /** The two device instants of a replayed write, as ISO strings. See `resolveMadeAt`. */
+  madeAt?: string
+  sentAt?: string
+}
+
+/** The two instants a replayed write states, as HTTP headers. The socket merges the same names off a frame. */
+export const MADE_AT_HEADER = 'x-fjs-made-at'
+export const SENT_AT_HEADER = 'x-fjs-sent-at'
+
+/**
+ * When a replayed write was made, on THIS server's clock (`FJS-D469`).
+ *
+ * Both instants are the device's own clock, which the server does not control.
+ * `sentAt` is read against the server's now to find the device's offset, and
+ * the made-at is moved by it — so a device clock wrong by a constant is
+ * corrected exactly, and only one changed between the press and the drain
+ * escapes. A made-at with nothing to compare it against is refused rather than
+ * trusted, and so is one later than its own send.
+ */
+export function resolveMadeAt(madeAt: string | undefined, sentAt: string | undefined, now = Date.now()): Date | undefined {
+  if (madeAt == null && sentAt == null) return undefined
+  if (madeAt == null || sentAt == null)
+    throw new BadRequest(
+      'A replayed write states when it was made (X-Fjs-Made-At) AND when it was sent (X-Fjs-Sent-At), both off ' +
+      'the device clock: the second is what corrects the first for how wrong that clock is. Got only ' +
+      (madeAt == null ? 'X-Fjs-Sent-At.' : 'X-Fjs-Made-At.'))
+  const made = Date.parse(madeAt)
+  const sent = Date.parse(sentAt)
+  if (Number.isNaN(made) || Number.isNaN(sent))
+    throw new BadRequest(
+      `X-Fjs-Made-At and X-Fjs-Sent-At are ISO-8601 instants. Got '${madeAt}' and '${sentAt}'.`)
+  if (made > sent)
+    throw new BadRequest(
+      `X-Fjs-Made-At (${madeAt}) is later than X-Fjs-Sent-At (${sentAt}) — a write cannot be sent before it was made.`)
+  return new Date(Math.min(made + (now - sent), now))
 }
 
 export function enterRequest<T>(src: RequestSource, fn: () => T): T {
   const h = src.headers
+  const madeAt = resolveMadeAt(src.madeAt ?? h?.[MADE_AT_HEADER], src.sentAt ?? h?.[SENT_AT_HEADER])
   return open({
     correlationId:  src.correlationId  ?? h?.['x-request-id'] ?? crypto.randomUUID(),
     idempotencyKey: src.idempotencyKey ?? h?.['idempotency-key'],
@@ -520,6 +574,7 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     user:           src.user,
     caller:         src.caller,
     tenant:         src.tenant,
+    ...(madeAt ? { madeAt } : {}),
   }, fn)
 }
 

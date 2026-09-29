@@ -31,12 +31,11 @@
  * how a person opening the popup reaches it.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
+import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const EXT  = join(HERE, '..')
@@ -163,7 +162,7 @@ console.log('\n  the extension — a surface loaded into a browser profile\n')
 
 // ─── Chrome, with the extension in it ──────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-shop-desk-'))
+const profile = chromeProfile('fjs-shop-desk-')
 start(CHROME, [
   '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu', '--no-sandbox',
   `--user-data-dir=${profile}`,

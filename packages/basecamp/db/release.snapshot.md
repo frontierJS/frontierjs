@@ -228,7 +228,7 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `port` | `Int` | yes | — | — |
 | `slug` | `String` | no | — | **required on write** |
 | `source` | `Json` | no | `'{}'` | — |
-| `status` | `AppStatus` | no | `'unknown'` | — |
+| `status` | `AppStatus` | no | `'unknown'` | @system |
 | `type` | `AppType` | no | `'container'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -966,10 +966,10 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 | `environmentId` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `kind` | `JobKind` | no | `'one_shot'` | — |
-| `lastRunAt` | `DateTime` | yes | — | — |
-| `lastRunStatus` | `String` | yes | — | — |
+| `lastRunAt` | `DateTime` | yes | — | @system |
+| `lastRunStatus` | `String` | yes | — | @system |
 | `name` | `String` | no | — | **required on write** |
-| `retryCount` | `Int` | no | `0` | — |
+| `retryCount` | `Int` | no | `0` | @system |
 | `retryLimit` | `Int` | no | `3` | — |
 | `runs` | `JobRun[]` | — | — | relation |
 | `status` | `JobStatus` | no | `'pending'` | — |
@@ -990,9 +990,9 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 transition status.cancel: failed, pending, running → cancelled
-transition status.fail: running → failed
-transition status.idle: running → pending
-transition status.start: failed, pending → running
+transition status.fail: running → failed @system
+transition status.idle: running → pending @system
+transition status.start: failed, pending → running @system
 ```
 
 ### `JobRun`

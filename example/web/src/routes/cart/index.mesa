@@ -198,8 +198,8 @@ title: Basket
 {:else if !cart.lines.length}
   <EmptyState
     title="Your basket is empty"
-    description="Pick a color and a size on any product page."
   >
+    Pick a color and a size on any product page.
     {#snippet action()}
       <Button variant="primary" id="basket-shop" onclick={() => goto('/products/')}>Browse products</Button>
     {/snippet}
@@ -382,7 +382,7 @@ title: Basket
         </Button>
       </div>
     {:else}
-      <form class="cluster" style="gap: .5rem; align-items: flex-end" onsubmit={submitDiscount} novalidate>
+      <form class="cluster" style="gap: .5rem" onsubmit={submitDiscount} novalidate>
         <Input
           id="discount-code"
           name="code"

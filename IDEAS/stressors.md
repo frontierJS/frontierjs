@@ -56,6 +56,9 @@ than started.
 | 13 | **JazzHR** — applicant tracking | a record the law says to forget, beside a report that must outlive it; a stranger who owns an application; and a hire that crosses into another app | `compliance-from-the-seed.md` · `bearer-access.md` · `state-machines.md` |
 | 14 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
 | 15 | **Ghost** — blog / publishing | a write that has to rebuild a prerendered page; a transition that fires at a future instant; a stranger's comment held for moderation | `state-machines.md` · `static-safety.md` · `bearer-access.md` |
+| 16 | **ksite** — a legacy-FJS static marketing site, being ported | a site authored in Markdown that names components it never imports; a collection read at build time with no database; a client theme written as colors, not tones | `static-safety.md` · `FJS-D38` · `FJS-D127` |
+| 17 | **Immich** — self-hosted photo library | a 4 GB upload held in memory whole; one upload fanning out into a pipeline of derived files; a backup from a phone that must resume and never send the same bytes twice | `overview.md` 2.7 · `untrusted-bytes.md` · `offline-first-and-release.md` · `bearer-access.md` |
+| 18 | **EventMark** — a staffing schedule written as a Markdown file | a text document that is the record while a screen writes back into it; a staff-to-child ratio broken from either side; a reference to a person who may not exist | `kernel-and-projections.md` · [`FJS-D474`](../DECISIONS.md#fjs-d474) · `time-and-recurrence.md` · `FJS-D305` |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -444,6 +447,184 @@ Members-only posts and paid newsletters are Etsy's money question (#11) and add
 nothing here; leave them out.
 
 ---
+
+### 16. ksite — the static half, from a real client template
+
+*Added 2026-09-28, from a read of `~/code/KOBAMI/SITES/ksite` (v0.5.0). A live
+port: ksite is the template every Kobami client marketing site is cut from, and
+it is moving onto FJS. Nothing is built yet.*
+
+**What it is.** A markdown-first SSG on the old line: Svelte 5 + Routify 3 +
+mdsvex + UnoCSS, prerendered by spank. `site/content/` is the client
+(90 `.md` files: `pages/`, `blocks/`, `collections/` of faqs, reviews,
+services, team, `menus/`, `settings/site.md` merged into every page, a
+`theme.json` + `theme.scss`); `site/src/` is the engine (75 blocks). A page is
+mostly `<Hero />` `<Trust />` `<Process />` with no import — the remark
+processor resolves each name page-local → `content/blocks/*.md` →
+`content/blocks/*.svelte` → `src/blocks/*.svelte`. One server file:
+`functions/api/event.js`, a Cloudflare Pages proxy for Plausible. Proof today
+is Playwright screenshot baselines per route in `tests/`.
+
+**What it breaks first is authoring, not data.** No schema, no API — the
+first FJS app with an empty `db/`, and the question is whether Sierra's
+`static` target plus Mesa can hold a site whose author writes Markdown and
+never a component:
+
+- **Markdown as a page.** Does a `.md` route with embedded `<Component />`
+  belong to Sierra's route table, and who resolves an unimported name — a
+  four-level lookup is a resolver, and Invariant 2's lesson is that resolvers
+  must agree.
+- **Collections without a database.** `content/collections/*` is typed
+  content read at build time. Is it a Litestone model over a file driver
+  (`jsonl` exists), a Resource with no Service, or neither — and does
+  prerender read it the way a live page would.
+- **Theme as color tokens.** `theme.json` hands UnoCSS colors;
+  Invariant 13 says tone and treatment. Mapping one client's theme onto
+  `@frontierjs/css` is the measurement, and the UnoCSS layer is the app's
+  opt-in, never the framework's.
+- **The edges a static host owns**: `_redirects`, sitemap, `robots.txt`,
+  `llms.txt`, JSON-LD, the per-page draft/omit directives
+  (`routify:meta omit="production"`), and the analytics proxy — which of these
+  Sierra's postbuild/deploy already has and which it lacks.
+- **Upgrade story.** ksite ships to clients as a copied framework
+  (`fli site:update`, `[ACTION]` lines in its `CHANGELOG.md`). FJS-D33 says a
+  config is a dependency, never a copy; a client site is the test of that.
+
+**Gradable** by the baselines it already has: the ported site must match
+ksite's own Playwright screenshots route for route. Port in
+`fjs-prototypes/ksite`, questions in its `PLAN.md` as below.
+
+---
+
+### 17. Immich — the only stressor whose first break is bytes
+
+*Added 2026-09-29. Nothing is built; the rank is only where it was appended, and
+it would sit nearer #5.* ([immich-app/immich](https://github.com/immich-app/immich))
+
+Every other entry breaks on a row. This one breaks on the file the row points
+at:
+
+- **An upload larger than the process.** `readValue` in
+  `packages/litestone/src/plugins/file.js` turns every `File` or `Blob` into
+  one `Uint8Array` through `arrayBuffer()` before the provider sees it, so a
+  4 GB phone video is 4 GB of heap per concurrent upload. Nothing streams to
+  the provider, and there is no chunked or resumable upload. A phone on a
+  train needs both.
+- **One write, many derived files.** Each asset produces a thumbnail, a
+  preview, a transcode for video, and its EXIF read into columns. That is
+  `overview.md` 2.7 (media processing, still `idea`) with a product attached.
+  It asks Caravan for a pipeline of dependent jobs per row, a retry of one
+  stage without the others, and a rerun over the whole library when the
+  thumbnail size changes — which looks like a backfill (`FJS-D157`) but is a
+  cursor over files, not over one table.
+- **Identity by content.** The phone sends a checksum, and the server answers
+  *already have it* before a byte moves. `file.js` computes no hash, and
+  nothing in `.lite` declares that two rows with the same bytes are the same
+  asset.
+- **Sync from a device.** The app's whole job is *send what the server lacks*,
+  which is `offline-first-and-release.md` (all absent) and `FJS-D38` (Mesa on
+  a phone), reached from the least forgiving direction: the device is the
+  source of truth and the server catches up.
+- **A share link with a password and an expiry.** An album a stranger opens
+  from a URL is `bearer-access.md`, and a partner who sees your whole library
+  is Notion's per-object sharing (#4) from a second product.
+- **A timestamp with no zone.** EXIF `DateTimeOriginal` is wall-clock, and its
+  offset field is often missing. That is an instant nobody can place —
+  `FJS-D143` from a direction Calendly never reached, because Calendly always
+  knows the zone.
+
+**Cleared before starting:** seeking in a video needs byte ranges, and
+`packages/junction/src/transport/static.ts` already serves them (`serveRange`)
+for the local provider.
+
+**Leave out the machine-learning half** — smart search, face clustering, the
+Python service. It stresses a runtime this framework does not claim, and the
+vector column it would feed is already built (`FJS-D328`). If a later phase
+wants it, the model is an attached service (`FJS-D158`) and only the seam is
+graded.
+
+**Gradable** from a phone, or from a script that acts like one: back up 10,000
+photos and a few multi-gigabyte videos, cut the connection halfway through,
+resume, and assert that no asset was stored twice, every derived file exists,
+and the API's memory stayed flat throughout.
+
+---
+
+### 18. EventMark — a schedule whose record is a text file
+
+*Added 2026-09-29, from a read of `EventMark.jsx`: one React file, a port of an
+earlier Svelte prototype (Schedown), kept outside the tree. Nothing is built. The
+rank only reflects when it was appended, and most of its surface is Connecteam's
+(#2).*
+
+**What it is.** A Markdown-flavored DSL. YAML frontmatter declares `people`,
+`attendees` and `locations` by key. Then `# Monday, 8/25` is a day,
+`## Location: gym` an event, `@time`, `@ratio 1:4` and `@attendees liam, nora`
+annotate it, `### Shift 1 (09:00-12:00)` is a shift, and `- sam` a person on it.
+A day/week/month screen drags people from a roster onto shifts, and **every drag
+re-serializes the whole document** into the editor beside it. Two samples ship
+with it: a volunteer drive, and a daycare whose rooms carry staff-to-child ratios.
+
+Shifts, people and places are #2's questions and are not re-run here. It earns a
+slot for these:
+
+- **The text is the record and the screen writes back into it.** The parser drops
+  any line it does not match, and `toEventMark` writes back only what was parsed.
+  So a comment or an unrecognized line typed into the editor is gone after the
+  first drag. In FJS the record is a row, which leaves three shapes: a `Schedule`
+  with one text column, where the gate, validation and audit see a blob; a model
+  tree `Schedule → Day → Event → Shift → Assignment` with the document as an
+  export, where hand-editing the text becomes an import that diffs against rows;
+  or both, which is two origins. `PHILOSOPHY.md` § III says *everything is a
+  projection*. **Is a text file a projection of rows that may write back?**
+  ksite (#16) reads Markdown at build time and never writes it, so this is the
+  reverse direction. `kernel-and-projections.md` is the nearest record.
+- **A constraint over a count, broken from either side.** `@ratio 1:4` compares
+  one shift's staff to the room's enrollment. The prototype shows it as a badge.
+  In a licensed daycare, a room below ratio is a violation someone has to answer
+  for, and two different writes cause it: removing an adult from a shift, or
+  enrolling a ninth toddler. `@@check` cannot see another row, and `@@exclude`
+  (`FJS-D474`) is about overlap, not counts. Whether this is a declaration, a
+  refusal on both writes, or a validation `warn` is unruled. That is the sharpest
+  question here, and it needs no screen.
+- **A double-booking the prototype does not see.** In the outreach sample, `kris`
+  is on the gym's Shift 1 (09:00–12:00) and on the pool's Morning Outreach
+  (09:00–10:30) on the same day. That makes it a caller for `@@exclude(person, …)`,
+  whose write path is `FJS-1528` (still open). The daycare sample has `mr_theo`
+  ending one room at 12:00 and starting the other at 12:00, which tests the
+  half-open boundary. Its ranges are wall-clock strings hung on a free-text day
+  label.
+- **A reference that may dangle.** `- sam` names a frontmatter key, and an
+  unknown key is accepted and shown raw. `addPerson` mints the key from the
+  display name, unique only within one schedule. So this is a natural key scoped
+  to a parent, and a relation whose target may not exist yet, which is the
+  opposite of a foreign key. remnant (#14) has natural keys but never a dangling
+  one.
+- **A date nobody wrote down.** A day is a label. It is resolved best-effort,
+  with the year borrowed from `start_date`, and one it cannot read falls out of
+  the month grid. The outreach sample has `Monday, 8/25` and `Tues, 8/25`: two
+  days on one date (the 26th was the Tuesday), and nothing notices. The times
+  have no zone by design, because a schedule is one site. That is `FJS-D143`
+  with the zone authored as absent. Immich's (#17) zone is merely missing.
+- **Drag from a roster that keeps its item.** `packages/ui/dnd.js`'s `dndzone`
+  moves an item between flow lists: a drop finalizes the origin too. Its header
+  says flex-wrap layouts are not built. Both chip rows here are flex-wrap, and
+  the roster copies rather than moves. The typed zones, where staff land on a
+  shift and children in a room, are what `type` already partitions.
+- **A whole app in the tab.** The prototype has no server, just local state and
+  a clipboard. `FJS-D305` puts Litestone in a browser worker over OPFS. This is
+  the smallest product whose Data realm might never leave the tab, with the
+  Markdown file as its export. It mirrors ksite's empty `db/` with an empty
+  `api/`.
+
+**Leave out** the hand-rolled YAML subset (use a real parser), and the
+role-to-Tailwind-color map, which is ksite's theme question (#16) again.
+
+**Gradable** from the two samples as fixtures, driven in a browser:
+`parse(serialize(doc))` is identity, and a hand-typed comment survives a drag or
+its loss is refused out loud. `kris`'s overlap is refused. `mr_theo`'s adjacent
+shifts are not. Dropping the toddler room to one adult flips it under ratio, and
+so does enrolling the ninth child. `Tues, 8/25` is flagged.
 
 ## Not on this list, with reasons
 

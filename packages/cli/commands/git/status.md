@@ -163,6 +163,11 @@ const paint = (f) => {
   return (s) => s
 }
 
+// A file's own count heats past 100 and again past 200, so a heavy row stands
+// out of a dim column. Not green or red: those already say added and deleted.
+const HOT  = 200, WARM = 100
+const heat = (v) => v > HOT ? (chalk.magenta ?? chalk.yellow) : v > WARM ? chalk.yellow : chalk.dim
+
 for (const z of shown) {
   const filled = Math.max(1, Math.round((z.churn / peak) * BAR))
   const bar    = chalk.dim('█'.repeat(filled) + '·'.repeat(BAR - filled))
@@ -203,7 +208,7 @@ for (const z of shown) {
     const cell = paint(f)(glyph) + chalk.dim(dir) + paint(f)(f.index ? chalk.bold(name) : name) + reach
     const pad  = ' '.repeat(Math.max(0, pathCol - plainWidth(f)))
     const nums = f.untracked || f.binary ? '' :
-      chalk.dim(`+${n(f.added)}`.padStart(6) + ' ' + `-${n(f.deleted)}`.padStart(6))
+      heat(f.added)(`+${n(f.added)}`.padStart(6)) + ' ' + heat(f.deleted)(`-${n(f.deleted)}`.padStart(6))
     console.log(`      ${chalk.dim(f.role.padEnd(roleCol))}  ${cell}${nums && pad + '  ' + nums}`)
   }
   console.log('')
@@ -227,7 +232,9 @@ console.log([
   ...counts,
 ].join(chalk.dim('  ·  ')))
 const marked = model.zones.flatMap(z => z.files).filter(f => f.blast && f.blast.band >= 2).length
+const heated = model.zones.flatMap(z => z.files).some(f => !f.untracked && !f.binary && (f.added > WARM || f.deleted > WARM))
 const legend = [
+  heated && chalk.dim('±n ') + chalk.yellow(`>${WARM}`) + chalk.dim(' / ') + (chalk.magenta ?? chalk.yellow)(`>${HOT}`),
   hiddenRows && chalk.dim(`…n = ${hiddenRows} test/record/snapshot/docs/new row(s) hidden, -a lists them`),
   t.staged && chalk.dim('bold = staged'),
   marked   && chalk.dim('↑n = named by n other file(s), ') + chalk.yellow('amber') + chalk.dim(` past 15 — ${marked} marked here`),

@@ -18,10 +18,10 @@
  *     image assertion below reads naturalWidth and never querySelector alone.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir }        from 'node:os'
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -107,13 +107,12 @@ if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
 // attaches to the first one's session and grades that browser's screen
 // (`FJS-740` one layer over, measured in `verify:stock`); and the default
 // profile carries the previous run's sign-in into this one.
-const profile = mkdtempSync(join(tmpdir(), 'fjs-catalog-'))
+const profile = chromeProfile('fjs-catalog-')
 const chrome = start(CHROME, [
   '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
   '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
   'about:blank',
 ], 'chrome')
-process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
 const wsUrl = await new Promise((resolve) => {
   let buf = ''

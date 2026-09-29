@@ -266,7 +266,7 @@ framework does not have.
   - **Recommend B** — an after-hook that announces, enqueues or invalidates would
     fire once per token under A, and a hook author cannot be expected to know
     which of their hooks is on a streamed method.
-- **Does the transcript belong to the framework or to the app?**
+- ~~**Does the transcript belong to the framework or to the app?**~~ **Answered 2026-09-29 (`FJS-D541`): B — the app's own models, with only the streaming seam and the column type in the framework.**
   - **A** — machinery models: the framework ships `Conversation` / `Message`
     (`IDEAS/machinery-models.md`'s question, and its rule — right for every app →
     import; the app must decide → ship the file).

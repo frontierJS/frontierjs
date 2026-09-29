@@ -27,6 +27,46 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d546"></a>2026-09-29 · `FJS-D546` — the whole access system is the WARDEN: a word for prose and never a package or an identifier, and `FJS-D29`'s noun rule reaches only what runs.
+
+**What it names.** Everything that decides whether a call may touch a row or a
+column: the principal and its claims, the gate, capabilities, row policies, field
+protection and tenancy scoping, and the authority half of a transition (a move's
+`@gate(n)` and `@system`). It is declared in the schema and enforced at the Data
+boundary (Invariant 6). The Data boundary is *where* the Warden enforces. `asSystem()`
+lifts the Warden and holds the integrity rules (`FJS-D502`). **Gate** keeps its
+meaning, and **policy** keeps its two (`FJS-D45`). The Warden is the umbrella over
+them, not a third sense of either.
+
+**Why a word.** The system had no name. `access-control.md` opened by calling it "two
+orthogonal systems" after the capability, field and tenancy layers had joined it, and
+a newcomer had no single handle to ask about. The owner coined it. The field's older
+name is the *reference monitor* (Anderson 1972), the mediator every access passes
+through. It is cited and not used, because it names the mediator rather than the
+declarations and reads as an OS kernel.
+
+**What this does to `FJS-D29`.** Its rule, *infrastructure takes place nouns and AI
+takes personified nouns*, exists so that a noun cannot drift into meaning a model.
+That drift happens to things that RUN and are named in code: a process, a package, a
+service, a wire field. The Warden runs nowhere and is spelled in no identifier, so the
+rule's reach is narrowed to those, and a concept named in prose is outside it. The
+cost stays visible: an agent over MCP is graded BY the Warden (`FJS-D258`), so a
+sentence about the agent surface must keep the Warden as the guard and the agent as
+the one asking. `FJS-D147`'s retirement of `warden` as a package stands. Capabilities
+are seed syntax and one layer of the Warden.
+
+**The nine, answered at the time.** Origin: defined here, in `ARCHITECT.md` § 2 and in
+`VOCABULARY.md`, by the pattern those two files already share. Concept: one noun, an
+umbrella over existing ones, adding no mechanism. Complexity: the problem's, and the
+reference monitor is its older name. Predictability: unchanged. Derived: the layer
+list is hand-written. Owner: Litestone, at the Data boundary. Boundary and failure:
+nothing executes, so neither applies. Silence: `docs/warden.md`'s layer list can fall
+behind the code with nothing failing. Its artefact is `none`, and each layer links to
+the file that is graded.
+
+*Lives in:* `packages/litestone/docs/warden.md` (the map), `ARCHITECT.md` § 2,
+`VOCABULARY.md`.
+
 ### <a id="fjs-d474"></a>2026-09-29 · `FJS-D474` — How does the no-overlap declaration name the scope it serializes — A named scope declared once at schema level (`scope person(employeeId)`), each model's `@@exclude(person, range: [a, b])` naming it; litestone compiles every write on any model citing the scope to `$lock('person:…')` plus a check of all its members.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (per-model `@@exclude([employeeId], range: […], against: [LeaveRequest, …])`, each model listing its siblings; no new noun, but the fact is stated on every write path and the one nobody wrote is the one that runs (drive finding 2)).
@@ -828,6 +868,8 @@ announces under its own name (`orders pay`, `FJS-D21`).
 
 ### <a id="fjs-d29"></a>2026-08-13 · `FJS-D29` — the process a fleet server runs is an OUTPOST, and infrastructure gets place nouns while AI gets personified ones.
 
+**Status:** amended-by [`FJS-D546`](#fjs-d546) — the noun rule's reach: it governs what runs and is named in code, so a concept named in prose, the Warden, is outside it.
+
 Basecamp's
 resident process was called an *agent*. So is the thing `IDEAS/agent-surface.md`
 proposes to expose over MCP. **The collision was already in the tree**, not a
@@ -1028,6 +1070,18 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d515"></a>2026-09-29 · `FJS-D515` — Who grades a claims-only guest STRANGER: Litestone's gate for any principal without an `id`, a guest marker `mergeClaims` sets, or each app's `getLevel` — Litestone owns it: `GatePlugin` grades a principal with neither `id` nor `userId` STRANGER before any `getLevel` runs, and `gradeStanding` makes the same test so Junction's `sessionGateLevel` and Caravan agree. After `toDataPrincipal`, every session already carries `id`, so no real session changes grade. The cost: a test or app calling `$setAuth({ role: 'admin' })` without an `id` now grades 0, which is three call sites in `litestone.test.ts` and any more that grep finds.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`mergeClaims` marks the guest with a framework-owned symbol that `GatePlugin` reads before `getLevel`. Principals without an `id` that come from anywhere else keep their grade. This coins a marker, and the rule holds only for guests Junction built), **C** (Keep it in each app's `getLevel`, as FJS-1447 left it. Fix basecamp's and the example's by hand, and add a `fli check` rule that flags a `getLevel` testing only `!user`. There is no framework owner, and the default `gradeStanding` still answers 3).
+
+The paper's recommendation, taken as written: `auth().id` is Litestone's documented identity, and a principal without one cannot satisfy a single `auth().id` policy. So *no identity is a stranger* is a fact of the Data boundary, not a choice each app makes, and one owner beats three hand-copied checks (Invariant 4).
+
+### <a id="fjs-d514"></a>2026-09-29 · `FJS-D514` — How does a custom method whose work touches no row require a caller to hold a claim — `claims:` on a methods entry (`{ method, gate: 0, claims: ['passId'] }`), graded in `gateAuth` where the floor is. A caller without a claim is refused 401, and `svc.describe()` reports the requirement.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Nothing new in Junction: the method grades itself (`if (!ctx.auth.claims?.passId) throw Unauthorized`), and we write down that a method touching no row owns its own entitlement check).
+
+The paper's recommendation, taken as written: it keeps entitlement declared rather than hand-coded in the method (Invariant 6's spirit), and it grades where the floor already sits, so there is still one owner.
 
 ### <a id="fjs-d492"></a>2026-09-29 · `FJS-D492` — How does a create policy that pins a column to `auth()` reach the generated form — Litestone derives `x-determined: { hostId: 'auth().id' }` from any create policy of the form `<column> == auth().<claim>`. Sierra's field rules drop the field from `required` and from the form, and the client seeds it from the session. That makes the scaffolded `before.create` hook redundant.
 
@@ -2926,6 +2980,36 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d513"></a>2026-09-29 · `FJS-D513` — Does the shared predicate language grow a value-assembling form, or do orion's assembling shapes stay documents — Grow `template` and `object` in the shared parser; litestone's policy compiler refuses both by name at parse of a `.lite` policy (a value-assembling form is not a predicate).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Orion-only layer: orion parses a superset over predicate's tokens; the shared grammar stays predicates. Splits FJS-D271's one-language clause), **C** (Accept: assembling shapes are documents, the inspector keeps showing JSON; close FJS-1209 as won't-fix).
+
+The paper's recommendation, taken as written: keeps one parser (FJS-D271) and pays for the commonest authoring shape, while the refusal keeps `.lite` policies predicate-only.
+
+### <a id="fjs-d506"></a>2026-09-29 · `FJS-D506` — Should a numeric validator (`@gte`, `@lte`, `@gt`, `@lt`) also emit a column CHECK, so an atomic operator on that column is allowed rather than refused — Emit `CHECK (col >= n)` from each numeric validator, the way `@scale`/`@money` already emit theirs, and let the operator through. A migration, a seed, a raw statement and `asSystem()` are then held as well. The cost is a rebuild migration for every existing schema that carries one, and a CHECK violation needs the validator's message rather than SQLite's.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep `FJS-D54` as it stands. The validator stays JS-only, and the refusal points at `@check`, which is what shipped in FJS-1405).
+
+The paper's recommendation, taken as written: it is the `@scale` precedent: a bound that only the boundary enforces misses four writers, and the operator refusal goes away with it. Pre-alpha, a rebuild migration costs nothing that has shipped.
+
+### <a id="fjs-d521"></a>2026-09-29 · `FJS-D521` — A refused foreign key: a new `ForeignKeyError`, or one constraint error class for unique, FK and datatype — `ForeignKeyError` beside `UniqueConflictError` in `core/errors.js`, built in `client.js` by checking the refused row's declared relations; datatype becomes a `ValidationError` before the write. junction gives it `status` 422.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (generalize `UniqueConflictError` into one `ConstraintError` with `kind: 'unique' | 'foreignKey' | 'datatype'` and the same `errors` channel; one class for a loader to group by `kind`).
+
+The paper's recommendation, taken as written: each class answers one complaint a form or loader acts on differently, and `UniqueConflictError` already has callers (seeder) keyed on its name.
+
+### <a id="fjs-d543"></a>2026-09-29 · `FJS-D543` — Q5 — Does a balanced ENTRY (the journal) get a spelling — No. `postJournal` stays the one writer, as ruled.
+
+Asked in [`IDEAS/ledger.md`](IDEAS/ledger.md) § Open questions. **A** was picked over **B** (a balanced entry's lines may only be written by a nested create of the entry, and the check runs when that one call completes. It is a declarable moment with no status column).
+
+The paper's recommendation, taken as written: B holds only against callers that use the client. A migration, a seed or raw SQL can still write a line on its own, which is the objection D168 already answered. Reopen if a second writer of a journal appears.
+
+### <a id="fjs-d542"></a>2026-09-29 · `FJS-D542` — Q3 — Does the entry get its before and after stamped by the engine — No stamping. The balance is the parent's, and a row's before and after are a window function over the tape when somebody asks.
+
+Asked in [`IDEAS/ledger.md`](IDEAS/ledger.md) § Open questions. **B** was picked over **A** (`@before(relation.field)` / `@after(relation.field)`, filled in the posting trigger).
+
+The paper's recommendation, taken as written: for now: once the engine guarantees the sum, the stamps are a second origin for a number the tape already answers. Revisit if an app needs to find a gap in a tape it did not write.
 
 ### <a id="fjs-d365"></a>2026-09-28 · `FJS-D365` — Q1 — should `@@transitions` grow `declaredBy:`, so a machine's moves can be rows a tenant edits? (`FJS-D365`) — `@@transitions(field, declaredBy: Model, scope: column)` over a foreign key, with a fixed declarer shape (`fromId?`, `toId`, `gate?`), enforced in the UPDATE's own `WHERE`; entries and the default come with it.
 
@@ -5676,6 +5760,12 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d518"></a>2026-09-29 · `FJS-D518` — Where does a data migration live — A data change is not a migration. `migrations/` holds `.sql` only, and the docs name the home for a data change: an app script chained after `migrate apply` and made idempotent by the rows it expects, which is what remnant chose (`remnant/PLAN.md` Q2). `.js` in the history becomes a refusal with a nonzero exit.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep `.js` migrations and have them declare rows-only (e.g. `export const touches = 'rows'`). The shadow skips a declared file, and an undeclared one still stops derivation. This coins a declaration, and nothing enforces it: a file that says rows-only can still run DDL through `sys.sql`).
+
+The paper's recommendation, taken as written: The history stays replayable by construction rather than on a file's word, and it is what the one real app already did. FJS-1472 (apply crashes on `.js`) disappears with it.
+
 ### <a id="fjs-d493"></a>2026-09-28 · `FJS-D493` — Who hands `litestone replicate`/`backup` the files the schema cannot name — Caravan's `jobs.db` and a `local` storage provider's bytes — The layout is the list. Everything an app persists lives under `db/` (Invariant 3), because deploy already mounts `/db` as the one volume (`CONTAINER_DB_DIR`), and `jobsVolumeVerdict` ([pause.js:347](packages/cli/core/pause.js)) and the `log-db-unbound` check already refuse a path outside it. `replicate`/`backup` cover every `*.db` under `db/` as a litestream directory target and copy every other file under `db/` byte for byte, skipping jsonl/logger directories as they do today. They name anything they cannot copy. A path outside `db/` is refused by the existing volume checks, not listed here.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (`litestone.config.js` gains `replicate.include: [paths]`, and the app lists `db/jobs.db` and `db/public/storage/` there. This is the smallest change, but every path is written twice: once where Caravan or `FileStorage` is configured and again here. When one of them moves, the restore drops files and nothing reports it), **B** (Junction owns the list. A battery that writes a file registers it at boot, next to `registerHealthCheck`; Caravan registers its db and `FileStorage` its root. The manifest exposes the list, and a `fli`-level `replicate`/`backup` hands litestone's `replicate()` the union. This derives the list, but it coins a registry and needs the app booted before anything can be backed up).
@@ -6069,6 +6159,42 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d509"></a>2026-09-29 · `FJS-D509` — Should the transport gzip a raw route's own `new Response(readable)`, which it cannot tell from a string body — Keep the contract: a streamed body is built with `ctx.stream()` or names `content-encoding`. Put that in the raw-route docs and the api-hazards entry, and have dev mode warn when an `arrayBuffer()` for compression waits longer than N ms.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Compress through `CompressionStream('gzip')` whenever the length is unknown, dropping `MIN_COMPRESS_BYTES` for those bodies. That breaks the small-body threshold, and gzip still holds chunks until it flushes, so ndjson stays delayed), **C** (Read the first chunk and pass the rest through as streamed if the next read doesn't settle at once. Timing-dependent, so the same route behaves differently under load).
+
+The paper's recommendation, taken as written: B and C each trade a certain rule for a heuristic that still fails the live-stream case, and the helper already exists.
+
+### <a id="fjs-d520"></a>2026-09-29 · `FJS-D520` — How does a row-tenanted app give a registering user their tenant — `onRegistered({ user, db })`, run inside the same transaction as the user insert; it may create the Account and membership and write the tenant column, and a throw rolls back the whole registration.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`createUser` passes through columns the app's own `User` declares, graded by the schema; the caller must already have the tenant id, so the Account is still made elsewhere and not in the same write), **C** (no auth change; a documented recipe (a raw route calling `asSystem()` then `issueSession`), which the scaffold's register page would call).
+
+The paper's recommendation, taken as written: it is the Feathers `registration` shape every B2B first signup needs (Account and owner in one write), and it gives the step auth is missing without auth learning tenancy.
+
+### <a id="fjs-d522"></a>2026-09-29 · `FJS-D522` — How does an app compose two principal claim sources so each stays described — `principal` also takes an array: resolvers run in order, results merged, a claim name emitted by two refused, the snapshot describes each element (a plain function still reads "describes nothing", but only for itself).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a named combinator `composeClaims(...resolvers)` returning a `DescribedResolver` whose `describe()` is a list; `principal` stays one slot).
+
+The paper's recommendation, taken as written: no new noun; the slot already is the one seam (`FJS-D113`), and a list is its plural. Either way `describe()` needs a kind for a claim proved by a signature rather than a row.
+
+### <a id="fjs-d541"></a>2026-09-29 · `FJS-D541` — Does the transcript belong to the framework or to the app — The app's own models, with only the streaming seam and the column type in the framework.
+
+Asked in [`IDEAS/chat-surface.md`](IDEAS/chat-surface.md) § Open questions. **B** was picked over **A** (machinery models: the framework ships `Conversation` / `Message` (`IDEAS/machinery-models.md`'s question, and its rule — right for every app → import; the app must decide → ship the file)).
+
+The paper's recommendation, taken as written: for now: a transcript's gate, its retention and its tenancy differ per app, and a shipped `@@gate` is final. Revisit once two apps here have written one.
+
+### <a id="fjs-d507"></a>2026-09-29 · `FJS-D507` — Should a conduit target declare whether the inbound correlation id reaches it, and which way is the default — Flip the default: a target gets the trace only when it states `trace: true`, meaning it is one of our own services. Leaking becomes opt-in, and `FJS-742`'s join only works on targets that declare it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`trace: false` on a target descriptor, falling back to the conduit-wide hook the same way the seven policy numbers do. The default stays on (`FJS-742`), and a third party opts out), **C** (Keep one conduit-wide switch and export `junctionTrace` so an app can wrap it per target. No new option, but every app has to rewrite the choice).
+
+The paper's recommendation, taken as written: the fact that decides it is *this target is a stranger*. A default that leaks on a forgotten flag fails open, and the compliance report in `compliance-from-the-seed.md` § 5 would read the same per-target declaration either way.
+
+### <a id="fjs-d505"></a>2026-09-29 · `FJS-D505` — Is *never keep* a declared word, a custom method declared a read, or a checklist — Let a custom method declare that it is a READ (`{ method: 'search', read: true }`). `READ_METHODS` already means *not idempotency-cached and not announced* for `find` and `get`, so FJS-1412 and the announcement close without a new concept. The trace half stays FJS-1413's own fix, a per-target or per-send switch. The logger and error halves already hold, measured.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (one word on a method's input (on the `methods:` entry or the input `type`), read by five consumers: idempotency refuses to keep the answer, the bus announces nothing, the request logger and error paths never quote it, conduit sends no correlation id on a send made inside the call, and `fli check` flags a method whose answer echoes it. Covers all six. It is a new word across four packages), **C** (no word. Write the six decisions into junction's AGENTS.md, and add a `fli check` rule that finds a custom method whose answer contains its input).
+
+The paper's recommendation, taken as written: the two stores that actually leaked (idempotency, and the announcement without `$.dispatch = false`) both leak because a read cannot say it is one. `read` is a word junction already uses. Leave A open until a second product needs the trace and trail halves declared rather than switched.
 
 ### <a id="fjs-d487"></a>2026-09-29 · `FJS-D487` — How does a tenant's declared custom-field list for an @@extensible model reach a generated list's columns and filters — Junction serves a built-in `declaredFields` custom method on each @@extensible model's service, gated like its `find`. The resource fetches it once per tenant and merges `fields.<key>` into columns and filters.
 
@@ -9339,6 +9465,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d510"></a>2026-09-29 · `FJS-D510` — Where does the flow canvas live: a graph component in `@frontierjs/ui`, or a canvas local to orion's web surface — An orion-local canvas under `packages/orion/web/`, reading `FlowLayout` directly; one consumer, no kit API to design up front.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a generic `<Graph>` (nodes, edges, viewport, drag) in `@frontierjs/ui` over `@frontierjs/css`, orion supplying node rendering; basecamp and litestone studio (schema diagram) are plausible second consumers).
+
+The paper's recommendation, taken as written: one consumer today; extract to the kit when a second arrives, so the API is graded by two real callers rather than guessed.
+
+### <a id="fjs-d545"></a>2026-09-29 · `FJS-D545` — Does step 1 run before the terminal backend exists — No. Extract the IR in the same piece of work as the first non-DOM backend, so the seam is placed by a real second consumer rather than a guess.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions. **B** was picked over **A** (yes, as a refactor graded by the byte-identical corpus).
+
+The paper's recommendation, taken as written: an IR with one consumer is a guess about where the second one needs the cut (`cut-one-level-simpler`). The byte-identical check is just as available when the terminal backend starts.
+
 ### <a id="fjs-d531"></a>2026-09-28 · `FJS-D531` — What is the helper called — `$.flip`, for the developer who arrives searching for that word.
 
 Asked in [`IDEAS/list-motion.md`](IDEAS/list-motion.md) § Open questions. **B** was picked over **A** (`$.move`, and the compiler refuses `animate:flip` by name, pointing at `{@attach $.move()}`).
@@ -11224,6 +11362,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d508"></a>2026-09-29 · `FJS-D508` — Where does an app declare its `fli check` allowances (`'<rule>:<path>'` → why) — An `allow` object inside `check-baseline.json`, beside the counts. One file holds an app's check policy; `readBaseline` already skips non-numeric keys, so it reads the object alongside.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A separate `check-allow.json` at the app root. Keeps "a number that only falls" and "an excuse with a reason" in different files, at the cost of a second file name), **C** (`fli.check.allow` in the app's `package.json`. No new file, but the policy hides in a manifest a person does not open for it).
+
+The paper's recommendation, taken as written: one file, one noun already taught; the ratchet grades only numbers so the reasons ride along without changing its semantics.
+
+### <a id="fjs-d544"></a>2026-09-29 · `FJS-D544` — Is it an application or a surface — One application built on FJS, the way basecamp is.
+
+Asked in [`IDEAS/fjs-os.md`](IDEAS/fjs-os.md) § Open questions. **A** was picked over **B** (a `shell/` surface any app may have, beside `widgets/` and `desktop/`: an app's own bar widget or launcher entry).
+
+The paper's recommendation, taken as written: for now. B is the same idea one level down, and is worth a ruling only once a second app wants a widget in the shell.
 
 ### <a id="fjs-d476"></a>2026-09-29 · `FJS-D476` — Which CI tier runs `litestone mutate` over `example` and `basecamp`, and is its score ratcheted by a baseline — Full tier: `example` whole, `basecamp` under a `--kinds` subset sized to minutes; per-app score in a `scripts/mutate-baselines.json` that ratchets like `typecheck-baselines.json` (Invariant 14).
 

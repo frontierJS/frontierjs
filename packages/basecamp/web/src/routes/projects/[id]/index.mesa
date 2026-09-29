@@ -141,7 +141,10 @@ title: Project
       <Button variant="outlined" onclick={() => editing = !editing}>
         {editing ? 'Cancel' : 'Edit'}
       </Button>
-      <Button variant="ghost" tone="danger" onclick={remove}>Delete</Button>
+      <Button variant="ghost" tone="danger"
+              data-confirm={`${project.name} is deleted with every environment, app and job inside it.`}
+              data-confirm-title="Delete this project?" data-confirm-label="Delete project"
+              onclick={remove}>Delete</Button>
     </div>
   </div>
 

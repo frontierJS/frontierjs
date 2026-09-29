@@ -1,5 +1,68 @@
 # Changes — Basecamp
 
+## 2026-09-28 — edit and delete on App, Environment, Job and AlertRule; the schema says what a form may write
+
+Tier 2 of the UI audit, first batch. The audit said "8 resource files"; there are 29, and none had the default form `FJS-D112` gives a resource file.
+
+- **Four resources carry their default form**: `App`, `Environment`, `Job`, `AlertRule`, with the markup half copied from `make:resource`'s template. A screen edits a row with `<App record={row} />`, and no screen lists fields.
+- **What a patch refuses is now declared in the schema instead of listed in the services.** `apps`, `environments` and `jobs` each kept a `narrowPatch` list of keys to drop silently, and a default form would have offered every one of them. The columns are now marked by what they are:
+  - `@immutable`, written once at create: `App.environmentId`/`slug`, `Environment.projectId`/`slug`, `Job.kind`/`appId`.
+  - `@system`, written by the machine: `App.status`, `Job.retryCount`/`lastRunAt`/`lastRunStatus`.
+  - The lists now hold only `Environment.variables`, which has its own methods.
+  - A payload naming one of these columns is refused by name instead of dropped. `apps.remove` names `status` with `system: [...]`.
+- **Job's `start`, `idle` and `fail` moves are `@system`**, as Deployment's engine moves already are. Removing `status` from the jobs list exposed the gap: `start` was unmarked, so a developer's patch could mark a job running when nothing was running it. `cancel` stays a person's move. `db/test/schema.test.ts` now asserts that an admin is refused `running`.
+- **App detail**:
+  - Breadcrumb with project and environment.
+  - A source line under the name, via `sourceLabel`. Both reads now carry it, from `describeSource`, which had no caller on the wire.
+  - Visit when a primary hostname exists.
+  - A ⋯ menu with Edit (a drawer, minus `source`, which has its own tab) and Delete.
+  - The overview is a main column (latest release, placement, scheduled work) with a Details aside.
+  - The newest release offers Roll back (graded by the model's transitions) or Retry. `apps.get` also carries the environment's project and each release's commit message, branch, author and predecessor.
+- **Environment detail**:
+  - Breadcrumb, Edit drawer (minus `variables`), and Delete. A protected environment is refused by the service in its own words.
+  - Open and Delete on each app row.
+  - Masked variables can be revealed, and a value is edited in place.
+  - Both plain forms are `novalidate`, so the service answers a blank value.
+- **Jobs**:
+  - The list has New job, and Run now follows the `start` move, as the detail screen's does.
+  - The detail has Edit, Delete, and each run's stdout.
+  - Both forms leave out `status` ([`FJS-1543`](../../ISSUES.md#fjs-1543)).
+- **Alerts**:
+  - Create uses the default form, which adds `description` and takes every default from the schema.
+  - Each rule has an inline Edit.
+  - An open event has Resolve.
+- **Delete from a watched screen reads the row first.** The delete's own push empties the record before the next line runs, so the job screen deleted the row and then stayed where it was.
+
+`verify:screens` 104/104, with a new *edit surfaces* section: each form changes a value and reads it back through the API; frozen and absent columns are asserted per form, a job is created `scheduled` and deleted through its confirmation, and an app is deleted from its menu. That run also fixed an existing check: *the open app screen shows it without a reload* looked for a second hostname on the overview, where only the primary is drawn. It now opens the Domains tab first. `verify.mjs`'s `fill` now falls back to a control's `name`. The main `verify` run stops before this batch: the uncommitted "names no image" refusal in `deployments.create` refuses the container app it deploys, and server remove's new confirmation stops its click. Neither is from this change. `bun run test` 450 pass. Open: [`FJS-1542`](../../ISSUES.md#fjs-1542).
+
+## 2026-09-28 — destructive buttons confirm, 2FA sign-in, Destroy server
+
+The first two tiers of the UI audit.
+
+- **Sign-in with a second factor.** `/login/` called `signIn()` and went straight to the landing page, and `session.js` then asked `/workspaces` with no token, so an account with TOTP could not sign in. The login screen now shows a code box while `session.awaitingCode` is set, and `session.js` gains `submitCode`, which loads the workspace only after the code is accepted. The box has a Start over button.
+- **`data-confirm` everywhere.** `<ConfirmProvider />` is mounted beside the Toaster, and about 30 destructive buttons now carry a message saying what is lost. They include project delete (which cascades), server remove, volume delete and prune, cleanup sweeps, a recipe run (which warns when no server is picked and it will run on all of them), hub suspend and grant, deploy cancel and rollback, and the member, key, flag, channel, network and blueprint removals.
+- **Destroy a server.** `servers.destroy` had no button, and Remove hid the row while the cloud VM kept billing. A cloud-made server now has a Destroy card that needs the machine's name typed back. Remove's confirmation on such a server says the machine keeps running. Sync is hidden on a `custom` machine, where it did nothing.
+- **`/volumes/?serverId=`** was ignored, so the cleanup screen's link landed on the whole fleet. It now filters.
+- **Secrets.** The kind list comes from the schema, which adds `notification`. A provider key has Test / Re-test, and a refusal from the cloud (a 200 with `isVerified: false`) is reported instead of passing silently. The list itself was empty because of a junction defect, fixed there.
+
+A scratch drive on its own ports and a temp database passed 22/22 in Chrome: the 2FA code box including a wrong code, confirm cancel and confirm, destroy gating, the volumes deep link, and the secrets list. `verify` was not run because the dev servers held 8120/8020.
+
+## 2026-09-28 — the app screen can deploy
+
+The app screen's only deploy button sat inside the inline file editor, so a container app had no way to ship and no place to name its image. The header now has a Deploy button that ships what the app already names; a refusal from the service shows as the screen's error. For a container or function app, the Source tab now has an Image field with Save and Save and deploy. `verify:build` 8/8.
+
+## 2026-09-28 — a container app with no image is refused at deploy
+
+Nothing builds an image yet. A container app with no image source still got the build step list: "Build image" and "Push image" reached outpost as a command-less `/exec`, which exits 0, and "Start container" then ran `docker run <app name>`, which failed with a Docker Hub pull-access error. `deployments.create` now refuses such an app with a 400 that names the fix, which is to set an image or inline source. `inline-app.test.ts` pinned the old behavior ("a git app still builds") and now asserts the refusal. The real git build path is `FJS-1496`. 450 pass.
+
+## 2026-09-28 — an Apps list, and a first-release wizard on the home screen
+
+An app could only be reached through a project and then an environment. `/apps/` now lists every app in the workspace, and it is in the Daily nav and the command palette. The home screen carries `LaunchSteps`, six steps from connecting a machine to deploying an app. They are answered by a new `infra.launch` read, and like `onboarding` nothing is stored. Each step links to the screen where the work happens, down to the specific environment or app, and the card hides once all six are done. `onboarding`'s server step linked to `/servers/create/`, which does not exist; it now links to `/servers/import/`. `api/test/services.test.ts` walks a fresh workspace from zero steps to six. 450 pass, `verify:build` 8/8; `verify:screens` was not run because the dev servers held 8120/8020.
+
+## 2026-09-28 — `db/schema.d.ts` regenerated
+
+The schema test failed on a stale `db/schema.d.ts`: litestone's generated query-log type gained `system: boolean`. Regenerated with `bun run db:types`; no schema change.
+
 ## 2026-09-28 — the tenant-isolation test drops the `unparented` verdict (`FJS-D481`)
 
 `verifyTenantIsolation` no longer reports `unparented`. A delegated row that names no parent is now graded, and a read by another tenant is `leaked`, so `db/test/schema.test.ts` counts it among the findings it already refuses. Basecamp has no model whose every scoping relation is optional, so its access is unchanged and its snapshots are current.

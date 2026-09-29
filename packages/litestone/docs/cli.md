@@ -225,7 +225,7 @@ Run a named data seed (e.g. calendar table). `--force` re-runs even if already a
 ```bash
 litestone backup [dest] [--vacuum]
 ```
-Create a hot backup. `--vacuum` runs `VACUUM INTO` for a compacted copy.
+Create a hot backup. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db).
 
 ```bash
 litestone optimize [table]

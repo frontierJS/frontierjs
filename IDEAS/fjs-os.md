@@ -200,7 +200,7 @@ open questions below becomes a ruling in `DECISIONS.md`.
     hand-written QML widget is also the reference output the backend needs, so it
     places the seam from a real consumer rather than a guess
     (`cut-one-level-simpler`, and `mesa-ir.md`'s own recommendation).
-- **Is it an application or a surface?**
+- ~~**Is it an application or a surface?**~~ **Answered 2026-09-29 (`FJS-D544`): A — one application built on FJS, the way basecamp is.**
   - **A** — one application built on FJS, the way basecamp is.
   - **B** — a `shell/` surface any app may have, beside `widgets/` and `desktop/`:
     an app's own bar widget or launcher entry.

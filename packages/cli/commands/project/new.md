@@ -2708,7 +2708,7 @@ if (!useInstall) echo('  bun install')
 const envFile = resolve(finalTarget, '.env')
 const keySet  = existsSync(envFile) &&
   /^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(readFileSync(envFile, 'utf8'))
-if (!keySet) {
+if (useApi && !keySet) {
   // --format hex, and it is load-bearing: keygen defaults to base64, litestone
   // parses this variable as HEX, and a base64 key therefore decodes to zero
   // bytes and is refused with a sentence about a key length. Advice that fails

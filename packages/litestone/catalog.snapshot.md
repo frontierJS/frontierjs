@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**111 words** — 12 declarations · 66 field attributes · 33 model attributes.
+**113 words** — 13 declarations · 66 field attributes · 34 model attributes.
 
 ## Declarations
 
@@ -24,6 +24,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] } |  |
 | `enum` | <Name> { values… } |  |
 | `valueset` | <Name> { source <Model> [value <field>] [scope <name>] [where "…"] [order [recent(<Model>.<col>, <clock>),] <field> [asc\|desc], …] } |  |
+| `scope` | <name>(<field>) |  |
 | `function` | <name>(p: Type, …): Type { @@expr("…") } |  |
 | `trait` | <Name> { fields… attributes… } |  |
 | `extend` | model <Name> { fields… attributes… } |  |
@@ -107,6 +108,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@index` | Shape the table | ([field [(sort: Asc \| Desc)], …][, where: <expr>]) |  |  |  |
 | `@@id` | Identify a row | ([field, …]) | in a model |  |  |
 | `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
+| `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>]) |  |  |  |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@relator` | Shape the table | ([field, …], once \| many \| many: <column>) |  |  |  |

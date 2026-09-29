@@ -149,6 +149,28 @@ describe('imported reads nothing here watches', () => {
     expect(ctx.analysis.warnings.join('\n')).toMatch(/'s\.n' is read by 'const d' but no '\$: s\.n' watch covers it/)
   })
 
+  // Svelte's spelling of a reactive read compiles to a derivation over the raw
+  // import, so it never re-runs — the ksite shell layout kept the first page's
+  // meta across every client navigation, and this was the one site unwarned.
+  it('names a `$: x =` derivation in the strict warning, and a watch silences it', async () => {
+    const opts = { filename: '/S.mesa', dev: false, css: false, externalReactivityHints: 'strict', warning: () => {} }
+    const bare = await compileSource(`<script>
+  import { page } from './router.js'
+  $: meta = page.meta
+</script>
+<p>{meta}</p>`, opts)
+    expect(bare.analysis.warnings.join('\n')).toMatch(/'page\.meta' is read by '\$: meta =' but no '\$: page\.meta' watch covers it/)
+    expect(bare.analysis.staticReads).toEqual([{ path: 'page.meta', where: '$: meta =', from: './router.js', watchedHere: false }])
+    const watched = await compileSource(`<script>
+  import { page } from './router.js'
+  $: page.meta
+  $: meta = page.meta
+</script>
+<p>{meta}</p>`, opts)
+    expect(watched.analysis.warnings.filter((w) => /watch covers it/.test(w))).toEqual([])
+    expect(watched.result).toContain('createWritableSignal(() => ($$proxy_page.meta))')
+  })
+
   it('hands the list to devtools in a dev build, and emits nothing extra otherwise', async () => {
     const dev = await compileSource(SCRATCH, { filename: '/S.mesa', dev: true, css: false })
     expect(dev.result).toMatch(/push_component\('S', '\/S\.mesa', \[\{"path":"stateObject\.count","where":"template","watchedHere":false\}/)

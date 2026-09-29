@@ -3,11 +3,14 @@ title: Environment
 ---
 <script>
   import { page } from '@frontierjs/sierra/router'
-  import { environments } from '../../../resources/Environment.mesa'
+  import Environment, { environments } from '../../../resources/Environment.mesa'
   import { apps } from '../../../resources/App.mesa'
+  import { projects } from '../../../resources/Project.mesa'
   import { deployments } from '../../../resources/Deployment.mesa'
   import { goto } from '@frontierjs/sierra/router'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
@@ -17,7 +20,9 @@ title: Environment
   $: page.params
 
   let environment = null
+  let project     = null
   let appRows     = []
+  let editing     = false
   let error       = null
   let loadError   = null
   let loading     = true
@@ -44,6 +49,9 @@ title: Environment
     error = null; loadError = null; loading = true
     try {
       await watch()
+      // For the breadcrumb only; a project that cannot be read leaves the
+      // link standing with a generic label rather than failing the screen.
+      project = await projects.service.get(environment.projectId).catch(() => null)
       // The app list is its own read: it is a different service's rows, and
       // nothing about the environment moving changes which apps sit in it.
       appRows = (await apps.service.find({ environmentId: page.params.id })).data
@@ -110,6 +118,45 @@ title: Environment
     return v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
   }
 
+  // ── The environment itself ────────────────────────────────────────────
+  // The row is watched, so a save lands on screen through the push; the
+  // drawer only has to close.
+  function saved() {
+    editing = false
+    toasts.success('Environment saved')
+  }
+
+  let removing = false
+
+  async function removeEnvironment() {
+    error = null; removing = true
+    // Read before the write: the row is watched, and the delete's own push
+    // empties `environment` before the next line runs.
+    const { id, name, projectId } = environment
+    try {
+      await environments.service.remove(id)
+      toasts.success(`${name} deleted`)
+      goto(`/projects/${projectId}/`)
+    } catch (e) {
+      // A protected environment is refused by the service, in its own words.
+      error = e.message
+      removing = false
+    }
+  }
+
+  async function removeApp(app) {
+    error = null; deploying = app.id
+    try {
+      await apps.service.remove(app.id)
+      toasts.success(`${app.name} deleted`)
+      appRows = appRows.filter(a => a.id !== app.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      deploying = null
+    }
+  }
+
   // ── Variables ─────────────────────────────────────────────────────────
   // Variables live in a Json column on the environment, and are edited through
   // custom methods rather than a PATCH of the whole array: two people editing
@@ -124,11 +171,25 @@ title: Environment
   let newSecret = false
   let busyKey   = null
 
+  // One row at a time is edited in place, and a masked value is shown only
+  // when asked — it is in the response either way (see the note on the cell).
+  let editKey   = null
+  let editValue = ''
+  let revealed  = new Set()
+
+  function startEdit(variable) { editKey = variable.key; editValue = variable.value ?? '' }
+  function toggleReveal(key) {
+    const next = new Set(revealed)
+    next.has(key) ? next.delete(key) : next.add(key)
+    revealed = next
+  }
+
   async function setVariable(key, value, secret) {
     error = null; busyKey = key
     try {
       environment = await environments.service.invoke('setVariable', environment.id, { key, value, secret })
-      newKey = ''; newValue = ''; newSecret = false
+      if (key === editKey) editKey = null
+      else { newKey = ''; newValue = ''; newSecret = false }
     } catch (e) {
       error = e.message
     } finally {
@@ -166,13 +227,35 @@ title: Environment
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if environment}
+  <nav aria-label="Breadcrumb" class="cluster" id="env-breadcrumb">
+    <a class="navlink" href={`/projects/${environment.projectId}/`}>{project?.name ?? 'Project'}</a>
+  </nav>
+
   <div class="section-header">
-    <h1>{environment.name}</h1>
     <div class="cluster">
-      <span class="pill">{environment.tier}</span>
-      <Button variant="ghost" href={`/projects/${environment.projectId}/`}>Back to project</Button>
+      <h1>{environment.name}</h1>
+      <span class="pill" id="env-tier">{environment.tier}</span>
+      {#if environment.isProtected}<span class="pill warning" id="env-protected">protected</span>{/if}
+    </div>
+    <div class="cluster">
+      <Button variant="outlined" id="env-edit" onclick={() => editing = true}>Edit</Button>
+      <!-- Not disabled when protected: the service refuses it in a sentence
+           that says what to do, and a dead button says nothing. -->
+      <Button variant="ghost" tone="danger" id="env-delete" disabled={removing}
+              data-confirm={`${environment.name} is deleted with its ${appRows.length} app${appRows.length === 1 ? '' : 's'} and their jobs.`}
+              data-confirm-title="Delete this environment?" data-confirm-label="Delete"
+              onclick={removeEnvironment}>Delete</Button>
     </div>
   </div>
+
+  <!-- `variables` is left out: it has its own editor below, which writes one
+       key at a time so two people on this screen do not erase each other. -->
+  <Drawer open={editing} title={`Edit ${environment.name}`} onclose={() => editing = false}>
+    {#if editing}
+      <Environment record={environment} except={['variables']} oncancel={() => editing = false}
+                   ondone={saved} submitId="env-edit-save" />
+    {/if}
+  </Drawer>
 
   {#if error}
     <article class="alert danger" id="screen-error">
@@ -212,17 +295,25 @@ title: Environment
                was one nullable string and is gone — an apex and a www is
                the ordinary case, and one column could not hold both. -->
           <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
-          <td>
+          <td class="cluster">
             <Button variant="outlined" disabled={deploying === app.id} onclick={() => deploy(app)}>
               {deploying === app.id ? 'Starting…' : 'Deploy'}
             </Button>
+            <Button variant="ghost" href={`/apps/${app.id}/`}>Open</Button>
+            <Button variant="ghost" tone="danger" disabled={deploying === app.id}
+                    aria-label={`Delete ${app.name}`}
+                    data-confirm={`${app.name} stops serving, and its releases, jobs and domains go with it.`}
+                    data-confirm-title="Delete this app?" data-confirm-label="Delete"
+                    onclick={() => removeApp(app)}>Delete</Button>
           </td>
         </tr>
       {/snippet}
     </Table>
   {/if}
 
-  <form class="card stack" on:submit|preventDefault={addApp}>
+  <!-- novalidate: the service answers a blank name in its own words, and a
+       browser bubble would stop the submit before it could. -->
+  <form class="card stack" novalidate on:submit|preventDefault={addApp}>
     <div class="field-row">
       <!-- `bind:` is not used on a component here: a component binding takes a
            writable top-level `let` in the caller, and `newApp.name` is a member
@@ -251,9 +342,31 @@ title: Environment
                data, not a security boundary: the value is in this response.
                Anything that must not reach the browser belongs in Secret,
                whose data column is @encrypted and system-only. -->
-          <td>{variable.secret ? '••••••••' : variable.value}</td>
           <td>
-            <Button variant="ghost" tone="danger" disabled={busyKey === variable.key} onclick={() => deleteVariable(variable.key)}>Remove</Button>
+            {#if editKey === variable.key}
+              <form class="cluster" on:submit|preventDefault={() => setVariable(variable.key, editValue, variable.secret)}>
+                <Input label="" aria-label={`Value of ${variable.key}`} id={`var-edit-${variable.key}`} value={editValue}
+                       oninput={(e) => editValue = e.target.value} />
+                <Button type="submit" variant="primary" disabled={busyKey === variable.key}>Save</Button>
+                <Button variant="ghost" onclick={() => editKey = null}>Cancel</Button>
+              </form>
+            {:else}
+              <code>{variable.secret && !revealed.has(variable.key) ? '••••••••' : variable.value}</code>
+            {/if}
+          </td>
+          <td class="cluster">
+            {#if variable.secret}
+              <Button variant="ghost" onclick={() => toggleReveal(variable.key)}>
+                {revealed.has(variable.key) ? 'Hide' : 'Reveal'}
+              </Button>
+            {/if}
+            {#if editKey !== variable.key}
+              <Button variant="ghost" onclick={() => startEdit(variable)}>Edit</Button>
+            {/if}
+            <Button variant="ghost" tone="danger" disabled={busyKey === variable.key}
+                    data-confirm={`${variable.key} is removed; the next deploy of this environment runs without it.`}
+                    data-confirm-title="Remove this variable?" data-confirm-label="Remove"
+                    onclick={() => deleteVariable(variable.key)}>Remove</Button>
           </td>
         </tr>
       {/snippet}
@@ -262,7 +375,7 @@ title: Environment
     <p class="text-sm text-muted">No variables set.</p>
   {/if}
 
-  <form class="card stack" on:submit|preventDefault={() => setVariable(newKey, newValue, newSecret)}>
+  <form class="card stack" novalidate on:submit|preventDefault={() => setVariable(newKey, newValue, newSecret)}>
     <div class="field-row">
       <Input label="Key" name="var-key" id="var-key" placeholder="DATABASE_URL"
              required bind:value={newKey} />

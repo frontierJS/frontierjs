@@ -62,7 +62,7 @@ export function createInfraService(app: BasecampApp) {
     // 500 rather than a refusal (hub.service.ts says the same thing). READER is
     // every workspace role; with no model to carry a @@gate, the declared level
     // is the only grade junction and an agent's tool list can read (FJS-D408).
-    methods: ['graph', 'onboarding'].map(method => ({ method, gate: LEVELS.READER })),
+    methods: ['graph', 'onboarding', 'launch'].map(method => ({ method, gate: LEVELS.READER })),
 
     // ── graph — the fleet as nodes and edges ──────────────────────────
     //
@@ -215,7 +215,7 @@ export function createInfraService(app: BasecampApp) {
       const steps = [
         { id: 'workspace', title: 'Create a workspace',   href: null,               done: true,
           detail: 'You are in one.' },
-        { id: 'server',    title: 'Add your first server', href: '/servers/create/', done: servers > 0,
+        { id: 'server',    title: 'Add your first server', href: '/servers/import/', done: servers > 0,
           detail: 'Provision or import a machine into the fleet.' },
         { id: 'ssh-key',   title: 'Add an SSH key',        href: '/secrets/',        done: sshKeys > 0,
           detail: 'A key to install on the machines you add.' },
@@ -234,6 +234,67 @@ export function createInfraService(app: BasecampApp) {
         // The counts the answers came from. A step that reads *done* against a
         // fleet of zero is a bug worth being able to see from the screen.
         counts: { servers, sshKeys, projects, deploys, members, invites },
+      }
+    },
+
+    // ── launch — the path from nothing to one app live on one machine ─
+    //
+    // The home screen's wizard, and the same rule as `onboarding`: no step is
+    // stored and none can be ticked. What this adds is WHERE each step
+    // happens — an app is reached through a project and an environment, so a
+    // step that said "place an app" without naming the app's own screen sent
+    // people hunting three clicks deep for it.
+    //
+    // The app it follows is the furthest along, so a workspace with one
+    // released app and ten drafts reads as done rather than as ten
+    // unfinished wizards.
+    async launch() {
+      $.dispatch = false   // read-shaped
+
+      const [online, project, env, apps] = await Promise.all([
+        db().server.findFirst({  where: { workspaceId: ws(), status: 'online' }, orderBy: { createdAt: 'asc' } }),
+        db().project.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
+        db().environment.findFirst({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' } }),
+        db().app.findMany({ where: { workspaceId: ws() }, orderBy: { createdAt: 'asc' }, limit: MAX_NODES }),
+      ])
+
+      const appIds = apps.map((a: { id: string }) => a.id)
+      const [placed, released] = await Promise.all([
+        appIds.length ? db().appServer.findMany({  where: { appId: { in: appIds } }, limit: MAX_NODES * 4 }) : [],
+        appIds.length ? db().deployment.findMany({ where: { appId: { in: appIds }, status: 'success' }, limit: MAX_NODES }) : [],
+      ])
+      const isPlaced   = new Set(placed.map((p: { appId: string }) => p.appId))
+      const isReleased = new Set(released.map((d: { appId: string }) => d.appId))
+      const app = apps.find((a: any) => isReleased.has(a.id))
+        ?? apps.find((a: any) => isPlaced.has(a.id))
+        ?? apps[0] ?? null
+
+      const steps = [
+        { id: 'machine', title: 'Connect a machine',
+          detail: online ? `${online.name} is online.` : 'Import a machine and run its install command, or run bun run dev:outpost on this laptop.',
+          href: online ? `/servers/${online.id}/` : '/servers/import/', done: !!online },
+        { id: 'project', title: 'Create a project',
+          detail: project ? `${project.name}.` : 'Apps and environments live inside one.',
+          href: project ? `/projects/${project.id}/` : '/projects/create/', done: !!project },
+        { id: 'environment', title: 'Add an environment',
+          detail: env ? `${env.name}.` : 'Production, staging — an app belongs to exactly one.',
+          href: project ? `/projects/${(env?.projectId ?? project.id)}/` : null, done: !!env },
+        { id: 'app', title: 'Create an app',
+          detail: app ? `${app.name} (${app.type}).` : 'A static app takes pasted HTML — the quickest first release.',
+          href: env ? `/environments/${(app?.environmentId ?? env.id)}/` : null, done: !!app },
+        { id: 'place', title: 'Place it on a machine',
+          detail: app && isPlaced.has(app.id) ? 'Placed.' : 'Pick the machine on the app screen and press Place.',
+          href: app ? `/apps/${app.id}/` : null, done: !!app && isPlaced.has(app.id) },
+        { id: 'release', title: 'Deploy it',
+          detail: app && isReleased.has(app.id) ? 'Released.' : 'Save and deploy from the app screen.',
+          href: app ? `/apps/${app.id}/` : null, done: !!app && isReleased.has(app.id) },
+      ]
+
+      return {
+        steps,
+        done:  steps.filter(s => s.done).length,
+        total: steps.length,
+        app:   app ? { id: app.id, name: app.name, slug: app.slug, type: app.type } : null,
       }
     },
 

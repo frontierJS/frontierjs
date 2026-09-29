@@ -237,7 +237,7 @@ title: Product
 {#if loading}
   <Skeleton lines={6} />
 {:else if !product}
-  <EmptyState title="No such product" description="It may have been removed." />
+  <EmptyState title="No such product">It may have been removed.</EmptyState>
 {:else}
   <SectionHeader title={product.name} level={1} sub={product.description ?? ''} />
 

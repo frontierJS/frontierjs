@@ -1,5 +1,9 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-28 — a payload JSON would change is refused at dispatch (`FJS-1514`, `FJS-D480`)
+
+`dispatch()` stored `JSON.stringify(data)`, so a `Date` reached the handler as a string, a `Map`, `Set` or `RegExp` as `{}`, `NaN` as null, and a `BigInt` threw a `TypeError` naming no job. Dispatch now walks the payload and throws naming the job, the key path (`data.order.when`) and what to store instead, and refuses an encoding over `PAYLOAD_MAX_BYTES` (256 KB, exported) with the bound in the message. The grading is `jsonLoss()` from `@frontierjs/toolbelt/json`, the same answer the junction cache gives. The type half of the ruling is not built and is filed separately. Proved in `test/payload.test.ts`.
+
 ## 2026-09-26 — Jobs that fail together no longer retry together (`FJS-1384`)
 
 The retry ladder read one fixed delay per attempt, so every job that failed at one instant against a downed provider came back at one instant — the thundering herd a queue is bought to prevent. `retryDelayFor()` in `worker.ts` adds up to 25% random jitter above the declared delay. The declared delay stays a floor, because a job waiting out a provider's rate-limit window must not come back early. Split from the `FJS-711` umbrella as `caravan-11`; `test/retry-jitter.test.ts` proves it.

@@ -156,6 +156,8 @@ title: Disk cleanup
 <div class="section-header">
   <h1>Disk cleanup</h1>
   <Button variant="primary" id="sweep-fleet" disabled={busy === 'fleet' || !picked.length}
+          data-confirm="The selected cleanups run on every server in the fleet. What they delete does not come back."
+          data-confirm-title="Sweep the whole fleet?" data-confirm-label="Sweep"
           onclick={() => sweep(null)}>Sweep the fleet</Button>
 </div>
 
@@ -288,6 +290,8 @@ title: Disk cleanup
           {/if}
           <Button variant="outlined" disabled={busy === s.serverId || !picked.length}
                   aria-label={`Clean ${s.serverName}`}
+                  data-confirm={`The selected cleanups run on ${s.serverName}. What they delete does not come back.`}
+                  data-confirm-title="Clean this server?" data-confirm-label="Clean"
                   onclick={() => sweep(s.serverId)}>Clean</Button>
         </div>
       </Card>

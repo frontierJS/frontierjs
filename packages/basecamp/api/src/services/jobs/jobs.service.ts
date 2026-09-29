@@ -125,8 +125,9 @@ export function createJobsService(app: BasecampApp) {
       if (data.cronExpression && !isValidCron(data.cronExpression as string))
         throw new BadRequest('Invalid cron expression')
 
-      // kind, status, appId and the run bookkeeping belong to the job.
-      const patch = narrowPatch(data, ['kind', 'status', 'appId', 'retryCount', 'lastRunAt', 'lastRunStatus'])
+      // kind and appId are @immutable, the run bookkeeping is @system, and
+      // status moves only by transition — the schema refuses each by name.
+      const patch = narrowPatch(data)
       if (changesNothing(patch)) return getScoped('job', 'Job')
 
       const updated = await db().job.update({ where: { id: $.id as string }, data: patch })

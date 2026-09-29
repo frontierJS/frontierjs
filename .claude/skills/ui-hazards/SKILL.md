@@ -25,6 +25,7 @@ Detail: `references/live-stores-and-records.md`
 - **A `@from` column moves when a CHILD row is written, and nothing announces the parent.**
 - **A live store holds what its last `load(query)` asked for, so a patch can take a row OUT of it.**
 - **`@version` is the revision a screen READ, and a push does not move it.**
+- **A watched record empties itself on its own delete, before the handler's next line.**
 
 ## Resources and forms
 Detail: `references/resources-and-forms.md`

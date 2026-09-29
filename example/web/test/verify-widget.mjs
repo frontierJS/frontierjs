@@ -28,12 +28,11 @@
  * exactly once.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { tmpdir }        from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -240,13 +239,12 @@ console.log('\n  widget — on somebody else\'s page')
 // attaches to the first one's session and grades that browser's screen
 // (`FJS-740` one layer over, measured in `verify:stock`); and the default
 // profile carries the previous run's sign-in into this one.
-const profile = mkdtempSync(join(tmpdir(), 'fjs-widget-'))
+const profile = chromeProfile('fjs-widget-')
 const chrome = start(CHROME, [
   '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
   '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
   'about:blank',
 ], 'chrome')
-process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
 const wsUrl = await new Promise((resolve) => {
   let buf = ''

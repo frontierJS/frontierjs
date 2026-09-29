@@ -36,6 +36,7 @@ import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markPublishHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
+import { MADE_AT_HEADER, SENT_AT_HEADER } from '../core/context.ts'
 import { wsSend }               from './send-queue.ts'
 import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from './bridge.ts'
@@ -241,11 +242,20 @@ interface ClaimGroup { claims: Record<string, unknown> | null; conns: Connection
  * An empty object is not a claim and is treated as none, or a resolver that
  * answers `{}` for an anonymous connection turns a `null` principal into an
  * object and grades it a rung ABOVE a stranger.
+ *
+ * It may answer a Promise, and is asked on EVERY frame, once per principal per
+ * channel, with nothing cached (`FJS-D472`). A claim that is a membership row
+ * read once when the socket opened is a snapshot: a person removed from a
+ * private team kept receiving its rows on the socket they already had while
+ * the same row over HTTP answered 404 (`FJS-1316`). The request path reads its
+ * claims per call, and this is that rule carried over to a broadcast.
  */
 export type ChannelClaimsFn = (
   channelName: string,
   conn:        Connection,
-) => Record<string, unknown> | null | undefined
+) => ChannelClaims | Promise<ChannelClaims>
+
+type ChannelClaims = Record<string, unknown> | null | undefined
 
 /** What the rule is asked of, and what it is asked about. */
 export interface GradingSource {
@@ -289,13 +299,13 @@ function tenancyHint(db: unknown, claimsFor?: ChannelClaimsFn): string {
 // exists to close.
 const _claimsThrew = new Set<string>()
 
-function resolveClaims(
+async function resolveClaims(
   claimsFor:   ChannelClaimsFn,
   channelName: string,
   conn:        Connection,
-): Record<string, unknown> | null {
+): Promise<Record<string, unknown> | null> {
   let answer
-  try { answer = claimsFor(channelName, conn) }
+  try { answer = await claimsFor(channelName, conn) }
   catch (err) {
     if (!_claimsThrew.has(channelName)) {
       _claimsThrew.add(channelName)
@@ -491,7 +501,11 @@ export async function gradeRecipients(
   // The principal is carried beside its key, because the key is now a string
   // and the grading needs the value: both modes build a Data-realm principal
   // out of it. Any member of a cohort will do — they serialized identically.
+  // The resolver is asked once per (principal, channel), not per connection:
+  // three tabs are one person, and a resolver that reads the database would
+  // otherwise read it three times for one answer (`FJS-D472`).
   const byPrincipal = new Map<unknown, { user: unknown; byClaims: Map<string, ClaimGroup> }>()
+  const byChannel   = new Map<unknown, Map<string, Connection[]>>()
   const seen = new Set<Connection>()
   let live = 0
   for (const ch of targets) {
@@ -499,16 +513,27 @@ export async function gradeRecipients(
       if (conn.socket.readyState !== 1 || seen.has(conn)) continue
       seen.add(conn)
       live++
-      const key    = principalKey(conn.user)
-      const claims = claimsFor ? resolveClaims(claimsFor, ch.name, conn) : null
-      const sig    = claims ? JSON.stringify(claims) : ''
-      let group = byPrincipal.get(key)
-      if (!group) byPrincipal.set(key, group = { user: conn.user ?? null, byClaims: new Map() })
-      const entry = group.byClaims.get(sig)
-      if (entry) entry.conns.push(conn)
-      else group.byClaims.set(sig, { claims, conns: [conn] })
+      const key = principalKey(conn.user)
+      if (!byPrincipal.has(key)) byPrincipal.set(key, { user: conn.user ?? null, byClaims: new Map() })
+      let chans = byChannel.get(key)
+      if (!chans) byChannel.set(key, chans = new Map())
+      const conns = chans.get(ch.name)
+      if (conns) conns.push(conn)
+      else chans.set(ch.name, [conn])
     }
   }
+  const asked = [...byChannel].flatMap(([key, chans]) => [...chans].map(([name, conns]) => ({ key, name, conns })))
+  const answers = claimsFor
+    ? await Promise.all(asked.map(({ name, conns }) => resolveClaims(claimsFor, name, conns[0])))
+    : null
+  asked.forEach(({ key, conns }, i) => {
+    const claims = answers ? answers[i] : null
+    const sig    = claims ? JSON.stringify(claims) : ''
+    const group  = byPrincipal.get(key)!
+    const entry  = group.byClaims.get(sig)
+    if (entry) entry.conns.push(...conns)
+    else group.byClaims.set(sig, { claims, conns: [...conns] })
+  })
 
   // An update that narrows who may read a row is refused to the reader it took
   // the row from, and a refusal alone strands the row in their live store —
@@ -1039,7 +1064,8 @@ export interface ChannelsOptions {
   /**
    * What a recipient holds in a given channel, merged onto their principal
    * before a broadcast is graded. See `ChannelClaimsFn` — under `strategy row`
-   * an app without one delivers nothing on any tenanted model.
+   * an app without one delivers nothing on any tenanted model. It may be async,
+   * and is asked on every frame.
    */
   claims?: ChannelClaimsFn
 
@@ -1289,8 +1315,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               const wsQuery = (extra.query ?? {}) as Record<string, unknown>
               // workspaceId is lifted onto ctx.caller.headers below, so it does
               // not also belong in locals — one owner per translation.
-              // correlationId/idempotencyKey become request metadata, which is
-              // an ALS store rather than a context field.
+              // correlationId becomes request metadata, which is an ALS store
+              // rather than a context field.
               // `base` is the row a held write was made against (`FJS-D334`).
               // It needs no envelope here — a frame already carries its caller
               // extras under `meta`, which is the slot HTTP does not have
@@ -1298,7 +1324,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // so it is lifted out of the spread into `locals` below.
               const {
                 query: _q, workspaceId: _ws, headers: _hdrs,
-                correlationId: _cid, idempotencyKey: _idk, base: _base,
+                correlationId: _cid, base: _base,
                 ...restExtra
               } = extra
 
@@ -1360,17 +1386,19 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // undefined for every socket call and anything reading it (a
               // correlation id in a log, the Idempotency-Key that decides
               // whether a create runs twice) silently applied to half the
-              // transports. enterRequest() is the one owner now; a socket has
-              // no per-call headers, so the frame carries the two values it
-              // needs under `meta`, the same place it carries the id and the
-              // workspace, and they are stated rather than derived.
+              // transports. enterRequest() is the one owner now, and reads the
+              // Idempotency-Key and a replayed write's two instants from the
+              // headers it is handed, as it does over HTTP. It is handed the
+              // FRAME's, not the merged map: the upgrade's are one set for
+              // every call on the connection, and one key there would make
+              // every later write a replay of the first.
               const started = Date.now()
               let status = 200
               try {
                 await _enterRequest!({
                   origin:         'websocket',
                   correlationId:  extra.correlationId as string | undefined,
-                  idempotencyKey: extra.idempotencyKey as string | undefined,
+                  headers:        _frameProtocolHeaders(extra.headers),
                   // Same as the HTTP path — the principal is request-wide, and
                   // it is what an internal call inherits when it names none.
                   user:           svcCtx.auth.user,
@@ -1575,7 +1603,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
 /** Junction's own protocol headers — the browser client sends these whether or
  *  not an app asked for them, so they are always mergeable. */
-const PROTOCOL_CALL_HEADERS = ['x-workspace-id', 'idempotency-key']
+const PROTOCOL_CALL_HEADERS = ['x-workspace-id', 'idempotency-key', MADE_AT_HEADER, SENT_AT_HEADER]
 
 /**
  * The upgrade request's headers, plus the ones this frame is allowed to state.
@@ -1611,6 +1639,19 @@ function _mergeCallHeaders(
   // The upgrade's own map when the frame added nothing, so the common case
   // allocates nothing and a reader still sees one object per connection.
   return merged ?? upgrade
+}
+
+/** The protocol headers THIS frame states, lower-cased — what enterRequest()
+ *  reads per call, and nothing the upgrade said for the whole connection. */
+function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefined {
+  if (!frame || typeof frame !== 'object') return undefined
+  let out: Record<string, string> | undefined
+  for (const [name, value] of Object.entries(frame)) {
+    const lower = name.toLowerCase()
+    if (value == null || !PROTOCOL_CALL_HEADERS.includes(lower)) continue
+    ;(out ??= {})[lower] = String(value)
+  }
+  return out
 }
 
 // ─── publish() hook factory ───────────────────────────────────────────────

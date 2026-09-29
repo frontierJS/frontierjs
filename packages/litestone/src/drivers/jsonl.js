@@ -23,7 +23,7 @@
 // by name, which is the honest answer for a driver over a file on a disk.
 import {
   existsSync, mkdirSync, appendFileSync, readFileSync,
-  statSync, openSync, readSync, closeSync, dirname } from '#host'
+  statSync, openSync, readSync, writeSync, fstatSync, closeSync, dirname } from '#host'
 import { noteMintedDirectory } from '../core/db-path.js'
 import { applyBusyTimeout } from '../core/pragmas.js'
 import { buildWhere } from '../core/query.js'
@@ -85,26 +85,41 @@ function ensureFile(filePath) {
   appendFileSync(filePath, '', 'utf8')
 }
 
-// Append a JSON line to a file. Returns { offset, bytes }.
+// An append handle held for the life of the table. Returns { offset, bytes, mtimeMs }.
 //
 // **The offset is read and the line appended as one step, and the CALLER is what
-// makes that true across processes.** `statSync(f).size` then `appendFileSync`
-// is two syscalls, so a second process appending between them makes the returned
-// offset name the OTHER writer's line — measured on the shipped code at 1,999 of
-// 8,000, one in four, with no artificial delay. An indexed read then answers the
-// wrong record with no error, which for an audit trail is the worst failure
-// there is (`FJS-665`).
+// makes that true across processes.** Reading the size then writing is two
+// syscalls, so a second process appending between them makes the returned
+// offset name the OTHER writer's line — measured at 1,999 of 8,000, one in four,
+// with no artificial delay. An indexed read then answers the wrong record with
+// no error, which for an audit trail is the worst failure there is (`FJS-665`).
+// Where an O_APPEND write landed is not reported back, so the lock is the index
+// database's write transaction (`jsonl-index.js`), taken by `create`/`createMany`.
 //
-// Nothing here can close that window alone: where an O_APPEND write landed is
-// not reported back, so the position is only knowable by holding a lock across
-// the pair. The lock is the index database's write transaction
-// (`jsonl-index.js`), taken by `create`/`createMany` — which is also where the
-// index row is written, so the offset and the row naming it commit together.
-function appendLine(filePath, line) {
-  ensureFile(filePath)
-  const offset = statSync(filePath).size
-  appendFileSync(filePath, line, 'utf8')
-  return { offset, bytes: Buffer.byteLength(line, 'utf8') }
+// **The size comes from the PATH, not the fd.** Compaction replaces the file by
+// `rename`, so a held fd would keep appending to the unlinked inode and every
+// row after the first sweep would vanish. One path stat per write answers both
+// questions — is this still our file, and how long is it — and replaces the
+// `existsSync` pair and the open/close an `appendFileSync` cost on every row.
+function makeAppender(filePath) {
+  let fd = null, ino = null
+  function reopen() {
+    if (fd !== null) { try { closeSync(fd) } catch {} }
+    ensureFile(filePath)
+    fd  = openSync(filePath, 'a')
+    ino = fstatSync(fd).ino
+  }
+  return {
+    append(line) {
+      let st
+      try { st = statSync(filePath) } catch { st = null }
+      if (fd === null || !st || st.ino !== ino) { reopen(); st = fstatSync(fd) }
+      const buf = Buffer.from(line, 'utf8')
+      writeSync(fd, buf)
+      return { offset: st.size, bytes: buf.length, mtimeMs: fstatSync(fd).mtimeMs }
+    },
+    close() { if (fd !== null) { try { closeSync(fd) } catch {} ; fd = null } },
+  }
 }
 
 // ─── JavaScript query engine (no-index path) ──────────────────────────────────
@@ -231,6 +246,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // ── Companion index.db ────────────────────────────────────────────────────
 
   let _indexDb = null
+  const appender = makeAppender(filePath)
 
   // The index file, and whether the handle we hold still points at it.
   //
@@ -468,11 +484,11 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
 
   // Push a freshly-written record into the warm cache (clone — the caller
   // owns the returned object) so the next read doesn't re-parse the tail.
-  function absorbIntoCache(record, offset, bytes) {
+  function absorbIntoCache(record, offset, bytes, mtimeMs) {
     if (_cache && _cache.size === offset) {
       _cache.records.push({ ...record })
-      _cache.size = offset + bytes
-      try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
+      _cache.size    = offset + bytes
+      _cache.mtimeMs = mtimeMs
     }
   }
 
@@ -482,10 +498,10 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // index row naming that offset is written under the same one, so the two
     // commit together or not at all (`FJS-665`). Unindexed there is no offset
     // and nothing to guard.
-    ensureFile(filePath)                       // before the lock — the index lives here too
+    if (hasIndex) ensureFile(filePath)         // before the lock — the index lives here too
     const write = () => {
-      const { offset, bytes } = appendLine(filePath, JSON.stringify(record) + '\n')
-      absorbIntoCache(record, offset, bytes)
+      const { offset, bytes, mtimeMs } = appender.append(JSON.stringify(record) + '\n')
+      absorbIntoCache(record, offset, bytes, mtimeMs)
       if (hasIndex) insertIndexRecord(record, offset)
     }
     if (hasIndex) locked(write); else write()
@@ -518,15 +534,15 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // One lock for the batch, and it IS the transaction the index rows were
     // already written in — `withWriteLock` replaced that BEGIN/COMMIT — so the
     // batch costs the same lock it always did and gains a correct offset.
-    ensureFile(filePath)                       // before the lock — the index lives here too
+    if (hasIndex) ensureFile(filePath)         // before the lock — the index lives here too
     const write = () => {
-      const { offset } = appendLine(filePath, lines.join(''))
+      const { offset, mtimeMs } = appender.append(lines.join(''))
       let pos = offset
       const offsets = lines.map(l => { const o = pos; pos += Buffer.byteLength(l, 'utf8'); return o })
       if (_cache && _cache.size === offset) {
         for (const r of records) _cache.records.push({ ...r })
-        _cache.size = pos
-        try { _cache.mtimeMs = statSync(filePath).mtimeMs } catch { _cache = null }
+        _cache.size    = pos
+        _cache.mtimeMs = mtimeMs
       }
       if (hasIndex) for (let i = 0; i < records.length; i++) insertIndexRecord(records[i], offsets[i])
     }
@@ -560,6 +576,6 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     optimizeFts: () => { throw new Error(`db.${model.name}.optimizeFts() — not supported on jsonl databases`) },
     search:      () => { throw new Error(`db.${model.name}.search() — FTS is not supported on jsonl databases`) },
     // Internal — called by $close
-    _close() { if (_indexDb) { try { _indexDb.close() } catch {} ; _indexDb = null } },
+    _close() { appender.close(); if (_indexDb) { try { _indexDb.close() } catch {} ; _indexDb = null } },
   }
 }

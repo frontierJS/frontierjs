@@ -12,6 +12,7 @@ import { createService, callService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { BadRequest } from '../src/core/errors.ts'
+import { createApp, channels, defaultConfig } from '../index.ts'
 
 // A service that counts how many times its body actually ran.
 function countingService(name = 'notes') {
@@ -267,5 +268,48 @@ describe('the same key with a different payload is refused', () => {
     expect(a.status).toBe(201)
     expect(b.status).toBe(422)
     expect(calls.create).toBe(1)
+  })
+})
+
+// ─── FJS-1483 — over the socket, the key rides the frame's headers ───────
+// A socket has no per-call headers, so the browser client puts the key where
+// it puts every other per-call header: the frame's `meta.headers`. The server
+// read only `meta.idempotencyKey`, a spelling no client sends, so a held write
+// the pending queue replayed over a live socket ran twice.
+
+describe('over the socket', () => {
+  test('two frames with the same key in meta.headers run the create once', async () => {
+    const { svc, calls } = countingService('things')
+    const app: any = createApp({
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+                http: { ...defaultConfig.http, drainTimeout: 50 } },
+    } as never)
+    app.setAuth({ async verifySession(t: string) { return t === 'alice' ? { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } })
+    app.services.register(svc)
+    app.configure(channels())
+    await app.start()
+    try {
+      const ws = new WebSocket(`ws://localhost:${app.http.port}/ws`, ['fjs', 'fjs.bearer.alice'])
+      await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws did not open')) })
+      const replies = new Map<string, (f: any) => void>()
+      ws.onmessage = (e: any) => {
+        const f = JSON.parse(e.data)
+        if (f.type === 'service_result' || f.type === 'service_error') replies.get(String(f.id))?.(f)
+      }
+      const send = (id: string, headers: Record<string, string>) => new Promise<any>(ok => {
+        replies.set(id, ok)
+        ws.send(JSON.stringify({ type: 'service_call', id, service: 'things', method: 'create',
+                                 data: { title: 'x' }, meta: { headers } }))
+      })
+      const a = await send('c1', { 'idempotency-key': 'same-key' })
+      const b = await send('c2', { 'idempotency-key': 'same-key' })
+      // Any casing a raw frame states, as HTTP header names are.
+      const c = await send('c3', { 'Idempotency-Key': 'same-key' })
+      ws.close()
+      expect(a.type).toBe('service_result')
+      expect(calls.create).toBe(1)
+      expect(b.result).toEqual(a.result)
+      expect(c.result).toEqual(a.result)
+    } finally { await app.stop() }
   })
 })

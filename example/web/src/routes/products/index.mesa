@@ -123,7 +123,7 @@ title: Products
   <Alert tone="danger">{error}</Alert>
 {/if}
 
-<div class="card cluster" style="align-items: flex-end; gap: 1rem; flex-wrap: wrap">
+<div class="card cluster" style="gap: 1rem">
   <Combobox
     id="f-name"
     label="Product"
@@ -207,8 +207,8 @@ title: Products
       <td colspan={columns.length}>
         <EmptyState
           title={rows().length ? 'No product matches those filters' : 'No products yet'}
-          description={rows().length ? 'Widen the price range or clear the brand.' : 'Seed the database and reload.'}
         >
+          {rows().length ? 'Widen the price range or clear the brand.' : 'Seed the database and reload.'}
           {#snippet action()}
             <Button variant="outlined" onclick={clearFilters}>Clear filters</Button>
           {/snippet}

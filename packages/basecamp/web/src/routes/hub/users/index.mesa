@@ -283,6 +283,8 @@ title: Hub users
               {:else}
                 <Button variant="ghost" tone="danger" disabled={busy === u.id}
                         aria-label={`Suspend ${label(u)}`}
+                        data-confirm={`${label(u)} is signed out and refused everywhere — API keys included — until restored.`}
+                        data-confirm-title="Suspend this account?" data-confirm-label="Suspend"
                         onclick={() => setStatus(u, 'suspended')}>Suspend</Button>
               {/if}
 
@@ -295,6 +297,11 @@ title: Hub users
               {#if u.kind === 'human'}
                 <Button variant="ghost" disabled={busy === u.id}
                         aria-label={u.isSystemAdmin ? `Revoke hub access for ${label(u)}` : `Grant hub access to ${label(u)}`}
+                        data-confirm={u.isSystemAdmin
+                          ? `${label(u)} loses the hub: every workspace, every user, the installation's settings.`
+                          : `${label(u)} can read and change every workspace and every user on this installation.`}
+                        data-confirm-title={u.isSystemAdmin ? 'Revoke hub access?' : 'Grant hub access?'}
+                        data-confirm-label={u.isSystemAdmin ? 'Revoke' : 'Grant'} data-confirm-tone="warning"
                         onclick={() => setAdmin(u, !u.isSystemAdmin)}>
                   {u.isSystemAdmin ? 'Revoke hub' : 'Grant hub'}
                 </Button>

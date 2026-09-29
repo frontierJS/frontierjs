@@ -1,5 +1,51 @@
 # Changes — @frontierjs/css
 
+## 2026-09-29 — a Cluster holding a field lines up on the control
+
+A `.field-group` is a label stacked over a control, and `.cluster` centers, so
+a button beside a labeled input sat 11px above the control (measured). Seven
+clusters across basecamp and `example` mixed the two: three patched it with an
+inline `align-items: flex-end`, four shipped crooked — basecamp's *Read log*
+row among them. `.cluster:where(:has(> .field-group))` now aligns to the end.
+Derived from the content rather than a new modifier, so no caller writes
+anything; `:where` holds it at `.cluster`'s weight, so an override still wins.
+`layout.spec.js` asserts the geometry, that a field-less Cluster still centers,
+and that an override wins. A hint under a field still lifts its control by the
+hint's height.
+
+The previous entry's *`card` and `card stack` render the same* is not true in
+general: `card stack` is a flex column, so a child's own margins do not
+collapse into the gap and an inline child stretches, while `card` is block
+flow. A bare `<p>` in basecamp's login card gets gap plus its UA margin under
+`stack` and only the rung without it. The 44 `card stack` uses stay until
+each is looked at.
+
+## 2026-09-28 — a Card spaces its own children
+
+`.card` set padding and nothing else, so its children sat flush. What read as
+spacing was a UA `<p>` margin — headings are zeroed, a bare `p` is not — so a
+card whose heading led into a paragraph looked right and one whose heading led
+into `Json`, a table or a row of controls did not. Basecamp's app screen showed
+it, and `card stack` had been written by hand 44 times across the repo to get
+what the Card should have said: the paved road measured by its workaround.
+
+`.card > * + *` now takes `margin-block-start: var(--space-2xl)`, Stack's rung,
+so `card` and `card stack` render the same. It is off on a Card that also
+carries a term arranging its children (Stack, Cluster, Group, Center, Split,
+Bar, Toolbar, Navlist, Pagination), where it would double a gap or drop a row's
+second item. That list is hand-written, so `cards.spec.js` derives the probe
+from the vocabulary's Layout and Region tiers and fails on an arranging term
+missing from it — it found three on its first run. Card's vocabulary row says
+it needs no `.stack`.
+
+Measured in basecamp, one more was flush: Facts, under every heading it sat
+beneath. Feed, Steps and Facts zeroed their UA list margin in `patterns`, which
+cascades after `components`, so the zero beat the Card's rule. The zero moved to
+`reset.css` — the weakest layer, and the bar that file states: a UA default
+fighting a term the term cannot fix itself without also overruling its parent.
+A second spec puts every Block term the vocabulary names inside a Card and
+checks it lands at the rung.
+
 ## 2026-09-26 — `dist/` is built on pack, not only on publish
 
 `./bundle.css` and `./bundle.min.css` export `dist/`, which is gitignored and

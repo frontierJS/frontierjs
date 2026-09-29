@@ -84,6 +84,7 @@ before you meet it.
 | Writable derived | blessed | UI | Signal | a derived Signal that may also be written, the write passing back to its sources | mesa `$: name = expr` — `Writable` alone means nothing. The prior-art name is a lens (Foster et al. 2007), cited and not used. `FJS-D384` |
 | Empty state | open | UI | Block tier | | the condition a screen is in with nothing to show; `EmptyState` is the component that renders it |
 | Data boundary | open | Data | Boundary | | where access is enforced; the widest phrase in the tree |
+| Warden | blessed | Data | | the whole access system: everything that decides whether a call may touch a row or a column — principal and claims, gate, capabilities, row policies, field protection, a transition's authority half. `asSystem()` lifts it and holds the integrity rules | `FJS-D546`. The Data boundary is where it enforces. Prior art is the *reference monitor* (Anderson 1972): cited, not used, because it names the mediator and not the declarations, and reads as an OS kernel |
 | Invariant | blessed | Framework | | a rule the framework does not break without a ruling — numbered in `CLAUDE.md` § Invariants and graded by `fli ws:invariants` | a CONTRIBUTOR word: cited by number in comments and registers, where the reader has the list. An app developer does not have it, so nothing an app sees cites one by number ([`FJS-1282`](ISSUES.md#fjs-1282)) — it states the rule |
 | State | open | Data | Transition | | |
 | PascalCase | open | | | | |

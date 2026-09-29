@@ -250,7 +250,7 @@ built.
     Cleaner, but every raw `<div>` in the corpus becomes an escape.
   - **Recommend A** — the portability report makes the gap visible without
     rewriting 461 files first, and B can be reached later by shrinking the table.
-- **Does step 1 run before the terminal backend exists?**
+- ~~**Does step 1 run before the terminal backend exists?**~~ **Answered 2026-09-29 (`FJS-D545`): B — no. Extract the IR in the same piece of work as the first non-DOM backend, so the seam is placed by a real second consumer rather than a guess.**
   - **A** — yes, as a refactor graded by the byte-identical corpus.
   - **B** — no. Extract the IR in the same piece of work as the first non-DOM
     backend, so the seam is placed by a real second consumer rather than a guess.

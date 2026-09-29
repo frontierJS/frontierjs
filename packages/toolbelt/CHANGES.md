@@ -1,5 +1,17 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-28 — `match` answers when a record leaves by the clock: `leavesAt` (`FJS-1274`)
+
+`leavesAt(window, record, directives)` is the epoch ms a row leaves an imposed window, or `null` when the read stepped outside it (`asOf`, `withExpired`, `onlyExpired`) or the window is only asked. A `day` edge is exclusive from its first UTC instant. The timer is the store's (`FJS-D111`).
+
+## 2026-09-28 — `json` answers what a JSON round trip would lose (`FJS-1514`)
+
+`jsonLoss(v)` names what cannot survive `JSON.stringify` → `JSON.parse` — a Date, Map, Set, RegExp, BigInt, typed array, function, symbol, NaN or Infinity — or answers null; `jsonLossAdvice(kind)` says what to store instead. This code was junction's cache codec, and it moved here so Caravan can refuse a payload with the same answer.
+
+## 2026-09-28 — a principal with no identity grades STRANGER (`FJS-1462`, `FJS-D515`)
+
+`gradeStanding({ cartToken: 'x' })` answered CREATOR(3): a claims-only guest reaches the Data boundary as `{ ...claims }`, and the grader asked only whether an object was there. `isIdentified(user)` — an `id` or a `userId` — now decides first, and without one the answer is STRANGER. Every session carries one, so no real session changes grade. Proved in `gate.spec.js`, whose fixtures now carry an `id`.
+
 ## 2026-09-28 — `owner == null` reads the foreign key (`FJS-D481`)
 
 The `== null` / `!= null` probe evaluated a field node as `record[name]`, skipping `columnOf`, so on a `belongsTo` it read the relation's name, which is never on a row: `owner == null` was `true` for every row in JS while SQL compiled it to `"ownerId" IS NULL`. The probe now reads through `columnOf`, as the `field == auth()` branch already did. Only litestone passes `columnOf`, and no shipped policy spelled the relation, so no answer changes outside the case this fixes. Proved in `predicate.spec.js`.

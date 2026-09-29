@@ -254,6 +254,8 @@ export interface ServiceDescription {
    * (`customMethodGrade` in `core/litestone.ts`).
    */
   methodGates: Record<string, number>
+  /** The claims a caller must hold for each method that declares any (`FJS-D514`). */
+  methodClaims: Record<string, string[]>
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /**
@@ -341,6 +343,8 @@ export interface Service {
    * form, and a method absent here takes the model's read gate as its floor.
    */
   _methodGates?: Record<string, number>
+  /** The claims each custom method DECLARED in `methods:`, keyed by name. */
+  _methodClaims?: Record<string, string[]>
 
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
@@ -513,6 +517,9 @@ export async function callService(
   // reenterAs() is the one owner of that rule, including the two cases that
   // are not re-entry at all: same principal opens nothing, and no store at all
   // means this call IS the entry point (a job, a script, a boot task).
+  // `madeAt` is read before either: a nested call inherits the request's, so a
+  // row a replayed write creates through another service is dated with it.
+  ctx.madeAt ??= requestMeta()?.madeAt ?? new Date()
   // enterCall is the SECOND scope and it wraps the whole of _callService —
   // pipeline, announcement, afterCommit drain, outbox handoff. Not merged into
   // runInServiceCall below: that one is read by litestone's write tap to
@@ -999,6 +1006,8 @@ export interface BaseServiceOptions {
    * was handed. Absent, the base reads its own `methods:`.
    */
   methodGates?: Record<string, number>
+  /** Per-method required claims, read off a `methods:` list the same way. */
+  methodClaims?: Record<string, string[]>
 
   /**
    * Hook pipeline. Carried through onto the returned object.
@@ -1498,6 +1507,16 @@ export interface MethodDeclaration {
    * whole difference (`FJS-826`).
    */
   gate?: number
+  /**
+   * Claims the caller must HOLD, beside the level (`FJS-D514`).
+   *
+   * A method whose work touches no row is invisible to every `@@allow` in the
+   * schema, so the only declaration that could admit a guest holding a pass and
+   * refuse one holding nothing was `gate: 0` — which admits both (`FJS-1437`).
+   * Each name must be present and non-null on what the principal resolver
+   * answered; `gateAuth` grades it where it grades the level.
+   */
+  claims?: string[]
 }
 
 export type MethodEntry  = string | MethodDeclaration
@@ -1548,6 +1567,32 @@ export function collectMethodGates(
         `which is not a level. It is a whole number 0–9, the same ladder @@gate uses.`
       )
     out[name] = gate
+  }
+  return out
+}
+
+/** The `claims:` each `methods:` entry declares, keyed by method name. */
+export function collectMethodClaims(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.claims === undefined) continue
+    const name   = methodEntryName(entry, serviceName)
+    const claims = entry.claims
+    if (!Array.isArray(claims) || !claims.length || claims.some(c => typeof c !== 'string' || !c.trim()))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares claims ${JSON.stringify(claims)}, ` +
+        `which is not a list of claim names.`)
+    // A CRUD verb reads rows, and which rows a claim reaches is @@allow's to say.
+    if (isCrudGatedMethod(name))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares claims, but ${name} reads or writes rows, ` +
+        `and which rows a claim reaches is the schema's @@allow. claims: is for a method that touches no row.`)
+    out[name] = [...claims]
   }
   return out
 }
@@ -1742,7 +1787,7 @@ export function createBaseService(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, methodGates, transactional } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, methodGates, methodClaims, transactional } = opts
 
   const base = createLitestoneBase({
     model,
@@ -1864,7 +1909,8 @@ export function createBaseService(
   // derives needs no declaration; this is only what sits above it.
   const levels = methodGates ?? collectMethodGates(methods, name ?? model ?? 'service')
   refuseModelCrudGates(levels, model, name ?? model ?? 'service')
-  const gateHook = markDerived(gateAuthAround(model, levels))
+  const claims = methodClaims ?? collectMethodClaims(methods, name ?? model ?? 'service')
+  const gateHook = markDerived(gateAuthAround(model, levels, claims))
 
   const derivedHooks: HookMap = {
     around: { all: [gateHook] },
@@ -2331,7 +2377,8 @@ export function createService(def: ServiceDefinition): Service {
   // definition), and calling the unused CRUD
   // methods now fails with the base's diagnostic — which names the spellings
   // tried and what the client actually has — instead of a bare sentence.
-  const declaredGates = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const base = createBaseService({
     model:      def.model,
     name:       def.name,
@@ -2349,6 +2396,7 @@ export function createService(def: ServiceDefinition): Service {
     // builds — without them the declaration parsed, was reported, and enforced
     // nothing, which is the shape of the defect it exists to fix.
     methodGates: declaredGates,
+    methodClaims: declaredClaims,
   })
   const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
 
@@ -2564,6 +2612,7 @@ export function createService(def: ServiceDefinition): Service {
         transactional: [...(service._transactional ?? [])],
         inputs:        { ...(service._inputs ?? {}) },
         methodGates:   { ...(service._methodGates ?? {}) },
+        methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         channel:    describeChannel(service.channel as PublishDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
@@ -2608,6 +2657,7 @@ export function createService(def: ServiceDefinition): Service {
   ;(service as Service)._customMethods = custom
   ;(service as Service)._inputs = methodInputs
   ;(service as Service)._methodGates = declaredGates
+  ;(service as Service)._methodClaims = declaredClaims
 
   // Resolve the method policy AFTER the custom methods are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.

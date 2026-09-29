@@ -333,13 +333,74 @@ function decodeEntities(str) {
 // codepoint, so no author text can collide with it.
 const BRACE_ESCAPE = '\uE0F1MESA_LBRACE\uE0F1'
 
+// ─── Layout ───────────────────────────────────────────────────────────────────
+
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+
+/**
+ * Wrap a Markdown body in the component its `layout:` names — mdsvex's
+ * `layout`, which is how a Markdown block says what it is a block OF.
+ *
+ * Mesa owns the wrap and the caller owns the NAME: `layouts` maps a name to a
+ * file, because where layouts live and which directory wins is a question for
+ * the framework compiling the app (Sierra's `markdownLayouts`). Without a map,
+ * `layout:` is metadata and nothing is wrapped — as before.
+ *
+ * The layout is handed every frontmatter key as a prop (the file's own values,
+ * or whatever the parent passed over them), the parent's `class` and undeclared
+ * attributes, and the body both ways a layout can read one: element children
+ * for `<slot />`, the `children` prop for `{@render children?.()}`. Nothing
+ * says which protocol a layout speaks, so it gets both (STATIC_RENDERING.md);
+ * a `children`-prop layout is warned once that the element children went
+ * unrendered, which is the runtime's own check and true.
+ *
+ * @returns {{ layoutImport: string, body: string, layoutError: string|null }}
+ */
+function wrapInLayout(html, frontmatter, layouts) {
+  const name = frontmatter.layout
+  if (!layouts || typeof name !== 'string' || name === '') {
+    return { layoutImport: '', body: html, layoutError: null }
+  }
+
+  const file = Object.hasOwn(layouts, name) ? layouts[name] : null
+  if (!file) {
+    const known = Object.keys(layouts).sort()
+    return {
+      layoutImport: '',
+      body: html,
+      layoutError: `layout: ${name} names no layout. ` +
+        (known.length ? `Known: ${known.join(', ')}.` : 'No layout directory holds any file.') +
+        ' Write `layout: false` for a file that has none.',
+    }
+  }
+
+  const props = Object.keys(frontmatter)
+    .filter((k) => k !== 'layout' && IDENTIFIER.test(k))
+    .map((k) => `${k}={${k}}`)
+    .join(' ')
+
+  return {
+    layoutImport: `  import MarkdownLayout from ${JSON.stringify(file)}`,
+    body: [
+      '{#snippet markdownBody()}',
+      html,
+      '{/snippet}',
+      `<MarkdownLayout ${props} {class} {...$attributes} children={markdownBody}>{@render markdownBody()}</MarkdownLayout>`,
+    ].join('\n'),
+    layoutError: null,
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /**
  * Compile a .md file to the same output format as compile().
  *
  * @param {string} source   — raw .md file contents
- * @param {object} [config] — same options as compile()
+ * @param {object} [config] — same options as compile(), plus:
+ *   config.layouts {Record<string,string>} — layout name → file. With it, a
+ *     `layout:` in the frontmatter wraps the body in that component, and a name
+ *     it does not hold is a compile error. Without it, `layout:` wraps nothing.
  * @returns {Promise<object>} ctx — same as compile(), plus:
  *   ctx.frontmatter  {object}       — parsed frontmatter values
  *   ctx.layout       {string|null}  — frontmatter.layout value
@@ -404,13 +465,25 @@ export async function compileMd(source, config = {}) {
     // spelling of `{` that reaches the DOM as text and never opens a `{…}`.
     .split(BRACE_ESCAPE).join('&#123;')
 
+  // 5c. The component `layout:` names wraps the body (FJS-1493).
+  const { layoutImport, body, layoutError } = wrapInLayout(safeHtml.trim(), frontmatter, config.layouts)
+
   // 6. Build merged <script> block
   const fmExports = frontmatterToExports(frontmatter, innerScript)
-  const mergedScript = [fmExports, innerScript].filter(Boolean).join('\n\n').trim()
+  const mergedScript = [layoutImport, fmExports, innerScript].filter(Boolean).join('\n\n').trim()
+
+  // The frontmatter again, at MODULE scope. The exports above are props, which
+  // only an instance can read, so a page listing a directory of `.md` files — a
+  // collection — could render each body and read none of its fields: no
+  // reviewer, no rating, nothing to sort by. mdsvex's `metadata`. A `.md` file
+  // has no `<script module>` of its own (a second script is refused), so this
+  // one cannot collide.
+  const moduleScript = `<script module>\n  export const frontmatter = ${JSON.stringify(frontmatter)}\n</script>`
 
   const mesaSource = [
+    moduleScript,
     mergedScript ? `<script>\n${mergedScript}\n</script>` : '',
-    safeHtml.trim()
+    body
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -424,6 +497,7 @@ export async function compileMd(source, config = {}) {
   ctx.layout       = frontmatter.layout ?? null
   ctx.markdownHTML = safeHtml
 
+  if (layoutError) scriptErrors.push(layoutError)
   if (scriptErrors.length) {
     ctx.analysis ??= {}
     ctx.analysis.errors ??= []

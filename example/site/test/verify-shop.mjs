@@ -53,13 +53,12 @@
  * `Ba ket (1 item)` and reads exactly like a rendering bug in the component.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-
 import { serveSite } from '@frontierjs/sierra/site/serve'
 import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
+import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -148,7 +147,7 @@ check('the basket link is in the layout, on every page',
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-shop-'))
+const profile = chromeProfile('fjs-shop-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
@@ -405,7 +404,6 @@ try {
   failed = 1
 } finally {
   try { chrome.kill() } catch {}
-  rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   stopAll()
 }
 

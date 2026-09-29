@@ -254,13 +254,16 @@ describe('the version rides the patch', () => {
     expect(lastPatch().version).toBe(99)
   })
 
-  // Inventing a number would silently win a race. Letting the server refuse is
-  // the honest failure.
-  test('nothing read means nothing sent — the server gets to refuse', async () => {
+  // Inventing a number would silently win a race, and sending none gets a
+  // refusal in the server's words, or none at all from an offline drain. The
+  // device refuses by name instead (`FJS-D468`); the rest is
+  // resource-read-versions.test.js.
+  test('nothing read means nothing sent — refused on the device', async () => {
     const r = createResource('orders', { model: 'Order' })
     expect(r.version(1)).toBeNull()
-    await r.service.patch(1, { note: 'edited' })
-    expect(lastPatch()).toEqual({ note: 'edited' })
+    const err = await r.service.patch(1, { note: 'edited' }).catch(e => e)
+    expect(err.code).toBe('VERSION_UNREAD')
+    expect(lastPatch()).toBeUndefined()
   })
 
   test('a model with no @version is untouched', async () => {

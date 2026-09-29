@@ -1305,12 +1305,16 @@ model Project {
 
 model Environment {
   id          String          @id @default(uuid())
-  projectId   String
+  // Moving an environment to another project is a new environment: its apps,
+  // releases and variables all belong to the one it was created under.
+  projectId   String          @immutable
   project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   workspaceId String
 
   name        String          @trim @length(1, 64)
-  slug        String          @trim @length(1, 64)
+  // A slug is an address other things were built on — a hostname, a CLI
+  // argument — so a rename changes `name` and leaves the address standing.
+  slug        String          @trim @length(1, 64) @immutable
   tier        EnvironmentTier @default(development)
   isProtected Boolean         @default(false)
   /// The environment's variables — a separate grant from editing the
@@ -1355,13 +1359,16 @@ model Environment {
 model App {
   id            String      @id @default(uuid())
   workspaceId   String
-  environmentId String
+  // Moving an app between environments would orphan its deployment history.
+  environmentId String      @immutable
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
   name          String      @trim @length(1, 80)
-  slug          String      @trim @length(1, 64)
+  slug          String      @trim @length(1, 64) @immutable
   type          AppType     @default(container)
-  status        AppStatus   @default(unknown)
+  // What the machine last reported — a deploy and a removal write it by naming
+  // the column; a form that offered it would let a person claim `running`.
+  status        AppStatus   @default(unknown) @system
 
   source        Json        @default("{}")
   config        Json        @default("{}")
@@ -1569,13 +1576,15 @@ model Job {
   id             String       @id @default(uuid())
   workspaceId    String
   workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  appId          String?
+  appId          String?      @immutable
   app            App?         @relation(fields: [appId], references: [id])
   environmentId  String?
   environment    Environment? @relation(fields: [environmentId], references: [id])
 
   name           String       @trim @length(1, 200)
-  kind           JobKind      @default(one_shot)
+  // What a job IS — a one-shot or a schedule, and for which app — is fixed at
+  // create; a different one is a new job.
+  kind           JobKind      @default(one_shot) @immutable
   status         JobStatus    @default(pending)
   command        String?
   cronExpression String?
@@ -1583,9 +1592,10 @@ model Job {
   triggerConfig  Json         @default("{}")
   timeoutSeconds Int          @default(300)
   retryLimit     Int          @default(3)
-  retryCount     Int          @default(0)
-  lastRunAt      DateTime?
-  lastRunStatus  String?
+  // The engine's record of the last run, written by `startRun`/`finishRun`.
+  retryCount     Int          @default(0) @system
+  lastRunAt      DateTime?    @system
+  lastRunStatus  String?      @system
 
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @default(now()) @updatedAt
@@ -1602,10 +1612,15 @@ model Job {
   // `cancel` is reachable from `failed` because `remove()` cancels whatever it
   // soft-deletes: a job left `pending` behind a `deletedAt` is invisible to
   // every read and still on the clock.
+  //
+  // Three moves are the ENGINE's — `startRun` and `finishRun`, through
+  // asSystem() — and `@system` says so, as it does on Deployment: a patch is
+  // reachable by a developer, and `start` unmarked let one mark a job running
+  // that nothing was running. `cancel` is a person's.
   @@transitions(status,
-    start:  [pending, failed]          -> running,
-    idle:   running                    -> pending,
-    fail:   running                    -> failed,
+    start:  [pending, failed]          -> running   @system,
+    idle:   running                    -> pending   @system,
+    fail:   running                    -> failed    @system,
     cancel: [pending, running, failed] -> cancelled)
   @@softDelete
   @@log(audit)

@@ -1,0 +1,74 @@
+---
+title: Apps
+---
+<script>
+  // Every app in this workspace. An app is CREATED inside its environment,
+  // because it belongs to exactly one, but it is FOUND here — reaching one
+  // only through project → environment was three clicks to a screen people
+  // open daily.
+  //
+  // Same shape as the deployments list: `columns()` ranks the read schema and
+  // names what it left out, and the service's include of `environment` is
+  // what the relation cell reads.
+  import { session } from '../../session.js'
+  import { apps } from '../../resources/App.mesa'
+  import Button    from '@frontierjs/ui/components/forms/Button.mesa'
+  import Cell      from '@frontierjs/ui/components/display/Cell.mesa'
+  import FilterBar from '@frontierjs/ui/components/display/FilterBar.mesa'
+  import Table     from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.workspaceId
+
+  const { columns: cols } = apps.columns()
+  const columns = [
+    ...cols,
+    { name: '_open', label: 'Actions', hideLabel: true },
+  ]
+
+  const { filters, search } = apps.filters()
+
+  // Composed for the reason the deployments list gives: a push carries the
+  // row without its includes, so a held row would blank its environment cell
+  // on the first deploy.
+  const list = apps.list({ state: 'local', composed: true, directives: { limit: 50 } })
+
+  $: session.workspaceId, () => list.reload()
+</script>
+
+<div class="section-header">
+  <h1>Apps</h1>
+  <span class="text-sm text-muted">created inside an environment</span>
+</div>
+
+{#if list.error}
+  <article class="alert danger">
+    <div class="alert-content">{list.error.message}</div>
+  </article>
+{/if}
+
+<FilterBar id="app-filters" {filters} {search} value={list.query}
+            directives={list.directives} onchange={list.apply} />
+
+{#if list.loading && !list.rows.length}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !list.rows.length}
+  <article class="alert info">
+    <div class="alert-content">
+      No apps match. An app is created inside an environment — <a href="/">the overview</a> walks you to one.
+    </div>
+  </article>
+{:else}
+  <Table id="app-rows" {columns} rows={list.rows} striped>
+    {#snippet row(app)}
+      <tr>
+        {#each cols as c}
+          <td data-col={c.name}><Cell value={app[c.name]} column={c} record={app} /></td>
+        {/each}
+        <td><Button variant="ghost" href={`/apps/${app.id}/`}>Open</Button></td>
+      </tr>
+    {/snippet}
+  </Table>
+  {#if list.hasMore}
+    <Button variant="ghost" id="app-more" onclick={list.more}>Load more</Button>
+  {/if}
+{/if}

@@ -123,8 +123,8 @@ title: DNS & edge
       <EmptyState
         compact
         title="No hostnames yet"
-        description="A domain is added on an app, where the certificate and the primary flag live with it."
       >
+        A domain is added on an app, where the certificate and the primary flag live with it.
         {#snippet action()}
           <Button variant="outlined" href="/projects/">Open a project</Button>
         {/snippet}

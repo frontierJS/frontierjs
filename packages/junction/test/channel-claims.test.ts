@@ -344,3 +344,89 @@ describe('the refuse-all warning names the cause', () => {
     expect(said).not.toContain('strategy row')
   })
 })
+
+// ─── a claim that takes a database read (`FJS-1316`, `FJS-D472`) ──────────
+//
+// linear's private teams: whether a person may see a team's rows is a
+// membership row, so the claim is a database read. A synchronous resolver
+// cannot make one, and the only place left to read it was the socket's
+// 'connection' handler, so a person removed from a team kept receiving its
+// rows on the socket they already had while the same row over HTTP was a 404.
+// The resolver may now answer a Promise, awaited on every frame with no cache.
+
+describe('a resolver that reads the database is asked on every frame', () => {
+  // A membership table the resolver reads, and the write that changes it.
+  function memberships(initial: Record<string, string[]>) {
+    const rows = new Map(Object.entries(initial))
+    const calls: string[] = []
+    const claimsFor = async (name: string, conn: any) => {
+      calls.push(`${conn.user?.userId}@${name}`)
+      await Promise.resolve()               // the read is a real await
+      const ws = name.slice('workspace:'.length)
+      return (rows.get(conn.user?.userId) ?? []).includes(ws) ? { workspaceId: ws } : null
+    }
+    return { rows, calls, claimsFor }
+  }
+
+  test('a member removed mid-session stops receiving on the socket they already have', async () => {
+    const m       = memberships({ ana: [WS_A] })
+    const manager = createChannelManager(undefined, m.claimsFor)
+    const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    m.rows.set('ana', [])
+    await publish(manager, db, { ...ROW_A, name: 'renamed' }, [`workspace:${WS_A}`])
+
+    expect(ana.rows()).toEqual([ROW_A])
+  })
+
+  test('and the other way — a person added mid-session starts receiving', async () => {
+    const m       = memberships({ ana: [] })
+    const manager = createChannelManager(undefined, m.claimsFor)
+    const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    m.rows.set('ana', [WS_A])
+    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+
+    expect(ana.rows()).toEqual([ROW_A])
+  })
+
+  test('asked once per principal per channel per frame, however many sockets they hold', async () => {
+    const m       = memberships({ ana: [WS_A], lea: [WS_A] })
+    const manager = createChannelManager(undefined, m.claimsFor)
+    const tabs    = [1, 2, 3].map(() => subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' }))
+    const lea     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'lea' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+
+    expect(m.calls.sort()).toEqual([
+      `ana@workspace:${WS_A}`, `ana@workspace:${WS_A}`,
+      `lea@workspace:${WS_A}`, `lea@workspace:${WS_A}`,
+    ])
+    for (const t of tabs) expect(t.rows()).toEqual([ROW_A, ROW_A])
+    expect(lea.rows()).toEqual([ROW_A, ROW_A])
+  })
+
+  test('a resolver that rejects refuses its recipients, and the others still receive', async () => {
+    const manager = createChannelManager(undefined, async (name: string, conn: any) => {
+      if (conn.user?.userId === 'broken') throw new Error('db gone')
+      return { workspaceId: name.slice('workspace:'.length) }
+    })
+    const broken = subscriber(manager, [`workspace:${WS_A}`], { userId: 'broken' })
+    const fine   = subscriber(manager, [`workspace:${WS_A}`], { userId: 'fine' })
+    const { db } = tenantBoundary()
+
+    const original = console.warn
+    console.warn = () => {}
+    try { await publish(manager, db, ROW_A, [`workspace:${WS_A}`]) }
+    finally { console.warn = original }
+
+    expect(broken.sent()).toEqual([])
+    expect(fine.rows()).toEqual([ROW_A])
+  })
+})

@@ -5,8 +5,8 @@
  * grader short of `vite build`: an unclosed `{#if}` or a RULE 7 watch passed
  * rules, lint, typecheck and tests, and failed at the first deploy (`FJS-1228`).
  *
- * The source goes through `prepareMesaSource`, the plugin's own preprocessing,
- * so a file is judged as the build would judge it. Auto-imports are not
+ * The source goes through `prepareForCompile`, the preparation both builds use
+ * (`FJS-1491`), so a file is judged as the build would judge it. Auto-imports are not
  * applied: Mesa compiles an undefined name without complaint, so they change
  * no verdict here.
  *
@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'fs'
 import { pathToFileURL } from 'url'
-import { findMesaFile, prepareMesaSource } from './mesa-plugin.js'
+import { findMesaFile, prepareForCompile } from './mesa-plugin.js'
 
 /**
  * @param {string[]} files — absolute paths
@@ -30,7 +30,7 @@ export async function checkMesaFiles(files, { root = process.cwd() } = {}) {
 
   const failed = []
   for (const file of files) {
-    const { content } = prepareMesaSource(readFileSync(file, 'utf8'), file)
+    const content = prepareForCompile(readFileSync(file, 'utf8'), file)
     if (content === null) continue
     try {
       const ctx = await compiler.compileSource(content, { filename: file })

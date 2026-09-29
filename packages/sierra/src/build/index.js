@@ -17,7 +17,7 @@ import { resolve, isAbsolute } from 'path'
 import { existsSync } from 'fs'
 import { readdir, rm } from 'fs/promises'
 import { pathToFileURL } from 'url'
-import { mesaPlugin } from './mesa-plugin.js'
+import { mesaPlugin, prepareForCompile } from './mesa-plugin.js'
 import { devtoolsPlugin } from './devtools-plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
@@ -28,6 +28,8 @@ import { prerenderRoutes } from './prerender.js'
 import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
 import { pruneUnreachable } from './prune-unreachable.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
+import { markdownLayoutsPlugin } from './markdown-layouts.js'
+import { expandGlobs } from './glob-expand.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
@@ -59,6 +61,9 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  *   it.
  * @property {{ shadowDOM?: boolean }} [mesa]
  * @property {{ components?: string[], modules?: Record<string, string[]|object|string> }} [autoImport]
+ * @property {string[]} [markdownLayouts] — directories whose `.mesa`/`.md` files
+ *   are the names a `.md` file's `layout:` may say, a later directory winning a
+ *   name. Unset, `layout:` is metadata and wraps nothing (see markdown-layouts.js).
  * @property {{ output?: string }} [routeTable] — where the generated route
  *   table is written (default `config/routes.js`)
  * @property {object} [junction]
@@ -80,6 +85,18 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  * @property {object|null} tree        — current route tree
  * @property {Map} staticMap           — file → ctx.isStatic boolean
  */
+
+/**
+ * A user plugin as Vite is handed it: everything but `closeBundle`, which the
+ * post-build pipeline calls itself (FJS-1535). Anything that is not a plain
+ * plugin object — an array, a falsy slot — passes through as Vite reads it.
+ */
+function withoutPostBuildHook(plugin) {
+  if (!plugin || typeof plugin !== 'object' || Array.isArray(plugin)) return plugin
+  if (typeof plugin.closeBundle !== 'function') return plugin
+  const { closeBundle, ...hooks } = plugin
+  return hooks
+}
 
 /**
  * Create a complete Vite config from a Sierra config object.
@@ -105,6 +122,7 @@ export function createSierraViteConfig(config = {}) {
     staticMap: new Map(),
     layoutPropMap: new Map(),  // layout file path → Set of export let prop names
     autoImportMap: new Map(),  // name → { kind, from, imported }
+    markdownLayouts: null,     // layout name → file, when markdownLayouts is set
   }
 
   const sierraPlugins = []
@@ -138,6 +156,8 @@ export function createSierraViteConfig(config = {}) {
   // Auto-import (all targets — widget components benefit too)
   const aiPlugin = autoImportPlugin(config, sierraContext)
   if (aiPlugin) sierraPlugins.push(aiPlugin)
+  const mlPlugin = markdownLayoutsPlugin(config, sierraContext)
+  if (mlPlugin) sierraPlugins.push(mlPlugin)
 
   // Mesa compiler for all targets
   // Devtools toolbar — dev only, no bundle impact in production
@@ -198,7 +218,11 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
     },
     plugins: [
       ...sierraPlugins,
-      ...userPlugins,
+      // A user plugin's `closeBundle` is Sierra's post-build hook, called with
+      // `{ outDir, root, config, routeTable }` once the pages are written.
+      // Vite would call it as well — first, and with no context — so the copy
+      // Vite sees carries every hook but that one (FJS-1535).
+      ...userPlugins.map(withoutPostBuildHook),
     ],
     server: {
       // `FLI_PORT_FE` first — that is the name the port broker sets
@@ -365,6 +389,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         indexed:   routeNodes
           .filter(n => n.meta?.status !== 'draft')
           .filter(n => n.meta?.robots !== 'noindex')
+          .filter(n => !n.meta?.redirect)
           .filter(n => !n.meta?.dynamic)
           .map(n => n.path),
         // The same list with the DYNAMIC exclusion left off. `indexed` drops
@@ -375,6 +400,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         indexable: routeNodes
           .filter(n => n.meta?.status !== 'draft')
           .filter(n => n.meta?.robots !== 'noindex')
+          .filter(n => !n.meta?.redirect)
           .map(n => n.path),
         redirects: routeNodes
           .filter(n => n.meta?.redirect)
@@ -420,6 +446,17 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           routesDir: config.routesDir ?? 'src/routes',
           outDir,
           renderComponent,
+          // What the Vite transform does to a file, done to every file the
+          // render reads from disk, with the options it compiles under — or a
+          // page that works in dev fails here (`FJS-1491`).
+          // And the one thing Vite does that the render cannot: an eager
+          // `import.meta.glob` becomes the static imports it stands for.
+          transformSource: (source, file) =>
+            expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file),
+          compileOptions: {
+            ...(config.mesa ?? {}),
+            ...(sierraContext.markdownLayouts ? { layouts: sierraContext.markdownLayouts } : {}),
+          },
           schemaDefs:   sierraContext.schemaDefs,
           schemaModels: sierraContext.schemaModels,
           db:           safetyDb,
@@ -447,6 +484,10 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         if (pre.written.length > 0) {
           console.log(`\n  [Sierra] Prerendered ${pre.written.length} page(s):`)
           for (const f of pre.written) console.log(`    ✓ ${f}`)
+        }
+        if (pre.omitted?.length) {
+          console.log(`\n  [Sierra] Not prerendered, by their frontmatter:`)
+          for (const o of pre.omitted) console.log(`    · ${o.route} — ${o.reason}`)
         }
 
         // Print what the safety check proved. A rule whose passing case is

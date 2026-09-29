@@ -84,3 +84,15 @@ body {
 /* Badge and Pill are spans in the vocabulary. Where Studio makes one clickable
    the element has to be a button, and the UA chrome has to come off it. */
 button:is(.badge, .pill) { appearance: none; cursor: pointer }
+/*
+ * ── A list-shaped term does not carry the UA list margin ─────────────
+ *
+ * `<ol>` and `<dl>` arrive with 1em above and below. Feed, Steps and Facts
+ * zeroed it themselves, in the patterns layer — which also beat the space a
+ * parent puts between its children, so a Facts under a Card's heading sat
+ * flush against it while every other child was spaced. Zeroed here, the
+ * weakest layer, the UA margin still goes and the parent still wins.
+ */
+:where(.feed, .steps, .facts) {
+  margin: 0;
+}

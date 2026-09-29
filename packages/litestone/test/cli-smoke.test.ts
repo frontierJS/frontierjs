@@ -1431,3 +1431,70 @@ describe('studio refuses a non-loopback bind that carries no token', () => {
     } finally { await killProc(proc) }
   }, 40_000)
 })
+
+// ─── backup / replicate: everything under db/, not only what the schema names ─
+//
+// Caravan's queue and a `local` storage provider's bytes sit under `db/` and no
+// `database { }` block names them, so a restore from either command brought back
+// every row and none of the pending jobs or images those rows point at
+// (FJS-1391). The layout is the list (`FJS-D493`). Paired with a bare project,
+// whose schema directory is its source tree and is not copied.
+describe('backup / replicate — the rest of db/', () => {
+  const appFixture = (label: string) => {
+    const dir = makeFixtureDir(label, { schema: null })
+    const db  = join(dir, 'db')
+    mkdirSync(join(db, 'public', 'storage', 'ProductImage'), { recursive: true })
+    mkdirSync(join(db, 'backups', 'earlier'), { recursive: true })
+    writeFileSync(join(db, 'schema.lite'), `model Post {\n  id    Int    @id\n  title String\n}\n`, 'utf8')
+    writeFileSync(join(dir, 'litestone.config.js'), `export default { schema: './db/schema.lite', db: './db/app.db' }\n`, 'utf8')
+    new Database(join(db, 'app.db')).run('CREATE TABLE post (id INTEGER PRIMARY KEY, title TEXT)')
+    const jobs = new Database(join(db, 'jobs.db'))
+    jobs.run('CREATE TABLE jobs (id TEXT PRIMARY KEY)')
+    jobs.run(`INSERT INTO jobs VALUES ('pending-1')`)
+    jobs.close()
+    writeFileSync(join(db, 'public', 'storage', 'ProductImage', 'a.png'), 'PNGBYTES')
+    writeFileSync(join(db, 'backups', 'earlier', 'app.db'), 'an older backup')
+    return dir
+  }
+
+  test('backup copies the queue hot and the stored bytes as they are', async () => {
+    const dir = appFixture('layout-backup')
+    const r   = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain('backup complete')
+
+    const jobs = new Database(join(dir, 'out', 'db-jobs.db'), { readonly: true })
+    expect(jobs.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])
+    jobs.close()
+    expect(readFileSync(join(dir, 'out', 'db-files', 'public', 'storage', 'ProductImage', 'a.png'), 'utf8')).toBe('PNGBYTES')
+    // The declared database is copied once, under its own name, and an earlier
+    // backup is not folded into this one.
+    expect(existsSync(join(dir, 'out', 'db-app.db'))).toBe(false)
+    expect(existsSync(join(dir, 'out', 'main.db'))).toBe(true)
+    expect(existsSync(join(dir, 'out', 'db-files', 'backups'))).toBe(false)
+  })
+
+  test('replicate streams the queue and names the bytes it cannot stream', async () => {
+    const dir  = appFixture('layout-replicate')
+    const fake = join(dir, 'fake-litestream')
+    // Answers the version floor, then prints the config it was handed.
+    writeFileSync(fake, `#!/bin/sh\nif [ "$1" = version ]; then echo v0.5.2; exit 0; fi\ncat "$3"\n`, { mode: 0o755 })
+    const r = await runCli(dir, ['replicate', '--url', 'file:///tmp/replica'], { env: { LITESTREAM_BIN: fake } })
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain(`path: ${join(dir, 'db', 'jobs.db')}`)
+    expect(r.stdout).toContain('url: file:///tmp/replica/db-jobs')
+    expect(r.stdout).toContain(`path: ${join(dir, 'db', 'app.db')}`)
+    expect(r.stdout).not.toContain('db-app')
+    expect(r.stdout).toContain('not replicated')
+    expect(r.stdout).toContain('db/public/storage/ProductImage/a.png')
+  })
+
+  test('a schema outside db/ copies its declared set and nothing beside it', async () => {
+    const dir = makeFixtureDir('layout-bare', { schema: `model Post {\n  id    Int    @id\n  title String\n}\n` })
+    new Database(join(dir, 'test.db')).run('CREATE TABLE post (id INTEGER PRIMARY KEY)')
+    new Database(join(dir, 'jobs.db')).run('CREATE TABLE jobs (id TEXT)')
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(readdirSync(join(dir, 'out'))).toEqual(['main.db'])
+  })
+})

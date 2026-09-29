@@ -47,14 +47,13 @@
  */
 
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
+import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -153,7 +152,7 @@ for (const want of ['employees', 'payRuns', 'payslips', 'journalEntries']) {
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-payroll-'))
+const profile = chromeProfile('fjs-payroll-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
@@ -829,7 +828,6 @@ t('console.noErrorsAnywhere', noise.length === 0)
   catch (e) { console.log(`  note  sweep: ${e.message}`) }
 
   try { chrome.kill() } catch {}
-  try { rmSync(profile, { recursive: true, force: true }) } catch {}
   stopAll()
 }
 

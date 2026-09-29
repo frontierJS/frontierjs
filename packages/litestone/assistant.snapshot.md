@@ -501,6 +501,16 @@ valueset TaskTag {
 }
 ```
 
+#### `scope` <name>(<field>)
+
+tier: **situational** · see also: `exclude`
+
+What a no-overlap rule serializes on, declared once for every model sharing it: each model's `@@exclude(<name>, range: […])` cites it, and a write on any of them is checked against all of them. One declaration rather than each model listing its siblings, because the model nobody updated is the one that lets two rows overlap. Every citing model must carry the field. Not `@@scope`, which is a named read filter on one model.
+
+```lite
+scope person(employeeId)
+```
+
 #### `function` <name>(p: Type, …): Type { @@expr("…") }
 
 tier: **common** · see also: `generated`
@@ -715,7 +725,7 @@ orders Order[] @keep
 
 #### `@omit` [(all)]
 
-tier: **essential** · legal in: on a model's field, on a type's field, on a trait's field · also called: hide, exclude, private · see also: `guarded`, `system`
+tier: **essential** · legal in: on a model's field, on a type's field, on a trait's field · also called: hide, private · see also: `guarded`, `system`
 
 Left out of results unless asked for. Bare: skipped in lists, present on findUnique. `(all)` means never, unless explicitly selected. A visibility default, not a boundary — it does not refuse a write.
 
@@ -1267,6 +1277,16 @@ A composite unique constraint. Parses to `uniqueIndex`, which is why the written
 
 ```lite
 @@unique([accountId, number])
+```
+
+#### `@@exclude` (<scope>, range: [<start>, <end>])
+
+tier: **situational** · legal in: in a model, in a trait · also called: no overlap, exclusion constraint, double booking · see also: `scope`, `unique`
+
+No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing.
+
+```lite
+@@exclude(person, range: [startsAt, endsAt])
 ```
 
 #### `@@check` ("<sql>"[, "<message>"])

@@ -18,7 +18,14 @@ the trail naming a grant, and `example`'s basket re-modelled onto all three
 app; the cookie redemption (`FJS-D340`) — the basket carries a header and no
 link, so nothing here has needed it yet; the emailed one-time code
 (`FJS-D341`); and `lastUsedAt`, which is a write per request and wants a
-measurement first. What *ships* is cited to the file that ships it;
+measurement first. **The portal half was first built by the jazzhr
+stressor's Phase 3 (2026-09-29), in app code** (`fjs-prototypes/jazzhr/api/src/lib/portal.ts`,
+`app.ts`): D340's redemption as a raw route that rotates the grant row's digest
+from a link purpose to a cookie purpose, the token in the URL fragment, driven
+in Chrome and Firefox. It needed no framework change and met one seam:
+`cookie()` is read off the WebSocket's upgrade, so the cookie a redeem sets
+after load is invisible to the socket and a cleared one keeps working
+([`FJS-1503`](../ISSUES.md#fjs-1503)). What *ships* is cited to the file that ships it;
 every number was read off a database or a probe named beside it. Do not cite
 this file as behavior — see `VERIFYING.md`.
 

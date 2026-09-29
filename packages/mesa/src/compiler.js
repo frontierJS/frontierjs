@@ -366,6 +366,16 @@ export function detectExpressionType(name) {
   return undefined
 }
 
+// Whether `exp` is exactly one JavaScript expression, and nothing after it.
+function isExpression(exp) {
+  try {
+    const node = acorn.parseExpressionAt(exp, 0, { ecmaVersion: 'latest', sourceType: 'module', preserveParens: true })
+    return exp.slice(node.end).trim() === ''
+  } catch {
+    return false
+  }
+}
+
 export function parseJS(exp, fullParse) {
   const self = {}
   if (fullParse === true) self.ast = acorn.parse(exp, { ecmaVersion: 'latest' })
@@ -2248,6 +2258,13 @@ export function parseText(source, options = {}) {
     if (jsx) throw parseError(
       `{${exp}} — JSX inside an expression is not supported; markup is not a value. ` +
       'Write {#if cond}<b>…</b>{/if}, or a {#snippet} rendered with {@render}.', i)
+    // An expression is emitted verbatim as `${…}`, so one that is not
+    // JavaScript compiled clean and failed at import, naming no file — a CSS
+    // block pasted into an attribute (`data-styles="main { --x: 1 }"`) did
+    // exactly that (Invariant 15).
+    if (!js && !isExpression(exp)) throw parseError(
+      `{${exp.length > 40 ? exp.slice(0, 40) + '…' : exp}} is not a JavaScript expression. ` +
+      "A brace meant as text is '&lbrace;', or '\\{' in Markdown.", i)
     parts.push({ value: exp, type: js ? 'js' : 'exp' })
     i = end
   }
@@ -7387,12 +7404,15 @@ function _checkExternalReactivity(ctx, imports) {
   // Where a read is made. The template, and every top-level `const` — the
   // place a reader expects a derivation, so `const d = store.n * 2` beside no
   // watch is the same silence as `{store.n}`. A `const` holding a function
-  // reads when it is called, and `var` is the stated snapshot (§6).
+  // reads when it is called, and `var` is the stated snapshot (§6). A `$: x =`
+  // derivation is the same site: its re-run is driven by the watches, so over
+  // an unwatched import it holds its first value — Svelte's spelling of a
+  // reactive read, and the one that shows nothing wrong until a navigation.
   const sites = _collectTemplateExpressions(ctx.DOM.body).map((expr) => ({ expr, where: 'template' }))
   for (const v of Object.values(vars ?? {})) {
-    if (v.kind !== 'const' || v.isProp || !v.initRaw) continue
+    if (!(v.kind === 'const' || v.isWritableDerived) || v.isProp || !v.initRaw) continue
     if (/^(Arrow)?FunctionExpression$|^ClassExpression$/.test(v.initNode?.type ?? '')) continue
-    sites.push({ expr: v.initRaw, where: `const ${v.name}` })
+    sites.push({ expr: v.initRaw, where: v.isWritableDerived ? `$: ${v.name} =` : `const ${v.name}` })
   }
   const staticReads = (ctx.analysis.staticReads ??= [])
 
