@@ -1,0 +1,226 @@
+<!--
+  The territory map's pan, zoom and selection.
+
+  The picture, the hotspots and every entry are already in the prerendered
+  HTML, and each hotspot is a link to its entry. This moves the SVG's viewBox,
+  and on a hotspot click shows a copy of that entry in a panel over the map
+  rather than scrolling the reader away from it.
+
+  Zoom is the viewBox, not a CSS transform, so the hotspots stay in the image's
+  own coordinates and a click needs no conversion. The viewBox is clamped to
+  the image: past the edge there is nothing to look at.
+
+  Plain wheel scrolls the page. A map that eats the wheel traps a reader who
+  was only scrolling past it, so zoom by wheel needs Ctrl or Cmd — which is
+  also what a trackpad pinch sends.
+-->
+<script>
+  $.onMount(() => {
+    const frame = document.querySelector('[data-map]')
+    const svg   = frame?.querySelector('svg')
+    const panel = frame?.querySelector('[data-panel]')
+    const body  = frame?.querySelector('[data-panel-body]')
+    if (!frame || !svg || !panel || !body) return
+
+    const { width: W, height: H } = svg.viewBox.baseVal
+    const MAX_ZOOM = 4
+    const view = { x: 0, y: 0, w: W }
+
+    const apply = () => {
+      view.w = Math.min(W, Math.max(W / MAX_ZOOM, view.w))
+      const h = view.w * H / W
+      view.x = Math.min(W - view.w, Math.max(0, view.x))
+      view.y = Math.min(H - h, Math.max(0, view.y))
+      svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${h}`)
+      frame.classList.toggle('is-zoomed', view.w < W)
+    }
+
+    // A screen point in image coordinates. The SVG's box has the image's
+    // aspect ratio, so one scale serves both axes.
+    const toImage = (clientX, clientY) => {
+      const r = svg.getBoundingClientRect()
+      const s = view.w / r.width
+      return { x: view.x + (clientX - r.left) * s, y: view.y + (clientY - r.top) * s }
+    }
+
+    // Keeps the image point under (px, py) where it is on screen.
+    const zoomAt = (px, py, factor) => {
+      const before = view.w
+      view.w = Math.min(W, Math.max(W / MAX_ZOOM, view.w / factor))
+      const k = view.w / before
+      view.x = px - (px - view.x) * k
+      view.y = py - (py - view.y) * k
+      apply()
+    }
+    const zoomCenter = (factor) => {
+      const h = view.w * H / W
+      zoomAt(view.x + view.w / 2, view.y + h / 2, factor)
+    }
+    const reset = () => { view.x = 0; view.y = 0; view.w = W; apply() }
+
+    // ─── selection ──────────────────────────────────────────────────────
+    const hotspots = [...svg.querySelectorAll('.territory')]
+    const ids      = hotspots.map((a) => a.dataset.id)
+
+    const select = (id) => {
+      const entry = document.querySelector(`.entry[data-id="${id}"]`)
+      if (!entry) return
+      for (const a of hotspots) a.classList.toggle('is-selected', a.dataset.id === id)
+
+      // A copy, so the list below keeps its entry and the id stays unique.
+      const copy = entry.cloneNode(true)
+      copy.removeAttribute('id')
+      body.replaceChildren(...copy.childNodes)
+      panel.dataset.id = id
+      panel.hidden = false
+
+      // Zoomed in with the territory off screen: bring it to the middle.
+      const e = svg.querySelector(`.territory[data-id="${id}"] ellipse`)
+      const cx = e.cx.baseVal.value, cy = e.cy.baseVal.value
+      const h = view.w * H / W
+      if (cx < view.x || cx > view.x + view.w || cy < view.y || cy > view.y + h) {
+        view.x = cx - view.w / 2
+        view.y = cy - h / 2
+        apply()
+      }
+      history.replaceState(null, '', '#' + id)
+    }
+
+    const close = () => {
+      const id = panel.dataset.id
+      panel.hidden = true
+      delete panel.dataset.id
+      for (const a of hotspots) a.classList.remove('is-selected')
+      history.replaceState(null, '', location.pathname + location.search)
+      svg.querySelector(`.territory[data-id="${id}"]`)?.focus()
+    }
+
+    // ─── pointers: drag to pan, two fingers to pinch ────────────────────
+    const pointers = new Map()
+    let dragged = false
+    let pinch   = null
+
+    const onDown = (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY })
+      if (pointers.size === 1) dragged = false
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()]
+        pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y) }
+      }
+    }
+
+    const onMove = (e) => {
+      const p = pointers.get(e.pointerId)
+      if (!p) return
+
+      if (pointers.size === 2 && pinch) {
+        p.x = e.clientX; p.y = e.clientY
+        const [a, b] = [...pointers.values()]
+        const dist = Math.hypot(a.x - b.x, a.y - b.y)
+        const mid  = toImage((a.x + b.x) / 2, (a.y + b.y) / 2)
+        zoomAt(mid.x, mid.y, dist / pinch.dist)
+        pinch.dist = dist
+        dragged = true
+        return
+      }
+
+      // Below the threshold it is still a click. Capturing any earlier would
+      // retarget the click to the SVG and the hotspot would never hear it.
+      if (!dragged && Math.hypot(e.clientX - p.x0, e.clientY - p.y0) < 5) return
+      if (!dragged) {
+        dragged = true
+        svg.setPointerCapture(e.pointerId)
+        frame.classList.add('is-dragging')
+      }
+      const s = view.w / svg.getBoundingClientRect().width
+      view.x -= (e.clientX - p.x) * s
+      view.y -= (e.clientY - p.y) * s
+      p.x = e.clientX; p.y = e.clientY
+      apply()
+    }
+
+    const onUp = (e) => {
+      pointers.delete(e.pointerId)
+      if (pointers.size < 2) pinch = null
+      if (!pointers.size) frame.classList.remove('is-dragging')
+    }
+
+    // ─── clicks, wheel, keys ────────────────────────────────────────────
+    // Capture phase: a drag that ended on a hotspot must not also select it.
+    const onClickCapture = (e) => {
+      if (!dragged) return
+      e.preventDefault()
+      e.stopPropagation()
+      dragged = false
+    }
+
+    const onClick = (e) => {
+      const a = e.target.closest('.territory')
+      if (!a) return
+      e.preventDefault()
+      select(a.dataset.id)
+    }
+
+    const onWheel = (e) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const p = toImage(e.clientX, e.clientY)
+      zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.01))
+    }
+
+    const onDblClick = (e) => {
+      e.preventDefault()
+      const p = toImage(e.clientX, e.clientY)
+      zoomAt(p.x, p.y, 2)
+    }
+
+    const onFrameClick = (e) => {
+      const z = e.target.closest('[data-zoom]')?.dataset.zoom
+      if (z === 'in') zoomCenter(1.5)
+      else if (z === 'out') zoomCenter(1 / 1.5)
+      else if (z === 'reset') reset()
+      else if (e.target.closest('[data-close]')) close()
+    }
+
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'Escape' && !panel.hidden) { close(); return }
+      const act = { '+': () => zoomCenter(1.5), '=': () => zoomCenter(1.5),
+                    '-': () => zoomCenter(1 / 1.5), '0': reset }[e.key]
+      if (!act) return
+      e.preventDefault()
+      act()
+    }
+
+    svg.addEventListener('pointerdown', onDown)
+    svg.addEventListener('pointermove', onMove)
+    svg.addEventListener('pointerup', onUp)
+    svg.addEventListener('pointercancel', onUp)
+    svg.addEventListener('click', onClickCapture, true)
+    svg.addEventListener('click', onClick)
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    svg.addEventListener('dblclick', onDblClick)
+    frame.addEventListener('click', onFrameClick)
+    frame.addEventListener('keydown', onKey)
+
+    // A link into the page names a territory: open on it.
+    const wanted = location.hash.slice(1)
+    if (ids.includes(wanted)) select(wanted)
+
+    frame.dataset.ready = ''
+
+    return () => {
+      svg.removeEventListener('pointerdown', onDown)
+      svg.removeEventListener('pointermove', onMove)
+      svg.removeEventListener('pointerup', onUp)
+      svg.removeEventListener('pointercancel', onUp)
+      svg.removeEventListener('click', onClickCapture, true)
+      svg.removeEventListener('click', onClick)
+      svg.removeEventListener('wheel', onWheel)
+      svg.removeEventListener('dblclick', onDblClick)
+      frame.removeEventListener('click', onFrameClick)
+      frame.removeEventListener('keydown', onKey)
+    }
+  })
+</script>

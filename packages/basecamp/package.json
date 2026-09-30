@@ -33,6 +33,7 @@
     "verify:screens": "bun web/test/verify-screens.mjs",
     "verify:provision": "bun web/test/verify-provision.mjs",
     "verify:outpost": "bun api/test/verify-outpost.mjs",
+    "verify:dns": "bun api/test/verify-dns.mjs",
     "verify:mcp": "bun api/test/verify-mcp.mjs",
     "verify:cli": "bun cli/test/verify-cli.mjs",
     "cli": "bun cli/src/main.js",

@@ -28,6 +28,7 @@ Detail: `references/the-hook-pipeline.md`
   - **Declaring one gate means naming the whole surface**
 - **The gate runs before anything an app wrote, and `validated:` is the phase after the derived layer.**
 - **An `Idempotency-Key` on a mutating request executes once and replays the first answer**
+  - **A custom method is a write until it declares `read: true`** (`FJS-D505`) — undeclared, a keyed search keeps its answer, query and all, for 24 hours, and the bus announces it; declared, a write inside it runs again on a keyed retry
 - **An irreversible effect belongs in `ctx.afterCommit(fn)`, not in an `after` hook.**
 - **A `mailer.send()` that answers `sent` sends everything the message declared — including `cc`, `bcc`, `attachments` and `headers`** (`FJS-895`)
 - **A recurring `app.scheduler` job does not overlap itself, and the tick it dropped is COUNTED** (`FJS-896`)

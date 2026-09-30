@@ -166,6 +166,15 @@ export class HttpTransport extends BaseTransport {
     const replayable = IDEMPOTENT_METHODS.has(method) || key !== undefined || req.replayable === true
 
     while (attempt <= retries) {
+      // Between attempts, including a sleep the signal cut short. Only a
+      // replayable request reaches a second attempt, so nothing here is one
+      // conduit declined to repeat.
+      if (req.signal?.aborted) {
+        return this.fail('aborted', `Canceled by the caller before attempt ${attempt + 1}`, {
+          retryable: true,
+        })
+      }
+
       const remaining = deadline - performance.now()
       if (remaining <= 0) {
         return this.fail('timeout', 'Total deadline exceeded before the request completed', {
@@ -179,6 +188,9 @@ export class HttpTransport extends BaseTransport {
 
       if (result.error === null)        return result  // success
       if (!result.error.retryable)      return result  // permanent failure
+      // Retryable in itself, but the caller has gone — no replay is wanted.
+      if (result.error.kind === 'aborted')
+        return replayable ? result : this.declineReplay(result)
       // Conduit has decided this must not be sent again, so the error may not
       // say `retryable: true` — that flag is what a caravan job acts on, and
       // the job would then make the replay conduit just refused (`FJS-733`).
@@ -200,7 +212,7 @@ export class HttpTransport extends BaseTransport {
       // Don't sleep past the deadline — return the error we already have
       // rather than burning the remaining budget on a wait.
       if (performance.now() + wait >= deadline) return result
-      if (wait > 0) await sleep(wait)
+      if (wait > 0) await sleep(wait, req.signal)
     }
 
     // Unreachable but TypeScript needs it
@@ -248,7 +260,7 @@ export class HttpTransport extends BaseTransport {
     const err  = result.error
     const code = (err.raw as { code?: string } | undefined)?.code
     const indeterminate =
-      (err.kind === 'timeout' || err.kind === 'server_error' ||
+      (err.kind === 'timeout' || err.kind === 'aborted' || err.kind === 'server_error' ||
        (err.kind === 'connection_failed' && !neverDispatched(code)))
 
     return {
@@ -273,6 +285,10 @@ export class HttpTransport extends BaseTransport {
 
     const controller = new AbortController()
     const timer      = setTimeout(() => controller.abort(), timeout)
+    // Joined to the caller's signal, so a cancel closes the socket rather than
+    // leaving the attempt to run out its own timer at the provider.
+    const cancel     = () => controller.abort()
+    req.signal?.addEventListener('abort', cancel, { once: true })
 
     try {
       const url = this.buildUrl(req)
@@ -451,6 +467,10 @@ export class HttpTransport extends BaseTransport {
         })
       }
 
+      if ((err as Error).name === 'AbortError' && req.signal?.aborted) {
+        return this.fail('aborted', 'Canceled by the caller', { retryable: true })
+      }
+
       if ((err as Error).name === 'AbortError') {
         return this.fail('timeout', `Request timed out after ${timeout}ms`, {
           retryable: true
@@ -471,6 +491,7 @@ export class HttpTransport extends BaseTransport {
 
     } finally {
       clearTimeout(timer)
+      req.signal?.removeEventListener('abort', cancel)
     }
   }
 
@@ -600,8 +621,14 @@ function absolute(location: string, base: string): string {
   return safeUrl(location, base)?.toString() ?? location
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+// Wakes early on the caller's signal; the retry loop reads it next.
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>(resolve => {
+    if (signal?.aborted) return resolve()
+    const done  = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve() }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
 }
 
 // ─── Body handling ────────────────────────────────────────────

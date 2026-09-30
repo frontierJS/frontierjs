@@ -320,6 +320,18 @@ export function createConduit(
       })
     }
 
+    // Before admission, so a call its caller already abandoned takes no slot
+    // and cannot be a half-open breaker's trial.
+    if (req.signal?.aborted) {
+      return reject<T>(req, {
+        kind:      'aborted',
+        target:    req.target,
+        protocol:  null,
+        message:   'Canceled by the caller before it was sent',
+        retryable: true,
+      })
+    }
+
     // Load shedding happens before anything else — the whole point is that
     // a request against a known-bad target costs nothing.
     //

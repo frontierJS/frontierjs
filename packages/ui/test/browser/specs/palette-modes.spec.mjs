@@ -115,14 +115,22 @@ export async function run(t) {
 
   t.is(await t.evaluate(`return document.querySelectorAll('.fjs-cp-clear').length;`), 0,
     'no clear button while the box is empty')
+  t.is(await t.evaluate(`return document.querySelector('#asked').textContent;`), 'unreported',
+    'onquery is silent until the words change')
   await t.type('order')
   await t.eventually(`document.querySelectorAll('.fjs-cp-clear').length`, 1,
     'and one once there is something to clear')
+  await t.eventually(`document.querySelector('#asked').textContent`, 'order',
+    'onquery reports what was typed')
 
   await t.clickAt('.fjs-cp-clear')
   await t.eventually(`${rows}.length`, 5, 'clearing it restores the whole list')
   t.is(await t.evaluate(`return document.querySelector('.fjs-cp-input').value;`), '',
     'and empties the box')
+  // The case an app listening for input on the box missed: the button empties
+  // it without an input event, so a list built on the words kept the old ones.
+  await t.eventually(`document.querySelector('#asked').textContent`, '',
+    'and onquery reports the empty box')
 
   // The button is inside the panel, so clicking it moves focus off the input.
   // Nothing on screen says so — the list is right, the box is empty, the caret

@@ -1,0 +1,170 @@
+---
+title: "FrontierJS — the territory map"
+description: "Every FrontierJS package on one map: the three realms, what sits in each, and what depends on what. Zoom in, pick a territory, read about it."
+render: static
+---
+<!--
+  The territory map. One picture, a hotspot per package, and the same words in
+  a list below it.
+
+  Every hotspot is an <a> to its entry in that list, so with no JavaScript the
+  map is a picture whose territories are links. The island adds pan and zoom,
+  and moves the entry into a panel over the map instead of scrolling away from
+  it. The list is also what a crawler and a screen reader get, since the
+  lettering on the picture is pixels.
+-->
+<script>
+  import TerritoryMap from '../islands/TerritoryMap.mesa'
+
+  export let data = null
+
+  const d = data ?? { image: { src: '', width: 1, height: 1 }, territories: [] }
+</script>
+
+<a href="#territories" class="visually-hidden">Skip the map</a>
+
+<!-- ─── Hero ────────────────────────────────────────────────────────── -->
+<section id="top" class="hero">
+  <div class="container">
+    <p class="eyebrow">The map</p>
+    <h1>One schema. Three realms.</h1>
+    <p class="lede">
+      Every package, where it sits, and what it leans on. Data flows from Litestone
+      through Junction to Sierra; everything else is a territory one of those three
+      reaches for. Pick one to read about it.
+    </p>
+  </div>
+</section>
+
+<!-- ─── The map ─────────────────────────────────────────────────────── -->
+<section id="atlas">
+  <div class="container">
+    <div class="frame" data-map>
+      <svg viewBox={`0 0 ${d.image.width} ${d.image.height}`} data-viewport
+           role="group" aria-label="FrontierJS territory map">
+        <image href={d.image.src} width={d.image.width} height={d.image.height} />
+        {#each d.territories as t}
+          <g>
+            <a href={'#' + t.id} class="territory" data-id={t.id} aria-label={t.name}>
+              <ellipse cx={t.cx} cy={t.cy} rx={t.rx} ry={t.ry} />
+            </a>
+          </g>
+        {/each}
+      </svg>
+
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button class="btn outlined square" data-zoom="in"    aria-label="Zoom in">+</button>
+        <button class="btn outlined square" data-zoom="out"   aria-label="Zoom out">&minus;</button>
+        <button class="btn outlined square" data-zoom="reset" aria-label="Show the whole map">&#x2922;</button>
+      </div>
+
+      <aside class="panel" data-panel hidden aria-live="polite">
+        <button class="btn ghost square close" data-close aria-label="Close">&times;</button>
+        <div data-panel-body></div>
+      </aside>
+    </div>
+    <p class="hint mouse">Drag to pan · <kbd>Ctrl</kbd> + scroll or double-click to zoom · <kbd>+</kbd> <kbd>&minus;</kbd> <kbd>0</kbd> from the keyboard</p>
+    <p class="hint touch">Pinch to zoom · once zoomed in, drag to pan</p>
+  </div>
+</section>
+
+<!-- ─── The territories, as words ───────────────────────────────────── -->
+<section id="territories">
+  <div class="container">
+    <h2>Every territory</h2>
+    <ul class="entries">
+      {#each d.territories as t}
+        <li id={t.id} class="entry" data-id={t.id}>
+          <p class="realm">{t.realm}</p>
+          <h3>{t.name}</h3>
+          <p class="pitch">{t.pitch}</p>
+          {#if t.features.length}
+            <p class="features">{t.features.join(' · ')}</p>
+          {/if}
+          {#if t.href}
+            <a class="link" href={t.href}>Read about {t.name} →</a>
+          {:else}
+            <p class="status">{t.status}</p>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </div>
+</section>
+
+<TerritoryMap client:load />
+
+<style>
+section { padding: 3rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 4rem; }
+section:first-of-type { border-top: 0; padding-bottom: 1rem; }
+#atlas { border-top: 0; padding-top: 0; }
+
+h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; letter-spacing: -.03em; margin: .35em 0 .3em; }
+h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 1rem; }
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+.lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+/* ── the map ───────────────────────────────────────────────────────── */
+.frame {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--rule-strong); border-radius: 10px;
+  background: var(--surface-sunken);
+}
+/* pan-y at rest: one finger still scrolls the page past the map, and a pinch
+   is left to the island. Zoomed in, a finger pans the map instead. */
+.frame svg { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: grab; user-select: none; }
+.frame.is-zoomed svg { touch-action: none; }
+.frame.is-dragging svg { cursor: grabbing; }
+
+.territory ellipse {
+  fill: transparent; stroke: transparent; stroke-width: 3;
+  vector-effect: non-scaling-stroke; cursor: pointer;
+  transition: fill .15s, stroke .15s;
+}
+.territory:focus { outline: none; }
+.territory:hover ellipse,
+.territory:focus-visible ellipse {
+  fill: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  stroke: var(--color-primary);
+}
+.territory.is-selected ellipse {
+  fill: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  stroke: var(--color-primary); stroke-width: 4;
+}
+
+.zoom { position: absolute; left: .75rem; top: .75rem; display: flex; flex-direction: column; gap: .35rem; }
+.zoom .btn { background: var(--surface); }
+
+.panel {
+  position: absolute; right: .75rem; top: .75rem;
+  width: min(22rem, 45%); max-height: calc(100% - 1.5rem); overflow: auto;
+  padding: 1rem 1.1rem; border: 1px solid var(--rule-strong); border-radius: 10px;
+  background: var(--surface); box-shadow: 0 8px 28px rgb(0 0 0 / .18);
+}
+.panel .close { position: absolute; right: .4rem; top: .4rem; }
+.panel h3 { padding-right: 2rem; }
+
+.hint { font-size: .8rem; color: var(--ink-mute); margin: .6rem 0 0; }
+.hint kbd { font-size: .75rem; }
+.hint.touch { display: none; }
+@media (hover: none) {
+  .hint.mouse { display: none; }
+  .hint.touch { display: block; }
+}
+
+/* A phone has no room beside the map, so the panel sits under it. */
+@media (max-width: 40rem) {
+  .panel { position: relative; right: auto; top: auto; width: auto; max-height: none; border-width: 1px 0 0; border-radius: 0; box-shadow: none; }
+  .zoom { top: .5rem; left: .5rem; }
+}
+
+/* ── the entries ───────────────────────────────────────────────────── */
+.entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.entry { padding: 1rem 1.1rem; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); scroll-margin-top: 5rem; }
+.entry:target { border-color: var(--color-primary); }
+.realm { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .2rem; }
+h3 { font-size: 1.1rem; margin: 0 0 .4rem; }
+.pitch { margin: 0 0 .5rem; color: var(--ink-soft); line-height: 1.5; }
+.features { font-size: .82rem; color: var(--ink-mute); margin: 0 0 .6rem; line-height: 1.5; }
+.status { font-size: .85rem; color: var(--ink-mute); font-style: italic; margin: 0; }
+</style>

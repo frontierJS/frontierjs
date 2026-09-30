@@ -166,6 +166,9 @@ describe('a release that fails pages the channel the flow names', () => {
     try {
       const failed = await until(() => sys.deployment.findUnique({ where: { id: deployment.id } }), (d: any) => d?.status === 'failed')
       expect(failed.status).toBe('failed')
+      // A release that landed nowhere marks no placement — the control for
+      // the `running` below, which the ingress record's addresses are read off.
+      expect((await sys.appServer.findFirst({ where: { appId: app.id } })).status).toBe('unknown')
 
       // **One release is SEVERAL runs.** The trigger is every `update` to a
       // Deployment and a release moves through `building` before it lands, so
@@ -207,6 +210,8 @@ describe('a release that fails pages the channel the flow names', () => {
     const deployment = await release(app.id, `shop:${uniq()}`)
     const done = await until(() => sys.deployment.findUnique({ where: { id: deployment.id } }), (d: any) => ['success', 'failed'].includes(d?.status))
     expect(done.status).toBe('success')
+    // Where it landed is now where it RUNS (`servingAddresses`, `FJS-D561`).
+    expect((await sys.appServer.findFirst({ where: { appId: app.id, serverId: box.id } })).status).toBe('running')
 
     const runs = await until(runsOf, (r: any[]) => r.some(x => (x.trigger as any)?.record?.id === deployment.id && ['completed', 'failed'].includes(x.status)))
     const ours = runs.filter((r: any) => (r.trigger as any)?.record?.id === deployment.id)

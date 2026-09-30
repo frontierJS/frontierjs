@@ -499,16 +499,19 @@ name when it declares none.
 
 ### `edge` · model `edge`
 
-- **methods** — `zones`, `records`
-- **custom methods** — `zones`, `records`
+- **methods** — `zones`, `records`, `sync`, `syncStep`
+- **custom methods** — `zones`, `records`, `sync`, `syncStep`
 - **who may call** —
   - `zones` — standing 2 or above — declared `gate: 2`
   - `records` — standing 2 or above — declared `gate: 2`
+  - `sync` — standing 5 or above — declared `gate: 5`
+  - `syncStep` — standing 2 or above — declared `gate: 2`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
+| before | `syncStep` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

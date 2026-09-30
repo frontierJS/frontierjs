@@ -1790,6 +1790,8 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `deletedAt` | `DateTime` | yes | — | — |
 | `flags` | `FeatureFlag[]` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `ingressAccountId` | `String` | yes | — | — |
+| `ingressZoneId` | `String` | yes | — | — |
 | `invitations` | `Invitation[]` | — | — | relation |
 | `jobs` | `Job[]` | — | — | relation |
 | `members` | `WorkspaceMember[]` | — | — | relation |
@@ -1807,6 +1809,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 
 ```
 @@index(accountId)
+@@check((ingressAccountId IS NULL) = (ingressZoneId IS NULL))
 ```
 
 ### `WorkspaceMember`

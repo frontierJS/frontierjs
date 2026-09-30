@@ -86,17 +86,30 @@ export class WebSocketTransport extends BaseTransport {
       })
     }
 
+    if (req.signal?.aborted) {
+      return this.fail('aborted', 'Canceled by the caller before it was sent', { retryable: true })
+    }
+
     const id = crypto.randomUUID()
 
     return new Promise<ConduitResult<T>>((resolve) => {
+      // The far side may still answer; the frame is dropped as unknown.
+      const cancel = () => {
+        clearTimeout(timer)
+        this.pending.delete(id)
+        resolve(this.fail('aborted', 'Canceled by the caller', { retryable: true }))
+      }
       const timer = setTimeout(() => {
+        req.signal?.removeEventListener('abort', cancel)
         this.pending.delete(id)
         resolve(this.fail('timeout', 'WS request timed out', { retryable: true }))
       }, REQUEST_TIMEOUT_MS)
+      req.signal?.addEventListener('abort', cancel, { once: true })
 
       this.pending.set(id, {
         resolve: (msg) => {
           clearTimeout(timer)
+          req.signal?.removeEventListener('abort', cancel)
           this.pending.delete(id)
           if (msg.error) {
             resolve(this.fail('server_error', msg.error, { retryable: false }))
@@ -106,6 +119,7 @@ export class WebSocketTransport extends BaseTransport {
         },
         reject: (err) => {
           clearTimeout(timer)
+          req.signal?.removeEventListener('abort', cancel)
           this.pending.delete(id)
           resolve(this.fail('connection_failed', err.message, { retryable: true }))
         },

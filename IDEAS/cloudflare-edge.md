@@ -6,11 +6,14 @@ dated: 2026-09-29
 
 # Idea — Cloudflare as basecamp's first edge adapter, with DNS writes
 
-**Status: PROPOSAL, Phases 1–4 and 6 built for reads, and the connector's
-writes** (2026-09-30: a Cloudflare token is an account, the `edge` service reads
+**Status: PROPOSAL, Phases 1–5 built, and 6 for reads** (2026-09-30: a Cloudflare token is an account, the `edge` service reads
 zones and records, `/dns/` shows them beside the `Domain` rows, and the connector
-writes marked records and refuses unmarked ones; D1–D6 are ruled). Nothing calls
-a write yet — `sync`, `adopt` and the job are Phases 4–5. Dated 2026-09-29. Basecamp declares
+writes marked records and refuses unmarked ones; `edge.sync` pushes a Domain
+and its App's ingress record, drift carries all four kinds, the `domain:dns`
+job pushes on a Domain write and on a release, and `verify:dns` drives it with
+nobody pressing sync; D1–D6 are ruled). Not built: `adopt`, a push when a
+machine leaves `online` (`FJS-1614`), and a screen for the ingress zone or the
+sync button. Dated 2026-09-29. Basecamp declares
 `IEdge` with a stub behind it and `/dns/` renders a skeleton where the zone goes
 (`packages/basecamp/docs/ADAPTERS.md` § `edge`). This fills it with Cloudflare, and
 widens it from reading a zone to managing one — DNS is among the first connections
@@ -160,16 +163,35 @@ versus one token per client writing SendGrid's records.
    - **Built, reads only:** `zones` and `records(accountId, zoneId)`. `records`
      carries drift's first kind, the one D3 does not decide: a serving record's
      `domainId`, and `missing` — a `Domain` in the zone with no A/AAAA/CNAME.
-     The other two kinds and `sync` wait on D3. Graded at `Domain`'s read gate,
+     **Built since:** `conflicts`, `orphans` and `stale` (an App's ingress
+     record against `servingAddresses`), and `sync(domainId)` at ADMINISTRATOR —
+     the ingress record, then the CNAME, every refusal a 409 decided before a
+     write. `adopt` is not built: taking over an unmarked record needs a
+     connector method that writes a mark onto somebody else's record, which
+     libdns has no word for, and drift already names the conflict. Graded at `Domain`'s read gate,
      the account read `asSystem()` confined to the workspace. `edge` left
      `BasecampProviders`, and the portal's entry reads the accounts.
 5. **Job** — `domain-dns.job.ts`, dispatched on a `Domain` write with
    `id: dns:<domainId>:<version>` so a repeat is a no-op; retry follows
    `error.retryable`; a soft delete removes the marked record.
+   - **Built** as `domain:dns`, calling `edge.syncStep` (internal, at READER,
+     since it runs as whoever released). Dispatched by `domains`
+     create · patch · remove · restore, and by a release landing
+     (`dns:<domainId>:release:<deploymentId>`) — without that second trigger a
+     Domain added before the first deploy is never pushed, and a release that
+     moves machines leaves the ingress record naming the old one.
+   - A 502 retries (5 attempts); a 4xx is terminal; *not yet* — no ingress
+     zone, an App running nowhere, no connected zone, a redirect — is SKIPPED,
+     so a workspace with no edge account fails no job.
+   - A deleted Domain's CNAME is removed only where it carries that Domain's
+     mark (`EdgeRecordRef.mark`). The App's ingress record stays.
+   - The hostname became immutable on `domains.patch`: the CNAME pushed for an
+     old one would stay marked as the row's, which no drift reports.
+   - A machine leaving `online` dispatches nothing (`FJS-1614`).
 6. **Screen** — `/dns/` renders records and drift in place of the skeleton;
    analytics keeps its skeleton. **Built** for records and `missing`;
    `verify:screens` connects an account at the sink and asserts both.
-7. **Proof** — an API test over the sink (the `compute.test.ts` shape);
+7. **Proof** — **built**: `edge.test.ts` and `verify:dns` (7120 + 7128). Planned as: an API test over the sink (the `compute.test.ts` shape);
    `verify-screens.mjs`'s *the edge adapter reports its real state* asserts against
    the sink (ADAPTERS.md § *What wiring one will break*); a `verify:dns` drive or an
    extension of `verify:provision`, with its `DRIVES.md` row; the sink's port from

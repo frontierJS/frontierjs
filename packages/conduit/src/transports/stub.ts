@@ -147,7 +147,13 @@ export class StubTransport extends BaseTransport {
     this.calls.push(req)
 
     const entry = this.match(req)
-    if (entry.delay_ms) await sleep(entry.delay_ms)
+    if (entry.delay_ms) await sleep(entry.delay_ms, req.signal)
+
+    // A stubbed provider is cancelable like a real one, or a test of a fan-out
+    // passes against the stub while its losers run on in production.
+    if (req.signal?.aborted) {
+      return this.fail('aborted', 'Canceled by the caller', { retryable: true })
+    }
 
     if (entry.kind === 'error') {
       return this.fail(entry.error_kind!, entry.message!, {
@@ -213,6 +219,11 @@ function normalize(pattern: string): string {
   return `${trimmed.slice(0, space).toUpperCase()} ${trimmed.slice(space + 1).trim()}`
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>(resolve => {
+    if (signal?.aborted) return resolve()
+    const done  = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve() }
+    const timer = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
 }

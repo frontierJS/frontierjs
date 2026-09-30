@@ -1,5 +1,26 @@
 # Changes — Basecamp
 
+## 2026-09-30 — a Domain reaches its zone on its own (`IDEAS/cloudflare-edge.md` Phase 5)
+
+- **`domain:dns`** (`jobs/domain-dns.job.ts`) runs `edge.syncStep`, the same push as `sync`, internal and at READER because it runs as whoever released. Dispatched by `domains` create · patch · remove · restore as `dns:<domainId>:<version>`, and by a release landing, for each of the App's Domains, as `dns:<domainId>:release:<deploymentId>`. Without the release trigger, a Domain added before the first deploy is never pushed, and a release that moves machines leaves the ingress record naming the old one.
+- **Not yet is not a failure.** No ingress zone, an App running nowhere, no connected zone and a redirect are skipped, and the drift still names the hostname `missing`, so a workspace with no edge account writes Domains without a failed job for each. A record somebody else made is terminal, and so is any other 4xx; a 502 retries, five attempts.
+- **A deleted Domain's CNAME is removed**, only where it carries that Domain's mark. `EdgeRecordRef.mark` narrows a delete to one owner's records. The App's ingress record stays.
+- **The hostname is fixed once added.** `domains.patch` refuses a changed one (400), and `/dns/`'s edit drawer no longer offers it. A certificate is for a hostname, and the CNAME pushed for the old one would stay in its zone marked as the row's, which no drift reports.
+- Open: a machine leaving `online` without a release pushes nothing (`FJS-1614`).
+
+`api/test/edge.test.ts` 43/43, mutation-checked (no dispatch on create, no skip, no mark on the delete each fail one); `verify:dns` 22/22 with nobody pressing sync, 15/22 with the release dispatch removed; `bun run test` 552/552; `verify:screens` 230/230; typecheck at baseline.
+
+## 2026-09-30 — a Domain is pushed to the edge (`FJS-D561`; `IDEAS/cloudflare-edge.md` Phase 4)
+
+- **`edge.sync(domainId)`**, at ADMINISTRATOR: the App's INGRESS RECORD `<appId>.<ingress zone>` set to an A per machine it runs on, then the Domain's CNAME to it carrying `Domain.proxied` — ingress first, so a CNAME never names a record that is not there. Each marked (`basecamp:app:<id>`, `basecamp:domain:<id>`). A 409, before anything is written, when there is no ingress zone, the App runs nowhere, no connected zone holds the hostname, the Domain redirects (`FJS-1610`), or an unmarked A/AAAA/CNAME sits at the name.
+- **Drift carries all four kinds** — `missing`, and now `conflicts` (a Domain whose name holds somebody else's serving record), `orphans` (a record marked for a Domain or App that is gone) and `stale` (an ingress record whose addresses are not where the App runs, as `have` against `want`).
+- **Where an app RUNS has a producer.** `AppServer.status` was written `unknown` and never moved, so `FJS-D561`'s *running placement* named nothing. The deploy job now marks the placement a release landed on `running` (`markRunning`), and `servingAddresses()` in `core/runtime.ts` reads it — `running` and on an `online` server, the executor's rule, so a drained machine leaves the record the way it leaves the next release.
+- **Schema.** `Workspace.ingressAccountId` + `ingressZoneId`, with a `@@check` that they are set together; written through `workspaces.patch`. No screen for either yet.
+- **`verify:dns`** (API 7120, stand-in 7128): connects through `/secrets`, sets the ingress zone, runs two releases through the job, and reads the zone off the stand-in itself — the CNAME and the ingress record, a second sync writing nothing, a drained machine's release moving and showing `stale` until synced, a conflict refused with the zone unchanged, a deleted Domain's orphan.
+- **Not built:** `adopt`, and the job that syncs on a Domain write (Phase 5).
+
+`api/test/edge.test.ts` 35/35 (the `online` and `running` filters each mutation-checked); `automation.test.ts` asserts `running` after a real release and `unknown` after a failed one; `verify:dns` 22/22, red with `markRunning` removed; `bun run test` 544/544 — twice it was 544 + one `compute.test.ts` teardown timeout under load, filed as `FJS-1612`; typecheck at baseline.
+
 ## 2026-09-30 — the edge connector writes, and only what it marked (`FJS-D562`, `FJS-D560`)
 
 - **`appendRecords` · `setRecords` · `deleteRecords`** on `EdgeConnector`, libdns's shape. Each is one `POST /dns_records/batch`, so a refused call leaves nothing half-written and a retry repeats rather than finishes. `setRecords` keeps a record already holding a wanted value (patched only where ttl, proxied or the mark moved) and sends nothing when the set is already true.

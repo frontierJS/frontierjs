@@ -299,8 +299,9 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 | `client_error` | no | any other 4xx — the target understood and refused. `raw` carries the body, which on a 4xx is usually the half you can act on: a validation report, a decline code |
 | `invalid_response` | no | the target answered and the answer is unusable — HTML where a payload was expected, a body that did not parse as the JSON it claimed, or a response that failed the `validate` you declared |
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
-| `circuit_open` | no | the target's breaker is open — nothing was sent |
-| `overloaded` | no | the target's concurrency cap is full — nothing was sent |
+| `circuit_open` | yes | the target's breaker is open — nothing was sent, and the message names the seconds to wait |
+| `overloaded` | yes | the target's concurrency cap is full — nothing was sent |
+| `aborted` | yes | the caller's `signal` ended the call. **Does not count toward the circuit breaker** — the caller left, the target did not fail. On an unkeyed POST that was in flight it comes back `retryable: false, indeterminate: true`, like a timeout |
 | `redirected` | no | a 3xx. Redirects are not followed unless the target sets `follow_redirects: 'same-origin'`, because a followed redirect re-sends the credential to wherever it points |
 | `stream_error` | no | a `websocket` stream failed after setup |
 
@@ -326,7 +327,8 @@ const result = await app.conduit.send<ServerResponse>({
   query:      { page: 2, tag: ['a', 'b'] },  // ?page=2&tag=a&tag=b
   body:       { name: 'web-01' },   // JSON-serializable
   headers:    { 'X-Custom': '1' },  // merged with auth headers — auth wins
-  timeout_ms: 5_000,                // overrides global default
+  timeout_ms: 5_000,                // per attempt — overrides the target's policy
+  signal:     ac.signal,            // ends the call — see Canceling below
 })
 ```
 
@@ -341,6 +343,22 @@ const result = await app.conduit.send<ServerResponse>({
 **`POST` and `PATCH` are never retried by default.** A timed-out `POST /servers` may have committed on the target, and re-sending it bills for a second server. The timeout is returned to you and the decision is yours.
 
 Backoff is jittered, so N callers hitting the same degraded provider don't retry in lockstep, and the whole call — every attempt plus every sleep — is capped by `deadline_ms`.
+
+#### Canceling
+
+`signal` ends the call: the attempt in flight is closed at the socket, no further attempt starts, and a backoff sleep wakes early. The answer is `aborted`, and it never counts against the target's breaker. A signal that is already aborted sends nothing and takes no concurrency slot.
+
+It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `policy.deadline_ms` is still the ceiling.
+
+```ts
+const ac      = new AbortController()
+const signal  = AbortSignal.any([ac.signal, AbortSignal.timeout(400)])
+const answers = providers.map(target => app.conduit.send({ target, method: 'GET', path: '/search', query: { q }, signal }))
+// …once enough have answered:
+ac.abort()   // every loser is closed at its provider, and none is retried
+```
+
+`http`, `unix`, `websocket` and the test stub all honor it.
 
 On an HTTP or Unix target, a method that isn't a valid HTTP verb returns `invalid_request` rather than being coerced to `POST`. A typo like `'GTE'` used to become a live write.
 

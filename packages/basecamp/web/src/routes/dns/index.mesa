@@ -113,10 +113,10 @@ title: DNS & edge
   $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
 
-  // How a hostname is served. `appId` moves by delete-and-create and the
+  // How a hostname is served. `appId` and the hostname move by delete-and-create and the
   // certificate columns by `uploadCert`, so neither is offered; the primary flag
   // is the app screen's Make primary, which demotes the sibling.
-  const SERVED = ['hostname', 'redirectTo', 'port', 'proxied', 'sslMode']
+  const SERVED = ['redirectTo', 'port', 'proxied', 'sslMode']
   let editing = null
 
   function saved() {

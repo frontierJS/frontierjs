@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-30 — the dev watcher ignores dotfiles, so `.sierra-fresh-*` copies no longer feed back into it
+
+`classify` reads a `.sierra-fresh-<pid>-<n>-x.meta.js` copy as a `companion`, so the scanner plugin's `add`/`unlink` handlers ran a scan for each one. Each scan writes a fresh copy of every companion, and each copy triggered another scan. One `bun run dev` in `website/` wrote 44,550 files into `site/src/routes/` in 35 seconds before it was killed. `roleOf` now answers `ignored` for a dotfile, which matches `walk.js`. Proof: `test/scanner-plugin.test.js` › *the dev watcher*, red with the check removed.
+
 ## 2026-09-30 — the browser drives open Chrome through `@frontierjs/mesa/drive` (`FJS-1588`)
 
 `test/browser/installable.mjs` and `test/fixtures/widget-site/test/verify.mjs` run on `openChrome()`. The widget drive's profile at `/tmp/fjs-widget-<pid>` was never removed, and now the driver removes it. `test/fixtures/island-site/verify.mjs` stays on `--dump-dom` and takes its binary from `findChrome()`, so `$FJS_CHROME` means the same thing there as in every other drive. installable 26/26, widgets 46/46, islands green.

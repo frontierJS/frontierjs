@@ -513,6 +513,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ownerId` | `string` | yes | — | — | — |
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
+| `ingressAccountId` | `string`? | — | — | — | — |
+| `ingressZoneId` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `accountId`, `name`, `slug`, `ownerId` · not accepted — `id`, `version`

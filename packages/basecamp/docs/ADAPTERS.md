@@ -51,7 +51,8 @@ like a compute account (`FJS-D558`), and `services/edge/` reads through it.
 
 ```
 edge.zones                         → each account, with its zones or the vendor's error
-edge.records(accountId, zoneId)    → the zone's records, and `missing`
+edge.records(accountId, zoneId)    → the zone's records, and drift: missing · conflicts · orphans · stale
+edge.sync(domainId)                → the App's ingress record, then the Domain's CNAME to it (ADMINISTRATOR)
 ```
 
 **What the adapter adds is the other side of a `Domain` row** — the zone's own
@@ -65,13 +66,28 @@ this app intends to serve that resolves nowhere.
 standing a scoped read of `Secret` is refused, and `/dns/` would say no account
 exists. Analytics is a GraphQL endpoint at Cloudflare, a step of its own.
 
-**The connector writes; nothing calls it yet.** `appendRecords` · `setRecords` ·
+**`records` is the plan and `sync` the apply.** A Domain is a CNAME to its App's
+INGRESS RECORD, `<appId>.<ingress zone>`, holding an A per machine the App runs
+on — `running` and `online` (`servingAddresses`, `FJS-D561`). The ingress zone is
+`Workspace.ingressAccountId` + `ingressZoneId`, set through `workspaces.patch`
+(no screen yet). `sync` refuses with a 409 before writing anything when there is
+no ingress zone, the App runs nowhere, no connected zone holds the hostname, the
+Domain redirects (`FJS-1610`), or an unmarked A/AAAA/CNAME sits at the name.
+
+**Nobody has to press it.** The `domain:dns` job runs `edge.syncStep` on every
+`Domain` create, patch, remove and restore, and for each of an App's Domains
+when a release lands. A deleted Domain's CNAME is removed, only where it
+carries that Domain's mark. The *not yet* refusals are skipped rather than
+failed, so a workspace with no edge account writes Domains without a failed job
+for each. A machine leaving `online` pushes nothing until the next release
+(`FJS-1614`). `adopt` is not built.
+
+**The connector writes.** `appendRecords` · `setRecords` ·
 `deleteRecords` (`FJS-D562`), each one batch that applies whole. Every record
 written carries a mark, the caller's `RecordMark` spelled by the connector
 (`basecamp:domain:<id>` in Cloudflare's `comment`), and a set or delete naming a
 (name, type) set that holds an unmarked record is refused before anything is sent
-(`FJS-D560`). `drift`'s other kinds, `sync`, `adopt` and the job that calls them
-are `IDEAS/cloudflare-edge.md` Phases 4–5.
+(`FJS-D560`).
 
 ### `cloudSpend` — `ICloudSpend`, behind `/cloud-spend/`
 

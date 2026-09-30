@@ -329,9 +329,11 @@ Everything above is loud. These are not.
   subscription, not a permission.
 
 - **A custom method's RESULT is announced under its own name** (`orders pay`) on
-  the service's channel. A read-shaped method that answers something other than
-  a row — a count, a report, a credential — sets `$.dispatch = false`, or that
-  answer goes to every joined socket.
+  the service's channel. A method that writes no record — a search, a count, a
+  report — is declared `{ method: 'search', read: true }` in `methods:`, which
+  announces nothing and keeps no answer under an `Idempotency-Key` (`FJS-D505`).
+  A WRITE whose answer is not a row — a credential — sets `$.dispatch = false`.
+  A write inside a declared read still happens, and a keyed retry runs it again.
 
 - **A header a caller varies per call must be listed in
   `middleware.callHeaders`** in `junction.config.js` (`config.http.callHeaders`
@@ -371,7 +373,7 @@ Everything above is loud. These are not.
 6. A custom method called by a machine or a stranger states its `gate:`.
 7. Irreversible effects are in `$.afterCommit` or `$.enqueue`, not `after`.
 8. A method that writes more than once is `transactional:`.
-9. A read-shaped custom method sets `$.dispatch = false`.
+9. A custom method that writes no record declares `read: true`.
 10. Raw routes use `{param}` and call services rather than the database.
 
 ---

@@ -1231,6 +1231,8 @@ export interface Workspace {
   ownerId: string
   settings: unknown
   status: WorkspaceStatus
+  ingressAccountId?: string | null
+  ingressZoneId?: string | null
   /** @version */
   version: number
   createdAt: string
@@ -1247,6 +1249,8 @@ export interface WorkspaceCreate {
   ownerId: string
   settings?: unknown
   status?: WorkspaceStatus
+  ingressAccountId?: string | null
+  ingressZoneId?: string | null
 }
 
 export interface WorkspaceUpdate {
@@ -1258,6 +1262,8 @@ export interface WorkspaceUpdate {
   ownerId?: string
   settings?: unknown
   status?: WorkspaceStatus
+  ingressAccountId?: string | null
+  ingressZoneId?: string | null
   version: number
 }
 
@@ -1270,6 +1276,8 @@ export interface WorkspaceWhere extends WhereBase {
   ownerId?: string | WhereOp<string> | null
   settings?: unknown | WhereOp<unknown> | null
   status?: WorkspaceStatus | WhereOp<WorkspaceStatus> | null
+  ingressAccountId?: string | WhereOp<string> | null
+  ingressZoneId?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null

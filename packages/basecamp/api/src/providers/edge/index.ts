@@ -59,13 +59,21 @@ export interface EdgeRecord {
 export interface RecordMark {
   /** Every record this app wrote — what makes a record OURS. */
   fleet:     string
-  /** Which `Domain` asked for it. Absent on a record marked by the fleet alone. */
+  /** Which `Domain` asked for it — the CNAME at its hostname. */
   domainId?: string
+  /** Which `App`'s INGRESS RECORD it is (`FJS-D561`). At most one of the two;
+   *  neither is a record marked by the fleet alone. */
+  appId?:    string
 }
 
 /** The mark a `Domain`'s records carry. */
 export function domainMark(domainId: string): RecordMark {
   return { fleet: FLEET, domainId }
+}
+
+/** The mark an App's ingress record carries. */
+export function appMark(appId: string): RecordMark {
+  return { fleet: FLEET, appId }
 }
 
 /** A record to write. `name` is the full hostname; `ttl` 1 is the vendor's
@@ -78,11 +86,14 @@ export interface EdgeRecordInput {
   proxied?: boolean
 }
 
-/** A record to delete: its set, and one value in it when the set has several. */
+/** A record to delete: its set, and one value in it when the set has several.
+ *  `mark` narrows it to the records one owner wrote — a Domain deleted after
+ *  another took its hostname must not remove the newcomer's CNAME. */
 export interface EdgeRecordRef {
   type:     string
   name:     string
   content?: string
+  mark?:    RecordMark
 }
 
 /** One edge vendor's dialect. `kind`, `label`, `descriptor` and `verify` are the

@@ -623,6 +623,13 @@ model Workspace {
   // one hook every workspace-scoped service already runs.
   status    WorkspaceStatus @default(active)
 
+  // Where every App's INGRESS RECORD is written (`FJS-D561`): an edge account
+  // — a `provider_key` Secret — and a zone it opens. A pair, because a zone id
+  // names nothing without the token that can reach it, and one set without the
+  // other is a workspace that looks configured and pushes nowhere.
+  ingressAccountId String?
+  ingressZoneId    String?
+
   version   Int           @version
   createdAt DateTime      @default(now())
   updatedAt DateTime      @default(now()) @updatedAt
@@ -644,6 +651,7 @@ model Workspace {
   @@softDelete(cascade)
   @@log(audit)
   @@index([accountId])
+  @@check("(ingressAccountId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
 
   // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim
   // would make the switcher, /hub and the create-a-workspace path answer nothing

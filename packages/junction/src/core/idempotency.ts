@@ -27,9 +27,6 @@ import { Conflict, Unprocessable } from './errors.ts'
 import type { ICache } from '../cache/index.ts'
 import type { ServiceContext } from './context.ts'
 
-// A read cannot be replayed usefully and does not need protecting.
-const READ_METHODS = new Set(['find', 'get'])
-
 export interface IdempotencyConfig {
   enabled?: boolean
   /** How long a completed key is remembered. Parsed by the cache's TTL grammar. */
@@ -126,8 +123,10 @@ export interface IdempotencyClaim {
 /**
  * Claim a key for this call, or discover that it is already spoken for.
  *
- * Returns null when idempotency does not apply — no key, a read, no cache, or
- * turned off — and the caller proceeds exactly as before.
+ * Returns null when idempotency does not apply — no key, no cache, or turned
+ * off — and the caller proceeds exactly as before. A read never reaches here:
+ * callService decides that with `isReadMethod`, since a declared read is a fact
+ * about the service and this sees only the call.
  *
  * The claim is synchronous from get() to set(), so two calls arriving in the
  * same tick cannot both see an empty slot: the second finds `pending` and is
@@ -141,7 +140,6 @@ export function claimIdempotency(
 ): IdempotencyClaim | null {
   if (!key) return null
   if (config?.enabled === false) return null
-  if (READ_METHODS.has(ctx.method as string)) return null
 
   const cache = cacheOf(ctx)
   if (!cache) return null

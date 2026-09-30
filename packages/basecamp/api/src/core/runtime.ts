@@ -40,3 +40,32 @@ export async function routedHosts(db: any, appId: string): Promise<string[]> {
   })
   return rows.map((d: { hostname: string }) => d.hostname)
 }
+
+/**
+ * The addresses an app's INGRESS RECORD holds (`FJS-D561`): each server this
+ * app has a `running` placement on that is `online` — the executor's rule for
+ * a machine that can take work, so a draining or unreachable machine drops out
+ * of the record the way it drops out of the next release. `running` is written
+ * by the deploy job on the machine the release landed on; a placement nothing
+ * has deployed to yet is `unknown`, and naming its machine would send traffic
+ * to a Caddy with no route. Sorted and unique, because two replicas on one
+ * machine are one address and the drift read compares this as a set.
+ */
+export async function servingAddresses(db: any, appId: string): Promise<string[]> {
+  const rows = await db.asSystem().appServer.findMany({
+    where: { appId, status: 'running' }, include: { server: true },
+  })
+  const ips = rows
+    .filter((p: any) => p.server?.status === 'online' && p.server.ipAddress)
+    .map((p: any) => String(p.server.ipAddress))
+  return [...new Set<string>(ips)].sort()
+}
+
+/** Mark the placements a release landed on as `running`. Every replica row on
+ *  that machine, since `/deploy` starts the app's one container there. */
+export async function markRunning(db: any, appId: string, serverId: string): Promise<void> {
+  await db.asSystem().appServer.updateMany({
+    where: { appId, serverId },
+    data:  { status: 'running', startedAt: new Date().toISOString(), stoppedAt: null },
+  })
+}

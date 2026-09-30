@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-09-30 — `CommandPalette` reports its query (`FJS-1318`, half)
+
+`onquery(query)` fires on every change to the typed words, the ✕ included.
+Two apps read the box off the DOM by `.fjs-cp-input` and `.fjs-cp-clear` —
+portal's `Palette.mesa`, for a search row labelled with the words, and
+linear's `SearchPalette.mesa`, for a server search — and both now take the
+prop. The ✕ empties the box without an `input` event, which linear's listener
+missed, so its server hits outlived the words. `palette-modes.spec.mjs` asserts
+typing and clearing both report. The other half of `FJS-1318` stays open: the
+palette still ranks the items it is handed, so a server hit on text the row
+does not show is dropped.
+
 ## 2026-09-29 — no `USD` fallback (`FJS-D556`)
 
 Every `@money` states its currency now, so `Cell`, `MoneyInput` and

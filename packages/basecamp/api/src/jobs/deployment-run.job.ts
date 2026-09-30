@@ -40,9 +40,10 @@ import { resolveExecutor, isExecutor } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
+import domainDns                from './domain-dns.job.ts'
 import { isInline, inlineFilesFor } from '../core/app-source.ts'
 import { releaseEnv } from '../core/variables.ts'
-import { runtimeOf, routedHosts, type Runtime } from '../core/runtime.ts'
+import { runtimeOf, routedHosts, markRunning, type Runtime } from '../core/runtime.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -125,6 +126,21 @@ function runner(app: BasecampApp) {
     })
   }
 
+  // A release can land somewhere the App's ingress record does not name, and
+  // until it is pushed the hostname sends people to where the App ran before.
+  // One push per Domain: the first rewrites the ingress record and the rest
+  // find it already true. Caught, because the release DID succeed — a queue
+  // hiccup here must not reach failDeploy, and `/dns/` names what went stale.
+  async function toZones(appId: string, deploymentId: string): Promise<void> {
+    try {
+      const domains = await app.db.asSystem().domain.findMany({ where: { appId }, select: { id: true } }) as { id: string }[]
+      for (const d of domains)
+        await app.jobs.dispatch(domainDns, { domainId: d.id }, { id: `dns:${d.id}:release:${deploymentId}` })
+    } catch (err) {
+      log.warn('release not pushed to its zones', { id: deploymentId, error: (err as Error).message })
+    }
+  }
+
   // ── Core runner ───────────────────────────────────────────────────
   async function runDeployment(deploymentId: string): Promise<void> {
     const startedAt = Date.now()
@@ -204,6 +220,11 @@ function runner(app: BasecampApp) {
         status: 'success',
         startedAt: new Date(startedAt).toISOString(),
       })
+      // The one write saying WHERE the app now runs — the ingress record's
+      // addresses are read off it (`servingAddresses`), and a placement never
+      // marked is a machine DNS must not send anybody to.
+      await markRunning(app.db, deploy.appId, executor.serverId)
+      await toZones(deploy.appId, deploymentId)
       log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
       await tellThem('deploy_success', deploy, service)
 

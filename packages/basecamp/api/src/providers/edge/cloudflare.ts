@@ -80,17 +80,20 @@ function toZone(z: Row): EdgeZone {
 }
 
 /** The mark as a comment. The fleet alone is `basecamp`; a Domain's is
- *  `basecamp:domain:<id>`. */
+ *  `basecamp:domain:<id>` and an App's ingress record `basecamp:app:<id>`. */
 function spell(mark: RecordMark): string {
-  return mark.domainId ? `${mark.fleet}:domain:${mark.domainId}` : mark.fleet
+  if (mark.domainId) return `${mark.fleet}:domain:${mark.domainId}`
+  if (mark.appId)    return `${mark.fleet}:app:${mark.appId}`
+  return mark.fleet
 }
 
 /** The mark a comment carries, or null. `basecamp-ish` and `added by hand` are
  *  not ours: the fleet word must be the whole comment or end at a colon. */
 function read(comment: string): RecordMark | null {
   if (comment === FLEET) return { fleet: FLEET }
-  const m = comment.match(new RegExp(`^${FLEET}:domain:(.+)$`))
-  return m ? { fleet: FLEET, domainId: m[1] } : null
+  const m = comment.match(new RegExp(`^${FLEET}:(domain|app):(.+)$`))
+  if (!m) return null
+  return m[1] === 'domain' ? { fleet: FLEET, domainId: m[2] } : { fleet: FLEET, appId: m[2] }
 }
 
 function toRecord(r: Row): EdgeRecord {
@@ -253,7 +256,8 @@ export const cloudflare: EdgeConnector = {
     const gone = new Map<string, EdgeRecord>()
     for (const ref of refs)
       for (const r of sets.get(setKey(ref.type, ref.name))!)
-        if (ref.content === undefined || sameContent(r.type, r.content, ref.content)) gone.set(r.id, r)
+        if ((ref.content === undefined || sameContent(r.type, r.content, ref.content))
+          && (!ref.mark || (r.mark !== null && spell(r.mark) === spell(ref.mark)))) gone.set(r.id, r)
     await batch(send, zoneId, { deletes: [...gone.keys()].map(id => ({ id })), patches: [], posts: [] })
     return [...gone.values()]
   },

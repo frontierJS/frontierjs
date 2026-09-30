@@ -130,7 +130,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           unmarked set is refused (`FJS-D560`, `FJS-D562`), so no caller can
           skip the check by forgetting it
           services/edge/ reads an edge account's zones and records beside the
-          workspace's `Domain` rows, at `Domain`'s read gate — the account
+          workspace's `Domain` rows (the plan), and `sync` pushes one Domain
+          and its App's ingress record (the apply) — `syncStep` is the same
+          push from jobs/domain-dns.job.ts, which a Domain write and a release
+          dispatch, and skips what cannot be pushed YET; the ingress addresses are
+          `servingAddresses` in core/runtime.ts, which only the deploy job's
+          `running` mark feeds. Reads at `Domain`'s read gate — the account
           lookup is `asSystem()` confined to the workspace, since a developer
           is below `Secret`'s 5; the portal's `edge` entry reads the same lookup
           services/hub/ is the ONLY service that takes no workspace

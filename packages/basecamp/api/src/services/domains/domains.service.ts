@@ -23,8 +23,9 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
+import domainDns from '../../jobs/domain-dns.job.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const DAY = 86_400_000
@@ -82,6 +83,11 @@ export function createDomainsService(app: BasecampApp) {
         })
   }
 
+  /** Tell the zone. The id is the row's version, so a replayed write is one
+   *  push; the job decides whether this workspace pushes at all. */
+  const toZone = (domainId: string, version: number | string) =>
+    app.jobs.dispatch(domainDns, { domainId }, { id: `dns:${domainId}:${version}` })
+
   return createService({
     name:  'domains',
     model: 'Domain',
@@ -124,6 +130,7 @@ export function createDomainsService(app: BasecampApp) {
 
       const created = await db().domain.create({ data })
       if (created.isPrimary) await demoteSiblings(created.appId, created.id)
+      await toZone(created.id, created.version)
       return decorate(created)
     },
 
@@ -131,14 +138,23 @@ export function createDomainsService(app: BasecampApp) {
       const domain = await getScoped('domain', 'Domain')
       // appId is immutable — moving a hostname to another app is a delete and a
       // create, and doing it as a patch would carry the certificate with it.
+      // So is the hostname, for the same reason twice over: a certificate is
+      // FOR a hostname, and the CNAME pushed for the old one would stay in its
+      // zone marked as this row's, which no drift reports as wrong. Refused
+      // rather than dropped, or a save that changed nothing looks like one
+      // that renamed it. A form resending the same hostname is not a change.
+      const asked = ($.data ?? {}) as Record<string, unknown>
+      if ('hostname' in asked && String(asked.hostname).trim().toLowerCase() !== domain.hostname.toLowerCase())
+        throw new BadRequest('A hostname is fixed once added — add the new one, then delete this one')
       // The cert columns are `uploadCert`'s, never a client's.
       const patch = narrowPatch($.data as Record<string, unknown>,
-        ['appId', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
+        ['appId', 'hostname', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
 
       if (changesNothing(patch)) return decorate(domain)
 
       const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
       if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
+      await toZone(updated.id, updated.version)
       return decorate(updated)
     },
 
@@ -150,7 +166,17 @@ export function createDomainsService(app: BasecampApp) {
       if (domain.isPrimary && await db().domain.count({ where: { appId: domain.appId } }) > 1)
         throw new Conflict('That is the primary hostname — make another one primary first')
 
-      return removeScoped('domain', 'Domain')
+      const removed = await removeScoped('domain', 'Domain')
+      await toZone(domain.id, `${domain.version}:removed`)
+      return removed
+    },
+
+    // A Domain brought back is a hostname to push again — its CNAME went when
+    // it was deleted.
+    async restore() {
+      const restored = await restoreScoped('domain', 'Domain')
+      await toZone(restored.id, `${restored.version}:restored`)
+      return decorate(restored)
     },
 
     // ── uploadCert ────────────────────────────────────────────────────

@@ -313,12 +313,15 @@ CREATE TABLE IF NOT EXISTS "workspace" (
   "ownerId" TEXT NOT NULL,
   "settings" TEXT NOT NULL DEFAULT '{}',
   "status" TEXT NOT NULL DEFAULT 'active',
+  "ingressAccountId" TEXT,
+  "ingressZoneId" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("type" IN ('personal', 'team', 'enterprise')),
   CHECK ("status" IN ('active', 'suspended')),
+  CHECK ((ingressAccountId IS NULL) = (ingressZoneId IS NULL)),
   FOREIGN KEY ("accountId") REFERENCES "account" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_workspace_accountId" ON "workspace" ("accountId") WHERE "deletedAt" IS NULL;

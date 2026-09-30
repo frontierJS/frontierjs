@@ -23,6 +23,7 @@
   let ran    = ''
   let runs   = 0
   let closes = 0
+  let asked  = null   // null until the palette first reports
 
   const hit = (id) => () => { ran = id; runs++ }
 
@@ -57,9 +58,11 @@
     maxHeight={maxHeight}
     data-fixture="modes"
     onclose={() => { open = false; closes++ }}
+    onquery={(q) => { asked = q }}
   />
 {/if}
 
 <output id="ran">{ran}</output>
 <output id="runs">{runs}</output>
 <output id="closes">{closes}</output>
+<output id="asked">{asked ?? 'unreported'}</output>

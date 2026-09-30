@@ -354,6 +354,15 @@ t('demos.prerendered', {
   tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
 }, counted)
 
+// The map's lettering is pixels, so the words are the list under it: one entry
+// per hotspot, and every hotspot a link to its own entry.
+t('map.prerendered', {
+  hotspots: countIn('map', /class="territory[ "]/g),
+  entries:  countIn('map', /class="entry[ "]/g),
+  linked:   (bodyOf('map').match(/href="#[a-z-]+" data-id=/g) ?? []).length,
+  image:    existsSync(join(DIST, 'map', 'territory.webp')) ? 1 : 0,
+}, (v) => v.hotspots > 0 && v.hotspots === v.entries && v.entries === v.linked && v.image === 1)
+
 // The tutorial page's argument is that the tutorial runs, so its samples are
 // transcripts of runs rather than prose about them. A paraphrase would be the
 // one thing on this site that has never been executed — these two strings come
@@ -660,6 +669,41 @@ try {
     const visible = [...document.querySelectorAll('.entry')].filter(e => !e.hidden).length;
     return { words, biggest: Math.max(...sizes) > Math.min(...sizes),
              filtered: visible, cloudAfter: document.querySelectorAll('[data-cloud] a').length };
+  `))
+
+  await goto(`${ORIGIN}/map/`)
+  t('demo.map', await evaluate(`
+    await waitFor(() => document.querySelector('[data-map][data-ready]'));
+    const svg   = document.querySelector('[data-map] svg');
+    const panel = document.querySelector('[data-panel]');
+    const width = () => svg.viewBox.baseVal.width;
+    const full  = width();
+    const img   = await fetch(svg.querySelector('image').getAttribute('href'));
+
+    // A hotspot click opens the panel on that entry and does not navigate.
+    svg.querySelector('.territory[data-id="junction"]').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await sleep(50);
+    const opened = !panel.hidden && panel.textContent.includes('Junction') &&
+                   location.hash === '#junction';
+
+    document.querySelector('[data-zoom="in"]').click();
+    const zoomedIn = width() < full;
+
+    // Ctrl + wheel zooms; a plain wheel is left to the page.
+    const r = svg.getBoundingClientRect();
+    const wheel = (ctrlKey) => svg.dispatchEvent(new WheelEvent('wheel',
+      { deltaY: -100, ctrlKey, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+        bubbles: true, cancelable: true }));
+    const w0 = width(); wheel(false); const plainIgnored = width() === w0;
+    wheel(true); const ctrlZooms = width() < w0;
+
+    document.querySelector('[data-zoom="reset"]').click();
+    const reset = width() === full;
+
+    document.querySelector('[data-close]').click();
+    return { imageServed: img.ok, opened, zoomedIn, plainIgnored, ctrlZooms, reset,
+             closed: panel.hidden && location.hash === '' };
   `))
 
   t('console.clean', consoleErrors, none)

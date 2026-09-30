@@ -12,7 +12,7 @@
  * `this.error` throws, `this.warn` collects.
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'vitest'
+import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
 import { cp, mkdir, rm, writeFile, readFile } from 'fs/promises'
 import { dirname, resolve }         from 'path'
 import { fileURLToPath }            from 'url'
@@ -109,6 +109,43 @@ describe('scannerPlugin buildStart', () => {
     const warning = warnings.find(w => w.includes('[boom].meta.js'))
     expect(warning).toBeTruthy()
     expect(warning).toContain('no database here')
+  })
+})
+
+// ─── The dev watcher ─────────────────────────────────────────────────────────
+//
+// A scan writes a `.sierra-fresh-*` copy of each companion beside it. If the
+// watcher reads that copy as a companion, its add starts a scan that writes
+// more copies, and the dev server fills the routes directory without end.
+describe('the dev watcher', () => {
+  async function watch(root) {
+    const handlers = {}
+    const plugin = scannerPlugin(
+      { target: 'static', routesDir: 'src/routes' },
+      { tree: null, layoutPropMap: new Map() }
+    )
+    plugin.configResolved({ root, command: 'serve' })
+    plugin.configureServer({
+      watcher:     { add() {}, on(event, fn) { handlers[event] = fn } },
+      moduleGraph: { getModuleById: () => null },
+      ws:          { send() {} },
+    })
+    return handlers
+  }
+
+  test('a .sierra-fresh copy does not start a scan', async () => {
+    const handlers = await watch(TMP)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      await handlers.add(resolve(TMP, 'src/routes/blog/.sierra-fresh-1-0-[tag].meta.js'))
+      await handlers.unlink(resolve(TMP, 'src/routes/blog/.sierra-fresh-1-0-[tag].meta.js'))
+      expect(log).not.toHaveBeenCalled()
+
+      await handlers.add(resolve(TMP, 'src/routes/blog/[tag].meta.js'))
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('New route file'))
+    } finally {
+      log.mockRestore()
+    }
   })
 })
 

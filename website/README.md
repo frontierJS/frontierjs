@@ -149,7 +149,7 @@ classic script filled in on load, and every demo page built its whole content
 from JavaScript. So the site a crawler read was mostly empty divs.
 
 Now there is one layout, one theme switcher, and **every page's content is in
-its file**. The interactive parts are nine islands that move
+its file**. The interactive parts are ten islands that move
 selections rather than build pages. `site/test/verify.mjs` asserts both halves:
 what is in the files, and that each widget still works in a real browser.
 

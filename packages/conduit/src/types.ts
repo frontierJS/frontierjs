@@ -259,6 +259,20 @@ export interface ConduitRequest {
   validate?: ResponseValidator
 
   timeout_ms?: number
+
+  // Ends the call: the attempt in flight is cut at the socket, no further
+  // attempt starts, and a backoff sleep wakes early. Answered as `aborted`,
+  // which the breaker does not count — the caller left, the target did not
+  // fail. Without it a fan-out that answered early left every loser running at
+  // the provider, and with retries on, conduit began NEW attempts after the
+  // answer had gone back (`FJS-1408`).
+  //
+  // It is also the whole-call deadline: `AbortSignal.timeout(ms)`, or
+  // `AbortSignal.any([...])` beside a cancel. There is no per-send
+  // `deadline_ms` because it would be the same budget spelled twice, and its
+  // expiry, answered as `timeout`, would open a healthy target's breaker for
+  // one impatient caller (`FJS-1409`).
+  signal?: AbortSignal
 }
 
 // Deliberately structural rather than tied to a schema library — Junction's
@@ -402,6 +416,11 @@ export const CONDUIT_ERROR_KINDS = [
   // has something to act on, which `meta.headers.location` and `meta.status`
   // carry (`FJS-679`).
   'redirected',
+  // The caller's `signal` ended the call. Not a target fault — patience is per
+  // caller and the breaker is per target. Retryable on the same terms as a
+  // `timeout`: a request conduit would replay may be sent again, and one it
+  // would not comes back `indeterminate`, since the bytes may have left.
+  'aborted',
 ] as const
 
 export type ConduitErrorKind = typeof CONDUIT_ERROR_KINDS[number]

@@ -256,6 +256,8 @@ export interface ServiceDescription {
   methodGates: Record<string, number>
   /** The claims a caller must hold for each method that declares any (`FJS-D514`). */
   methodClaims: Record<string, string[]>
+  /** The custom methods declared `read: true`, whose answer is never kept or announced (`FJS-D505`). */
+  readMethods: string[]
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /**
@@ -345,6 +347,8 @@ export interface Service {
   _methodGates?: Record<string, number>
   /** The claims each custom method DECLARED in `methods:`, keyed by name. */
   _methodClaims?: Record<string, string[]>
+  /** The custom methods DECLARED `read: true` in `methods:`. Read through `isReadMethod`. */
+  _readMethods?: string[]
 
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
@@ -476,6 +480,9 @@ export interface HookTelemetryEvent {
 }
 
 const CRUD_METHODS = new Set(['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'])
+// The CRUD verbs that write nothing. A custom method joins them only by
+// declaring it (`isReadMethod`).
+const CRUD_READ_METHODS = new Set(['find', 'get', 'aggregate'])
 
 /**
  * The function behind a custom method name, or undefined.
@@ -540,6 +547,7 @@ async function _callService(
   const start  = Date.now()
   const method = ctx.method
   const isCustom = !CRUD_METHODS.has(method as string)
+  const isRead   = isReadMethod(service, method as string)
 
   // ── The method policy ────────────────────────────────────────────────
   // Enforced HERE because callService is the one path every caller takes —
@@ -581,7 +589,9 @@ async function _callService(
   //
   // Nothing is claimed unless the request carried a key, so an app that never
   // sends one is on exactly the path it was on before.
-  const idem = claimIdempotency(
+  // A read keeps no answer: the one a declared read gives back is what the
+  // method was declared a read to keep out of every store (`FJS-D505`).
+  const idem = isRead ? null : claimIdempotency(
     ctx,
     requestMeta()?.idempotencyKey,
     (ctx.app as { config?: { idempotency?: import('./idempotency.ts').IdempotencyConfig } } | undefined)
@@ -750,12 +760,12 @@ async function _callService(
   // written (client/index.ts), and the server had never sent one. Apps hid it by
   // re-issuing find() after every call.
   //
-  // Reads never announce, which is why `find`/`get` are excluded by name rather
-  // than by shape. A custom method that only READS (search, stats, export) is
-  // indistinguishable from one that writes at this layer — it opts out with
-  // `ctx.dispatch = false`, the same switch that suppresses any other broadcast.
+  // Reads never announce, and a read is known by name or by declaration rather
+  // than by shape: a custom method that only reads (search, stats, export) is
+  // indistinguishable from one that writes at this layer, so it says so with
+  // `read: true` in `methods:` (`FJS-D505`).
   const eventName = AUTO_EVENT_MAP[method as string]
-    ?? (isCustom ? (method as string) : undefined)
+    ?? (isCustom && !isRead ? (method as string) : undefined)
 
   // ── When is a write DONE, and who says so ─────────────────────────────
   //
@@ -1298,8 +1308,8 @@ export function customMethodNames(svc: object): string[] {
 //
 // Reads are excluded BY NAME rather than by guessing from the method's shape —
 // the same rule the announcement uses. A read taking BEGIN IMMEDIATE would
-// serialize every reader behind every other.
-const NON_TRANSACTIONAL_METHODS = new Set(['find', 'get', 'aggregate'])
+// serialize every reader behind every other. A custom method declared `read`
+// is NOT excluded: one that meters as it answers keeps its write's transaction.
 
 export function resolveTransactional(
   decl:    TransactionalDeclaration | undefined,
@@ -1307,7 +1317,7 @@ export function resolveTransactional(
 ): readonly string[] {
   if (decl === undefined || decl === false) return []
   const wanted = decl === true ? methods : decl
-  return wanted.filter(m => !NON_TRANSACTIONAL_METHODS.has(m))
+  return wanted.filter(m => !CRUD_READ_METHODS.has(m))
 }
 
 // The ids of the rows a call's announcement carries: the id it was called with,
@@ -1347,7 +1357,7 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
     // after the hooks are pushed, and one runtime check is cheaper than keeping
     // two derivations of "which methods" in step.
     const method = ctx.method as string
-    if (NON_TRANSACTIONAL_METHODS.has(method)) return next()
+    if (CRUD_READ_METHODS.has(method)) return next()
     if (Array.isArray(decl) && !decl.includes(method)) return next()
 
     type TxClient = NonNullable<typeof ctx.locals.db>
@@ -1521,6 +1531,17 @@ export interface MethodDeclaration {
    * answered; `gateAuth` grades it where it grades the level.
    */
   claims?: string[]
+  /**
+   * The method answers without writing a record, so its answer is kept and
+   * announced as `find`'s is: never (`FJS-D505`). Without it a custom method is
+   * a write, and a search whose answer echoes its query had that query kept
+   * for 24 hours under an Idempotency-Key and published on the bus.
+   *
+   * A write inside the method still happens, and is not made exactly-once: a
+   * keyed retry runs it again, because keeping the answer is what a key would
+   * have cost.
+   */
+  read?: boolean
 }
 
 export type MethodEntry  = string | MethodDeclaration
@@ -1599,6 +1620,41 @@ export function collectMethodClaims(
     out[name] = [...claims]
   }
   return out
+}
+
+/** The custom methods a `methods:` list declares `read: true`. */
+export function collectReadMethods(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+): string[] {
+  const out: string[] = []
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.read === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    if (typeof entry.read !== 'boolean')
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares read ${JSON.stringify(entry.read)}, ` +
+        `which is not true or false.`)
+    // A CRUD verb is a read or a write by its name, and a declaration that
+    // could disagree with the name is one nothing would honor.
+    if (CRUD_METHODS.has(name))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares read, but ${name} is a CRUD verb, ` +
+        `whose name already says whether it reads. read: is for a custom method.`)
+    if (entry.read) out.push(name)
+  }
+  return out
+}
+
+/**
+ * Whether this call answers without writing a record — the reads by name, and
+ * the custom methods declared `read: true`. The one answer idempotency and the
+ * announcement both take.
+ */
+export function isReadMethod(service: Service, method: string): boolean {
+  return CRUD_READ_METHODS.has(method) || !!service._readMethods?.includes(method)
 }
 
 /**
@@ -2383,6 +2439,7 @@ export function createService(def: ServiceDefinition): Service {
   // tried and what the client actually has — instead of a bare sentence.
   const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
   const base = createBaseService({
     model:      def.model,
     name:       def.name,
@@ -2617,6 +2674,7 @@ export function createService(def: ServiceDefinition): Service {
         inputs:        { ...(service._inputs ?? {}) },
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
+        readMethods:   [...(service._readMethods ?? [])],
         channel:    describeChannel(service.channel as PublishDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
@@ -2662,6 +2720,7 @@ export function createService(def: ServiceDefinition): Service {
   ;(service as Service)._inputs = methodInputs
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
+  ;(service as Service)._readMethods = declaredReads
 
   // Resolve the method policy AFTER the custom methods are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.

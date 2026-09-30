@@ -8,7 +8,7 @@
  * - Emits build warnings for Sierra-specific issues
  */
 
-import { resolve, relative } from 'path'
+import { resolve, relative, basename } from 'path'
 import { scan } from '../scanner/index.js'
 import { generateRouteTable } from '../scanner/generate-route-table.js'
 import { classify } from '../scanner/classify.js'
@@ -170,7 +170,13 @@ export function scannerPlugin(config, sierraContext) {
 
       for (const dir of mounts) server.watcher.add(dir)
       const inScope = (file) => file.startsWith(absRoutesDir) || [...mounts].some(dir => file.startsWith(dir))
-      const roleOf  = (file) => file.endsWith('.mount.js') ? 'mount' : classify(relative(root, file).replace(/\\/g, '/'))
+      // A dotfile is never a route (walk.js skips them), and every scan writes a
+      // `.sierra-fresh-*` copy of each companion here. Read as a companion, each
+      // copy's add and unlink starts another scan, which writes more copies —
+      // tens of thousands of files in seconds.
+      const roleOf  = (file) => basename(file).startsWith('.') ? 'ignored'
+        : file.endsWith('.mount.js') ? 'mount'
+        : classify(relative(root, file).replace(/\\/g, '/'))
 
       server.watcher.on('add', async (file) => {
         if (!inScope(file)) return

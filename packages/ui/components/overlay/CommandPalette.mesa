@@ -34,6 +34,11 @@
   //       onclose={() => commandPalette.hide()}
   //     />
   //   {/if}
+  //
+  // A list that depends on the words — a server search, a row whose label IS
+  // the words — follows `onquery` and hands back new `items`. Reading the box
+  // off the DOM instead misses the ✕, which empties it without an `input`
+  // event, and breaks on any rename of the palette's classes.
 
   import { uid } from '../../utils.js'
   import { rank, segments } from '@frontierjs/toolbelt/search'
@@ -43,6 +48,7 @@
   export let groupOrder   = []      // explicit group sort order
   export let emptyText    = undefined  // (query: string) => string
   export let onclose      = undefined
+  export let onquery      = undefined  // Observer: (query: string) => void, untrimmed, on every change
 
   // export var — snapshot at mount, layout never changes after open
   export var maxHeight     = '62vh'
@@ -103,7 +109,7 @@
   // ── Watchers ─────────────────────────────────────────────────────────────
 
   // Reset cursor to top when query changes
-  $: query, () => { idx = 0 }
+  $: query, () => { idx = 0; onquery?.(query) }
 
   // Scroll active row into view whenever idx moves
   $: idx, () => {

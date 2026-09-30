@@ -1,6 +1,22 @@
 # Changes — @frontierjs/conduit
 
 
+## 2026-09-30 — `signal` ends one send (`FJS-1408`)
+
+`ConduitRequest.signal` joins the caller's `AbortSignal` to the transport's own
+`AbortController`, so a cancel closes the attempt at the socket and the provider sees the
+close. It also ends the retry loop and wakes a backoff sleep early. The answer is a new kind,
+`aborted`. It is retryable on the same terms as `timeout` (an unkeyed POST in flight comes
+back `indeterminate`), and it is not in `TARGET_FAULTS`. A signal that is already aborted is
+refused before admission, so it takes no concurrency slot and cannot be a half-open trial.
+`http`, `unix`, `websocket` and the stub all honor it.
+
+The row also asked for a per-send `deadline_ms`, and it was not built. `AbortSignal.timeout(ms)`
+is that deadline already. A second spelling that expired as `timeout` would count against a
+healthy target's breaker, which is `FJS-1409` again. Measured in Portal: before this, a quorum
+fan-out left 17 requests open across 20 queries, and a dead provider under the default
+`retry_limit` took 3.8 s over four attempts after the race had returned at 400 ms.
+
 ## 2026-09-30 — the trace reaches only a target that declares `trace: true` (`FJS-1413`, `FJS-D507`)
 
 The junction plugin's default trace handed every target the inbound correlation id, as

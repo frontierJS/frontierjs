@@ -189,6 +189,29 @@ work (`IDEAS/map-packages.md`).
 - **Where does lawful basis live?** It is per-processing-purpose, not per-column, so
   it may not belong in the schema at all — possibly a sidecar file the map joins
   against. Resist putting non-derivable prose in the seed.
+- **Does the map read a method's `input:` type?** A value that is processed and
+  never kept already has a noun in the seed: a `type`, which has no table, named
+  by a custom method's `input:` and enforced there by `validateInput`. Portal's
+  search query is `type SearchQuery`, the input of all four search methods. The
+  proposal is a rule, not a word: § 1 lists a `type` field reached through an
+  `input:` as *processed, not stored*, and cites `read: true` (`FJS-D505`) on that
+  method as the evidence that no framework store keeps it. A `type` declares a
+  shape, not a retention, so code can still copy the value into a model, which
+  is the same limit `@pii` has on a stored field. `FJS-D505`'s deferred option A,
+  a *never keep* word on the input, is left with two consumers that do not exist
+  yet: this map line and a `fli check` rule for an answer that echoes its input
+  (`FJS-1403`, closed).
+- **How does the map learn what a send carries?** § 5 says a target that
+  receives a `@pii` field is a processor, and nothing in the seed or in conduit
+  says which fields a send carries. This holds for every field, stored or not.
+  Portal's query, which reaches five providers, is only the first case where it
+  shows. **A** — a conduit target declares what it receives, as field paths the
+  map resolves against the schema. A new entry shows up in a diff, but a
+  forgotten one is silent. **B** — record at runtime what a send carried. More
+  machinery, and it only sees paths that actually ran. **C** — the map does not
+  answer this, and says so per target. **Recommend A, with B as its test**: § 4's
+  diff grades a new `receives` as a widening, and a drive that records a send
+  carrying a field its target never declared turns A's silent case red.
 - **Does a Slice declare its own PII?** It must — a billing slice contributes
   personal data to the consuming app's data map, and if that does not flow through,
   the map is wrong the moment anyone installs anything (`IDEAS/slices.md`).

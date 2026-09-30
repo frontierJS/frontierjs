@@ -4443,6 +4443,7 @@ describe('retryable (FJS-739)', () => {
       server_error:      'depends',
       timeout:           'depends',
       connection_failed: 'depends',
+      aborted:           'depends',
       // The same request gets the same answer, forever.
       target_not_found:  'permanent',
       auth_failed:       'permanent',
@@ -4458,6 +4459,133 @@ describe('retryable (FJS-739)', () => {
     // And nothing here names a kind that no longer exists.
     const stale = Object.keys(ANSWER).filter(k => !(CONDUIT_ERROR_KINDS as readonly string[]).includes(k))
     expect(stale).toEqual([])
+  })
+})
+
+// ─── signal — the caller ends the call (FJS-1408) ────────────
+
+describe('signal (FJS-1408)', () => {
+  const creds = () => createStaticResolver({ HETZNER_TOKEN: 'htz-token-abc' })
+
+  // A provider that holds each request until the client goes away, and says
+  // when that was. Bun fires `req.signal` on the SERVER when the client closes
+  // the socket, so `closed` is the provider's own view of the cancel.
+  function holding() {
+    const closed: number[] = []
+    let hits = 0
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        hits++
+        const t0 = performance.now()
+        req.signal.addEventListener('abort', () => closed.push(performance.now() - t0))
+        await Bun.sleep(2_000)
+        return Response.json({ late: true })
+      },
+    })
+    return {
+      closed,
+      get hits() { return hits },
+      url:  `http://localhost:${server.port}`,
+      stop: () => server.stop(true),
+    }
+  }
+
+  async function conduitFor(address: string, extra: Record<string, unknown> = {}) {
+    const target = providerTarget({ address })
+    const c = createConduit({ credentials: creds(), targets: [target], ...extra })
+    await c.init()
+    return { c, id: target.id }
+  }
+
+  it('a signal already aborted sends nothing and takes no slot', async () => {
+    const p = holding()
+    try {
+      const { c, id } = await conduitFor(p.url, { resilience: { max_concurrent: 1 } })
+      const r = await c.send({ target: id, method: 'GET', signal: AbortSignal.abort() })
+      expect(r.error?.kind).toBe('aborted')
+      expect(r.error?.retryable).toBe(true)
+      expect(r.error?.indeterminate).toBeUndefined()
+      expect(p.hits).toBe(0)
+      expect(c.stats().requests.in_flight).toBe(0)
+    } finally { p.stop() }
+  })
+
+  it('a cancel mid-flight closes the socket at the provider and answers at once', async () => {
+    const p = holding()
+    try {
+      const { c, id } = await conduitFor(p.url)
+      const ac = new AbortController()
+      setTimeout(() => ac.abort(), 50)
+      const t0 = performance.now()
+      const r  = await c.send({ target: id, method: 'GET', signal: ac.signal })
+      const took = performance.now() - t0
+
+      expect(r.error?.kind).toBe('aborted')
+      expect(took).toBeLessThan(500)
+      await Bun.sleep(50)
+      // Control: without the join, the provider held the request to its own
+      // 2s answer and saw no close.
+      expect(p.closed).toHaveLength(1)
+      expect(p.closed[0]).toBeLessThan(500)
+    } finally { p.stop() }
+  })
+
+  it('no attempt starts after the cancel, even with retries on', async () => {
+    let hits = 0
+    const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
+    try {
+      const { c, id } = await conduitFor(s.url, { retry_limit: 3 })
+      const ac = new AbortController()
+      // Inside the first backoff (250–500ms), which the cancel must wake.
+      setTimeout(() => ac.abort(), 100)
+      const t0 = performance.now()
+      const r  = await c.send({ target: id, method: 'GET', signal: ac.signal })
+
+      expect(r.error?.kind).toBe('aborted')
+      expect(performance.now() - t0).toBeLessThan(240)
+      await Bun.sleep(600)
+      expect(hits).toBe(1)
+    } finally { s.stop() }
+  })
+
+  it('AbortSignal.timeout is the whole-call deadline, and it is not the target\'s fault', async () => {
+    const p = holding()
+    try {
+      const { c, id } = await conduitFor(p.url, { resilience: { failure_threshold: 2, reset_ms: 10_000 } })
+      for (let i = 0; i < 3; i++) {
+        const r = await c.send({ target: id, method: 'GET', signal: AbortSignal.timeout(30) })
+        expect(r.error?.kind).toBe('aborted')
+      }
+      // Three caller deadlines against a threshold of two: a `timeout` here
+      // would have opened the breaker for every other caller (`FJS-1409`).
+      expect(c.stats().breakers[id]?.state ?? 'closed').toBe('closed')
+      const next = await c.send({ target: id, method: 'GET', signal: AbortSignal.timeout(30) })
+      expect(next.error?.kind).toBe('aborted')
+      expect(p.hits).toBe(4)
+    } finally { p.stop() }
+  })
+
+  it('an unkeyed POST canceled in flight is indeterminate, not retryable', async () => {
+    const p = holding()
+    try {
+      const { c, id } = await conduitFor(p.url)
+      const r = await c.send({
+        target: id, method: 'POST', path: '/charge', body: { a: 1 }, signal: AbortSignal.timeout(30),
+      })
+      expect(r.error?.kind).toBe('aborted')
+      expect(r.error?.retryable).toBe(false)
+      expect(r.error?.indeterminate).toBe(true)
+    } finally { p.stop() }
+  })
+
+  it('a stubbed delay is canceled like a real provider', async () => {
+    const stub = new StubTransport(providerTarget())
+    stub.mockDefault({ ok: true }, { delay_ms: 2_000 })
+    const t0 = performance.now()
+    const r  = await stub.send({ target: 'provider:hetzner', method: 'GET', signal: AbortSignal.timeout(30) })
+    expect(r.error?.kind).toBe('aborted')
+    expect(performance.now() - t0).toBeLessThan(500)
   })
 })
 
