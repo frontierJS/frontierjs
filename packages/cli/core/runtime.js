@@ -14,6 +14,7 @@ import { declarationProblem, valueProblem } from './flags.js'
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { colorEnabled } from './color.js'
+import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 
 const env = process.env
 
@@ -290,6 +291,20 @@ export async function Command({ file, arg, flag, emit }) {
   //
   //   context.exec({ command: `cd ${root} && ${context.fli} keygen aes --env` })
   config.fli = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(global.fliRoot, 'bin', 'fli.js'))}`
+
+  // ─── context.bin — how a command invokes litestone, sierra or junction ─────
+  //
+  // The APP's copy, resolved the way its own imports resolve it, quoted and
+  // ready to prefix a shell command. Never `bunx`: on a machine with no install
+  // that fetches whatever the registry holds under the bare name, which is not
+  // ours (FJS-1586). Unresolved is a refusal, not a fallback.
+  //
+  //   context.exec({ command: `${context.bin('litestone')} migrate apply`, cwd: root })
+  config.bin = (name, from = config.paths.root) => {
+    const command = binCommand(name, from)
+    if (!command) throw new Error(`${SNAPSHOT_BINS.get(name)} is not installed where ${from} can reach it — run bun install`)
+    return command
+  }
   config.env   = process.env
   config.env.browser ??= env.BROWSER || 'firefox'
 

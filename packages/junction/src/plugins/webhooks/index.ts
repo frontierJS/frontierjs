@@ -38,8 +38,8 @@ import type { IEventBus }      from '../../events/index.ts'
 import type { DatabaseClient } from '../../storage/database/index.ts'
 import { signRequest }         from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
-import { assertDeliverableTarget, WebhookTargetError } from './url.ts'
-import type { TargetPolicy }   from './url.ts'
+import { assertPublicUrl, PublicUrlError }   from '../../core/public-url.ts'
+import type { PublicUrlPolicy } from '../../core/public-url.ts'
 import { shapeForAudience, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
 
@@ -380,13 +380,13 @@ export interface WebhookDeliveryResult {
 async function attemptDelivery(
   registration: WebhookRegistration,
   delivery:     WebhookDelivery,
-  targets:      TargetPolicy = {},
+  targets:      PublicUrlPolicy = {},
 ): Promise<WebhookDeliveryResult> {
 
   // Re-graded per attempt, not only at registration: a name that resolved to a
   // public address when somebody registered it can resolve to `127.0.0.1` an
   // hour later, and a retry ladder runs for a day.
-  try { await assertDeliverableTarget(registration.url, targets) }
+  try { await assertPublicUrl(registration.url, targets) }
   catch (err) {
     return { ok: false, statusCode: null, error: (err as Error).message, ms: 0 }
   }
@@ -506,9 +506,9 @@ export interface WebhookOptions {
   retryInterval?: number
 
   // Where a registration may point. Default: https, resolving to a public
-  // address — see `./url.ts`. A test with a receiver on localhost turns both
+  // address — see `core/public-url.ts`. A test with a receiver on localhost turns both
   // off and says so in one place.
-  targets?: TargetPolicy
+  targets?: PublicUrlPolicy
 
   // The gate level a caller needs to manage registrations over HTTP. Default
   // ADMINISTRATOR(5): a registration is a standing grant to receive this app's
@@ -745,7 +745,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
           // Graded here rather than in the store, so a custom store cannot
           // arrive without the check — and again before every attempt, since
           // what a name resolves to is not fixed at registration.
-          await assertDeliverableTarget(url, targets)
+          await assertPublicUrl(url, targets)
 
           // The audience is READ from the principal in scope and never taken
           // from a caller's payload. `IAuth.sessionFor` must not be wired to
@@ -856,7 +856,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
         let hook: WebhookRegistration
         try { hook = await manager.register(body.url, body.events, body.secret) }
         catch (err) {
-          if (err instanceof WebhookTargetError) return ctx.json({ error: err.message }, 400)
+          if (err instanceof PublicUrlError) return ctx.json({ error: err.message }, 400)
           throw err
         }
         return ctx.json(hook, 201)   // includes secret — the one and only time

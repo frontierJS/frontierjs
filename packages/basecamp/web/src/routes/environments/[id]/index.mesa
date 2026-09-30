@@ -6,7 +6,9 @@ title: Environment
   import Environment, { environments } from '../../../resources/Environment.mesa'
   import { apps } from '../../../resources/App.mesa'
   import { projects } from '../../../resources/Project.mesa'
-  import { deployments } from '../../../resources/Deployment.mesa'
+  import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
+  import { at } from '../../../datetime.js'
+  import Pill from '@frontierjs/ui/components/display/Pill.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -16,12 +18,14 @@ title: Environment
   import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
+  import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
 
   let environment = null
   let project     = null
   let appRows     = []
+  let releases    = null   // null until read; [] is "never released"
   let editing     = false
   let error       = null
   let loadError   = null
@@ -59,6 +63,19 @@ title: Environment
       error = e.message; loadError = e
     } finally {
       loading = false
+    }
+    loadReleases()
+  }
+
+  // What shipped HERE, whichever app it was. A release records the environment
+  // it went to, so an app moved since still shows where its old releases landed.
+  // Not fatal: the environment is the screen, this is a section of it.
+  const RELEASE_LIMIT = 10
+  async function loadReleases() {
+    try {
+      releases = (await deployments.service.find({ environmentId: page.params.id }, { limit: RELEASE_LIMIT })).data
+    } catch {
+      releases = null
     }
   }
 
@@ -135,7 +152,7 @@ title: Environment
     const { id, name, projectId } = environment
     try {
       await environments.service.remove(id)
-      toasts.success(`${name} deleted`)
+      offerUndo(name, environments, id)
       goto(`/projects/${projectId}/`)
     } catch (e) {
       // A protected environment is refused by the service, in its own words.
@@ -148,7 +165,7 @@ title: Environment
     error = null; deploying = app.id
     try {
       await apps.service.remove(app.id)
-      toasts.success(`${app.name} deleted`)
+      offerUndo(app.name, apps, app.id, (row) => { appRows = [...appRows, row] })
       appRows = appRows.filter(a => a.id !== app.id)
     } catch (e) {
       error = e.message
@@ -209,6 +226,13 @@ title: Environment
   }
 
   $: variables = environment?.variables ?? []
+  const RELEASE_COLUMNS = [
+    { name: 'queued', label: 'Queued' },
+    { name: 'app',    label: 'App' },
+    { name: 'status', label: 'Status' },
+    { name: 'branch', label: 'Branch' },
+  ]
+
   const APP_COLUMNS = [
     { name: 'name',    label: 'Name' },
     { name: 'type',    label: 'Type' },
@@ -330,6 +354,27 @@ title: Environment
       </Button>
     </div>
   </form>
+
+  <h2 class="h4">Recent releases</h2>
+  {#if releases === null}
+    <p class="text-sm text-muted">Releases could not be read.</p>
+  {:else if !releases.length}
+    <p class="text-sm text-muted" id="env-no-releases">Nothing has been released to this environment yet.</p>
+  {:else}
+    <Table id="env-releases" columns={RELEASE_COLUMNS} rows={releases} striped>
+      {#snippet row(d)}
+        <tr>
+          <td class="text-sm text-muted">{at(d.queuedAt)}</td>
+          <td>{#if d.app}<a href={`/apps/${d.appId}/`}>{d.app.name}</a>{:else}—{/if}</td>
+          <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'muted'}>{d.status}</Pill></a></td>
+          <td class="text-sm text-muted">{d.branch ?? '—'}</td>
+        </tr>
+      {/snippet}
+    </Table>
+    {#if releases.length >= RELEASE_LIMIT}
+      <p class="text-sm text-muted">The last {RELEASE_LIMIT}. Every release is on <a href="/deployments/">Deployments</a>.</p>
+    {/if}
+  {/if}
 
   <h2 class="h4">Variables</h2>
 

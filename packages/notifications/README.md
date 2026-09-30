@@ -419,7 +419,7 @@ The UI half is a resource file whose data half is `<script module>`, per Invaria
 - `isUnread(n)` — what the bell counts and the list styles
 - `markRead(id)` — `service.patch(id, { readAt })`
 
-Real-time needs no code: the resource's live store receives the `notification:created` event the inApp driver publishes, as long as the `channels()` plugin is configured on the server.
+Real-time needs no code, given two things on the server: the `channels()` plugin, and a connection joined to `notifications:user:<id>`. The inApp driver pushes `notifications created` there, and the client routes a frame to a store only as `<service> <verb>` — which is why the app mounts the list as the `notifications` service.
 
 ---
 

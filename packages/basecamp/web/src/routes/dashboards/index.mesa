@@ -28,6 +28,7 @@ title: Dashboards
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { offerUndo } from '../../resources/Trash.mesa'
 
   $: session.workspaceId
 
@@ -98,7 +99,7 @@ title: Dashboards
     error = null; busy = dashboard.id
     try {
       await dashboards.service.remove(dashboard.id)
-      toasts.success(`${dashboard.name} deleted`)
+      offerUndo(dashboard.name, dashboards, dashboard.id, load)
       await load()
     } catch (e) {
       error = e.message

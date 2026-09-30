@@ -33,7 +33,7 @@ const opts = [flag.visibility && '--visibility', flag.json && '--json'].filter(B
 
 // An unknown word is an ANSWER here, not a crash: litestone names it, suggests
 // the near ones and exits 1. Letting stream() reject prints `Command failed
-// (exit 1): cd … && bunx litestone explain @nosuch` underneath that, which is a
+// (exit 1): cd … litestone … explain @nosuch` underneath that, which is a
 // second report saying less than the first. Keep the status, drop the noise.
 try {
   await context.stream({

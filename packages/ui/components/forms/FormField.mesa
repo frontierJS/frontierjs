@@ -24,6 +24,7 @@
   import MultiSelect   from './MultiSelect.mesa'
   import Input         from './Input.mesa'
   import JsonInput     from './JsonInput.mesa'
+  import MoneyInput    from './MoneyInput.mesa'
   import Select        from './Select.mesa'
   import Textarea      from './Textarea.mesa'
   import { formControl, defaultControlProps } from '../../controls.js'
@@ -33,6 +34,9 @@
 
   export let value   = undefined
   export let write   = undefined      // (v) => void
+  // The whole draft, for a control whose meaning is in a sibling column: a
+  // `@money(field: currency)` amount converts by the code on its own row.
+  export let record  = undefined
   export let options = undefined      // a foreign key's rows, once they arrive
   // How many rows the SERVER has, where it said. A control that shows a page
   // of a big relation and one that shows all of it are the same screen once
@@ -156,6 +160,17 @@
         name: f.name, field: f, value: v, onvalue: (point) => onvalue(point),
       }),
     },
+    // `@money`. The box is in major units and the column in minor ones, so
+    // `onvalue` for `datetime`'s reason. A per-row currency is read off the
+    // draft here, so changing the row's code re-derives the amount.
+    money: {
+      component: MoneyInput,
+      props: ({ field: f, value: v, onvalue, record: r }) => ({
+        name: f.name, field: f, value: v,
+        currency: f.currency ?? (f.currencyField ? (r?.[f.currencyField] ?? '') : undefined),
+        onvalue: (next) => onvalue(next),
+      }),
+    },
     datetime: {
       component: DateTimeInput,
       // `onvalue` rather than `oninput` on purpose: the element holds a wall
@@ -188,7 +203,7 @@
 
   const props = entry
     ? (entry.props ?? defaultControlProps)({
-        field, value, options, total, optionsError, onvalue: (v) => write?.(v),
+        field, value, options, total, optionsError, record, onvalue: (v) => write?.(v),
       })
     : {}
 </script>

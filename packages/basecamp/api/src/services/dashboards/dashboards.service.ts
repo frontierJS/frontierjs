@@ -196,7 +196,7 @@ export function createDashboardsService(app: BasecampApp) {
     // which would replace a whole row from the wire and take `workspaceId`
     // with it. Naming the six means the absence is real; it also throws at
     // construction on a method this service does not have.
-    methods: ['find', 'get', 'create', 'patch', 'remove',
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'restore',
               'kinds', 'addWidget', 'updateWidget', 'removeWidget', 'reorder'],
 
     async find() {

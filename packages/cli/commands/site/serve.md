@@ -23,7 +23,7 @@ harness proves the site works under rules nothing in production applies.
 
 ```js
 context.exec({
-  command: `bunx sierra site --serve --port ${flag.port || 8700}`,
+  command: `${context.bin('sierra', context.paths.site)} site --serve --port ${flag.port || 8700}`,
   cwd:     context.paths.site,
   dry:     flag.dry,
 })

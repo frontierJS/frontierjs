@@ -1,5 +1,21 @@
 # Changes — @frontierjs/notifications
 
+## 2026-09-29 — a new notification reaches the bell
+
+[`FJS-1573`](../../ISSUES.md#fjs-1573). The inApp driver pushed `notification:created`, and the
+browser client routes a frame to a service's store only when its name is `<service> <verb>`,
+split on the space. The old name was a single word to the client, so it reached no store and
+every bell stayed at the count from its first load until a reload. Nothing reported it. The
+frame is now `notifications created` (`CREATED_EVENT` in `drivers/inapp.ts`), and the app mounts
+the in-app list as the `notifications` service, which `example` and basecamp both do.
+
+The tests here asserted only the frame the server sent, and it was sent correctly, just under
+a name nothing read. They now assert that it splits into `['notifications', 'created']`. The
+full path is proved in basecamp: `api/test/services.test.ts` connects junction's real browser
+client over a real socket, sends one, and sees it arrive on `notifications`. That test was red
+on the old name. The README and `examples/Notification.mesa` also now say the app has to join
+a connection to `notifications:user:<id>`, which basecamp had never done.
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

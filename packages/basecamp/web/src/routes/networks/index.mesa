@@ -20,6 +20,7 @@ title: Networking
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import { page } from '@frontierjs/sierra/router'
+  import { offerUndo } from '../../resources/Trash.mesa'
 
   $: session.workspaceId
 
@@ -138,7 +139,7 @@ title: Networking
     error = null; busy = network.id
     try {
       await networks.service.remove(network.id)
-      toasts.success(`${network.name} deleted`)
+      offerUndo(network.name, networks, network.id, load)
       await load()
     } catch (e) {
       // 'N server(s) are still attached — detach them first' arrives here. The

@@ -2677,7 +2677,7 @@ if (useInstall) {
   try {
     log.info('→ initial migration')
     context.exec({
-      command: 'bunx litestone migrate create initial --schema db/schema.lite',
+      command: `${context.bin('litestone', finalTarget)} migrate create initial --schema db/schema.lite`,
       cwd: finalTarget, stdio: 'pipe',
     })
   } catch (e) {

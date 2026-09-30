@@ -46,6 +46,9 @@
     "./render-component": {
       "import": "./src/render-component.js"
     },
+    "./drive": {
+      "import": "./src/drive.js"
+    },
     "./vite": {
       "import": "./mesa-vite/index.js"
     },

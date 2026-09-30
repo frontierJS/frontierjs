@@ -5,6 +5,7 @@ title: Server
   import { page, goto } from '@frontierjs/sierra/router'
   import { humanize } from '@frontierjs/toolbelt/inflect'
   import Server, { servers } from '../../../resources/Server.mesa'
+  import { apps } from '../../../resources/App.mesa'
   import { at } from '../../../datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -13,11 +14,13 @@ title: Server
   import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord   from '../../../components/NoRecord.mesa'
   import ServerHealthBody from '../../../components/widgets/ServerHealthBody.mesa'
+  import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
 
   let server    = null
   let events    = []
+  let placed    = null   // the apps on this machine; null until read
   let error     = null
   let loadError = null
   let loading   = true
@@ -55,6 +58,7 @@ title: Server
     try {
       await watchRow()
       await loadEvents()
+      loadPlaced()
     } catch (e) {
       error = e.message; loadError = e
     } finally {
@@ -67,6 +71,18 @@ title: Server
   // is a 404 — and no announcement carries it.
   async function loadEvents() {
     events = rowsOf(await servers.service.invoke('events', page.params.id))
+  }
+
+  // Which apps run here — the question an operator asks before draining or
+  // destroying a machine. A placement is an AppServer row, so the filter is
+  // `serverId`, which the apps service reserves and joins through. Not fatal:
+  // the machine is the screen.
+  async function loadPlaced() {
+    try {
+      placed = (await apps.service.find({ serverId: page.params.id }, { limit: 100 })).data
+    } catch {
+      placed = null
+    }
   }
 
   load()
@@ -113,7 +129,9 @@ title: Server
   async function remove() {
     error = null; busy = 'remove'
     try {
-      await servers.service.remove(server.id)
+      const { id, name } = server
+      await servers.service.remove(id)
+      offerUndo(name, servers, id)
       goto('/servers/')
     } catch (e) {
       // 'Cannot remove an online server — drain it first' arrives here, and is
@@ -395,6 +413,22 @@ title: Server
   </dl>
 
   <div class="tiles" style="--tile-min: 18rem">
+    <article class="card stack" id="server-apps">
+      <h2 class="h4">Apps on this machine</h2>
+      {#if placed === null}
+        <p class="text-sm text-muted">The apps placed here could not be read.</p>
+      {:else if !placed.length}
+        <p class="text-sm text-muted">Nothing is placed here. An app's own screen places it on a machine.</p>
+      {:else}
+        <ul class="stack">
+          {#each placed as a}
+            <li><a href={`/apps/${a.id}/`}>{a.name}</a>
+              <span class="text-sm text-muted">{a.environment?.name ?? ''} · {a.type}</span></li>
+          {/each}
+        </ul>
+      {/if}
+    </article>
+
     <article class="card stack">
       <h2 class="h4">Plan</h2>
       {#if entries(server.plan).length}

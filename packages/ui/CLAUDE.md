@@ -18,7 +18,7 @@ components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · Thresholds · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · CodeInput ·
-              FileUpload · FileField · GeoField · Button
+              FileUpload · FileField · GeoField · MoneyInput · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · …
@@ -221,6 +221,14 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   control hands back nothing, reports through `$context.form.reportInvalid` and
   RETRACTS when the pair completes — without the retraction the guard is a lock.
   Clearing both boxes is a row with no location, which is ordinary.
+- **A `@money` column is `MoneyInput`, a TEXT box in major units** (`FJS-D555`).
+  `type="number"` answers `''` for `1,200` and steps on the scroll wheel. The
+  text is parsed as a string and never multiplied as a float (`8.29 * 100` is
+  828.99…). A value it cannot store exactly is refused through `reportInvalid`
+  and never rounded. A `@money(field: …)` column reads its code off the draft
+  `record`, which `FormField` hands a props builder and does not forward by
+  default, since an undeclared prop lands on the element as an attribute.
+  `FilterBar` reuses `readMoney`/`showMoney` from its module script.
 - **A `Json` column is the one shape with no schema under it, and both halves of
   the answer are new.** `display/Json.mesa` reads a document and
   `forms/JsonInput.mesa` edits one; Sierra's table answers `json` where the

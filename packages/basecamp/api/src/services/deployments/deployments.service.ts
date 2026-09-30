@@ -7,11 +7,11 @@
 // a cancel rather than a delete — deployment history is the audit surface for
 // "what is actually running", so it is never erased here.
 //
-// `service_id` is now `appId`. The join to app+environment is
+// The join to app+environment is
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, changesNothing, ws, actor } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
@@ -100,11 +100,12 @@ export function createDeploymentsService(app: BasecampApp) {
 
     async find() {
       const { limit, offset } = getPagination()
-      const appId  = ($.query.appId ?? $.query.service_id) as string | undefined
-      const status = $.query.status as string | undefined
-
+      // Every filter the caller sent, not a chosen few. autoFilter has already
+      // refused a key that is not a column, so a key it admitted and this body
+      // skipped answered every row as a match — the /deployments/ filter bar
+      // offers a dozen columns and filtered on two.
       const { rows, total } = await db().deployment.findManyAndCount({
-        where:   { workspaceId: ws(), ...(appId ? { appId } : {}), ...(status ? { status } : {}) },
+        where:   { ...parseWhere($.query), workspaceId: ws() },
         include: WITH_APP,
         orderBy: { queuedAt: 'desc' },
         limit, offset,

@@ -29,6 +29,8 @@ import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
 import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
 import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
+import { notifyPeople }           from '../src/core/notify.ts'
+import { createJunctionClient }   from '@frontierjs/junction/client'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -296,6 +298,7 @@ describe('the HTTP pipeline answers the same app', () => {
 describe('the two transports answer the same app', () => {
   let penv: any
   let token: string
+  let parityUser: string
 
   beforeAll(async () => {
     penv = await createTestEnv({
@@ -316,7 +319,9 @@ describe('the two transports answer the same app', () => {
     const acct = await sys.account.create({ data: { slug: `p-${uniq()}`, displayName: 'Parity' } })
     const email = `parity-${uniq()}@x.co`
     const user  = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Parity' })
-    await sys.user.update({ where: { id: user.id ?? user.userId }, data: { accountId: acct.id } })
+    // Active, because a registered account starts `pending_verification` and
+    // `notifyPeople` pages nobody who is not.
+    await sys.user.update({ where: { id: user.id ?? user.userId }, data: { accountId: acct.id, status: 'active' } })
     const wsp = await sys.workspace.create({
       data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}`, ownerId: user.id ?? user.userId },
     })
@@ -326,6 +331,7 @@ describe('the two transports answer the same app', () => {
     })
     const login = await penv.app.auth.login(email, 'hunter2hunter2')
     token = login.token ?? login.accessToken
+    parityUser = user.id ?? user.userId
   }, 120_000)
 
   afterAll(async () => { await penv?.close() })
@@ -338,6 +344,38 @@ describe('the two transports answer the same app', () => {
     // A mismatch names both answers, so the message IS the report.
     expect(found.map((m: any) => m.message ?? JSON.stringify(m))).toEqual([])
   }, 180_000)
+
+  test('a notification sent in the API reaches the notifications store of an open socket', async () => {
+    // The whole route, with nothing standing in: the real browser client, a
+    // real session, the connect handler's join, the inApp driver's push, and
+    // the client's own routing of a frame to a service. Each half was tested
+    // alone and the pair never met — the driver pushed `notification:created`,
+    // which the client does not route to any service, and no bell moved.
+    const client = createJunctionClient({ url: penv.url })
+    try {
+      client.setToken(token)
+      await new Promise<void>((res, rej) => {
+        const t = setTimeout(() => rej(new Error('the socket never connected')), 8000)
+        client.once('connect', () => { clearTimeout(t); res() })
+      })
+      const got: any[] = []
+      client.service('notifications').on('created', (row: any) => got.push(row))
+
+      // The join runs in the connection handler after `connect` is emitted, so
+      // the send is repeated until one lands rather than timed against it.
+      const deadline = Date.now() + 5000
+      while (!got.length && Date.now() < deadline) {
+        await notifyPeople(penv.app, 'deploy_failed', [parityUser],
+          { deploymentId: 'd-1', appName: 'Site', environment: 'prod', step: 'build' })
+        await new Promise(r => setTimeout(r, 200))
+      }
+      expect(got.length).toBeGreaterThan(0)
+      expect(got[0].userId).toBe(parityUser)
+      expect(got[0].data.title).toBe('Deploy failed')
+    } finally {
+      client.disconnect()
+    }
+  }, 30_000)
 })
 
 describe('?workspace_id= — the documented fallback, which had never worked', () => {
@@ -2352,6 +2390,102 @@ describe('a custom method grades its caller before a system read or a guarded wr
   })
 })
 
+describe('the trash lists what was deleted, and each service brings its own back', () => {
+  const uniq  = () => Math.random().toString(36).slice(2, 8)
+  const trash = async (who: any = owner) => {
+    const out = await env.as(who).service('trash').find()
+    return (out.data ?? out) as any[]
+  }
+  const live = async (accessor: string, id: string) =>
+    !(await (env.system as any)[accessor].findFirst({ where: { id }, withDeleted: true })).deletedAt
+
+  async function projectTree() {
+    const sys  = env.system as any
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: `Tree ${uniq()}`, slug: `tree-${uniq()}` } })
+    const e    = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'staging', slug: 'staging' } })
+    const a    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Web', slug: `web-${uniq()}`, type: 'static' } })
+    const b    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'Api', slug: `api-${uniq()}`, type: 'static' } })
+    return { proj, e, a, b }
+  }
+
+  test('a deleted project is ONE item that counts what went with it, and restoring it empties the trash of all of it', async () => {
+    const { proj, e, a, b } = await projectTree()
+    await env.as(owner).service('projects').remove(proj.id)
+
+    const items = await trash()
+    const mine  = items.filter((i: any) => [proj.id, e.id, a.id, b.id].includes(i.ref))
+    expect(mine).toHaveLength(1)
+    expect(mine[0]).toMatchObject({ id: `projects:${proj.id}`, service: 'projects', kind: 'Project', name: proj.name, href: `/projects/${proj.id}/` })
+    expect(mine[0].includes).toEqual([{ kind: 'Environment', count: 1 }, { kind: 'App', count: 2 }])
+
+    const back = await env.as(owner).service('projects').restore(proj.id)
+    expect(back).toMatchObject({ id: proj.id, deletedAt: null })
+    for (const [acc, id] of [['project', proj.id], ['environment', e.id], ['app', a.id], ['app', b.id]])
+      expect(await live(acc, id)).toBe(true)
+    expect((await trash()).some((i: any) => i.ref === proj.id)).toBe(false)
+  })
+
+  test('an app deleted BEFORE its environment stays deleted when the environment comes back, and is listed then', async () => {
+    const { e, a, b } = await projectTree()
+    await env.as(owner).service('apps').remove(a.id)
+    expect((await trash()).find((i: any) => i.ref === a.id)).toMatchObject({ kind: 'App', within: 'staging', note: expect.stringContaining('stopped') })
+
+    await env.as(owner).service('environments').remove(e.id)
+    const during = await trash()
+    // Folded under the environment, and not counted by it: a different delete.
+    expect(during.some((i: any) => i.ref === a.id)).toBe(false)
+    expect(during.find((i: any) => i.ref === e.id).includes).toEqual([{ kind: 'App', count: 1 }])
+
+    await env.as(owner).service('environments').restore(e.id)
+    expect(await live('app', b.id)).toBe(true)
+    expect(await live('app', a.id)).toBe(false)
+    expect((await trash()).some((i: any) => i.ref === a.id)).toBe(true)
+  })
+
+  test('a viewer sees the trash without the kinds it cannot read, and cannot restore', async () => {
+    const sys    = env.system as any
+    const secret = await sys.secret.create({ data: { workspaceId: ws.id, name: `GONE_${uniq()}`, kind: 'generic' } })
+    const proj   = await sys.project.create({ data: { workspaceId: ws.id, name: `Seen ${uniq()}`, slug: `seen-${uniq()}` } })
+    await sys.secret.remove({ where: { id: secret.id } })
+    await sys.project.remove({ where: { id: proj.id } })
+
+    const seen = await trash(viewer)
+    expect(seen.some((i: any) => i.ref === proj.id)).toBe(true)
+    expect(seen.some((i: any) => i.kind === 'Secret')).toBe(false)
+    expect((await trash(owner)).some((i: any) => i.ref === secret.id)).toBe(true)
+
+    await expect(env.as(viewer).service('projects').restore(proj.id)).rejects.toThrow(/level 4/)
+    await expect(env.as(outsider).service('trash').find()).rejects.toThrow()
+  })
+
+  test('a channel comes back WITH the credential its delete took', async () => {
+    const sys     = env.system as any
+    const secret  = await sys.secret.create({ data: { workspaceId: ws.id, name: `hook-${uniq()}`, kind: 'notification' } })
+    const channel = await sys.notificationChannel.create({ data: { workspaceId: ws.id, name: `Pager ${uniq()}`, kind: 'webhook', secretId: secret.id } })
+    await env.as(owner).service('channels').remove(channel.id)
+    expect(await live('secret', secret.id)).toBe(false)
+
+    await env.as(owner).service('channels').restore(channel.id)
+    expect(await live('notificationChannel', channel.id)).toBe(true)
+    expect(await live('secret', secret.id)).toBe(true)
+  })
+
+  test('recipes, dashboards and secrets answer restore, and a row that is not deleted is a 404', async () => {
+    const sys = env.system as any
+    const rows = {
+      recipes:    ['recipe',    await sys.recipe.create({ data: { workspaceId: ws.id, name: `R ${uniq()}`, slug: `r-${uniq()}`, script: 'true' } })],
+      dashboards: ['dashboard', await sys.dashboard.create({ data: { workspaceId: ws.id, name: `D ${uniq()}`, slug: `d-${uniq()}` } })],
+      secrets:    ['secret',    await sys.secret.create({ data: { workspaceId: ws.id, name: `S_${uniq()}`, kind: 'generic' } })],
+    } as Record<string, [string, any]>
+    for (const [service, [accessor, row]] of Object.entries(rows)) {
+      await expect(env.as(owner).service(service).restore(row.id)).rejects.toThrow(/not/)
+      await env.as(owner).service(service).remove(row.id)
+      expect(await env.as(owner).service(service).restore(row.id)).toMatchObject({ id: row.id })
+      expect(await live(accessor, row.id)).toBe(true)
+    }
+  })
+})
+
 describe('infra.launch walks to the screen each step happens on', () => {
   test('an empty workspace starts at the machine; a released app on a placed machine is done', async () => {
     const sys  = env.system as any
@@ -2384,5 +2518,180 @@ describe('infra.launch walks to the screen each step happens on', () => {
     const all = await me.call('launch')
     expect(all.done).toBe(all.total)
     expect(all.app.id).toBe(a.id)
+  })
+})
+
+describe('notifications — the inbox reads what the driver writes', () => {
+  // Seven kinds wrote rows for weeks and no service read them. The rows below
+  // are made the way the inApp driver makes them — `asSystem()`, because the
+  // gate says 8 for create — so what is graded is the reading half alone.
+  const list = (r: any) => (r.data ?? r) as any[]
+  const mine = () => env.as(owner).service('notifications')
+  const note = (userId: string, title: string, at: string) =>
+    (env.system as any).notification.create({ data: {
+      userId, type: 'deploy_failed', data: { title }, createdAt: at,
+    } })
+
+  let older: any, newer: any, theirs: any
+  beforeAll(async () => {
+    older  = await note(owner.userId,     'older', '2026-01-01T00:00:00.000Z')
+    newer  = await note(owner.userId,     'newer', '2026-01-02T00:00:00.000Z')
+    theirs = await note(developer.userId, 'theirs', '2026-01-03T00:00:00.000Z')
+  })
+
+  test('a person lists their own, newest first, and never somebody else\'s', async () => {
+    const ids = list(await mine().find()).map(n => n.id)
+    expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(older.id))
+    expect(ids).not.toContain(theirs.id)
+  })
+
+  test('an empty patch marks one read and a stated null marks it unread again', async () => {
+    const read = await mine().patch(older.id, {})
+    expect(read.readAt).toBeTruthy()
+    const back = await mine().patch(older.id, { readAt: null })
+    expect(back.readAt).toBeNull()
+  })
+
+  test('a patch rewrites nothing but readAt', async () => {
+    const out = await mine().patch(older.id, { data: { title: 'forged' }, type: 'job_failed' })
+    expect(out.data.title).toBe('older')
+    expect(out.type).toBe('deploy_failed')
+  })
+
+  test('nobody marks somebody else\'s', async () => {
+    await expect(env.as(developer).service('notifications').patch(newer.id, {})).rejects.toThrow()
+    const row = await (env.system as any).notification.findUnique({ where: { id: newer.id } })
+    expect(row.readAt).toBeNull()
+  })
+
+  test('readAll marks every one of MINE and leaves theirs unread', async () => {
+    const unread = list(await mine().find()).filter(n => !n.readAt).length
+    expect(unread).toBeGreaterThan(0)
+    const { count } = await mine().call('readAll')
+    expect(count).toBe(unread)
+    expect(list(await mine().find()).every(n => n.readAt)).toBe(true)
+    const row = await (env.system as any).notification.findUnique({ where: { id: theirs.id } })
+    expect(row.readAt).toBeNull()
+  })
+
+  test('a viewer marks their own read — the lowest role still reads its inbox', async () => {
+    const n = await note(viewer.userId, 'for the viewer', '2026-01-04T00:00:00.000Z')
+    const out = await env.as(viewer).service('notifications').patch(n.id, {})
+    expect(out.readAt).toBeTruthy()
+    const { count } = await env.as(viewer).service('notifications').call('readAll')
+    expect(count).toBe(0)
+  })
+
+  test('signed out is refused by name, not answered with an empty inbox', async () => {
+    await expect(env.service('notifications').find()).rejects.toThrow(/Sign in to read your notifications/)
+  })
+})
+
+describe('users — a person edits their own profile, at any standing', () => {
+  const sys = () => env.system as any
+
+  test('a viewer reads and edits their own row through me', async () => {
+    const users = env.as(viewer).service('users')
+    expect((await users.get('me')).id).toBe(viewer.userId)
+    const out = await users.patch('me', { displayName: 'Vee', username: 'vee' })
+    expect(out.displayName).toBe('Vee')
+    const row = await sys().user.findUnique({ where: { id: viewer.userId } })
+    expect([row.displayName, row.username]).toEqual(['Vee', 'vee'])
+  })
+
+  test('a caller naming no workspace edits theirs too', async () => {
+    const bare = session({ userId: viewer.userId })
+    const out = await env.as(bare).service('users').patch(viewer.userId, { displayName: 'Vee 2' })
+    expect(out.displayName).toBe('Vee 2')
+  })
+
+  test('nobody reads or edits somebody else\'s, the owner of the workspace included', async () => {
+    await expect(env.as(owner).service('users').get(viewer.userId)).rejects.toThrow(/No user/)
+    await expect(env.as(owner).service('users').patch(viewer.userId, { displayName: 'forged' }))
+      .rejects.toThrow(/No user/)
+    expect((await sys().user.findUnique({ where: { id: viewer.userId } })).displayName).not.toBe('forged')
+  })
+
+  // Which columns is the schema's, and the service names none of them. Each of
+  // these is one a person must not write about themselves.
+  test('the address, the organization and every graded column are dropped', async () => {
+    const before = await sys().user.findUnique({ where: { id: developer.userId } })
+    await env.as(developer).service('users').patch('me', {
+      email: 'taken@x.co', accountId: null, emailVerified: true,
+      isSystemAdmin: true, status: 'suspended', kind: 'bot', displayName: 'Dev',
+    })
+    const row = await sys().user.findUnique({ where: { id: developer.userId } })
+    expect(row.email).toBe(before.email)
+    expect(row.accountId).toBe(before.accountId)
+    expect(row.emailVerified).toBe(before.emailVerified)
+    expect([row.isSystemAdmin, row.status, row.kind]).toEqual([before.isSystemAdmin, before.status, before.kind])
+    expect(row.displayName).toBe('Dev')
+  })
+
+  test('there is no list of people here', async () => {
+    await expect(env.as(owner).service('users').find()).rejects.toThrow()
+  })
+
+  // The gate reads at 1, so a stranger is refused before the service runs,
+  // unlike notifications, whose read is 0.
+  test('signed out is refused, not answered with nobody', async () => {
+    await expect(env.service('users').get('me')).rejects.toThrow(/Authentication required/)
+  })
+})
+
+describe('a list honors every filter it admits', () => {
+  // The hand-written finds named two or three filters each and dropped the
+  // rest, after autoFilter had already judged the key a column — so a filter
+  // on `branch` or `name` answered 200 with every row. Each claim below is
+  // paired with a row it must leave out, because a find that ignores its
+  // filter passes any test that only looks for the row that should be there.
+  const list = (r: any) => (r.data ?? r) as any[]
+  const ids  = (r: any) => list(r).map(x => x.id)
+  let env1: any, env2: any, placed: any, elsewhere: any, box: any, d1: any, d2: any, job: any
+
+  beforeAll(async () => {
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'Filters', slug: `filters-${uniq}` } })
+    env1 = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'one', slug: 'one' } })
+    env2 = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'two', slug: 'two' } })
+    placed    = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env1.id, name: `placed-${uniq}`, slug: 'placed', type: 'static' } })
+    elsewhere = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env2.id, name: `elsewhere-${uniq}`, slug: 'elsewhere', type: 'static' } })
+    box = await serverAt('online', { workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}` })
+    await sys.appServer.create({ data: { appId: placed.id, serverId: box.id } })
+    d1 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: placed.id,    environmentId: env1.id, trigger: 'manual', branch: `main-${uniq}` } })
+    d2 = await sys.deployment.create({ data: { workspaceId: ws.id, appId: elsewhere.id, environmentId: env2.id, trigger: 'manual', branch: `feat-${uniq}` } })
+    job = await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `nightly-${uniq}`, kind: 'one_shot', command: 'true' } })
+    await sys.job.create({ data: { workspaceId: ws.id, appId: placed.id, name: `weekly-${uniq}`, kind: 'one_shot', command: 'true' } })
+  })
+
+  test('apps on one server, and not the app placed nowhere', async () => {
+    const got = ids(await env.as(owner).service('apps').find({ serverId: box.id }))
+    expect(got).toEqual([placed.id])
+  })
+
+  test('apps by a column the find never named', async () => {
+    const got = ids(await env.as(owner).service('apps').find({ name: elsewhere.name }))
+    expect(got).toEqual([elsewhere.id])
+  })
+
+  test('deployments in one environment, and not the other one\'s', async () => {
+    const got = ids(await env.as(owner).service('deployments').find({ environmentId: env1.id }))
+    expect(got).toEqual([d1.id])
+  })
+
+  test('deployments by branch — a filter the /deployments/ bar offers', async () => {
+    const got = ids(await env.as(owner).service('deployments').find({ branch: d2.branch }))
+    expect(got).toEqual([d2.id])
+  })
+
+  test('jobs by name', async () => {
+    const got = ids(await env.as(owner).service('jobs').find({ name: job.name }))
+    expect(got).toEqual([job.id])
+  })
+
+  test('a key that is not a column is still refused by name', async () => {
+    await expect(env.as(owner).service('deployments').find({ bogusColumn: 1 })).rejects.toThrow(/bogusColumn/)
+    await expect(env.as(owner).service('apps').find({ service_id: placed.id })).rejects.toThrow(/service_id/)
   })
 })

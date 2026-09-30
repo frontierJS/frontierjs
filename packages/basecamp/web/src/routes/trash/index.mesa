@@ -1,0 +1,103 @@
+---
+title: Trash
+---
+<script>
+  // What this workspace deleted, newest first, each with Restore.
+  //
+  // A project deleted with its environments and apps is one row that says what
+  // went with it — restoring it brings all of that back — and a row appears
+  // only once whatever holds it is live, so every Restore here can succeed.
+  // Refusals are the row's own service's: a viewer's press is a 403 in words.
+  import { goto }     from '@frontierjs/sierra/router'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { session }  from '../../session.js'
+  import { trash, loadTrash, restoreItem } from '../../resources/Trash.mesa'
+  import { at, ago } from '../../datetime.js'
+
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  const { get: items, unsubscribe } = useStore(trash.store)
+  $.onDestroy(unsubscribe)
+
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  async function load() {
+    error = null; loading = true
+    try { await loadTrash() }
+    catch (e) { error = e.message }
+    finally { loading = false }
+  }
+  load()
+  $: session.workspaceId, () => load()
+
+  async function restore(item) {
+    error = null; busy = item.id
+    try {
+      await restoreItem(item)
+      toasts.success(`${item.name} restored`, undefined, { label: 'Open', run: () => goto(item.href) })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const plural = (n, word) => `${n} ${word.toLowerCase()}${n === 1 ? '' : 's'}`
+  const withIt = (item) => item.includes.map(i => plural(i.count, i.kind)).join(', ')
+
+  const COLUMNS = [
+    { name: 'what',    label: 'Deleted' },
+    { name: 'kind',    label: 'Kind' },
+    { name: 'when',    label: 'When' },
+    { name: 'actions', label: '' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Trash</h1>
+</div>
+<p class="text-sm text-muted">
+  Deleting keeps the record, so anything here comes back as it was. Nothing is emptied automatically.
+</p>
+
+{#if error}
+  <article class="alert danger">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading && !items().length}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !items().length}
+  <EmptyState title="Nothing deleted">
+    Projects, apps, servers, secrets and the rest land here when they are deleted, and can be restored from here.
+  </EmptyState>
+{:else}
+  <Table id="trash-rows" columns={COLUMNS} rows={items()}>
+    {#snippet row(item)}
+      <tr data-trash-id={item.id}>
+        <td>
+          <strong>{item.name}</strong>
+          {#if item.within}<span class="text-sm text-muted"> in {item.within}</span>{/if}
+          {#if item.includes.length}
+            <div class="text-sm text-muted">with {withIt(item)}</div>
+          {/if}
+          {#if item.note}<div class="text-sm text-muted">{item.note}</div>{/if}
+        </td>
+        <td><Pill>{item.kind}</Pill></td>
+        <td class="text-sm text-muted" title={at(item.deletedAt)}>{ago(item.deletedAt)}</td>
+        <td>
+          <Button variant="outlined" size="sm" disabled={busy === item.id} onclick={() => restore(item)}>
+            {busy === item.id ? 'Restoring…' : 'Restore'}
+          </Button>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

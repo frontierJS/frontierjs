@@ -627,6 +627,11 @@ minimum bar and spending everything else on `only`.**
   that recur across clusters which never cite each other, and the keystone of each
   sitting unread in another. Ranked nowhere because it proposes nothing to build on its
   own; kept because 4.19, 2.19's `FJS-519` and 5.34 each read differently beside it
+- `IDEAS/rebuilt-in-the-stressors.md` — the seven stressors read for what each app
+  rebuilt that the framework should own. Ranked nowhere because its finding is that no
+  kernel is missing and every leaf it found is a register row (`FJS-1578`…`FJS-1582`);
+  kept for its method, since only driving an app's copy against the owner found the
+  bypass that reading both missed
 - `DECISIONS.md` — where 5.1, 5.3, and the `Slice` vocabulary ruling land
 - `website/README.md` — the publication gate, which this file will eventually feed
 

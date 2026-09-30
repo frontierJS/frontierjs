@@ -23,8 +23,8 @@
   // a person types is dollars — and without a control that knows the
   // difference, somebody raising a plan to twenty-nine dollars types 29 and the
   // shop charges twenty-nine cents, with every screen agreeing (`FJS-582`).
-  // The control is registered in `web/src/money-control.js` off `x-money` on
-  // the rule, so nothing here names a currency, a step or a divisor.
+  // Sierra's control table gives the column the kit's `money` box off
+  // `x-money` on the rule, so nothing here names a currency or a divisor.
   //
   // The plan's own screen passes `only={['price']}` and an `onsubmit` that
   // calls `plans.reprice`, because closing one window and opening the next is

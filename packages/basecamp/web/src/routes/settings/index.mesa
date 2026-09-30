@@ -337,7 +337,7 @@ title: Your settings
         <strong>This Basecamp has no mail provider</strong>, so an Email switch is kept for when
         one is set and nothing is mailed until then.
       {/if}
-      In-app copies are recorded, but no screen lists them yet.
+      In-app ones land in <a href="/notifications/">your notifications</a> and the bell in the top bar.
     </p>
   </Card>
 

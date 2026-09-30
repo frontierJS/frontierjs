@@ -23,7 +23,6 @@ import './resources/ProductVariant.mesa'
 import { getClient }        from '@frontierjs/sierra/junction'
 import { useCartClient }    from './cart.js'
 import { loadShopCalendar } from './datetime.js'
-import './money-control.js'
 import './displays.js'
 
 import { mount } from '@frontierjs/mesa/runtime'

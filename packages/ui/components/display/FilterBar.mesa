@@ -55,6 +55,7 @@
   import Select      from '../forms/Select.mesa'
   import MultiSelect from '../forms/MultiSelect.mesa'
   import Button      from '../forms/Button.mesa'
+  import { readMoney, showMoney, FALLBACK_CURRENCY } from '../forms/MoneyInput.mesa'
   import { directiveParams, splitParams } from '@frontierjs/toolbelt/directives'
 
   // `resource.filters().filters` — the ranked columns, each with `op` and
@@ -108,6 +109,25 @@
   function emit(next) {
     const { query, directives } = splitParams(next)
     onchange?.(query, directives)
+  }
+
+  // ── A money range is typed in major units ────────────────────────────────
+  //
+  // The column holds minor units, so a box handing its text straight to the
+  // query filtered "from 10" as from ten cents. The bounds convert through
+  // `MoneyInput`'s own two functions, and commit on `change` rather than on
+  // every keystroke: the box is re-derived from the query, and `12.` shown
+  // back as `12.00` mid-typing takes the point away.
+  //
+  // A `@money(field: …)` column holds amounts in several currencies, which no
+  // one range compares; its bounds are read in the fallback currency.
+  const moneyCode = (f) => f.currency ?? FALLBACK_CURRENCY
+
+  /** One bound's text → the query, or nothing while the text is not an amount. */
+  function writeMoneyBound(f, key, text) {
+    const { value: minor } = readMoney(text, moneyCode(f))
+    if (minor === undefined) return
+    write(f, { ...current(f), [key]: minor ?? undefined })
   }
 
   /** Is anything filtered at all? Drives the clear-all affordance. */
@@ -210,6 +230,27 @@
         aria-label={f.label}
         oninput={(e) => write(f, e.target.value === '' ? undefined : e.target.value === 'true')}
       />
+    {:else if f.kind === 'range' && f.display === 'money'}
+      <span class="filter-range">
+        <Input
+          type="text"
+          inputmode="decimal"
+          value={showMoney(current(f)?.gte, moneyCode(f))}
+          placeholder={f.label + ' from'}
+          aria-label={f.label + ' from'}
+          data-currency={moneyCode(f)}
+          onchange={(e) => writeMoneyBound(f, 'gte', e.target.value)}
+        />
+        <Input
+          type="text"
+          inputmode="decimal"
+          value={showMoney(current(f)?.lte, moneyCode(f))}
+          placeholder={f.label + ' to'}
+          aria-label={f.label + ' to'}
+          data-currency={moneyCode(f)}
+          onchange={(e) => writeMoneyBound(f, 'lte', e.target.value)}
+        />
+      </span>
     {:else if f.kind === 'range'}
       <span class="filter-range">
         <Input

@@ -63,6 +63,7 @@ the package has no root entry.
 | a boolean in a form · a setting | `@frontierjs/ui/components/forms/Checkbox.mesa` · `@frontierjs/ui/components/forms/Switch.mesa` |
 | one of a few options with descriptions | `@frontierjs/ui/components/forms/RadioGroup.mesa` |
 | a `DateTime` column (an instant) | `@frontierjs/ui/components/forms/DateTimeInput.mesa` |
+| a `@money` column | `@frontierjs/ui/components/forms/MoneyInput.mesa` — the box is in major units and hands back minor ones; `currency` feeds a `@money(field: …)` column its row's code |
 | a calendar, a date range, presets | `@frontierjs/ui/components/forms/DatePicker.mesa` |
 | a day a screen walks one at a time | the same, with `showStepper` — a prev/next pair beside the trigger. It steps only onto days the calendar would let you click, so the buttons go dead at the edge of `disabledDates` / `enabledDates` and at the past and future bounds |
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
@@ -127,8 +128,8 @@ bind, and `bind:this` gives `submit()`, `reset()` and `flushAutosave()`.
 **Generation is on when the form has no default children.** `only` narrows and
 orders, `except` removes, `auto` forces either way. Buttons go in
 `slot="actions"` or an `actions` snippet, which keeps generation on. A column
-with no control — `@money`, until the app contributes one — is left off with a
-console warning naming it.
+with no control — a `@scale` column, until the app contributes one — is left
+off with a console warning naming it.
 
 **A hand-written form writes the record itself.** Each control resolves its
 label, rules and error from the form; its callback carries the value back:
@@ -162,6 +163,7 @@ The callbacks disagree:
 | `NumberInput` · `Slider` | `onchange` | `{ value }`, or `{ start, end }` for a range |
 | `Thresholds` | `onchange` | the cuts, ascending — an array, also written back through `bind:values` |
 | `DateTimeInput` · `JsonInput` · `FileField` | `onvalue` | an ISO instant · a parsed document · a `File`, `null` to clear, `undefined` to keep |
+| `MoneyInput` | `onvalue` | minor units, `null` for a blank box — nothing while the text is not an amount |
 | `FileUpload` | `onchange` | `File[]` |
 
 **`autosave` saves once the typing stops** — `true` for 800 ms, or a number of
@@ -177,10 +179,10 @@ answers *which columns get it*, the kit's *what it renders as*.
 ```js
 import { registerControl }     from '@frontierjs/sierra/junction'
 import { registerFormControl } from '@frontierjs/ui/controls'
-import Money from './Money.mesa'
+import Duration from './Duration.mesa'
 
-registerControl('money', (rule) => (rule?.['x-money'] ? 'money' : null))
-registerFormControl('money', Money)
+registerControl('duration', (rule) => (rule?.['x-unit']?.dimension === 'duration' ? 'duration' : null))
+registerFormControl('duration', Duration)
 ```
 
 The component is handed `{ name, field, value, onvalue, options }`; a third

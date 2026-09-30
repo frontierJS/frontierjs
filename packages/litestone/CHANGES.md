@@ -1,5 +1,18 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-30 — a cascade restore brings back only what that cascade removed (`FJS-1583`)
+
+`remove()` stamps the parent and every live child with one timestamp and leaves
+a child that was already deleted with its own. `restore()` ignored the stamp and
+un-deleted every child of the parent, so an app deleted on its own a week before
+its environment came back when the environment did. It now matches the root's
+stamp at every level, reading each level's keys before clearing them, with one
+walk per distinct stamp when `where` matches roots removed at different times.
+
+`test/restore-cascade.test.ts` covers a child, a grandchild two levels down, and
+two roots in one call; the first two were red before. Found building basecamp's
+trash, where the old behavior would have restored things nobody asked for.
+
 ## 2026-09-29 — `@@exclude` is enforced on every write: two rows under one scope key may not overlap (`FJS-1528`)
 
 The write-path half of `FJS-D474`. A create, `createMany`, `upsert`, `upsertMany`,

@@ -472,13 +472,13 @@ export function defaultControlFor(rule) {
 /**
  * Which control this field gets.
  *
- *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|null,
+ *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|'money'|null,
  *     task?: 'select'|'quantify'|'text'|'position'|'bytes',
  *     type?, options?, model?, valueField?, relation?, reason? }
  *
  * `task` is what the person does to the value (Foley, Wallace & Chan 1984) and
  * `control` is one technique for it, so the task is read off the column and
- * survives a registered control replacing the technique. `@money` answers
+ * survives a registered control replacing the technique. `@scale` answers
  * `quantify` with no control: the task with no built-in technique. A read-only
  * column and a type this table does not know answer no task.
  *
@@ -606,22 +606,34 @@ function _builtinControl(rule) {
   // hundred for these: 42 typed into a `@money` box is forty-two CENTS, and
   // nothing at any layer refuses it, because 42 is a legal value of the column.
   //
-  // So there is no built-in answer here, and the table says so the way it says
-  // it for an array or a `Json` document — `control: null` plus a reason, which
+  // `@money` gets the kit's `money` box, which shows major units and writes
+  // minor ones (`FJS-D555`). The conversion is fixed by the currency, so the
+  // box is the same in every app and an app has nothing to decide in it. The
+  // currency rides on the answer in `displayFor`'s
+  // spelling, `currency` for a stated code and `currencyField` for a code held
+  // per row, because the control converts by it and a form fed only the rule
+  // would have to parse `x-money`'s three shapes a second time.
+  if (rule['x-money']) {
+    return {
+      control:       'money',
+      task:          'quantify',
+      currency:      rule['x-money'].currency,
+      currencyField: rule['x-money'].field,
+    }
+  }
+
+  // `@scale` has no built-in answer, and the table says so the way it says it
+  // for an array or a `Json` document: `control: null` plus a reason, which
   // leaves the field IN `formFields()` with the sentence beside it rather than
-  // dropping it silently. What the control IS remains an app's decision
-  // (`FJS-D17`): the currency's symbol, whether the box is in major units, what
-  // a blank means, and — for `@scale` — what the number even measures, since
-  // `example`'s `Discount.value` is a percentage on half its rows and money on
-  // the other half. `registerControl` is asked before this table, so an app or
-  // a kit that has answered wins and this is only what happens when nobody has.
-  if (rule['x-money'] || rule['x-scale']) {
+  // dropping it silently. The unit is the app's to name, since `example`'s
+  // `Discount.value` is a percentage on half its rows and money on the other
+  // half. `registerControl` is asked before this table, so an app that has
+  // answered wins.
+  if (rule['x-scale']) {
     return {
       control: null,
       task:    'quantify',
-      reason: rule['x-money']
-        ? '@money — register a control; the box is in major units and the column is minor'
-        : '@scale — register a control; the box is in decimals and the column is a scaled integer',
+      reason:  '@scale — register a control; the box is in decimals and the column is a scaled integer',
     }
   }
 

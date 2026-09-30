@@ -19,7 +19,8 @@
 //
 // Run:  node test/browser/verify-devtools.mjs        (needs Chrome, and bun)
 
-import { openChrome, green, red, dim } from '../../../mesa/test/browser/drive.mjs'
+import { openChrome }                   from '../../../mesa/src/drive.js'
+import { green, red, dim }              from '../../../mesa/test/browser/drive.mjs'
 import { spawn }                        from 'node:child_process'
 import { mkdtempSync, writeFileSync }   from 'node:fs'
 import { tmpdir }                       from 'node:os'

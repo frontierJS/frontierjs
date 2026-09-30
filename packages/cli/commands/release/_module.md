@@ -11,7 +11,7 @@ import { resolve } from 'path'
 // helper in db/_module.md and test/_module.md — a namespace module is the only
 // script a command is compiled with, so there is nowhere shared to put it.
 
-const litestone = (context) => `cd ${context.paths.root} && bunx litestone`
+const litestone = (context) => `cd ${JSON.stringify(context.paths.root)} && ${context.bin('litestone')}`
 
 // ─── schemaPath ──────────────────────────────────────────────────────────────
 // Existence is not checked here: the litestone CLI already fatals by name when

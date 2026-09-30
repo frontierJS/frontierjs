@@ -798,10 +798,16 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     const table = getTable(ctx)
     const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
 
+    // By id it answers the row or a 404, as remove does. Litestone answers an
+    // array for any where, so a by-id restore used to hand back `[row]` where
+    // the client types a row, and `[]` for an id that was never deleted — a
+    // 200 for an Undo that brought nothing back (`FJS-1584`).
     if (ctx.id) {
       assertNameable(ctx)
       const where = { [idField]: ctx.id }
-      return table.restore({ where })
+      const [row] = await table.restore({ where }) as unknown[]
+      if (!row) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} is not deleted`)
+      return row
     }
 
     ensureBulkAllowed('restore')
@@ -2193,7 +2199,10 @@ export function autoFilter(accessorOpt: string | undefined) {
 
     let problems: WhereKeyProblem[] = []
     try { problems = check.call(client, accessor, plain) ?? [] } catch { return }
-    if (!problems.length) return
+    if (!problems.length) {
+      admittedFilters.set(ctx, { model: accessor, keys: Object.keys(ctx.query) })
+      return
+    }
 
     // Name every bad key, not just the first — a caller fixing a filter one
     // round trip at a time is the thing the silent 200 already put them through.
@@ -2228,6 +2237,62 @@ export function autoFilter(accessorOpt: string | undefined) {
       `Filterable fields on ${on}: ${valid}. ` +
       `Paging and sorting are directives, not filters — use $limit, $offset, $orderBy, $select.`,
       problems.map(p => ({ field: where(p), message: `Unknown filter key '${where(p)}'` })),
+    )
+  }
+}
+
+// ─── Unread filters ─────────────────────────────────────────────────────────
+//
+// `autoFilter` admits a key because it names a column, and a hand-written `find`,
+// `get` or `aggregate` then builds its own where out of the keys it names. A key admitted here and
+// never read by the body matched every row: `?branch=nope` answered 200 with
+// every release, and a FilterBar built off the schema filtered on two of the
+// dozen columns it offered (`FJS-1577`). Admitting a key and applying it are one
+// question, so the place that admits also checks that the body read it.
+//
+// Only the METHOD's reads count. A hook that spreads ctx.query touches every
+// key and would hide the drop; a key a hook took OFF ctx.query before the body
+// ran was that hook's to apply. A read is not proof of use — a body that reads
+// a key and discards it passes — but a forgotten key is the failure seen.
+
+const admittedFilters = new WeakMap<ServiceContext, { model: string, keys: string[] }>()
+
+/**
+ * Watch which admitted filter keys the method body reads off `ctx.query`.
+ * Returns the check to run once the body has returned, which puts the original
+ * object back and refuses every admitted key the body never read, by name.
+ * `undefined` when `autoFilter` admitted nothing this call.
+ */
+export function watchFilterReads(ctx: ServiceContext): (() => void) | undefined {
+  const admitted = admittedFilters.get(ctx)
+  const target   = ctx.query as Record<string, unknown> | undefined
+  if (!admitted || !target || typeof target !== 'object') return undefined
+
+  const pending = new Set(admitted.keys.filter(k => Object.prototype.hasOwnProperty.call(target, k)))
+  if (!pending.size) return undefined
+
+  const read = (k: string | symbol) => { if (typeof k === 'string') pending.delete(k) }
+  // Enumeration reads every key — `parseWhere($.query)`, a spread and the base
+  // find's parseQuery all walk the object, and each applies all of it.
+  ctx.query = new Proxy(target, {
+    get(t, k, r)                   { read(k); return Reflect.get(t, k, r) },
+    has(t, k)                      { read(k); return Reflect.has(t, k) },
+    getOwnPropertyDescriptor(t, k) { read(k); return Reflect.getOwnPropertyDescriptor(t, k) },
+    deleteProperty(t, k)           { read(k); return Reflect.deleteProperty(t, k) },
+    ownKeys(t)                     { pending.clear(); return Reflect.ownKeys(t) },
+  })
+
+  return () => {
+    ctx.query = target
+    if (!pending.size) return
+    const keys  = [...pending]
+    const named = keys.map(k => `'${k}'`).join(', ')
+    const verb  = `${ctx.service}.${ctx.method}`
+    throw new BadRequest(
+      `${verb} does not filter on ${named} — ${keys.length > 1 ? 'each is a column' : 'it is a column'} ` +
+      `on ${admitted.model}, but the method never read ${keys.length > 1 ? 'them' : 'it'} off the query, ` +
+      `so every row would have matched. A hand-written ${ctx.method} spreads parseWhere($.query) into its where.`,
+      keys.map(k => ({ field: k, message: `${verb} does not filter on '${k}'` })),
     )
   }
 }

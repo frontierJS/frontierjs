@@ -112,13 +112,13 @@ describe('fan-out to all three transports', () => {
     expect(msg.html).toContain('href="https://x.test/go"')
   })
 
-  test('a subscribed WS connection receives notification:created with the payload', async () => {
+  test('a subscribed WS connection receives a frame the client routes to the notifications store', async () => {
     const frames = h.listen('u3')
     await h.app.notify({ id: 'u3', email: 'e@f.test' }, new Welcome(['inApp']))
 
     expect(frames.length).toBe(1)
     const frame = frames[0] as { event: string; data: { userId: string; data: Record<string, unknown> } }
-    expect(frame.event).toBe('notification:created')
+    expect(frame.event.split(' ')).toEqual(['notifications', 'created'])
     expect(frame.data.userId).toBe('u3')
     expect(frame.data.data.title).toBe('Welcome!')
   })

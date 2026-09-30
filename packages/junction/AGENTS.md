@@ -169,6 +169,20 @@ wrote runs. `before` shapes the raw payload; the schema validator runs after it;
 a rule that needs the coerced payload or reads the database belongs in
 `validated:`. `before: { all: [...] }` reaches custom methods too.
 
+**A hand-written `find` must read every filter it was sent.** Any key that names
+a column is admitted, and a key the body never reads off `$.query` is a 400 naming
+it (`FJS-D553`). A schema-built FilterBar sends columns the body did not name, so
+spread the query rather than picking keys out of it:
+
+```ts
+async find() {
+  return $.db.order.findMany({ where: { ...parseWhere($.query), shopId: shop() } })
+}
+```
+
+The same holds for a hand-written `get` or `aggregate`. A before hook that applies
+a key itself deletes it from `$.query`.
+
 **`transactional:` wraps the whole pipeline**, `after` hooks included, and holds
 SQLite's write lock for that long. `find` and `get` are never wrapped.
 `$.enqueue` refuses outside a transaction.

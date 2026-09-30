@@ -213,6 +213,22 @@ async function auditFixture(n, tag) {
   if (code !== 0) fail(`audit-fixture.mjs exited ${code}\n${err}`)
 }
 
+/** Three notifications for the seeded owner, two unread; answers what it
+ *  wrote, newest first. A subprocess for auditFixture's reason: only the
+ *  driver writes a notification, and it does so through `asSystem()`. */
+async function notificationFixture(tag) {
+  const p = spawn('bun', ['web/test/notification-fixture.mjs', tag], {
+    cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, DATABASE_URL: DB, AUDIT_PATH: AUDIT },
+  })
+  let out = '', err = ''
+  p.stdout.on('data', d => { out += d })
+  p.stderr.on('data', d => { err += d })
+  const code = await new Promise(r => p.on('exit', r))
+  if (code !== 0) fail(`notification-fixture.mjs exited ${code}\n${err}`)
+  return JSON.parse(out.trim().split('\n').pop())
+}
+
 const goto = async path => { await send('Page.navigate', { url: BASE + path }); await sleep(1200) }
 const text = sel => evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`)
 const body = () => evaluate(`document.body.textContent`)
@@ -1415,7 +1431,11 @@ try {
   await click('#blueprint-save')
   const bpEdited = await eventually(async () => (await apiGet(`/blueprints/${bp?.id}`)).body, b => b?.description === 'Edited by the drive')
   check('a blueprint is edited', bpEdited?.description === 'Edited by the drive',
-    await evaluate(`document.querySelector('dialog[open]')?.textContent.replace(/\\s+/g, ' ').slice(0, 200) ?? 'drawer closed'`))
+    await evaluate(`(() => { const d = document.querySelector('dialog[open]')
+      if (!d) return 'drawer closed'
+      const why = [...d.querySelectorAll('.alert, [role=alert], .field-error, [aria-invalid=true]')]
+        .map(e => e.id || e.getAttribute('name') || e.textContent.trim()).join(' | ')
+      return why || d.textContent.replace(/\\s+/g, ' ').slice(0, 200) })()`))
 
   // ─── Home, the palette's New entries, a release's own screen ───────────
   console.log('\n  home, ⌘K\'s New entries, the deployment screen')
@@ -1487,6 +1507,130 @@ try {
   await until(`!!document.getElementById('notification-delivery')`, v => v, 'settings never rendered')
   check('settings no longer says nothing delivers',
     !/nothing delivers/.test(await text('#settings-notifications')))
+  check('and points at where in-app notifications land',
+    await present('#settings-notifications a[href="/notifications/"]'))
+
+  // ─── What runs on a machine, what shipped to an environment ────────────
+  console.log('\n  a server\'s apps, an environment\'s releases')
+  const allApps = (await apiGet('/apps?$limit=100')).body?.data ?? []
+  let host = null, hosted = []
+  for (const srv of (await apiGet('/servers?$limit=100')).body?.data ?? []) {
+    hosted = (await apiGet(`/apps?serverId=${srv.id}`)).body?.data ?? []
+    if (hosted.length) { host = srv; break }
+  }
+  check('the seed places an app on a machine', !!host)
+  check('and ?serverId= narrows the list rather than answering every app',
+    hosted.length > 0 && hosted.length < allApps.length, `${hosted.length} of ${allApps.length}`)
+  if (host) {
+    await goto(`/servers/${host.id}/`)
+    const shown = await until(`[...document.querySelectorAll('#server-apps a')].map(a => a.getAttribute('href')).sort().join()`,
+      v => !!v, 'the server screen never listed its apps')
+    check('the server screen lists exactly the apps placed on it',
+      shown === hosted.map(x => `/apps/${x.id}/`).sort().join(), shown)
+  }
+
+  const shipped = ((await apiGet('/deployments?$limit=100')).body?.data ?? []).find(d => d.environmentId)
+  check('the seed has a release that names its environment', !!shipped)
+  if (shipped) {
+    const here    = (await apiGet(`/deployments?environmentId=${shipped.environmentId}&$limit=10`)).body?.data ?? []
+    check('?environmentId= answers only that environment\'s releases',
+      here.length > 0 && here.every(d => d.environmentId === shipped.environmentId))
+    await goto(`/environments/${shipped.environmentId}/`)
+    const rows = await until(`[...document.querySelectorAll('#env-releases a[href^="/deployments/"]')].map(a => a.getAttribute('href')).join()`,
+      v => !!v, 'the environment screen never listed its releases')
+    check('the environment screen lists its releases, newest first',
+      rows === here.map(d => `/deployments/${d.id}/`).join(), rows)
+  }
+
+  // ─── The inbox ─────────────────────────────────────────────────────────
+  console.log('\n  the bell and /notifications/')
+  const inbox = await notificationFixture('inbox')
+  const [failedDeploy, failedJob, resolved] = inbox
+
+  // A full load: the fixture wrote underneath an open page, and a row nobody
+  // pushed reaches the store on the next read.
+  await goto('/')
+  const unreadAtFirst = await until(`Number(document.getElementById('bell-count')?.textContent.trim() ?? 0)`,
+    n => n >= 2, 'the bell never counted the two unread')
+  ok(`the bell counts what is unread (${unreadAtFirst})`)
+  check('and its name says so to a screen reader',
+    /unread/.test(await evaluate(`document.getElementById('bell').getAttribute('aria-label')`)))
+
+  await click('#bell')
+  const menu = await until(`[...document.querySelectorAll('[role=menuitem]')].map(b => b.textContent.trim()).join(' | ')`,
+    t => t.includes(failedDeploy.title), 'the bell menu never listed the unread notification')
+  check('the menu lists the unread and not the read one',
+    menu.includes(failedJob.title) && !menu.includes(resolved.title), menu.slice(0, 200))
+  await evaluate(`[...document.querySelectorAll('[role=menuitem]')]
+    .find(b => b.textContent.includes(${JSON.stringify(failedDeploy.title)})).click()`)
+  await until(`location.pathname`, p => p === failedDeploy.url, 'opening a notification never went to its action')
+  ok('opening one goes where it points')
+  await until(`Number(document.getElementById('bell-count')?.textContent.trim() ?? 0)`,
+    n => n === unreadAtFirst - 1, 'the bell never counted the opened one as read')
+  ok('and marks it read — the bell counts one fewer')
+
+  await goto('/notifications/')
+  await until(`!!document.getElementById('notifications-rows')`, v => v, '/notifications/ never listed anything')
+  const unreadRows = await body()
+  check('the screen opens on Unread, without the one just read or the read one',
+    unreadRows.includes(failedJob.title) && !unreadRows.includes(failedDeploy.title) && !unreadRows.includes(resolved.title))
+  await clickText('#notifications-filter', 'All')
+  await until(`document.getElementById('notifications-rows')?.textContent ?? ''`,
+    t => t.includes(resolved.title) && t.includes(failedDeploy.title), 'All never showed the read ones')
+  ok('All shows the read ones too')
+
+  await click('#notifications-read-all')
+  await until(`!document.getElementById('bell-count')`, v => v, 'Mark all read left the bell counting')
+  ok('Mark all read empties the bell')
+  const inboxAfter = (await apiGet('/notifications?$limit=50')).body?.data ?? []
+  check('and the server agrees — nothing of this fixture is unread',
+    inbox.every(n => inboxAfter.find(r => r.id === n.id)?.readAt), JSON.stringify(inboxAfter.map(r => [r.data?.title, r.readAt])).slice(0, 200))
+
+  // ─── Undo, and the trash ───────────────────────────────────────────────
+  // Two doors to one verb: the toast a delete ends with, and /trash/ with no
+  // clock on it. Every press is read back through the API, because a toast
+  // saying *restored* over a refused restore looks exactly like a pass.
+  console.log('\n  Undo, and /trash/')
+  const binPrj = (await apiPost('/projects', { name: 'Drive trash', slug: 'drive-trash' })).body
+  const binEnv = (await apiPost('/environments', { projectId: binPrj?.id, name: 'Drive env', slug: 'drive-env' })).body
+  check('a project with an environment in it, to delete', !!binPrj?.id && !!binEnv?.id, JSON.stringify(binEnv)?.slice(0, 160))
+
+  const deleteProject = async () => {
+    await goto(`/projects/${binPrj.id}/`)
+    await until(`document.querySelector('h1')?.textContent ?? ''`, t => t === 'Drive trash', 'the project never rendered')
+    await clickText('.section-header', 'Delete')
+    await confirmIt()
+    await until(`location.pathname`, p => p === '/projects/', 'deleting the project never left it')
+  }
+  const undoButton = `[...document.querySelectorAll('.toast-stack .toast')]
+    .find(t => t.textContent.includes('Drive trash deleted'))?.querySelector('button:not([aria-label])')`
+
+  await deleteProject()
+  check('the delete took', (await apiGet(`/projects/${binPrj.id}`)).status === 404)
+  const undoLabel = await until(`${undoButton}?.textContent.trim() ?? ''`, t => t, 'the delete offered no Undo')
+  check('the toast a delete ends with offers Undo', undoLabel === 'Undo', undoLabel)
+  await evaluate(`${undoButton}.click()`)
+  const undone = await eventually(async () => (await apiGet(`/projects/${binPrj.id}`)).status, s => s === 200)
+  check('pressing Undo brings the project back', undone === 200, `GET answered ${undone}`)
+  check('and its environment with it', (await apiGet(`/environments/${binEnv.id}`)).status === 200)
+  const backInList = await until(`document.body.textContent.includes('Drive trash')`, v => v,
+    'the restored project never reappeared on the list').catch(() => false)
+  check('the list it was deleted from shows it again, with no reload', backInList)
+
+  await deleteProject()
+  await goto('/trash/')
+  const binRow = `document.querySelector('#trash-rows tr[data-trash-id="projects:${binPrj.id}"]')`
+  const rowText = await until(`${binRow}?.textContent.replace(/\\s+/g, ' ') ?? ''`, t => t, 'the project never reached /trash/')
+  check('/trash/ lists the deleted project', rowText.includes('Drive trash'), rowText.slice(0, 160))
+  check('as one row that says what went with it', rowText.includes('with 1 environment'), rowText.slice(0, 160))
+  check('and not its environment as a second row, which could not be restored alone',
+    !(await evaluate(`!!document.querySelector('#trash-rows tr[data-trash-id="environments:${binEnv.id}"]')`)))
+  await evaluate(`[...${binRow}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Restore').click()`)
+  const restored = await eventually(async () => (await apiGet(`/projects/${binPrj.id}`)).status, s => s === 200)
+  check('Restore on /trash/ brings it back', restored === 200, `GET answered ${restored}`)
+  const leftBin = await until(`!${binRow}`, v => v, 'the restored row stayed on /trash/').catch(() => false)
+  check('and it leaves the trash', leftBin)
+  check('the trash answers what the screen showed', !((await apiGet('/trash')).body?.data ?? []).some(i => i.ref === binPrj.id))
 
   // FAILED. The API is stopped under a page that is already signed in, and the
   // next screen is reached by CLICKING — a client-side navigation, so the

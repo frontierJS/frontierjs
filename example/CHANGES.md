@@ -1,5 +1,12 @@
 # Changes — example
 
+## 2026-09-29 — `money-control.js` is gone; the kit draws the money box (`FJS-1582`)
+
+`web/src/money-control.js` registered a `money` control that the kit now ships
+(`FJS-D555`), so it and its import in `main.js` are deleted. `verify`'s
+`form.totalMin` became `form.totalBox`, which asserts a text box in USD: the
+kit's box has no native `min`, and `@gte(0)` is judged on the stored cents.
+
 ## 2026-09-29 — the caravan comment in `api/src/app.ts` names `work()` (`FJS-D551`)
 
 `boot()` loads the job files and `work()` starts the workers. The comment said

@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
 `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
-`/query`, `/redact`, `/search`, `/signature` and `/units` today; a caller
+`/query`, `/redact`, `/search`, `/signature`, `/sse` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -129,6 +129,14 @@ src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      junction's resolver is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier
+src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
+                     which junction's `ctx.sse()` writes with, and
+                     `parseEvents`, incremental over decoded text, which
+                     sierra's `readEvents` reads with. Every page reading a
+                     stream had written a reader, splitting on `\n\n`
+                     (`FJS-1581`). `data` is JSON both ways; a line that is not
+                     JSON reads as its text. Ships a `.d.ts` — junction's
+                     `SseEvent` extends it
 src/redact/          *is this key a credential* — the question
                      `$protectedFields` cannot answer, because `authorization`
                      and `cookie` are on no row. Junction's logger, `defineEnv`
@@ -550,4 +558,5 @@ license.
 | `gate` | `packages/litestone`: `bun run test` (the boundary that enforces it) · `packages/junction`: `bun run test` — `session-gate-level.test.ts` asserts the export IS the kit's binding, which is the assertion four hand copies could not make · `packages/sierra`: `bun run test` (the screen's verdict). The kit's own spec walks the whole 216-case grid and the whole 0-9 square, because the drift was one branch and asking one grader about one caller is what hid it |
 | `geo` | `packages/toolbelt`: `bun run test` — the spec compares `boundingBox`+`distance` against a BRUTE-FORCE scan at the equator, at a pole and across ±180, which is the only assertion that can see a prefilter dropping a row. Then `packages/litestone`: `bun test test/point.test.ts`, whose own gate is the same comparison in SQL: the two halves of a live list call `isNear` and the same haversine, so a change here moves the server's answer too |
 | `match` | `packages/toolbelt`: `bun run test`, then `packages/sierra`: `bun run test` (the live store that reads it) and `packages/jetty`: `bun run test` (the other one, which may not import sierra). A `near` change is graded against litestone as well — `false` here REMOVES a row from a live list, so the two halves have to agree about a row on the circle's edge |
+| `sse` | `packages/toolbelt`: `bun run test` — the spec reads every frame at every chunk boundary. Then `packages/sierra`: `bun run test event-stream`, which reads a REAL junction `ctx.sse()` stream through `readEvents` and asserts leaving the loop fires the server's `onDisconnect` |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

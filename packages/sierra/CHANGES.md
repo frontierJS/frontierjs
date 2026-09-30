@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-29 — `@money` answers the `money` control (`FJS-1582`, `FJS-D555`)
+
+`controlFor` answers `{ control: 'money', task: 'quantify', currency, currencyField }` for a column carrying `x-money`, where it answered `control: null` and a reason telling the app to register one. The currency is on the answer in `displayFor`'s spelling, so a form never parses `x-money`'s three shapes. `@scale` still answers `null`. `field-control-scaled.test.js` asserts all three shapes, and `control-task.test.js` lists `money`.
+
+## 2026-09-29 — `readEvents` reads a `ctx.sse()` stream (`FJS-1581`)
+
+`readEvents(response)` from `@frontierjs/sierra/fetch` is an async generator over a `text/event-stream` response: `for await (const { event, data, id } of readEvents(await sierraFetch(url)))`. `EventSource` cannot send a bearer token, so a page reading an authenticated stream had to write the fetch, the body reader and the frame parser itself, as portal did in about 40 lines. The frame is toolbelt's `/sse`, which junction writes with. Leaving the loop cancels the body, so the server's `onDisconnect` fires. A non-2xx throws with `status`, `body` and the server's `message`, and a response that is not an event stream throws a `TypeError`, where either would otherwise have been read as a stream with nothing in it. Nothing reconnects. Proved in `test/event-stream.test.js` against a real junction app, and with `reader.cancel()` removed the hang-up test fails.
+
 ## 2026-09-29 — AGENTS.md answers offline (`FJS-1550`)
 
 *Offline — held writes and kept reads* is new: `@@sync` as the switch, the two

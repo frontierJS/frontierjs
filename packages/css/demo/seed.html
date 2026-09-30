@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" class="theme-seed">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seed Theme</title>
+<link rel="stylesheet" href="../src/index.css">
+<link rel="stylesheet" href="seed.css">
+<style>
+  body { margin: 0; padding: 24px 16px; background: var(--surface-sunken); color: var(--ink); font-family: system-ui, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .switches label { position: relative; display: grid; gap: 4px; font-size: 0.85rem; color: var(--ink-soft); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .sw { border-radius: 8px; padding: 10px; font-size: 0.75rem; border: 1px solid var(--rule); box-shadow: var(--shadow-sm); }
+  .sw b { display: block; height: 32px; border-radius: 4px; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  td, th { padding: 4px 8px; border-bottom: 1px solid var(--rule); text-align: left; }
+  .fail { color: var(--color-danger); font-weight: 600; }
+  .lock { position: absolute; inset-block-start: 0; inset-inline-end: 0; margin: 0; }
+  pre { overflow-x: auto; font-size: 0.8rem; }
+  .preview { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 600px) { .preview { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<main>
+  <article class="card">
+    <h1>Seed theme</h1>
+    <p>Seventeen switches; tick a lock to keep one through Randomize; every other token is <code>oklch(from …)</code> of these.</p>
+    <div class="switches">
+      <label>Dark <input id="dark" type="range" min="0" max="1" step="0.01" value="1"></label>
+      <label>Primary <input id="primary" type="color" value="#bd93f9"></label>
+      <label>Surface hue/chroma <input id="surface" type="color" value="#282a36"></label>
+      <label>Shadow <input id="shadow" type="range" min="0" max="1" step="0.01" value="0.35"></label>
+      <label>Radius <input id="radius" type="range" min="0" max="2" step="0.05" value="0.6"></label>
+      <label>Density <input id="density" type="range" min="0.6" max="1.5" step="0.05" value="1"></label>
+      <label>Type scale <input id="scale" type="range" min="1.05" max="1.5" step="0.01" value="1.2"></label>
+      <label>Motion <input id="motion" type="range" min="0" max="3" step="0.1" value="1"></label>
+      <label>Accent hue offset <input id="accent" type="range" min="0" max="360" step="5" value="60"></label>
+      <label>Border width <input id="border" type="range" min="0" max="4" step="0.5" value="1"></label>
+      <label>Focus ring <input id="ring" type="color" value="#bd93f9"></label>
+      <label>Ring width <input id="ringw" type="range" min="1" max="5" step="0.5" value="2"></label>
+      <label>Body font <select id="body"></select></label>
+      <label>Heading font <select id="display"></select></label>
+      <label>Heading weight <input id="weight" type="range" min="300" max="900" step="100" value="700"></label>
+      <label>Heading tracking <input id="tracking" type="range" min="-0.05" max="0.1" step="0.005" value="-0.015"></label>
+      <label>Heading leading <input id="leading" type="range" min="1" max="1.6" step="0.05" value="1.2"></label>
+    </div>
+    <div class="row">
+      <button id="randomize" class="btn secondary">Randomize</button>
+      <button id="fix" class="btn outlined">Fix contrast</button>
+      <button id="share" class="btn ghost">Copy link</button>
+    </div>
+  </article>
+
+  <article class="card">
+    <h2>Components</h2>
+    <div class="row">
+      <button class="btn primary">Primary</button>
+      <button class="btn secondary">Secondary</button>
+      <button class="btn outlined danger">Delete</button>
+      <button class="btn ghost">Ghost</button>
+      <span class="badge success">paid</span>
+      <span class="badge warning">due</span>
+      <span class="badge info">new</span>
+    </div>
+    <p style="color: var(--ink-soft)">Soft ink — secondary copy.</p>
+    <p style="color: var(--ink-mute)">Mute ink — hints and placeholders.</p>
+    <input class="field" placeholder="An input">
+    <h1>Heading 1</h1><h2>Heading 2</h2><h3>Heading 3</h3><h4>Heading 4</h4>
+  </article>
+
+  <div class="alert warning"><div class="alert-content">A warning alert on the derived palette.</div></div>
+
+  <div class="preview">
+    <nav class="card" aria-label="Workspace">
+      <div class="navlist-label">Workspace</div>
+      <ul class="navlist">
+        <li><a class="navlink" href="#!" aria-current="page">Invoices</a></li>
+        <li><a class="navlink" href="#!">Clients <span class="badge">4</span></a></li>
+        <li><a class="navlink" href="#!">Reports</a></li>
+      </ul>
+    </nav>
+    <article class="card">
+      <div class="tabs">
+        <div class="tablist" role="tablist" aria-label="Invoice sections">
+          <button class="tab" role="tab" id="t-1" aria-selected="true" aria-controls="v-1">Invoices</button>
+          <button class="tab" role="tab" id="t-2" aria-selected="false" aria-controls="v-2" tabindex="-1">New invoice</button>
+        </div>
+        <article class="view" role="tabpanel" id="v-1" aria-labelledby="t-1">
+          <div class="table-wrap">
+            <table class="table striped">
+              <thead><tr><th>Invoice</th><th>Client</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>#1042</td><td>Maid.Tech</td><td><span class="badge success">paid</span></td>
+                  <td class="table-actions"><button class="btn ghost square" aria-label="Delete" data-open="confirm">&times;</button></td></tr>
+                <tr><td>#1043</td><td>Kobami</td><td><span class="badge warning">due</span></td>
+                  <td class="table-actions"><button class="btn ghost square" aria-label="Delete" data-open="confirm">&times;</button></td></tr>
+                <tr><td>#1044</td><td>Remnant</td><td><span class="badge info">draft</span></td>
+                  <td class="table-actions"><button class="btn ghost square" aria-label="Delete" data-open="confirm">&times;</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+        <article class="view" role="tabpanel" id="v-2" aria-labelledby="t-2" hidden>
+          <form class="stack" onsubmit="return false">
+            <div class="field-group">
+              <label for="email">Billing email</label>
+              <input class="field" id="email" type="email" required value="not-an-email">
+              <div class="field-hint">Edit and leave the field to see the error state.</div>
+            </div>
+            <label class="field-check"><input type="checkbox" role="switch" class="switch" checked> <span>Send reminders</span></label>
+            <div class="row"><button class="btn primary">Save</button></div>
+          </form>
+        </article>
+      </div>
+    </article>
+  </div>
+
+  <dialog class="dialog" id="confirm">
+    <div class="surface-header">
+      <strong>Delete invoice</strong>
+      <button class="dialog-close" aria-label="Close" data-close>&times;</button>
+    </div>
+    <div class="surface-body"><p>This cannot be undone.</p></div>
+    <div class="surface-footer">
+      <button class="btn outlined" data-close>Cancel</button>
+      <button class="btn danger" data-close>Delete</button>
+    </div>
+  </dialog>
+
+  <article class="card">
+    <h2>Tokens</h2>
+    <div class="swatches" id="swatches"></div>
+  </article>
+
+  <article class="card">
+    <h2>Contrast</h2>
+    <table id="contrast"><thead><tr><th>Pair</th><th>Ratio</th></tr></thead><tbody></tbody></table>
+  </article>
+
+  <article class="card">
+    <h2>Your theme</h2>
+    <div class="row">
+      <label>Theme name <input class="field" id="name" value="mine" pattern="[a-z][a-z0-9-]*"></label>
+      <label class="field-check"><input type="checkbox" id="resolved" checked> <span>Resolved values (a shippable theme)</span></label>
+      <button id="copy" class="btn outlined">Copy CSS</button>
+    </div>
+    <pre id="out"></pre>
+  </article>
+</main>
+
+<script>
+var root = document.documentElement
+var TOKENS = ['--surface-sunken', '--surface', '--surface-raised', '--ink', '--ink-soft', '--ink-mute', '--rule',
+  '--color-primary', '--color-secondary', '--color-info', '--color-success', '--color-warning', '--color-danger', '--color-muted']
+var PAIRS = [['--ink', '--surface'], ['--ink-soft', '--surface-raised'], ['--ink-mute', '--surface-raised'],
+  ['--ink-mute', '--surface-sunken'], ['--color-primary', '--surface'], ['--color-danger', '--surface']]
+
+// A computed oklch() string is not parseable by hand; the canvas resolves it to sRGB.
+var ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+function rgbOf (token) {
+  var probe = document.createElement('i')
+  probe.style.color = 'var(' + token + ')'
+  document.body.appendChild(probe)
+  var c = getComputedStyle(probe).color
+  probe.remove()
+  ctx.clearRect(0, 0, 1, 1)
+  ctx.fillStyle = c
+  ctx.fillRect(0, 0, 1, 1)
+  return ctx.getImageData(0, 0, 1, 1).data
+}
+function lum (rgb) {
+  var a = [0, 1, 2].map(function (i) {
+    var v = rgb[i] / 255
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
+  })
+  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2]
+}
+function ratio (a, b) {
+  var x = lum(rgbOf(a)), y = lum(rgbOf(b))
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+function hex (rgb) {
+  return '#' + [0, 1, 2].map(function (i) { return rgb[i].toString(16).padStart(2, '0') }).join('')
+}
+
+var FONTS = {
+  system: 'system-ui, sans-serif',
+  humanist: "'Seravek', 'Gill Sans Nova', Ubuntu, Calibri, 'DejaVu Sans', sans-serif",
+  geometric: "Avenir, Montserrat, Corbel, 'URW Gothic', sans-serif",
+  serif: "'Iowan Old Style', 'Palatino Linotype', Georgia, serif",
+  slab: "Rockwell, 'Roboto Slab', 'DejaVu Serif', serif",
+  mono: "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace"
+}
+;['body', 'display'].forEach(function (id) {
+  document.getElementById(id).innerHTML = Object.keys(FONTS).map(function (k) {
+    return '<option value="' + FONTS[k] + '">' + k + '</option>'
+  }).join('')
+})
+
+// [property, control id]
+var SWITCHES = [['--dark', 'dark'], ['--seed-primary', 'primary'], ['--seed-surface', 'surface'], ['--seed-shadow', 'shadow'],
+  ['--seed-radius', 'radius'], ['--density', 'density'], ['--seed-type-scale', 'scale'], ['--seed-motion', 'motion'],
+  ['--seed-accent', 'accent'], ['--seed-border', 'border'], ['--seed-ring', 'ring'], ['--seed-ring-width', 'ringw'],
+  ['--font-primary', 'body'], ['--font-display', 'display'], ['--heading-font-weight', 'weight'],
+  ['--seed-tracking', 'tracking'], ['--seed-leading', 'leading']]
+function val (id) { return document.getElementById(id).value }
+
+document.querySelectorAll('.switches label').forEach(function (label) {
+  var lock = document.createElement('input')
+  lock.type = 'checkbox'
+  lock.className = 'lock'
+  lock.title = 'Lock through Randomize'
+  label.appendChild(lock)
+})
+function locked (id) { return document.getElementById(id).parentNode.querySelector('.lock').checked }
+
+function apply () {
+  SWITCHES.forEach(function (s) { root.style.setProperty(s[0], val(s[1])) })
+  root.style.colorScheme = val('dark') >= 0.5 ? 'dark' : 'light'
+
+  document.getElementById('swatches').innerHTML = TOKENS.map(function (t) {
+    return '<div class="sw"><b style="background: var(' + t + ')"></b>' + t + '<br>' + hex(rgbOf(t)) + '</div>'
+  }).join('')
+
+  document.querySelector('#contrast tbody').innerHTML = PAIRS.map(function (p) {
+    var r = ratio(p[0], p[1])
+    return '<tr><td>' + p[0] + ' on ' + p[1] + '</td><td class="' + (r < 4.5 ? 'fail' : '') + '">' + r.toFixed(2) + ':1</td></tr>'
+  }).join('')
+
+  var params = new URLSearchParams()
+  SWITCHES.forEach(function (s) { params.set(s[1], val(s[1])) })
+  history.replaceState(null, '', '#' + params)
+
+  document.getElementById('out').textContent = themeCss()
+}
+
+// The seed's own declarations, read from the sheet so a new token in seed.css exports without an edit here.
+function seedProps () {
+  var props = []
+  Array.from(document.styleSheets).forEach(function (sheet) {
+    if (!/seed\.css$/.test(sheet.href || '')) return
+    Array.from(sheet.cssRules).forEach(function (rule) {
+      if (!rule.style || !/theme-seed/.test(rule.selectorText)) return
+      Array.from(rule.style).forEach(function (p) {
+        if (p.startsWith('--') && !/^--(seed-|_)/.test(p) && p !== '--dark' && props.indexOf(p) < 0) props.push(p)
+      })
+    })
+  })
+  return props
+}
+
+// A computed custom property is its substituted text, oklch(from ...) and calc() included; a probe
+// element resolves it the way a real use site would.
+function resolve (prop) {
+  var raw = getComputedStyle(root).getPropertyValue(prop).trim()
+  if (/^(oklch|oklab|color|rgb|hsl|#|color-mix)/.test(raw)) return hex(rgbOf(prop))
+  if (!/calc|pow|var\(/.test(raw)) return raw
+  var probe = document.createElement('i')
+  document.body.appendChild(probe)
+  var out = raw
+  if (/shadow/.test(prop)) {
+    probe.style.boxShadow = 'var(' + prop + ')'
+    out = getComputedStyle(probe).boxShadow.replace(/rgba?\([^)]*\)/g, function (c) {
+      ctx.clearRect(0, 0, 1, 1)
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      var d = ctx.getImageData(0, 0, 1, 1).data
+      var a = +(c.match(/,\s*([\d.]+)\)$/) || [0, 1])[1]
+      return a < 1 ? 'rgb(' + d[0] + ' ' + d[1] + ' ' + d[2] + ' / ' + a.toFixed(2) + ')' : hex(d)
+    })
+  } else if (/ms\b|s\b/.test(raw) && !/px|rem|em/.test(raw)) {
+    probe.style.transitionDuration = 'var(' + prop + ')'
+    out = Math.round(parseFloat(getComputedStyle(probe).transitionDuration) * 1000) + 'ms'
+  } else if (/px|rem|em/.test(raw)) {
+    // margin, not width: a width clamps a negative tracking to 0.
+    probe.style.display = 'block'
+    probe.style.marginLeft = 'var(' + prop + ')'
+    var px = parseFloat(getComputedStyle(probe).marginLeft)
+    out = /rem/.test(raw) ? +(px / 16).toFixed(4) + 'rem'
+      : /em/.test(raw) ? +(px / parseFloat(getComputedStyle(probe).fontSize)).toFixed(4) + 'em'
+        : +px.toFixed(2) + 'px'
+  } else {
+    // Scaled up because layout rounds to 1/64px, which turns 1.1 into 1.0938.
+    probe.style.display = 'block'
+    probe.style.marginLeft = 'calc(var(' + prop + ') * 10000px)'
+    out = String(+(parseFloat(getComputedStyle(probe).marginLeft) / 10000).toFixed(4))
+  }
+  probe.remove()
+  return out
+}
+
+function themeCss () {
+  var name = (val('name').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'mine')
+  if (!document.getElementById('resolved').checked) {
+    return '.theme-seed {\n' + SWITCHES.map(function (s) { return '  ' + s[0] + ': ' + val(s[1]) + ';\n' }).join('') + '}'
+  }
+  var failing = PAIRS.filter(function (p) { return ratio(p[0], p[1]) < 4.5 })
+  return (failing.length ? '/* FAILS contrast: ' + failing.map(function (p) { return p[0] + ' on ' + p[1] }).join(', ') + ' */\n' : '') +
+    '.theme-' + name + ' {\n  color-scheme: ' + (val('dark') >= 0.5 ? 'dark' : 'light') + ';\n' +
+    seedProps().map(function (p) { return '  ' + p + ': ' + resolve(p) + ';\n' }).join('') + '}'
+}
+
+function hsl (h, s, l) {
+  var k = function (n) { return (n + h / 30) % 12 }
+  var a = s * Math.min(l, 1 - l)
+  var f = function (n) { return Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))) }
+  return hex([f(0), f(8), f(4)])
+}
+function toHsl (h) {
+  var rgb = [1, 3, 5].map(function (i) { return parseInt(h.slice(i, i + 2), 16) / 255 })
+  var max = Math.max.apply(null, rgb), min = Math.min.apply(null, rgb), l = (max + min) / 2, d = max - min
+  if (!d) return [0, 0, l]
+  var s = d / (1 - Math.abs(2 * l - 1))
+  var hue = max === rgb[0] ? ((rgb[1] - rgb[2]) / d + 6) % 6 : max === rgb[1] ? (rgb[2] - rgb[0]) / d + 2 : (rgb[0] - rgb[1]) / d + 4
+  return [hue * 60, s, l]
+}
+
+// Walks the primary's lightness away from the surface, then drains the surface's chroma, until
+// every pair clears 4.5:1. The ink pairs are derived from --dark, so chroma is the only lever on them.
+function fix () {
+  var dark = val('dark') >= 0.5
+  var p = toHsl(val('primary'))
+  for (var i = 0; i < 40 && ratio('--color-primary', '--surface') < 4.5; i++) {
+    p[2] = Math.max(0, Math.min(1, p[2] + (dark ? 0.02 : -0.02)))
+    document.getElementById('primary').value = hsl(p[0], p[1], p[2])
+    apply()
+  }
+  var sf = toHsl(val('surface'))
+  for (var j = 0; j < 20 && PAIRS.some(function (q) { return ratio(q[0], q[1]) < 4.5 }); j++) {
+    sf[1] = Math.max(0, sf[1] - 0.05)
+    document.getElementById('surface').value = hsl(sf[0], sf[1], sf[2])
+    apply()
+  }
+  apply()
+}
+
+function between (lo, hi, step) { return (Math.round((lo + Math.random() * (hi - lo)) / step) * step).toFixed(2) }
+
+// Ranges are narrower than the sliders: a random pick should look like a theme, not a stress test.
+function randomize () {
+  var set = function (id, v) { if (!locked(id)) document.getElementById(id).value = v }
+  var pick = function (list) { return list[Math.floor(Math.random() * list.length)] }
+  var dark = locked('dark') ? val('dark') >= 0.5 : Math.random() < 0.5
+  set('dark', dark ? 1 : 0)
+  set('primary', hsl(Math.random() * 360, 0.55 + Math.random() * 0.35, 0.55 + Math.random() * 0.15))
+  set('surface', hsl(Math.random() * 360, Math.random() * 0.25, dark ? 0.15 : 0.95))
+  set('shadow', between(0.1, 0.6, 0.01))
+  set('radius', between(0, 1.6, 0.05))
+  set('density', between(0.8, 1.25, 0.05))
+  set('scale', between(1.125, 1.333, 0.01))
+  set('motion', between(0.5, 1.5, 0.1))
+  set('accent', pick([30, 60, 120, 150, 180, 210]))
+  set('border', pick([1, 1, 1, 1.5, 2]))
+  // Usually the primary; sometimes the ink, which is how the print themes do it.
+  set('ring', Math.random() < 0.7 ? val('primary') : (dark ? '#f2f2f2' : '#16130f'))
+  set('ringw', pick([2, 2, 2.5, 3]))
+  set('body', pick(Object.values(FONTS).slice(0, 4)))
+  set('display', pick(Object.values(FONTS)))
+  set('weight', pick([500, 600, 700, 800]))
+  set('tracking', pick([-0.02, -0.015, -0.01, 0, 0, 0.02]))
+  set('leading', between(1.1, 1.35, 0.05))
+  apply()
+}
+
+document.getElementById('randomize').addEventListener('click', randomize)
+document.getElementById('fix').addEventListener('click', fix)
+function flash (btn, text) {
+  var was = btn.textContent
+  btn.textContent = text
+  setTimeout(function () { btn.textContent = was }, 1200)
+}
+document.getElementById('share').addEventListener('click', function (e) {
+  navigator.clipboard.writeText(location.href).then(function () { flash(e.target, 'Copied') })
+})
+document.getElementById('copy').addEventListener('click', function (e) {
+  navigator.clipboard.writeText(document.getElementById('out').textContent).then(function () { flash(e.target, 'Copied') })
+})
+document.querySelectorAll('.switches input[id], .switches select, #name, #resolved').forEach(function (el) { el.addEventListener('input', apply) })
+
+document.querySelectorAll('[role=tab]').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('[role=tab]').forEach(function (t) {
+      var on = t === tab
+      t.setAttribute('aria-selected', on)
+      t.tabIndex = on ? 0 : -1
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on
+    })
+  })
+})
+document.querySelectorAll('[data-open]').forEach(function (b) {
+  b.addEventListener('click', function () { document.getElementById(b.dataset.open).showModal() })
+})
+document.querySelectorAll('[data-close]').forEach(function (b) {
+  b.addEventListener('click', function () { b.closest('dialog').close() })
+})
+
+// A shared link carries every switch in the hash; a value the control refuses keeps its default.
+new URLSearchParams(location.hash.slice(1)).forEach(function (v, id) {
+  var el = document.getElementById(id)
+  if (el && SWITCHES.some(function (s) { return s[1] === id })) el.value = v
+})
+apply()
+</script>
+</body>
+</html>

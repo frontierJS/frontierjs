@@ -548,6 +548,11 @@ onDisconnect(() => { off(); clearInterval(heartbeat) })
 return response
 ```
 
+The frame is `@frontierjs/toolbelt/sse`'s `formatEvent`, and a page reads it back
+with `readEvents` from `@frontierjs/sierra/fetch` — over `fetch`, because
+`EventSource` cannot send a bearer token. `send` refuses an `event` or `id`
+holding a line break.
+
 ---
 
 ## Methods the transport answers for you

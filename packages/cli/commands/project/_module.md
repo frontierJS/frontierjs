@@ -14,8 +14,8 @@ import { execSync } from 'child_process'
 
 const freshJsonSchema = (context) => {
   const root = context.paths.root
-  execSync(`cd ${root} && bunx litestone jsonschema --schema db/schema.lite`, {
-    stdio: 'pipe',
+  execSync(`${context.bin('litestone')} jsonschema --schema db/schema.lite`, {
+    cwd: root, stdio: 'pipe',
   })
   const schemaJson = resolve(context.paths.db, 'schema.json')
   return JSON.parse(readFileSync(schemaJson, 'utf8'))

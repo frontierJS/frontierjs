@@ -14,7 +14,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { findSnapshots, missingSnapshots, formatSnapshotResults, SNAPSHOT_BINS } from '../core/snapshots.js'
+import { findSnapshots, missingSnapshots, formatSnapshotResults, binCommand, SNAPSHOT_BINS } from '../core/snapshots.js'
+import { readdirSync, readFileSync } from 'fs'
 
 let ROOT
 
@@ -169,5 +170,46 @@ describe('reporting', () => {
     // A passing snapshot prints nothing — a green line beside a red one is how a
     // failure gets read as noise.
     expect(out.join('\n')).not.toContain('access')
+  })
+})
+
+// The commands that build a shell string run the app's installed copy of a
+// framework bin, never `bunx`, which on a machine with no install fetches
+// whatever the registry holds under the bare name (FJS-1586).
+describe('a framework bin as a shell prefix', () => {
+
+  test('resolves through the installed package, under the interpreter its shebang names', () => {
+    const dir = tree('bin-installed', {
+      'node_modules/@frontierjs/litestone/package.json': JSON.stringify({ name: '@frontierjs/litestone', bin: { litestone: 'src/cli.js' } }),
+      'node_modules/@frontierjs/litestone/src/cli.js':   '#!/usr/bin/env bun\n',
+      'node_modules/@frontierjs/sierra/package.json':    JSON.stringify({ name: '@frontierjs/sierra', bin: { sierra: 'src/cli.js' } }),
+      'node_modules/@frontierjs/sierra/src/cli.js':      '#!/usr/bin/env node\n',
+    })
+    expect(binCommand('litestone', dir)).toBe(`bun ${JSON.stringify(join(dir, 'node_modules/@frontierjs/litestone/src/cli.js'))}`)
+    expect(binCommand('sierra', dir)).toBe(`node ${JSON.stringify(join(dir, 'node_modules/@frontierjs/sierra/src/cli.js'))}`)
+  })
+
+  test('not installed is null, never a fetch', () => {
+    const dir = tree('bin-missing', { 'package.json': JSON.stringify({ name: 'app' }) })
+    expect(binCommand('litestone', dir)).toBeNull()
+  })
+
+  // The refusal half: a command body that EXECUTES `bunx litestone|sierra|junction`.
+  // A scaffolded package.json script, a string printed for a person to type and
+  // a `docker exec` into an installed image are not a fetch fli makes, and are
+  // not matched: the pattern is an exec'd command string.
+  test('no fli command executes one through bunx', () => {
+    const cli  = join(import.meta.dir, '..')
+    const exec = /(command:|execSync\().*bunx (litestone|sierra|junction)/
+    const hits = []
+    for (const top of ['commands', 'core']) {
+      for (const rel of readdirSync(join(cli, top), { recursive: true })) {
+        if (!/\.(md|js)$/.test(rel)) continue
+        readFileSync(join(cli, top, rel), 'utf8').split('\n').forEach((line, i) => {
+          if (exec.test(line)) hits.push(`${top}/${rel}:${i + 1}`)
+        })
+      }
+    }
+    expect(hits).toEqual([])
   })
 })

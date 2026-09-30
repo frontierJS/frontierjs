@@ -36,6 +36,14 @@ export function workspaceIdFromChannel(name: string): string | null {
   return name.startsWith('workspace:') ? name.slice('workspace:'.length) || null : null
 }
 
+/**
+ * One person's in-app notifications. `@frontierjs/notifications` owns this
+ * spelling and pushes to it; it is repeated here so a connection can join its
+ * own, which basecamp never did — every notification was written and none
+ * reached an open tab.
+ */
+export const notificationChannelName = (userId: string): string => `notifications:user:${userId}`
+
 /** The channels plugin's manager, or undefined when it is not configured. */
 export function channelManager(app: BasecampApp): Manager | undefined {
   return (app as unknown as Record<string, unknown>).channels as Manager | undefined

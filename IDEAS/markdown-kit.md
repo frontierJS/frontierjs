@@ -1,12 +1,12 @@
 ---
 id: markdown-kit
-status: future
+status: proposed
 dated: 2026-09-29
 ---
 
 # Idea — the kit renders `@markdown`
 
-**Status: FUTURE.**
+**Status: PROPOSED.**
 
 `@markdown` in the schema only refuses a bad value; nothing in the kit renders
 one. `Cell` shows it as plain text, so `## About the role` and `**bold**` reach

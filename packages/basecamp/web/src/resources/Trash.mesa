@@ -1,0 +1,49 @@
+<script module>
+  // src/resources/Trash.mesa — what this workspace deleted, and the way back.
+  //
+  // No model, like Infra: `trash.find` is assembled from twelve soft-deleting
+  // tables. An item names the SERVICE that restores it, because that service's
+  // `restore` is what reverses the rest of its delete — a Secret re-registered,
+  // a Channel's credential brought back with it.
+  //
+  // Two doors to one verb. A delete's toast offers Undo for eight seconds, and
+  // /trash/ is the same restore with no clock on it — a timed button is never
+  // the only way to take something back.
+  import { createResource, getClient } from '@frontierjs/sierra/junction'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  export const trash = createResource('trash', { model: null })
+
+  export const UNDO_MS = 8000
+
+  export const loadTrash = () => trash.load()
+
+  /**
+   * Bring an item back through its own service, then re-read the list rather
+   * than dropping one row: a restored parent can surface a child that was
+   * deleted on its own before it, which was folded under the parent until now.
+   */
+  export async function restoreItem(item) {
+    const row = await getClient().service(item.service).restore(item.ref)
+    await loadTrash()
+    return row
+  }
+
+  /**
+   * The toast a delete ends with. `onBack` is for a screen holding the row
+   * somewhere a live store does not reach; a list over the resource's own
+   * store gets the row back from the `restored` push.
+   */
+  export function offerUndo(name, resource, id, onBack) {
+    toasts.success(`${name} deleted`, UNDO_MS, {
+      label: 'Undo',
+      run: async () => {
+        try {
+          const row = await resource.service.restore(id)
+          toasts.success(`${name} restored`)
+          await onBack?.(row)
+        } catch (e) { toasts.error(e.message) }
+      },
+    })
+  }
+</script>

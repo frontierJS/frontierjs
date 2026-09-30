@@ -6196,6 +6196,42 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d553"></a>2026-09-29 · `FJS-D553` — A method must read every filter `autoFilter` admitted, and junction refuses by name each one the method body never read.
+
+**Why.** `autoFilter` admits a query key because it names a column, and a
+hand-written `find` builds its own where from the keys it names. A key admitted
+and then skipped matched every row and answered 200. In basecamp, `?branch=nope`
+returned every release, and the `/deployments/` FilterBar offered a dozen columns
+while filtering on two (`FJS-1577`). Admitting a key and applying it are one
+question with two owners, and only junction sees both.
+
+**What was picked.** The owner picked **B** over **A**. **A** was a sweep of the 27
+hand-written finds to spread `parseWhere($.query)`, plus a `fli check` rule. That
+fixes one app and catches only the spellings its pattern knows.
+
+**The shape.**
+- `autoFilter` records the keys it admitted. `callService` watches `ctx.query`
+  around the body of every non-custom method `autoFilter` ran on: `find`, `get`
+  and `aggregate`. Watching `find` alone would have made one of the three methods
+  `autoFilter` guards behave unlike the other two (§ V, predictability).
+- A property read, an `in`, a delete, or any enumeration (`parseWhere`, a spread,
+  the base find's `parseQuery`) marks a key read.
+- After the body returns, the original object goes back on `ctx.query`. Every
+  admitted key still unread is one 400, with a `field` entry per key.
+- Reads by hooks do not count, because a hook that rebuilds `ctx.query` touches
+  every key and would hide the drop. A key a before hook took off `ctx.query` was
+  that hook's to apply, and is not checked.
+
+**What it does not catch.** A body that reads a key and discards it passes. The
+check proves a key was read, not that it narrowed the where. It fires on a request
+that sends the key, so a test that never sends one proves nothing about it. The
+base `get` by id reads its query and does not apply it, which is that gap in
+junction's own code (`FJS-1585`).
+
+**Where it lives.** `junction/src/core/litestone.ts` (`watchFilterReads`, beside
+`autoFilter`) and `junction/src/core/service.ts` (`callService`). Pinned by
+`junction test/unread-filters.test.ts`.
+
 ### <a id="fjs-d551"></a>2026-09-29 · `FJS-D551` — A plugin's clock is `work()`, its own start phase, and a one-shot boot skips it: `boot()` makes a plugin callable, `work()` makes it act unasked.
 
 **Why.** `junction call` and the five snapshot tools boot an app to make one call or
@@ -9537,6 +9573,22 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d555"></a>2026-09-29 · `FJS-D555` — `@money` has a built-in form control: sierra's table answers `money` and the kit binds it to `MoneyInput`. `@scale` keeps no control.
+
+Asked in [`FJS-1582`](ISSUES.md#fjs-1582). A built-in control was picked over shipping `MoneyInput` for the app to register, which would have left a form putting cents in a dollar box until an app added two lines. It amends how `FJS-D17` was applied, not what it says: the table answered `control: null` for `@money` and left the control to the app, and every app that met that answer wrote the same box. An app still replaces it by registering `money`.
+
+**The box is text in major units and hands back minor ones**, converted by the currency's ISO 4217 exponent. Blank is `null`. A value it cannot store exactly is refused through `reportInvalid` and never rounded: more decimals than the currency has, or `12,50`, which as grouping is 1250. `type="number"` would blank `1,200` and turn on scroll-wheel stepping.
+
+**The currency rides on the table's answer** as `currency` / `currencyField`, spelled as in `displayFor`. A `@money(field: …)` column converts by its row's code: `FormField` hands a props builder the draft `record`, and when the code changes the amount on screen is kept and the minor value re-derived. A bare `@money` uses `USD`, which `<Cell>` and `formatMoney` also use. An app-level default is `FJS-1589`.
+
+**`FilterBar`'s money range converts through the same two functions** and commits on `change`. It had filtered "from 10" as ten cents.
+
+**`@scale` stays `control: null`.** Its number is money on some rows and a percentage on others (`example`'s `Discount.value`), and no app has written that control.
+
+§ V answered before the first edit. The adjudication is *batteries vs. smallness*: this is a battery. Tier: Register. Question 9: a money box must write minor units. `packages/ui/test/browser/specs/money.spec.mjs` fails when it does not (8.29 → 829, 12.345 refused, the per-row re-derivation), and so do `filter-bar.spec.mjs` and sierra's `field-control-scaled.test.js`.
+
+— `packages/sierra/src/junction/field-rules.js`, `packages/ui/components/forms/MoneyInput.mesa`, `FormField.mesa`, `display/FilterBar.mesa`.
 
 ### <a id="fjs-d510"></a>2026-09-29 · `FJS-D510` — Where does the flow canvas live: a graph component in `@frontierjs/ui`, or a canvas local to orion's web surface — An orion-local canvas under `packages/orion/web/`, reading `FlowLayout` directly; one consumer, no kit API to design up front.
 
@@ -13456,6 +13508,14 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d554"></a>2026-09-29 · `FJS-D554` — The browser drive an app imports is `@frontierjs/mesa/drive`: the driver half of mesa's harness, published; the spec runner stays in `test/browser/` and is not.
+
+Asked in [`FJS-1580`](ISSUES.md#fjs-1580). **A** was picked over **B** (a new leaf package, `@frontierjs/drive`), **C** (`@frontierjs/testing/browser`) and **D** (a toolbelt kit).
+
+Mesa is the leaf, so every package's drive and every app's may import it. litestone's browser-client drive already did, by relative path. C sits above junction, so mesa, ui and css could not use it, which leaves two harnesses for good. D spends toolbelt's license: `FJS-D26` admits it below the graph because every export is pure, and a kit that spawns processes and installs exit handlers makes that "pure, except". B is the same code under a clearer name, plus a package and a noun. It is the rename to reach for if app-level helpers (an authenticator, server preflight, a report) outgrow a substrate subpath.
+
+The driver is mesa-neutral but for one line: a console warning starting `[Mesa]` counts as a page error. A page mesa did not render never writes one, so that needs no option, and an option nobody passes is complexity the problem did not have. One option was added, `profile`, a directory kept across close and relaunch, because an offline app's drive cannot be measured without it. Lives in `packages/mesa/src/drive.js`. The copies still to fold onto it are `FJS-1588`.
 
 ### <a id="fjs-d535"></a>2026-09-28 · `FJS-D535` — Its own package, or part of auth — Fold into `@frontierjs/auth` as a second plugin.
 

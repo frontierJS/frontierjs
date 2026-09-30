@@ -4,10 +4,8 @@
 //
 // Mounted at /jobs. Custom methods dispatch on X-Service-Method:
 //   trigger · cancel
-//
-// `service_id` is now `appId`: the model it points at is App, not Service.
 
-import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -75,12 +73,9 @@ export function createJobsService(app: BasecampApp) {
 
     async find() {
       const { limit, offset } = getPagination()
-      const appId  = ($.query.appId ?? $.query.service_id) as string | undefined
-      const kind   = $.query.kind   as string | undefined
-      const status = $.query.status as string | undefined
-
+      // Every filter the caller sent — see deployments.find for the failure.
       return findScoped('job', {
-        where: { ...(appId ? { appId } : {}), ...(kind ? { kind } : {}), ...(status ? { status } : {}) },
+        where: parseWhere($.query),
         limit, offset,
       })
     },

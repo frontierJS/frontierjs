@@ -14,7 +14,7 @@ loop.
 
 ```js
 context.exec({
-  command: `bunx sierra widgets --config config/sierra.config.js`,
+  command: `${context.bin('sierra', context.paths.widgets)} widgets --config config/sierra.config.js`,
   cwd:     context.paths.widgets,
   dry:     flag.dry,
 })

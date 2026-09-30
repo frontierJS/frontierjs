@@ -12,6 +12,14 @@
 //   try   { await send(); t.update('success', 'Sent') }
 //   catch (e) { t.update('error', e.message) }
 //
+// A toast may carry ONE action — a button beside the message that runs and
+// then dismisses the toast. It is the Undo a delete offers:
+//
+//   toasts.success('Recipe deleted', 8000, { label: 'Undo', run: () => restore() })
+//
+// A timed toast is never the only way to act: whatever the action does has to
+// be reachable somewhere that does not disappear.
+//
 // ── Why the writes go through `_w` ──────────────────────────────────────
 //
 // A component watches a plain object through `watchProxy`, and ONLY a write
@@ -50,6 +58,15 @@ function _checkDuration(duration) {
   }
 }
 
+// An action with no label is a blank button, and one with no `run` is a button
+// that closes the toast and does nothing else while claiming to.
+function _checkAction(action) {
+  if (action == null) return
+  if (typeof action.label !== 'string' || !action.label || typeof action.run !== 'function') {
+    throw new TypeError('toasts: an action is { label: string, run: function }')
+  }
+}
+
 function _schedule(id, duration) {
   clearTimeout(_timers.get(id))
   _timers.delete(id)
@@ -57,12 +74,13 @@ function _schedule(id, duration) {
 }
 
 export const toasts = {
-  items: [],   // { id, message, type, duration }
+  items: [],   // { id, message, type, duration, action }
 
-  add(message, type = 'info', duration = DEFAULT_DURATION) {
+  add(message, type = 'info', duration = DEFAULT_DURATION, action = null) {
     _checkDuration(duration)
+    _checkAction(action)
     const id = ++_nextId
-    _w.items = [...this.items, { id, message, type, duration }]
+    _w.items = [...this.items, { id, message, type, duration, action }]
     _schedule(id, duration)
     return id
   },
@@ -131,10 +149,10 @@ export const toasts = {
     return this.handle(this.add(message, 'loading', 0))
   },
 
-  success(message, duration) { return this.add(message, 'success', duration) },
-  error(message, duration)   { return this.add(message, 'error',   duration) },
-  warning(message, duration) { return this.add(message, 'warning', duration) },
-  info(message, duration)    { return this.add(message, 'info',    duration) },
+  success(message, duration, action) { return this.add(message, 'success', duration, action) },
+  error(message, duration, action)   { return this.add(message, 'error',   duration, action) },
+  warning(message, duration, action) { return this.add(message, 'warning', duration, action) },
+  info(message, duration, action)    { return this.add(message, 'info',    duration, action) },
 }
 
 const _w = watchProxy(toasts)

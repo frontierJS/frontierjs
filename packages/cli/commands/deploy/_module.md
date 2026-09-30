@@ -257,7 +257,8 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
   let pivot = 'unknown', findings = []
   if (!schema.missing) {
     const out = context.exec({
-      command: `cd ${context.paths.root} && bunx litestone release --schema ${context.paths.db}/schema.lite --json`,
+      command: `${context.bin('litestone')} release --schema ${context.paths.db}/schema.lite --json`,
+      cwd:     context.paths.root,
       stdio:   'pipe', allowFailure: true,
     })
     try {

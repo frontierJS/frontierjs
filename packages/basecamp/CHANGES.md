@@ -1,5 +1,46 @@
 # Changes — Basecamp
 
+## 2026-09-30 — Tier 4: a trash view, and Undo on every delete
+
+Twelve models soft-delete, and nothing on any screen could bring a row back.
+
+- **`/trash/`** lists what this workspace deleted, newest first, with Restore on each row. It reads the new **`trash` service**, which has no model, for `infra`'s reason: it is assembled from the twelve tables. A kind the caller cannot read (a viewer and Secrets) is left out rather than failing the list.
+- **A cascade is one row.** A deleted project says *with 1 environment, 2 apps*, and its children are not listed separately, since none of them could be restored on its own. A row whose parent is deleted is hidden until the parent is back. A child deleted on its own before its parent then appears, because it stays deleted when the parent is restored (the litestone half is [`FJS-1583`](../../ISSUES.md#fjs-1583)).
+- **The trash only lists.** A restore goes to the row's own service, which knows what else its delete did. `secrets.restore` re-registers a cloud account that `remove` deregistered, and `channels.restore` brings back the credential its `remove` took. `recipes` and `dashboards` did not list `restore` among their methods, so they answered 405, and now they list it. `core/resource.ts` gains `restoreScoped` for a service that overrides `restore`. Apps come back stopped and jobs come back cancelled, and the row says so.
+- **Undo.** Every delete on a soft-deleting model now ends in a toast with Undo for eight seconds. That covers projects, environments, apps, hostnames, jobs, servers, networks, recipes, flags, channels, dashboards and secrets. The toast action is new in `@frontierjs/ui`. A list gets the row back from the `restored` push. The trash is the same restore with no timer on it.
+- **A by-id restore answered an array** ([`FJS-1584`](../../ISSUES.md#fjs-1584), fixed in junction). The Undo needed a row back, and an empty array for an id that was not deleted looked like a success.
+
+`bun run test` 469/469. Five new trash tests cover:
+- a deleted project is one item with its counts, and restoring it clears all of it from the trash.
+- an app deleted before its environment stays deleted and is listed afterwards.
+- a viewer sees no secrets and cannot restore.
+- a channel comes back with its credential.
+- recipes, dashboards and secrets restore, and a live row is a 404.
+
+`verify:screens` 198/198. Its new section deletes a project from its own screen, presses Undo, and reads both the project and its environment back through the API and on the list. It then deletes the project again and checks `/trash/`: one row that names the environment and no second row. It presses Restore and checks that the API agrees.
+
+## 2026-09-29 — Tier 4: a machine's apps, an environment's releases, and filters that filter
+
+- **`apps.find` takes `?serverId=`.** A placement is an `AppServer` row and not a column of `App`, so the key is reserved (`$.reserved.serverId`) and joined through `appServers: { some }`. The server screen has an *Apps on this machine* card, which is what an operator needs to see before draining or destroying a machine.
+- **`deployments.find` takes `?environmentId=`**, and the environment screen has *Recent releases*: the last ten releases that went to that environment, linked to the app and the release. A release records the environment it went to, so an app that has since moved still shows where its older releases landed.
+- **Those finds ignored most filters** ([`FJS-1577`](../../ISSUES.md#fjs-1577)). `apps`, `deployments` and `jobs` each read two or three query keys and silently dropped the rest, even though junction's `autoFilter` had already accepted those keys as columns. So `?branch=nope` returned every release, and the `/deployments/` filter bar only worked on app and status. All three now spread `parseWhere($.query)` into their `where`. A key that isn't a column is still refused by name. The other 24 hand-written finds are the open half of the issue.
+- **The unused aliases are gone:** `?service_id=` (from the Service→App rename) and `?environment_id=`. Nothing sent them.
+- **One status-to-tone table for releases.** The app screen, the deployment screen and the dashboard's deploy feed each had their own copy, and each colored `building` and `pending` differently. The table is now `DEPLOY_TONE` in `resources/Deployment.mesa`.
+
+`bun run test` 464/464. The six new tests each pair the row a filter should return with one it must leave out. Four of them fail against the previous services, and the jobs test does too once a second job exists. `verify:screens` 186/186, including a section that checks the server screen's apps and the environment screen's releases against the API's own filtered answers, and that `?serverId=` returns fewer apps than the whole workspace.
+
+## 2026-09-29 — Tier 4: the notification inbox
+
+The first Tier 4 item from the UI audit. Seven kinds of notification were written to the database and no screen ever read one.
+
+- **A `notifications` service** (`find`, `get`, `patch`, `readAll`). It takes no workspace, for the same reason notification-preferences doesn't: the row policy limits every read and write to the recipient. `patch` writes only `readAt`. An empty body marks the notification read, and an explicit `null` marks it unread. `readAll` marks every unread one read. A signed-out caller gets *Sign in to read your notifications*, not an empty inbox.
+- **A bell in the topbar.** It shows the unread count in its accessible name and lists the newest six unread. Opening one marks it read and goes to its action. It also has *Mark all read* and a link to the full list. **`/notifications/`** is that full list, with Unread and All filters, mark read or unread per row, and Mark all read. There is also a ⌘K entry. Settings now points to the list instead of saying no screen shows these.
+- **Nothing reached an open tab.** The connect handler never joined a connection to `notifications:user:<id>`, and the driver pushed a frame name the client does not route ([`FJS-1573`](../../ISSUES.md#fjs-1573), fixed in `@frontierjs/notifications`). Both are fixed. `services.test` now opens junction's real browser client over a socket and checks that a send arrives on `notifications`. That test fails without either fix.
+- **A viewer could not clear their own bell** ([`FJS-1574`](../../ISSUES.md#fjs-1574)). `Notification` updated at level 4, which is DEVELOPER on this ladder. The package's own ladder calls 4 USER. The gate is now `0.8.1.8`.
+- **Editing a blueprint after editing its parameters failed** ([`FJS-1575`](../../ISSUES.md#fjs-1575)). The edit form was given the composed row, so the patch sometimes carried `params`, and the service refuses that. This was the intermittent *a blueprint is edited* failure noted below. With the bell's store load in the shell it failed every run, which is how it was found. The form now gets the row without its params. The framework half is still open as [`FJS-1576`](../../ISSUES.md#fjs-1576).
+
+`bun run test` 458/458. There are eight new notification tests: owner-only reads, newest first, read and unread, the dropped fields, somebody else's row, `readAll`, the viewer, and the socket. `verify:screens` passed 180/180 twice. A new section covers the bell count and its accessible name, the menu (unread only), opening one, the Unread and All filters, and Mark all read, with the server checked afterwards. The rows come from `web/test/notification-fixture.mjs`, because the seed deliberately sends nothing.
+
 ## 2026-09-29 — Tier 3: stale text, ⌘K's New entries, the release screen, and toasts that never closed
 
 The UI audit's Tier 3, plus the one Tier 2 row left over.

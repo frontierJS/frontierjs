@@ -19,7 +19,7 @@ title: App
   import App, { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
-  import { deployments } from '../../../resources/Deployment.mesa'
+  import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { session } from '../../../session.js'
   import { at, ago } from '../../../datetime.js'
 
@@ -42,6 +42,7 @@ title: App
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
 
@@ -152,6 +153,7 @@ title: App
     error = null; busy = domain.id
     try {
       await domains.service.remove(domain.id)
+      offerUndo(domain.hostname, domains, domain.id, load)
       await load()
     } catch (e) {
       // 'That is the primary hostname — make another one primary first' lands
@@ -357,7 +359,7 @@ title: App
     const { id, name, environmentId } = app
     try {
       await apps.service.remove(id)
-      toasts.success(`${name} deleted`)
+      offerUndo(name, apps, id)
       goto(`/environments/${environmentId}/`)
     } catch (e) {
       error = e.message
@@ -398,9 +400,6 @@ title: App
   }
   const CERT_TONE = {
     active: 'success', expiring_soon: 'warning', expired: 'danger', none: 'muted',
-  }
-  const DEPLOY_TONE = {
-    success: 'success', failed: 'danger', rolled_back: 'warning', cancelled: 'muted',
   }
 
   // Only the tabs with something behind them. See the note at the foot.

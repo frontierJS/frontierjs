@@ -205,6 +205,7 @@ src/
     loader.ts — auto-discovers *.service.ts
     services-dir.ts — where an app's services are, one answer
     rate-limit.ts — the one rate limiter
+    public-url.ts — assertPublicUrl: whether a URL a stranger chose may be fetched; @frontierjs/junction/public-url (FJS-1579)
     idempotency.ts — claimIdempotency
     metrics.ts — reading a counter, beside db/metrics.lite
     query-values.ts — what a directive's value means: parseSort, parseSelect, comparatorFor
@@ -229,7 +230,7 @@ src/
   auth/ — types.ts (IAuth, SessionVerifier) · providers/better-auth.ts
   plugins/
     manifest/index.ts · openapi/index.ts · devtools/index.ts · devtools/admin.html
-    webhooks/ — index.ts · payload.ts (what a subscriber may receive) · url.ts (which destinations)
+    webhooks/ — index.ts · payload.ts (what a subscriber may receive)
     email/ — index.ts · plugin.ts · hook.ts · types.ts · system/sender.ts · system/smtp.ts ·
              campaign/sender.ts · campaign/unconfigured.ts
     outbox/index.ts · backfill/index.ts · export/index.ts (the governed extract, FJS-D228) ·

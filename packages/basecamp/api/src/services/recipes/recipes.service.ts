@@ -112,7 +112,7 @@ export function createRecipesService(app: BasecampApp) {
     // which answers every CRUD verb this service leaves out — PUT included,
     // which would replace a whole row from the wire and take `workspaceId`
     // with it.
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'run', 'runs', 'startRun', 'finishRun'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'restore', 'run', 'runs', 'startRun', 'finishRun'],
 
     // ── find ──────────────────────────────────────────────────────────
     async find() {

@@ -1,0 +1,255 @@
+<script module>
+  // ── major units in the box ⇄ minor units in the column ──────────────────
+  //
+  // `@money` stores a whole number of MINOR units and a person types MAJOR
+  // ones, so both edges convert, by the currency's own exponent (2 for USD, 0
+  // for JPY, 3 for KWD) and never by a constant. `FilterBar` reads these two
+  // for its range boxes, because a filter box in cents is the same bug.
+  //
+  // The text is parsed as a STRING and never multiplied as a float: `8.29 *
+  // 100` is 828.9999999999999, and splicing the digits is exact where rounding
+  // a float is only usually right.
+
+  import { minorUnits } from '@frontierjs/toolbelt/units'
+
+  // `@money` with no code is the app's default currency, and nothing yet
+  // states one: this is the fallback `<Cell>` and `formatMoney` also use
+  // (`FJS-1589`).
+  export const FALLBACK_CURRENCY = 'USD'
+
+  // An optional sign, a whole part grouped by commas in threes or not grouped,
+  // and a fraction after a point. `12,50` is refused rather than read as 1250:
+  // it is a decimal comma, and reading it as grouping charges a hundred times
+  // the amount typed.
+  const AMOUNT = /^(-)?(\d{1,3}(?:,\d{3})+|\d+)?(?:\.(\d*))?$/
+
+  /** The exponent, or `null` where the code is not an ISO 4217 currency. */
+  function digitsOf(code) {
+    try { return minorUnits(code) } catch { return null }
+  }
+
+  /**
+   * What the box holds → the minor-unit value, plus what is wrong with it.
+   *
+   *   blank       → `null`: no amount, which a nullable column allows and a
+   *                 required one refuses at the form.
+   *   an amount   → the integer the column stores.
+   *   anything else → NO value and a message. More decimals than the currency
+   *                 has is refused rather than rounded, because rounding
+   *                 changes the amount a person typed and says nothing.
+   */
+  export function readMoney(text, currency) {
+    const t = String(text ?? '').replace(/\s+/g, '')
+    if (t === '') return { value: null, message: '' }
+
+    const code = String(currency ?? '').toUpperCase()
+    if (!code) return { value: undefined, message: 'choose the currency first' }
+    const digits = digitsOf(code)
+    if (digits == null) return { value: undefined, message: `${code} is not a currency` }
+
+    const m = AMOUNT.exec(t)
+    if (!m || (m[2] === undefined && !m[3])) {
+      return { value: undefined, message: 'an amount is a number, like 1,234.50' }
+    }
+
+    const frac = m[3] ?? ''
+    if (frac.length > digits) {
+      return {
+        value: undefined,
+        message: digits === 0
+          ? `${code} has no minor unit — a whole number`
+          : `${code} has ${digits} decimal place${digits === 1 ? '' : 's'}`,
+      }
+    }
+
+    const n = Number((m[2] ?? '0').replace(/,/g, '') + frac.padEnd(digits, '0'))
+    if (!Number.isSafeInteger(n)) return { value: undefined, message: 'too large to store exactly' }
+    return { value: m[1] && n !== 0 ? -n : n, message: '' }
+  }
+
+  /**
+   * The stored value → what the box shows: every decimal place the currency
+   * has and no grouping, so what is shown parses back to the same integer.
+   * Blank for no amount; the raw integer where the code is not a currency,
+   * because an edit box that showed nothing would erase the amount on save.
+   */
+  export function showMoney(minor, currency) {
+    if (minor == null || minor === '') return ''
+    const n = Number(minor)
+    if (!Number.isInteger(n)) return String(minor)
+    const digits = digitsOf(String(currency ?? '').toUpperCase())
+    if (digits == null || digits === 0) return String(n)
+
+    const s = String(Math.abs(n)).padStart(digits + 1, '0')
+    return (n < 0 ? '-' : '') + s.slice(0, -digits) + '.' + s.slice(-digits)
+  }
+
+  /** `$`, `£`, `¥` — the symbol a person reads beside the box; the code where Intl has none. */
+  export function currencySymbol(currency) {
+    const code = String(currency ?? '').toUpperCase()
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
+        .formatToParts(0).find(p => p.type === 'currency')?.value ?? code
+    } catch {
+      return code
+    }
+  }
+</script>
+
+<script>
+  // MoneyInput.mesa
+  // The control a `@money` column gets: a box in major units over a column in
+  // minor ones (`FJS-D555`).
+  //
+  // Inside a generated form nothing is written: Sierra's control table answers
+  // `money` for a column carrying `x-money`, with the currency on the answer.
+  //
+  //   <Form {resource}>
+  //     <MoneyInput name="total" value={record.total} onvalue={(v) => record.total = v} />
+  //   </Form>
+  //
+  // `currency` wins where it is stated, which is how a hand-written form feeds
+  // a `@money(field: currency)` column its row's code.
+  //
+  // ── Why there is no `oninput` ────────────────────────────────────────────
+  //
+  // For `DateTimeInput`'s reason: the element holds dollars and the column
+  // holds cents, so `e.target.value` is the one value that must never reach
+  // the write. And the box is `type="text"`, because a number input answers
+  // '' for any text it cannot parse, so `1,200` vanished without a word.
+
+  import Field from './Field.mesa'
+  import { uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+
+  export let value    = null          // minor units, or null
+  export let currency = undefined     // ISO 4217; else the field's, else the rule's
+  export let disabled = undefined     // undefined = ask the form; false overrides it
+  export let required = undefined
+  export let readonly = false
+  export let placeholder = ''
+
+  // One entry from `resource.formFields()`; `currency` rides on it.
+  export let field = undefined
+
+  // Field integration
+  export let name        = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately".
+  export let label       = undefined
+  export let hint        = ''
+  export let error       = ''
+  export let errors      = undefined
+  export let badge       = undefined
+  export let help        = undefined
+  export let removable   = false
+  export let onremovekey = undefined
+
+  export let onvalue = undefined      // (minor | null) => void — nothing while the text is not an amount
+  export let onblur  = undefined
+  export let onfocus = undefined
+
+  export var id = ''
+  const inputId = id || uid('money')
+
+  const form = $context.form
+
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const rule = resolveRule(form, name)
+  const resolvedRequired = stated(required, rule?.required)
+
+  const code = String(
+    currency ?? field?.currency ?? rule?.['x-money']?.currency
+      ?? (field?.currencyField || rule?.['x-money']?.field ? '' : FALLBACK_CURRENCY),
+  ).toUpperCase()
+  const symbol = code ? currencySymbol(code) : ''
+
+  // What the box holds. Owned by the control once typing starts: `12.` is on
+  // the way to an amount, and rewriting it from the value would take the
+  // point away mid-keystroke.
+  let text = showMoney(value, code)
+
+  // What the control itself refuses, as opposed to what the server said.
+  let localError = ''
+
+  const displayError = resolveError(form, name, error, errors) || localError
+
+  let inputEl
+  export function focus() { inputEl?.focus() }
+
+  function commit() {
+    const { value: next, message } = readMoney(text, code)
+    setLocalError(message)
+    if (next === undefined || next === value) return
+    value = next
+    onvalue?.(next)
+  }
+
+  // One place, for `JsonInput`'s reason: a control that reports its refusal and
+  // never retracts it is a form that can never be submitted again.
+  function setLocalError(message) {
+    localError = message
+    form?.reportInvalid?.(name, message)
+  }
+
+  // A value set from outside — a reset, a record that arrived after mount —
+  // replaces the text, unless the text already reads as that value.
+  $: value, () => {
+    if (readMoney(text, code).value !== value) {
+      text = showMoney(value, code)
+      setLocalError('')
+    }
+  }
+
+  // The currency changed under the text, which happens on a row that holds its
+  // own code. The amount on screen is what the person typed, so it is kept and
+  // the stored value re-derived: 12 dollars becomes 12 yen, never 1200 yen.
+  $: code, () => { commit() }
+</script>
+
+{#snippet control()}
+  <div class="field-row">
+    {#if symbol}
+      <span class="field-addon" aria-hidden="true">{symbol}</span>
+    {/if}
+    <input
+      bind:this={inputEl}
+      class="field"
+      id={inputId}
+      name={name || undefined}
+      type="text"
+      inputmode="decimal"
+      autocomplete="off"
+      placeholder={placeholder}
+      value={text}
+      disabled={resolvedDisabled}
+      required={resolvedRequired}
+      readonly={readonly}
+      aria-invalid={!!displayError || null}
+      data-currency={code || null}
+      on:input={(e) => { text = e.target.value; commit() }}
+      on:blur={onblur}
+      on:focus={onfocus}
+      {...$attributes}
+    />
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field
+    id={inputId}
+    name={name}
+    label={label}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error || localError}
+    errors={errors}
+    removable={removable}
+    onremovekey={onremovekey}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

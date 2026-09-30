@@ -199,6 +199,22 @@ function workspaceMember(dir, pkgName, bin) {
   return null
 }
 
+/**
+ * A resolved bin as a shell-command prefix — `"bun" "/abs/src/tools/cli.js"` —
+ * or null when its package does not resolve from `from`. For the commands that
+ * build a shell string, where `bunx` on a machine with no install fetches a
+ * stranger's package from the registry (FJS-1586).
+ *
+ * Run under the interpreter its shebang names, as `bunx` does: sierra's says
+ * node, and vite under bun is not the build the app gets.
+ */
+export function binCommand(bin, from) {
+  const file = resolveGenerator(bin, from)
+  if (!file) return null
+  const shebang = readFileSync(file, 'utf8').split('\n', 1)[0]
+  return `${/\bnode\b/.test(shebang) ? 'node' : 'bun'} ${JSON.stringify(file)}`
+}
+
 function listDirs(parent) {
   try {
     return readdirSync(parent).map(name => join(parent, name)).filter(p => statSync(p).isDirectory())

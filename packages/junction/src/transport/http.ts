@@ -27,6 +27,7 @@ import type { SessionVerifier }           from '../auth/types.ts'
 import type { TrustProxy } from './forwarded.ts'
 
 import { isCompressible } from '@frontierjs/toolbelt/mime'
+import { formatEvent } from '@frontierjs/toolbelt/sse'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 
@@ -1062,17 +1063,13 @@ export class HttpTransport {
         })
 
         const send = (event: import('./types.ts').SseEvent | unknown): void => {
+          const e = (event && typeof event === 'object' && 'data' in (event as object))
+            ? event as import('./types.ts').SseEvent
+            : { data: event }
+          // Outside the try: a refusal is the caller's mistake, and the catch
+          // below is for a stream the client already closed.
+          const msg = formatEvent(e)
           try {
-            const e = (event && typeof event === 'object' && 'data' in (event as object))
-              ? event as import('./types.ts').SseEvent
-              : { data: event }
-
-            let msg = ''
-            if ((e as import('./types.ts').SseEvent).id)    msg += `id: ${(e as import('./types.ts').SseEvent).id}\n`
-            if ((e as import('./types.ts').SseEvent).event) msg += `event: ${(e as import('./types.ts').SseEvent).event}\n`
-            if ((e as import('./types.ts').SseEvent).retry) msg += `retry: ${(e as import('./types.ts').SseEvent).retry}\n`
-            msg += `data: ${JSON.stringify((e as import('./types.ts').SseEvent).data ?? e)}\n\n`
-
             controller.enqueue(ENCODER.encode(msg))
           } catch { /* stream already closed */ }
         }

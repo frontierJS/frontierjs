@@ -56,7 +56,8 @@ import { fileURLToPath }                                   from 'node:url'
 import { gzipSync }                                        from 'node:zlib'
 import { build }                                           from 'vite'
 import mesa                                                from '../mesa-vite/index.js'
-import { openChrome, green, red, dim }                     from '../test/browser/drive.mjs'
+import { openChrome }                                      from '../src/drive.js'
+import { green, red, dim }                                 from '../test/browser/drive.mjs'
 
 const HERE     = fileURLToPath(new URL('.', import.meta.url))
 const DIST     = join(HERE, 'dist')

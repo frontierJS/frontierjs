@@ -1,0 +1,60 @@
+<script>
+  // money.mesa — MoneyInput standing alone, and inside a generated <Form>
+  // where nothing about it is written at all.
+  //
+  // The generated half proves the WIRING: Sierra's control table answers
+  // `money` for a column carrying `x-money`, with the currency on the answer,
+  // and the kit binds that name to MoneyInput. A break in either link leaves
+  // the column off the form with a warning, and a form that looks finished.
+  //
+  // `refund` is the per-row shape: `@money(field: currency)` converts by the
+  // code on its own row, read off the form's draft.
+  import MoneyInput from '../../../components/forms/MoneyInput.mesa'
+  import Form       from '../../../components/forms/Form.mesa'
+  import Button     from '../../../components/forms/Button.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  let seen      = undefined
+  let seenCount = 0
+
+  // What litestone emits for each `@money` shape.
+  const FIELDS = {
+    total:    { type: 'integer', required: true,  title: 'Total',  'x-money': { currency: 'USD' } },
+    tip:      { type: 'integer', required: false, title: 'Tip',    'x-money': { currency: 'JPY' } },
+    currency: { type: 'string',  required: true,  title: 'Currency', enum: ['USD', 'JPY'] },
+    refund:   { type: 'integer', required: false, title: 'Refund', 'x-money': { field: 'currency' } },
+  }
+
+  const RESOURCE = {
+    context:     { model: 'Order', service: 'orders', idField: 'id' },
+    fields:      FIELDS,
+    formFields:  (opts) => formFieldList(FIELDS, opts),
+    options:     () => Promise.resolve({ options: [], total: 0, truncated: false }),
+    make:        () => ({ total: 1299, tip: 500, currency: 'USD', refund: 1000 }),
+    validate:    () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service:     {},
+  }
+
+  let record = RESOURCE.make()
+  let saves  = 0
+  let sent   = undefined
+</script>
+
+<h2>standing alone — a dinar has three places</h2>
+<MoneyInput id="alone" label="Price" name="price" currency="KWD" value={1500}
+            onvalue={(v) => { seen = v; seenCount++ }} />
+
+<output id="seen">{JSON.stringify(seen)}</output>
+<output id="seen-count">{seenCount}</output>
+
+<h2>generated — nothing here names a control</h2>
+<Form id="generated" resource={RESOURCE} bind:record={record}
+      onsubmit={(r) => { saves++; sent = { total: r.total, tip: r.tip, currency: r.currency, refund: r.refund } }}>
+  {#snippet actions()}
+    <Button type="submit" id="save">Save</Button>
+  {/snippet}
+</Form>
+
+<output id="saves">{saves}</output>
+<output id="sent">{JSON.stringify(sent)}</output>

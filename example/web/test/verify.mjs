@@ -627,7 +627,10 @@ try {
     return rows;
   `))
   t('form.referenceMaxLength', await evaluate(`return document.querySelector('[name="reference"]').maxLength`))
-  t('form.totalMin', await evaluate(`return document.querySelector('[name="total"]').min`))
+  t('form.totalBox', await evaluate(`
+    const el = document.querySelector('[name="total"]');
+    return [el.type, el.inputMode, el.dataset.currency].join('/');
+  `))
 
   // 7b ─ a relation key must arrive as null, not 0. `0` is a perfectly good
   // integer, so it passes coerce and validate and reaches SQLite as
@@ -932,9 +935,9 @@ try {
   // ── The money form ──────────────────────────────────────────────────────
   //
   // THE assertion this phase owes. `PlanVersion.price` is `@money(USD)`, so the
-  // column holds cents; the box is in dollars because `web/src/money-control.js`
-  // registers a control off `x-money` on the rule. Without it the box is an
-  // integer spinner, and somebody raising a plan to thirty-one fifty types
+  // column holds cents; the box is in dollars because sierra's control table
+  // answers the kit's `money` box off `x-money` on the rule. As an integer
+  // spinner, and somebody raising a plan to thirty-one fifty types
   // 31.50, the form sends 31.5, and the shop charges thirty-one CENTS with
   // every screen agreeing (`FJS-582`).
   //
@@ -1493,7 +1496,10 @@ const expected = {
   'form.statusOptions':     ['pending', 'paid', 'shipped', 'refunded', 'cancelled'],
   'form.customerOptions':   ['Acme Corp', 'Globex'],
   'form.referenceMaxLength': 20,      // @length(3, 20)
-  'form.totalMin':           '0',     // @gte(0)
+  // `@money(USD)` gets the kit's money box: text, so `1,200` is read rather
+  // than blanked, in the column's own currency. `@gte(0)` is judged on the
+  // stored cents by validate() and the Data boundary, not by a native `min`.
+  'form.totalBox':           'text/decimal/USD',
 
   // make() must not invent customer #0 for an unpicked relation.
   'form.customerStartsEmpty': '',
@@ -1517,8 +1523,8 @@ const expected = {
 
   // @upper uppercased it, the blank note stored as NULL rather than '', and
   // 42.5 typed into a box in DOLLARS was written down as 4250 CENTS — the
-  // contributed `money` control (web/src/money-control.js), resolved off
-  // `x-money` on the column and not off its name.
+  // kit's `money` box, which sierra's table answers off `x-money` on the
+  // column and not off its name.
   'stored.record': { reference: 'ORD-CDP-1', total: 4250, note: null, status: 'pending' },
 
   'afterDelete.gone':        true,

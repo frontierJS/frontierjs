@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-29 — The browser drive is published as `@frontierjs/mesa/drive` (`FJS-1580`, `FJS-D554`)
+
+An app's drive had no harness to import, so each one launched Chrome itself, and connectteam's copy did it on a fixed port. The driver half of `test/browser/drive.mjs` is now `src/drive.js`, exported as `./drive`, and the spec runner stays in `test/browser/drive.mjs` on top of it, unpublished. `openChrome` gained `profile`, a directory the caller keeps across close and relaunch, because IndexedDB, Cache Storage and OPFS live in the profile and a drive reopening an offline app on a fresh one measures nothing. Every in-repo `openChrome` import moved to `src/drive.js`: mesa's bench and vite-error-surface test, the cli's codegraph and register-atlas drives, junction's devtools drive and litestone's browser-client drive. `test/drive.test.js` writes IndexedDB, relaunches on the kept profile and reads it back, and a temp profile reads empty. The mesa, ui, cli and litestone drives pass on it; junction's was not run because port 8503 was held by another process.
+
 ## 2026-09-29 — A concise arrow that returns a function compiles again (`FJS-1570`)
 
 `_checkDerivedAssigned` skips a function that declares its own copy of a derived, and to find those declarations it read `fn.body.body` as the statement list. For a concise arrow the body is an expression, and when that expression is another function, `(n) => () => { … }`, its `.body` is a BlockStatement object. The `for…of` threw `{} is not iterable` and the whole compile died with it. The kit's `dnd.mesa` and `palette-modes.mesa` fixtures both hold that shape, so the ui drive's dndzone and CommandPalette-modes specs threw before their first assertion. The statement list is now read only from a BlockStatement body. `test/compile-errors.test.js` compiles a component with the shape. The ui drive runs 1148 passing, both specs included.

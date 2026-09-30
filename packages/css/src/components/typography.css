@@ -81,7 +81,7 @@ h6, .h6 {
 /* Ring in focus.css; the small radius here is just the shape it traces
    around what is otherwise a square run of inline text. */
 .link:focus-visible {
-  border-radius: 2px;
+  border-radius: calc(var(--btn-radius) * 0.33);
 }
 
 /*

@@ -29,7 +29,7 @@ import { createSchema } from './schema.ts'
 import { AUTO_EVENT_MAP, isPublishHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
-  markDerived, isDerivedHook, isCrudGatedMethod,
+  watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
 
@@ -645,7 +645,11 @@ async function _callService(
     // Anything the Litestone tap sees OUTSIDE this scope is a write no service
     // announced, which is what it exists to catch.
     await runInServiceCall(coverage, () => runPipeline(ctx, resolvedPipeline, async () => {
+      // The body must read every filter autoFilter admitted — see
+      // watchFilterReads. Around the method alone, so a hook's reads do not count.
+      const settleFilterReads = isCustom ? undefined : watchFilterReads(ctx)
       const raw = await methodFn(ctx)
+      settleFilterReads?.()
       // The method returned, so any write it made is real. Recorded here rather
       // than inferred from `pipelineError` below, because with no transaction
       // open a LATER hook throwing does not undo it (`FJS-688`).

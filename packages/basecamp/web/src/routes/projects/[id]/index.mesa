@@ -12,6 +12,7 @@ title: Project
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
+  import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
 
@@ -89,7 +90,9 @@ title: Project
   async function remove() {
     error = null
     try {
-      await projects.service.remove(project.id)
+      const { id, name } = project
+      await projects.service.remove(id)
+      offerUndo(name, projects, id)
       goto('/projects/')
     } catch (e) { error = e.message }
   }
@@ -142,7 +145,7 @@ title: Project
         {editing ? 'Cancel' : 'Edit'}
       </Button>
       <Button variant="ghost" tone="danger"
-              data-confirm={`${project.name} is deleted with every environment, app and job inside it.`}
+              data-confirm={`${project.name} is deleted with every environment, app and job inside it. Trash brings all of it back.`}
               data-confirm-title="Delete this project?" data-confirm-label="Delete project"
               onclick={remove}>Delete</Button>
     </div>

@@ -86,15 +86,37 @@ export async function run(t) {
   await t.eventually(held(`q.title?.contains ?? null`), 'ab',
     'a text column writes through Input')
 
+  // `total` is a `money` column: typed in dollars, filtered in cents, and
+  // committed when the box is left rather than on each keystroke.
   await t.clickAt(`${BAR} input[placeholder="Total from"]`)
   await t.type('5')
-  await t.eventually(held(`q.total?.gte ?? null`), '5',
-    'a range column writes through the low Input')
+  await t.press('Tab')
+  await t.eventually(held(`q.total?.gte ?? null`), '500',
+    'a money range writes through the low Input, in minor units')
 
   await t.clickAt(`${BAR} input[placeholder="Total to"]`)
-  await t.type('9')
-  await t.eventually(held(`q.total?.lte ?? null`), '9',
+  await t.type('9.5')
+  await t.press('Tab')
+  await t.eventually(held(`q.total?.lte ?? null`), '950',
     'and the high one, which is a second binding on the same branch')
+  t.is(await t.evaluate(`return document.querySelector('${BAR} input[placeholder="Total to"]').value;`),
+    '9.50', 'and the box shows the bound back in dollars')
+
+  // Three decimals of a dollar is not an amount, and the filter already held
+  // stays rather than being replaced by a guess.
+  await t.evaluate(`
+    const el = document.querySelector('${BAR} input[placeholder="Total from"]');
+    el.value = '5.125';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  `)
+  await t.eventually(held(`q.total?.gte ?? null`), '500',
+    'a bound with more decimals than the currency has is not written')
+
+  await t.clickAt(`${BAR} input[placeholder="Rate from"]`)
+  await t.type('5')
+  await t.eventually(held(`q.rate?.gte ?? null`), '5',
+    'a plain number range still writes through the Input as it is typed')
 
   // A `<select>` cannot be typed into, so this one is set and told to report —
   // the value has to move through the element's own change path or the adapter

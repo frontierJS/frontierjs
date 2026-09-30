@@ -119,7 +119,7 @@ const requireDb = (context, flag) => {
 // Returns the litestone CLI invocation for the current project.
 
 const litestone = (context) => {
-  return `cd ${context.paths.root} && bunx litestone`
+  return `cd ${JSON.stringify(context.paths.root)} && ${context.bin('litestone')}`
 }
 </script>
 

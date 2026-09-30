@@ -7,15 +7,14 @@
 //
 // ── Why this is not mesa's harness ───────────────────────────────────────────
 //
-// `packages/mesa/test/browser/drive.mjs` drives Chrome for this repo's own
-// drives, and it is a SPEC RUNNER — specs, filtering, reporting, a bootstrap
-// injected before the page's own scripts. Two things make it the wrong thing to
-// reach for here. It is not published (`files:` is `src` and `mesa-vite`), so an
-// app that installed the framework has no harness at any path; and what a probe
-// needs is one question and one answer, not a run.
+// `@frontierjs/mesa/drive` (`packages/mesa/src/drive.js`) is the browser every
+// drive is meant to share, and this is a second CDP client beside it until
+// FJS-1588 folds it on. What stops that today: `openChrome` exits the process
+// when there is no Chrome, and a lesson has to SKIP by name instead, because no
+// Chrome is a fact about the machine, not about the app.
 //
-// So this is deliberately small: launch, navigate, evaluate, close. Everything
-// a lesson asserts goes through `page.eval(expr)` and comes back as JSON.
+// So this stays small: launch, navigate, evaluate, close. Everything a lesson
+// asserts goes through `page.eval(expr)` and comes back as JSON.
 //
 // ── The traps, all of which cost somebody a day in the other harness ─────────
 //

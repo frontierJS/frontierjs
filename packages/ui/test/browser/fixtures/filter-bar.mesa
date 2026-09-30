@@ -24,6 +24,7 @@
     col('title',  'Title',  'text'),
     col('status', 'Status', 'enum', { rule: { enum: ['open', 'paid'] } }),
     col('total',  'Total',  'money'),
+    col('rate',   'Rate',   'number'),
     col('active', 'Active', 'boolean'),
   ]
 

@@ -77,7 +77,7 @@ const SETS = buildFieldRules({
 // fails here until it is listed, which is where its task gets decided.
 const CONTROLS = [
   'checkbox', 'combobox', 'datetime', 'file', 'geo', 'input',
-  'json', 'multiselect', 'picker', 'select', 'textarea',
+  'json', 'money', 'multiselect', 'picker', 'select', 'textarea',
 ]
 
 afterEach(() => {
@@ -112,6 +112,7 @@ describe('every built-in answer names its task', () => {
     expect(task('count')).toBe('quantify')
     expect(task('name')).toBe('text')
     expect(task('serial')).toBe('quantify')
+    expect(task('price')).toBe('quantify')
     expect(task('dueOn')).toBe('quantify')
     expect(task('opensAt')).toBe('quantify')
 
@@ -123,8 +124,8 @@ describe('every built-in answer names its task', () => {
     expect(task('photo')).toBe('bytes')
   })
 
-  test('@money names its task and has no technique for it', () => {
-    const answer = controlFor(fields.price)
+  test('@scale names its task and has no technique for it', () => {
+    const answer = controlFor(fields.rate)
     expect(answer.control).toBeNull()
     expect(answer.task).toBe('quantify')
     expect(answer.reason).toMatch(/register a control/)

@@ -72,6 +72,7 @@
         message={toast.message}
         tone={toast.type}
         duration={toast.duration}
+        action={toast.action}
         ondismiss={handleDismiss}
       />
     {/each}

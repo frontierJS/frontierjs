@@ -1,5 +1,33 @@
 # Changes — @frontierjs/css
 
+## 2026-09-29 — the seed playground exports a real theme, fixes its own contrast, and shares by link
+
+`demo/seed.html` now writes `.theme-<name>` with every seed token resolved to a concrete value (hex, rem, em, ms, px, plain number), read from `seed.css`'s own declarations so a new token exports without an edit. A roll that fails contrast gets a `/* FAILS contrast */` header, because a shipped theme must pass. **Fix contrast** walks the primary's lightness away from the surface, then drains the surface's chroma, until every pair clears 4.5:1. Every switch rides in the URL hash, so **Copy link** shares the exact theme. The preview gains a nav list, tabs, a striped table, a dialog, a field-group with a `:user-invalid` email and a switch. Two new switches: `--seed-tracking` → `--heading-letter-spacing`, and `--seed-leading` → `--leading-heading`, with display 0.1 tighter. A sweep of the 7 literal-px borders in `src/` found no FJS-1572-style bug: spinners, the tooltip arrow, the disclosure chevron, the step marker and the code-line rule are all shapes or emphasis marks that stay put by design. Probed in headless Chrome: a hash round-trip, fix taking a 1.24:1 primary to all pairs ≥4.76, resolved export values, and no sideways scroll.
+
+## 2026-09-29 — `theme-seed` gets fonts, border weight, focus ring and accent offset; the playground gets Randomize
+
+Seven more switches, each wiring a token the kit already reads: `--font-primary`, `--font-display` and `--heading-font-weight` directly, `--seed-border` → `--border-width`, `--seed-ring`/`--seed-ring-width` → `--ring`/`--ring-width`, and `--seed-accent` as the secondary's hue offset from primary. `demo/seed.html` gains a control per switch (fonts are six system stacks, no webfont), a Randomize button whose ranges are narrower than the sliders so a roll reads as a theme, and a lock per switch that Randomize leaves alone. Its sample input now uses `.field`; `.input` is not a class in the kit. Probed in headless Chrome: border 3 gives a 3px `.btn.outlined` and `.field`.
+
+## 2026-09-29 — no component corner is a literal pixel radius (FJS-1572)
+
+`.link:focus-visible`, `.dialog-close`, the keycap, inline `code` and `code[language] mark` now take `calc(var(--btn-radius) * k)` with k picked to keep today's 2/4/4/4/3px at the default 6px, so a theme that squares or softens its buttons moves them too. A new `tokens.spec` test fails on any `*radius` outside tokens.css and themes that is not a `var()` or a shape (0, 50%, 999px, 9999px). `seed.css` moved from `src/themes/` to `demo/`, because `meta.spec` requires every sheet under `src/` to be imported by index.css and seed is not meant to ship.
+
+## 2026-09-29 — `theme-seed` grows four more switches: radius, density, type scale, motion
+
+`--seed-radius` drives `--btn-radius`/`--field-radius`/`--card-radius` (a card stays a third rounder than a control), `--density` is exposed as-is since every `--space-*` already reads it, `--seed-type-scale` makes `--text-lg`…`--text-4xl` powers of the ratio over `--text-md` (the small rungs stay at the legibility floor), and `--seed-motion` multiplies the four `--motion-*` durations, so 0 turns animation off. `demo/seed.html` has a slider per switch and a heading ladder. Probed in headless Chrome at radius 0, scale 1.333, motion 0 and density 0.8. Five literal-px corners a radius switch cannot reach are filed as FJS-1572.
+
+## 2026-09-29 — `theme-seed`, an experimental theme grown from four switches
+
+`demo/seed.css` derives every theme token from `--dark` (0–1),
+`--seed-primary`, `--seed-surface` (hue and chroma only) and `--seed-shadow`
+using relative color syntax. The status tones keep fixed hues so they keep their
+meaning. `demo/seed.html` is the playground: pickers, live swatches, a contrast
+table and the resulting four-line theme. It is deliberately not imported by
+`index.css` and not in the vocabulary or `contrast.spec.js`. Measured at the
+Dracula seed, the ink ramp clears AA in both modes, but raw `--color-primary` as
+text is 2.31:1 in light mode, so shipping it means the contrast spec has to pass
+across a sweep of seeds rather than one.
+
 ## 2026-09-29 — AGENTS.md's modifier table is complete, and one term is one command (`FJS-1550`)
 
 `text` (on `.skeleton`) and `disabled` (on `.btn`) were in the register and not

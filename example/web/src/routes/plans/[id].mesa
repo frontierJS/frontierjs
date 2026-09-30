@@ -21,11 +21,11 @@ title: Plan
   // ─── The money control ────────────────────────────────────────────────────
   //
   // `price` is `@money(USD)`, so the column holds CENTS and the person types
-  // dollars. Nothing on this page knows that: `web/src/money-control.js`
-  // registers a control off `x-money` on the rule, and `<PlanVersion>` renders
-  // whatever the schema's own control table answers. Without it the box is an
-  // integer spinner and twenty-nine dollars is stored as twenty-nine cents,
-  // with every screen agreeing (`FJS-582`).
+  // dollars. Nothing on this page knows that: sierra's control table answers
+  // the kit's `money` box off `x-money` on the rule (`FJS-D555`), and
+  // `<PlanVersion>` renders whatever that table answers. An integer spinner
+  // here stores twenty-nine dollars as twenty-nine cents, with every screen
+  // agreeing (`FJS-582`).
   import PlanVersion, { planVersions } from '@/resources/PlanVersion.mesa'
   import { plans }         from '@/resources/Plan.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'

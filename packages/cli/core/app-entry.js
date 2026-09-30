@@ -221,18 +221,23 @@ export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
   }
   if (!entry) return { entry: null, error: surfaceMissingHint(root) }
 
+  // Resolved the way the app's own imports resolve it, never with `bunx`, which
+  // on a machine with no install fetches a stranger's `junction` (FJS-1571).
+  const junction = resolveGenerator('junction', entry.dir)
+  if (!junction) return { entry, error: `@frontierjs/junction is not installed where ${entry.dir} can reach it` }
+
   // argv, never a shell: the flags come out of a file's header, and a file in a
   // repo is not the same trust level as a string somebody typed. Run from the
   // snapshot's own directory, because the app resolves its database and its
   // services against the cwd its own scripts use.
-  const run = runner('bunx', ['junction', 'atlas', ...entry.args], {
+  const run = runner('bun', [junction, 'atlas', ...entry.args], {
     cwd:       entry.dir,
     encoding:  'utf8',
     maxBuffer: 64 * 1024 * 1024,
   })
 
   if (run.error?.code === 'ENOENT') {
-    return { entry, error: 'bunx not found — junction is Bun-only, so reading the app model needs bun on PATH' }
+    return { entry, error: 'bun not found — junction is Bun-only, so reading the app model needs bun on PATH' }
   }
   if (run.status !== 0) {
     const tail = (run.stderr ?? '').trim().split('\n').slice(-6).join('\n')

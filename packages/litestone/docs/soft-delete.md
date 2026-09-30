@@ -71,7 +71,7 @@ When `accounts.remove()` is called:
 - All related `users.deletedAt` is stamped (cascade)
 - All related `sessions` rows are hard-deleted (`@hardDelete`)
 
-`restore()` reverses the cascade — restores the account and its soft-deleted children. Hard-deleted children cannot be restored.
+`restore()` reverses the cascade — restores the account and the children that cascade stamped. The cascade stamps every child with the parent's own timestamp and leaves a child that was already deleted with its older one, so `restore()` matches the stamp: a user deleted on their own before the account stays deleted when the account comes back. Hard-deleted children cannot be restored.
 
 ## @hardDelete on a relation field
 

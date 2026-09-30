@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-29 — `sse`: the event-stream frame, written and read by one kit (`FJS-1581`)
+
+`formatEvent({ data, event, id, retry })` is the bytes of one event, `data` JSON-encoded; it refuses an event name or id holding a line break, and a `retry` that is not a whole number. `parseEvents(text, lastId)` is the WHATWG reader, incremental: the complete events at the front of the text, the unread tail, and the id to pass next time. CRLF, CR and LF all end a line, a CR at the end of the text is held for its LF, several data lines join, `data` is JSON-decoded and falls back to the text. Junction's `ctx.sse()` writes with the first and sierra's `readEvents` reads with the second. Proved in `sse.spec.js`, which reads a stream cut at every offset.
+
 ## 2026-09-28 — `match` answers when a record leaves by the clock: `leavesAt` (`FJS-1274`)
 
 `leavesAt(window, record, directives)` is the epoch ms a row leaves an imposed window, or `null` when the read stepped outside it (`asOf`, `withExpired`, `onlyExpired`) or the window is only asked. A `day` edge is exclusive from its first UTC instant. The timer is the store's (`FJS-D111`).

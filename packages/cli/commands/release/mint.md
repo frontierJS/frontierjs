@@ -87,7 +87,7 @@ if (!schema.missing) {
   // `--json` alone: it emits the VERDICT and writes nothing. Adding `--stdout`
   // prints the surface instead, which parses as JSON and is the wrong document.
   const out = context.exec({
-    command: `cd ${context.paths.root} && bunx litestone release --schema ${context.paths.db}/schema.lite --json`,
+    command: `${litestone(context)} release --schema ${context.paths.db}/schema.lite --json`,
     stdio:   'pipe',
   })
   try {

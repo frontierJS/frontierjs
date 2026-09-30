@@ -54,6 +54,39 @@ test('tokens: no component or pattern declares a literal stacking rung', functio
   );
 });
 
+test('tokens: no component or pattern declares a literal pixel radius', function () {
+  /*
+   * A px corner does not move when a theme retunes --btn-radius, so a
+   * square theme keeps rounded code chips beside square buttons (FJS-1572).
+   * Shapes stay legal: 0 is a flush edge, 50% a dot, 999px a pill.
+   */
+  var allowed = /^(0|0px|50%|999px|9999px|inherit)$|var\(/;
+  var offenders = [];
+
+  allRules().forEach(function (rule) {
+    if (!(window.CSSStyleRule && rule instanceof CSSStyleRule)) return;
+
+    var href = (rule.parentStyleSheet && rule.parentStyleSheet.href) || '';
+    if (/tokens\.css$/.test(href) || /\/themes\//.test(href)) return;
+
+    for (var i = 0; i < rule.style.length; i++) {
+      var name = rule.style[i];
+      if (!/radius$/.test(name)) continue;
+      var v = rule.style.getPropertyValue(name).trim();
+      // A longhand expanded from a var() shorthand reads back empty.
+      if (v && !allowed.test(v)) {
+        offenders.push(href.split('/').pop() + ': ' + rule.selectorText + ' { ' + name + ': ' + v + ' }');
+      }
+    }
+  });
+
+  assert.equal(
+    offenders.length,
+    0,
+    'literal radius outside tokens.css:\n        ' + offenders.join('\n        ')
+  );
+});
+
 test('tokens: every rung on the stacking ladder is declared', function () {
   var root = document.documentElement;
 

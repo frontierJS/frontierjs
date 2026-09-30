@@ -45,7 +45,7 @@ if (flag.vacuum) argv.push('--vacuum')
 if (flag.zip)    argv.push('--zip')
 if (flag.db)     argv.push('--db', flag.db)
 
-context.exec({ command: `bunx litestone ${argv.join(' ')}`, dry: flag.dry })
+context.exec({ command: `${litestone(context)} ${argv.join(' ')}`, dry: flag.dry })
 
 if (!flag.dry) log.success(`Backed up every declared database → ${dest}`)
 ```

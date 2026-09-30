@@ -1,6 +1,6 @@
 // web/src/displays.js — what this shop renders differently from the kit.
 //
-// The reading half of `money-control.js`, and the same rule (`FJS-D17`): a
+// The same rule as a contributed control (`FJS-D17`): a
 // contributed renderer is TWO registrations and one name across them.
 // `registerDisplay` (sierra) answers WHICH renderer a column gets, from the
 // schema alone, in plain Node; `registerDisplayComponent` (@frontierjs/ui) says

@@ -12,14 +12,14 @@
  *   // one place in the app, at startup
  *   import { registerControl }     from '@frontierjs/sierra/junction'
  *   import { registerFormControl } from '@frontierjs/ui/controls'
- *   import Money from './Money.mesa'
+ *   import Duration from './Duration.mesa'
  *
- *   registerControl('money', (rule) => rule['x-money'] ? 'money' : null)
- *   registerFormControl('money', Money)
+ *   registerControl('duration', (rule) => rule['x-unit']?.dimension === 'duration' ? 'duration' : null)
+ *   registerFormControl('duration', Duration)
  *
  * A registered name REPLACES a built-in of the same name, so swapping the
  * kit's `select` for a combobox everywhere is one line and not a fork. The
- * kit's own five are in `components/forms/FormField.mesa` in this same shape —
+ * kit's own are in `components/forms/FormField.mesa` in this same shape —
  * a contributed control takes the identical path, which is what stops the
  * extension route being a second-class one that rots.
  *
@@ -33,6 +33,11 @@
  *   value    the current value
  *   onvalue  (v) => void — hand back the new value
  *   options  a foreign key's rows, once they arrive; [] until then
+ *
+ * A `props` builder is also handed `record`, the form's whole draft, for a
+ * control whose value means something only beside a sibling column. It is not
+ * forwarded by default: a component that does not declare it would put it on
+ * its element as an attribute.
  *
  * A control that wraps an existing component instead supplies `props`, which
  * receives the same object and returns whatever that component takes.

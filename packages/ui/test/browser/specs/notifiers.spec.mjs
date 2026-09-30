@@ -158,6 +158,37 @@ export async function run(t) {
   t.is(detail.left, 0, 'and the refused toast is not queued')
   await t.evaluate(`window.toasts.clear(); return true;`)
 
+  /* ── an action ───────────────────────────────────────────────────────── */
+
+  // The Undo a delete offers. Pressed, it runs ONCE and the toast goes: one
+  // left on screen while a restore is in flight takes a second press.
+  await t.evaluate(`
+    window.__ran = 0;
+    window.toasts.success('Recipe deleted', 0, { label: 'Undo', run: () => { window.__ran++ } });
+    return true;
+  `)
+  await t.evaluate(`await waitFor(() => byText('.toast-stack .toast', 'Recipe deleted')); return true;`)
+  t.ok(await t.evaluate(`
+    const b = byText('.toast-stack .toast', 'Recipe deleted').querySelector('button:not([aria-label])');
+    return b?.textContent.trim() === 'Undo';
+  `), 'an action is a button carrying its label, beside the dismiss button')
+  await t.evaluate(`
+    byText('.toast-stack .toast', 'Recipe deleted').querySelector('button:not([aria-label])').click();
+    return true;
+  `)
+  await t.eventually(`document.querySelectorAll('.toast-stack .toast').length`, 0,
+    'pressing it dismisses the toast')
+  t.is(await t.evaluate(`return window.__ran;`), 1, 'and runs the action once')
+
+  const badAction = await t.evaluate(`
+    const refused = [];
+    try { window.toasts.success('x', 0, { label: 'Undo' }) } catch (e) { refused.push('no run') }
+    try { window.toasts.success('x', 0, { run: () => {} }) } catch (e) { refused.push('no label') }
+    return refused.join(',');
+  `)
+  t.is(badAction, 'no run,no label', 'an action with no run or no label is refused')
+  await t.evaluate(`window.toasts.clear(); return true;`)
+
   /* ── the alert banner ────────────────────────────────────────────────── */
 
   await t.evaluate(`window.alert_.success('Changes saved', 0); return true;`)

@@ -97,7 +97,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `Combobox`
-`MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `CodeInput` `FileUpload`
+`MultiSelect` `DatePicker` `DateTimeInput` `MoneyInput` `JsonInput` `CodeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
@@ -198,6 +198,17 @@ get the wall clock, which is the one thing that must never reach the column. A
 />
 ```
 
+**A `@money` column gets `MoneyInput`**, for the same reason one unit over: the
+column holds cents and the box holds dollars, converted by the currency's own
+exponent — two places for USD, none for JPY, three for KWD. More decimals than
+the currency has is refused rather than rounded, and `12,50` is refused rather
+than read as 1250. A `@money(field: currency)` column converts by its row's
+code, and changing that code keeps the amount on screen.
+
+```svelte
+<MoneyInput name="total" value={record.total} onvalue={(cents) => record.total = cents} />
+```
+
 `bind:` is not used there on purpose: a component binding takes a writable
 top-level `let` in the caller, so a field of a record is written back through
 the callback.
@@ -270,19 +281,19 @@ a hand-written one cannot disagree about what a `Float` is.
 ### Contributing a control
 
 The kit ships a control per field rule — select, picker, combobox, multiselect,
-checkbox, textarea, input, json, file and datetime — so the columns it cannot place — a `String[]`, money,
-a rating, a rich editor — are controls your app owns. Two
+checkbox, textarea, input, json, file, geo, money and datetime — so the columns it cannot place — a `String[]`,
+a `@scale` number, a rating, a rich editor — are controls your app owns. Two
 registrations, in one place, at startup:
 
 ```js
 import { registerControl }     from '@frontierjs/sierra/junction'
 import { registerFormControl } from '@frontierjs/ui/controls'
-import Money from './Money.mesa'
+import Rating from './Rating.mesa'
 
 // which columns get it — a name, a whole descriptor, or null to decline
-registerControl('money', (rule, { field }) => (field.endsWith('Cents') ? 'money' : null))
+registerControl('rating', (rule, { field }) => (field === 'rating' ? 'rating' : null))
 // what that name renders as
-registerFormControl('money', Money)
+registerFormControl('rating', Rating)
 ```
 
 Two because the two halves live on opposite sides of a dependency rule: Sierra's

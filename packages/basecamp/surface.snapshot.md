@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-38 services · 39 routes · 16 plugins · prefix (none)
+40 services · 39 routes · 16 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -43,7 +43,7 @@ and what it does.
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 
-### A service hook runs in front of the body (86)
+### A service hook runs in front of the body (88)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -73,6 +73,7 @@ name, and is as unread as the body.
 | `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `dashboards.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
@@ -106,6 +107,7 @@ name, and is as unread as the body.
 | `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `recipes.restore` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
 | `recipes.startRun` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `internalOnly` |
@@ -408,9 +410,10 @@ name when it declares none.
 
 ### `dashboards` · model `Dashboard`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `addWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `updateWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
@@ -774,6 +777,24 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `notifications` · model `Notification`
+
+- **methods** — `find`, `get`, `patch`, `readAll`
+- **custom methods** — `readAll`
+- **who may call** —
+  - `readAll` — anyone, a stranger included — floor, the model's read gate is 0
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `signedIn` |
+| before | `find` | `newestFirst` → `autoFilter` → `autoSort` |
+| before | `patch` | `readAtOnly` → `autoValidate` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `portal` · model `portal`
 
 - **methods** — `find`, `get`, `ping`
@@ -815,9 +836,10 @@ name when it declares none.
 
 ### `recipes` · model `Recipe`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `run`, `runs`, `startRun`, `finishRun`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `run`, `runs`, `startRun`, `finishRun`
 - **custom methods** — `run`, `runs`, `startRun`, `finishRun`
 - **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope`
   - `run` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `runs` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope`
   - `startRun` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope` → `internalOnly`
@@ -953,6 +975,23 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `trash` · model `trash`
+
+- **methods** — `find`
+- **who may call** —
+  - `find` — standing 2 or above — declared `gate: 2`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

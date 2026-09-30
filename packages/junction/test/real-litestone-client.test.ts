@@ -716,6 +716,34 @@ describe('$withDeleted on a write', () => {
   })
 })
 
+// FJS-1584 — a by-id restore is the Undo a screen offers, so it answers what
+// remove answers: the row, or a 404. It answered litestone's array.
+describe('restore by id', () => {
+  const svc = () => createService({ name: 'docs', model: 'doc' })
+
+  test('answers the row it brought back, and a read sees it again', async () => {
+    const db = await mkSoftDb()
+    await (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown>, remove(a: unknown): Promise<unknown> }> })
+      .asSystem().doc!.create({ data: { id: 1, code: 'X' } })
+    await svc().remove(ctx(db, { service: 'docs', method: 'remove', id: 1 }))
+
+    const row = await svc().restore!(ctx(db, { service: 'docs', method: 'restore', id: 1 })) as { id: number, deletedAt: unknown }
+    expect(Array.isArray(row)).toBe(false)
+    expect(row).toMatchObject({ id: 1, deletedAt: null })
+    expect(((await svc().find(ctx(db, { service: 'docs' }))) as { data: unknown[] }).data).toHaveLength(1)
+  })
+
+  test('a row that is not deleted is a 404, not a 200 with nothing in it', async () => {
+    const db = await mkSoftDb()
+    await (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
+      .asSystem().doc!.create({ data: { id: 1, code: 'X' } })
+    for (const id of [1, 99]) {
+      const err = await svc().restore!(ctx(db, { service: 'docs', method: 'restore', id })).catch((e: Error) => e) as Error
+      expect(toFrameworkError(err).code).toBe(404)
+    }
+  })
+})
+
 // ─── A write key that is a PATH, and the two boundaries it has to cross ──────
 //
 // `{ 'settings.commute': { source } }` is not supported and never was. What

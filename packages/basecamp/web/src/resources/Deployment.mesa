@@ -13,4 +13,11 @@
   import { createResource } from '@frontierjs/sierra/junction'
 
   export const deployments = createResource('deployments')
+
+  /** A release's status as a tone. One table for every screen that draws one:
+   *  three copies had drifted to three answers for `building` and `pending`. */
+  export const DEPLOY_TONE = {
+    success: 'success', failed: 'danger', cancelled: 'muted',
+    rolled_back: 'warning', building: 'info', pending: 'muted',
+  }
 </script>

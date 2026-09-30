@@ -20,7 +20,7 @@
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { connectorFor, targetFor } from '../../providers/compute/index.ts'
 import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD }
@@ -164,6 +164,14 @@ export function createSecretsService(app: BasecampApp) {
       const removed = await removeScoped('secret', 'Secret')
       await unregisterAccount(app, secret as { id: string; providerKind?: ProviderKind | null })
       return removed
+    },
+
+    // The way back re-registers what remove deregistered, or a restored cloud
+    // key reads as present on this screen and answers `auth_failed` on the next.
+    async restore() {
+      const secret = await restoreScoped('secret', 'Secret')
+      await registerAccount(app, secret as { id: string; kind?: string; providerKind?: ProviderKind | null })
+      return secret
     },
 
     // ── verify ────────────────────────────────────────────────────────

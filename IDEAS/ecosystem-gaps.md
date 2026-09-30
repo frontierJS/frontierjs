@@ -218,8 +218,9 @@ No Playwright or Puppeteer, and none wanted: mesa's CDP harness (`test/browser/`
 shared by mesa, `@frontierjs/ui`, junction's devtools drive and `fli gui`'s, and the
 cli ships a small page driver of its own (`core/browser.js`) for the tutor. CI runs
 on every push (`bun run ci`, `.github/workflows/ci.yml`). What is still missing is
-the Dusk half: a browser harness an APP's own suite can import, since mesa's is a
-spec runner and is not published.
+the Dusk half, and its driver now ships: `@frontierjs/mesa/drive` (`FJS-D554`), with
+a `profile` an offline app's drive can reopen. The copies still to fold onto it
+are `FJS-1588`.
 
 ### 9. Media processing
 

@@ -6834,23 +6834,36 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // (`FJS-638`).
       let restored
       await tx.wrapExclusive(() => {
-      // If cascading, restore child tables too (reverse of delete cascade)
+      // If cascading, restore child tables too (reverse of delete cascade).
+      // Only the children holding the ROOT'S stamp: remove() stamps every live
+      // child with its own timestamp and leaves an already-deleted child with
+      // an older one, so matching the stamp is what separates what this
+      // cascade removed from what somebody deleted on its own (`FJS-1583`).
+      // One walk per stamp, because `where` can match roots removed apart.
       if (softDeleteCascade) {
         const cascadeTargets = _cascadeTargets()
         if (cascadeTargets.length > 0) {
           const deletedRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).all(...params)
           const firstTarget = cascadeTargets[0]
           const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
-          const affectedPKs = new Map([[modelName, deletedRows.map(r => r[rootPKCol])]])
-          for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
-            const parentPKs = affectedPKs.get(parentModel) ?? []
-            if (!parentPKs.length) continue
-            const ph = parentPKs.map(() => '?').join(',')
-            if (hardDelete) continue  // hard-deleted children are gone — cannot restore
-            writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
-            if (_cascadeParents.has(childModel)) {
-              const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-              affectedPKs.set(childModel, childPKs)
+          const byStamp = new Map()
+          for (const r of deletedRows) {
+            const stamp = r[col('deletedAt')]
+            byStamp.set(stamp, [...(byStamp.get(stamp) ?? []), r[rootPKCol]])
+          }
+          for (const [stamp, rootPKs] of byStamp) {
+            const affectedPKs = new Map([[modelName, rootPKs]])
+            for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
+              const parentPKs = affectedPKs.get(parentModel) ?? []
+              if (!parentPKs.length) continue
+              if (hardDelete) continue  // hard-deleted children are gone — cannot restore
+              const ph = parentPKs.map(() => '?').join(',')
+              // Read before the write: after it, the stamp that names them is gone.
+              if (_cascadeParents.has(childModel)) {
+                const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`).all(...parentPKs, stamp).map(r => r[referencedKey])
+                affectedPKs.set(childModel, childPKs)
+              }
+              writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`, ...parentPKs, stamp)
             }
           }
         }

@@ -1145,7 +1145,7 @@ table `network` · db `main` · gate `2.5` · @@softDelete
 
 ### `Notification`
 
-table `notification` · db `main` · gate `0.8.4.8`
+table `notification` · db `main` · gate `0.8.1.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |

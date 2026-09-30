@@ -12,11 +12,11 @@
   // auth().id)` — and the server enforces it, which is why signing out and back
   // in as somebody else needs no code on this side at all.
   //
-  // Real-time needs no code here either. `createResource` binds a live store to
-  // the service's channel, so the `notification:created` event the inApp driver
-  // publishes lands in `notifications.store` on its own. It arrives only if the
-  // channels() plugin is configured on the server; without it the rows still
-  // persist and `load()` still reads them.
+  // Real-time needs no code here either. The inApp driver pushes
+  // `notifications created` to `notifications:user:<id>`, and the client routes
+  // a `<service> <verb>` frame into this resource's store. It arrives only if
+  // the server has the channels() plugin AND joins a connection to that
+  // channel; without them the rows still persist and `load()` still reads them.
   import { createResource } from '@frontierjs/sierra/junction'
 
   export const notifications = createResource('notifications', {

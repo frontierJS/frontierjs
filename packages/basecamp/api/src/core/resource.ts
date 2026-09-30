@@ -159,3 +159,14 @@ export async function removeScoped(accessor: string, label: string) {
   const removed = await db()[accessor].remove({ where: { id: $.id as string } })
   return Array.isArray(removed) ? removed[0] : removed
 }
+
+/**
+ * Un-delete the row `$.id` names and return it, or 404. For a service whose
+ * `remove` did more than stamp the row — the service overrides `restore`, calls
+ * this, and reverses its own side effect after it.
+ */
+export async function restoreScoped(accessor: string, label: string) {
+  const [row] = await db()[accessor].restore({ where: { id: $.id as string } })
+  if (!row) throw new NotFound(`${label} '${$.id}' is not in the trash`)
+  return row
+}

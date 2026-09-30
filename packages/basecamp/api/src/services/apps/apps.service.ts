@@ -19,7 +19,7 @@
 // spelled out — and it returns a nested object instead of flattened
 // `environment_name` / `environment_tier` columns.
 
-import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
@@ -125,18 +125,22 @@ export function createAppsService(app: BasecampApp) {
     // where an `after: { all: [...] }` hook broadcast every read to every browser
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    // `?serverId=` is not a column of App — a placement is an AppServer row —
+    // so it is reserved rather than graded as a filter, and read below.
+    reservedQuery: [...WORKSPACE_QUERY, 'serverId'],
 
     async find() {
       const { limit, offset } = getPagination()
-      const environmentId = ($.query.environmentId ?? $.query.environment_id) as string | undefined
-      const type          = $.query.type as string | undefined
-
+      const serverId = $.reserved.serverId as string | undefined
+      // Every filter the caller sent, not a chosen few. autoFilter has already
+      // refused a key that is not a column, so a key it admitted and this body
+      // skipped answered every row as a match: `?name=` or `?status=` came back
+      // as the whole workspace.
       const { rows, total } = await db().app.findManyAndCount({
         where: {
+          ...parseWhere($.query),
           workspaceId: ws(),
-          ...(environmentId ? { environmentId } : {}),
-          ...(type          ? { type }          : {}),
+          ...(serverId ? { appServers: { some: { serverId } } } : {}),
         },
         include: WITH_DETAIL,
         orderBy: { createdAt: 'desc' },

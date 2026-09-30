@@ -25,6 +25,7 @@
     "./testing": "./src/testing/index.ts",
     "./openapi": "./src/plugins/openapi/index.ts",
     "./webhooks": "./src/plugins/webhooks/index.ts",
+    "./public-url": "./src/core/public-url.ts",
     "./manifest": "./src/plugins/manifest/index.ts",
     "./outbox": "./src/plugins/outbox/index.ts",
     "./backfill": "./src/plugins/backfill/index.ts",

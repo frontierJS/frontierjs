@@ -4,6 +4,7 @@
 // they only see the ctx shape defined in bridge.ts
 
 import type { SessionContext } from '../auth/types.ts'
+import type { SseEvent as SseFrame } from '@frontierjs/toolbelt/sse'
 
 // ─── Raw request — lives entirely inside transport ───────────────────────────
 
@@ -69,11 +70,11 @@ export interface PaginateResponse {
 
 // ─── SSE sender ───────────────────────────────────────────────────────────
 
-export interface SseEvent {
-  data:    unknown           // will be JSON-serialized
-  event?:  string            // named event type, e.g. 'update'
-  id?:     string            // event id for Last-Event-ID tracking
-  retry?:  number            // reconnect delay hint in ms
+// The frame is toolbelt's, read back by the browser half with the same kit.
+// `data` is required here because its presence is how send() tells an event
+// from a bare payload.
+export interface SseEvent extends SseFrame {
+  data: unknown
 }
 
 export type SseSendFn = (event: SseEvent | unknown) => void

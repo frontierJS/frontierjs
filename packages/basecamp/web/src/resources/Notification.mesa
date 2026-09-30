@@ -1,0 +1,50 @@
+<script module>
+  // src/resources/Notification.mesa — the in-app half of a notification.
+  //
+  // No markup: a notification is read, never filled in. No filter for "mine"
+  // either — `@@allow('read', userId == auth().id)` on the model is what scopes
+  // it, so a sign-in as somebody else is a different list with no code here.
+  //
+  // One store for the bell and /notifications/. The inApp driver pushes
+  // `notifications created` to `notifications:user:<id>`, which the API joins
+  // on connect, and the client routes that frame into this store — so neither
+  // screen polls.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const notifications = createResource('notifications', { model: 'Notification' })
+
+  /** Newest first, stated by the CLIENT: the store places a pushed row by the
+   *  order its load asked for, and the service's own default is invisible to
+   *  it, so a push would land at the bottom of a list read top-down. */
+  export const INBOX = { orderBy: '-createdAt', limit: 50 }
+
+  export const loadInbox = () => notifications.load({}, INBOX)
+
+  export const isUnread = (n) => !n.readAt
+
+  /** The driver merges `title`, `body` and `action` into `data` beside the
+   *  type's own keys; a row written before a type had a title still renders. */
+  export const titleOf  = (n) => n.data?.title ?? n.type
+  export const bodyOf   = (n) => n.data?.body ?? ''
+  export const actionOf = (n) => n.data?.action ?? null
+
+  /** An empty patch marks it read by the server's clock; a stated null marks
+   *  it unread again. The store moves only on pushed frames and the service
+   *  announces no patch — a per-person channel would warn on every write the
+   *  driver makes outside a call — so the answer is applied here. */
+  async function mark(n, body) {
+    const row = await notifications.service.patch(n.id, body)
+    if (row?.id) notifications.store.upsert(row)
+    return row
+  }
+  export const markRead   = (n) => mark(n, {})
+  export const markUnread = (n) => mark(n, { readAt: null })
+
+  /** `readAll` is an updateMany, which announces nothing, so the store is
+   *  re-read rather than left showing rows the server has already marked. */
+  export async function markAllRead() {
+    const out = await notifications.service.invoke('readAll')
+    await loadInbox()
+    return out?.count ?? 0
+  }
+</script>

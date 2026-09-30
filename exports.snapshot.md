@@ -250,6 +250,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./css-inliner (import)` | `src/css-inliner.js` | yes |
 | exports | `./render-component.js (import)` | `src/render-component.js` | yes |
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
+| exports | `./drive (import)` | `src/drive.js` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
 | exports | `./vite/swap (import)` | `mesa-vite/swap.js` | yes |
@@ -303,7 +304,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `src/index.js` | yes |
 | exports | `./scanner` | `src/scanner/index.js` | yes |
 | exports | `./build` | `src/build/index.js` | yes |
-| exports | `./router` | `src/router/index.js` | yes |
+| exports | `./router` | `src/router/entry.js` | yes |
 | exports | `./router/internals` | `src/router/internals.js` | yes |
 | exports | `./analytics` | `src/analytics/index.js` | yes |
 | exports | `./junction` | `src/junction/index.js` | yes |
@@ -369,6 +370,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
+| exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
+| exports | `./sse (default)` | `src/sse/sse.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`
@@ -385,8 +388,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 76 files |
-| exports | `./components/*` | `components/*.mesa` | 76 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 77 files |
+| exports | `./components/*` | `components/*.mesa` | 77 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

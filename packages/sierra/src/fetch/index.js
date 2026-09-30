@@ -18,6 +18,8 @@
  *   }
  */
 
+import { parseEvents } from '@frontierjs/toolbelt/sse'
+
 // The active fetch implementation — starts as native fetch
 let _fetch = typeof globalThis.fetch !== 'undefined' ? globalThis.fetch.bind(globalThis) : null
 
@@ -124,6 +126,64 @@ export async function sierraFetch(input, init = {}) {
     throw new Error('[Sierra] fetch is not available in this environment')
   }
   return _fetch(input, init)
+}
+
+// ─── Event streams ───────────────────────────────────────────────────────────
+
+/**
+ * The events of a `text/event-stream` response, as they arrive — the reading
+ * half of junction's `ctx.sse()`.
+ *
+ *   const res = await sierraFetch('/api/search/stream', { method: 'POST', body, signal })
+ *   for await (const { event, data, id } of readEvents(res)) { … }
+ *
+ * `EventSource` cannot send an Authorization header, so an authenticated stream
+ * is a fetch, and `sierraFetch` is the fetch that carries the session. Leaving
+ * the loop — `break`, a throw, `return` — cancels the body, which is what fires
+ * the server's `onDisconnect`; aborting the fetch's signal does the same from
+ * outside the loop. Nothing here reconnects: a caller resuming a stream sends
+ * the last `id` it saw as `Last-Event-ID` on a new request.
+ *
+ * A response that is not a stream is REFUSED rather than read as one with no
+ * events: a 401 or a JSON answer would otherwise end the loop at once, and an
+ * empty result is what a stream with nothing to say looks like too.
+ *
+ * @param {Response} response
+ * @returns {AsyncGenerator<{ event: string, data: unknown, id: string }>}
+ */
+export async function* readEvents(response) {
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    const err = new Error(body?.message ?? `[Sierra] readEvents: the stream answered ${response.status}`)
+    err.status = response.status
+    err.body = body
+    throw err
+  }
+  const type = response.headers.get('content-type') ?? ''
+  if (!/^\s*text\/event-stream\s*(;|$)/i.test(type)) {
+    throw new TypeError(`[Sierra] readEvents: the response is ${type || 'untyped'}, not text/event-stream — read it with response.json() or response.text()`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let rest = ''
+  let lastId = ''
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      const out = parseEvents(rest + decoder.decode(value, { stream: true }), lastId)
+      rest = out.rest
+      lastId = out.lastId
+      yield* out.events
+    }
+    // parseEvents holds a final CR in case its LF is in the next chunk; there
+    // is none, so a stream whose last line break is a bare CR is read here.
+    rest += decoder.decode()
+    if (rest.endsWith('\r')) yield* parseEvents(rest + '\n', lastId).events
+  } finally {
+    reader.cancel().catch(() => {})
+  }
 }
 
 /**

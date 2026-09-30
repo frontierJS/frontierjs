@@ -58,6 +58,10 @@
     },
     "./search": "./src/search/search.js",
     "./signature": "./src/signature/signature.js",
+    "./sse": {
+      "types": "./src/sse/sse.d.ts",
+      "default": "./src/sse/sse.js"
+    },
     "./units": "./src/units/units.js"
   },
   "files": [

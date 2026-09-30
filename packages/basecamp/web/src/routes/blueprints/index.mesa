@@ -111,6 +111,13 @@ title: Blueprints
 
   $.onDestroy(() => { unwatchSel?.(); selRow?.release() })
 
+  /** The row without the params composed onto it. The edit form patches what
+   *  it is handed, `blueprints.patch` refuses `params` by name (they are saved
+   *  whole with `setParams`), and whether the form counted them as changed
+   *  depended on which read it last diffed against — so the edit failed on
+   *  some runs and not others. */
+  const rowOf = ({ params: _params, ...row }) => row
+
   async function open(bp) {
     error = null
     if (selected?.id === bp.id) return watchSelected(null)
@@ -321,7 +328,7 @@ title: Blueprints
       <h2 class="h4">{selected.name} {selected.version}</h2>
       <span class="cluster">
         {#if isAdmin}
-          <Button variant="outlined" id="blueprint-edit" onclick={() => authoring = selected}>Edit</Button>
+          <Button variant="outlined" id="blueprint-edit" onclick={() => authoring = rowOf(selected)}>Edit</Button>
           {#if !params}
             <Button variant="outlined" id="blueprint-params-edit" onclick={editParams}>Edit parameters</Button>
           {/if}

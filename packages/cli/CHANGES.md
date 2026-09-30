@@ -1,5 +1,45 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-29 — `context.bin(name)`: no fli command runs `bunx` litestone or sierra (`FJS-1586`)
+
+About twenty commands built `cd <root> && bunx litestone …` or `bunx sierra …`.
+Examples are `db:*`, `test:*`, `release:*`, `deploy:doctor`, `site:serve`,
+`widgets:*`, `project:map`, `fli:validate` and `fli new`'s first migration. On a
+machine with no install, `bunx` fetches whatever the registry holds under the
+bare name. `context.bin(name, from = paths.root)` sits beside `context.fli` and
+resolves the app's copy through `resolveGenerator`. It returns it as a quoted
+shell prefix, run under the interpreter its shebang names: node for sierra, as
+`bunx` did. When the package does not resolve, the command refuses with
+`@frontierjs/litestone is not installed where … can reach it`. `binCommand` in
+`core/snapshots.js` is the pure half. `project:map` and `fli:validate` now pass
+`cwd` rather than building `cd ${root}` into the string.
+
+Not moved: scaffolded `package.json` scripts, the widget Dockerfile's `RUN`,
+`docker exec` into an installed image, and the tutor's `reproduce:` strings. Each
+of those runs where an install exists, or is printed for a person to type.
+`snapshots.test.js` fails on any command body that execs `bunx` litestone,
+sierra or junction.
+
+## 2026-09-29 — `app:atlas` and `project:map` resolve junction, never `bunx` (`FJS-1571`)
+
+`readAppAtlas` in `core/app-entry.js` ran `bunx junction atlas`, which on a
+machine with no install fetches a stranger's `junction` from the registry. It
+now resolves the bin through `resolveGenerator` from the snapshot's directory,
+as `callArgv` does, and spawns `bun <bin> atlas`. When junction does not resolve,
+it says so and spawns nothing. `test/call-argv.test.js` asserts the argv through
+the injected runner.
+
+## 2026-09-29 — codegraph: a growth sparkline per package
+
+The codegraph page's Packages table has a Growth column. The line is source
+files born per slice and the area is edits per slice, over 48 slices of one
+span shared by every row, so a young package reads as young. `timelineOf` in
+`core/codegraph.js` buckets the creation and edit times `parseGitLog` already
+kept, so there is no second git call. Only files still in the tree count, and
+sweep commits are left out of the edits. A toggle scales each row to its own
+peak or every row to the project's, because per-row scaling made a package
+with three edits look as busy as one with a thousand.
+
 ## 2026-09-29 — `fli call <service>.<method>` (`FJS-1560`)
 
 `fli call orders.find '{"$limit":5}' --as alex@shop.test --tenant flagship` calls

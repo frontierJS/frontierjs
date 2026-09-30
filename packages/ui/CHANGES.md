@@ -1,5 +1,28 @@
 # Changes
 
+## 2026-09-29 — `MoneyInput`, the control a `@money` column gets (`FJS-1582`, `FJS-D555`)
+
+`forms/MoneyInput.mesa` is a text box in major units over a column in minor
+ones, converted by the currency's own exponent. A generated `<Form>` draws it
+for every `@money` column through `FormField`'s new `money` entry, where the
+column used to be left off with a warning until the app registered a control.
+More decimals than the currency has, and `12,50`, are refused through
+`reportInvalid` rather than rounded or read as 1250. A `@money(field: …)`
+column converts by its row's code: `FormField` now hands a `props` builder the
+form's draft `record`, and changing the code keeps the amount on screen.
+`FilterBar`'s money range converts through the same functions and commits on
+`change`, because it had filtered "from 10" as ten cents. `money.spec.mjs`
+drives all three `x-money` shapes and `filter-bar.spec.mjs` the range.
+
+## 2026-09-30 — a toast can carry one action
+
+`toasts.add(message, type, duration, action)` and the four tone helpers take an
+`action: { label, run }`, drawn as a button beside the message. Pressing it
+dismisses the toast first and then runs the action, so a restore in flight
+cannot be pressed twice. An action without a label or a `run` is refused. The
+first caller is basecamp's Undo after a delete. `notifiers.spec` covers the
+button, the single run, the dismissal and the refusal.
+
 ## 2026-09-29 — `data-confirm` on a `type=button` inside a form is covered (`FJS-1558`)
 
 The freeze that FJS-1558 recorded in basecamp's two-step card was not the kit's. `ConfirmProvider` writes the clicked element into a signal. In a dev build mesa's write log walked that element's `form` without end, and that is fixed in mesa. The confirm-attribute fixture now has the card's shape: a plain form holding a kit `Input` and two guarded kit `Button`s, pressed with `el.click()`. The spec asserts the panel asks, the handler waits, and the handler runs once on confirm. The ui suite has 1076 passing. The 2 failures are the `dnd` and `palette-modes` fixture compiles, now filed as `FJS-1570`.

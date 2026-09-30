@@ -165,7 +165,7 @@ describe.skipIf(!CHROME)('a cold page load on a broken component', () => {
     await new Promise((r) => http.listen(0, '127.0.0.1', r))
     origin = `http://127.0.0.1:${http.address().port}`
 
-    const { openChrome } = await import('./browser/drive.mjs')
+    const { openChrome } = await import('../src/drive.js')
     browser = await openChrome()
   }, 60000)
 

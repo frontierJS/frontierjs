@@ -59,7 +59,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
-| `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
+| `Notification` | 0 STRANGER | 8 SYSTEM | 1 VISITOR | 8 SYSTEM |
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `NotificationPreference` | 1 VISITOR | 1 VISITOR | 1 VISITOR | 1 VISITOR |
 | `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |

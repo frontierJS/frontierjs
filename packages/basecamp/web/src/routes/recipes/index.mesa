@@ -34,6 +34,7 @@ title: Recipes
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
+  import { offerUndo } from '../../resources/Trash.mesa'
 
   $: session.workspaceId
 
@@ -178,7 +179,7 @@ title: Recipes
     error = null; busy = recipe.id
     try {
       await recipes.service.remove(recipe.id)
-      toasts.success(`${recipe.name} deleted`)
+      offerUndo(recipe.name, recipes, recipe.id, load)
       if (selected?.id === recipe.id) watchSelected(null)
       await load()
     } catch (e) {

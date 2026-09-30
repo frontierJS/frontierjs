@@ -10,8 +10,7 @@
   //
   // So the app claims the rendering and nothing else. `displayFor` already
   // NAMES this column `money` from `x-money` alone, which is the half a
-  // registration would otherwise have to restate — `money-control.js` needs
-  // both halves because no built-in table answers `money` for a form.
+  // registration would otherwise have to restate.
   //
   // `$: prefs.currency` is load-bearing and is the whole reason this is a
   // component rather than a formatter passed to `Cell`: Mesa reads an

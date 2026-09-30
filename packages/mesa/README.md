@@ -475,6 +475,39 @@ DevTools server hooks — no separate import needed.
 
 ---
 
+## Browser drive — `@frontierjs/mesa/drive`
+
+A real Chrome over CDP, for an app's own drive: launch, navigate, evaluate, send
+input the browser trusts, collect what the page threw. No dependency — the
+protocol goes over the global `WebSocket`. Chrome comes from `$FJS_CHROME`, or
+`google-chrome` on `PATH`.
+
+```js
+import { openChrome } from '@frontierjs/mesa/drive'
+
+const page = await openChrome({ profile: 'test/.profile' })
+await page.navigate('http://localhost:8700/', 'window.__ready')
+await page.clickAt('button[type=submit]')
+await page.type('ada@example.com')
+await page.press('Enter')
+const title = await page.evaluate(`return document.title`)
+if (page.errors.length) throw new Error(page.errors.join('\n'))
+await page.close()
+```
+
+| Option | Default | |
+|---|---|---|
+| `profile` | a temp directory, removed on close | A directory you keep. IndexedDB, Cache Storage, the service worker and OPFS live in it, so a drive that closes and reopens an offline app needs one |
+| `bootstrap` | — | A script run before anything else in every document |
+| `windowSize` | `'1280,900'` | |
+
+The handle is `{ navigate, evaluate, clickAt, press, type, key, newPage, cmd, errors, close }`.
+`errors` holds what the page threw, its `console.error` calls, and any console
+warning starting `[Mesa]` — a render the framework survived but corrupted.
+Chrome picks its own debugging port, so two drives never attach to each other's
+browser, and a crashed run's browser and temp profile are cleaned up on exit
+and on the next launch.
+
 ## Tests
 
 ```bash

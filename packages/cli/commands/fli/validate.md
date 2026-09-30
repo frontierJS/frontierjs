@@ -205,8 +205,8 @@ if (!existsSync(schemaLite)) {
 
 log.info('Generating schema.json...')
 try {
-  execSync(`cd ${root} && bunx litestone jsonschema --schema db/schema.lite --out ${schemaJson}`, {
-    stdio: 'pipe',
+  execSync(`${context.bin('litestone')} jsonschema --schema db/schema.lite --out ${JSON.stringify(schemaJson)}`, {
+    cwd: root, stdio: 'pipe',
   })
 } catch (e) {
   log.error(`litestone jsonschema failed: ${e.stderr?.toString().trim() || e.message}`)

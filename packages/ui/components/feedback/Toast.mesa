@@ -19,6 +19,7 @@
   export let type      = ''      // legacy alias — 'error' → danger
   export let duration  = 3500    // ms — drives the drain animation
   export let ondismiss = undefined
+  export let action    = null    // { label, run } — see toastStore.js
 
   const iconPathMap = {
     info:    'M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z',
@@ -51,6 +52,13 @@
   function dismiss() {
     ondismiss?.(id)
   }
+
+  // Dismissed first: the action is usually a request, and a toast still on
+  // screen while it runs invites a second press that runs it twice.
+  function act() {
+    dismiss()
+    action.run()
+  }
 </script>
 
 <!--
@@ -75,6 +83,10 @@
     </span>
 
     <p style:flex="1" style:margin="0">{message}</p>
+
+    {#if action}
+      <button type="button" class="btn ghost fjs-toast-action" on:click={act}>{action.label}</button>
+    {/if}
 
     <button type="button" class="btn ghost square" aria-label="Dismiss notification" on:click={dismiss}>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -107,6 +119,11 @@
     align-items: flex-start;
     gap:         0.75rem;
     padding:     0.75rem 1rem;
+  }
+  .fjs-toast-action {
+    align-self:  center;
+    font-size:   0.8125rem;
+    white-space: nowrap;
   }
   .fjs-toast-drain {
     block-size: 2px;

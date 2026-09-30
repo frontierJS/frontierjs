@@ -923,6 +923,7 @@
     <FormField
       field={f}
       value={record?.[f.name]}
+      record={record}
       options={pickers[f.name]}
       optionsError={pickerErrors[f.name]}
       total={totals[f.name]}

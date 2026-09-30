@@ -63,9 +63,9 @@ README's *Verified* section — not a claim.
   away. `payments` deliberately carries no `@sealed`, because a payment against
   an issued invoice is exactly the row that must keep arriving.
 - **A price is typed in dollars and stored in cents, on a form that names no
-  field.** `PlanVersion.price` is `@money(USD)`, and `web/src/money-control.js`
-  resolves a control off `x-money` on the RULE — not off a column name — so the
-  box, its step and its two conversions come from the schema. `verify` types
+  field.** `PlanVersion.price` is `@money(USD)`, and sierra's control table
+  answers the kit's `money` box off `x-money` on the RULE — not off a column
+  name — so the box and its two conversions come from the schema. `verify` types
   `31.50` into a browser and then asks the database, which answers 3150.
 
 - **A buy button runs on a page the shop does not own.** `widgets/` is a third
@@ -150,13 +150,6 @@ README's *Verified* section — not a claim.
   `web/src/money.js`; `verify:ui` asserts the NUMBER moved and not only the
   symbol, because a toggle that changed the glyph alone would show one price as
   two different amounts.
-- **A form takes dollars where the column takes cents**, and that is a
-  contributed control rather than a special case: `web/src/money-control.js`
-  registers `money` in sierra's table off `x-money` on the column — the
-  declaration, not the column's name — and binds it to the kit's `Input` with
-  the conversion in its `props`. Without it the generated order form offers a
-  spinner stepping by one, and staff raising a telephone order for forty-two
-  dollars charge forty-two cents with every screen agreeing.
 - **A customer can be taken off the books and their orders cannot.**
   `Customer` is `@@softDelete` and `orders Order[] @keep` — the third fate a
   soft-deleted parent's children can have, and the one that had no spelling
@@ -311,8 +304,6 @@ example/
         ├── prefs.js              ← browser preferences; the only non-model state
         ├── money.js              ← BASE, the display currency, and the one
         │                           `fromMinor` this surface performs
-        ├── money-control.js      ← the `money` control: a box in dollars over a
-        │                           column in cents, resolved off `x-money`
         ├── resources/Order.mesa  ← .mesa, invariants 18 + 19
         └── routes/               ← index, orders/{index,create,[id]}, products,
                                     customers, cart, inventory, settings

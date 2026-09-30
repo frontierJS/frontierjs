@@ -158,7 +158,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
     </section>`,
     `<section class="pane cg-lower">
       <section aria-labelledby="regions-h">
-        <div class="section-header"><h2 id="regions-h" class="h5">Packages</h2><button class="btn outlined" id="clear" hidden>show every package</button></div>
+        <div class="section-header"><h2 id="regions-h" class="h5">Packages</h2><button class="btn outlined" id="growth-scale" aria-pressed="false" title="Growth: scale each row to its own peak, or every row to the busiest package">growth: each row</button><button class="btn outlined" id="clear" hidden>show every package</button></div>
         <p class="text-xs text-muted">Select a row to isolate it on the map. Exposed is the share of the package's source complexity no test covers.</p>
         <div class="table-wrap"><table class="table striped dense" id="regions">
           <thead><tr><th>Region</th><th>Growth</th><th class="cg-r">Files</th><th class="cg-r">Source</th><th class="cg-r">Exposed</th><th class="cg-r">Hotspots</th><th class="cg-r">Hot files</th></tr></thead><tbody></tbody>
@@ -271,7 +271,7 @@ const fmtBytes = b => b == null ? '–' : b < 1024 ? b + ' B' : b < 1048576 ? (b
 const fmtDays = a => a == null ? 'never committed' : a < 1 ? 'today' : a < 2 ? 'yesterday' : a < 60 ? Math.round(a) + ' days ago' : Math.round(a / 30.4) + ' months ago'
 const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } }
 
-const state = { cuts: D.cognitiveCuts.slice(), layout: 'core', view: 'score', q: '', kinds: new Set(D.all ? D.kinds : ['source']), focus: null, hover: -1, pinned: -1 }
+const state = { cuts: D.cognitiveCuts.slice(), layout: 'core', view: 'score', q: '', kinds: new Set(D.all ? D.kinds : ['source']), focus: null, hover: -1, pinned: -1, growthShared: store.get('fli-codegraph-growth') === 'shared' }
 const cv = $('cv'), ctx = cv.getContext('2d'), tip = $('tip'), stage = $('stage')
 let L = null, B = 8, C = {}
 
@@ -662,19 +662,21 @@ function renderTables() {
     '<tr data-file="' + f.i + '" tabindex="0"><td class="cg-name" title="' + esc(f.path) + '"><bdi>' + esc(f.path) + '</bdi></td><td class="cg-r">' + n(f.usedBy) + '</td><td class="cg-r">' + (f.exposure == null ? '–' : n(f.exposure)) + '</td><td class="cg-r">' + (f.level ?? '–') + '</td></tr>').join('')
 }
 
-// Line: source files born per slice. Area: edits per slice, for scale only.
-// Each series fits its own height; the x span is shared by every row.
+// Line: source files born per slice. Area: edits per slice. The x span is
+// shared by every row; the height is each row's own peak, or with
+// state.growthShared the project's, so a quiet package reads quiet.
+const PEAKS = D.timeline ? [0, 1].map(k => Math.max(1, ...Object.values(D.timeline.regions).flatMap(r => r[k]))) : [1, 1]
 function growth(region) {
   const t = D.timeline, r = t && t.regions[region]
   if (!r) return ''
   const W = 120, H = 22, dx = W / (t.steps - 1)
-  const pts = (ys, pad) => { const m = Math.max(1, ...ys); return ys.map((y, i) => (i * dx).toFixed(1) + ',' + (H - pad - y / m * (H - 2 * pad)).toFixed(1)) }
+  const pts = (k, pad) => { const ys = r[k], m = state.growthShared ? PEAKS[k] : Math.max(1, ...ys); return ys.map((y, i) => (i * dx).toFixed(1) + ',' + (H - pad - y / m * (H - 2 * pad)).toFixed(1)) }
   const [born, edits] = r
   const d = new Date(t.start * 1000).toISOString().slice(0, 10)
   return '<svg class="cg-growth" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + born.reduce((a, b) => a + b, 0) + ' source files born, ' + edits.reduce((a, b) => a + b, 0) + ' edits since ' + d + '">' +
     '<title>since ' + d + ' · ' + born.reduce((a, b) => a + b, 0) + ' src files · ' + edits.reduce((a, b) => a + b, 0) + ' edits</title>' +
-    '<polygon points="0,' + H + ' ' + pts(edits, 0).join(' ') + ' ' + W + ',' + H + '"/>' +
-    '<polyline points="' + pts(born, 1.5).join(' ') + '"/></svg>'
+    '<polygon points="0,' + H + ' ' + pts(1, 0).join(' ') + ' ' + W + ',' + H + '"/>' +
+    '<polyline points="' + pts(0, 1.5).join(' ') + '"/></svg>'
 }
 
 function syncControls() {
@@ -798,6 +800,16 @@ function act(ev) {
 }
 for (const t of [$('regions'), $('hot'), $('used')]) { t.addEventListener('click', act); t.addEventListener('keydown', act) }
 $('clear').addEventListener('click', () => { state.focus = null; syncControls(); redraw() })
+function syncGrowth() {
+  $('growth-scale').setAttribute('aria-pressed', state.growthShared)
+  $('growth-scale').textContent = 'growth: ' + (state.growthShared ? 'whole project' : 'each row')
+}
+$('growth-scale').addEventListener('click', () => {
+  state.growthShared = !state.growthShared
+  store.set('fli-codegraph-growth', state.growthShared ? 'shared' : 'row')
+  syncGrowth(); renderTables(); syncControls()
+})
+syncGrowth()
 
 function setTheme(theme) {
   document.body.className = document.body.className.replace(/\btheme-[\w-]+/, 'theme-' + theme)

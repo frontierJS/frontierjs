@@ -392,21 +392,25 @@ enum NotificationKind {
 
 model User {
   id             String    @id @default(uuid())
-  email          String    @email @unique @lower
+  // The address is what a password reset and every notification go to, so a
+  // new one is proven before it is kept, and that flow is auth's. Writable here
+  // it is an account taken over by whoever holds a session, with
+  // `emailVerified` still true for an address nobody verified. `accountId`
+  // moves a person between organizations, which is the hub's act.
+  email          String    @email @unique @lower @allow('write', auth().isSystemAdmin)
   name           String?   @trim
   // Both carry auth's own field policy, and they carry it because this model
-  // gates update at USER(4) with `@@allow('update', id == auth().id)` — your own
-  // row. Without it the field policy is the only thing between a caller and
-  // their own `emailVerified`, and marking your own address verified is skipping
-  // the verification. Nothing here exposes a write path to `db.user` today,
-  // which is exactly why it went missing from the copy unnoticed (`FJS-483`).
+  // lets a person update their own row (`users.patch`, the profile form).
+  // Without it the field policy is the only thing between a caller and their
+  // own `emailVerified`, and marking your own address verified is skipping the
+  // verification (`FJS-483`).
   //
   // `role` is auth's and is read nowhere in this app — the privileged bit is
   // `isSystemAdmin` below. It keeps the policy anyway: a column nobody reads is
   // one somebody will.
   emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
   role           String    @default("user") @allow('write', auth().isAdmin)
-  accountId      String?
+  accountId      String?   @allow('write', auth().isSystemAdmin)
   account        Account?  @relation(fields: [accountId], references: [id])
 
   // ── Basecamp additions ──
@@ -421,7 +425,9 @@ model User {
   username       String?    @trim
   displayName    String?    @trim
   avatarUrl      String?
-  scopes         Json       @default([])
+  // Read by nothing here: a key's scopes are its Credential's. It is named
+  // like a grant, so it is written like one, for `role`'s reason above.
+  scopes         Json       @default([]) @allow('write', auth().isSystemAdmin)
 
   // The hub tier — who may read across workspaces and suspend a tenant.
   //
@@ -453,13 +459,17 @@ model User {
   deployments    Deployment[]
   apiKeys        ApiKey[]
 
-  // Read at USER(4) is auth's own ladder — an app's screens list its people.
-  // Update at USER(4) is per MODEL, so on its own it says any signed-in caller
-  // may rewrite any other person's row; the policy is what makes it their own
-  // row. Everything this app writes to a person goes through the hub, and the
-  // hub is asSystem(), which passes the policy — so nothing legitimate here
-  // depends on the update path a caller reaches.
-  @@gate("4.4.4.5")
+  // R.C.U.D. Read and update are VISITOR(1) for Notification's reason:
+  // standing in a workspace says nothing about a row that belongs to none, and
+  // at USER(4), which is DEVELOPER on this ladder, a viewer could not read or
+  // edit their own profile. The policies are what confine it. Your own row at
+  // any standing; everyone's at 4, which is what the gate said before and what
+  // an app's screens listing its people need. Update is your own row only, and
+  // the field policies above keep the columns a person may not write about
+  // themselves. Create is SYSTEM: registration, setup, an accepted invitation
+  // and the hub's bots all write through asSystem(), which passes all of it.
+  @@gate("1.8.1.5")
+  @@allow('read',   id == auth().id || auth().level >= 4)
   @@allow('update', id == auth().id)
   @@softDelete
   @@log(audit)
@@ -2542,12 +2552,12 @@ model HubConfig {
 // copy against the package's, so a column the driver starts writing is named
 // there rather than discovered at the first send.
 //
-// Four deliberate deviations from the shipped shape, and three are one reason:
+// Five deliberate deviations from the shipped shape, and three are one reason:
 // **every id in this app is a uuid**, so `id` and `contextId` are `String`
 // where the package writes `Int`, and a relation back to this app's own `User`
 // is added. The fourth is `contextType`, which the package leaves unconstrained
 // because it cannot know an app's subjects; this one can, so it is an enum and
-// the column carries a CHECK.
+// the column carries a CHECK. The fifth is the update gate, below.
 //
 // **No `workspaceId`, and that is the interesting one.** A notification is
 // addressed to a PERSON, and a person is in several workspaces — the row policy
@@ -2590,11 +2600,17 @@ model Notification {
 
   // R.C.U.D. Read is open and the policy scopes it; create is SYSTEM, because
   // the only writer is the package's inApp driver through `asSystem()`; update
-  // is USER, a recipient marking one read; delete is SYSTEM.
+  // is VISITOR(1), a recipient marking one read; delete is SYSTEM.
+  //
+  // Update is 1 where the package ships 4: its ladder calls 4 USER, and in this
+  // one 4 is DEVELOPER, which left every viewer, billing member and person with
+  // no workspace unable to clear their own bell. Standing in a workspace says
+  // nothing about a row that belongs to none — NotificationPreference's reason —
+  // and the update policy is what confines it to the recipient.
   //
   // Create is 8 and NOT 9. `9` is LOCKED — a wall `asSystem()` does not pass
   // either — so a 9 here would stop the driver from ever writing a row.
-  @@gate("0.8.4.8")
+  @@gate("0.8.1.8")
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
   @@index([userId, readAt])

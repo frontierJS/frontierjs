@@ -576,12 +576,12 @@ describe('the gate ladder', () => {
     db.$close()
   })
 
-  // `User` gates read AND update at USER(4) — auth's ladder, so that an app can
-  // list its people and a person can edit their own profile. A gate is per
-  // MODEL, so on its own that is every signed-in caller writing every other
-  // person's row, including the column their own level is graded from. These
-  // three are what makes the level safe to hold, and none of them is a level:
-  // a row policy for whose row, and a field write policy for which columns.
+  // `User` gates read AND update at VISITOR(1), so that a person at any
+  // standing can edit their own profile. A gate is per MODEL, so on its own
+  // that is every signed-in caller writing every other person's row, including
+  // the column their own level is graded from. The policies are what make the
+  // level safe to hold, and none of them is a level: a row policy for whose
+  // row, and a field write policy for which columns.
   test('a member reads every person and writes only their own row', async () => {
     const db  = await client()
     const sys = db.asSystem()
@@ -598,6 +598,46 @@ describe('the gate ladder', () => {
     // proves it, not the return value.
     await dev.user.update({ where: { id: other.id }, data: { name: 'rewritten' } })
     expect((await sys.user.findUnique({ where: { id: other.id } })).name).toBe('Other')
+    db.$close()
+  })
+
+  // The profile form's whole reach. A viewer is READER(2) and a caller naming
+  // no workspace is VISITOR(1), both under the 4 that lists people, and both
+  // are somebody who owns a profile.
+  test('a viewer, or nobody\'s member, reads and edits their own row and no other', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const other = await sys.user.create({ data: { email: 'other@example.com', name: 'Other' } })
+    await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
+
+    for (const who of [as('viewer'), { id: 'u1', userId: 'u1' }]) {
+      const me = db.$setAuth(who)
+      expect((await me.user.findMany({ limit: 10 })).map((u: any) => u.id)).toEqual(['u1'])
+      expect(await me.user.findUnique({ where: { id: other.id } })).toBeNull()
+      expect((await me.user.update({ where: { id: 'u1' }, data: { displayName: `as ${who.memberRole ?? 'visitor'}` } })).displayName)
+        .toBe(`as ${who.memberRole ?? 'visitor'}`)
+    }
+    db.$close()
+  })
+
+  // An address is proven before it is kept, and that flow is auth's: an
+  // address changed here is an account taken over by whoever holds the
+  // session, still marked verified. A field write policy DROPS, so the write
+  // lands with the rest and the row read back is the assertion.
+  test('a person cannot change their own address, organization or scopes', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const acct = await sys.account.create({ data: { type: 'organization', status: 'active', slug: 'x', displayName: 'X' } })
+    await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
+
+    await db.$setAuth(as('owner')).user.update({ where: { id: 'u1' }, data: {
+      email: 'taken@example.com', accountId: acct.id, scopes: ['admin'], username: 'me',
+    } })
+    const row = await sys.user.findUnique({ where: { id: 'u1' } })
+    expect(row.email).toBe('u1@example.com')
+    expect(row.accountId).toBeNull()
+    expect(row.scopes).toEqual([])
+    expect(row.username).toBe('me')
     db.$close()
   })
 

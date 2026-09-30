@@ -10,6 +10,7 @@ title: Job
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
+  import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
   $: session.level
@@ -80,7 +81,7 @@ title: Job
     const { id, name } = job
     try {
       await jobs.service.remove(id)
-      toasts.success(`${name} deleted`)
+      offerUndo(name, jobs, id)
       goto('/jobs/')
     } catch (e) {
       error = e.message

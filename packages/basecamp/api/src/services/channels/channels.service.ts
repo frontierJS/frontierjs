@@ -32,7 +32,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
+import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { KINDS, deliverToChannel, testMessage } from '../../core/delivery.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -210,6 +210,15 @@ export function createChannelsService(app: BasecampApp) {
         await sys().secret.remove({ where: { id: channel.secretId as string } })
 
       return removed
+    },
+
+    // The credential comes back with it — remove took both, and a channel
+    // restored without its Secret is a row that fails every delivery.
+    async restore() {
+      const channel = await restoreScoped('notificationChannel', 'Channel')
+      if (channel.secretId)
+        await sys().secret.restore({ where: { id: channel.secretId as string } })
+      return channel
     },
 
     // ── rules ─────────────────────────────────────────────────────────

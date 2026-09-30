@@ -758,11 +758,11 @@ be worse.
   followed with the signature re-sent; and a subscriber whose deliveries all
   died stayed active. **`manage` (default 5) is the standing**, graded with
   `sessionGateLevel` — 403 for a caller who is merely too junior and 401 for a
-  stranger, which a client acts on differently. **`assertDeliverableTarget` is
+  stranger, which a client acts on differently. **`assertPublicUrl` (`core/public-url.ts`) is
   the destination**, an ALLOW-list of schemes plus a public-address check over
   every address a name answers with, run at registration AND before every
   attempt — a name that resolved publicly an hour ago can resolve to loopback
-  now. A rebind BETWEEN the check and the connect is not closed and `url.ts`
+  now. A rebind BETWEEN the check and the connect is not closed and `public-url.ts`
   says so: it needs the socket pinned to the graded address, and `fetch` has no
   way to do that. `targets: { allowHttp, allowPrivate }` is the opt-out and the
   only thing in this repo that turns it off is the delivery suite, whose

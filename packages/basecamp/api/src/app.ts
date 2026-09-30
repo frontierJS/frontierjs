@@ -45,7 +45,7 @@ import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './core/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
-import { workspaceChannelName, workspaceIdFromChannel } from './channels.ts'
+import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './channels.ts'
 
 import type { BasecampApp } from './basecamp.types.ts'
 
@@ -456,6 +456,7 @@ export async function buildBasecampApp(
       if (!s?.userId) return
 
       a.channel?.('authenticated').join(conn)
+      a.channel?.(notificationChannelName(s.userId)).join(conn)
 
       // asSystem(): resolving who may hear what is not a request the caller
       // makes, and WorkspaceMember is not readable through the caller's own

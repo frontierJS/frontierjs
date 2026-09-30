@@ -1,5 +1,36 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-29 — `ctx.sse()` writes toolbelt's frame (`FJS-1581`)
+
+`send` formats with `formatEvent` from `@frontierjs/toolbelt/sse`, which sierra's `readEvents` reads with, so the stream has one frame format rather than a writer here and a reader in each page. Two changes follow. An `event` or `id` holding a line break now throws: before, it framed a second event nobody sent. The throw is outside the closed-stream catch, so it reaches the caller. And `retry: 0` is written, where the old truthiness test dropped it. `SseEvent` extends toolbelt's type.
+
+## 2026-09-30 — `restore` by id answers the row, or a 404 (`FJS-1584`)
+
+A by-id restore returned litestone's array: `[row]` where the client's
+`restore(id)` is typed as a row, and `[]` with a 200 for an id that was never
+deleted, so an Undo that brought nothing back looked like it worked. By id it now
+answers what `remove` does. A filtered restore still answers the array.
+`test/real-litestone-client.test.ts` § restore by id covers both.
+
+## 2026-09-29 — a filter the method never read is refused by name (`FJS-1577`, `FJS-D553`)
+
+`autoFilter` admitted any query key that names a column, and a hand-written
+`find` then read only the keys it named. A skipped key matched every row and
+answered 200. In basecamp, `?branch=nope` returned every release.
+
+- `autoFilter` records the keys it admits. `callService` watches `ctx.query`
+  around the body of any non-custom method that `autoFilter` ran on (`find`, `get`,
+  `aggregate`). After the body returns it refuses, in one 400 with a `field` entry
+  per key, every admitted key the body never read.
+- A read is a property access, an `in`, a delete or an enumeration, so
+  `parseWhere($.query)`, a spread and the base methods' own parsing read every
+  key. Hook reads do not count. A key a before hook deleted from `ctx.query` is
+  not checked.
+- Not caught: a body that reads a key and discards it.
+- `test/unread-filters.test.ts` covers this. With the check removed, the four
+  refusal cases fail, and so does the after-hook case, because the watch is never
+  taken off.
+
 ## 2026-09-29 — `junction call`: one service method, once, as somebody (`FJS-1560`)
 
 `junction call --app <module> <service>.<method> [id] [json] [--as <who>] [--tenant <id>]`

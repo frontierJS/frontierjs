@@ -96,7 +96,7 @@ describe('ctx.app.notify from a service hook', () => {
 
     expect(frames.length).toBe(1)
     const frame = frames[0] as { event: string; data: NotificationRecord }
-    expect(frame.event).toBe('notification:created')
+    expect(frame.event.split(' ')).toEqual(['notifications', 'created'])
     expect(frame.data.userId).toBe('owner-3')
     expect(frame.data.data.title).toBe('"Receipt" was created')
   })

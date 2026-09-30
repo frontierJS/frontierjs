@@ -46,7 +46,7 @@ import { createServer }                from 'node:http'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, rmSync } from 'node:fs'
 import { join, extname, dirname }      from 'node:path'
 import { fileURLToPath }               from 'node:url'
-import { openChrome }                  from '../../../mesa/test/browser/drive.mjs'
+import { openChrome }                  from '../../../mesa/src/drive.js'
 import { parse, parseFile }            from '../../src/core/parser.js'
 import { deviceSchema }                from '../../src/device-schema.js'
 

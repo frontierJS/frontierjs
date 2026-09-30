@@ -37,6 +37,9 @@ src/
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
   css-inliner.js       — scoped-style extraction and inlining
+  drive.js             — Chrome over CDP, @frontierjs/mesa/drive. Published: an
+                         app's drive and every in-repo drive import it
+                         (`FJS-D554`). No framework import, no dependency
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
@@ -54,8 +57,8 @@ docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
 docs/STATIC_RENDERING.md — server rendering: what runs, islands, tmpDir, globals
 
 test/browser/
-  drive.mjs            — Chrome over CDP + the spec runner. SHARED: @frontierjs/ui
-                         reads it by relative path
+  drive.mjs            — the spec runner over src/drive.js. SHARED, unpublished:
+                         @frontierjs/ui and the cli read it by relative path
   probes.js            — the in-page DOM half (waitVisible, matchedRules, …)
   runtime/             — the language in a real browser (server · page · fixtures · specs)
   vite/                — the plugin in a real dev server (app · specs)
@@ -329,7 +332,10 @@ their own label, constraints and server error from it.
 
 **`test/browser/` is where this package is run rather than described** — three
 drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
-`probes.js`) and read by relative path because mesa is the leaf. `runtime/` and
+`probes.js`) and read by relative path because mesa is the leaf. The browser
+under the runner is `src/drive.js`, which is published: a change to it reaches
+every app's drive, so `test/drive.test.js` pins what an app asks of it and
+the runner never did — a kept `profile` read back after a relaunch. `runtime/` and
 `vite/` gate; `repl/` is manual and needs the network. What bites:
 
 - **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`

@@ -7,6 +7,7 @@ title: Projects
   import { useStore } from '@frontierjs/sierra/junction'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import { offerUndo } from '../../resources/Trash.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
   $.onDestroy(unsubscribe)
@@ -31,6 +32,7 @@ title: Projects
     error = null
     try {
       await projects.service.remove(project.id)
+      offerUndo(project.name, projects, project.id)
       // The store drops the row on its own — the service publishes `removed`
       // and useStore is subscribed. load() again would also work and costs a
       // round trip to learn what we already know.

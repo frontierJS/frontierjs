@@ -21,7 +21,7 @@ tested at all.
 
 ```js
 context.exec({
-  command: `bunx sierra widgets --config config/sierra.config.js --serve --port ${flag.port || 8300}`,
+  command: `${context.bin('sierra', context.paths.widgets)} widgets --config config/sierra.config.js --serve --port ${flag.port || 8300}`,
   cwd:     context.paths.widgets,
   dry:     flag.dry,
 })

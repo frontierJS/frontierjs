@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url'
 import { resolve, join }  from 'node:path'
 import { mkdtempSync }    from 'node:fs'
 import { tmpdir }         from 'node:os'
-import { openChrome, green, red, dim } from '../../../mesa/test/browser/drive.mjs'
+import { openChrome }      from '../../../mesa/src/drive.js'
+import { green, red, dim } from '../../../mesa/test/browser/drive.mjs'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
 const CLI  = resolve(HERE, '../..')

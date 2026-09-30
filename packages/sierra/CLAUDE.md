@@ -477,13 +477,12 @@ src/
   reason** — an array, a `Json` column, a `readOnly` field, a name the model does
   not have. Filtering those out here would make a column added to `.lite`
   disappear from a form with nothing saying so, which is the bug the generated
-  list exists to end. **`@money` and `@scale` are on that list**, and they are the
-  ones that look answerable: the integer row returns `{ control: 'input', step: 1 }`,
-  which is right for a count and out by a factor of a hundred here — 42 typed into
-  a `@money` box is forty-two CENTS and no layer refuses it, because 42 is a legal
-  value of the column. What the control IS stays the app's (`FJS-D17`): the
-  symbol, whether the box is in major units, and for `@scale` what the number even
-  measures.
+  list exists to end. **`@scale` is on that list** and looks answerable: the
+  integer row returns `{ control: 'input', step: 1 }`, which is right for a count
+  and out by a factor of a hundred for a scaled column, and what its number
+  measures is the app's to say. **`@money` answers `money`** (`FJS-D555`) with
+  `currency`/`currencyField` on the answer — never the integer row, where 42 typed
+  is forty-two CENTS and no layer refuses it.
 - **`find()` answers the list envelope; `findData()` is the rows.** And the FIRST
   argument to `find` is the filter — `find({ limit: 100 })` filters on a column
   named `limit`, which matches nothing and says nothing (`FJS-109`).

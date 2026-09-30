@@ -1,0 +1,127 @@
+/*
+ * seed.css
+ * A theme grown from a handful of switches — color, shape, space, type,
+ * motion, line and focus; the list is the top of .theme-seed. Every other token is derived with relative color
+ * syntax, so a picker can re-theme the page live.
+ *
+ * Lives beside its playground (seed.html) rather than in src/, because
+ * meta.spec requires every src/ sheet to ship: derived hues are not held
+ * to the contrast spec, and a pale primary on a light ground fails AA.
+ */
+
+@property --dark {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --seed-shadow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.35;
+}
+
+.theme-seed {
+  /* ── The switches ── */
+  --dark: 1;
+  --seed-primary: #bd93f9;
+  /* Only hue and chroma are read; lightness comes from --dark. */
+  --seed-surface: #282a36;
+  --seed-shadow: 0.35;
+  --seed-radius: 0.6;        /* 0 square · 0.6 default · 2 soft */
+  --density: 1;              /* tokens.css already multiplies every --space-* by it */
+  --seed-type-scale: 1.2;    /* ratio between heading rungs */
+  --seed-motion: 1;          /* 0 = no animation */
+  --seed-accent: 60;         /* secondary's hue, degrees from primary: 30 analogous · 180 complementary */
+  --seed-border: 1;          /* px; every rule that reads --border-width */
+  --seed-ring: var(--seed-primary);
+  --seed-ring-width: 2;      /* px */
+  --font-primary: system-ui, sans-serif;
+  --font-display: var(--font-primary);
+  --heading-font-weight: 700;
+  --seed-tracking: -0.015;   /* em, all six headings */
+  --seed-leading: 1.2;       /* h2-h6; h1 runs 0.1 tighter */
+
+  /*
+   * color-scheme is a keyword and cannot be computed from --dark, so native
+   * controls follow the OS unless the page flips it — the playground does.
+   */
+  color-scheme: light dark;
+
+  /* ── Ground ─────────────────────────────────────────────────────────
+   * Raised goes LIGHTER on a dark ground and darker on a light one; that
+   * sign flip is the whole of what --_step does.
+   */
+  --_L: calc(0.985 - var(--dark) * 0.735);
+  --_step: calc(0.035 - var(--dark) * 0.075);
+
+  --surface:        oklch(from var(--seed-surface) var(--_L) calc(c * 0.6) h);
+  --surface-raised: oklch(from var(--seed-surface) calc(var(--_L) - var(--_step)) calc(c * 0.6) h);
+  --surface-sunken: oklch(from var(--seed-surface) calc(var(--_L) + var(--_step)) calc(c * 0.6) h);
+  --topbar-bg:      var(--surface-sunken);
+  --sidebar-bg:     var(--surface-sunken);
+  --dialog-bg:      var(--surface-raised);
+
+  /* ── Ink ── three steps, pulled toward mid-lightness ── */
+  --ink:      oklch(from var(--seed-surface) calc(0.2 + var(--dark) * 0.75) calc(c * 0.25) h);
+  --ink-soft: oklch(from var(--seed-surface) calc(0.36 + var(--dark) * 0.46) calc(c * 0.5) h);
+  --ink-mute: oklch(from var(--seed-surface) calc(0.47 + var(--dark) * 0.24) calc(c * 0.6) h);
+
+  --rule:        oklch(from var(--surface) calc(l - 0.1 + var(--dark) * 0.2) c h);
+  --rule-strong: oklch(from var(--rule) calc(l - 0.07 + var(--dark) * 0.14) c h);
+
+  /* ── Accents ────────────────────────────────────────────────────────
+   * The status tones keep the primary's lightness and chroma but take a
+   * FIXED hue, so danger still reads as danger whatever the seed is.
+   */
+  --color-primary:   var(--seed-primary);
+  --color-secondary: oklch(from var(--seed-primary) l c calc(h + var(--seed-accent)));
+  --color-info:      oklch(from var(--seed-primary) l c 215);
+  --color-success:   oklch(from var(--seed-primary) l c 150);
+  --color-warning:   oklch(from var(--seed-primary) l c 70);
+  --color-danger:    oklch(from var(--seed-primary) l c 25);
+  --color-muted:     oklch(from var(--seed-surface) 0.6 0.05 h);
+
+  /* The tone-as-text window from tokens.css, interpolated by --dark. */
+  --tone-l-min: calc(var(--dark) * 0.74);
+  --tone-l-max: calc(0.46 + var(--dark) * 0.54);
+
+  /* ── Elevation ── dark grounds need far more alpha to read at all ── */
+  --_sa: calc(var(--seed-shadow) * (0.35 + var(--dark) * 0.65));
+  --_sc: oklch(from var(--seed-surface) 0.12 calc(c * 0.5) h / var(--_sa));
+  --_sc2: oklch(from var(--seed-surface) 0.12 calc(c * 0.5) h / calc(var(--_sa) * 0.6));
+  --shadow-sm: 0 1px 2px var(--_sc);
+  --shadow-md: 0 2px 6px var(--_sc), 0 1px 2px var(--_sc2);
+  --shadow-lg: 0 8px 28px var(--_sc), 0 1px 3px var(--_sc2);
+
+  /* ── Shape ── cards stay a third rounder than controls at every setting ── */
+  --btn-radius:   calc(var(--seed-radius) * 10px);
+  --field-radius: var(--btn-radius);
+  --card-radius:  calc(var(--seed-radius) * 13.33px);
+
+  /*
+   * ── Type ── body stays put; the rungs above it are powers of the ratio.
+   * The small rungs are not scaled: they sit at the legibility floor.
+   */
+  --text-lg:  calc(var(--text-md) * var(--seed-type-scale));
+  --text-xl:  calc(var(--text-md) * pow(var(--seed-type-scale), 2));
+  --text-2xl: calc(var(--text-md) * pow(var(--seed-type-scale), 3));
+  --text-3xl: calc(var(--text-md) * pow(var(--seed-type-scale), 4));
+  --text-4xl: calc(var(--text-md) * pow(var(--seed-type-scale), 5));
+
+  /* ── Motion ── 0 must be exactly 0ms, so this is a multiplier not a floor ── */
+  --motion-fast:  calc(var(--seed-motion) * 120ms);
+  --motion-base:  calc(var(--seed-motion) * 150ms);
+  --motion-enter: calc(var(--seed-motion) * 160ms);
+  --motion-slow:  calc(var(--seed-motion) * 200ms);
+
+  /* ── Line and focus ── */
+  --border-width: calc(var(--seed-border) * 1px);
+  --ring:         var(--seed-ring);
+  --ring-width:   calc(var(--seed-ring-width) * 1px);
+
+  /* ── Headings ── */
+  --heading-letter-spacing: calc(var(--seed-tracking) * 1em);
+  --leading-heading: var(--seed-leading);
+  --leading-display: calc(var(--seed-leading) - 0.1);
+}

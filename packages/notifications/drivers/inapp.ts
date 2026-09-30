@@ -70,6 +70,16 @@ export async function sendInApp(
   // app.channel() returns undefined when the channels() plugin is absent
   const channel = app.channel?.(`notifications:user:${recipient.id}`)
   if (channel) {
-    channel.send('notification:created', record)
+    channel.send(CREATED_EVENT, record)
   }
 }
+
+/**
+ * The frame a new notification is pushed as. The browser client routes a frame
+ * to a service's live store only when its name is `<service> <verb>`, split on
+ * the space; `notification:created` was one word to it, so every bell stayed
+ * at its first load and nothing said why (FJS-1573). The service half is the
+ * name an app mounts the in-app list under — `notifications`, which is also the
+ * model's accessor and the channel's prefix.
+ */
+export const CREATED_EVENT = 'notifications created'

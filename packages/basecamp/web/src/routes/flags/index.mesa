@@ -39,6 +39,7 @@ title: Flags
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
   import { page } from '@frontierjs/sierra/router'
+  import { offerUndo } from '../../resources/Trash.mesa'
 
   $: session.workspaceId
 
@@ -190,7 +191,7 @@ title: Flags
     error = null; busy = flag.id
     try {
       await flags.service.remove(flag.id)
-      toasts.success(`${flag.key} deleted`)
+      offerUndo(flag.key, flags, flag.id, load)
       await load()
     } catch (e) {
       error = e.message

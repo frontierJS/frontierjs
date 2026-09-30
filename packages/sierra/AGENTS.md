@@ -134,6 +134,18 @@ returned string that is a path on this origin redirects. `fetch` is
 else. Guards are `beforeNavigate(({ from, to }) => …)` — `false` cancels, a path
 redirects — and they run on a cold load and on the Back button.
 
+A `ctx.sse()` stream is read with `readEvents` from `@frontierjs/sierra/fetch`,
+never `EventSource`, which cannot send the session:
+
+```js
+import { sierraFetch, readEvents } from '@frontierjs/sierra/fetch'
+const res = await sierraFetch('/api/search/stream', { method: 'POST', body, signal })
+for await (const { event, data, id } of readEvents(res)) { … }  // data is JSON-decoded
+```
+
+Leaving the loop hangs up, and the server's `onDisconnect` fires. A non-2xx or a
+response that is not `text/event-stream` throws rather than yielding nothing.
+
 A detail screen watches its row:
 
 ```js

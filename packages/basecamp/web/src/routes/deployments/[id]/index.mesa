@@ -5,7 +5,7 @@ title: Deployment
   import { page, goto }   from '@frontierjs/sierra/router'
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
-  import { deployments }  from '../../../resources/Deployment.mesa'
+  import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { clock, at }    from '../../../datetime.js'
   import { toasts }       from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
@@ -93,7 +93,6 @@ title: Deployment
     }
   }
 
-  const TONE = { success: 'success', failed: 'danger', cancelled: 'muted', rolled_back: 'warning' }
   const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
 
   const secs = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
@@ -140,7 +139,7 @@ title: Deployment
   <div class="section-header">
     <h1>{deployment.app?.name ?? 'Deployment'}</h1>
     <div class="cluster">
-      <span class="pill {TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
+      <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       {#if cancelIt}
         <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed}
                 data-confirm="The release stops at the step it is on."

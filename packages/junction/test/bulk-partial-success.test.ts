@@ -510,9 +510,11 @@ describe('a filtered bulk restore', () => {
     await db.note!.removeMany({ where: {} })
 
     const svc = createService({ name: 'notes', model: 'Note', allowBulk: true }) as never as
-      { restore(c: ServiceContext): Promise<Record<string, unknown>[]> }
+      { restore(c: ServiceContext): Promise<Record<string, unknown>> }
 
+    // By id it answers the row, as remove does (FJS-1584) — not the array a
+    // filtered restore answers.
     const out = await svc.restore(ctx(db, { service: 'notes', method: 'restore', id: 1 }))
-    expect(out).toHaveLength(1)
+    expect(out).toMatchObject({ id: 1, title: 't1' })
   })
 })

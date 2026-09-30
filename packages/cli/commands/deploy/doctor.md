@@ -255,11 +255,8 @@ if (dockerfileSrc) {
 // no container, no network (FJS-D123 section 6). Same command, so there is one
 // implementation of the rule and not two.
 if (existsSync(resolvePath(context.paths.root, 'db/schema.lite'))) {
-  // `bunx litestone` inline rather than the `litestone(context)` helper: that
-  // is a hand copy in db/_module.md and release/_module.md, and a third one
-  // here would be the drift those two already are.
   const probe = context.exec({
-    command: `bunx litestone migrate check --schema db/schema.lite`,
+    command: `${context.bin('litestone')} migrate check --schema db/schema.lite`,
     cwd: context.paths.root, stdio: 'pipe', allowFailure: true,
   })
   // `status` is the exit code — what `execSync` puts on the error it throws,

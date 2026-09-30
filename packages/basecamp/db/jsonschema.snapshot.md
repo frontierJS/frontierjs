@@ -1338,7 +1338,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Notification`
 
-- gate `read:0 create:8 update:4 delete:8` · closed (`additionalProperties: false`)
+- gate `read:0 create:8 update:1 delete:8` · closed (`additionalProperties: false`)
 - relation `user` — belongsTo `User` via `userId` · on delete Cascade
 
 | Field | Type | Required | Label | Rules | Messages |

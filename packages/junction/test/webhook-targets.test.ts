@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { webhooks } from '../src/plugins/webhooks/index.ts'
-import { assertDeliverableTarget, WebhookTargetError } from '../src/plugins/webhooks/url.ts'
+import { assertPublicUrl, PublicUrlError } from '../src/core/public-url.ts'
 
 // ─── a receiver that can also redirect ────────────────────────────────────
 
@@ -119,11 +119,40 @@ describe('a destination is graded before anything is sent', () => {
 
   for (const [what, url] of REFUSED) {
     it(`refuses ${what}`, async () => {
-      await expect(assertDeliverableTarget(url)).rejects.toBeInstanceOf(WebhookTargetError)
+      await expect(assertPublicUrl(url)).rejects.toBeInstanceOf(PublicUrlError)
     })
   }
 
-  // An ADDRESS rather than a name: `assertDeliverableTarget` resolves a
+  // One v6 address has many spellings and `new URL()` rewrites the one the
+  // caller wrote — `[::ffff:127.0.0.1]` arrives here as `::ffff:7f00:1`. A
+  // copy that matched the dotted form only fetched loopback (`FJS-1578`), so
+  // each form that carries a v4 address is paired with the same form carrying
+  // a public one.
+  const V4_IN_V6 = [
+    ['mapped, written dotted',       '::ffff:127.0.0.1',  '::ffff:93.184.216.34'],
+    ['mapped, written in hex',       '::ffff:7f00:1',     '::ffff:5db8:d822'],
+    ['mapped, fully expanded',       '0:0:0:0:0:ffff:7f00:1', '0:0:0:0:0:ffff:5db8:d822'],
+    ['SIIT-translated',              '::ffff:0:7f00:1',   '::ffff:0:5db8:d822'],
+    ['IPv4-compatible',              '::7f00:1',          '::5db8:d822'],
+    ['NAT64 well-known prefix',      '64:ff9b::a9fe:a9fe', '64:ff9b::5db8:d822'],
+    ['6to4',                         '2002:a00:1::1',     '2002:5db8:d822::1'],
+  ] as const
+  for (const [form, inside, outside] of V4_IN_V6) {
+    it(`grades a v4 address ${form} as the v4 address it carries`, async () => {
+      await expect(assertPublicUrl(`https://[${inside}]/x`)).rejects.toThrow(/private address/)
+      await expect(assertPublicUrl(`https://[${outside}]/x`)).resolves.toBeInstanceOf(URL)
+    })
+  }
+
+  it('refuses the documentation, Teredo and discard ranges, and accepts public v6', async () => {
+    for (const url of ['https://198.51.100.7/x', 'https://203.0.113.7/x', 'https://[2001:db8::1]/x',
+                       'https://[2001::1]/x', 'https://[100::1]/x', 'https://[64:ff9b:1::1]/x', 'https://[fec0::1]/x'])
+      await expect(assertPublicUrl(url)).rejects.toThrow(/private address/)
+    await expect(assertPublicUrl('https://[2606:4700::1111]/x')).resolves.toBeInstanceOf(URL)
+    await expect(assertPublicUrl('https://192.0.32.10/x')).resolves.toBeInstanceOf(URL)
+  })
+
+  // An ADDRESS rather than a name: `assertPublicUrl` resolves a
   // hostname, and a suite that needs DNS to assert its control is a suite that
   // goes red on a machine with no network. `localhost` below is the one name
   // used here, and it resolves out of /etc/hosts.
@@ -132,19 +161,19 @@ describe('a destination is graded before anything is sent', () => {
   it('accepts an ordinary public https destination — the control for all ten', async () => {
     // Without this row a guard that refused everything would pass every case
     // above.
-    await expect(assertDeliverableTarget(PUBLIC)).resolves.toBeInstanceOf(URL)
+    await expect(assertPublicUrl(PUBLIC)).resolves.toBeInstanceOf(URL)
   })
 
   it('refuses a name that resolves to a private address as well as a literal one', async () => {
     // The literal is easy; the NAME is the case an allow-list of strings misses.
-    await expect(assertDeliverableTarget('https://localhost/x')).rejects.toThrow(/non-public address/)
+    await expect(assertPublicUrl('https://localhost/x')).rejects.toThrow(/resolves to a private address/)
   })
 
   it('each relaxation opens only its own half', async () => {
-    await expect(assertDeliverableTarget('http://93.184.216.34/h', { allowHttp: true })).resolves.toBeTruthy()
-    await expect(assertDeliverableTarget('http://127.0.0.1/h', { allowHttp: true })).rejects.toThrow(/non-public/)
-    await expect(assertDeliverableTarget('http://127.0.0.1/h', { allowPrivate: true })).rejects.toThrow(/must be https/)
-    await expect(assertDeliverableTarget('https://127.0.0.1/h', { allowPrivate: true })).resolves.toBeTruthy()
+    await expect(assertPublicUrl('http://93.184.216.34/h', { allowHttp: true })).resolves.toBeTruthy()
+    await expect(assertPublicUrl('http://127.0.0.1/h', { allowHttp: true })).rejects.toThrow(/private address/)
+    await expect(assertPublicUrl('http://127.0.0.1/h', { allowPrivate: true })).rejects.toThrow(/must be https/)
+    await expect(assertPublicUrl('https://127.0.0.1/h', { allowPrivate: true })).resolves.toBeTruthy()
   })
 
   it('answers 400 over HTTP rather than 500, and 201 for a destination that passes', async () => {
@@ -158,7 +187,7 @@ describe('a destination is graded before anything is sent', () => {
 
   it('the manager refuses too, so a store is never reached with an ungraded url', async () => {
     const app = await makeApp()
-    await expect(app.webhooks.register('http://169.254.169.254/', ['*'])).rejects.toThrow(WebhookTargetError)
+    await expect(app.webhooks.register('http://169.254.169.254/', ['*'])).rejects.toThrow(PublicUrlError)
     expect(await app.webhooks.list()).toHaveLength(0)
   })
 
@@ -176,7 +205,7 @@ describe('a destination is graded before anything is sent', () => {
     expect(hits).toHaveLength(0)
     const [d] = await app.webhooks.deliveries(hook.id)
     expect(d.status).toBe('failed')
-    expect(d.lastError).toMatch(/must be https|non-public/)
+    expect(d.lastError).toMatch(/must be https|private address/)
   })
 })
 
@@ -271,13 +300,13 @@ describe('the lookup is bounded', () => {
   // the process rather than only this delivery.
   it('refuses rather than hanging when a name does not resolve in time', async () => {
     const started = Date.now()
-    await expect(assertDeliverableTarget('https://a.b.c.invalid/x', { lookupTimeoutMs: 50 }))
-      .rejects.toThrow(WebhookTargetError)
+    await expect(assertPublicUrl('https://a.b.c.invalid/x', { lookupTimeoutMs: 50 }))
+      .rejects.toThrow(PublicUrlError)
     expect(Date.now() - started).toBeLessThan(2_000)
   })
 
   it('an address literal does no lookup at all — the control', async () => {
     // With a 1ms budget this could only pass by never resolving.
-    await expect(assertDeliverableTarget('https://93.184.216.34/x', { lookupTimeoutMs: 1 })).resolves.toBeTruthy()
+    await expect(assertPublicUrl('https://93.184.216.34/x', { lookupTimeoutMs: 1 })).resolves.toBeTruthy()
   })
 })
