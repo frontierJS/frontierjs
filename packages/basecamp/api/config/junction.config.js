@@ -55,6 +55,10 @@ export default {
       // real machine through its outpost, and twenty at once is twenty machines
       // busy at the same moment rather than a fleet that stays serving.
       fleet:       { concurrency: 2 },
+      // One at a time. An App's Domains share its ingress record, so two
+      // pushes at once rewrite the same set and one deletes a record the
+      // other is patching.
+      dns:         { concurrency: 1 },
     },
   },
 }

@@ -29,6 +29,7 @@ import { mcpPlugin }         from '@frontierjs/mcp'
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { apply, LEVELS }                         from '@frontierjs/litestone'
+import type { WriteEvent }                       from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
@@ -45,6 +46,7 @@ import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './core/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
+import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './channels.ts'
 
 import type { BasecampApp } from './basecamp.types.ts'
@@ -892,6 +894,30 @@ export async function buildBasecampApp(
       const n = await registerAllAccounts(app as unknown as BasecampApp, db)
       if (n) logger.info('conduit: cloud accounts registered', { count: n })
     },
+  })
+
+  // ── DNS follows the fleet ─────────────────────────────────────────────
+  // A machine entering or leaving `online` changes which addresses every App
+  // on it should be published at, with no release and no Domain write to say
+  // so (`FJS-1614`). Tapped at the write rather than called from each move,
+  // because the moves are seven call sites and growing — drain, undrain,
+  // reboot, destroy, the reachability sweep, the vendor's own report, a
+  // check-in — and the one a future site forgets is the stale record nothing
+  // notices. The heartbeat's `checkIn` is a plain update naming `status`, and
+  // litestone announces that as a transition too, so it arrives here as well.
+  let untapFleet: (() => void) | undefined
+  app.configure({
+    name: 'basecamp-dns-follows-fleet',
+    boot: () => {
+      untapFleet = (db as any).$tapEvents((e: WriteEvent) => {
+        if (e.event !== 'transition' || e.model !== 'Server') return
+        if ((e.from === 'online') === (e.to === 'online')) return
+        const row = e.record as { id: string; updatedAt?: string }
+        return pushAppsOn(app as unknown as BasecampApp, row.id, String(e.to), String(row.updatedAt ?? Date.now()))
+          .catch(err => logger.warn('dns: fleet move not pushed', { serverId: row.id, error: (err as Error).message }))
+      })
+    },
+    shutdown: () => { untapFleet?.() },
   })
 
   // ── Graceful shutdown ─────────────────────────────────────────────────

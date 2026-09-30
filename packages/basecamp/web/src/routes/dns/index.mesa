@@ -109,6 +109,14 @@ title: DNS & edge
     ? 'A hostname this workspace serves has no record'
     : `${zone?.missing.length} hostnames this workspace serves have no record`
 
+  // An ingress record naming the wrong machines. `down` is an app on no online
+  // machine at all, whose record is kept where it last ran (FJS-D567) — the
+  // one a push cannot fix, so it is the red one.
+  $: down       = zone?.stale.filter(s => s.down) ?? []
+  $: staleTitle = down.length
+    ? `${down.length === 1 ? 'An app runs' : `${down.length} apps run`} on no online machine`
+    : 'An ingress record names machines its app no longer runs on'
+
   $: proxied  = rows.filter(r => r.proxied).length
   $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
@@ -272,6 +280,23 @@ title: DNS & edge
             <ul id="zone-missing">
               {#each zone.missing as d}
                 <li><code>{d.hostname}</code> — resolves nowhere in <code>{zone.zone.name}</code></li>
+              {/each}
+            </ul>
+          </Callout>
+        {/if}
+
+        {#if zone.stale.length}
+          <Callout tone={down.length ? 'danger' : 'warning'} title={staleTitle}>
+            <ul id="zone-stale">
+              {#each zone.stale as s}
+                <li>
+                  <code>{s.name}</code> —
+                  {#if s.down}
+                    no online machine; still pointing at {s.have.join(', ')} until one returns
+                  {:else}
+                    points at {s.have.join(', ') || 'nothing'}, runs at {s.want.join(', ')}
+                  {/if}
+                </li>
               {/each}
             </ul>
           </Callout>

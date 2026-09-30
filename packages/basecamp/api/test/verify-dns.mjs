@@ -12,7 +12,9 @@
  * deleted each reach the zone through the `domain:dns` job, so every zone
  * assertion WAITS on Cloudflare rather than on an answer from basecamp. And
  * the case `FJS-D561` owes: a release that moves to another machine moves the
- * ingress record with it.
+ * ingress record with it — and a machine draining or returning with no release
+ * moves it too (`FJS-1614`), except off the last machine, where it stays
+ * (`FJS-D567`).
  *
  * It needs no browser and no machine: releases go to the stub executor
  * (`BASECAMP_STUB_OUTPOST=1`), which lands on the first ONLINE placement,
@@ -241,8 +243,20 @@ try {
     again.status === 200 && again.body?.ingress?.name === ingress && same.length === 1 && same[0].id === a1[0]?.id,
     JSON.stringify(again.body))
 
-  // ── The machine drains; the next release moves; the record follows ──
+  // ── The machine drains with no release, and the app runs nowhere ──
+  // The drain's own push runs and is refused as not-yet: an app on no online
+  // machine keeps its record where it last ran (FJS-D567). Waited out rather
+  // than raced, like the skip above.
   await call(`/servers/${one.id}`, { serviceMethod: 'drain', body: {} })
+  await sleep(1500)
+  const kept = await aAt()
+  check('draining the app\'s only machine leaves its record where it last ran — it is never emptied',
+    kept.length === 1 && kept[0].content === one.ipAddress, JSON.stringify(kept))
+  const down = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
+  check('…and drift names the app down', (down.body?.stale ?? []).some(s => s.appId === app.id && s.down),
+    JSON.stringify(down.body?.stale))
+
+  // ── The next release moves; the record follows ──
   const moved = await released(app.id)
   check('with the first machine draining, the next release lands on the second', moved?.status === 'success',
     JSON.stringify(moved?.error ?? moved))
@@ -252,6 +266,12 @@ try {
     JSON.stringify(await aAt()))
   const after = await edge('records', { accountId: secret?.id, zoneId: 'zone-shop' })
   check('…and no drift is left', !(after.body?.stale ?? []).some(s => s.appId === app.id), JSON.stringify(after.body?.stale))
+
+  // ── The first machine comes back with no release: the record takes it again ──
+  await call(`/servers/${one.id}`, { serviceMethod: 'undrain', body: {} })
+  const both = await until(async () => (await aAt()).length === 2, 15_000)
+  check('undraining the first machine puts it back in the record, with no release and nobody pressing sync', !!both,
+    JSON.stringify(await aAt()))
 
   // ── Somebody else's record at the name: refused, left, named ──
   const before = await zone('zone-shop')
@@ -275,7 +295,7 @@ try {
   check('…and its CNAME leaves Cloudflare', cleared, JSON.stringify(await cnameAt()))
   const left = await edge('records', { accountId: secret?.id, zoneId: 'zone-example' })
   check('…leaving no orphan behind', !(left.body?.orphans ?? []).some(r => r.name === hostname), JSON.stringify(left.body?.orphans))
-  check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 1)
+  check('…and the app\'s ingress record stays, for its other hostnames', (await aAt()).length === 2)
 } catch (err) {
   failed++
   console.log(`  FAIL  ${err.message}`)

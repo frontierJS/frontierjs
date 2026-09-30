@@ -117,6 +117,7 @@ class NotYet extends Conflict {}
 interface DomainRow { id: string; appId: string; hostname: string; redirectTo: string | null; proxied: boolean }
 
 export function createEdgeService(app: BasecampApp) {
+  const scoped = sessionScope(app)
   async function account(id: unknown): Promise<EdgeAccount> {
     if (!id) throw new BadRequest('accountId is required — which edge account to ask')
     const found = (await edgeAccounts()).find(a => a.id === String(id))
@@ -185,9 +186,13 @@ export function createEdgeService(app: BasecampApp) {
       ingress = await ingressZone(accounts)
       if (!ingress)
         throw new NotYet('This workspace has no ingress zone — set one (an edge account and a zone it opens) before a Domain can be pushed')
+      // Not-yet, never a delete: an App whose machines all left `online` keeps
+      // its record where it last ran, and `records` names it `down`
+      // (`FJS-D567`). Emptying it would make a dead machine a hostname that
+      // does not exist, cached as such after the machine is back.
       addresses = await servingAddresses(app.db, domain.appId)
       if (!addresses.length)
-        throw new NotYet(`${domain.hostname}'s app runs on no online server yet — deploy it, or the record would point nowhere`)
+        throw new NotYet(`${domain.hostname}'s app runs on no online server — deploy it; a record already there is kept where it last ran`)
       home = await zoneOf(accounts, host)
       if (!home) throw new NotYet(`No connected zone holds ${domain.hostname} — connect the account that has it`)
       present = await home.connector.records(home.send, home.zone.id)
@@ -244,7 +249,10 @@ export function createEdgeService(app: BasecampApp) {
     methods: [
       ...['zones', 'records'].map(method => ({ method, gate: LEVELS.READER })),
       { method: 'sync', gate: LEVELS.ADMINISTRATOR },
-      { method: 'syncStep', gate: LEVELS.READER },
+      // `gate: 0` for the app's own push, which has no caller to grade. A
+      // caller's push is graded by the Domain read it makes at its standing,
+      // and `internalOnly` keeps the method off the wire either way.
+      { method: 'syncStep', gate: 0 },
     ],
 
     // ── zones ──────────────────────────────────────────────────────────
@@ -277,7 +285,10 @@ export function createEdgeService(app: BasecampApp) {
     //              mark — `sync` refuses it (`FJS-D560`), so it is named here
     //   orphans    a record this app marked for a Domain or App that is gone
     //   stale      an App's ingress record whose addresses are not where it
-    //              runs (`FJS-D561`), as `have` against `want`
+    //              runs (`FJS-D561`), as `have` against `want`; `down` when
+    //              `want` is empty — the App runs on no online machine and the
+    //              record is kept, by ruling, pointing where it last ran
+    //              (`FJS-D567`), so nothing a push can fix
     //
     // Which records are OURS is the mark, which the connector reads.
     async records() {
@@ -324,7 +335,7 @@ export function createEdgeService(app: BasecampApp) {
       for (const [appId, recs] of ingress) {
         const have = recs.map(r => r.content).sort()
         const want = await servingAddresses(app.db, appId)
-        if (have.join() !== want.join()) stale.push({ appId, name: recs[0].name, have, want })
+        if (have.join() !== want.join()) stale.push({ appId, name: recs[0].name, have, want, down: !want.length })
       }
 
       return {
@@ -363,15 +374,23 @@ export function createEdgeService(app: BasecampApp) {
     // what makes its ingress record wrong. The confinement is the read below —
     // a Domain in another workspace answers nothing.
     //
+    // A machine moving has no caller (`pushAppsOn`), so there the job is the
+    // app's and the Domain's own row names the workspace, the way a heartbeat
+    // takes its server's. Which mode is the principal, never a flag the
+    // caller sends.
+    //
     // A DELETED Domain is read too, because its CNAME is still in the zone
     // pointing at an app that may since have gone. Only the record carrying its
     // own mark goes: a hostname released and claimed again by a new Domain
     // holds the newcomer's CNAME by the time this runs.
     async syncStep() {
       const id     = String($.id)
-      const domain = await db().domain.findFirst({ where: { id, workspaceId: ws() }, withDeleted: true }) as
-        (DomainRow & { deletedAt: string | null }) | null
+      const caller = !!$.auth?.user
+      const domain = await (caller ? db() : app.db.asSystem()).domain.findFirst({
+        where: caller ? { id, workspaceId: ws() } : { id }, withDeleted: true,
+      }) as (DomainRow & { workspaceId: string; deletedAt: string | null }) | null
       if (!domain) throw new NotFound(`Domain '${id}' not found`)
+      if (!caller) $.locals.workspaceId = domain.workspaceId
       try {
         return domain.deletedAt ? await unpush(domain) : await push(domain)
       } catch (err) {
@@ -382,8 +401,11 @@ export function createEdgeService(app: BasecampApp) {
 
     hooks: {
       before: {
-        all: [sessionScope(app)],
-        syncStep: [internalOnly()],
+        // `syncStep` is also the app's own (a machine moving), where there is
+        // no session to authenticate — so it is scoped only when a caller IS
+        // there, and `internalOnly` keeps it off the wire either way.
+        all: [sessionScope(app, { except: ['syncStep'] })],
+        syncStep: [internalOnly(), function scopedWhenACaller(ctx) { return ctx.auth?.user ? scoped(ctx) : undefined }],
       },
     },
   })

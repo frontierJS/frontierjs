@@ -31,7 +31,7 @@ bun run image:up     # …and bring the stack up on 8020  · image:down stops it
 
 **The devtools console is opt-in and there is one of it.** `DEVTOOLS=1` puts
 junction's console on **8503** — the live call feed, `/metrics` with conduit's
-and caravan's own sections, readiness, and the job queue with its five queues,
+and caravan's own sections, readiness, and the job queue with its six queues,
 every handler's schedule, and retry / cancel / run-now. It is the only screen
 here that can see the queue at all: `/jobs` in the SPA is basecamp's own `Job`
 model, which is a fleet noun and not the thing running it.
@@ -132,8 +132,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           services/edge/ reads an edge account's zones and records beside the
           workspace's `Domain` rows (the plan), and `sync` pushes one Domain
           and its App's ingress record (the apply) — `syncStep` is the same
-          push from jobs/domain-dns.job.ts, which a Domain write and a release
-          dispatch, and skips what cannot be pushed YET; the ingress addresses are
+          push from jobs/domain-dns.job.ts, which a Domain write, a release and
+          a Server crossing `online` dispatch (the last through the one tap in
+          app.ts, as the app), and skips what cannot be pushed YET — an App on
+          no online machine keeps its record (`FJS-D567`); the ingress addresses are
           `servingAddresses` in core/runtime.ts, which only the deploy job's
           `running` mark feeds. Reads at `Domain`'s read gate — the account
           lookup is `asSystem()` confined to the workspace, since a developer

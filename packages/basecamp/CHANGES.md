@@ -1,5 +1,14 @@
 # Changes — Basecamp
 
+## 2026-09-30 — DNS follows the fleet between releases (`FJS-1614`, `FJS-D567`)
+
+- **A machine entering or leaving `online` pushes every App on it.** One tap on litestone's write events in `app.ts` (`basecamp-dns-follows-fleet`) dispatches `domain:dns` for each Domain of each App `running` on a Server whose transition crosses `online`: drain, undrain, reboot, destroy, the sweep's `loseContact`, the vendor's reports, and the heartbeat's `checkIn`. A plain update naming `status` is announced as a transition, so the heartbeat needs no call of its own. Id `dns:<domainId>:server:<serverId>:<status>:<at>`.
+- **Those pushes are the app's, not a person's.** Dispatched with `actor: null`; `domain:dns` runs either way, and `edge.syncStep` (now `gate: 0`, still `internalOnly`) reads the Domain at the caller's standing where there is one, or through `asSystem()` by id and takes the workspace off the row where there is not.
+- **An App on no online machine keeps its record** where it last ran (`FJS-D567`). The push refuses as not-yet, and `edge.records` answers the App in `stale` with `down: true`. `/dns/` now renders `stale` at all, with a danger callout when any App is down and a warning otherwise.
+- **`domain:dns` moved to its own one-wide `dns` queue.** An App's Domains share its ingress record, and two concurrent pushes deleted a record the other was patching. The retries recovered, ten seconds later. The same race was live on the release path, which dispatches one push per Domain.
+
+`api/test/edge.test.ts` 47/47: drain, undrain, the sweep taking the last machine (record kept, `down`), and a signed check-in bringing one back. 44/47 with the tap removed. `verify:dns` 25/25, which adds drain-with-no-release to the only machine and undrain-with-no-release; 23/25 with the tap removed. `bun run test` 556/556; typecheck at baseline.
+
 ## 2026-09-30 — a Domain reaches its zone on its own (`IDEAS/cloudflare-edge.md` Phase 5)
 
 - **`domain:dns`** (`jobs/domain-dns.job.ts`) runs `edge.syncStep`, the same push as `sync`, internal and at READER because it runs as whoever released. Dispatched by `domains` create · patch · remove · restore as `dns:<domainId>:<version>`, and by a release landing, for each of the App's Domains, as `dns:<domainId>:release:<deploymentId>`. Without the release trigger, a Domain added before the first deploy is never pushed, and a release that moves machines leaves the ingress record naming the old one.

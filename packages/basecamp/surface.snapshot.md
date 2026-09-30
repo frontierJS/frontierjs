@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-43 services · 39 routes · 16 plugins · prefix (none)
+43 services · 39 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -505,13 +505,13 @@ name when it declares none.
   - `zones` — standing 2 or above — declared `gate: 2`
   - `records` — standing 2 or above — declared `gate: 2`
   - `sync` — standing 5 or above — declared `gate: 5`
-  - `syncStep` — standing 2 or above — declared `gate: 2`
+  - `syncStep` — anyone, a stranger included — declared `gate: 0`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `sessionScope` |
-| before | `syncStep` | `internalOnly` |
+| before | `syncStep` | `internalOnly` → `scopedWhenACaller` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -1176,5 +1176,6 @@ In configure order, which is what `requires:` is checked against.
 12. `installRoute`
 13. `staticRoutes`
 14. `basecamp-cloud-accounts`
-15. `basecamp-cleanup`
-16. `corsPlugin`
+15. `basecamp-dns-follows-fleet`
+16. `basecamp-cleanup`
+17. `corsPlugin`

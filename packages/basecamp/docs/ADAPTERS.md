@@ -79,8 +79,9 @@ Domain redirects (`FJS-1610`), or an unmarked A/AAAA/CNAME sits at the name.
 when a release lands. A deleted Domain's CNAME is removed, only where it
 carries that Domain's mark. The *not yet* refusals are skipped rather than
 failed, so a workspace with no edge account writes Domains without a failed job
-for each. A machine leaving `online` pushes nothing until the next release
-(`FJS-1614`). `adopt` is not built.
+for each. A machine entering or leaving `online` pushes each App on it, with
+no release (`FJS-1614`); an App left on no online machine keeps its record
+where it last ran, named `down` in drift (`FJS-D567`). `adopt` is not built.
 
 **The connector writes.** `appendRecords` · `setRecords` ·
 `deleteRecords` (`FJS-D562`), each one batch that applies whole. Every record

@@ -503,7 +503,7 @@ describe('sync', () => {
 
     const name = `${web.id}.shop.test`
     expect((await shopRecords()).stale).toEqual([
-      { appId: web.id, name, have: ['203.0.113.5'], want: ['203.0.113.5', '203.0.113.6'] }])
+      { appId: web.id, name, have: ['203.0.113.5'], want: ['203.0.113.5', '203.0.113.6'], down: false }])
 
     const out = await edge(admin).call('sync', api.id, {}) as any
     expect(out.ingress.records.map((r: any) => r.content).sort()).toEqual(['203.0.113.5', '203.0.113.6'])
@@ -595,5 +595,69 @@ describe('sync', () => {
       [{ type: 'CNAME', name: 'ghost.example.test', content: `${web.id}.shop.test` }])
     const answer = await edge(admin).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
     expect(answer.orphans.map((r: any) => r.name)).toContain('ghost.example.test')
+  })
+
+  // ─── a machine moving ────────────────────────────────────────────────
+  //
+  // No release and no Domain write: the fleet moving is what makes the App's
+  // ingress record wrong here (`FJS-1614`), and each push is dispatched as the
+  // app — a sweep and a check-in have no caller to run as.
+
+  const ingressAt = async () => (await zoneRecs('zone-shop'))
+    .filter((r: any) => r.name === `${web.id}.shop.test` && r.type === 'A').map((r: any) => r.content).sort()
+  const servers = () => env.as(admin).service('servers')
+
+  test('a machine drained with no release leaves its App\'s record', async () => {
+    expect(await ingressAt()).toEqual(['203.0.113.5', '203.0.113.6'])
+    await servers().call('drain', online2.id)
+    expect(await until(ingressAt, (v: string[]) => v.length === 1)).toEqual(['203.0.113.5'])
+  })
+
+  test('…and undrained, it is put back', async () => {
+    await servers().call('undrain', online2.id)
+    expect(await until(ingressAt, (v: string[]) => v.length === 2)).toEqual(['203.0.113.5', '203.0.113.6'])
+  })
+
+  test('an App left on no online machine keeps its record where it last ran, and drift names it down', async () => {
+    const { sweepUnreachable } = await import('../src/jobs/server-reachability.job.ts')
+    const sys   = env.system as any
+    const quiet = new Date(Date.now() - 3_600_000).toISOString()
+    const lose  = async (s: any) => {
+      await sys.server.update({ where: { id: s.id }, data: { lastHeartbeatAt: quiet } })
+      expect((await sweepUnreachable(app, { serverId: s.id, graceMs: 60_000 })).quiet).toBe(1)
+    }
+
+    await lose(online1)
+    expect(await until(ingressAt, (v: string[]) => v.length === 1)).toEqual(['203.0.113.6'])
+
+    // The last one. What its own job does is this call, answered as not-yet.
+    await lose(online2)
+    expect(await edge(developer).call('syncStep', api.id) as any)
+      .toMatchObject({ skipped: expect.stringContaining('kept where it last ran') })
+    expect(await ingressAt()).toEqual(['203.0.113.6'])
+    expect((await shopRecords()).stale).toEqual([
+      { appId: web.id, name: `${web.id}.shop.test`, have: ['203.0.113.6'], want: [], down: true }])
+  })
+
+  test('a check-in bringing a machine back puts it in the record — an update naming status, not a transition() call', async () => {
+    const { signRequest } = await import('@frontierjs/toolbelt/signature')
+    const sys    = env.system as any
+    // The key an enrolled machine holds — a check-in is refused without one.
+    const secret = 'a'.repeat(64)
+    const held   = await sys.secret.create({ data: {
+      workspaceId: site.id, name: `outpost:${online1.slug}`, kind: 'generic', data: JSON.stringify({ secret }) } })
+    await sys.server.update({ where: { id: online1.id }, data: { outpostSecretId: held.id } })
+
+    const body = { outpost_version: '0.4.1', health: { cpu: 3, memory: 10 } }
+    const path = `/servers/${online1.id}`
+    const headers = await signRequest({
+      secret, method: 'POST', path, query: '', body: JSON.stringify(body),
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    })
+    const req = env.http.post(path).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(headers)) req.set(k, v as string)
+    expect((await req.send(body)).status).toBe(200)
+
+    expect(await until(ingressAt, (v: string[]) => v[0] === '203.0.113.5')).toEqual(['203.0.113.5'])
   })
 })

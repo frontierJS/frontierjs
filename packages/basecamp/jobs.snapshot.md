@@ -28,7 +28,7 @@ it re-resolved when it runs. Survives a restart.
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `cleanup:run` | `fleet` | on dispatch | — | 2 | 10000 | **none** |
 | `deployment:run` | `deployments` | on dispatch | — | 1 | default | **none** |
-| `domain:dns` | `fleet` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
+| `domain:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `job:run` | `jobs` | on dispatch | — | 3 | 5000, 30000, 120000 | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |

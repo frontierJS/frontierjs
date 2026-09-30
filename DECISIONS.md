@@ -11513,6 +11513,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d567"></a>2026-09-30 · `FJS-D567` — An App running on no online machine KEEPS its ingress record, pointing where it last ran, and the drift read names it red. The DNS is never emptied to follow a fleet that went down.
+
+Asked in `FJS-1614`, the push that follows a machine leaving `online`. **Keep** was picked over **delete the record**. Deleting turns *the machine is down* into *the name does not exist*, which resolvers cache as a negative answer, so the hostname stays dark after the machine returns, until a push runs and the negative TTL lapses. Keeping costs nothing, since traffic to a dead machine fails either way, and the hostname answers again the moment the machine does. This is Route 53's rule: when every health-checked record fails, it answers them all rather than none.
+
+No adjudication in tension: keeping dominates. A record naming a dead machine is already the outage, and an absent record is the outage plus a slower recovery. **§ V's ninth question**: *an App with no online machine is red on `/dns/` and its record is still there.* `edge.test.ts` asserts both: the push refuses as not-yet and writes nothing, and `records` answers the App in `stale` with `down: true`. **Enforced.** Where it lives: `push` and `records` in `packages/basecamp/api/src/services/edge/edge.service.ts`.
+
 ### <a id="fjs-d565"></a>2026-09-30 · `FJS-D565` — Once Caddy fronts a machine, a container's published port binds to `127.0.0.1`. That change goes in with the first route push and not before it.
 
 Asked in [`IDEAS/fleet-ingress.md`](IDEAS/fleet-ingress.md) D7. **A loopback bind** was picked over **leaving `-p port:containerPort` on every interface**, which answers the internet over plain HTTP around Caddy and its TLS. The recommendation, taken as written. The timing is part of the ruling: binding loopback before a route exists leaves the app unreachable.

@@ -10,10 +10,10 @@ dated: 2026-09-29
 zones and records, `/dns/` shows them beside the `Domain` rows, and the connector
 writes marked records and refuses unmarked ones; `edge.sync` pushes a Domain
 and its App's ingress record, drift carries all four kinds, the `domain:dns`
-job pushes on a Domain write and on a release, and `verify:dns` drives it with
-nobody pressing sync; D1–D6 are ruled). Not built: `adopt`, a push when a
-machine leaves `online` (`FJS-1614`), and a screen for the ingress zone or the
-sync button. Dated 2026-09-29. Basecamp declares
+job pushes on a Domain write, on a release and on a machine entering or
+leaving `online`, and `verify:dns` drives it with nobody pressing sync; D1–D6
+are ruled, and an App on no online machine keeps its record, `FJS-D567`). Not
+built: `adopt`, and a screen for the ingress zone or the sync button. Dated 2026-09-29. Basecamp declares
 `IEdge` with a stub behind it and `/dns/` renders a skeleton where the zone goes
 (`packages/basecamp/docs/ADAPTERS.md` § `edge`). This fills it with Cloudflare, and
 widens it from reading a zone to managing one — DNS is among the first connections
@@ -175,7 +175,8 @@ versus one token per client writing SendGrid's records.
    `id: dns:<domainId>:<version>` so a repeat is a no-op; retry follows
    `error.retryable`; a soft delete removes the marked record.
    - **Built** as `domain:dns`, calling `edge.syncStep` (internal, at READER,
-     since it runs as whoever released). Dispatched by `domains`
+     since it runs as whoever released; at the app's own standing when a
+     machine moved). Dispatched by `domains`
      create · patch · remove · restore, and by a release landing
      (`dns:<domainId>:release:<deploymentId>`) — without that second trigger a
      Domain added before the first deploy is never pushed, and a release that
@@ -187,9 +188,16 @@ versus one token per client writing SendGrid's records.
      mark (`EdgeRecordRef.mark`). The App's ingress record stays.
    - The hostname became immutable on `domains.patch`: the CNAME pushed for an
      old one would stay marked as the row's, which no drift reports.
-   - A machine leaving `online` dispatches nothing (`FJS-1614`).
+   - A machine entering or leaving `online` pushes every Domain of every App
+     running on it (`FJS-1614`): a tap on the Server transition in `app.ts`,
+     dispatched as the app, since the sweep and a check-in have no caller.
+     An App left on no online machine keeps its record where it last ran,
+     and drift names it `down` (`FJS-D567`).
+   - The pushes run on their own one-wide `dns` queue. An App's Domains share
+     its ingress record, and two pushes at once rewrite the same set.
 6. **Screen** — `/dns/` renders records and drift in place of the skeleton;
-   analytics keeps its skeleton. **Built** for records and `missing`;
+   analytics keeps its skeleton. **Built** for records, `missing` and
+   `stale` (red when an App is `down`);
    `verify:screens` connects an account at the sink and asserts both.
 7. **Proof** — **built**: `edge.test.ts` and `verify:dns` (7120 + 7128). Planned as: an API test over the sink (the `compute.test.ts` shape);
    `verify-screens.mjs`'s *the edge adapter reports its real state* asserts against

@@ -670,6 +670,25 @@ try {
     ['CNAME', 'MX', 'TXT', 'ingress-1.fleet.test'].every(t => recText.includes(t)), recText.slice(0, 200))
   check('a hostname with no record is named as resolving nowhere',
     (await text('#zone-missing')).includes('drive.example.test'), await text('#zone-missing'))
+
+  // An ingress record marked as the app's and naming an address it runs at
+  // nowhere, written at the stand-in directly: `stale` drift. Red when the app
+  // runs on no online machine (`down`, FJS-D567), amber otherwise — so the
+  // tone is graded against the sentence the same callout prints.
+  const ingressName = `${firstApp.id}.example.test`
+  const planted = await fetch(`${CF_SINK}/zones/zone-example/dns_records/batch`, {
+    method: 'POST', headers: { authorization: 'Bearer cfat_devtoken', 'content-type': 'application/json' },
+    body: JSON.stringify({ posts: [{ type: 'A', name: ingressName, content: '192.0.2.99', comment: `basecamp:app:${firstApp.id}` }] }),
+  })
+  check('an ingress record naming the wrong machine is planted at the stand-in', planted.ok, String(planted.status))
+  await goto('/dns/')
+  await until(`document.querySelector('#zone-stale')?.textContent ?? ''`, t => t.includes(ingressName),
+    'an ingress record naming the wrong machine was never named on /dns/')
+  const staleText = await text('#zone-stale')
+  const staleTone = await evaluate(`document.querySelector('#zone-stale').closest('.alert').classList.contains('danger') ? 'danger' : 'warning'`)
+  check('a stale ingress record is named, with the address it holds', staleText.includes('192.0.2.99'), staleText)
+  check(`and its tone is the one its sentence calls for (${staleTone})`,
+    staleTone === (staleText.includes('no online machine') ? 'danger' : 'warning'), `${staleTone}: ${staleText}`)
   await evaluate(`[...document.querySelectorAll('#edge-zones button')].find(b => b.textContent.includes('broken.test')).click()`)
   await until(`document.querySelector('#zone-error')?.textContent ?? ''`, t => t.includes('Invalid zone configuration'),
     'a zone the vendor refused did not show the vendor\'s reason')
