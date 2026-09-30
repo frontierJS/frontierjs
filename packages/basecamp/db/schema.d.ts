@@ -58,7 +58,7 @@ export type ServerRole = 'general' | 'build' | 'database' | 'gateway' | 'worker'
 
 export type ServerEventKind = 'created' | 'removed' | 'reboot_requested' | 'drain_started' | 'drain_cancelled' | 'provision_requested' | 'provision_created' | 'provision_ready' | 'provision_timeout' | 'destroy_requested' | 'destroy_finished' | 'enrollment_issued' | 'sync_requested' | 'status_synced' | 'status_sync_ignored' | 'sync_failed' | 'sync_no_account' | 'sync_unsupported' | 'sync_unrecognized' | 'came_online' | 'unreachable' | 'recipe_ran' | 'recipe_failed' | 'cleanup_queued' | 'cleanup_ran' | 'cleanup_failed' | 'volume_removed' | 'volumes_pruned'
 
-export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean'
+export type ProviderKind = 'custom' | 'hetzner' | 'digitalocean' | 'cloudflare'
 
 export type EnvironmentTier = 'development' | 'test' | 'preview' | 'staging' | 'production'
 
@@ -102,7 +102,7 @@ export type NotificationContext = 'Deployment' | 'AlertEvent' | 'JobRun' | 'Serv
 
 export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'server_unreachable' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
-export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Environment.variables' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update'
+export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Server.create' | 'Server.delete' | 'Server.destroy' | 'Server.drain' | 'Server.provision' | 'Server.reboot' | 'Server.undrain' | 'Server.update' | 'Variable.create' | 'Variable.delete' | 'Variable.update'
 
 // ── Models ───────────────────────────────────────────────────────────────────
 
@@ -1644,6 +1644,15 @@ export interface Server {
    * does: provisioned or imported, it is created first and enrolls after.
    */
   outpostSecretId?: string | null
+  /**
+   * The certificate this machine's command port answers with, PEM, handed
+   * over in the enrollment exchange and pinned on its Conduit target — the
+   * one certificate a command to it will accept (`FJS-1603`). Public by
+   * nature, so no protection. Null means no command can reach the machine:
+   * no target is registered without it, and the only way to change it is to
+   * enroll again.
+   */
+  outpostCert?: string | null
   plan: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1706,6 +1715,15 @@ export interface ServerCreate {
    * does: provisioned or imported, it is created first and enrolls after.
    */
   outpostSecretId?: string | null
+  /**
+   * The certificate this machine's command port answers with, PEM, handed
+   * over in the enrollment exchange and pinned on its Conduit target — the
+   * one certificate a command to it will accept (`FJS-1603`). Public by
+   * nature, so no protection. Null means no command can reach the machine:
+   * no target is registered without it, and the only way to change it is to
+   * enroll again.
+   */
+  outpostCert?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1735,6 +1753,7 @@ export interface ServerUpdate {
   enrollTokenHash?: string | null
   enrollExpiresAt?: string | null
   outpostSecretId?: string | null
+  outpostCert?: string | null
   plan?: unknown
   actualSpecs?: unknown | null
   health?: unknown | null
@@ -1764,6 +1783,7 @@ export interface ServerWhere extends WhereBase {
   enrollTokenHash?: string | WhereOp<string> | null
   enrollExpiresAt?: string | WhereOp<string> | null
   outpostSecretId?: string | WhereOp<string> | null
+  outpostCert?: string | WhereOp<string> | null
   plan?: unknown | WhereOp<unknown> | null
   actualSpecs?: unknown | WhereOp<unknown> | null
   health?: unknown | WhereOp<unknown> | null
@@ -2095,12 +2115,6 @@ export interface Environment {
   slug: string
   tier: EnvironmentTier
   isProtected: boolean
-  /**
-   * The environment's variables — a separate grant from editing the
-   * environment itself. Renaming a staging environment and reading its
-   * secrets are the same `update` to the gate and are not the same act.
-   */
-  variables: unknown
   /** @version */
   version: number
   createdAt: string
@@ -2116,12 +2130,6 @@ export interface EnvironmentCreate {
   slug: string
   tier?: EnvironmentTier
   isProtected?: boolean
-  /**
-   * The environment's variables — a separate grant from editing the
-   * environment itself. Renaming a staging environment and reading its
-   * secrets are the same `update` to the gate and are not the same act.
-   */
-  variables?: unknown
 }
 
 export interface EnvironmentUpdate {
@@ -2132,7 +2140,6 @@ export interface EnvironmentUpdate {
   slug?: string
   tier?: EnvironmentTier
   isProtected?: boolean
-  variables?: unknown
   version: number
 }
 
@@ -2144,7 +2151,6 @@ export interface EnvironmentWhere extends WhereBase {
   slug?: string | WhereOp<string> | null
   tier?: EnvironmentTier | WhereOp<EnvironmentTier> | null
   isProtected?: boolean | WhereOp<boolean> | null
-  variables?: unknown | WhereOp<unknown> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
@@ -2169,9 +2175,13 @@ export interface App {
   type: AppType
   status: AppStatus
   source: unknown
-  config: unknown
-  port?: number | null
   isPublic: boolean
+  port?: number | null
+  containerPort?: number | null
+  volumePath?: string | null
+  healthCheck?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   blueprintId?: string | null
   createdAt: string
   updatedAt: string
@@ -2187,9 +2197,13 @@ export interface AppCreate {
   type?: AppType
   status?: AppStatus
   source?: unknown
-  config?: unknown
-  port?: number | null
   isPublic?: boolean
+  port?: number | null
+  containerPort?: number | null
+  volumePath?: string | null
+  healthCheck?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   blueprintId?: string | null
 }
 
@@ -2202,9 +2216,13 @@ export interface AppUpdate {
   type?: AppType
   status?: AppStatus
   source?: unknown
-  config?: unknown
-  port?: number | null
   isPublic?: boolean
+  port?: number | null
+  containerPort?: number | null
+  volumePath?: string | null
+  healthCheck?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   blueprintId?: string | null
 }
 
@@ -2217,9 +2235,13 @@ export interface AppWhere extends WhereBase {
   type?: AppType | WhereOp<AppType> | null
   status?: AppStatus | WhereOp<AppStatus> | null
   source?: unknown | WhereOp<unknown> | null
-  config?: unknown | WhereOp<unknown> | null
-  port?: number | WhereOp<number> | null
   isPublic?: boolean | WhereOp<boolean> | null
+  port?: number | WhereOp<number> | null
+  containerPort?: number | WhereOp<number> | null
+  volumePath?: string | WhereOp<string> | null
+  healthCheck?: string | WhereOp<string> | null
+  cpuLimit?: number | WhereOp<number> | null
+  memLimitMb?: number | WhereOp<number> | null
   blueprintId?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
@@ -2232,6 +2254,70 @@ export interface AppWhere extends WhereBase {
 export type AppOrderBy =
   | { [K in keyof Omit<App, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<App, never>]?: OrderDir }>
+
+// ─── Variable ────────────────────────────────────────────────────
+
+export interface Variable {
+  id: string
+  workspaceId: string
+  environmentId: string
+  appId?: string | null
+  key: string
+  secret: boolean
+  value?: string | null
+  /** @encrypted */
+  secretValue?: string | null
+  /** @version */
+  version: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export interface VariableCreate {
+  id?: string
+  workspaceId: string
+  environmentId: string
+  appId?: string | null
+  key: string
+  secret?: boolean
+  value?: string | null
+  secretValue?: string | null
+}
+
+export interface VariableUpdate {
+  id?: string
+  workspaceId?: string
+  environmentId?: string
+  appId?: string | null
+  key?: string
+  secret?: boolean
+  value?: string | null
+  secretValue?: string | null
+  version: number
+}
+
+export interface VariableWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  environmentId?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  key?: string | WhereOp<string> | null
+  secret?: boolean | WhereOp<boolean> | null
+  value?: string | WhereOp<string> | null
+  secretValue?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  deletedAt?: string | WhereOp<string> | null
+  AND?: VariableWhere[]
+  OR?:  VariableWhere[]
+  NOT?: VariableWhere
+}
+
+export type VariableOrderBy =
+  | { [K in keyof Omit<Variable, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Variable, never>]?: OrderDir }>
 
 // ─── Domain ──────────────────────────────────────────────────────
 
@@ -3601,12 +3687,10 @@ export interface Blueprint {
   brandColor?: string | null
   appType: AppType
   port?: number | null
-  persistent: boolean
   volumePath?: string | null
   healthCheck?: string | null
-  replicas: number
-  cpuLimit?: string | null
-  memLimit?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   notes?: string | null
   links: unknown
   deprecatedAt?: string | null
@@ -3628,12 +3712,10 @@ export interface BlueprintCreate {
   brandColor?: string | null
   appType?: AppType
   port?: number | null
-  persistent?: boolean
   volumePath?: string | null
   healthCheck?: string | null
-  replicas?: number
-  cpuLimit?: string | null
-  memLimit?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   notes?: string | null
   links?: unknown
   deprecatedAt?: string | null
@@ -3651,12 +3733,10 @@ export interface BlueprintUpdate {
   brandColor?: string | null
   appType?: AppType
   port?: number | null
-  persistent?: boolean
   volumePath?: string | null
   healthCheck?: string | null
-  replicas?: number
-  cpuLimit?: string | null
-  memLimit?: string | null
+  cpuLimit?: number | null
+  memLimitMb?: number | null
   notes?: string | null
   links?: unknown
   deprecatedAt?: string | null
@@ -3675,12 +3755,10 @@ export interface BlueprintWhere extends WhereBase {
   brandColor?: string | WhereOp<string> | null
   appType?: AppType | WhereOp<AppType> | null
   port?: number | WhereOp<number> | null
-  persistent?: boolean | WhereOp<boolean> | null
   volumePath?: string | WhereOp<string> | null
   healthCheck?: string | WhereOp<string> | null
-  replicas?: number | WhereOp<number> | null
-  cpuLimit?: string | WhereOp<string> | null
-  memLimit?: string | WhereOp<string> | null
+  cpuLimit?: number | WhereOp<number> | null
+  memLimitMb?: number | WhereOp<number> | null
   notes?: string | WhereOp<string> | null
   links?: unknown | WhereOp<unknown> | null
   deprecatedAt?: string | WhereOp<string> | null
@@ -4149,6 +4227,7 @@ export interface ServiceTypes {
   projects: Project
   environments: Environment
   apps: App
+  variables: Variable
   domains: Domain
   appServers: AppServer
   appNetworks: AppNetwork
@@ -4323,6 +4402,7 @@ export interface LitestoneClient {
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere>
   readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere>
+  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere>
   readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere>
   readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere>

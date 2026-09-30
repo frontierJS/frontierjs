@@ -287,7 +287,7 @@ title: Blueprints
   }
 
   function storage(bp) {
-    return bp.persistent ? (bp.volumePath ?? 'persistent') : 'stateless'
+    return bp.volumePath ?? 'stateless'
   }
 </script>
 
@@ -338,9 +338,9 @@ title: Blueprints
               onchange={(e) => deployForm = { ...deployForm, serverId: e.target.value }} />
 
       {#each deploying.params as p}
-        <!-- A secret is masked and lands in a Secret; everything else is the
-             app's plain environment. A blank field takes the default, then a
-             minted value where the blueprint says how to mint one. -->
+        <!-- Each lands as a variable on the app, a secret one encrypted. A
+             blank field takes the default, then a minted value where the
+             blueprint says how to mint one. -->
         <Input id={`deploy-param-${p.key}`} label={`${p.label}${p.required && !p.generate && !p.defaultValue ? ' *' : ''}`}
                type={p.secret ? 'password' : 'text'} autocomplete="off"
                value={deployForm.values[p.key]}
@@ -456,8 +456,7 @@ title: Blueprints
       <div><dt>Port</dt><dd>{selected.port ?? 'none'}</dd></div>
       <div><dt>Storage</dt><dd>{storage(selected)}</dd></div>
       <div><dt>Health check</dt><dd>{selected.healthCheck ?? 'none'}</dd></div>
-      <div><dt>Replicas</dt><dd>{selected.replicas}</dd></div>
-      <div><dt>Limits</dt><dd>{selected.cpuLimit ?? '—'} CPU · {selected.memLimit ?? '—'} memory</dd></div>
+      <div><dt>Limits</dt><dd>{selected.cpuLimit ?? '—'} CPU · {selected.memLimitMb != null ? `${selected.memLimitMb} MiB` : '—'} memory</dd></div>
     </dl>
 
     {#if params}

@@ -77,7 +77,9 @@ src/
   `X-Request-Id` — so nothing this app sent carried either, and a target's logs
   could not be joined to the request that caused them (`FJS-742`). It is spread
   UNDER the caller's opts, so an app's own tracer replaces it and
-  `trace: () => null` turns it off. An upstream `traceparent` is continued; with
+  `trace: () => null` turns it off. **It reaches only a target that declares
+  `trace: true`** — absent means a third party, which would otherwise hold the join from its
+  log of a query to our audit row naming who typed it (`FJS-1413`, `FJS-D507`). An upstream `traceparent` is continued; with
   none, the trace id is DERIVED from the correlation id, because a random one
   per call makes six calls from one request six unrelated traces. A uuid needs
   no derivation — dashes out, it is already a trace id.
@@ -170,6 +172,12 @@ src/
   the same sentence a wrong secret produces. A verifier must
   recompute from the RAW request URL — a path the router already stripped is a
   different request.
+- **`pinned_cert` is `ca`, and a fingerprint callback alone is fail-open.** Under
+  `rejectUnauthorized: false` Bun never calls `checkServerIdentity`, so the obvious pin
+  accepts every certificate. `ca: <pem>` replaces the public roots and is the refusal. The
+  callback beside it only stands in for the hostname check, which an IP-only machine's
+  certificate cannot pass (`FJS-D557`). The control in the suite is the same server with
+  no pin, refused.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
   credential, under what policy.

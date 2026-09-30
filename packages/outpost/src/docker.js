@@ -64,7 +64,7 @@ function logArgs(logs) {
   ]
 }
 
-export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps' } = {}) {
+export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps' } = {}) {
 
   /** Run a docker command, or throw with what the machine actually said. A
    *  route turns that into an error the caller reads; swallowing it here is
@@ -147,10 +147,14 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
      * new one is named the same way, because a machine that accumulates
      * `app-1`, `app-2` is one nothing can address by name afterwards.
      */
-    async deploy({ appId, image, digest, config = {}, port }) {
+    async deploy({ appId, image, digest, config = {}, port, loopback = false }) {
       const name = `fjs-${appId}`
       if (config.volumePath != null && !/^\/[^:,]*$/.test(String(config.volumePath)))
         throw new Error(`volumePath must be an absolute path with no ':' or ',' — got '${config.volumePath}'`)
+      if (config.cpuLimit != null && !(Number(config.cpuLimit) > 0))
+        throw new Error(`cpuLimit must be a number of CPUs above 0 — got '${config.cpuLimit}'`)
+      if (config.memLimitMb != null && !(Number.isInteger(Number(config.memLimitMb)) && Number(config.memLimitMb) >= 6))
+        throw new Error(`memLimitMb must be a whole number of MiB, at least 6 — got '${config.memLimitMb}'`)
       // Best-effort: a first deploy has nothing to remove, and `docker rm` on a
       // name that does not exist is an error rather than a no-op.
       await run(['docker', 'rm', '-f', name]).catch(() => {})
@@ -169,7 +173,10 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
       // is a dependency edge from a machine agent to the CLI.
       argv.push(...logArgs(config.logs))
       for (const [key, value] of Object.entries(config.env ?? {})) argv.push('-e', `${key}=${value}`)
-      if (port) argv.push('-p', `${port}:${config.containerPort ?? port}`)
+      // An app Caddy fronts answers only through Caddy (`FJS-D565`): its port
+      // on every interface is the same app over plain HTTP, around the
+      // certificate. An app with no hostname keeps it, or nothing reaches it.
+      if (port) argv.push('-p', `${loopback ? '127.0.0.1:' : ''}${port}:${config.containerPort ?? port}`)
       // The data a container keeps, on a NAMED volume that outlives it. Every
       // deploy removes the container first, so a database started without one
       // comes back empty after its next release. Named for the app, so the
@@ -177,6 +184,8 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
       // anything but a mount point was refused above, before the old container
       // went.
       if (config.volumePath != null) argv.push('-v', `${name}-data:${config.volumePath}`)
+      if (config.cpuLimit   != null) argv.push('--cpus', String(config.cpuLimit))
+      if (config.memLimitMb != null) argv.push('--memory', `${config.memLimitMb}m`)
       // Addressed by digest where one is known — the tag is a name and two
       // builds share it. This is the half `Deployment.builtImage` records.
       argv.push(await reference(image, digest))
@@ -239,10 +248,23 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
 
     /** Is the container up? `State.Running`, asked of the daemon rather than
      *  inferred from the fact that `docker run` returned. */
-    async healthCheck({ appId }) {
+    /** Running, and — where the app names a path — answering it on the port
+     *  this machine published. A process that is up and serving 502s is the
+     *  release a running-only check calls healthy. */
+    async healthCheck({ appId, port, path }) {
       const name = `fjs-${appId}`
       const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
-      return { healthy: result.exitCode === 0 && result.stdout.trim() === 'true' }
+      if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
+      if (path == null) return { healthy: true }
+      if (!port || !/^\/[^ ]*$/.test(String(path)))
+        return { healthy: false, reason: `a health path needs a published port and a path beginning with '/' — got port ${port}, path '${path}'` }
+      const url = `http://127.0.0.1:${port}${path}`
+      try {
+        const res = await fetchFn(url, { signal: AbortSignal.timeout(3_000) })
+        return res.ok ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
+      } catch (err) {
+        return { healthy: false, reason: `${url} did not answer: ${err.message}` }
+      }
     },
 
     /** An operator's script, run as this process's user. There is no sandbox

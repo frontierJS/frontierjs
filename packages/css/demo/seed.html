@@ -9,7 +9,11 @@
 <style>
   body { margin: 0; padding: 24px 16px; background: var(--surface-sunken); color: var(--ink); font-family: system-ui, sans-serif; }
   main { max-width: 880px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .switches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; }
+  .switches fieldset { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-content: start;
+    margin: 0; padding: 12px; border: 1px solid var(--rule); border-radius: 8px; min-inline-size: 0; }
+  .switches fieldset:last-child { grid-column: 1 / -1; }
+  .switches legend { padding: 0 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-mute); }
   .switches label { position: relative; display: grid; gap: 4px; font-size: 0.85rem; color: var(--ink-soft); }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
@@ -30,23 +34,38 @@
     <h1>Seed theme</h1>
     <p>Seventeen switches; tick a lock to keep one through Randomize; every other token is <code>oklch(from …)</code> of these.</p>
     <div class="switches">
-      <label>Dark <input id="dark" type="range" min="0" max="1" step="0.01" value="1"></label>
-      <label>Primary <input id="primary" type="color" value="#bd93f9"></label>
-      <label>Surface hue/chroma <input id="surface" type="color" value="#282a36"></label>
-      <label>Shadow <input id="shadow" type="range" min="0" max="1" step="0.01" value="0.35"></label>
-      <label>Radius <input id="radius" type="range" min="0" max="2" step="0.05" value="0.6"></label>
-      <label>Density <input id="density" type="range" min="0.6" max="1.5" step="0.05" value="1"></label>
-      <label>Type scale <input id="scale" type="range" min="1.05" max="1.5" step="0.01" value="1.2"></label>
-      <label>Motion <input id="motion" type="range" min="0" max="3" step="0.1" value="1"></label>
-      <label>Accent hue offset <input id="accent" type="range" min="0" max="360" step="5" value="60"></label>
-      <label>Border width <input id="border" type="range" min="0" max="4" step="0.5" value="1"></label>
-      <label>Focus ring <input id="ring" type="color" value="#bd93f9"></label>
-      <label>Ring width <input id="ringw" type="range" min="1" max="5" step="0.5" value="2"></label>
-      <label>Body font <select id="body"></select></label>
-      <label>Heading font <select id="display"></select></label>
-      <label>Heading weight <input id="weight" type="range" min="300" max="900" step="100" value="700"></label>
-      <label>Heading tracking <input id="tracking" type="range" min="-0.05" max="0.1" step="0.005" value="-0.015"></label>
-      <label>Heading leading <input id="leading" type="range" min="1" max="1.6" step="0.05" value="1.2"></label>
+      <fieldset>
+        <legend>Color</legend>
+        <label>Dark <input id="dark" type="range" min="0" max="1" step="0.01" value="1"></label>
+        <label>Primary <input id="primary" type="color" value="#bd93f9"></label>
+        <label>Accent hue offset <input id="accent" type="range" min="0" max="360" step="5" value="60"></label>
+        <label>Surface hue/chroma <input id="surface" type="color" value="#282a36"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Shape</legend>
+        <label>Radius <input id="radius" type="range" min="0" max="2" step="0.05" value="0.6"></label>
+        <label>Border width <input id="border" type="range" min="0" max="4" step="0.5" value="1"></label>
+        <label>Shadow <input id="shadow" type="range" min="0" max="1" step="0.01" value="0.35"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Focus</legend>
+        <label>Focus ring <input id="ring" type="color" value="#bd93f9"></label>
+        <label>Ring width <input id="ringw" type="range" min="1" max="5" step="0.5" value="2"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Rhythm</legend>
+        <label>Density <input id="density" type="range" min="0.6" max="1.5" step="0.05" value="1"></label>
+        <label>Motion <input id="motion" type="range" min="0" max="3" step="0.1" value="1"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Type</legend>
+        <label>Body font <select id="body"></select></label>
+        <label>Heading font <select id="display"></select></label>
+        <label>Type scale <input id="scale" type="range" min="1.05" max="1.5" step="0.01" value="1.2"></label>
+        <label>Heading weight <input id="weight" type="range" min="300" max="900" step="100" value="700"></label>
+        <label>Heading tracking <input id="tracking" type="range" min="-0.05" max="0.1" step="0.005" value="-0.015"></label>
+        <label>Heading leading <input id="leading" type="range" min="1" max="1.6" step="0.05" value="1.2"></label>
+      </fieldset>
     </div>
     <div class="row">
       <button id="randomize" class="btn secondary">Randomize</button>
@@ -130,6 +149,144 @@
       <button class="btn danger" data-close>Delete</button>
     </div>
   </dialog>
+
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <ol>
+      <li><a class="link" href="#!">Dashboard</a></li>
+      <li><a class="link" href="#!">Invoices</a></li>
+      <li><a aria-current="page">INV-1042</a></li>
+    </ol>
+  </nav>
+
+  <div class="tiles">
+    <article class="tile"><div class="tile-label">Outstanding</div><div class="tile-value">$48,290</div><div class="tile-delta success">+12.4%</div></article>
+    <article class="tile"><div class="tile-label">Overdue</div><div class="tile-value">$9,120</div><div class="tile-delta danger">+22.0%</div></article>
+    <article class="tile"><div class="tile-label">Avg. days to pay</div><div class="tile-value">18.2</div><div class="tile-delta muted">no change</div></article>
+  </div>
+
+  <div class="alert info"><div class="alert-content"><strong>Paid in full.</strong> An info alert.</div></div>
+  <div class="alert success"><div class="alert-content">A success alert.</div></div>
+  <div class="alert danger"><div class="alert-content">A danger alert.</div><button class="btn outlined danger">Retry</button></div>
+
+  <article class="card">
+    <h2>More components</h2>
+    <div class="row">
+      <button class="btn primary outlined">Primary outlined</button>
+      <button class="btn success">Success</button>
+      <button class="btn warning outlined">Warning</button>
+      <button class="btn info ghost">Info ghost</button>
+      <button class="btn primary" disabled>Disabled</button>
+      <span class="tooltip-anchor">
+        <button class="btn outlined square" aria-label="Help" aria-describedby="tt-help">?</button>
+        <span class="tooltip" id="tt-help" role="tooltip">A tooltip</span>
+      </span>
+    </div>
+    <div class="row">
+      <span class="avatar primary" role="img" aria-label="Dana Ortiz">DO</span>
+      <span class="avatar info" role="img" aria-label="Globex">GI</span>
+      <span class="avatar success" role="img" aria-label="Sam">SK</span>
+      <span class="pill">pill</span>
+      <span class="pill primary">primary</span>
+      <span class="pill danger">4</span>
+      <span class="badge danger">overdue</span>
+      <span class="badge">plain</span>
+      <span class="spinner" aria-hidden="true"></span>
+      <span class="skeleton text" style="inline-size: 8rem" aria-hidden="true"></span>
+    </div>
+    <div class="stack">
+      <progress class="progress" value="5" max="10">5 of 10</progress>
+      <progress class="progress warning" value="824" max="1000">824 of 1,000</progress>
+      <progress class="progress danger" value="97" max="100">97 of 100</progress>
+    </div>
+  </article>
+
+  <div class="preview">
+    <article class="card">
+      <ol class="steps" aria-label="Setup progress">
+        <li class="step complete"><span class="step-marker"></span><span class="step-label">Company details</span></li>
+        <li class="step" aria-current="step"><span class="step-marker"></span><span class="step-label">Connect a bank</span><span class="step-hint">Needed to collect</span></li>
+        <li class="step"><span class="step-marker"></span><span class="step-label">Invite team</span></li>
+      </ol>
+    </article>
+    <article class="card">
+      <ol class="feed">
+        <li><article class="feed-item"><span class="feed-dot success" aria-hidden="true"></span><div class="feed-content"><strong>INV-1042 paid</strong> — $4,200<div class="text-sm text-muted">2 hours ago</div></div></article></li>
+        <li><article class="feed-item"><span class="feed-dot info" aria-hidden="true"></span><div class="feed-content"><strong>INV-1048 sent</strong><div class="text-sm text-muted">Yesterday</div></div></article></li>
+        <li><article class="feed-item"><span class="feed-dot danger" aria-hidden="true"></span><div class="feed-content"><strong>INV-1031 overdue</strong><div class="text-sm text-muted">3 days ago</div></div></article></li>
+      </ol>
+    </article>
+  </div>
+
+  <article class="card">
+    <dl class="facts divided">
+      <dt>Customer</dt><dd>Acme Corporation</dd>
+      <dt>Status</dt><dd><span class="badge success">Paid</span></dd>
+      <dt>Reference</dt><dd><code>INV-1042</code></dd>
+      <dt>Amount</dt><dd><strong>$4,200.00</strong></dd>
+    </dl>
+    <hr class="divider">
+    <details class="disclosure">
+      <summary class="disclosure-summary">Internal notes (2)</summary>
+      <div class="disclosure-body"><p>Customer asked for net-45 terms. Press <kbd>⌘</kbd><kbd>Enter</kbd> to save.</p></div>
+    </details>
+    <div class="field-group">
+      <label for="rate">Hourly rate</label>
+      <div class="field-row">
+        <span class="field-addon">$</span>
+        <input class="field" id="rate" type="number" value="145">
+        <span class="field-addon">/hr</span>
+      </div>
+    </div>
+    <div class="field-group">
+      <label for="plan">Plan</label>
+      <select class="field" id="plan"><option>Starter</option><option>Team</option></select>
+    </div>
+    <div class="field-group">
+      <label for="note">Note</label>
+      <textarea class="field" id="note" rows="2" placeholder="Visible to your team only"></textarea>
+    </div>
+    <div class="row">
+      <label class="field-check"><input type="checkbox" checked> <span>Checkbox</span></label>
+      <label class="field-check"><input type="radio" name="r" checked> <span>Radio A</span></label>
+      <label class="field-check"><input type="radio" name="r"> <span>Radio B</span></label>
+    </div>
+  </article>
+
+  <div class="preview">
+    <article class="card">
+      <ul class="items">
+        <li class="item">billing@acme.example</li>
+        <li class="item">Dana Ortiz, accounts payable</li>
+        <li class="item">1 Innovation Way</li>
+      </ul>
+    </article>
+    <article class="card">
+      <div class="empty">
+        <h3 class="empty-title">Nothing archived</h3>
+        <p class="empty-text">Customers you archive are kept here for 90 days.</p>
+        <div class="empty-actions"><button class="btn outlined">Learn more</button></div>
+      </div>
+    </article>
+  </div>
+
+  <nav class="pagination" aria-label="Pagination">
+    <a class="pagination-link" href="#!" rel="prev">&lsaquo;</a>
+    <a class="pagination-link" href="#!" aria-current="page">1</a>
+    <a class="pagination-link" href="#!">2</a>
+    <span class="pagination-gap">…</span>
+    <a class="pagination-link" href="#!">9</a>
+    <a class="pagination-link" href="#!" rel="next">&rsaquo;</a>
+  </nav>
+
+  <article class="card prose">
+    <p class="kicker">Prose</p>
+    <p>Body copy with a <a href="#!">link</a>, <strong>bold</strong>, <em>emphasis</em> and <code>inline code</code>.</p>
+    <blockquote>A blockquote under the heading font.</blockquote>
+    <ul><li>List item one</li><li>List item two</li></ul>
+  </article>
+
+  <div class="row"><button class="btn outlined" id="toast-btn">Show a toast</button></div>
+  <div class="toast-stack" id="toasts" aria-live="polite"></div>
 
   <article class="card">
     <h2>Tokens</h2>
@@ -390,6 +547,13 @@ document.querySelectorAll('[role=tab]').forEach(function (tab) {
       document.getElementById(t.getAttribute('aria-controls')).hidden = !on
     })
   })
+})
+document.getElementById('toast-btn').addEventListener('click', function () {
+  var el = document.createElement('article')
+  el.className = 'toast success raised'
+  el.textContent = 'Invoice sent.'
+  document.getElementById('toasts').appendChild(el)
+  setTimeout(function () { el.remove() }, 2500)
 })
 document.querySelectorAll('[data-open]').forEach(function (b) {
   b.addEventListener('click', function () { document.getElementById(b.dataset.open).showModal() })

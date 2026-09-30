@@ -23,6 +23,12 @@ export abstract class BaseTransport {
     protected credentials: CredentialResolver
   ) {}
 
+  // Whether the inbound request's trace may reach this target — only one that
+  // declared itself ours (`FJS-D507`).
+  get traced(): boolean {
+    return this.descriptor.trace === true
+  }
+
   abstract send<T>(req: ConduitRequest): Promise<ConduitResult<T>>
   abstract stream(req: ConduitRequest): AsyncIterable<ConduitChunk>
 

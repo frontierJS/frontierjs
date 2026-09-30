@@ -4,6 +4,22 @@
 
 The pasted `User` moved with `@frontierjs/auth`'s fragment. Before, a shopper's `PATCH /users/<own id>` could change their own address, which password reset mails to, while `emailVerified` stayed true. Now `email` and `accountId` are admin-written like `role`, and a shopper's write drops them. `verify:users` passed every boundary check over HTTP, 67 in all. Its screen section stopped twice with *Inspected target navigated or closed* inside `packages/mesa/src/drive.js`, which another session has uncommitted edits in, so the screen half was not proved. It ran on 7115/7015 with its own mail and psp sinks on 7116/7117, because another session's API held 8110 through 8112.
 
+## 2026-09-29 — `verify` expects the text box `@money` has been since `FJS-D555`
+
+`form.controls` still expected `Total:number`, but since `FJS-D555` a `@money` column renders as `MoneyInput`, a text box in major units. The expectation now reads `Total:text`.
+
+The failures in the main tree were checked in a fresh worktree at `f8a6876b`, where the tree was not polluted. All ran on `openChrome` (`FJS-1588`):
+
+- **Green there:**
+  - `verify:live` 19 (`FJS-1371`)
+  - `verify:revisions` 43
+  - `verify:account` 44
+  - `verify` 70, once this fix was in
+- **`verify` is still intermittent.** It fails 1 run in 2 on a local-database warning at unload (`FJS-1598`).
+- **Still failing there:**
+  - `verify:values`: the `FJS-1366` 30s timeout, which now carries the driver's message.
+  - `verify:site`: `FJS-1334`.
+
 ## 2026-09-29 — Every browser drive here runs on `@frontierjs/mesa/drive` (`FJS-1588`)
 
 The other 18 drives that launched Chrome themselves now open `openChrome`: fourteen in `web/test`, three in `site/test` and the extension's. `lib/chrome-profile.mjs` is deleted, since the driver's sweep does what it did. Each drive keeps its own console policy through `browser.on`, because most fail on every error or warning and not only on a `[Mesa]` one. `verify:live` counts frames the same way. The expression-form drives keep a one-line `evaluate` that returns `(expr)`. `verify:extension` and `verify:account` had used fixed debugging ports, 9224 and 9225, which are gone. The extension loads through `args` plus the handle's browser-level `send`.

@@ -101,22 +101,38 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           machine's are outpost's, and they win)
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
+          core/runtime.ts is the ONE reader of how a container starts —
+          App's port, volume, health path and limits, each a `docker run` flag;
+          a column added there and not applied by outpost is `FJS-1605` again
+          core/variables.ts is what a container's environment IS — the
+          environment's `Variable` rows with the app's own on top, snapshotted
+          when a release is made and a secret read only when it is sent
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan (`jobsDir`), and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
           one shape, opposite safeguards; jobs/outpost-run.ts is their half
-          providers/ is who the app SPEAKS to — `index.ts` is the 10 (eight
-          self-hosted appliances, plus `edge` and `cloudSpend`, which are
-          somebody else's service reached with a token), executor.ts and
+          providers/ is who the app SPEAKS to — `index.ts` is nine (eight
+          self-hosted appliances, plus `cloudSpend`, somebody else's service
+          reached with a token), executor.ts and
           outpost.ts are the fleet's own, and outpost-dev.ts is this laptop
           enrolled as one of them (`bun run dev:outpost`). One folder, because FJS-D06 rules
           Provider to mean a party outside the app and Infisical is one in the
           sense Hetzner is. `hosted` on the portal entry is what separates the
           two kinds, and it is there because *unconfigured* means different
           work for each: install it and set a URL, or open an account and hold
-          a key
+          a key. compute/ and edge/ are the vendors held as a workspace
+          ACCOUNT — a `provider_key` Secret that compute/accounts.ts registers
+          as `provider:<kind>:<secretId>` through `accountConnectorFor`
+          (`FJS-D558`); a *-sink.ts beside each connector is its stand-in.
+          edge/ writes only records it MARKED, and the connector is where an
+          unmarked set is refused (`FJS-D560`, `FJS-D562`), so no caller can
+          skip the check by forgetting it
+          services/edge/ reads an edge account's zones and records beside the
+          workspace's `Domain` rows, at `Domain`'s read gate — the account
+          lookup is `asSystem()` confined to the workspace, since a developer
+          is below `Secret`'s 5; the portal's `edge` entry reads the same lookup
           services/hub/ is the ONLY service that takes no workspace
           services/infra/ takes one and has no MODEL — `graph` and
           `onboarding`, two projections assembled from several tables, where
@@ -173,9 +189,8 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   addresses `ctx.id` rather than the header and would otherwise carry an admin's
   standing into any other workspace they can name; and the role hooks, because a
   gate refuses with a level and a person needs the sentence.
-- **`Server` and `Environment` are graded on TWO axes, and the second one is a
-  column.** `@@capabilities` on both models plus `@capability` on
-  `Environment.variables`, ANDed with the gate (`FJS-D146`): a caller needs the
+- **`Server`, `Environment` and `Variable` are graded on TWO axes.**
+  `@@capabilities` on all three, ANDed with the gate (`FJS-D146`): a caller needs the
   level AND the grant. `WorkspaceMember.capabilities` holds the grant and
   `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the
   row the standing already comes from — per request, per workspace, so the same
@@ -194,16 +209,16 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   checked. It stays a hook because all three membership writers are `asSystem()`,
   which has no principal — *what you hold* is undefined there, not merely
   skipped — and litestone's own `Capability[]` guard covers every other door.
-  **The two `capability-ladder` warnings from `fli check` are answered, not
+  **The three `capability-ladder` warnings from `fli check` are answered, not
   ignored**: the gates stay steep because the grant table is bounded by them, so
   the ladder still catches a grant mis-stamped by a bug or a migration.
-- **Ten models declare `@version`, and a service-side write of a row must carry
-  the version it read.** The rule for which ten is in `db/schema.lite`'s header:
+- **Thirteen models declare `@version`, and a service-side write of a row must carry
+  the version it read.** The rule for which is in `db/schema.lite`'s header:
   a row a PERSON edits, never one a machine also writes on its own schedule —
   `@version` is per row and not per column, so a heartbeat or an engine moving
   `status` would refuse an edit for a change nobody made. Three consequences
   here. A method that fetches a row and then writes it (`makePrimary`,
-  `uploadCert`, `verify`, `demoteSiblings`, `saveVariables`) states
+  `uploadCert`, `verify`, `demoteSiblings`) states
   `version: row.version` — a real compare-and-swap, not a formality. An empty
   patch is `changesNothing(patch)` and not `!Object.keys(patch).length`, because
   the version rides on every one and would otherwise turn an untouched form into
@@ -433,10 +448,17 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   **A list carries `summarizeSource`, not the files**: fifty pasted pages on a
   request that draws a table of names, and `content` is removed rather than
   blanked so nothing renders an empty editor over a file that has a page in it.
-- **Deleting an inline app retires it from the machine.** Files do not stop when
-  nothing restarts them, so a row removed here and a page still answering on the
-  internet is the failure. Best effort and logged: a machine that cannot be
-  reached does not refuse an operator's decision.
+- **Deleting an app retires it from the machine** — `/static/retire` for inline,
+  `/stop` for a container, which also drops its Caddy route. Neither stops on
+  its own, so a row removed here and a page still answering on the internet is
+  the failure. Best effort and logged: a machine that cannot be reached does
+  not refuse an operator's decision.
+- **A `/deploy` names the app's hostnames and Caddy on the machine routes them**
+  (`FJS-D564`). `routedHosts()` reads the LIVE `Domain` rows, not the release
+  snapshot, and a hostname sent there is a certificate request — so a deleted
+  row must drop out. A hostname with no `App.port` fails the release in
+  Outpost's words. A `Domain` changed between releases reaches no machine yet
+  (`FJS-1610`).
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

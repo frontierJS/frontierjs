@@ -12,7 +12,8 @@
     "./docker": "./src/docker.js",
     "./static": "./src/static.js",
     "./serve": "./src/serve.js",
-    "./vitals": "./src/vitals.js"
+    "./vitals": "./src/vitals.js",
+    "./cert": "./src/cert.js"
   },
   "scripts": {
     "start": "bun src/index.js",

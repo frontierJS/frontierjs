@@ -15,7 +15,7 @@
 // are off — and a test that only ran the correct version could not tell the two
 // apart.
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { spawnSync } from 'child_process'
 import { readFileSync, mkdtempSync, rmSync } from 'fs'
@@ -32,7 +32,7 @@ const exec = (stdin) => spawnSync('bun', [RUNNER], { input: stdin, encoding: 'ut
 
 let dir
 beforeEach(() => { dir = mkdtempSync(`${tmpdir()}/fjs-jmig-`) })
-afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+afterEach(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
 
 /**
  * A journal as a target that deployed before Phase 3b is holding it: the old

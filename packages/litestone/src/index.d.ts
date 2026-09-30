@@ -884,6 +884,8 @@ export interface ApplyResult {
   skipped:  string[]
   /** True when the directory held candidate files and NONE matched: a refusal, not an empty directory. */
   unmatched?: boolean
+  /** True when the history holds a `.js` file: nothing ran, `message` names it (`FJS-D518`). */
+  refused?: boolean
   failed?:  string
   message?: string
 }
@@ -907,7 +909,7 @@ export interface VerifyResult {
 }
 
 export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
-export declare function apply(db: unknown, dir?: string, client?: AnyLitestoneClient): Promise<ApplyResult>
+export declare function apply(db: unknown, dir?: string): Promise<ApplyResult>
 export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean }): VerifyResult
 /** An object the live database and the schema disagree about in a way the differ cannot name. */
@@ -1195,6 +1197,24 @@ export declare class UniqueConflictError extends Error {
   values:    unknown[]
   errors:    Array<{ path: string[], message: string }>
   status:    409
+  retryable: false
+}
+
+/**
+ * A refused foreign key (`FJS-D521`). A write naming a parent that does not
+ * exist carries `relation`, `field`, `value` and `target`; a delete a Restrict
+ * child refuses carries `child`, found through any cascade. Either is absent
+ * when the client could not find the culprit.
+ */
+export declare class ForeignKeyError extends Error {
+  model:     string
+  relation?: string
+  field?:    string | string[]
+  value?:    unknown
+  target?:   string
+  child?:    { model: string, id: unknown }
+  errors:    Array<{ path: string[], message: string }>
+  status:    422
   retryable: false
 }
 

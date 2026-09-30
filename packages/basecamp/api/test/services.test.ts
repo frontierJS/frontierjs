@@ -18,6 +18,9 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }        from 'node:path'
+import { ensureCert }  from '@frontierjs/outpost/cert'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { seriesKey }   from '@frontierjs/junction'
@@ -31,7 +34,11 @@ import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
 import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
 import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
-import { resolveSecretEnv }       from '../src/core/credentials.ts'
+import { snapshotVariables, releaseEnv } from '../src/core/variables.ts'
+
+// The certificate a machine's command port answers with, which enrollment pins
+// on its Conduit target (FJS-1603). Every enrollment below presents it.
+const CERT = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-outpost-cert-'))).cert
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -573,7 +580,7 @@ async function enrollMachine(serverId: string): Promise<string> {
     where: { id: serverId },
     data:  { enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000) },
   })
-  const res = await env.http.post(`/servers/${serverId}/enroll`).send({ token })
+  const res = await env.http.post(`/servers/${serverId}/enroll`).send({ token, cert: CERT })
   const secret = (res.body as { secret?: string }).secret
   if (!secret) throw new Error(`enrollMachine(${serverId}): ${res.status} ${res.text}`)
   return secret
@@ -1795,7 +1802,7 @@ describe('an app made from a blueprint', () => {
     bp = await sys.blueprint.create({ data: {
       slug: `kv-${tag()}`, name: 'KV', category: 'Data', description: 'A store', version: '7',
       image: 'redis:7.2-alpine', appType: 'database', port: 6379,
-      persistent: true, volumePath: '/data', replicas: 1,
+      volumePath: '/data', healthCheck: '/ping', cpuLimit: 0.5, memLimitMb: 256,
     } })
     for (const [i, p] of [
       { key: 'KV_PASSWORD', label: 'Password',      required: true,  secret: true },
@@ -1826,25 +1833,49 @@ describe('an app made from a blueprint', () => {
     expect(r.type).toBe('database')
     expect(r.port).toBe(6379)
     expect(r.source).toEqual({ kind: 'image', image: 'redis:7.2-alpine' })
-    expect(r.config.volumePath).toBe('/data')
-    // A default stands in for a blank field; a blank optional one is absent.
-    expect(r.config.env).toEqual({ KV_POLICY: 'allkeys-lru' })
-    expect(Object.keys(r.config.secretEnv).sort()).toEqual(['KV_KEY', 'KV_PASSWORD'])
+    // Every setting the blueprint states lands on the column `core/runtime.ts`
+    // reads, which is what makes it reach `docker run` (`FJS-1605`).
+    expect([r.volumePath, r.healthCheck, r.cpuLimit, r.memLimitMb]).toEqual(['/data', '/ping', 0.5, 256])
 
-    // The typed password is in no column an app read returns — paired with
-    // the release resolving it, so "not there" is not "not anywhere".
-    const row = await (env.system as any).app.findFirst({ where: { id: r.id } })
-    expect(JSON.stringify(row)).not.toContain('hunter2-kv')
-    const resolved = await resolveSecretEnv(env.db, row.config) as any
-    expect(resolved.env.KV_PASSWORD).toBe('hunter2-kv')
-    expect(resolved.env.KV_POLICY).toBe('allkeys-lru')
+    // Every parameter is a variable on the app. A default stands in for a
+    // blank field; a blank optional one is absent.
+    const vars = await env.as(developer).service('variables').find({ appId: r.id }) as any
+    expect(vars.data.map((v: any) => [v.key, v.secret, v.value])).toEqual([
+      ['KV_KEY', true, null], ['KV_PASSWORD', true, null], ['KV_POLICY', false, 'allkeys-lru'],
+    ])
+
+    // The typed password is in no read — paired with the release resolving
+    // it, so "not there" is not "not anywhere".
+    expect(JSON.stringify(vars)).not.toContain('hunter2-kv')
+    expect(JSON.stringify(await env.as(developer).service('apps').get(r.id))).not.toContain('hunter2-kv')
+    const snap = await snapshotVariables(env.system, r)
+    expect(JSON.stringify(snap)).not.toContain('hunter2-kv')
+    const shipped = await releaseEnv(env.system, snap)
+    expect(shipped.KV_PASSWORD).toBe('hunter2-kv')
+    expect(shipped.KV_POLICY).toBe('allkeys-lru')
     // `random_hex_16` is sixteen BYTES, the way `openssl rand -hex 16` reads.
-    expect(resolved.env.KV_KEY).toMatch(/^[0-9a-f]{32}$/)
-    expect(resolved.secretEnv).toBeUndefined()
+    expect(shipped.KV_KEY).toMatch(/^[0-9a-f]{32}$/)
 
-    // The secrets are this workspace's rows, which is where /secrets/ lists them.
+    // No Secret row: /secrets/ is the workspace's credentials, not an app's env.
     const secrets = await (env.system as any).secret.findMany({ where: { workspaceId: ws.id } })
-    expect(secrets.filter((x: any) => x.name.startsWith('cache/KV_')).length).toBe(2)
+    expect(secrets.some((x: any) => x.name.startsWith('cache/'))).toBe(false)
+  })
+
+  test('deleting the app takes its variables with it, and a restore brings them back', async () => {
+    const r = await make(developer, {
+      blueprintId: bp.id, environmentId: environment.id, name: 'Cache three',
+      values: { KV_PASSWORD: 'pw-three' },
+    }) as any
+    const sys  = env.system as any
+    const live = () => sys.variable.count({ where: { appId: r.id } })
+    expect(await live()).toBe(3)
+
+    await env.as(owner).service('apps').remove(r.id)
+    expect(await live()).toBe(0)
+
+    await env.as(owner).service('apps').call('restore', r.id)
+    expect(await live()).toBe(3)
+    expect((await releaseEnv(env.system, await snapshotVariables(env.system, r))).KV_PASSWORD).toBe('pw-three')
   })
 
   test('a gone secret fails the release by name rather than starting without it', async () => {
@@ -1852,9 +1883,9 @@ describe('an app made from a blueprint', () => {
       blueprintId: bp.id, environmentId: environment.id, name: 'Cache two',
       values: { KV_PASSWORD: 'x' },
     }) as any
-    const ref = r.config.secretEnv.KV_PASSWORD as string
-    await (env.system as any).secret.remove({ where: { id: ref.slice('secret:'.length).split('#')[0] } })
-    await expect(resolveSecretEnv(env.db, r.config)).rejects.toThrow(/KV_PASSWORD/)
+    const snap = await snapshotVariables(env.system, r)
+    await (env.system as any).variable.delete({ where: { id: snap.secretEnv.KV_PASSWORD } })
+    await expect(releaseEnv(env.system, snap)).rejects.toThrow(/KV_PASSWORD/)
   })
 
   test('a required parameter is refused by its label, an unknown one by its key', async () => {
@@ -1882,6 +1913,76 @@ describe('an app made from a blueprint', () => {
     }) as any
     await expect(env.as(developer).service('apps').patch(plain.id, { blueprintId: bp.id }))
       .rejects.toThrow(/blueprintId/)
+  })
+})
+
+describe('variables', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let environment: any, web: any, api: any
+
+  beforeAll(async () => {
+    const sys     = env.system as any
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Vars', slug: `vars-${tag()}` } })
+    environment   = await sys.environment.create({ data: {
+      workspaceId: ws.id, projectId: project.id, name: 'Staging', slug: `stg-${tag()}` } })
+    const app = (name: string) => sys.app.create({ data: {
+      workspaceId: ws.id, environmentId: environment.id, name, slug: `${name}-${tag()}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    web = await app('web')
+    api = await app('api')
+  })
+
+  const vars = (who: any = developer) => env.as(who).service('variables')
+
+  test("a release gets its environment's variables with its own on top", async () => {
+    await vars().create({ environmentId: environment.id, key: 'LOG_LEVEL', value: 'debug' })
+    await vars().create({ environmentId: environment.id, key: 'DATABASE_URL', value: 'pg://shared-pw', secret: true })
+    await vars().create({ appId: web.id, key: 'LOG_LEVEL', value: 'info' })
+    // The app's own plain value replaces the environment's secret of that key.
+    await vars().create({ appId: web.id, key: 'DATABASE_URL', value: 'pg://web-only' })
+
+    expect(await releaseEnv(env.system, await snapshotVariables(env.system, web)))
+      .toEqual({ LOG_LEVEL: 'info', DATABASE_URL: 'pg://web-only' })
+    expect(await releaseEnv(env.system, await snapshotVariables(env.system, api)))
+      .toEqual({ LOG_LEVEL: 'debug', DATABASE_URL: 'pg://shared-pw' })
+  })
+
+  test('a viewer reads the keys and never a secret, and writes nothing', async () => {
+    const list = await vars(viewer).find({ environmentId: environment.id, appId: null }) as any
+    expect(list.data.map((v: any) => v.key)).toEqual(['DATABASE_URL', 'LOG_LEVEL'])
+    expect(JSON.stringify(list)).not.toContain('shared-pw')
+    await expect(vars(viewer).create({ environmentId: environment.id, key: 'X', value: 'y' })).rejects.toThrow()
+  })
+
+  test('a key is a name a container can take, and one key per scope', async () => {
+    await expect(vars().create({ environmentId: environment.id, key: 'NO SPACES', value: 'x' }))
+      .rejects.toThrow(/letters, digits and underscores/)
+    await expect(vars().create({ environmentId: environment.id, key: 'LOG_LEVEL', value: 'again' })).rejects.toThrow()
+  })
+
+  test('a removed variable frees its key, and a secret stays secret on an edit', async () => {
+    const row = await vars().create({ appId: api.id, key: 'TOKEN', value: 'first', secret: true }) as any
+    const edited = await vars().patch(row.id, { value: 'second', version: row.version }) as any
+    expect(edited.value).toBe(null)
+    const stored = await (env.system as any).variable.findFirst({ where: { id: row.id } })
+    expect(stored.secretValue).toBe('second')
+    await expect(vars().patch(row.id, { secret: false, version: edited.version })).rejects.toThrow(/secret/)
+
+    await vars().remove(row.id)
+    await vars().create({ appId: api.id, key: 'TOKEN', value: 'third', secret: true })
+  })
+
+  test('a runtime setting the machine would refuse is refused at the write', async () => {
+    // The machine checks too, but only after the old container is gone.
+    const apps = env.as(developer).service('apps')
+    await expect(apps.patch(web.id, { volumePath: '/etc:/host' })).rejects.toThrow(/volumePath|absolute path/)
+    await expect(apps.patch(web.id, { cpuLimit: 0 })).rejects.toThrow(/cpuLimit/)
+    await expect(apps.patch(web.id, { port: null, healthCheck: '/up' })).rejects.toThrow(/health check/)
+  })
+
+  test('an app has no config blob for a setting to hide in', async () => {
+    await expect(env.as(developer).service('apps').patch(web.id, { config: { env: { A: 'b' } } }))
+      .rejects.toThrow(/config/)
   })
 })
 
@@ -2587,16 +2688,20 @@ describe('a custom method grades its caller before a system read or a guarded wr
     const sys  = env.system as any
     const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'Prot', slug: `prot-${Math.random().toString(36).slice(2, 8)}` } })
     const prod = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'prod', slug: `prod-${Math.random().toString(36).slice(2, 8)}`, isProtected: true } })
-    const vars = async () => (await sys.environment.findFirst({ where: { id: prod.id } })).variables
+    const vars = async () => (await sys.variable.findMany({ where: { environmentId: prod.id } })).map((v: any) => v.key)
+    const set  = (who: any) => env.as(who).service('variables')
+      .create({ environmentId: prod.id, key: 'DATABASE_URL', value: 'postgres://real', secret: true })
 
-    for (const call of [
-      () => env.as(developer).service('environments').call('setVariable', prod.id, { key: 'DATABASE_URL', value: 'postgres://elsewhere', secret: false }),
-      () => env.as(developer).service('environments').call('deleteVariable', prod.id, { key: 'DATABASE_URL' }),
-    ]) await expect(call()).rejects.toThrow(/Protected environments/)
+    await expect(set(developer)).rejects.toThrow(/Protected environments/)
     expect(await vars()).toEqual([])
 
-    await env.as(owner).service('environments').call('setVariable', prod.id, { key: 'DATABASE_URL', value: 'postgres://real', secret: true })
-    expect((await vars()).map((v: any) => v.key)).toEqual(['DATABASE_URL'])
+    const row = await set(owner) as any
+    expect(await vars()).toEqual(['DATABASE_URL'])
+    for (const call of [
+      () => env.as(developer).service('variables').patch(row.id, { value: 'postgres://elsewhere', version: row.version }),
+      () => env.as(developer).service('variables').remove(row.id),
+    ]) await expect(call()).rejects.toThrow(/Protected environments/)
+    expect(await vars()).toEqual(['DATABASE_URL'])
   })
 
   test('restore is graded as an update: a viewer is refused and a developer restores', async () => {

@@ -16,7 +16,7 @@
 // Every refusal is PAIRED with the same call one term away, and every refusal
 // is followed by a read of the journal asserting it wrote nothing.
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { execSync } from 'child_process'
 import { readFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -45,7 +45,7 @@ beforeEach(() => {
   deployConf = { app_id: APP, journal: { path: `${dir}/deploy.db` } }
   context    = { exec: realExec, config: { deployConf }, git: { user: () => 'tester' }, paths: {} }
 })
-afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+afterEach(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
 
 const journal = () => helpers.connectJournal(context, { host: HOST, serverPath: dir, deployConf })
 

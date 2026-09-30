@@ -182,11 +182,11 @@ export function describeSkipped(skipped) {
 // Cheap: `create()` already opened a `:memory:` database to build a pristine
 // one out of the schema, so this is the same move seeded from the files.
 //
-// **A `.js` migration is not replayed and makes the answer unknown.** It needs a
-// Litestone client and may perform schema surgery through `sys.sql`, so
-// skipping it would answer a confident diff over a shadow missing part of its
-// history — the class of silent wrongness this ruling exists to remove. Callers
-// are handed `unknown` with the files named, and say so.
+// **A `.js` file in the history is refused, never skipped** (`FJS-D518`). A
+// data change is not a migration: a `.js` file could change the schema through
+// `sys.sql` and cannot be replayed, so skipping it would answer a confident diff
+// over a shadow missing part of its history. Callers are handed the files named
+// and refuse with them.
 
 export function buildShadow(dir = './migrations', only = null) {
   const files = listMigrationFiles(dir).filter(f => !only || only.has(f))
@@ -390,14 +390,19 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   return { created: true, name, filePath, summary, sql }
 }
 
+// A data change belongs in an app script chained after `migrate apply` and made
+// idempotent by the rows it expects — said once, for apply and the shadow alike.
+export function jsRefusal(files) {
+  return `${files.join(', ')} is not a migration: migrations/ holds .sql only, because a ` +
+         `.js file can change the schema through sys.sql and cannot be replayed. Move a ` +
+         `data change to an app script run after \`migrate apply\`, idempotent by the rows it expects`
+}
+
 // One sentence for every caller that could not build a shadow, so create, the
 // guard and the doctor say the same thing about the same directory.
 export function shadowRefusal(shadow) {
   if (shadow.reason === 'js-migrations')
-    return `the migration history contains JavaScript migrations (${shadow.files.join(', ')}), ` +
-           `which run against a Litestone client and can change the schema through sys.sql. ` +
-           `They cannot be replayed into a shadow database, so what the history builds is unknown ` +
-           `and no migration can be derived from it. Write this one by hand`
+    return jsRefusal(shadow.files)
   if (shadow.reason === 'replay-failed')
     return `the migration history does not replay — "${shadow.file}" failed: ${shadow.error}. ` +
            `A deploy applies these files in this order, so it would fail the same way`
@@ -553,7 +558,7 @@ function runInTransaction(rawDb, stmts, record = null, guard = null) {
   }
 }
 
-export async function apply(db, dir = './migrations', client = null) {
+export async function apply(db, dir = './migrations') {
   const absDir  = resolve(dir)
   const files   = listMigrationFiles(absDir)
   const skipped = unmatchedMigrationFiles(absDir)
@@ -571,6 +576,14 @@ export async function apply(db, dir = './migrations', client = null) {
     return { applied: [], pending: 0, skipped, message: 'no migration files found' }
   }
 
+  // Refused before anything runs: a history holding one cannot be replayed, so
+  // applying the .sql around it would leave a database no guard can read.
+  const js = files.filter(f => f.endsWith('.js'))
+  if (js.length) {
+    const message = jsRefusal(js)
+    return { applied: [], pending: 0, skipped, refused: true, failed: js[0], error: message, message }
+  }
+
   const appliedSet = new Set(appliedMigrations(db).map(m => m.name))
   const pending    = files.filter(f => !appliedSet.has(f))
 
@@ -583,53 +596,10 @@ export async function apply(db, dir = './migrations', client = null) {
   for (const file of pending) {
     const filePath = join(absDir, file)
     const t0       = performance.now()
-    const isJs     = file.endsWith('.js')
 
     try {
-      if (isJs) {
-        // ── JS migration ─────────────────────────────────────────────────────
-        // Dynamically import the migration module and call up(client)
-        if (!client) throw new Error(
-          `JS migration "${file}" requires a Litestone client. ` +
-          `Pass the client as the third argument to apply(db, dir, client).`
-        )
-        const mod = await import(filePath)
-        const up  = mod.up ?? mod.default
-        if (typeof up !== 'function')
-          throw new Error(`JS migration "${file}" must export an "up" function or a default function`)
-
-        // A migration runs as the SYSTEM, always.
-        //
-        // It is schema surgery performed by an operator, outside any request
-        // and usually before the rows it touches have an owner — so every
-        // access declaration in the schema is beside the point here, and a
-        // migration that could be filtered by a policy would be a migration
-        // that silently half-applied.
-        //
-        // Stated explicitly because raw SQL now refuses on a schema that
-        // declares access rules (FJS-005): `up(tx)` handed migrations the
-        // unscoped client, whose `sql` is guarded, so the very first JS
-        // migration on a gated schema failed with "use asSystem()" — advice
-        // aimed at application code that a migration cannot act on. Caught by
-        // running one, not by reading.
-        //
-        // The system proxy is passed rather than the transaction's `tx`
-        // because $transaction hands the callback the unscoped clientProxy —
-        // the same thing `authQuery` works around to keep auth alive through a
-        // batch. The transaction is connection state, so it still wraps this.
-        const sys = typeof client.asSystem === 'function' ? client.asSystem() : client
-
-        // Run inside a transaction — rollback on failure
-        await client.$transaction(async () => {
-          await up(sys)
-        })
-
-        recordMigration(db, file, null)   // no SQL content for JS migrations
-      } else {
-        // ── SQL migration ────────────────────────────────────────────────────
-        const { sql, stmts } = loadMigrationSql(filePath)
-        runInTransaction(db, executableStatements(stmts), () => recordMigration(db, file, sql))
-      }
+      const { sql, stmts } = loadMigrationSql(filePath)
+      runInTransaction(db, executableStatements(stmts), () => recordMigration(db, file, sql))
 
       const elapsed = (performance.now() - t0).toFixed(0)
       results.push({ file, ok: true, elapsed })

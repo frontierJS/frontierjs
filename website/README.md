@@ -105,7 +105,8 @@ nowhere else, so every deploy had to copy the file and rewrite twenty-one hrefs.
 bun run dev       # vite dev on :8690 — the routes, client-routed
 bun run build     # prerender site/dist/ — one HTML file per route
 bun run preview   # serve site/dist/ on :8790, as it deploys
-bun run verify    # the drive: the files, then a real browser
+bun run verify    # the drive: the files, then a real browser; exits 1 on a failure
+bun run test      # build, then verify — what CI runs
 bun run clean     # rm -rf site/dist
 ```
 
@@ -160,10 +161,10 @@ Deploy target is any static host: `bun run build`, publish `site/dist/`.
 The build writes `sitemap.xml`, `robots.txt` and a pre-paint theme script into
 every page.
 
-`website` is a root workspace member, so `bun run --filter '*' test` reaches it —
-its `test` script is the build, which is the whole of what a static site can be
-wrong about at the level a suite can see. The browser drive is `verify` and
-needs Chrome.
+`website` is a root workspace member, so `bun run --filter '*' test` and CI's
+`tests` phase reach it. Its `test` script is the build followed by `verify`, the
+browser drive, so it needs Chrome (`$FJS_CHROME`, which the CI workflow sets).
+`verify` prints every check's value and exits 1 naming the ones that failed.
 
 ## Before publishing
 

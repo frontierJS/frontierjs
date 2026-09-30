@@ -182,6 +182,8 @@ export type { EnvSpec, EnvFieldSpec, EnvOutput }            from './src/core/env
 // ─── Auth providers ───────────────────────────────────────────────────────
 export { createBetterAuthAdapter, createBetterAuthPlugin }        from './src/auth/providers/better-auth.ts'
 export type { BetterAuthAdapterOptions }                          from './src/auth/providers/better-auth.ts'
+export { signedRequest, REFUSE }                                  from './src/auth/credentials.ts'
+export type { CredentialVerifier, CredentialAnswer, InboundRequest, SignedRequestOptions } from './src/auth/credentials.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 export { autoloadServices, loadServiceFile }                      from './src/core/loader.ts'

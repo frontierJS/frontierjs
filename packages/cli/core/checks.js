@@ -39,14 +39,15 @@ import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
 // `scope: 'app'` runs against a client app; `scope: 'repo'` against a package
-// tree. `fli check` runs the app scope, `ci.mjs` runs both.
+// tree; `scope: 'both'` in either run. `fli check` runs the app scope, `ci.mjs`
+// runs both.
 
 // `findApps` moved to `core/runnables.js`, where the other tree readers live —
 // it had to, because these rules now read the runnable list and two modules
 // importing each other is a cycle. Re-exported because it is part of this
 // module's surface and its callers should not have to care.
 export { findApps } from './runnables.js'
-import { runnables }              from './runnables.js'
+import { runnables, findApps }    from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
 import { DRIVES_FILE, readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
@@ -78,8 +79,8 @@ export const RULES = [
     title: 'one Resource per file' },
   { id: 'vite-strict-port',     scope: 'app',  severity: 'error', invariant: null,
     title: 'every vite config sets strictPort' },
-  { id: 'drive-cdp-port',       scope: 'app',  severity: 'error', invariant: null,
-    title: 'a drive lets Chrome pick its debugging port' },
+  { id: 'drive-opens-chrome',   scope: 'both', severity: 'error', invariant: null,
+    title: 'a drive opens Chrome through @frontierjs/mesa/drive' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
@@ -262,7 +263,7 @@ export function verdictOf(rule, out) {
 
 export function runChecks({ root, only = null, scope = 'app', allow = {} } = {}) {
   const wanted = RULES.filter(r =>
-    (scope === 'both' || r.scope === scope) && (!only || only.includes(r.id)))
+    (scope === 'both' || r.scope === 'both' || r.scope === scope) && (!only || only.includes(r.id)))
 
   const findings = []
   const allowed  = []
@@ -729,39 +730,52 @@ const CHECKS = {
     })) }
   },
 
-  // The same hazard as the rule above, at the browser end, and it is worse
-  // because it can pass. On a FIXED debugging port only the first Chrome binds;
-  // every later one starts, fails to bind, and `GET /json/version` is answered
-  // by the browser that got there first — so the drive attaches to somebody
-  // else's session and grades their screen. Measured: a drive read *a
-  // signed-out visitor is refused* as FALSE against a browser signed in as an
-  // administrator, and died three assertions later on a button that was not
-  // there ([FJS-1265](../../../ISSUES.md#fjs-1265)). Two runs that happen to
-  // agree are green, which is why nothing caught it for seven drives.
+  // A drive that launches Chrome itself has to learn, one at a time, what the
+  // driver already knows. A FIXED debugging port binds only the first browser,
+  // so a second drive attached to somebody else's session and graded their
+  // screen — *a signed-out visitor is refused* read FALSE against a browser
+  // signed in as an administrator (`FJS-1265`). A launcher with no sweep left
+  // its Chrome running after a throw, and nineteen were found alive on one
+  // machine (`FJS-361`). About twenty-five copies carried some of those lessons
+  // and not others (`FJS-1588`); `openChrome()` carries all of them, so the
+  // debugging port is its flag and nobody else's.
   //
-  // Port 0 and read the port back off Chrome's own stderr.
-  'drive-cdp-port': ({ root }) => {
+  // Scope `both`, and one rule for either run: a root checks the drives under
+  // it and leaves a nested app to that app's own run, which is how ci already
+  // splits the workspace — so nothing is reported twice. A drive is any file
+  // under a `test/`, `tests/` or `bench/` directory. `--dump-dom` is not here:
+  // a page that computes its own answer and is read back from the dump has no
+  // port to pin, and css's harness is that shape on purpose.
+  'drive-opens-chrome': ({ root }) => {
+    const apps  = new Set(findApps(root).filter(a => a !== root))
     const files = []
-    walk(root, 5, dir => {
-      if (!/^tests?$/.test(basename(dir))) return
-      for (const name of readdirSync(dir)) {
-        if (/\.(mjs|js|ts)$/.test(name)) files.push(join(dir, name))
+    const visit = (dir, depth, inTests) => {
+      if (depth < 0) return
+      for (const name of safeRead(dir)) {
+        if (SKIP.has(name) || name.startsWith('.')) continue
+        const child = join(dir, name)
+        let st
+        try { st = statSync(child) } catch { continue }
+        if (st.isDirectory()) {
+          if (!apps.has(child)) visit(child, depth - 1, inTests || /^(tests?|bench)$/.test(name))
+        } else if (inTests && /\.(mjs|js|ts)$/.test(name)) files.push(child)
       }
-    })
+    }
+    visit(root, 8, false)
     if (!files.length) return { skipped: 'no test directory' }
     const findings = []
     for (const path of files) {
       let text
       try { text = readFileSync(path, 'utf8') } catch { continue }
-      const m = /--remote-debugging-port=(\d+)/.exec(text)
-      if (!m || m[1] === '0') continue
+      const m = /--remote-debugging-port\b/.exec(text)
+      if (!m) continue
       findings.push({
         file: path,
         line: lineOf(text, m.index),
-        message: `Chrome is pinned to port ${m[1]}. Only the first browser binds it, so a second drive ` +
-                 `attaches to the FIRST one's session and asserts against a page it did not open — green ` +
-                 `whenever the two runs agree. Use --remote-debugging-port=0 and read the port back off ` +
-                 `Chrome's stderr.`,
+        message: 'this drive launches Chrome itself. Use `openChrome()` from @frontierjs/mesa/drive: it ' +
+                 'lets Chrome pick the port, gives the run a profile of its own, and kills the browser ' +
+                 'on a throw or a signal — a launcher written here has to relearn each of those, and a ' +
+                 'fixed port attaches to whichever browser bound it first.',
       })
     }
     return { findings }

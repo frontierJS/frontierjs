@@ -1,5 +1,15 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-30 — `ws:publish` notes a package the website holds back (`FJS-1369`)
+
+The website names each workspace package it does not describe in `HELD_BACK`, with a reason. That list goes stale when the package gets a page or turns `private`, and never when it first reaches npm, because a build does not ask the registry. So the release now asks the question. `00-preflight` reads `HELD_BACK` from `website/site/src/data/packages.js`, which now exports it, and a planned package named there prints a `website-held-back` note with its reason and the fix: delete the entry and describe the package. It is a note, so the release still proceeds, and outside this workspace there is no file and no note. A dry run of `fli ws:pub patch --dry --filter orion` prints it.
+
+## 2026-09-30 — `drive-opens-chrome` replaces `drive-cdp-port` (`FJS-1588`)
+
+The rule refused only a FIXED debugging port. It now refuses any `--remote-debugging-port` in a file under `test/`, `tests/` or `bench/`, and the message points at `openChrome()` from `@frontierjs/mesa/drive`. The driver owns that flag: it picks the port, gives each run its own profile, and sweeps the browser on a throw or a signal. Port 0 fixed only the first of those.
+
+It is the first rule with `scope: 'both'`, which `runChecks` now honors. It runs in an app's check for a client app, and in the repo run for the packages. A root leaves a nested app to that app's own run, which is how ci already splits the workspace, so nothing is reported twice. Two named allowances in `scripts/ci-allowances.json` cover the driver's own refusal test and this rule's fixture. New tests: port 0 and a fixed port are both found. The repo run reads `test/browser/` and `bench/`, and leaves a `--dump-dom` page and a nested app alone.
+
 ## 2026-09-29 — Scaffolded scripts name the bin, never `bunx` (`FJS-1586`)
 
 The `package.json` scripts `fli new` writes, `db:migrate`, `db:backup` and `db:types`, ran `bunx litestone …`. `siteScripts` and `widgetScripts` ran `bunx sierra …`. Before `bun install`, `bunx` fetches whatever the registry holds under the bare name. They now say `litestone …` and `sierra …`. `bun run` puts the app's bins on `PATH`, including after a `cd` into a surface, so the installed copy runs. A fresh clone never fetches. It runs a globally linked copy if there is one, and otherwise fails with *command not found*. The warning printed when the first migration cannot be written now says `fli db:migrate --create-only`. The guard in `snapshots.test.js` now also matches a script key or a string that begins with `bunx`. It catches all seven old lines. The earlier entry's "Not moved" list shrinks to the Dockerfile `RUN`, `docker exec` and the tutor's `reproduce:` strings.

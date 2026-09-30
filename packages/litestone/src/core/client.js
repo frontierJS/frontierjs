@@ -51,7 +51,7 @@ import {
   VersionConflictError, SyncConflictError, TransitionGateError, TransitionSystemError,
   TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError, SealedDocumentError,
   UniqueConflictError, uniqueConflictColumns, checkViolationExpr, isCheckViolation,
-  isUniqueConflict, CapabilityNotDeclaredError, LockNotAcquiredError,
+  isUniqueConflict, ForeignKeyError, isForeignKeyFailure, CapabilityNotDeclaredError, LockNotAcquiredError,
   LockReleasedByOtherError, LockExpiredError,
 } from './errors.js'
 import { threeWay } from './three-way.js'
@@ -537,7 +537,81 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // one of them ends up trying neither.
   function asConstraintError(err, data) {
     if (isCheckViolation(err)) return asCheckViolation(err)
+    if (isForeignKeyFailure(err)) return asMissingParent(err, data)
     return asUniqueConflict(err, data)
+  }
+
+  // ── a foreign key naming a row that is not there (FJS-1454) ────────────────
+  //
+  // SQLite names neither the column nor the value, so each declared key the
+  // row carries is looked up in its parent until one is missing. Physical
+  // names come from the table's own foreign_key_list, so `@map` needs no second
+  // spelling. Failing path only.
+  function asMissingParent(err, data) {
+    if (err instanceof ForeignKeyError) return err
+    const row = Array.isArray(data) ? data[0] : data
+    try {
+      // One entry per column; a composite key shares its `id` across them.
+      const keys = new Map()
+      for (const fk of writeDb.query(`PRAGMA foreign_key_list("${tableName}")`).all()) {
+        if (!keys.has(fk.id)) keys.set(fk.id, [])
+        keys.get(fk.id).push(fk)
+      }
+      for (const cols of keys.values()) {
+        const fields = cols.map(c => _fieldOf(c.from))
+        const values = fields.map(f => row?.[f])
+        if (values.some(v => v == null)) continue
+        const hit = readDb.query(
+          `SELECT 1 FROM "${cols[0].table}" WHERE ${cols.map(c => `"${c.to}" = ?`).join(' AND ')} LIMIT 1`
+        ).get(...values)
+        if (hit) continue
+        const [relation, rel] = Object.entries(ctx.relationMap?.[modelName] ?? {})
+          .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
+        const one = fields.length === 1
+        return new ForeignKeyError(modelName, {
+          relation,
+          field:  one ? fields[0] : fields,
+          value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
+          target: rel?.targetModel ?? cols[0].table,
+        })
+      }
+    } catch { return err }
+    return new ForeignKeyError(modelName)
+  }
+
+  // ── a delete a child still refers to (FJS-1454) ────────────────────────────
+  //
+  // The refusing child may sit under a cascade, so the walk follows every
+  // Cascade relation from `rows` and stops at the first child whose relation
+  // does not let go of its parent. Run after the refused DELETE rolled back.
+  function asRestrictedDelete(err, rows) {
+    if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
+    try {
+      let frontier = [[modelName, rows]]
+      const seen = new Set()
+      while (frontier.length) {
+        const next = []
+        for (const [parent, parentRows] of frontier) {
+          for (const rel of Object.values(ctx.relationMap?.[parent] ?? {})) {
+            if (rel.kind !== 'hasMany' || rel.onDelete === 'SetNull' || rel.onDelete === 'SetDefault') continue
+            const sink = ctx.cascadeSinkFor?.(rel.targetModel)
+            if (!sink) continue
+            const keys = [...new Set(parentRows.map(r => r[rel.referencedKey]).filter(v => v != null))]
+            if (!keys.length) continue
+            const found = sink.rowsWhere(rel.foreignKey, keys)
+              .filter(r => !seen.has(`${rel.targetModel}\0${r[sink.idField]}`))
+            if (!found.length) continue
+            if (rel.onDelete !== 'Cascade') {
+              return new ForeignKeyError(modelName, { child: { model: rel.targetModel, id: found[0][sink.idField] } })
+            }
+            for (const r of found) seen.add(`${rel.targetModel}\0${r[sink.idField]}`)
+            next.push([rel.targetModel, found])
+          }
+        }
+        frontier = next
+      }
+    } catch { return err }
+    return new ForeignKeyError(modelName)
   }
 
   // ── which row of a batch ────────────────────────────────────────────────────
@@ -7440,7 +7514,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (!r) return null
         noteCardinality(r)
         _delDoomed = cascadeDoomed([r])
-        writeDb.run(_delSql, ...delFinalParams)
+        try { writeDb.run(_delSql, ...delFinalParams) }
+        catch (e) { throw asRestrictedDelete(e, [r]) }
         return r
       })
       if (!row) throwIfSealed(delFinalSql0, delFinalParams0, 'delete')

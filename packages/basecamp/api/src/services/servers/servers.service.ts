@@ -865,12 +865,16 @@ export function createServersService(app: BasecampApp) {
     // holds for them. One call, because a wizard's first step needs both and
     // asking twice makes the empty case flicker.
     async providers() {
+      // Accounts at a cloud that MAKES machines. A workspace's Cloudflare
+      // account is a provider key too, and listed here it would be offered as
+      // somewhere to provision, which the wizard can only fail on.
+      const providers = computeProviders()
       const accounts = await db().secret.findMany({
-        where:   { kind: 'provider_key' },
+        where:   { kind: 'provider_key', providerKind: { in: providers.map(p => p.kind) } },
         orderBy: { name: 'asc' },
       })
       return {
-        providers: computeProviders(),
+        providers,
         // `data` is @encrypted and absent from the row, so nothing here can
         // leak a token: what a picker needs is an id, a name and a vendor.
         accounts: (accounts as Record<string, unknown>[]).map(a => ({
@@ -1063,12 +1067,25 @@ export function createServersService(app: BasecampApp) {
       // `GET /conduit-targets`.
       const outboundRef = secretRef(server.outpostSecretId as string, 'secret')
 
-      if (data.outpost_url && known?.address !== data.outpost_url) {
+      // No target without a pin, and no pin over plain http. That port takes
+      // every deploy's decrypted env, and an Outpost's heartbeat names its own
+      // URL, so a machine reporting `http://` is refused here rather than
+      // trusted. Refusing to register is the whole refusal: the executor finds
+      // no target and fails the deploy by name (`FJS-1603`).
+      const pinnable = !!data.outpost_url && /^https:\/\//i.test(data.outpost_url) && !!server.outpostCert
+      if (data.outpost_url && !pinnable) {
+        // A target already held is taken away too: one registered before the
+        // machine lost its pin would go on carrying commands in the clear.
+        if (known) await app.conduit?.deregister(target)
+        app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
+          server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
+      } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert)) {
         await app.conduit.register({
           id:            target,
           kind:          'outpost',
           protocol:      'http',
           address:       data.outpost_url,
+          pinned_cert:   server.outpostCert,
           // A REF, resolved at send time. This carried the secret itself
           // (`{ secret: … }`) until 2026-08-09, which was wrong twice: conduit's
           // hmac signer reads `ref` and nothing else, so every outbound call to

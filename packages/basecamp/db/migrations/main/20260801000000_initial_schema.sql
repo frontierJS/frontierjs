@@ -183,12 +183,10 @@ CREATE TABLE IF NOT EXISTS "blueprint" (
   "brandColor" TEXT,
   "appType" TEXT NOT NULL DEFAULT 'container',
   "port" INTEGER,
-  "persistent" INTEGER NOT NULL DEFAULT 0,
   "volumePath" TEXT,
   "healthCheck" TEXT,
-  "replicas" INTEGER NOT NULL DEFAULT 1,
-  "cpuLimit" TEXT,
-  "memLimit" TEXT,
+  "cpuLimit" REAL,
+  "memLimitMb" INTEGER,
   "notes" TEXT,
   "links" TEXT NOT NULL DEFAULT '[]',
   "deprecatedAt" TEXT,
@@ -470,7 +468,7 @@ CREATE TABLE IF NOT EXISTS "secret" (
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("kind" IN ('ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'notification', 'generic')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
   UNIQUE ("workspaceId", "name"),
   CHECK (kind != 'provider_key' OR providerKind IS NOT NULL),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
@@ -524,6 +522,7 @@ CREATE TABLE IF NOT EXISTS "server" (
   "enrollTokenHash" TEXT,
   "enrollExpiresAt" TEXT,
   "outpostSecretId" TEXT,
+  "outpostCert" TEXT,
   "plan" TEXT NOT NULL DEFAULT '{}',
   "actualSpecs" TEXT,
   "health" TEXT,
@@ -534,8 +533,9 @@ CREATE TABLE IF NOT EXISTS "server" (
   "deletedAt" TEXT,
   CHECK ("status" IN ('pending', 'provisioning', 'installing', 'online', 'unreachable', 'draining', 'stopped', 'destroying', 'destroyed')),
   CHECK ("role" IN ('general', 'build', 'database', 'gateway', 'worker')),
-  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean')),
+  CHECK ("providerKind" IN ('custom', 'hetzner', 'digitalocean', 'cloudflare')),
   UNIQUE ("workspaceId", "slug"),
+  CHECK (providerKind != 'cloudflare'),
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_server_workspaceId" ON "server" ("workspaceId") WHERE "deletedAt" IS NULL;
@@ -814,7 +814,6 @@ CREATE TABLE IF NOT EXISTS "environment" (
   "slug" TEXT NOT NULL,
   "tier" TEXT NOT NULL DEFAULT 'development',
   "isProtected" INTEGER NOT NULL DEFAULT 0,
-  "variables" TEXT NOT NULL DEFAULT '[]',
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -889,9 +888,13 @@ CREATE TABLE IF NOT EXISTS "app" (
   "type" TEXT NOT NULL DEFAULT 'container',
   "status" TEXT NOT NULL DEFAULT 'unknown',
   "source" TEXT NOT NULL DEFAULT '{}',
-  "config" TEXT NOT NULL DEFAULT '{}',
-  "port" INTEGER,
   "isPublic" INTEGER NOT NULL DEFAULT 0,
+  "port" INTEGER,
+  "containerPort" INTEGER,
+  "volumePath" TEXT,
+  "healthCheck" TEXT,
+  "cpuLimit" REAL,
+  "memLimitMb" INTEGER,
   "blueprintId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -921,6 +924,28 @@ CREATE TABLE IF NOT EXISTS "flag_override" (
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_flag_override_environmentId" ON "flag_override" ("environmentId");
+
+CREATE TABLE IF NOT EXISTS "variable" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "environmentId" TEXT NOT NULL,
+  "appId" TEXT,
+  "key" TEXT NOT NULL,
+  "secret" INTEGER NOT NULL DEFAULT 0,
+  "value" TEXT,
+  "secretValue" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  UNIQUE ("appId", "key"),
+  CHECK (secret = 0 OR value IS NULL),
+  FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("appId") REFERENCES "app" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_variable_environmentId" ON "variable" ("environmentId") WHERE "deletedAt" IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_variable_environmentId_key" ON "variable" ("environmentId", "key") WHERE "appId" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_variable_deletedAt" ON "variable" ("deletedAt") WHERE "deletedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "domain" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

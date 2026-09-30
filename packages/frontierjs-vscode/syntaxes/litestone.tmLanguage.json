@@ -95,6 +95,7 @@
         { "include": "#doc-comment" },
         { "include": "#comments" },
         { "include": "#model-attribute" },
+        { "include": "#string" },
         { "include": "#type" },
         {
           "name": "variable.parameter.litestone",
@@ -115,6 +116,7 @@
         { "include": "#doc-comment" },
         { "include": "#comments" },
         { "include": "#model-attribute" },
+        { "include": "#string" },
         { "include": "#field" }
       ]
     },

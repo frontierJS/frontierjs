@@ -90,6 +90,28 @@ export interface TargetDescriptor {
   // collides with an auth header is therefore ignored rather than merged.
   headers?:        Record<string, string>
 
+  // This target is one of our own services, so the conduit-wide `trace` may
+  // hand it the inbound request's correlation id and `traceparent`.
+  //
+  // Absent means a third party, and it gets neither: junction writes that id
+  // on every audit row of the request, so a provider holding a user's query
+  // and the id holds the join to the person who typed it (`FJS-1413`,
+  // `FJS-D507`). A forgotten flag therefore fails closed.
+  trace?:          boolean
+
+  // The one certificate this target may present, as PEM.
+  //
+  // For a counterparty no public CA will vouch for: an outpost reached by a
+  // bare IP, serving a certificate it made itself and handed over at
+  // enrollment. The connection trusts this certificate and nothing else —
+  // neither the public roots nor the hostname, which an IP-only machine has no
+  // certificate for. Without it the only way to reach such a machine is plain
+  // HTTP, which put every deploy's decrypted env on the wire (`FJS-1603`).
+  //
+  // Refused at register() anywhere it would be accepted and not applied: a
+  // protocol other than 'http', or an address that is not https.
+  pinned_cert?:    string
+
   // What this target's 3xx answers mean.
   //
   // 'never' (the default) makes a redirect its own result: nothing is re-sent,

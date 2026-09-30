@@ -33,27 +33,23 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../../mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '../..')
 const DIST = join(PKG, 'web/dist/client')
 
-const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
 const API_PORT = 8120
 const PORT     = Number(process.env.PREVIEW_PORT ?? 5311)
 const UI       = `http://localhost:${PORT}`
-// Per run, never a fixed path — see verify.mjs for what a shared one costs.
-const PROFILE  = mkdtempSync(join(tmpdir(), 'fjs-basecamp-build-'))
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
 const results  = []
-let chromePid = null                        // set once Chrome is spawned
+let browser = null
 
 function check(name, got, want) {
   const ok = typeof want === 'function' ? want(got) : got === want
@@ -63,12 +59,7 @@ function check(name, got, want) {
 
 async function cleanup() {
   for (const c of children) { try { c.kill() } catch {} }
-  await sleep(300)
-  // A SIGTERM to the browser process leaves its zygote, GPU and renderer
-  // children alive, reparented to init. Chrome runs in its own process group so
-  // the group can be reaped here.
-  if (chromePid) { try { process.kill(-chromePid, 'SIGKILL') } catch {} }
-  await rm(PROFILE, { recursive: true, force: true }).catch(() => {})
+  await browser?.close()
 }
 
 // This file starts an API, a preview server and a Chrome, none of them children
@@ -118,75 +109,17 @@ if (!up) {
   process.exit(1)
 }
 
-// Port 0, read back off stderr. A FIXED debugging port is not just a collision
-// risk: Chrome refuses to start a second browser on a bound one and exits
-// quietly, so the poll below finds the OTHER browser's tabs and this file
-// drives those — which cost `verify.mjs` two runs against a css guide page
-// open in another session's Chrome.
-const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0',
-  `--user-data-dir=${PROFILE}`,
-  '--window-size=1280,800',
-  'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
-chromePid = chrome.pid
-children.push({ kill: () => { try { process.kill(-chrome.pid, 'SIGTERM') } catch {} } })
-
-const browserWsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15_000)
-  chrome.stderr.on('data', d => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-}).catch(async (e) => {
-  console.error(`\n  ${e.message} — is ${CHROME} installed? Set $FJS_CHROME.\n`)
+browser = await openChrome({ windowSize: '1280,800' }).catch(async (e) => {
+  console.error(`\n  ${e.message}\n`)
   await cleanup()
   process.exit(1)
 })
-
-const cdpPort = new URL(browserWsUrl).port
-let target = null
-for (let i = 0; i < 60 && !target; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
-    target = list.find(t => t.type === 'page')
-  } catch {}
-  if (!target) await sleep(250)
-}
-if (!target) {
-  console.error(`\n  No Chrome debug target on :${cdpPort}. Is ${CHROME} installed? Set $FJS_CHROME.\n`)
-  await cleanup()
-  process.exit(1)
-}
-
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise(r => ws.addEventListener('open', r))
-
-let msgId = 0
-const pending = new Map()
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
-})
-// An untimed promise on a renderer that stopped answering hangs the run with no
-// output, so the wrapper is killed and its Chrome orphaned. Name it instead.
-const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
-  const n = ++msgId
-  const timer = setTimeout(() => {
-    pending.delete(n)
-    rej(new Error(`CDP ${method} timed out after ${ms}ms — the page stopped answering`))
-  }, ms)
-  pending.set(n, msg => { clearTimeout(timer); res(msg) })
-  ws.send(JSON.stringify({ id: n, method, params }))
-})
+const send = browser.cmd
 
 const evaluate = async (expression) => {
   const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-  if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description ?? 'eval failed')
-  return r.result?.result?.value
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? 'eval failed')
+  return r.result?.value
 }
 
 await send('Page.navigate', { url: UI + '/' })

@@ -91,43 +91,11 @@ export interface IObservability {
   queryMetrics(query: string, from: Date, to: Date):  Promise<unknown[]>
 }
 
-/**
- * The edge — DNS and whatever terminates TLS in front of the fleet.
- *
- * Basecamp's own `Domain` rows are the hostnames it INTENDS to serve; this is
- * the other side of that, and the two disagreeing is the thing the screen
- * exists to show. A record here is the provider's, so it carries the
- * provider's id and nothing of ours.
- */
-export interface IEdge {
-  listZones():                                    Promise<EdgeZone[]>
-  listRecords(zoneId: string):                    Promise<EdgeRecord[]>
-  analytics(zoneId: string, from: Date, to: Date): Promise<EdgeAnalytics>
-}
-
-export interface EdgeZone {
-  id:        string
-  name:      string
-  sslMode:   string
-  proxied:   boolean
-  universalSsl?: boolean
-}
-
-export interface EdgeRecord {
-  id:       string
-  type:     string
-  name:     string
-  content:  string
-  proxied:  boolean
-  ttl:      number
-}
-
-export interface EdgeAnalytics {
-  requests:       number
-  cached:         number
-  bandwidthBytes: number
-  threats:        number
-}
+// A zone and a record are the connector's shapes, declared once at its
+// boundary. The edge is not in `BasecampProviders`: it is a workspace ACCOUNT
+// (`FJS-D558`), read by `services/edge/`.
+import type { EdgeZone, EdgeRecord } from './providers/edge/index.ts'
+export type { EdgeZone, EdgeRecord }
 
 /**
  * What the cloud is charging.
@@ -188,7 +156,6 @@ export interface BasecampProviders {
   observability: IObservability
   networking:    INetworking
   integrations:  IIntegrations
-  edge:          IEdge
   cloudSpend:    ICloudSpend
 }
 

@@ -363,7 +363,7 @@ describe('the agent guidance', () => {
       .flatMap(m => [...m[1].matchAll(/`([a-z0-9-]+)`/g)].map(x => x[1]))
     expect(cited.length).toBeGreaterThan(5)
 
-    const app = new Set(RULES.filter(r => r.scope === 'app').map(r => r.id))
+    const app = new Set(RULES.filter(r => r.scope !== 'repo').map(r => r.id))
     expect(cited.filter(id => !app.has(id))).toEqual([])
   })
 

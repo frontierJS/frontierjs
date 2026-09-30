@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-30 — `predicate`: `rel.some(expr)` is a node, and `evaluate` takes `resolveSome` (`FJS-D566`)
+
+`members.some(userId == auth().id)` parses to `{ type: 'some', rel, where }`. Inside the parentheses the relation has spent the one hop, so a dot or `check()` is refused at the token that makes it. `a.b.some(…)` names the to-many test rather than *crosses two relations*, and an empty `some()` is refused. A field named `some` read without a call is still a path. `evaluate` answers the node through `resolveSome`, default `null`, so an allow fails closed where there is no database to ask. The litestone side is its own entry.
+
 ## 2026-09-29 — `sse`: the event-stream frame, written and read by one kit (`FJS-1581`)
 
 `formatEvent({ data, event, id, retry })` is the bytes of one event, `data` JSON-encoded; it refuses an event name or id holding a line break, and a `retry` that is not a whole number. `parseEvents(text, lastId)` is the WHATWG reader, incremental: the complete events at the front of the text, the unread tail, and the id to pass next time. CRLF, CR and LF all end a line, a CR at the end of the text is held for its LF, several data lines join, `data` is JSON-decoded and falls back to the text. Junction's `ctx.sse()` writes with the first and sierra's `readEvents` reads with the second. Proved in `sse.spec.js`, which reads a stream cut at every offset.

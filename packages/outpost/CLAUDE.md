@@ -15,9 +15,18 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
+| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, DELETEd on stop, the ingress server made on the first one |
+| `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 
 ## What bites here
+
+- **The command port is TLS or nothing, and the certificate must not change.**
+  Basecamp pins the one handed over at enrollment (`FJS-D557`), so a new
+  certificate on 8180 fails every command until the machine enrolls again, and
+  a restart that minted one would do exactly that. `ensureCert` reads before it
+  makes. A plain-http `OUTPOST_PUBLIC_URL` is refused at start, because Basecamp
+  would register no target for it and the machine would look healthy.
 
 - **The route bodies are basecamp's wire contract and they are snake_case.**
   `app_id`, `timeout_s`, `keep_images`, `server_id`. Inside is camelCase. A route
@@ -71,12 +80,22 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
   release passes the first and reads whatever it points at, through a 200, on a
   port with no authentication in front of it. Publish writes only regular files,
   so that is the case where something else put it there.
+- **Outpost holds no copy of Caddy's routes, and must not grow one.** Caddy runs
+  `--resume` (the package's `caddy-api` unit) and reloads what its admin API
+  last saved, which is the whole answer to *Caddy restarted* (`FJS-D564`). A
+  path Caddy has not made yet answers 400, not 404; an `@id` it has not seen
+  answers 404 — `PATCH /id/…` falling back to `POST` rests on that.
+- **Naming a hostname moves the port to loopback, for that app only**
+  (`FJS-D565`). An app with no hostname keeps its port on every interface, or
+  nothing reaches it; `verify:docker` connects on a non-loopback address to
+  prove the other case refuses.
 - **A path with no extension is served `index.html`.** An app using the History
   API 404s on every refresh otherwise. A request that names a file gets the
   truth — a fallback there hides a typo forever.
 
 ## Proving a change
 
-`bun run test` — no Docker, no network. Then `basecamp`'s own drive
+`bun run test` — no Docker, no network. `bun run verify:docker` for anything
+that runs a command or touches Caddy — it pulls `caddy:2`. Then `basecamp`'s own drive
 (`bun run verify`), which stands up a sink speaking this protocol: if a shape
 here changes, that is where it shows.

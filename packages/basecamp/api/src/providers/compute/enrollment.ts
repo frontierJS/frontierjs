@@ -27,7 +27,8 @@
 // derived for that reason — and Basecamp knows it, because the vendor said so
 // when the machine came up. One exchange, two facts.
 
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
+import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
+import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
 
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
@@ -105,6 +106,32 @@ export function mintOutpostSecret(): string {
   return randomBytes(32).toString('hex')
 }
 
+/** A certificate's PEM, or anything else. The one a machine enrolls with is
+ *  pinned on its Conduit target, and conduit refuses a pin it cannot parse at
+ *  register() — which is a heartbeat, long after the token was spent. */
+export function isCertificate(pem: unknown): pem is string {
+  if (typeof pem !== 'string' || pem.length > 16_384 || !pem.includes('BEGIN CERTIFICATE')) return false
+  try {
+    new X509Certificate(pem)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The enrollment answer carries the machine's own key, so the address it is
+ * asked of must be https. Loopback is the exception: nothing crosses a network,
+ * and it is where a dev API and its Outpost live.
+ */
+export function assertEnrollsOverTls(basecampUrl: string): void {
+  const url = new URL(basecampUrl)
+  if (url.protocol === 'https:') return
+  if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return
+  throw new Error(
+    `A machine cannot enroll with ${basecampUrl}: the answer carries its key, so API_URL must be https (FJS-1603)`)
+}
+
 /**
  * The install, as one script, and it is the SAME script both ways a machine
  * gets one.
@@ -136,24 +163,56 @@ set -euo pipefail
 : "$ENROLL_TOKEN"   # single-use, short-lived, and the only secret here
 OUTPOST_PORT="$OUTPOST_PORT"
 
+# The enrollment answer is this machine's key. Over plain http it crosses the
+# network readable by anybody on the path.
+case "$BASECAMP_URL" in
+  https://*|http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*) ;;
+  *) echo "BASECAMP_URL must be https: the enrollment answer carries this machine's key" >&2; exit 1 ;;
+esac
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -yqq curl ca-certificates
+apt-get install -yqq curl ca-certificates openssl
 
 # Docker, from the vendor's own script. The Outpost runs containers and has no
 # other way to.
 curl -fsSL https://get.docker.com | sh
+
+# Caddy, the machine's ingress (FJS-D564). The Outpost is the only thing that
+# configures it, through the admin API on localhost:2019, so it runs as the
+# package's caddy-api unit: no Caddyfile, and --resume, which reloads the
+# config the admin API last saved. That is what puts every route back after
+# Caddy restarts on its own; the Outpost keeps no copy to replay.
+apt-get install -yqq debian-keyring debian-archive-keyring apt-transport-https gnupg
+curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \\
+  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \\
+  > /etc/apt/sources.list.d/caddy-stable.list
+apt-get update -qq
+apt-get install -yqq caddy
+systemctl disable --now caddy.service
+systemctl enable --now caddy-api.service
 
 # Bun, which the Outpost is written for.
 curl -fsSL https://bun.sh/install | bash
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
+# The command port's certificate. Made before the exchange because it rides in
+# it: Basecamp pins this one, and a command reaches no port holding any other.
+install -d -m 0700 /etc/basecamp
+openssl ${OPENSSL_CERT_ARGS.join(' ')} \\
+  -keyout /etc/basecamp/outpost.key -out /etc/basecamp/outpost.crt 2>/dev/null
+chmod 0600 /etc/basecamp/outpost.key
+# One JSON string: every line ends in a literal backslash-n. PEM holds no quote
+# and no backslash, so nothing else needs escaping.
+CERT=$(awk '{printf "%s\\\\n", $0}' /etc/basecamp/outpost.crt)
+
 # The exchange. This is the only moment the enrollment token is used, and the
 # only moment this machine has no credential of its own.
 ENROLL=$(curl -fsSL -X POST "$BASECAMP_URL/servers/$SERVER_ID/enroll" \\
   -H 'content-type: application/json' \\
-  -d "{\\"token\\":\\"$ENROLL_TOKEN\\"}")
+  -d "{\\"token\\":\\"$ENROLL_TOKEN\\",\\"cert\\":\\"$CERT\\"}")
 
 OUTPOST_SECRET=$(echo "$ENROLL" | grep -o '"secret":"[^"]*"' | cut -d'"' -f4)
 OUTPOST_PUBLIC_URL=$(echo "$ENROLL" | grep -o '"publicUrl":"[^"]*"' | cut -d'"' -f4)
@@ -163,12 +222,13 @@ if [ -z "$OUTPOST_SECRET" ]; then
   exit 1
 fi
 
-install -d -m 0700 /etc/basecamp
 cat > /etc/basecamp/outpost.env <<ENVEOF
 OUTPOST_SERVER_ID=$SERVER_ID
 OUTPOST_SECRET=$OUTPOST_SECRET
 OUTPOST_PUBLIC_URL=$OUTPOST_PUBLIC_URL
 OUTPOST_PORT=$OUTPOST_PORT
+OUTPOST_TLS_CERT=/etc/basecamp/outpost.crt
+OUTPOST_TLS_KEY=/etc/basecamp/outpost.key
 BASECAMP_URL=$BASECAMP_URL
 ENVEOF
 chmod 0600 /etc/basecamp/outpost.env
@@ -204,6 +264,7 @@ export function cloudInit(opts: {
   token:       string
   outpostPort: number
 }): string {
+  assertEnrollsOverTls(opts.basecampUrl)
   const script = installScript().replace(/^#!\/bin\/bash\n/, '')
   return `#!/bin/bash
 BASECAMP_URL=${JSON.stringify(opts.basecampUrl)}
@@ -229,6 +290,7 @@ export function installCommand(opts: {
   token:       string
   outpostPort: number
 }): string {
+  assertEnrollsOverTls(opts.basecampUrl)
   return `curl -fsSL ${opts.basecampUrl}/install.sh | sudo env `
     + `BASECAMP_URL=${opts.basecampUrl} `
     + `SERVER_ID=${opts.serverId} `

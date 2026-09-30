@@ -1,5 +1,52 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-30 — a row policy asks whether ANY row of a to-many matches: `members.some(userId == auth().id)` (`FJS-1291`, `FJS-D566`)
+
+*The caller is one of this row's members* had no spelling, so linear, Portal and jazzhr each carried a copy: a resolver-filled `claim teamIds`, a `readerIds String[] @system`, a `submittedIds`. A revoke, a seed or a stamp made on the model left the reader stale. `rel.some(condition)` compiles to a correlated `EXISTS` over the child's foreign key (`someSql` in `core/policy.js`). The JS half (create, post-update, `$readAs`) runs the same `EXISTS` with the parent's key bound, so a broadcast is graded against the live membership row. A soft-deleted child is not one of the relation's rows, as in the query `where`'s `some`. On create the test is false, because nothing points at a row that does not exist yet.
+
+The condition is checked at startup as a policy on the CHILD model, so an unknown or parent-only column names the child's fields. A dot or `check()` inside, `a.b.some(…)`, a `.some` over a to-one or an implicit many-to-many, `@derived` and an index predicate are each refused by name. `verifyRowPolicies` reports the rule as not-graded, like a path.
+
+Measured by EXPLAIN over 300 teams and 3000 memberships: an unindexed child FK plans as an AUTOMATIC index per read, and `@@index([teamId])` makes it `SEARCH __some USING INDEX`. `litestone advise`'s `foreign-key-without-index` already names that column, so nothing new refuses it. `test/policy-some.test.ts`, plus a `policy-interpreters.test.ts` row grading SQL against `$readAs`. A mutant JS half that ignored soft delete failed it.
+
+## 2026-09-30 — a refused foreign key is a `ForeignKeyError` naming the relation and the value, or the child that blocked a delete (`FJS-1454`)
+
+`FJS-D521` ruled a class beside `UniqueConflictError`. A create or update whose key names no parent now throws `ForeignKeyError` with `model`, `relation`, `field`, `value` and `target`, found by looking each declared key of the row up in its parent on the failing path; a composite key reports its columns as parallel arrays. A `delete` refused by a child throws it with `child: { model, id }`, walking through `onDelete: Cascade` hops to the relation that would not let go. `status` is 422 and `errors` is the form channel, so junction maps it with no change of its own. `deleteMany` and the soft-delete paths still throw SQLite's bare error. `test/foreign-key-error.test.ts`.
+
+## 2026-09-30 — a `.js` file in `migrations/` is refused with a nonzero exit, and a data change is an app script (`FJS-1474`)
+
+`FJS-D518` ruled that a data change is not a migration. `apply()` now refuses a directory holding a `.js` file before running anything in it: it returns `refused`, `failed` and `error`, so a tenant migrate throws too. The code that ran one through a system client is gone, along with `apply()`'s third argument. `migrate check` prints ✗ and exits 1 where it used to print `·` and exit 0. `migrate create` on a single database had no `blocked` branch. It printed the shadow's refusal under a green ✓ and exited 0, so a script reading the exit code was told a migration had been written. It now exits 1. `jsRefusal()` is the one sentence all of them print. `docs/migrations.md` and the README point a backfill at an app script chained after `migrate apply` and made idempotent by the rows it expects. The README's view example is a `.sql` file now. Proved by `test/cli-smoke.test.ts` (apply, check and create each refuse a `.js` history) and by `test/litestone.test.ts` § *a .js file in migrations/*.
+
+## 2026-09-30 — the Studio drives open Chrome through `@frontierjs/mesa/drive` (`FJS-1588`)
+
+The six `test/verify-studio-*.mjs` drop their own launcher, profile cleanup and CDP client. Each takes `cmd` and `evaluate` from `openChrome()`, and `consoleErrors` is the driver's `errors`: exceptions and `console.error`, which was already each drive's policy. `bench/studio-{sidebar,factory-click,advisor-fix}.mjs` move too. They lose a fixed CDP port 7504, which HEAD's factory-click orphaned a Chrome on when Studio failed, and a hard-coded home-directory path. `bench/studio-ui-test{,2,3}.mjs` are deleted. They drove playwright-core and a `/opt/pw-browsers` binary, and neither is installed.
+
+Measured: models 39, compare 38, preview 26, advisor 26. access (`FJS-1238`) and explore (`FJS-1203`) fail at the same line as HEAD's copies, and so do the three bench scripts (`FJS-1604`).
+
+## 2026-09-29 — `verifyRowPolicies` grades a create `@@deny` against the schema it is asked about (`FJS-1595`)
+
+`create` was left out of the check, on the grounds that evalJs is the only
+thing that enforces a create, so grading one would mean evalJs grading itself.
+That holds without `against`. Under `against` it does not: the verdict comes
+from the ORIGINAL schema and the create runs on the mutant. Dropping orion's
+owner deny on basecamp's `Flow` or `FlowVersion` survived `litestone mutate`
+because nothing asked.
+
+The check now grades create's column-only `@@deny` rules by payload, and only
+under `against`. A payload the original's deny fires on and the built schema
+admits comes back `got: 'admitted'`. Three things make the deny reachable. The
+payload holds only the required columns and the ones under test, so a
+factory-filled `@system` or `@guarded` column is not refused first. A parent
+is built to satisfy a path allow (`flow.ownerId == auth().id`). A parent is
+stamped with the reader's tenant, so the delegated tenancy `check()` admits.
+
+A model with a required column that only SYSTEM writes (basecamp's
+`Invitation.token`) is reported `skipped` by name. So is a deny that no payload
+fired, or one where no payload was admitted. A create `@@allow` is still not
+graded. `litestone mutate --kinds=deny-drop` in basecamp went from 1/3 to 3/3.
+The whole CI subset is 22/22, so the floor in `scripts/mutate-baselines.json`
+goes from 91 to 100. A new test in `test/litestone.test.ts` fails with the
+grader stubbed. `bun run test` 5485 pass, 0 fail.
+
 ## 2026-09-29 — `verifyFieldProtection` grades a protected column on a model no reader reaches (`FJS-1594`)
 
 A model gated at SYSTEM refuses the SYSADMIN(7) read, and the check used to

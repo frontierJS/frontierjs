@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'fs'
-import { join }   from 'path'
+import { join, relative } from 'path'
 import { tmpdir } from 'os'
 
 import { keyLiteral, weakLiteral, buildIndex } from '../core/seams.js'
@@ -169,10 +169,10 @@ const CLEAN = {
                                         "  const LABELS = { ssh_key: 'SSH key' }\n" +
                                         '</script>\n<Table {columns} rows={[]} />\n',
   'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
-  // A browser drive, so `drive-cdp-port` RUNS over the clean tree rather than
-  // skipping — a rule that only ever skips is what this file exists to catch —
-  // and finds nothing, because Chrome is left to pick the port.
-  'web/test/verify-leads.mjs':          "spawn(CHROME, ['--headless=new', '--remote-debugging-port=0'])\n",
+  // A browser drive, so `drive-opens-chrome` RUNS over the clean tree rather
+  // than skipping — a rule that only ever skips is what this file exists to
+  // catch — and finds nothing, because the driver opens the browser.
+  'web/test/verify-leads.mjs':          "import { openChrome } from '@frontierjs/mesa/drive'\nconst browser = await openChrome()\n",
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -352,7 +352,7 @@ describe('the clean app', () => {
     // The claim that matters: nothing was skipped. A green run over a tree the
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
-    expect(ran.length).toBe(RULES.filter(r => r.scope === 'app').length)
+    expect(ran.length).toBe(RULES.filter(r => r.scope !== 'repo').length)
   })
 })
 
@@ -1023,15 +1023,36 @@ describe('the silent config hazards', () => {
     expect(findings[0].message).toMatch(/hops to the next free port/)
   })
 
-  test('a drive that pins Chrome to a fixed debugging port is an error', () => {
-    const root = tree('cdp-pin', {
-      ...CLEAN,
-      'web/test/verify-leads.mjs': "spawn(CHROME, ['--headless=new', '--remote-debugging-port=9222'])\n",
+  // Port 0 as well as a fixed one: port 0 fixed the collision and left the
+  // profile, the sweep and the orphan to every copy to learn again.
+  test('a drive that launches Chrome itself is an error, whatever port it asks for', () => {
+    for (const port of ['9222', '0']) {
+      const root = tree(`cdp-own-${port}`, {
+        ...CLEAN,
+        'web/test/verify-leads.mjs': `spawn(CHROME, ['--headless=new', '--remote-debugging-port=${port}'])\n`,
+      })
+      const { findings } = only(root, 'drive-opens-chrome')
+      expect(findings).toHaveLength(1)
+      expect(findings[0].line).toBe(1)
+      expect(findings[0].message).toMatch(/openChrome\(\)/)
+    }
+  })
+
+  test('in the repo run it reads nested drive directories and bench/, and leaves a nested app to its own run', () => {
+    const launch = "spawn(CHROME, ['--remote-debugging-port=0'])\n"
+    const root = tree('cdp-repo', {
+      'packages/store/test/browser/verify-studio.mjs': launch,
+      'packages/store/bench/studio-sidebar.mjs':       launch,
+      // A page that reports through the dumped DOM has no port to pin.
+      'packages/css/test/run.js':                      "spawnSync(bin, ['--headless', '--dump-dom', url])\n",
+      'packages/fleet/db/schema.lite':                 'model Server { id Integer @id }\n',
+      'packages/fleet/web/test/verify.mjs':            launch,
     })
-    const { findings } = only(root, 'drive-cdp-port')
-    expect(findings).toHaveLength(1)
-    expect(findings[0].line).toBe(1)
-    expect(findings[0].message).toMatch(/attaches to the FIRST one's session/)
+    const { findings } = only(root, 'drive-opens-chrome', { scope: 'repo' })
+    expect(findings.map(f => relative(root, f.file)).sort())
+      .toEqual(['packages/store/bench/studio-sidebar.mjs', 'packages/store/test/browser/verify-studio.mjs'])
+    // …and the app's own run is where its drive is graded.
+    expect(only(join(root, 'packages/fleet'), 'drive-opens-chrome').findings).toHaveLength(1)
   })
 
   test('a commented body tag ABOVE the real one is an error, at the mention', () => {

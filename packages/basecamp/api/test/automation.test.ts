@@ -121,7 +121,7 @@ afterAll(async () => {
 async function placedApp() {
   const sys  = env.system as any
   const slug = `app-${uniq()}`
-  const made = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container', config: {} } })
+  const made = await sys.app.create({ data: { workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container' } })
   await sys.appServer.create({ data: { appId: made.id, serverId: box.id, replicaIndex: 0 } })
   return made
 }

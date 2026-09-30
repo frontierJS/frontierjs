@@ -295,7 +295,7 @@ describe('the routes basecamp reaches these through', () => {
 
   const CONFIG = {
     serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
-    port: 7180, version: '0.1.0', publicUrl: 'http://outpost.test:7180',
+    port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
     heartbeatMs: 30_000, reportMs: 300_000, workDir: '/tmp/outpost-test',
   }
   let nonce = 0

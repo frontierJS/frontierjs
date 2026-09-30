@@ -7,6 +7,9 @@ The user-facing history of the FrontierJS VS Code extension. Engineering detail
 
 ### Litestone (`.lite`)
 
+- **A brace inside a string no longer ends the model.** A field such as
+  `data String @default("{}")` stopped highlighting at the `}`, and every field
+  below it in that model showed as plain text.
 - **Formatting no longer damages a schema.** A multi-line `@@transitions`
   body or an attribute message wrapped onto a second line was rewritten, and
   could leave a string open to the end of the file. The formatter now changes

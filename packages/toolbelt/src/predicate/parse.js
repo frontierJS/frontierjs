@@ -67,6 +67,7 @@ function sourceHint(node) {
 //   value    ::= auth() [.field] | now() | check(field [,op]) | null | bool | string | number
 //              | '[' literal (',' literal)* ']'
 //              | ident | ident '.' ident   (one relation hop — FJS-D221)
+//              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
 //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in'
 
 // The policy dialect: a condition over one record, which is what a schema takes.
@@ -284,6 +285,9 @@ function value(p, ctx) {
 
   // check(field) or check(field, 'operation')
   if (t.type === TK.IDENT && t.value === 'check') {
+    if (ctx.within) throw p.fail(
+      `check() inside '${ctx.within}.some(…)' delegates from rows one relation away, which is a ` +
+      `second hop. Put the condition on the model '${ctx.within}' holds, or test its columns here.`, t)
     p.eat(TK.IDENT)
     p.eat(TK.LPAREN)
     const field = p.eat(TK.IDENT).value
@@ -343,17 +347,50 @@ function value(p, ctx) {
   // the author cannot see, per policy, per query — so `a.b.c` is refused HERE
   // rather than compiled into something slow, which makes the bound
   // discoverable from the mistake instead of from a decision record.
+  //
+  // Inside `rel.some(…)` a name is a column of the rows being tested, and the
+  // relation has already spent the one hop — so a dot there is refused the way
+  // `a.b.c` is, and for the same reason.
   if (t.type === TK.IDENT) {
     p.eat(TK.IDENT)
     if (!p.check(TK.DOT)) return { type: 'field', name: t.value }
+    if (ctx.within)
+      throw p.fail(
+        `'${t.value}.…' inside '${ctx.within}.some(…)' crosses a second relation. A name there is ` +
+        `a column on the rows '${ctx.within}' holds — one hop is the bound, and '${ctx.within}' spent it.`, p.peek())
     p.eat(TK.DOT)
     const field = p.eat(TK.IDENT).value
-    if (p.check(TK.DOT))
+    if (field === 'some' && p.check(TK.LPAREN)) return some(p, ctx, t.value)
+    if (p.check(TK.DOT)) {
+      // `interview.scorecards.some(…)` is a to-many test two relations away,
+      // and saying *crosses two relations* names the hops where the author was
+      // reaching for the test.
+      if (p.peek(1)?.value === 'some' && p.peek(2)?.type === TK.LPAREN)
+        throw p.fail(
+          `'${t.value}.${field}.some(…)' tests rows two relations away. '.some()' asks about a relation ` +
+          `on THIS model — put the rule on the model '${t.value}' points at, where it reads '${field}.some(…)'.`, p.peek())
       throw p.fail(
         `'${t.value}.${field}.…' crosses two relations. A policy may name a column ONE hop away — ` +
         `put the rule on the model '${t.value}' points at, or carry the value on this model.`, p.peek())
+    }
     return { type: 'path', rel: t.value, name: field }
   }
 
   throw p.fail(`Expected a value in policy expression, got '${t.value ?? t.type}'`, t)
+}
+
+// `members.some(userId == auth().id)` — does ANY row of a to-many relation
+// satisfy the condition (`FJS-D566`). The same question the query `where` asks
+// as `{ members: { some: … } }`, under the same word. The condition is read
+// against the related model, which is why it is a node of its own rather than
+// a path: its names belong to another model, and a walker that descended into
+// it as though they were this model's would check them against the wrong
+// field list.
+function some(p, ctx, rel) {
+  p.eat(TK.LPAREN)
+  if (p.check(TK.RPAREN))
+    throw p.fail(`'${rel}.some()' needs a condition — the columns it tests are the rows '${rel}' holds`, p.peek())
+  const where = parseExpression(p, { ...ctx, within: rel })
+  p.eat(TK.RPAREN)
+  return { type: 'some', rel, where }
 }

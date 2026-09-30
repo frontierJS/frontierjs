@@ -1,5 +1,13 @@
 # Changes — @frontierjs/css
 
+## 2026-09-30 — `test/run.js` finds Chrome with the driver's `findChrome()` (`FJS-1588`)
+
+The harness had its own candidate list, which fell through to another browser when `$FJS_CHROME` named a missing binary. It now asks `findChrome()` from mesa's driver, where the variable is authoritative and naming nothing is an error. `--dump-dom` stays. 509 passing.
+
+## 2026-09-29 — the seed playground previews the whole kit
+
+`demo/seed.html` gains breadcrumb, tiles, info/success/danger alerts, tone×treatment buttons, tooltip, avatars, pills, spinner, skeleton, progress, steps, feed, facts, divider, disclosure, a field-row with addons, select, textarea, checkbox/radio, items, empty state, pagination, a prose card and a toast trigger, so a switch shows its effect on more than buttons. Markup copied from `demo/index.html`. Not yet walked in a browser.
+
 ## 2026-09-29 — the seed playground exports a real theme, fixes its own contrast, and shares by link
 
 `demo/seed.html` now writes `.theme-<name>` with every seed token resolved to a concrete value (hex, rem, em, ms, px, plain number), read from `seed.css`'s own declarations so a new token exports without an edit. A roll that fails contrast gets a `/* FAILS contrast */` header, because a shipped theme must pass. **Fix contrast** walks the primary's lightness away from the surface, then drains the surface's chroma, until every pair clears 4.5:1. Every switch rides in the URL hash, so **Copy link** shares the exact theme. The preview gains a nav list, tabs, a striped table, a dialog, a field-group with a `:user-invalid` email and a switch. Two new switches: `--seed-tracking` → `--heading-letter-spacing`, and `--seed-leading` → `--leading-heading`, with display 0.1 tighter. A sweep of the 7 literal-px borders in `src/` found no FJS-1572-style bug: spinners, the tooltip arrow, the disclosure chevron, the step marker and the code-line rule are all shapes or emphasis marks that stay put by design. Probed in headless Chrome: a hash round-trip, fix taking a 1.24:1 primary to all pairs ≥4.76, resolved export values, and no sideways scroll.

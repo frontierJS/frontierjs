@@ -55,6 +55,10 @@ declare module '@frontierjs/junction' {
  * puts it under the caller's, so an app wiring its own tracer replaces this
  * whole thing rather than fighting it, and `trace: () => null` turns it off.
  *
+ * It reaches only a target declaring `trace: true`. Junction writes the
+ * correlation id on every audit row of the request, so a third party holding
+ * it and a user's query holds the join to who typed it (`FJS-1413`, `FJS-D507`).
+ *
  * Outside a request — a job, a script, boot — `requestMeta()` answers
  * undefined, and a fresh trace per call is then the correct answer rather than
  * a missing one: there is no inbound request for the call to hang off.

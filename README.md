@@ -235,15 +235,16 @@ change), a `PROJECT_STATE.md` and a `CHANGES.md`.
 | Toolbelt — pure-function kits, zero deps           | [packages/toolbelt](./packages/toolbelt/README.md)                   |
 | Config — the tooling opinion                       | [packages/config](./packages/config/README.md)                       |
 | VS Code — Litestone + Mesa language support        | [packages/frontierjs-vscode](./packages/frontierjs-vscode/README.md) |
+| Orion — flow automations (porting, not on npm)     | [packages/orion](./packages/orion/README.md)                         |
 
-**Two applications and two claimed folders**, all built *on* the framework rather
+**Two applications and a claimed folder**, all built *on* the framework rather
 than part of it:
 
 | | |
 | --- | --- |
 | [Basecamp](./packages/basecamp/README.md) | Fleet operations — the largest dogfooding surface, all three realms real |
 | [`example/`](./example/README.md) | The kitchen sink — a fleet of shops across six surfaces, a drive per feature area, every package exercised |
-| [Oracle](./packages/oracle/README.md) · [Orion](./packages/orion/README.md) | Claimed, not built. V2, deferred until core leaves alpha (`FJS-D14`) |
+| [Oracle](./packages/oracle/README.md) | Claimed, not built. V2, deferred until core leaves alpha (`FJS-D14`) |
 
 ---
 

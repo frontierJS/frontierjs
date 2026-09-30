@@ -14,7 +14,7 @@
 // This module hand-writes SQL against a schema litestone emits, so a table that
 // gets renamed is a runtime failure on a machine nobody is watching.
 
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test'
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { spawnSync } from 'child_process'
 import { readFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -249,7 +249,7 @@ describe('the journal, through the runner that ships to the target', () => {
       exec: (stdin) => spawnSync('bun', [RUNNER], { input: stdin, encoding: 'utf8' }).stdout,
     })
   })
-  afterAll(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
+  afterEach(() => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
 
   const begin = (tid = 't1') =>
     j.begin({ release: RELEASE, transition: { ...TRANSITION, id: tid }, steps: steps(tid) })

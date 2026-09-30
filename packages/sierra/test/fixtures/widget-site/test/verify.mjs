@@ -41,17 +41,16 @@ import { createServer } from 'node:http'
 import { readFile, readdir } from 'node:fs/promises'
 import { join, extname, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 
 import { serveWidgets } from '../../../../src/widget/serve.js'
+import { openChrome } from '../../../../../mesa/src/drive.js'
 
 // This file lives in the surface's own `test/`, so the built widgets are a
 // level up — the same relationship `web/test/` has to `web/dist/`.
 const HERE    = dirname(fileURLToPath(import.meta.url))
 const SURFACE = resolve(HERE, '..')
 const EMBEDS  = join(SURFACE, 'dist/embeds')
-const CHROME  = process.env.FJS_CHROME ?? 'google-chrome'
 const TYPES   = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
 
 if (!existsSync(join(EMBEDS, 'Counter.js'))) {
@@ -333,50 +332,15 @@ const CSP_PROBE = `
 
 // ─── Drive Chrome ─────────────────────────────────────────────────────────────
 
-const profile = `/tmp/fjs-widget-${process.pid}`
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd } = browser
 
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const timer = setTimeout(() => reject(new Error('Chrome did not report a debugging port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); resolve(m[0]) }
-  })
-})
-
-const { default: WebSocket } = await import('ws').catch(() => ({ default: globalThis.WebSocket }))
-const ws = new WebSocket(wsUrl)
-await new Promise(r => ws.addEventListener('open', r))
-
-let id = 0
-const pending = new Map()
-ws.addEventListener('message', (e) => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
-})
-const send = (method, params = {}, sessionId) => new Promise(r => {
-  const n = ++id
-  pending.set(n, r)
-  ws.send(JSON.stringify({ id: n, method, params, sessionId }))
-})
-
-const { result: target } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: attach } = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true })
-const session = attach.sessionId
-
-await send('Page.enable', {}, session)
-await send('Runtime.enable', {}, session)
-await send('Page.navigate', { url: origin }, session)
+await cmd('Page.navigate', { url: origin })
 await new Promise(r => setTimeout(r, 1500))
 
-const { result } = await send('Runtime.evaluate', {
+const result = await cmd('Runtime.evaluate', {
   expression: PROBE, awaitPromise: true, returnByValue: true,
-}, session)
+})
 
 // ── the same widgets, on a host page with a strict CSP ────────────────────────
 // A bank, a government site, anything behind a WAF: `style-src 'self'` blocks an
@@ -384,15 +348,15 @@ const { result } = await send('Runtime.evaluate', {
 // Mesa's own scoped styles arrive through adoptedStyleSheets and are not gated.
 // So it half-renders. The page asserts BOTH stylesheets under one policy — a fix
 // that broke both would look like a fix that broke neither.
-await send('Page.navigate', { url: `${origin}/csp` }, session)
+await cmd('Page.navigate', { url: `${origin}/csp` })
 await new Promise(r => setTimeout(r, 1500))
-const { result: csp } = await send('Runtime.evaluate', {
+const csp = await cmd('Runtime.evaluate', {
   expression: CSP_PROBE, awaitPromise: true, returnByValue: true,
-}, session)
+})
 
 const got = { ...fileChecks, ...headerChecks, ...(result?.result?.value ?? {}), ...(csp?.result?.value ?? {}) }
 
-chrome.kill()
+await browser.close()
 server.close()
 await widgetOrigin.close()
 

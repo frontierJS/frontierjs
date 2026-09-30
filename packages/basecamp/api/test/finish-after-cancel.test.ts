@@ -46,7 +46,7 @@ beforeAll(async () => {
     workspaceId: ws.id, projectId: project.id, name: 'Production', slug: `e-${uniq()}` } })
   const slug = `app-${uniq()}`
   target = await sys.app.create({ data: {
-    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container', config: {} } })
+    workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container' } })
 })
 
 describe('a job run that finishes after the job was cancelled', () => {

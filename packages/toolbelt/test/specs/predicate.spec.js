@@ -228,6 +228,14 @@ test('predicate: an unresolved path is null, an unresolved check is true', funct
   assert.equal(evaluate({ type: 'check', field: 'customer' }, { record: {} }), true)
 })
 
+// A `some` is a predicate like `check()`, but it asks whether a row EXISTS —
+// with no database to ask, the answer is unknown, and an allow fails closed.
+test('predicate: an unresolved some is null, and the caller answers it', function () {
+  const node = { type: 'some', rel: 'members', where: lit(true) }
+  assert.equal(evaluate(node, { record: {} }), null)
+  assert.equal(evaluate(node, { record: {}, resolveSome: () => true }), true)
+})
+
 test('predicate: both are the caller\'s to answer', function () {
   const env = {
     record: {},

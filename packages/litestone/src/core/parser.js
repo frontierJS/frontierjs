@@ -6457,6 +6457,7 @@ function validate(schema) {
       if (n.type === 'now')   named.push('\0now')
       if (n.type === 'path')  named.push('\0cross')
       if (n.type === 'check') named.push('\0cross')
+      if (n.type === 'some')  named.push('\0cross')
       for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k])
       if (Array.isArray(n.items)) n.items.forEach(walk)
       if (Array.isArray(n.args))  n.args.forEach(walk)
@@ -7926,7 +7927,7 @@ function validate(schema) {
           `Model '${model.name}': ${label} while: reads auth(), and a commitment has no caller — the system owes it`)
         else if (n.type === 'now') errors.push(
           `Model '${model.name}': ${label} while: reads now(). When it is owed is on:'s to say`)
-        else if (n.type === 'path' || n.type === 'check') errors.push(
+        else if (n.type === 'path' || n.type === 'check' || n.type === 'some') errors.push(
           `Model '${model.name}': ${label} while: crosses a relation. It reads this row and nothing else — ` +
           `copy the value onto the row when the terms are agreed`)
         else if (n.type === 'field' && !model.fields.some(f => f.name === n.name)) {

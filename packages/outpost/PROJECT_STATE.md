@@ -33,6 +33,11 @@ resolved no executor and every step passed having issued nothing.
 - **Build-once-promote-a-digest.** V1 builds on the target. The digest plumbing
   is done, so what remains is a builder and somewhere to put the artefact —
   `IDEAS/deploy-plane.md` §b.
-- No TLS of its own (it expects to sit behind one), no metric endpoint.
+- **Ingress is Caddy's, driven from here** (`FJS-D564`): a `/deploy` naming
+  `hosts` gets a route and a Let's Encrypt certificate, and its port binds to
+  loopback (`FJS-D565`). Not yet: an `inline` app behind Caddy, a redirecting
+  `Domain`, a route pushed when a `Domain` changes between releases, and the
+  certificate's expiry reported back (`IDEAS/fleet-ingress.md` Phases 3–5).
+- No metric endpoint.
   Log streaming is built (`POST /logs`), which is what `FJS-123`'s alert
   evaluator needed and now has.

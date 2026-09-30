@@ -1,6 +1,6 @@
 # Project state — @frontierjs/orion
 
-**Phases 1 to 6 of `IDEAS/orion-port.md` are done, and phase 7's `example` drive passes · private, unpublished.**
+**Phases 1 to 6 of `IDEAS/orion-port.md` are done, and phase 7's `example` drive passes · publishable, never released — its first npm release deletes orion's `HELD_BACK` entry in `website/site/src/data/packages.js` and writes its page (`FJS-1369`).**
 
 ## What is real
 

@@ -33,6 +33,7 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../../mesa/src/drive.js'
 // The count is the enum's; `db/test/schema.test.ts` holds this list equal to it.
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
 import { totp } from '../../../auth/totp.ts'
@@ -41,18 +42,22 @@ const KINDS = NOTIFICATION_KIND_NAMES.length
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const PKG      = join(HERE, '..', '..')
-const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
 // The dev slot by default; `API_PORT`/`UI_PORT` move the whole drive (the test
 // slot is 7120/7020) so it can run beside a dev server holding 8120/8020.
 const API_PORT = Number(process.env.API_PORT ?? 8120)
 const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
 const BASE     = `http://localhost:${WEB_PORT}`
+// Cloudflare's stand-in, on the basecamp slot's `7`: 8127 beside the dev API,
+// 7127 beside the test one (`docs/PORTS.md`).
+const CF_PORT  = API_PORT + 7
+const CF_SINK  = `http://localhost:${CF_PORT}/client/v4`
 const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
 const PASSWORD = 'hunter2hunter2'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
 let passed = 0, failed = 0
+let browser = null
 
 function ok(label)          { passed++; console.log(`  ✓ ${label}`) }
 function bad(label, detail) { failed++; console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`) }
@@ -61,6 +66,7 @@ function check(label, cond, detail) { cond ? ok(label) : bad(label, detail) }
 async function cleanup() {
   for (const c of children) { try { c.kill?.() ?? process.kill(-c.pid, 'SIGTERM') } catch {} }
   await sleep(300)
+  await browser?.close()
 }
 function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => process.exit(1)) }
 
@@ -89,7 +95,7 @@ if (seedCode !== 0) fail(`db/seed.js exited ${seedCode}\n${seedErr}`)
 // A stale dev server means this drive would assert against the OTHER app's
 // build and report a pass. Vite sets strictPort, so it would die anyway; the
 // API would not.
-for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
+for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT], ['Cloudflare sink', CF_PORT]]) {
   const answered = await fetch(`http://localhost:${port}/`).then(() => true).catch(() => false)
   if (answered) fail(`Something already answers on :${port} (${name}). Stop it — this drive would test it instead.`)
 }
@@ -103,11 +109,16 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 let apiLog = ''
 const api = spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT, PORT: String(API_PORT) },
+  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT, PORT: String(API_PORT),
+    CLOUDFLARE_URL: CF_SINK },
 })
 api.stdout.on('data', d => { apiLog += d })
 api.stderr.on('data', d => { apiLog += d })
 children.push(api)
+children.push(spawn('bun', ['api/src/providers/edge/cloudflare-sink.ts'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, CF_SINK_PORT: String(CF_PORT) },
+}))
 children.push(spawn('bun', ['run', 'web'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
@@ -122,64 +133,22 @@ const waitFor = async (url, label) => {
 }
 await waitFor(`http://localhost:${API_PORT}/health`, 'the API')
 await waitFor(BASE, 'the web server')
+await waitFor(`${CF_SINK}/zones`, 'the Cloudflare stand-in')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
-const PROFILE = mkdtempSync(join(tmpdir(), 'basecamp-screens-chrome-'))
-const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${PROFILE}`,
-  '--window-size=1280,900', 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
-children.push(chrome)
-chrome.on('error', e => fail(`Could not launch ${CHROME}: ${e.message}. Set $FJS_CHROME.`))
-
-const browserWsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15_000)
-  chrome.stderr.on('data', d => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-}).catch(e => fail(`${e.message}. Is ${CHROME} installed? Set $FJS_CHROME.`))
-
-const cdpPort = new URL(browserWsUrl).port
-let target = null
-for (let i = 0; i < 60; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
-    target = list.find(t => t.type === 'page')
-    if (target) break
-  } catch {}
-  await sleep(250)
-}
-if (!target) fail(`No Chrome debug target on :${cdpPort}`)
-
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise(r => ws.addEventListener('open', r))
-
-let msgId = 0
-const pending = new Map()
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+browser = await openChrome().catch(async (e) => {
+  console.error(`\n✗ ${e.message}\n`)
+  await cleanup()
+  process.exit(1)
 })
-const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
-  const n = ++msgId
-  const timer = setTimeout(() => {
-    pending.delete(n)
-    rej(new Error(`CDP ${method} timed out after ${ms}ms`))
-  }, ms)
-  pending.set(n, msg => { clearTimeout(timer); res(msg) })
-  ws.send(JSON.stringify({ id: n, method, params }))
-})
+const send = browser.cmd
 
 async function evaluate(expression) {
   const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
     .catch(e => { throw new Error(`${e.message} evaluating ${expression.trim().slice(0, 160)}`) })
-  const ex = r.result?.exceptionDetails
+  const ex = r.exceptionDetails
   if (ex) throw new Error(ex.exception?.description ?? JSON.stringify(ex))
-  return r.result?.result?.value
+  return r.result?.value
 }
 
 /** Poll until an expression settles rather than sleeping a guessed amount. */
@@ -248,11 +217,9 @@ const fill = fields => evaluate(`
 // The console is watched throughout: a Mesa keying warning or a runtime throw
 // is a defect the assertions below would otherwise walk straight past.
 const consoleErrors = []
-await send('Runtime.enable')
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type)) {
-    const t = msg.params.args.map(a => a.value ?? a.description ?? '').join(' ')
+browser.on('Runtime.consoleAPICalled', (params) => {
+  if (['error', 'warning'].includes(params.type)) {
+    const t = params.args.map(a => a.value ?? a.description ?? '').join(' ')
     // Vite's own dev-time noise, and a favicon nobody has drawn.
     if (/favicon|\[vite\]|Download the .* DevTools/i.test(t)) return
     consoleErrors.push(t)
@@ -675,11 +642,39 @@ try {
   check('and a certificate status rather than a blank cell', dns.includes('none'), dns.slice(0, 200))
   check('the vendor half is a skeleton, not a number',
     await evaluate(`document.querySelectorAll('[aria-busy="true"] .skeleton').length`) > 0)
-  // The word comes from the portal's ping, not from the page. `IEdge` is
-  // declared with a stub behind it, so it must read unconfigured here — and
-  // must stop reading it the day an adapter is wired.
+  // The word comes from the portal's ping, not from the page. The seed holds no
+  // edge account, so it must read unconfigured — and must stop reading it the
+  // moment one is connected, which is the next block.
   check('and the edge adapter reports its real state', (await text('#edge-status')).trim() === 'unconfigured',
     await text('#edge-status'))
+
+  // Connected: a Cloudflare token as a provider key, through the app's own
+  // secrets service, pointed at the stand-in by `CLOUDFLARE_URL`. The sink's
+  // `example.test` zone holds an apex CNAME, an MX and a TXT, and no record for
+  // `drive.example.test` — the hostname created above, so it is the one the
+  // screen must name as resolving nowhere.
+  console.log('\n  /dns/ — a connected edge account')
+  const cf = await apiPost('/secrets', { name: 'cf-drive', kind: 'provider_key', providerKind: 'cloudflare', data: 'cfat_devtoken' })
+  check('a Cloudflare token is accepted as a provider key', cf.status === 201 || cf.status === 200, JSON.stringify(cf.body).slice(0, 160))
+  await goto('/dns/')
+  await until(`document.querySelector('#edge-status')?.textContent.trim()`, v => v === 'healthy',
+    'the edge adapter never read healthy with an account connected')
+  ok('the edge adapter reports healthy once an account is connected')
+  await until(`document.querySelectorAll('#zone-records tbody tr').length`, n => n > 0,
+    'the first zone\'s records never rendered')
+  const zonesText = await text('#edge-zones')
+  check('the account\'s zones are listed, every page of them',
+    ['example.test', 'shop.test', 'pending.test', 'broken.test'].every(z => zonesText.includes(z)), zonesText.slice(0, 160))
+  const recText = await text('#zone-records')
+  check('the zone\'s records are the vendor\'s, types and all',
+    ['CNAME', 'MX', 'TXT', 'ingress-1.fleet.test'].every(t => recText.includes(t)), recText.slice(0, 200))
+  check('a hostname with no record is named as resolving nowhere',
+    (await text('#zone-missing')).includes('drive.example.test'), await text('#zone-missing'))
+  await evaluate(`[...document.querySelectorAll('#edge-zones button')].find(b => b.textContent.includes('broken.test')).click()`)
+  await until(`document.querySelector('#zone-error')?.textContent ?? ''`, t => t.includes('Invalid zone configuration'),
+    'a zone the vendor refused did not show the vendor\'s reason')
+  ok('a zone the vendor refused shows the vendor\'s reason')
+  check('and the hostnames above it still render', (await text('#dns-rows')).includes('drive.example.test'))
 
   // ── /cloud-spend/ ──────────────────────────────────────────────────────
   console.log('\n  /cloud-spend/ — the inventory a bill would cover')
@@ -776,6 +771,15 @@ try {
   const hostedText = await text('#hosted-tiles')
   check('the hosted pair are the two the screens ask about',
     hostedText.includes('Edge & DNS') && hostedText.includes('Cloud spend'), hostedText.slice(0, 120))
+  // The edge tile reads the workspace's ACCOUNT, connected on /dns/ above; the
+  // spend tile beside it still has nothing behind it. Paired, so a tile that
+  // said *set* for everything does not pass.
+  const credentialOf = name => evaluate(`[...document.querySelectorAll('#hosted-tiles .card')]
+    .find(c => c.textContent.includes(${JSON.stringify(name)}))?.querySelector('dd code')?.textContent.trim() ?? null`)
+  check('the edge tile reads the connected account as its credential', await credentialOf('Edge & DNS') === 'set',
+    await credentialOf('Edge & DNS'))
+  check('and the spend tile, with nothing behind it, does not', await credentialOf('Cloud spend') === 'not set',
+    await credentialOf('Cloud spend'))
 
   // ── A detail screen with no record ─────────────────────────────────────
   //
@@ -893,8 +897,6 @@ try {
   await click('#env-edit')
   await until(`!!document.getElementById('env-edit-save')`, v => v, 'the environment form never opened')
   check('an environment\'s project is frozen on an edit', await frozen('dialog[open] [name=projectId]'))
-  check('and its variables are not a box on it — they have their own editor',
-    !(await present('dialog[open] [name=variables]')))
   await typeIn('dialog[open] [name=name]', 'Production edited')
   await click('#env-edit-save')
   await until(`document.querySelector('h1')?.textContent.includes('Production edited')`, v => v,
@@ -904,17 +906,17 @@ try {
   await typeIn('#var-key', 'SCREENS_PROBE')
   await typeIn('#var-value', 'first')
   await clickText('form.card', 'Set variable')
-  await until(`document.getElementById('variable-rows')?.textContent.includes('SCREENS_PROBE')`, v => v,
+  await until(`document.getElementById('var-rows')?.textContent.includes('SCREENS_PROBE')`, v => v,
     'the variable never appeared')
-  await clickText('#variable-rows', 'Edit')
+  await clickText('#var-rows tr[data-key=SCREENS_PROBE]', 'Edit')
   await until(`!!document.getElementById('var-edit-SCREENS_PROBE')`, v => v, 'the value never became editable')
   await typeIn('#var-edit-SCREENS_PROBE', 'second')
-  await clickText('#variable-rows', 'Save')
-  await until(`document.getElementById('variable-rows')?.textContent.includes('second')`, v => v,
+  await clickText('#var-rows tr[data-key=SCREENS_PROBE]', 'Save')
+  await until(`document.getElementById('var-rows')?.textContent.includes('second')`, v => v,
     'the edited value never showed')
-  const envAfter = (await apiGet(`/environments/${envId}`)).body
+  const envVars = (await apiGet(`/variables?environmentId=${envId}&appId=null`)).body
   check('a variable edited in place is the one stored',
-    envAfter?.variables?.find(v => v.key === 'SCREENS_PROBE')?.value === 'second')
+    envVars?.data?.find(v => v.key === 'SCREENS_PROBE')?.value === 'second')
 
   // Job — the create form may choose what the edit form freezes.
   await goto('/jobs/')
@@ -1705,6 +1707,93 @@ try {
   check('and it leaves the trash', leftBin)
   check('the trash answers what the screen showed', !((await apiGet('/trash')).body?.data ?? []).some(i => i.ref === binPrj.id))
 
+  // ─── Snoozing a rule ───────────────────────────────────────────────────
+  // Read back through the API each time: a badge that says *snoozed* over a
+  // refused call looks exactly like a pass.
+  console.log('\n  /alerts/ — snooze')
+  const snoozeRule = ((await apiGet('/alerts')).body?.data ?? [])[0]
+  check('the seed has an alert rule to snooze', !!snoozeRule)
+  await goto('/alerts/')
+  await until(`!!document.querySelector('[data-snooze="${snoozeRule.id}"]')`, v => v, 'the rule card offers no Snooze')
+  await click(`[data-snooze="${snoozeRule.id}"]`)
+  await until(`[...document.querySelectorAll('[role=menuitem]')].some(i => i.textContent.trim() === '1 hour')`, v => v,
+    'Snooze opened no durations')
+  await evaluate(`[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.trim() === '1 hour').click()`)
+  const snoozedBadge = await until(`document.querySelector('[data-snoozed="${snoozeRule.id}"]')?.textContent ?? ''`, t => t,
+    'the card never said it was snoozed')
+  check('the card says until when', /snoozed until/.test(snoozedBadge), snoozedBadge)
+  const snoozedRow = (await apiGet(`/alerts/${snoozeRule.id}`)).body
+  const inMs = Date.parse(snoozedRow?.snoozedUntil ?? '') - Date.now()
+  check('the rule is snoozed for an hour, by the server clock', inMs > 55 * 60_000 && inMs <= 60 * 60_000,
+    snoozedRow?.snoozedUntil)
+  await click(`[data-unsnooze="${snoozeRule.id}"]`)
+  await until(`!document.querySelector('[data-snoozed="${snoozeRule.id}"]')`, v => v, 'Unsnooze left the badge up')
+  check('and Unsnooze clears it', (await apiGet(`/alerts/${snoozeRule.id}`)).body?.snoozedUntil === null)
+
+  // ─── Deploying from a blueprint ────────────────────────────────────────
+  // No machine is picked, so this is the app alone; `place` and a release are
+  // the app screen's own buttons, driven elsewhere. What is read back is what
+  // only the server can say: which blueprint, and that the typed password is
+  // in no column an app read returns.
+  console.log('\n  /blueprints/ — deploy')
+  const envForBp = ((await apiGet('/environments')).body?.data ?? [])[0]
+  check('the seed has an environment to deploy into', !!envForBp)
+  await goto('/blueprints/')
+  await until(`!!document.querySelector('[aria-label="Deploy Redis"]')`, v => v, 'no Deploy on the Redis card')
+  await click('[aria-label="Deploy Redis"]')
+  await until(`document.querySelectorAll('#deploy-environment option').length > 1`, v => v,
+    'the deploy drawer never listed the environments')
+  await evaluate(`(() => { const el = document.getElementById('deploy-environment')
+    el.value = ${JSON.stringify(envForBp.id)}; el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await fill({ 'deploy-name': 'Drive cache', 'deploy-param-REDIS_PASSWORD': 'drive-pw-7c1' })
+  check('a secret parameter is masked', await evaluate(`document.getElementById('deploy-param-REDIS_PASSWORD').type`) === 'password')
+  await until(`document.getElementById('deploy-save')?.disabled === false`, v => v, 'Create app never enabled')
+  await click('#deploy-save')
+  const landedApp = await until(`location.pathname`, p => /^\/apps\/[^/]+\/$/.test(p), 'deploying never reached the app screen')
+  const bpAppId = landedApp.split('/')[2]
+  const bpApp = (await apiGet(`/apps/${bpAppId}`)).body
+  const redisBp = ((await apiGet('/blueprints')).body?.data ?? []).find(b => b.name === 'Redis')
+  check('the app records the blueprint it came from', !!redisBp && bpApp?.blueprintId === redisBp.id, bpApp?.blueprintId)
+  check('and runs its image', bpApp?.source?.image === redisBp?.image, JSON.stringify(bpApp?.source))
+  const bpVars = (await apiGet(`/variables?appId=${bpAppId}`)).body
+  const bpPw   = (bpVars?.data ?? []).find(v => v.key === 'REDIS_PASSWORD')
+  check('the password is a secret variable on the app, and no read carries the value',
+    bpPw?.secret === true && bpPw.value === null
+      && !JSON.stringify(bpVars).includes('drive-pw-7c1') && !JSON.stringify(bpApp).includes('drive-pw-7c1'),
+    JSON.stringify(bpVars)?.slice(0, 200))
+  const drawerGone = await until(`!document.getElementById('blueprint-deploy')`, v => v, 'the drawer stayed open').catch(() => false)
+  check('the app screen names it', drawerGone && (await body()).includes('Drive cache'))
+  await evaluate(`[...document.querySelectorAll('#app-tabs [role=tab]')].find(b => b.textContent.trim() === 'config').click()`)
+  const bpRow = await until(`document.querySelector('#app-var-rows tr[data-key=REDIS_PASSWORD]')?.textContent ?? ''`,
+    t => t.includes('REDIS_PASSWORD'), 'the Config tab never listed the app\'s variables').catch(() => '')
+  check('its Config tab lists the password as set, and the page holds no value',
+    bpRow.includes('secret · set') && !(await evaluate(`document.body.innerHTML`)).includes('drive-pw-7c1'),
+    bpRow)
+  // The blueprint's limits land on columns the release reads (`FJS-1605`), so
+  // the tab shows them as the API holds them rather than as a Json blob.
+  const runtime = await text('#app-runtime')
+  check('its Config tab shows the runtime the blueprint gave it',
+    bpApp?.memLimitMb === redisBp?.memLimitMb && bpApp?.cpuLimit === redisBp?.cpuLimit
+      && runtime.includes(`${redisBp?.memLimitMb} MiB`) && runtime.includes(String(redisBp?.port)),
+    runtime)
+
+  // ─── Home's fleet summary ──────────────────────────────────────────────
+  console.log('\n  home — the fleet summary')
+  await goto('/')
+  const tiles = await until(`[...document.querySelectorAll('#fleet-summary .tile')]
+      .map(t => ({ label: t.querySelector('.tile-label')?.textContent.trim(), value: t.querySelector('.tile-value')?.textContent.trim() }))`,
+    ts => ts.length === 4 && ts.every(t => t.value), 'the summary tiles never filled in')
+  const sum = (await apiCall('GET', '/infra', null, 'summary')).body
+  const tile = label => tiles.find(t => t.label === label)?.value
+  check('Machines is the server\'s count', tile('Machines') === String(sum?.servers?.total), `${tile('Machines')} vs ${sum?.servers?.total}`)
+  check('Apps counts the one just deployed', tile('Apps') === String(sum?.apps?.total) && sum.apps.total > 0,
+    `${tile('Apps')} vs ${sum?.apps?.total}`)
+  check('Releases today and Alerts firing match too',
+    tile('Releases today') === String(sum?.releases?.total) && tile('Alerts firing') === String(sum?.alerts?.firing),
+    JSON.stringify(tiles))
+  check('each tile opens its list', await evaluate(
+    `[...document.querySelectorAll('#fleet-summary a.tile')].map(a => a.getAttribute('href')).join(' ')`) === '/servers/ /apps/ /deployments/ /alerts/')
+
   // FAILED. The API is stopped under a page that is already signed in, and the
   // next screen is reached by CLICKING — a client-side navigation, so the
   // session stays in memory and the only thing that fails is this screen's own
@@ -1781,5 +1870,4 @@ try {
 console.log(`\n${failed ? '✗' : '✓'} ${passed}/${passed + failed} checks passed\n`)
 await cleanup()
 await rm(SCRATCH,  { recursive: true, force: true })
-await rm(PROFILE,  { recursive: true, force: true })
 process.exit(failed ? 1 : 0)

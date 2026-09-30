@@ -1,59 +1,22 @@
 // src/services/environments/environments.service.ts
 // Environments — a named deploy target inside a Project.
 //
-// Mounted at /environments. Custom methods dispatch on X-Service-Method:
-//   setVariable · deleteVariable
+// Mounted at /environments. Its variables are `Variable` rows, at /variables.
 //
 // `model: 'Environment'` derives validation from db/schema.lite. The
 // hand-written schemas here declared TIERS as five values while the schema enum
 // had three — the schema has been widened to match, because the service was the
 // older and better evidence of what a tier is.
 
-import { createService, NotFound, Forbidden, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws, slugify }
+import { createService, NotFound, Forbidden, $ } from '@frontierjs/junction'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, refuseProtectedForDeveloper, WORKSPACE_QUERY }
+  from '../../core/hooks.ts'
+import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
-interface EnvVariable { key: string; value: string; secret: boolean }
-
 export function createEnvironmentsService(app: BasecampApp) {
-
-  /** Rewrite the variables array and return the saved row.
-   *
-   *  Takes the row rather than reaching for `$.id`: Environment declares
-   *  @version, so the write states the version this call read. Two people on
-   *  the variables screen at once is the ordinary case, and without it the
-   *  second save erases the first person's key with no sign it did. */
-  async function saveVariables(env: Record<string, unknown>, variables: EnvVariable[]) {
-    // Return the WHOLE row, like every other method on this service.
-    //
-    // This used to answer `{ id, variables }`. Nothing was wrong with the write
-    // — but a caller that does the obvious thing with the result of a method
-    // that updates a record (`environment = await ...setVariable(...)`) silently
-    // loses name, tier and projectId, and the page renders "undefined" as its
-    // heading. A custom method is still a method on this model; a partial row
-    // is a shape no caller can distinguish from a full one until it breaks.
-    return db().environment.update({
-      where: { id: $.id as string },
-      data:  { variables, version: env.version },
-    })
-  }
-
-  /**
-   * A protected environment is the production guard: a developer may deploy to
-   * it but not reshape it.
-   *
-   * One check for every writer of the row. The capability grid cannot say it —
-   * a developer holds `Environment.variables` on every environment, protected or
-   * not — so a writer that skips this lets a developer rewrite production's
-   * `DATABASE_URL` that `patch` refuses them (`FJS-1087`).
-   */
-  function refuseProtectedForDeveloper(env: Record<string, unknown>, ctx: ServiceContext) {
-    if (env.isProtected && roleOf(ctx) === 'developer')
-      throw new Forbidden('Protected environments require admin or owner role to modify')
-  }
 
   /**
    * An environment's project must be in the caller's workspace.
@@ -106,9 +69,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       refuseProtectedForDeveloper(env, ctx)
 
       // projectId and slug are @immutable and the schema refuses them by name.
-      // `variables` has its own methods, which edit one key and leave the rest
-      // standing; a whole-list patch from a stale form would erase them.
-      const patch = narrowPatch($.data as Record<string, unknown>, ['variables'])
+      const patch = narrowPatch($.data as Record<string, unknown>)
       if (changesNothing(patch)) return env
       return db().environment.update({ where: { id: $.id as string }, data: patch })
     },
@@ -124,43 +85,12 @@ export function createEnvironmentsService(app: BasecampApp) {
       return removed
     },
 
-    // ── setVariable ───────────────────────────────────────────────────
-    // `variables` is a Json column, so it arrives as an array and is written
-    // back as one — no JSON.parse/stringify at this layer.
-    async setVariable(ctx: ServiceContext) {
-      const { key, value, secret } = ($.data ?? {}) as Partial<EnvVariable>
-      if (!key?.trim())        throw new BadRequest('key is required')
-      if (value === undefined) throw new BadRequest('value is required')
-
-      const env       = await getScoped('environment', 'Environment')
-      refuseProtectedForDeveloper(env, ctx)
-      const variables = [...((env.variables ?? []) as EnvVariable[])]
-      const entry: EnvVariable = { key: key.trim(), value, secret: Boolean(secret) }
-      const idx       = variables.findIndex(v => v.key === entry.key)
-
-      if (idx >= 0) variables[idx] = entry
-      else          variables.push(entry)
-
-      return saveVariables(env, variables)
-    },
-
-    async deleteVariable(ctx: ServiceContext) {
-      const { key } = ($.data ?? {}) as { key?: string }
-      if (!key) throw new BadRequest('key is required')
-
-      const env = await getScoped('environment', 'Environment')
-      refuseProtectedForDeveloper(env, ctx)
-      return saveVariables(env, ((env.variables ?? []) as EnvVariable[]).filter(v => v.key !== key))
-    },
-
     hooks: {
       before: {
-        all:            [sessionScope(app)],
-        create:         [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
-        patch:          [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        remove:         [requireWorkspaceRole(app, 'admin', 'owner')],
-        setVariable:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        deleteVariable: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        all:    [sessionScope(app)],
+        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
+        patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },
   })

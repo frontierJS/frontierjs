@@ -1,6 +1,6 @@
 # Adapters — what is declared, what is stubbed, and what wiring one costs
 
-**Status: EVERY BOUNDARY IS DECLARED. NOTHING IS BEHIND ANY OF THEM.** Dated
+**Status: EVERY BOUNDARY IS DECLARED. ONE IS WIRED — `edge`, reading.** Dated
 2026-08-30. This is the pick-up doc for the work `docs/SCREENS.md` § Phase 14
 left: four screens exist, each says which adapter is not connected, and each is
 waiting on the same two things — an adapter and a service.
@@ -12,8 +12,9 @@ with a reason, and the reasons are the part worth not relitigating.
 
 ## The ten
 
-`api/src/providers/index.ts` builds them; `api/src/basecamp.types.ts` declares
-them; `services/portal/` reports them. Every one is a Stub today.
+`api/src/providers/index.ts` builds nine of them; `api/src/basecamp.types.ts`
+declares them; `services/portal/` reports all ten. `edge` is a workspace account
+read by `services/edge/`; the other nine are a Stub.
 
 | Provider | Interface | Kind | A screen is waiting | Config key |
 | --- | --- | --- | --- | --- |
@@ -25,7 +26,7 @@ them; `services/portal/` reports them. Every one is a Stub today.
 | `observability` | `IObservability` | appliance (Grafana) | **`/observability/`** | `providers.observability.grafana_url` |
 | `networking` | `INetworking` | appliance (NetBird) | — | `providers.networking.url` |
 | `integrations` | `IIntegrations` | appliance (Nango) | — | `providers.integrations.nango_url` |
-| `edge` | `IEdge` | **hosted** | **`/dns/`** | `providers.edge.api_token` |
+| `edge` | `IEdge` | **hosted** | **`/dns/`** | a workspace's Cloudflare account — a `provider_key` Secret (`FJS-D558`) |
 | `cloudSpend` | `ICloudSpend` | **hosted** | **`/cloud-spend/`** | `providers.cloud_spend.api_token` |
 
 **`hosted` is a field on the portal entry, not a heading on a screen.** An
@@ -43,25 +44,34 @@ Each is the same shape of work: **a connector, then a service, then the screen
 stops rendering skeletons.** The screens are done and none of them needs
 touching except to render what arrives.
 
-### `edge` — `IEdge`, behind `/dns/`
+### `edge` — a workspace account, behind `/dns/`
+
+Not in `app.providers`: a Cloudflare token is a `provider_key` Secret, registered
+like a compute account (`FJS-D558`), and `services/edge/` reads through it.
 
 ```
-listZones()                        → EdgeZone[]
-listRecords(zoneId)                → EdgeRecord[]
-analytics(zoneId, from, to)        → EdgeAnalytics
+edge.zones                         → each account, with its zones or the vendor's error
+edge.records(accountId, zoneId)    → the zone's records, and `missing`
 ```
 
-The real half of that screen already ships: `Domain` rows with their certificate
-status, the app each hostname points at, primary and proxied. **What the adapter
-adds is the other side of the same fact** — the zone's own records — and the
-value of the screen is the two disagreeing. A hostname this app intends to serve
-that the zone has no record for is the bug nobody currently sees.
+**What the adapter adds is the other side of a `Domain` row** — the zone's own
+records — and the value of the screen is the two disagreeing. `records` marks a
+serving record (A, AAAA, CNAME) with the `domainId` whose hostname it answers, and
+lists as `missing` a `Domain` inside the zone with no serving record: a hostname
+this app intends to serve that resolves nowhere.
 
-Cloudflare is the obvious first vendor. What is actually hard: the zone id is
-not the hostname (`listZones` exists for that mapping), and analytics is a
-GraphQL endpoint at Cloudflare rather than a REST one, so the connector is not a
-one-line `fetch`. The plan, with DNS writes and the owed choices, is
-`IDEAS/cloudflare-edge.md`.
+**Read at `Domain`'s read gate, not `Secret`'s.** The account lookup is
+`asSystem()` confined to the workspace, selecting no `data`; at a developer's
+standing a scoped read of `Secret` is refused, and `/dns/` would say no account
+exists. Analytics is a GraphQL endpoint at Cloudflare, a step of its own.
+
+**The connector writes; nothing calls it yet.** `appendRecords` · `setRecords` ·
+`deleteRecords` (`FJS-D562`), each one batch that applies whole. Every record
+written carries a mark, the caller's `RecordMark` spelled by the connector
+(`basecamp:domain:<id>` in Cloudflare's `comment`), and a set or delete naming a
+(name, type) set that holds an unmarked record is refused before anything is sent
+(`FJS-D560`). `drift`'s other kinds, `sync`, `adopt` and the job that calls them
+are `IDEAS/cloudflare-edge.md` Phases 4–5.
 
 ### `cloudSpend` — `ICloudSpend`, behind `/cloud-spend/`
 
@@ -147,7 +157,9 @@ Do not spend the argument again.
 ## What wiring one will break, and that is correct
 
 `web/test/verify-screens.mjs` asserts `unconfigured` for four adapters, because
-that is the truth in a test environment that sets no provider variables. **If you
+that is the truth in a test environment that sets no provider variables. `edge`
+is asserted both ways: `unconfigured` on the seed, then `healthy` once the drive
+connects an account at the Cloudflare sink it starts. **If you
 wire an adapter and the drive goes red, read the assertion before the code:**
 
 | Check | Screen |

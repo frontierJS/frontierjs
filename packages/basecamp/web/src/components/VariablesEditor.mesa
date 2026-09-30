@@ -1,0 +1,148 @@
+<script>
+  // VariablesEditor.mesa — the variables set on one environment or one app.
+  //
+  // One editor for both scopes, because they are one model: `appId` given is
+  // that app's own, otherwise the environment's (`appId: null`). A secret's
+  // value is `@encrypted` and never in the response, so it cannot be shown or
+  // revealed — only replaced.
+  import { variables } from '../resources/Variable.mesa'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Table    from '@frontierjs/ui/components/display/Table.mesa'
+
+  export let environmentId = null
+  export let appId         = null
+  export let idPrefix      = 'var'
+
+  let rows      = []
+  let error     = null
+  let newKey    = ''
+  let newValue  = ''
+  let newSecret = false
+  let busyId    = null
+  let editId    = null
+  let editValue = ''
+
+  $: query = appId ? { appId } : { environmentId, appId: null }
+
+  async function load() {
+    try {
+      rows = (await variables.service.find(query, { limit: 200 })).data
+    } catch (e) {
+      error = e.message
+    }
+  }
+  load()
+  $: environmentId, appId, () => load()
+
+  // Another tab, or another person, setting a key in this scope.
+  const READS = new Set(['get', 'find'])
+  var off = variables.service.on('*', (method, changed) => {
+    if (READS.has(method)) return
+    if (appId ? changed?.appId === appId : (changed?.environmentId === environmentId && !changed?.appId)) load()
+  })
+  $.onDestroy(() => off())
+
+  async function add() {
+    error = null; busyId = 'new'
+    try {
+      await variables.service.create({ ...(appId ? { appId } : { environmentId }), key: newKey, value: newValue, secret: newSecret })
+      newKey = ''; newValue = ''; newSecret = false
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  function startEdit(v) { editId = v.id; editValue = v.secret ? '' : (v.value ?? '') }
+
+  async function save(v) {
+    error = null; busyId = v.id
+    try {
+      // The version this editor read, so a second person's save in between is
+      // a conflict rather than an overwrite.
+      await variables.service.patch(v.id, { value: editValue, version: v.version })
+      editId = null
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  async function drop(v) {
+    error = null; busyId = v.id
+    try {
+      await variables.service.remove(v.id)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busyId = null
+    }
+  }
+
+  const COLUMNS = [
+    { name: 'key',     label: 'Key' },
+    { name: 'value',   label: 'Value' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
+  ]
+</script>
+
+{#if error}
+  <p class="alert danger" role="alert">{error}</p>
+{/if}
+
+{#if rows.length}
+  <Table id={`${idPrefix}-rows`} columns={COLUMNS} {rows} striped hover={false}>
+    {#snippet row(v)}
+      <tr data-key={v.key}>
+        <td><code>{v.key}</code></td>
+        <td>
+          {#if editId === v.id}
+            <form class="cluster" on:submit|preventDefault={() => save(v)}>
+              <Input label="" aria-label={`Value of ${v.key}`} id={`${idPrefix}-edit-${v.key}`} value={editValue}
+                     type={v.secret ? 'password' : 'text'} autocomplete="off"
+                     placeholder={v.secret ? 'New value' : ''}
+                     oninput={(e) => editValue = e.target.value} />
+              <Button type="submit" variant="primary" disabled={busyId === v.id}>Save</Button>
+              <Button variant="ghost" onclick={() => editId = null}>Cancel</Button>
+            </form>
+          {:else if v.secret}
+            <span class="text-muted">secret · set</span>
+          {:else}
+            <code>{v.value}</code>
+          {/if}
+        </td>
+        <td class="cluster">
+          {#if editId !== v.id}
+            <Button variant="ghost" onclick={() => startEdit(v)}>{v.secret ? 'Replace' : 'Edit'}</Button>
+          {/if}
+          <Button variant="ghost" tone="danger" disabled={busyId === v.id}
+                  data-confirm={`${v.key} is removed; the next release runs without it.`}
+                  data-confirm-title="Remove this variable?" data-confirm-label="Remove"
+                  onclick={() => drop(v)}>Remove</Button>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{:else}
+  <p class="text-sm text-muted">No variables set.</p>
+{/if}
+
+<form class="card stack" novalidate on:submit|preventDefault={add}>
+  <div class="field-row">
+    <Input label="Key" name={`${idPrefix}-key`} id={`${idPrefix}-key`} placeholder="DATABASE_URL"
+           required bind:value={newKey} />
+    <Input label="Value" name={`${idPrefix}-value`} id={`${idPrefix}-value`} required bind:value={newValue}
+           type={newSecret ? 'password' : 'text'} autocomplete="off" />
+  </div>
+  <Checkbox id={`${idPrefix}-secret`} label="Secret — stored encrypted, never shown again" bind:checked={newSecret} />
+  <div class="cluster">
+    <Button variant="primary" type="submit" disabled={busyId !== null}>Set variable</Button>
+  </div>
+</form>

@@ -2779,9 +2779,9 @@ async function _ensureParent(schema, model, field, value, chain) {
 
 // A rule this grader cannot put a row on both sides of, because what decides is
 // not a column on the row being seeded. `check()` delegates to another model's
-// policy; a `path` (`FJS-D221`) reads a column one relation away — and the
-// factory makes one row, not a parent and a child arranged to disagree. Both
-// are reported as not-graded BY NAME, because *skipped* and *graded, and every
+// policy; a `path` (`FJS-D221`) reads a column one relation away and a `some`
+// (`FJS-D566`) the rows of one — and the factory makes one row, not a parent
+// and a child arranged to disagree. All three are reported as not-graded BY NAME, because *skipped* and *graded, and every
 // row landed on one side* read identically from the summary and only one of
 // them is a broken policy.
 function _readsLevel(node) {
@@ -2792,7 +2792,7 @@ function _readsLevel(node) {
 
 function _hasCheckNode(node) {
   if (!node || typeof node !== 'object') return false
-  if (node.type === 'check' || node.type === 'path') return true
+  if (node.type === 'check' || node.type === 'path' || node.type === 'some') return true
   return Object.values(node).some(v => (Array.isArray(v) ? v.some(_hasCheckNode) : _hasCheckNode(v)))
 }
 

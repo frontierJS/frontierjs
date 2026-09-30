@@ -84,6 +84,7 @@ export function policyExprToString(node) {
       : node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
     case 'field':   return node.name
     case 'path':    return `${node.rel}.${node.name}`
+    case 'some':    return `${node.rel}.some(${policyExprToString(node.where)})`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
     case 'literal': {
       const v = node.value
@@ -216,7 +217,7 @@ export function authClaimSites(schema) {
   const walk = (n, at) => {
     if (!n || typeof n !== 'object') return
     if (n.type === 'auth' && n.field) sites.push({ name: n.field, ...at })
-    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) if (n[k]) walk(n[k], at)
+    for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else', 'where']) if (n[k]) walk(n[k], at)
   }
   for (const model of schema?.models ?? []) {
     for (const a of model.attributes ?? [])
@@ -322,6 +323,30 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
             say(`'${n.rel}.${n.name}' is @${kind} on ${rel.targetModel}, so the column holds an ` +
                 `encoding rather than the value — a comparison across the hop would match nothing`)
       }
+      return
+    }
+    // Any row of a to-many relation (`FJS-D566`). The condition is about the
+    // RELATED model, so it is checked as a policy on that model — every refusal
+    // above, made against the field list the names actually belong to.
+    if (n.type === 'some') {
+      const rel = relationMap?.[model.name]?.[n.rel]
+      const say = (msg) => { throw new Error(
+        `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
+      if (!rel) {
+        const rels = Object.keys(relationMap?.[model.name] ?? {}).sort()
+        say(`'${n.rel}' is not a relation on this model` +
+            (rels.length ? `. Relations: ${rels.join(', ')}` : ''))
+      }
+      if (rel.kind === 'belongsTo')
+        say(`'${n.rel}' is a to-one (belongsTo) relation, so there is one row and no 'some' to ask — ` +
+            `read its column as '${n.rel}.<column>'`)
+      // The join table is a second hop, which the bound refuses everywhere else.
+      if (rel.kind !== 'hasMany')
+        say(`'${n.rel}' is ${rel.kind}, and '.some()' crosses a to-many relation by its foreign key. ` +
+            `Declare the join model and test it: '<joinRelation>.some(…)'`)
+      const target = schema?.models?.find(m => m.name === rel.targetModel)
+      if (target)
+        checkExpr(target, n.where, relationMap, `${model.name}.${n.rel}.some(…) in ${what}`, claims, schema)
       return
     }
     // The same sentence about the OTHER side of the comparison. An absent claim
@@ -482,6 +507,10 @@ export function compileDerived(model, fieldName, node) {
         bad(`'${n.rel}.${n.name}' crosses a relation, which a @derived field does not do — ` +
             `bring the value onto this model with @from(${n.rel}, ${n.name})`)
         break
+      case 'some':
+        bad(`'${n.rel}.some(…)' crosses a relation, which a @derived field does not do — ` +
+            `@from(${n.rel}, …, exists: true) is the one that reads down a to-many`)
+        break
       default:
         bad(`unsupported expression node '${n.type}'`)
     }
@@ -570,7 +599,7 @@ export function checkDerivedType(model, schema, field, expr) {
 export function dependsOnClock(node) {
   if (!node || typeof node !== 'object') return false
   if (node.type === 'now') return true
-  return ['left', 'right', 'expr', 'cond', 'then', 'else'].some(k => dependsOnClock(node[k]))
+  return ['left', 'right', 'expr', 'cond', 'then', 'else', 'where'].some(k => dependsOnClock(node[k]))
 }
 
 // Does this expression read the ROW, or only the caller?
@@ -628,6 +657,8 @@ export function compileStatic(node, modelName, schema, relationMap = new Map()) 
     if (!n || typeof n !== 'object') return
     if (n.type === 'path') throw new Error(
       `'${n.rel}.${n.name}' crosses a relation, and this predicate reads the row it is about and nothing else`)
+    if (n.type === 'some') throw new Error(
+      `'${n.rel}.some(…)' crosses a relation, and this predicate reads the row it is about and nothing else`)
     for (const v of Object.values(n)) Array.isArray(v) ? v.forEach(noHops) : noHops(v)
   }
   noHops(node)
@@ -1171,6 +1202,37 @@ function pathSql(node, modelName, schema, relationMap) {
          `WHERE "${targetTable}"."${refKey}" = "${selfTable}"."${fk}")`
 }
 
+// Does ANY row of a to-many relation satisfy the condition (`FJS-D566`) — a
+// correlated EXISTS, the SQL the query where builds for `{ rel: { some } }`
+// (`relationFilterOn` in client.js), and like it a soft-deleted row is not one
+// of the relation's rows: a removed membership would otherwise go on granting.
+//
+// The child is ALIASED because a self-relation (`User.reports User[]`) names
+// one table on both sides, and unaliased the correlation compares the child
+// with itself. The condition compiles unqualified against the child model: the
+// subquery is the innermost scope, so a bare column resolves to the alias, and
+// startup refused every name the child does not have.
+//
+// `bound` is `evalSome`'s case — one row in hand and no outer table, so the
+// parent's key is a parameter the caller has already pushed.
+function someSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, visited, bound = false) {
+  const rel = relationMap[modelName]?.[node.rel]
+  if (!rel || rel.kind !== 'hasMany')
+    throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
+
+  const selfDef     = schema?.models?.find(m => m.name === modelName)
+  const targetDef   = schema?.models?.find(m => m.name === rel.targetModel)
+  const selfTable   = selfDef   ? modelToTableName(selfDef, false)   : modelName
+  const targetTable = targetDef ? modelToTableName(targetDef, false) : rel.targetModel
+  const fk          = policyColumn(schema, rel.targetModel, rel.foreignKey)
+  const parent      = bound ? '?' : `"${selfTable}"."${policyColumn(schema, modelName, rel.referencedKey)}"`
+  const live        = ctx.softDeleteMap?.[rel.targetModel]
+    ? ` AND "__some"."${policyColumn(schema, rel.targetModel, 'deletedAt')}" IS NULL` : ''
+  const cond = compileSql(node.where, params, ctx, rel.targetModel, op, policyMap, schema, relationMap, visited)
+
+  return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE "__some"."${fk}" = ${parent}${live} AND (${cond}))`
+}
+
 function compileSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, visited) {
   switch (node.type) {
 
@@ -1201,6 +1263,9 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
 
     case 'path':
       return pathSql(node, modelName, schema, relationMap)
+
+    case 'some':
+      return someSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, visited)
 
     case 'auth':
       params.push(claimValue(ctx, node.field, modelName))
@@ -1458,6 +1523,35 @@ function evalPath(node, ctx, data, modelName, relationMap) {
   return row?.v ?? null
 }
 
+// `rel.some(…)` for one row, where there is no outer table to correlate
+// against — create, post-update, and a broadcast graded by `$readAs`. The SAME
+// SQL the WHERE runs, with the parent's key bound instead of correlated, so the
+// two halves cannot come to disagree about which child counts — `evalCheck`'s
+// approach, for `evalCheck`'s reason.
+//
+// A row with no key has no children: false, which is what the EXISTS answers
+// for it too. On create that is the ordinary case — nothing can point at a row
+// that does not exist yet — so a create rule that needs a member fails closed.
+function evalSome(node, ctx, data, modelName, policyMap, relationMap, op) {
+  const rel = relationMap?.[modelName]?.[node.rel]
+  if (!rel || rel.kind !== 'hasMany')
+    throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
+
+  const key = data?.[rel.referencedKey]
+  if (key == null) return false
+
+  const schema = ctx.schema
+  const db     = ctx.readDb
+  if (!schema || !db?.query) return null
+
+  const params = [key]
+  const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, policyMap, schema, relationMap, new Set([modelName]), true)} AS hit`
+  const hit    = db.query(sql).get(...params)?.hit
+  if (ctx.policyDebug === 'verbose')
+    plog(ctx, op ?? 'read', modelName, `\x1b[2m${node.rel}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
+  return !!hit
+}
+
 // ─── JS evaluator (create + post-update) ──────────────────────────────────────
 // Evaluates a policy expression against a data/row object in JavaScript.
 // Used when there's no WHERE clause available (create) or for post-update checks.
@@ -1500,10 +1594,11 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
       return rel?.kind === 'belongsTo' ? rel.foreignKey : name
     },
     affinityOf:   (n) => affinityOf(n, ctx, modelName, relationMap),
-    // The two nodes that read ANOTHER MODEL. Each opens a database, which is
-    // why neither could move and why both are injected here.
+    // The three nodes that read ANOTHER MODEL. Each opens a database, which is
+    // why none could move and why all three are injected here.
     resolvePath:  (n) => evalPath(n, ctx, data, modelName, relationMap),
     resolveCheck: (n) => evalCheck(n, ctx, data, modelName, policyMap, relationMap, op),
+    resolveSome:  (n) => evalSome(n, ctx, data, modelName, policyMap, relationMap, op),
     claimOf:      (field) => claimValue(ctx, field, modelName),
   })
 }

@@ -9,9 +9,9 @@
  *
  * Two claims carry this file and neither is about the happy path.
  *
- * **The config comes from the TARGET.** That is the whole of what separates a
+ * **The settings come from the TARGET.** That is the whole of what separates a
  * rollback from a redeploy, and both write a Deployment that looks right: a
- * rollback taking `App.config` puts the old image back with the new settings,
+ * rollback taking the app's columns puts the old image back with the new settings,
  * which is neither release, and nothing on any screen would say so.
  *
  * **Nothing is written before the move.** Every refusal here is asserted with
@@ -84,14 +84,14 @@ beforeAll(async () => {
 })
 
 /** An app with two shipped releases behind it, placed on a machine that can
- *  take another. `config` is what the app looks like NOW — deliberately not
+ *  take another. `runtime` is what the app looks like NOW — deliberately not
  *  what either release shipped with. */
-async function anAppWithHistory(config: Record<string, unknown> = { replicas: 3 }) {
+async function anAppWithHistory(runtime: Record<string, unknown> = { cpuLimit: 3 }) {
   const sys  = env.system as any
   const slug = `app-${uniq()}`
   const target = await sys.app.create({ data: {
     workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-    type: 'container', config } })
+    type: 'container', ...runtime } })
   await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
 
   const shipped = async (data: Record<string, unknown>) => releaseAt('success', {
@@ -100,12 +100,12 @@ async function anAppWithHistory(config: Record<string, unknown> = { replicas: 3 
 
   const first = await shipped({
     toImage: `${slug}:v1`, builtImage: 'sha256:' + 'a'.repeat(64),
-    configSnapshot: { source: {}, config: { replicas: 1 } },
+    configSnapshot: { source: {}, runtime: { cpuLimit: 1 } },
     commitSha: 'aaaaaaa', branch: 'main',
   })
   const current = await shipped({
     toImage: `${slug}:v2`, builtImage: 'sha256:' + 'b'.repeat(64),
-    configSnapshot: { source: {}, config: { replicas: 2 } },
+    configSnapshot: { source: {}, runtime: { cpuLimit: 2 } },
     commitSha: 'bbbbbbb', branch: 'main',
     previousDeploymentId: first.id,
   })
@@ -138,19 +138,49 @@ describe('a release is put back', () => {
     expect(replacement.previousDeploymentId).toBe(current.id)
   })
 
-  test('the config comes from the TARGET and never from the app', async () => {
-    // The claim this file exists for. A rollback taking `App.config` puts the
+  test('the settings come from the TARGET and never from the app', async () => {
+    // The claim this file exists for. A rollback taking the app's columns puts the
     // old image back with settings neither release ever ran, and the row it
     // writes looks correct from every screen.
-    const { first, current, app } = await anAppWithHistory({ replicas: 9 })
+    const { first, current, app } = await anAppWithHistory({ cpuLimit: 9 })
     const replacement: any = await roll(admin, current.id)
 
     expect(replacement.configSnapshot).toEqual(first.configSnapshot)
-    expect((replacement.configSnapshot as any).config.replicas).toBe(1)
+    expect((replacement.configSnapshot as any).runtime.cpuLimit).toBe(1)
     // Paired with the app's own value, or *equals the target* and *equals
     // whatever was lying around* are the same assertion.
-    expect((app.config as any).replicas).toBe(9)
-    expect((replacement.configSnapshot as any).config.replicas).not.toBe(9)
+    expect(app.cpuLimit).toBe(9)
+    expect((replacement.configSnapshot as any).runtime.cpuLimit).not.toBe(9)
+  })
+
+  test('a release records its variables when it is made, plain values by copy and secrets by id', async () => {
+    const { app: target } = await anAppWithHistory()
+    const vars = env.as(admin).service('variables')
+    const level = await vars.create({ appId: target.id, key: 'LOG_LEVEL', value: 'debug' }) as any
+    await vars.create({ appId: target.id, key: 'API_TOKEN', value: 'tok-sealed', secret: true })
+
+    const made: any = await env.as(developer).service('deployments').create({ appId: target.id, toImage: `${target.slug}:v3` })
+    const snap = (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
+    expect(snap.env).toEqual({ LOG_LEVEL: 'debug' })
+    expect(Object.keys(snap.secretEnv)).toEqual(['API_TOKEN'])
+    expect(JSON.stringify(snap)).not.toContain('tok-sealed')
+
+    // A plain value is copied, so a rollback to this release puts back
+    // `debug` whatever the variable says by then.
+    await vars.patch(level.id, { value: 'warn', version: level.version })
+    const again = (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
+    expect(again.env).toEqual({ LOG_LEVEL: 'debug' })
+  })
+
+  test('a release records how its container starts, and a later edit leaves it alone', async () => {
+    const { app: target } = await anAppWithHistory({ port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128 })
+    const made: any = await env.as(developer).service('deployments').create({ appId: target.id, toImage: `${target.slug}:v3` })
+    const snap = async () => (await (env.system as any).deployment.findUnique({ where: { id: made.id } })).configSnapshot
+    const shipped = { port: 8080, containerPort: 80, healthCheck: '/up', memLimitMb: 128 }
+    expect((await snap()).runtime).toEqual(shipped)
+
+    await env.as(admin).service('apps').patch(target.id, { memLimitMb: 512 })
+    expect((await snap()).runtime).toEqual(shipped)
   })
 
   test('it carries the commit it is putting back, not the one it is undoing', async () => {
@@ -196,7 +226,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     const slug = `solo-${uniq()}`
     const target = await sys.app.create({ data: {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-      type: 'container', config: {} } })
+      type: 'container' } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     const only = await releaseAt('success', {
       appId: target.id, workspaceId: ws.id,
@@ -224,7 +254,7 @@ describe('what a rollback refuses, before it writes anything', () => {
     const slug = `noimg-${uniq()}`
     const target = await sys.app.create({ data: {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-      type: 'container', config: {} } })
+      type: 'container' } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     const blank = await releaseAt('success', {
       appId: target.id, workspaceId: ws.id })
@@ -248,7 +278,7 @@ describe('what a rollback refuses, before it writes anything', () => {
       workspaceId: other.id, projectId: otherProject.id, name: 'Production', slug: `e-${uniq()}` } })
     const target = await sys.app.create({ data: {
       workspaceId: other.id, environmentId: otherEnv.id, name: slug, slug,
-      type: 'container', config: {} } })
+      type: 'container' } })
     const theirs = await releaseAt('success', {
       appId: target.id, workspaceId: other.id, toImage: 'x:v1' })
 

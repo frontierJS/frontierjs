@@ -35,6 +35,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:
 import { tmpdir }                                             from 'node:os'
 import { dirname, join }                                      from 'node:path'
 import { fileURLToPath }                                      from 'node:url'
+import { createConnection }                                   from 'node:net'
 
 const ROOT     = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const API_PORT = 7120
@@ -79,7 +80,13 @@ const until  = async (ask, ms) => {
   for (let t = 0; t < ms; t += 500) { if (await ask()) return true; await sleep(500) }
   return false
 }
-const answers = port => fetch(`http://localhost:${port}/`).then(() => true, () => false)
+// A connect, not a fetch: 8180 speaks TLS, and a plain-http fetch at it fails
+// whether or not anything is listening.
+const answers = port => new Promise(done => {
+  const s = createConnection({ port, host: '127.0.0.1' })
+  s.once('connect', () => { s.destroy(); done(true) })
+  s.once('error',   () => done(false))
+})
 
 function check(name, ok) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${name}`)
@@ -159,7 +166,10 @@ try {
   await exited(second)
   check('a second launcher refuses the held port, by number',
     second.out.includes('port 8180 is already answering'))
-  const health = await fetch('http://localhost:8180/health').then(r => r.json(), () => ({}))
+  // Pinned the way Basecamp pins it: the certificate the launcher enrolled with.
+  const health = await fetch('https://localhost:8180/health', {
+    tls: { ca: first.cert, checkServerIdentity: () => undefined },
+  }).then(r => r.json(), () => ({}))
   check('…and the first is still the machine answering', health.server_id === first.serverId)
 
   // ── A release reaches it, and the page comes back off the disk ──
@@ -229,12 +239,17 @@ try {
   // `{ appId }` and nothing else: the image is the one its SOURCE names, and
   // the release carries it to /pull, /deploy and /health-check on this
   // laptop's own daemon.
+  // Every runtime column set, so each one is read back off the container the
+  // daemon started rather than off the request (`FJS-1605`). whoami answers
+  // any path, so `/health` proves the path is asked, not that it is checked.
   const name = `whoami-${process.pid}`
   const box  = await call('/apps', { ...auth, body: {
     environmentId: environment?.id, name, slug: name, type: 'container',
     source: { kind: 'image', image: IMAGE },
-    config: { port: APP_PORT, containerPort: 80, env: { WHOAMI_NAME: name } },
+    port: APP_PORT, containerPort: 80, healthCheck: '/health', cpuLimit: 0.5, memLimitMb: 64,
   } })
+  if (!box?.id) throw new Error(`the app was not made: ${JSON.stringify(box)}`)
+  await call('/variables', { ...auth, body: { appId: box.id, key: 'WHOAMI_NAME', value: name } })
   container = `fjs-${box?.id}`
   await call(`/apps/${box?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
 
@@ -250,8 +265,11 @@ try {
   const running = sh('docker', 'inspect', '--format', '{{.Image}}', container).stdout.trim()
   check('…and the digest it records is the bytes the daemon holds', !!imageId && ran?.builtImage === imageId)
   check('…the bytes the container named for the app is running', !!imageId && running === imageId)
-  check('…answering on the port its config names, with its env',
+  check('…answering on the port its columns name, with its variable',
     (await fetch(`http://localhost:${APP_PORT}/`).then(r => r.text(), () => '')).includes(`Name: ${name}`))
+  const limits = sh('docker', 'inspect', '--format', '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}}', container).stdout.trim()
+  check('…started with the limits its columns name', limits === `500000000 ${64 * 1024 * 1024}`)
+  check('…and its health step asked the path', steps.some(s => /health/i.test(s.name) && s.status === 'success'))
 
   const again = await released(box?.id, auth)
   const held  = sh('docker', 'ps', '-a', '--filter', `name=^${container}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)

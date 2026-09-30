@@ -26,7 +26,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
          slugify, actor }
   from '../../core/resource.ts'
-import { secretRef } from '../../core/credentials.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -36,6 +35,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 // The one reader of `App.source`. A service that parsed the blob itself would
 // be the second, and the two would disagree the first time a kind was added.
 import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '../../core/app-source.ts'
+import { runtimeOf } from '../../core/runtime.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const WITH_ENV = { environment: true }
@@ -81,6 +81,15 @@ export function createAppsService(app: BasecampApp) {
     if (kind === 'inline' && type !== 'static')
       throw new BadRequest(
         `An inline source is served as files, so this app's type must be 'static' — it is '${type}'`)
+  }
+
+  /** A health path is asked of the port the release publishes, so one with
+   *  no port could only fail — after the old container is already gone. */
+  function checkRuntime(data: Record<string, unknown>, current?: Record<string, unknown>) {
+    const path = 'healthCheck' in data ? data.healthCheck : current?.healthCheck
+    const port = 'port' in data ? data.port : current?.port
+    if (path != null && port == null)
+      throw new BadRequest(`A health check is asked of the published port, so '${path}' needs a port`)
   }
 
   async function assertEnvironmentInWorkspace(environmentId: string) {
@@ -132,16 +141,11 @@ export function createAppsService(app: BasecampApp) {
   }
 
   /**
-   * What a blueprint's parameters become: plain values in `config.env`, and
-   * each secret one as a `Secret` row that `config.secretEnv` names by ref.
-   *
-   * The split is the whole point. `App.config` reads at VIEWER on every list,
-   * and a password typed into the deploy form must not be one of the things it
-   * answers — so the material goes to a `@encrypted` column and the app holds
-   * `secret:<id>#value`, which the release resolves at the moment it is sent
-   * to the machine (`jobs/deployment-run.job.ts`). A blank field falls back to
-   * the blueprint's default, then to a minted value for a param that says how
-   * to mint one; a required param with none of the three is refused by label.
+   * What a blueprint's parameters become: one `Variable` each, on the app, and
+   * a secret parameter's value in the row's `@encrypted` column. A blank field
+   * falls back to the blueprint's default, then to a minted value for a param
+   * that says how to mint one; a required param with none of the three is
+   * refused by label.
    */
   function paramValues(params: any[], values: Record<string, unknown>) {
     const known   = new Set(params.map(p => p.key))
@@ -149,7 +153,7 @@ export function createAppsService(app: BasecampApp) {
     if (unknown.length)
       throw new BadRequest(`This blueprint takes no parameter named ${unknown.map(k => `'${k}'`).join(', ')}`)
 
-    const env: Record<string, string> = {}, secret: Record<string, string> = {}
+    const out: Array<{ key: string; value: string; secret: boolean }> = []
     const missing: string[] = []
     for (const p of params) {
       const given = values[p.key]
@@ -159,10 +163,10 @@ export function createAppsService(app: BasecampApp) {
         || p.defaultValue
         || (p.generate ? mint(p.generate) : '')
       if (!value) { if (p.required) missing.push(p.label); continue }
-      ;(p.secret ? secret : env)[p.key] = value
+      out.push({ key: p.key, value, secret: Boolean(p.secret) })
     }
     if (missing.length) throw new BadRequest(`Required: ${missing.join(', ')}`)
-    return { env, secret }
+    return out
   }
 
   return createService({
@@ -206,6 +210,7 @@ export function createAppsService(app: BasecampApp) {
     async create() {
       const data = $.data as Record<string, unknown>
       checkSource(data)
+      checkRuntime(data)
       await assertEnvironmentInWorkspace(data.environmentId as string)
       await assertSlugFree('app', { environmentId: data.environmentId, slug: data.slug },
         `App slug '${data.slug}' already exists in this environment`)
@@ -223,6 +228,7 @@ export function createAppsService(app: BasecampApp) {
       // schema refuses all three by name, so nothing here restates them.
       const patch = narrowPatch($.data as Record<string, unknown>)
       checkSource(patch, current as Record<string, unknown>)
+      checkRuntime(patch, current as Record<string, unknown>)
       if (!changesNothing(patch))
         await db().app.update({ where: { id: $.id as string }, data: patch })
 
@@ -235,22 +241,22 @@ export function createAppsService(app: BasecampApp) {
       // "running" would keep showing up as live in any status rollup.
       await db().app.update({ where: { id: $.id as string }, data: { status: 'stopped' }, system: ['status'] })
 
-      // A container stops when nothing restarts it. FILES do not: an inline app
-      // deleted here would go on serving its last release, at its own address,
-      // to anybody who had the link — a row removed from a console and a page
+      // Neither kind stops on its own. Files go on serving their last release
+      // at their own address, and a container is started `unless-stopped` with
+      // a Caddy route in front of it — a row removed from a console and an app
       // still on the internet. So the machine is told, and a machine that
       // cannot be reached does not block the delete: the row is the operator's
       // decision and the retire is best effort, said in the log rather than
       // swallowed.
-      if (sourceKindOf(target.source) === 'inline') {
-        const executor = await resolveExecutor(app, target.id)
-        if (isExecutor(executor)) {
-          const reply = await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
-          if (reply.error)
-            app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
-        } else {
-          app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
-        }
+      const executor = await resolveExecutor(app, target.id)
+      if (isExecutor(executor)) {
+        const reply = sourceKindOf(target.source) === 'inline'
+          ? await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
+          : await executor.call('/stop', { app_id: target.id })
+        if (reply.error)
+          app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
+      } else {
+        app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
       }
 
       const removed = await removeScoped('app', 'App')
@@ -350,54 +356,33 @@ export function createAppsService(app: BasecampApp) {
       await assertSlugFree('app', { environmentId, slug },
         `App slug '${slug}' already exists in this environment`)
 
+      checkRuntime(runtimeOf(bp))
+
       const values = (data.values ?? {}) as Record<string, unknown>
       if (typeof values !== 'object' || Array.isArray(values))
         throw new BadRequest('`values` must be an object of parameter → text')
-      const { env, secret } = paramValues(bp.params, values)
+      const params = paramValues(bp.params, values)
 
-      // The ids are chosen here so the app can name its secrets in the same
-      // write that creates it, rather than being written twice.
-      const appId     = crypto.randomUUID()
-      const secretIds = Object.fromEntries(Object.keys(secret).map(k => [k, crypto.randomUUID()]))
-
-      const created = await db().app.create({
-        data: {
-          id: appId, environmentId, name: appName, slug,
-          type:   bp.appType,
-          port:   bp.port ?? null,
-          source: parseAppSource({ kind: 'image', image: bp.image }),
-          config: {
-            env,
-            secretEnv: Object.fromEntries(Object.keys(secret).map(k => [k, secretRef(secretIds[k]!, 'value')])),
-            ...(bp.port        ? { port: bp.port } : {}),
-            ...(bp.persistent && bp.volumePath ? { volumePath: bp.volumePath } : {}),
-            ...(bp.healthCheck ? { healthCheck: bp.healthCheck } : {}),
-            replicas: bp.replicas,
-            ...(bp.cpuLimit    ? { cpuLimit: bp.cpuLimit } : {}),
-            ...(bp.memLimit    ? { memLimit: bp.memLimit } : {}),
+      // One transaction: an app whose variables did not land is an app whose
+      // first release starts a container without its password.
+      const created = await db().$transaction(async (tx: any) => {
+        const row = await tx.app.create({
+          data: {
+            environmentId, name: appName, slug,
+            type:   bp.appType,
+            source: parseAppSource({ kind: 'image', image: bp.image }),
+            ...runtimeOf(bp),
+            blueprintId: bp.id,
           },
-          blueprintId: bp.id,
-        },
-        system: ['blueprintId'],
-      })
-
-      // `Secret` writes at 5 and the deploy is a developer's act, so these go
-      // through `asSystem()` with the tenant from `ws()` — the rule for any
-      // system create on a scoped model. An app whose secrets did not land is
-      // an app whose first release fails naming them, so it is taken back.
-      try {
-        for (const [key, value] of Object.entries(secret))
-          await $.db.asSystem().secret.create({
-            data: {
-              id: secretIds[key], workspaceId: ws(), kind: 'generic', createdBy: actor(),
-              name: `${slug}/${key} · ${appId.slice(0, 8)}`,
-              data: JSON.stringify({ value }),
-            },
+          system: ['blueprintId'],
+        })
+        for (const p of params)
+          await tx.variable.create({
+            data: { environmentId, appId: row.id, key: p.key, secret: p.secret,
+                    ...(p.secret ? { secretValue: p.value } : { value: p.value }) },
           })
-      } catch (err) {
-        await $.db.asSystem().app.delete({ where: { id: appId } }).catch(() => {})
-        throw err
-      }
+        return row
+      })
 
       app.events.emit('app:created', {
         id: created.id, workspace_id: ws(), environment_id: created.environmentId, type: created.type,

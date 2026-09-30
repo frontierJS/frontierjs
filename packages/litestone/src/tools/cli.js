@@ -619,6 +619,8 @@ async function cmdCreate(label, cfg) {
         ? createForDatabase(rawDb, parseResult, name, label || 'migration', migrationsDir, { pluralize: cfg.pluralize })
         : create(rawDb, parseResult, label || 'migration', migrationsDir, { pluralize: cfg.pluralize })
 
+      // A refusal printed under ✓ with exit 0 told a script a migration was written.
+      if (result.blocked) { console.error(`\n  ${red('✗')}  ${result.message}\n`); process.exit(1) }
       if (!result.created) {
         console.log(`  ${green('✓')}  ${result.message}\n`)
         continue
@@ -784,15 +786,16 @@ async function cmdCheck(cfg) {
   const dbs         = migrationDirsFor(parseResult, cfg)
   const multi       = dbs.length > 1
   const gaps        = []
+  let   refused     = false
 
   for (const { name, migrationsDir } of dbs) {
     const gap = historyGap(parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name })
-    if (gap.unknown) { console.log(`  ${dim('·')}  ${multi ? name + ': ' : ''}${gap.message}\n`); continue }
+    if (gap.unknown) { console.error(`  ${red('✗')}  ${multi ? name + ': ' : ''}${gap.message}\n`); refused = true; continue }
     if (gap.ok) { console.log(`  ${green('✓')}  ${multi ? name + ': ' : ''}the migration history builds the schema\n`); continue }
     gaps.push({ name, summary: gap.summary })
   }
 
-  if (!gaps.length) return
+  if (!gaps.length) { if (refused) process.exit(1); return }
 
   console.error(`\n  ${red('✗')}  the migration history does not build the schema this app declares:\n`)
   for (const { name, summary } of gaps) {
@@ -967,19 +970,12 @@ async function cmdApply(cfg) {
         }
       }
 
-      // Create Litestone client if any JS migrations are pending
-      // (needed so JS migrations receive full ORM access). `db` is main's PATH;
-      // handed the raw handle, every pending .js file died in `resolve` (FJS-1472).
-      const hasPendingJs = pending.some(f => f.endsWith('.js'))
-      let lsClient = null
-      if (hasPendingJs) {
-        const { createClient } = await import('../core/client.js')
-        const mainPath = dbs.find(d => d.name === 'main')?.path
-        lsClient = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: mainPath, encryptionKey: getEncKey() })
+      const result = await apply(rawDb, migrationsDir)
+      if (result.refused) {
+        console.error(`  ${red('✗')}  ${result.message}\n`)
+        anyFailed = true
+        continue
       }
-
-      const result = await apply(rawDb, migrationsDir, lsClient)
-      if (lsClient) lsClient.$close()
 
       // Named whether or not anything ran: a directory holding three valid
       // migrations and one misnamed file applies three and is silent about the
@@ -1018,7 +1014,7 @@ async function cmdApply(cfg) {
     // path above — including the one that applies nothing and `continue`s.
     for (const { name, migrationsDir } of dbs) {
       const gap = historyGap(parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name })
-      if (gap.unknown) continue   // a JS history cannot be shadowed — say nothing rather than guess
+      if (gap.unknown) continue   // apply refused it above and names the files
       if (!gap.ok) missingByDb.push({ name, summary: gap.summary })
     }
   } finally {

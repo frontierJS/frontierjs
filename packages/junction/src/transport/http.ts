@@ -10,6 +10,7 @@ import { WS_PROTOCOL, bearerFromProtocols, withoutBearer } from '../core/ws-auth
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
 import { serveStatic }                    from './static.ts'
+import { REFUSE, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
 // breaks any runtime that strips types rather than transpiling — Node's
 // --experimental-strip-types fails with "does not provide an export named
@@ -114,6 +115,8 @@ export interface HttpTransportOptions {
   }
   static?:      StaticOptions
   auth?:        SessionVerifier
+  /** Non-bearer credentials, in order, asked before the bearer path (`FJS-D475`). */
+  credentials?: CredentialVerifier[]
   /**
    * Cookie name to read the session token from, in addition to
    * `Authorization: Bearer` and `x-api-key`. Null/omitted = cookies are not
@@ -745,7 +748,20 @@ export class HttpTransport {
 
     // ── Resolve auth ───────────────────────────────────────────────
     let user = null
-    if (this._opts.auth) {
+    for (const verify of this._opts.credentials ?? []) {
+      // A verifier that throws is refused rather than skipped: skipping would
+      // let a broken key lookup fall through to anonymous.
+      let answer
+      try {
+        answer = await verify({
+          method, path, query: url.search.slice(1), headers,
+          body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host: (headers.host ?? url.host) || null,
+        })
+      } catch { answer = REFUSE }
+      if (answer === REFUSE) return new Response('Unauthorized', { status: 401 })
+      if (answer) { user = answer; break }
+    }
+    if (!user && this._opts.auth) {
       const token = extractToken(headers, this._opts.authCookie ?? null)
       if (token) {
         // The headers come with it. A provider that binds one database ignores

@@ -1420,7 +1420,9 @@ const expected = {
     // Customer is a `combobox`, not a `select`: a relation picker is a
     // searchable one, because the rows come from a service that caps them and
     // a native select cannot reach past the page it was handed (`FJS-459`).
-    'Reference:text', 'Status:select', 'Total:number', 'Note:text', 'Customer:combobox',
+    // Total is `@money`, so a text box in major units: a number input answers
+    // an empty value for a decimal comma rather than refusing it (`FJS-D555`).
+    'Reference:text', 'Status:select', 'Total:text', 'Note:text', 'Customer:combobox',
   ],
   'form.statusOptions':     ['pending', 'paid', 'shipped', 'refunded', 'cancelled'],
   'form.customerOptions':   ['Acme Corp', 'Globex'],

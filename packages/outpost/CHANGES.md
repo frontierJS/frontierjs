@@ -1,5 +1,28 @@
 # Changes — @frontierjs/outpost
 
+## 2026-09-30 — Caddy fronts an app by its hostnames (`FJS-D564`, `FJS-D565`)
+
+`/deploy` takes `hosts`. Naming any pushes a route to the machine's Caddy through its admin API (`src/ingress.js`, `OUTPOST_CADDY_ADMIN`, default `http://127.0.0.1:2019`): one route per app, `@id` `fjs-<app>`, reverse-proxying to `127.0.0.1:<port>`, PATCHed on a redeploy and DELETEd by `/stop` and by a deploy that names none. The ingress server is made on the first route and listens on Caddy's own `https_port`. The same deploy binds the container's port to `127.0.0.1`. A hostname Caddy cannot route (a wildcard, a bare label) is refused before anything runs; one another app's route holds is refused before the container starts; so is a Caddy that does not answer. A machine with no Caddy deploys an app with no hostname exactly as before. Outpost keeps no copy of the routes: Caddy's `--resume` reloads them after a restart, which is `FJS-D564`'s owed answer. `bun run test` 97/97 (ten new, against a Caddy stand-in modelled on the real admin API's answers). `verify:docker` 32/32 with seven new assertions against a real Caddy; forcing the old all-interfaces bind fails `ingress.portRefusesOffLoopback`, and dropping `--resume` fails `ingress.survivesACaddyRestart`.
+
+## 2026-09-30 — limits and a health path are applied (`FJS-1605`)
+
+`/deploy` takes `config.cpuLimit` (`--cpus`) and `config.memLimitMb` (`--memory <n>m`). Like `volumePath`, a bad value is refused before the old container is removed. `/health-check` takes `port` and `path`. With a path, a running container must also answer `127.0.0.1:<port><path>` with a 2xx, and a failure says why in `reason`. `createDocker({ fetch })` is the seam the suite uses. `bun run test` 87/87, `verify:docker` 25/25.
+
+## 2026-09-30 — the command port speaks TLS only (`FJS-1603`, `FJS-D557`)
+
+8180 carried every deploy's decrypted environment in the clear. It now serves
+`OUTPOST_TLS_CERT`/`OUTPOST_TLS_KEY`, both required. `OUTPOST_PUBLIC_URL` defaults to
+`https://localhost:<port>`, and the process refuses to start on one that is not `https`.
+`@frontierjs/outpost/cert` exports `ensureCert(dir)`, which makes a self-signed P-256
+certificate once and keeps it across restarts, because Basecamp pins the one it was
+handed. It also exports `OPENSSL_CERT_ARGS`, which the install script builds its shell line
+from. `verify:docker` drives the process over pinned TLS and asserts that plain HTTP on the
+command port gets no answer. The static origin on 8181 is unchanged.
+
+## 2026-09-30 — a deploy keeps its data: `config.volumePath` is a named volume
+
+`/deploy` removes the old container before it starts the new one, so a database container kept nothing from one release to the next. `config.volumePath` now mounts `fjs-<app>-data` at that path. The next release is handed the same volume. A path that is not absolute, or that holds `:` or `,` (which docker would read as more than a mount point), is refused before the running container is removed. Basecamp sends the path for a blueprint that declares persistent storage. One new test covers the mount and the refusal, and checks that the refusal removed nothing. `bun run test` 83/83.
+
 ## 2026-09-27 — the process against a real daemon, and a volume report that says what the volumes hold (`FJS-1398`)
 
 `verify:docker` starts the Outpost process on test-tier 7180 with a stand-in Basecamp on 7182 and drives it with signed commands against the real daemon: `/pull` answers the daemon's own image id, `/deploy` runs that digest on 7183 with its env and the 10m log cap and answers HTTP, a second deploy replaces the first, `/stop` removes it, and the heartbeat, volume report and disk report arrive signed and holding what the daemon holds. It never calls a prune or a volume route — on a workstation those remove somebody's things. It found **every volume reported as 0 bytes with no mountpoint**: `volume ls` answers `Size: "N/A"` and `volume inspect` answers an array on one line. Sizes now come from `docker system df -v`, and the line reader flattens an array.

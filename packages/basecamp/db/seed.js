@@ -76,7 +76,7 @@ class EnvironmentFactory extends Factory {
   // supplies it per row rather than deriving it from seq.
   definition() {
     return { name: 'Development', slug: 'development', tier: 'development',
-             isProtected: false, variables: [] }
+             isProtected: false }
   }
   tier(tier) {
     return this.state({
@@ -130,7 +130,6 @@ class AppFactory extends Factory {
       type:     'static',
       status:   'running',
       source:   { kind: 'inline', files: [{ path: 'index.html', content: PASTED_PAGE }] },
-      config:   {},
       port:     null,
       isPublic: true,
     }
@@ -141,7 +140,6 @@ class AppFactory extends Factory {
       type:     name === 'worker' ? 'worker' : name === 'scheduler' ? 'cron' : 'container',
       status:   rng ? rng.pick(['running', 'running', 'running', 'stopped', 'error']) : 'running',
       source:   { kind: 'git', repo: `git@forgejo.local:acme/${name}.git`, branch: 'main' },
-      config:   { replicas: 1 },
       port:     name === 'web' ? 3000 : null,
       isPublic: name === 'web',
     }
@@ -617,9 +615,18 @@ export class BasecampSeeder extends Seeder {
           }
 
           for (const environment of environments) {
+            // One of each kind a release merges: environment-wide, a secret,
+            // and an app's own that overrides the environment's of that key.
+            const base = { workspaceId: ws.id, environmentId: environment.id }
+            await sys.variable.create({ data: { ...base, key: 'LOG_LEVEL', value: environment.tier === 'production' ? 'warn' : 'debug' } })
+            await sys.variable.create({ data: { ...base, key: 'DATABASE_URL', secret: true,
+              secretValue: `postgres://app:seed@db.${environment.slug}.local/app` } })
+
             const apps = await new AppFactory(sys)
               .seed(RNG_SEED + environments.indexOf(environment))
               .create(2, { workspaceId: ws.id, environmentId: environment.id })
+            if (apps[0])
+              await sys.variable.create({ data: { ...base, appId: apps[0].id, key: 'LOG_LEVEL', value: 'info' } })
 
             for (const app of apps) {
               // Where it runs. A seeded app with no placement is an app whose

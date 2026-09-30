@@ -19,6 +19,8 @@ import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
 import { isInline, imageOf } from '../../core/app-source.ts'
+import { snapshotVariables } from '../../core/variables.ts'
+import { runtimeOf } from '../../core/runtime.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
 // current environment and a deployment records the one it went to, and those
@@ -147,9 +149,13 @@ export function createDeploymentsService(app: BasecampApp) {
           `App '${target.name}' names no image, and nothing builds one yet — ` +
           `set its source to an image (e.g. nginx:alpine) or to inline files`)
 
-      // What the app looked like at release time. `source`/`config` are Json
-      // columns, so these are already objects — the old code JSON.parse'd them.
-      data.configSnapshot = { source: target.source ?? {}, config: target.config ?? {} }
+      // What the app looked like at release time: how its container starts
+      // (`core/runtime.ts`) and its variables — plain values copied, secrets by
+      // id (`core/variables.ts`).
+      data.configSnapshot = {
+        source: target.source ?? {}, runtime: runtimeOf(target),
+        ...await snapshotVariables(db(), target),
+      }
       data.toImage      ??= imageOf(target.source)
       data.environmentId  = target.environmentId
       data.triggeredBy    = actor() === 'system' ? null : actor()
@@ -244,10 +250,10 @@ export function createDeploymentsService(app: BasecampApp) {
     // fact that somebody rolled back at 11pm on a Friday is the thing an
     // operator most wants to find afterwards.
     //
-    // **The config comes from the TARGET and never from the app.** That is the
-    // whole of what separates this from a redeploy: `App.config` is the desired
-    // state somebody has since edited, and rolling back to the old image with
-    // the new config puts back neither release.
+    // **The settings come from the TARGET and never from the app.** That is the
+    // whole of what separates this from a redeploy: the app's columns are the
+    // desired state somebody has since edited, and rolling back to the old image
+    // with the new settings puts back neither release.
     //
     // ─── Why the retire happens HERE and not when the replacement lands ──
     //

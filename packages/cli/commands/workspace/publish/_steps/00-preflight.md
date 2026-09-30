@@ -6,6 +6,7 @@ description: Every reason this release must not go to npm, before a version is s
 <script>
 import { resolve } from 'path'
 import { execSync } from 'child_process'
+import { existsSync } from 'fs'
 </script>
 
 ```js
@@ -20,8 +21,17 @@ const dirty  = dirtyPackages(planned.map(p => ({ name: p.pkg.name, dir: p.dir })
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 
+// The website's list of packages it holds back, read where it lives. Absent
+// outside this workspace, where there is no site to fall behind.
+let heldBack = []
+const siteData = resolve(context.config.wsRoot ?? '', 'website/site/src/data/packages.js')
+if (existsSync(siteData)) {
+  const { HELD_BACK = {} } = await import('file://' + siteData)
+  heldBack = planned.filter(p => p.pkg.name in HELD_BACK).map(p => ({ name: p.pkg.name, reason: HELD_BACK[p.pkg.name] }))
+}
+
 const refusals = publishRefusals({
-  dirty, drift, cycles: sorted.cycles,
+  dirty, drift, cycles: sorted.cycles, heldBack,
   force: { dirty: flag['allow-dirty'], peers: flag['allow-peer-drift'] },
 })
 

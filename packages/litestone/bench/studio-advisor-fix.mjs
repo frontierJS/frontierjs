@@ -8,8 +8,10 @@
 // the text landed in the file would prove the button typed, not that it helped.
 import { spawn } from 'node:child_process'
 import { mkdtempSync, cpSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'; import { join } from 'node:path'
-const R = '/home/j/code/FRONTIER/frontierjs', PORT = 7503
+import { tmpdir } from 'node:os'; import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../mesa/src/drive.js'
+const R = join(dirname(fileURLToPath(import.meta.url)), '../../..'), PORT = 7503
 let fails = 0
 const ok = (n,c,x='') => { console.log((c?'ok   ':'FAIL ')+n+(c?'':'  → '+x)); if(!c) fails++ }
 const work = mkdtempSync(join(tmpdir(),'fix-')); cpSync(`${R}/packages/basecamp/db`, work, { recursive: true })
@@ -51,18 +53,12 @@ try {
   ok('an unknown model is refused', !nope.ok && /not found/.test(nope.error ?? ''), nope.error)
 
   // ── the button itself, in a browser ──────────────────────────────────────
-  const { spawn: sp } = await import('node:child_process')
-  const CDP = 7504
-  const chrome = sp('google-chrome', ['--headless=new', `--remote-debugging-port=${CDP}`,
-    '--window-size=1500,900', '--no-sandbox', '--disable-gpu', 'about:blank'], { stdio: 'ignore' })
+  const browser = await openChrome({ windowSize: '1500,900' })
   try {
     const w = async (fn,t=80)=>{for(let i=0;i<t;i++){await new Promise(r=>setTimeout(r,250));const v=await fn().catch(()=>null);if(v)return v}return null}
-    const tg = await w(()=>fetch(`http://127.0.0.1:${CDP}/json/list`).then(r=>r.json()).then(x=>{const q=x.filter(y=>y.type==='page');return q.length?q:null}))
-    const ws = new WebSocket(tg[0].webSocketDebuggerUrl); await new Promise(r=>ws.addEventListener('open',r))
-    let id=0
-    const send=(m,pp={})=>new Promise(res=>{const mine=++id;const on=e=>{const x=JSON.parse(e.data);if(x.id===mine){ws.removeEventListener('message',on);res(x.result)}};ws.addEventListener('message',on);ws.send(JSON.stringify({id:mine,method:m,params:pp}))})
+    const send = browser.cmd
     const ev=async e=>(await send('Runtime.evaluate',{expression:e,returnByValue:true,awaitPromise:true}))?.result?.value
-    await send('Page.enable'); await send('Page.navigate',{url:`http://127.0.0.1:${PORT}/`})
+    await send('Page.navigate',{url:`http://127.0.0.1:${PORT}/`})
     await w(async()=>(await ev(`document.querySelectorAll('#tableList .table-item').length`))>0)
     await ev(`showTool('perf')`)
     await w(async()=>(await ev(`perfIssues.length`))>0)
@@ -77,8 +73,7 @@ try {
     ok('the toast says a migration is still needed', /migrate to create it/.test(t2 ?? ''), String(t2))
     ok('and offers the migrations panel', /Migrations/.test(t2 ?? ''), String(t2))
     console.log('     toast:', String(t2))
-    ws.close()
-  } finally { chrome.kill('SIGKILL') }
+  } finally { await browser.close() }
 
   // and the whole point: a migration built from the edited schema creates it
   const { createClient } = await import(R + '/packages/litestone/src/index.js')

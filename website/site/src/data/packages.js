@@ -31,8 +31,9 @@ const PACKAGES = resolve(HERE, '../../../../packages')
  * A `private` package is out of the walk by its own manifest and needs no entry
  * here; the first version of this list carried one and the check refused it.
  */
-const HELD_BACK = {
+export const HELD_BACK = {
   '@frontierjs/mcp': 'projection only — no transport, so nothing a visitor installs can reach it',
+  '@frontierjs/orion': 'mid-port and never released to npm, so a page would hand a visitor an install that 404s',
 }
 
 let cached = null

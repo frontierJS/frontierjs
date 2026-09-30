@@ -1,5 +1,125 @@
 # Changes — Basecamp
 
+## 2026-09-30 — the edge connector writes, and only what it marked (`FJS-D562`, `FJS-D560`)
+
+- **`appendRecords` · `setRecords` · `deleteRecords`** on `EdgeConnector`, libdns's shape. Each is one `POST /dns_records/batch`, so a refused call leaves nothing half-written and a retry repeats rather than finishes. `setRecords` keeps a record already holding a wanted value (patched only where ttl, proxied or the mark moved) and sends nothing when the set is already true.
+- **The mark.** A caller passes a `RecordMark` (`domainMark(domainId)`, compute's `MachineMark` argument); `cloudflare.ts` spells it `basecamp:domain:<id>` in `comment` and reads it back as `EdgeRecord.mark`. `basecamp-ish` and `added by hand` are not ours. A set or delete naming a set that holds an unmarked record is refused, every set checked before anything is sent.
+- **A vendor's refusal keeps its reason.** Conduit keeps a 4xx body as `error.raw` and `sendVia` dropped it, so Cloudflare's *a CNAME already exists* read `HTTP 400`. `sendVia` now passes the parsed body as `data` on an error. DigitalOcean and Hetzner do not read it yet (`FJS-1611`).
+- **The spend guard's words cover DNS** — the guard already caught every POST; its message named only machines.
+- **The Cloudflare stand-in writes** — the batch route, all or nothing, refusing a missing id and a CNAME beside an A/AAAA/CNAME; each listener keeps its own zones. `zone-shop` now holds an unmarked MX and A, where the suite writes.
+
+`api/test/edge.test.ts` 28/28, mutation-checked (the refusal off, and a set clearing its whole name, each fail); `bun run test` 537/537; typecheck at baseline.
+
+## 2026-09-30 — a release tells the machine its hostnames; deleting a container app stops it (`FJS-D564`)
+
+- **`/deploy` carries `hosts`** — `routedHosts()` in `core/runtime.ts`: the app's live `Domain` rows, not the snapshot, redirects left out. Outpost routes them through Caddy and binds the port to loopback. `compute.test.ts` grades the read against the real schema (a deleted row, a redirect, another app's name). The `verify` drive asserts a deleted hostname is not sent.
+- **The install puts Caddy on the machine** — the package's `caddy-api` unit (`caddy run --resume`, no Caddyfile); `caddy.service` is disabled. Checked against the published deb, which ships both units.
+- **`apps.remove` sends `/stop` for a container app**, as it sent `/static/retire` for an inline one. A deleted container app was never stopped, so it went on running `unless-stopped`, and would now have kept its Caddy route.
+- Open: a `Domain` changed between releases reaches no machine until the next deploy (`FJS-1610`).
+
+## 2026-09-30 — `/dns/` reads the zone (`IDEAS/cloudflare-edge.md` Phases 4 and 6, reads)
+
+- **`services/edge/`** — `zones` (every edge account in the workspace, each with its zones or the vendor's error) and `records` (one zone's records beside this workspace's `Domain` rows: a serving record's `domainId`, and `missing`, a Domain in the zone with no A/AAAA/CNAME). Graded at READER, `Domain`'s read gate; the account lookup is `asSystem()` confined to the workspace and selecting no `data`, because a developer is below `Secret`'s 5 and would otherwise be told no account exists. A vendor refusal is a 502 with Cloudflare's message; in `zones` it is per account. `drift` and `sync` wait on D3.
+- **`edge` leaves `BasecampProviders`** (`FJS-D558`): `IEdge`, `StubEdge` and `EdgeAnalytics` are gone. The portal's `edge` entry reads the workspace's accounts — configured when one exists, `adapter` names the vendors, and `get`/`ping` verify each token (`degraded` when any is refused).
+- **Connector:** `zone(send, id)`, which the sink now answers.
+- **`/dns/`** lists each account's zones, reads the first, and shows its records and the hostnames with no record. A refused account or zone shows the vendor's reason without taking the hostname table down. Analytics stays a skeleton. `/admin/adapters/` names the vendor behind a configured hosted entry.
+- **`verify:screens`** starts the Cloudflare sink on API port + 7, keeps the `unconfigured` assertion, then connects an account through `/secrets` and asserts healthy, all four zones, the records, `drive.example.test` as missing, the broken zone's reason, and the adapters tile reading `set` beside spend's `not set`.
+
+`api/test/edge.test.ts` 19/19; `bun run test` 526/526; `verify:screens` 230/230; `verify:build` 8/8; typecheck at baseline.
+
+## 2026-09-30 — a Cloudflare token is a workspace account, and it reads zones (`FJS-D558`, `FJS-D559`)
+
+The edge adapter's first half, reads only (`IDEAS/cloudflare-edge.md` Phases 1–3).
+
+- **`providers/edge/`** — `EdgeConnector` and `cloudflare.ts`: `verify` · `zones` · `records`. A 200 whose envelope says `success: false` is refused with Cloudflare's message rather than read as an empty list; lists walk `total_pages`; a record keeps its `comment`, where the ownership mark will go. `EdgeZone`/`EdgeRecord` are declared there once and `basecamp.types.ts` takes them from it.
+- **One account lookup.** `accountConnectorFor` in `compute/accounts.ts` answers a compute or an edge connector, and registration, `secrets` create and `secrets.verify` go through it. `ComputeSend` is renamed `AccountSend`, the type both realms' connectors take. `servers.providers` lists compute accounts only, so the machine wizard does not offer Cloudflare.
+- **Schema.** `ProviderKind` gains `cloudflare`; `Server` refuses it with a `@@check` (`FJS-D559`).
+- **`cloudflare-sink.ts`** on 8127, `CLOUDFLARE_URL` to point at it. It pages at 2, refuses an unknown token, answers a token that opens no zone, and serves one zone whose records answer 200 with `success: false`.
+- **Not yet:** the edge service and `/dns/`. `IEdge`'s stub is still what the portal reads, so its edge entry says `unconfigured` beside a verified account until Phase 4.
+
+`api/test/edge.test.ts` 12/12; `bun run test` 519/519.
+
+## 2026-09-30 — how a container starts is columns (`FJS-1605`)
+
+`App.config` was Json the machine read into. The machine published a port from `config.port` while the form edited `App.port`, so an app given a port by hand started with none published. `apps.fromBlueprint` copied a blueprint's health check, replicas and limits into it, and nothing applied them.
+
+- **`App.config` is gone.** `App` has `port` (published on the machine), `containerPort` (what the image listens on, null for the same number), `volumePath`, `healthCheck`, `cpuLimit` (CPUs, a `Float`) and `memLimitMb`. Each is checked at the write, so a `volumePath` outpost would refuse is refused before the old container is removed. A health path with no port is refused by `apps` (`checkRuntime`). It is not a `@@check`, because litestone's generic verifier fills the path and leaves an optional Int null, so it could build no App row at all.
+- **`core/runtime.ts` is the one reader.** `deployments.create` snapshots it as `configSnapshot.runtime`, so a rollback still puts back the settings that shipped. The deploy job sends it as outpost's `config`, and the health step sends the port and path.
+- **Removed rather than applied:** `Blueprint.replicas`, because an app's replicas are its placements, and `Blueprint.persistent`, because `volumePath` already says it. Blueprint's limits have App's names and types now, so `fromBlueprint` is `...runtimeOf(bp)`. The seed's `500m`/`512Mi` were Kubernetes spellings that `--cpus` would have refused. They are now `0.5`/`512`.
+- **The Config tab** lists the runtime settings in place of the Json card, and Edit opens the schema form, which offers every column.
+- `verify:outpost` was posting `config.env`, which `FJS-1600` had already made a 400. It now sets columns plus a variable and reads `NanoCpus`/`Memory` off the real container.
+
+`bun run test` 507/507. New tests cover the snapshot holding the runtime and ignoring a later edit, the write-time refusals (volume path, CPU, health without a port), and a blueprint's settings landing on the columns. `verify:outpost` 25/26 with Docker: the runtime checks pass, and the one FAIL is the seed's missing decoy ([`FJS-1606`](../../ISSUES.md#fjs-1606)), which predates this change. `verify:screens` 221/221, with a new check that the Config tab shows the blueprint's limits. `verify:build` 8/8, typecheck at baseline (13).
+
+## 2026-09-30 — a command reaches a machine only over pinned TLS (`FJS-1603`, `FJS-D557`)
+
+Every deploy sent the app's decrypted secret environment to `http://<ip>:8180`.
+
+- **Enrollment takes the machine's certificate.** `POST /servers/{id}/enroll` requires `cert`,
+  a PEM, and checks it before the lookup and before the burn, so a malformed one spends no
+  token. It is kept on the new `Server.outpostCert` column, and `publicUrl` is `https://`.
+- **The heartbeat registers a pinned target or none.** A non-`https` `outpost_url`, or a row
+  with no certificate, registers nothing and deregisters any target already held. A changed
+  pin re-registers. The executor refuses a target with no `pinned_cert`, so the refusal is a
+  deploy that fails by name.
+- **The install makes the certificate before it enrolls.** It uses `openssl`, with the argv
+  from `@frontierjs/outpost/cert`, writes it under `/etc/basecamp`, and refuses a
+  `BASECAMP_URL` that is not `https` outside loopback. `cloudInit` and `installCommand`
+  refuse the same thing, because the enroll answer is the machine's key.
+- **`dev:outpost` takes the same path**, with its certificate in `.outpost/tls/`. A remembered
+  identity from before it held one enrolls again.
+
+## 2026-09-30 — the browser drives open Chrome through `@frontierjs/mesa/drive` (`FJS-1588`)
+
+`web/test/verify{,-build,-screens,-provision}.mjs` drop their own launcher, `/json/list` poll and CDP client for `openChrome()`. The console watchers read events through `browser.on`. `verify.mjs` takes `API_PORT`/`UI_PORT` like its siblings, so it can run beside a dev server. Measured in a worktree at f8a6876b on the test slot: build 8/8, screens 206/206 (HEAD's copy also 206/206), provision 70/70. `verify` prints the same ok/FAIL sequence as HEAD's copy and stops at the same throw (`FJS-1602`).
+
+## 2026-09-30 — An app's environment is rows (`FJS-1600`, `FJS-1599`)
+
+A container's environment lived in two Json blobs. `App.config.env` reached the machine and `Environment.variables` did not reach it at all. A blueprint's secret parameters went to `Secret` rows that outlived the app.
+
+- **`Variable`** is one model for both scopes: `environmentId`, plus `appId` for an app's own (null means environment-wide), `key`, `secret`, `value` and `secretValue`. `secretValue` is `@encrypted`, so it is in no read but a system one. `key` is `@regex`-checked to a name `docker run -e` can take. `key`, `secret` and the scope are `@immutable`. Keys are unique per environment where `appId` is null, and per app otherwise. The gate is `2.4.4.4` with `@@capabilities`. `Variable.create/update/delete` replace the `Environment.variables` column grant for developer, admin and owner.
+- **A release gets the environment's variables with the app's own on top.** `deployments.create` snapshots them next to `source` and `config`. Plain values are copied, so a rollback puts back what shipped. A secret is recorded by its variable id. `core/variables.ts` is the one owner of that merge and of the read at `/deploy`. A secret that is gone still fails the release and names the key. `resolveSecretEnv` is gone from `core/credentials.ts`, which is back to owning conduit refs only.
+- **Deleting an app takes its variables with it, and restoring it brings them back.** This is `App`'s `@@softDelete(cascade)`, with no retire step. `apps.fromBlueprint` writes each parameter as a variable in the same transaction as the app, and it writes no `Secret`.
+- **A `variables` service** handles find, get, create, patch and remove. A protected environment still refuses a developer on its own variables (`refuseProtectedForDeveloper` moved to `core/hooks.ts`). An app's own variable needs the authority that patches the app. Remove hard-deletes, so the key can be set again. `apps` refuses `config.env` and `config.secretEnv` and says where they go.
+- **A secret environment variable used to be plaintext** in a column readable at viewer, and the screen masked it for display only. Now it is encrypted and absent from every response. The editor says *secret · set* and offers Replace, not Reveal.
+- **`VariablesEditor.mesa`** is the editor on both the environment screen and the app's Config tab. The Config tab's callout, which said the schema had no per-app override, is gone.
+- The rest of `App.config` is still Json that outpost reads into. Some of what a blueprint writes there is never applied ([`FJS-1605`](../../ISSUES.md#fjs-1605)).
+
+`bun run test` 502/502. New tests: the environment's and app's merge, including a plain app value replacing an environment secret; delete and restore carrying an app's variables; the protected guard on create, patch and remove; the key rule and per-scope uniqueness; a secret staying secret on an edit with its key freed by remove; `config.env` refused; and a release snapshot holding a secret by id only, with plain values frozen at creation. `verify:screens` 220/220: the blueprint deploy reads the password back as a secret variable with no value in any read, and the app's Config tab lists it as set. `verify:build` 8/8, `verify:mcp` 15/15, typecheck at baseline. `fli check`: `capability-ladder` baseline 2 → 3, answered the same way as Server and Environment. `bun run verify` was not run: it needs the dev database empty, and port 8020 was held by another process.
+
+## 2026-09-30 — Tier 4: a fleet summary on Home
+
+Home opened on the action queue and the project list. Nothing on it said how big the fleet was or how it was doing.
+
+- **`infra.summary`** counts four things for the workspace. Machines are counted by status, leaving out destroyed ones. Apps are counted by status. Releases are the last 24 hours, by status. Alerts are the firing events, how many of those nobody has acknowledged, and how many rules are snoozed right now. Every count goes through the caller's own client, so tenancy and soft-delete are the Data boundary's. The browser does not tally the stores it already holds, because those are pages of a list and a tally over a page is wrong past its last row.
+- **Home has four tiles under the queue**: Machines, Apps, Releases today and Alerts firing. Each links to its list and turns red when something in it is broken. They are read again half a second after a server or release push lands. The drive checks the first read and not that refresh.
+
+`bun run test` has one new test. It builds a workspace of its own with a destroyed machine, a deleted app, a release from yesterday and a resolved event, and checks each count exactly. It then files a release in another workspace and checks that the count does not move. `verify:screens` reads the four tiles against the API's own answer and checks where each one links.
+
+## 2026-09-30 — Tier 4: deploying from a blueprint
+
+The catalog showed what a blueprint would send, and a callout said nothing could send it.
+
+- **`App.blueprintId`** records which catalog entry an app was made from. It is `@system` and `@immutable`, so only the method below writes it, and a patch naming it is refused. It is a record of origin, not a live link: the blueprint's image, type, port and settings are copied onto the app, so editing the catalog changes no running app.
+- **`apps.fromBlueprint({ blueprintId, environmentId, name, values })`** makes the app. It needs developer or above, the same as `create`. A withdrawn blueprint is refused, and so is a parameter the blueprint does not have (named by its key) and a required one left empty (named by its label). A blank field takes the blueprint's default. If there is none and the parameter has a generator, a value is minted. `random_hex_N` means N bytes, the way `openssl rand -hex N` reads it.
+- **A secret parameter never lands on the app.** `App.config` is on every app read and in every release snapshot. So a secret value is written to a `Secret` row (`@encrypted`, through `asSystem()` with the tenant from `ws()`), and `config.secretEnv` holds `secret:<id>#value`. **`resolveSecretEnv`** in `core/credentials.ts` turns those refs into values only when the release sends `/deploy`. A ref that no longer resolves fails the release and names the variable, instead of starting the container without it.
+- **A blueprint's `volumePath` is kept across releases.** Outpost removes the old container on every deploy, so a Postgres made from the catalog would have come back empty after its second release. Outpost now mounts a named volume, `fjs-<app>-data`, at that path.
+- **`/blueprints/`** has a Deploy button on every offered card for anyone in a workspace. It opens a drawer with the environment, the app name, an optional machine, and one field per parameter (secret ones masked). With a machine picked it also calls `place` and queues the first release. Either way it lands on the app's screen. The "not wired yet" callout is gone.
+
+`bun run test` has five new tests. They cover what is copied and what is minted, that the typed password is in no column an app read returns and that the release resolves it, that a gone secret fails naming its variable, the refusals, and that a patch cannot write `blueprintId`. `verify:screens` deploys Redis from the card, checks the password field is masked, and reads the new app back through the API: its blueprint, its image, and a ref where the password would be. Two gaps are filed. Deleting the app leaves its secrets ([`FJS-1599`](../../ISSUES.md#fjs-1599)). An app's environment is still Json that the deploy reads into ([`FJS-1600`](../../ISSUES.md#fjs-1600)).
+
+## 2026-09-30 — Tier 4: snoozing an alert
+
+A rule could be paused, and a paused rule stays paused until somebody remembers it.
+
+- **`AlertRule.snoozedUntil`** is set by **`alerts.snooze({ minutes })`** and cleared by **`alerts.unsnooze`**. Both need admin or above, the same as Pause. The server turns the duration into an instant on its own clock. The column is `@system`, so the ordinary edit cannot set it, and the audit trail records who snoozed. The limit is a week (`MAX_SNOOZE_MINUTES`). Anything longer is a paused rule, and the refusal says so.
+- **The evaluator opens no event for a snoozed rule and keeps evaluating it.** A breach still holding when the snooze runs out fires on the next pass. An event opened before the snooze still resolves, so an incident already paged is closed as usual. A past `snoozedUntil` is not a snooze and nothing clears it. `isSnoozed` in `core/alerting.ts` is the one comparison, and the screen and `infra.summary` ask the same question.
+- **`/alerts/`** has Snooze on each rule with four durations (1 hour, 4 hours, 1 day, 1 week). A snoozed rule shows *snoozed until …* and an Unsnooze button.
+
+`bun run test` has five new tests. Two evaluator tests: a snoozed rule opens nothing while an identical awake one fires, then fires once its snooze is in the past; and a snooze does not hold an open event open. Three service tests: the snooze is minutes from the server's now and unsnooze clears it; over a week, or no duration at all, is refused while exactly a week is not; and a developer cannot snooze, while a patch carrying the right version is refused by `@system` rather than by the version check. `verify:screens` snoozes a seeded rule for an hour from the card, reads `snoozedUntil` back through the API, and unsnoozes.
+
+All three: `bun run test` 495/495. `verify:screens` 220/220 (was 206). `verify:mcp` 15/15, `verify:build` 8/8, typecheck at baseline. `bun run verify` was not run, because it deletes the dev database.
+
 ## 2026-09-30 — Tier 4: leaving a workspace, and handing one over
 
 Nobody below admin could leave a workspace, an owner could never leave or step down, and `Workspace.ownerId`, which is the owner the hub names, never moved after creation.

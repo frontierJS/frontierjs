@@ -86,9 +86,9 @@ title: Adapters
 
   <h2 class="h4">Hosted services</h2>
   <p class="text-sm text-muted">
-    Somebody else's service, reached with a credential. Wiring one is a
-    <code>@frontierjs/conduit</code> target plus its token as a <a href="/secrets/">Secret</a> —
-    there is no URL to open and no <code>url</code> to show.
+    Somebody else's service, reached with a credential — its token held as a
+    <a href="/secrets/">Secret</a>, and for the edge a provider key this workspace adds itself.
+    There is no URL to open and no <code>url</code> to show.
   </p>
   <div class="tiles" style="--tile-min: 17rem" id="hosted-tiles">
     {#each hosted as entry}
@@ -100,6 +100,7 @@ title: Adapters
         <p class="text-sm text-muted">{entry.description}</p>
         <dl class="facts">
           <dt>Credential</dt><dd><code>{entry.configured ? 'set' : 'not set'}</code></dd>
+          {#if entry.configured}<dt>Adapter</dt><dd>{entry.adapter}</dd>{/if}
         </dl>
         <div class="cluster">
           <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>

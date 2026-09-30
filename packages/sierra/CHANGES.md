@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-30 — the browser drives open Chrome through `@frontierjs/mesa/drive` (`FJS-1588`)
+
+`test/browser/installable.mjs` and `test/fixtures/widget-site/test/verify.mjs` run on `openChrome()`. The widget drive's profile at `/tmp/fjs-widget-<pid>` was never removed, and now the driver removes it. `test/fixtures/island-site/verify.mjs` stays on `--dump-dom` and takes its binary from `findChrome()`, so `$FJS_CHROME` means the same thing there as in every other drive. installable 26/26, widgets 46/46, islands green.
+
+## 2026-09-29 — a linked checkout's local-db worker loads in dev (`FJS-1601`)
+
+In dev, `createSierraViteConfig` now adds the workspace root, sierra's real directory and litestone's real directory to `server.fs.allow`. Before this, an app linked with `--source local` got "outside of Vite serving allow list" for `local-db-worker.js`, and the device database never started.
+
 ## 2026-09-29 — a per-row currency offers no range filter (`FJS-D556`)
 
 `resource.filters()` answers `op: null` with a reason for a

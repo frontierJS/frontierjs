@@ -8,6 +8,9 @@ import { conduit as conduitPlugin } from './src/plugin.ts'
 import { createMemoryStore }  from './src/stores/memory.ts'
 import { createSQLiteStore }  from './src/stores/sqlite.ts'
 import { Database }           from 'bun:sqlite'
+import { mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir }             from 'node:os'
+import { join }               from 'node:path'
 import { createTestConduit }  from './src/testing.ts'
 import { StubTransport }      from './src/transports/stub.ts'
 import { HttpTransport }      from './src/transports/http.ts'
@@ -2449,7 +2452,7 @@ describe('trace context', () => {
   it('attaches a W3C traceparent and correlation id', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = providerTarget({ address: s.url })
+      const target = providerTarget({ address: s.url, trace: true })
       const c = createConduit({
         credentials: secrets(), targets: [target], retry_limit: 0,
         trace: createTraceContext(),
@@ -2467,7 +2470,7 @@ describe('trace context', () => {
   it('continues an existing trace rather than starting a new one', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = providerTarget({ address: s.url })
+      const target = providerTarget({ address: s.url, trace: true })
       const traceId = 'a'.repeat(32)
       const c = createConduit({
         credentials: secrets(), targets: [target], retry_limit: 0,
@@ -2483,7 +2486,7 @@ describe('trace context', () => {
   it('a malformed upstream trace id is replaced, not propagated', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = providerTarget({ address: s.url })
+      const target = providerTarget({ address: s.url, trace: true })
       const c = createConduit({
         credentials: secrets(), targets: [target], retry_limit: 0,
         trace: createTraceContext({ current: () => ({ trace_id: 'not-hex' }) }),
@@ -2499,7 +2502,7 @@ describe('trace context', () => {
   it('a new span id is minted per call', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = providerTarget({ address: s.url })
+      const target = providerTarget({ address: s.url, trace: true })
       const c = createConduit({
         credentials: secrets(), targets: [target], retry_limit: 0,
         trace: createTraceContext({ current: () => ({ trace_id: 'b'.repeat(32) }) }),
@@ -2517,7 +2520,7 @@ describe('trace context', () => {
   it('caller headers override trace headers, and auth overrides both', async () => {
     const s = recorder(() => Response.json({ ok: true }))
     try {
-      const target = providerTarget({ address: s.url })
+      const target = providerTarget({ address: s.url, trace: true })
       const c = createConduit({
         credentials: secrets(), targets: [target], retry_limit: 0,
         trace: createTraceContext(),
@@ -4455,5 +4458,87 @@ describe('retryable (FJS-739)', () => {
     // And nothing here names a kind that no longer exists.
     const stale = Object.keys(ANSWER).filter(k => !(CONDUIT_ERROR_KINDS as readonly string[]).includes(k))
     expect(stale).toEqual([])
+  })
+})
+
+// ─── pinned_cert — one certificate, and nothing else ─────────
+
+describe('pinned_cert (FJS-1603)', () => {
+  // Two self-signed certificates naming no address, which is what an outpost
+  // reached by bare IP holds. Made here rather than committed: a private key in
+  // the tree is a finding for every scanner that reads it.
+  const dir = mkdtempSync(join(tmpdir(), 'conduit-pin-'))
+  const make = (name: string) => {
+    const made = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
+      '-nodes', '-days', '1', '-subj', `/CN=${name}`,
+      '-keyout', join(dir, `${name}.key`), '-out', join(dir, `${name}.crt`)])
+    if (made.exitCode !== 0) throw new Error(`openssl: ${made.stderr.toString()}`)
+    return { cert: readFileSync(join(dir, `${name}.crt`), 'utf8'), key: readFileSync(join(dir, `${name}.key`), 'utf8') }
+  }
+  const mine  = make('mine')
+  const other = make('other')
+
+  const serve = (tls: { cert: string; key: string }) =>
+    Bun.serve({ port: 0, tls, fetch: () => Response.json({ ok: true }) })
+
+  async function sendTo(port: number | undefined, overrides: Partial<TargetDescriptor>) {
+    const c = createConduit({ credentials: secrets(), retry_limit: 0 })
+    await c.init()
+    await c.register(outpostTarget({ address: `https://127.0.0.1:${port}`, ...overrides }))
+    return c.send({ target: 'outpost:srv-test', method: 'GET', path: '/health' })
+  }
+
+  it('reaches the machine holding the pinned certificate', async () => {
+    const s = serve(mine)
+    try {
+      const r = await sendTo(s.port, { pinned_cert: mine.cert })
+      expect(r.error).toBeNull()
+      expect(r.data).toEqual({ ok: true })
+    } finally { s.stop(true) }
+  })
+
+  it('refuses a machine holding any other certificate', async () => {
+    const s = serve(other)
+    try {
+      const r = await sendTo(s.port, { pinned_cert: mine.cert })
+      expect(r.data).toBeNull()
+      expect(r.error?.kind).toBe('connection_failed')
+    } finally { s.stop(true) }
+  })
+
+  // The control: without the pin the same machine is unreachable, so the pass
+  // above is the pin's doing and not a transport that verifies nothing.
+  it('without a pin, a self-signed machine is refused', async () => {
+    const s = serve(mine)
+    try {
+      expect((await sendTo(s.port, {})).error?.kind).toBe('connection_failed')
+    } finally { s.stop(true) }
+  })
+
+  it('is refused at register() on a plain-http address', async () => {
+    const c = createConduit()
+    await c.init()
+    await expect(c.register(outpostTarget({ pinned_cert: mine.cert }))).rejects.toThrow(/must be https/)
+  })
+
+  it('is refused at register() on a unix target, which would not apply it', async () => {
+    const c = createConduit()
+    await c.init()
+    await expect(c.register(outpostTarget({ protocol: 'unix', address: 'https://x', pinned_cert: mine.cert })))
+      .rejects.toThrow(/only an 'http' target/)
+  })
+
+  it('is refused at register() when it is not a certificate', async () => {
+    const c = createConduit()
+    await c.init()
+    await expect(c.register(outpostTarget({ address: 'https://10.0.0.5:7700', pinned_cert: mine.key })))
+      .rejects.toThrow(/not a PEM certificate/)
+  })
+
+  it('survives the SQLite registry', async () => {
+    const s = createSQLiteStore(new Database(':memory:'))
+    await s.init()
+    await s.set(outpostTarget({ address: 'https://10.0.0.5:7700', pinned_cert: mine.cert }))
+    expect((await s.get('outpost:srv-test'))!.pinned_cert).toBe(mine.cert)
   })
 })

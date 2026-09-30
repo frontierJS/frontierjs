@@ -19,20 +19,30 @@ every fleet server to do that.
 OUTPOST_SERVER_ID=<the Server row's id> \
 OUTPOST_SECRET=<this server's secret> \
 BASECAMP_URL=https://basecamp.internal \
+OUTPOST_TLS_CERT=/etc/basecamp/outpost.crt \
+OUTPOST_TLS_KEY=/etc/basecamp/outpost.key \
 bunx --bun @frontierjs/outpost
 ```
 
-Those three have no default and the process refuses to start without them: an
-Outpost that cannot name its server reports as nobody, and one with no secret
-would either refuse every command or accept every one. Everything else has a
+Those five have no default and the process refuses to start without them. An
+Outpost that cannot name its server reports as nobody. One with no secret
+would either refuse every command or accept every one. The command port serves
+TLS only. Its certificate is self-signed (`ensureCert` in
+`@frontierjs/outpost/cert`), sent to Basecamp in the enrollment exchange and
+pinned there, so a command reaches no port holding any other (`FJS-D557`).
+Everything else has a
 default — `OUTPOST_PORT` (8180 dev, 7180 test — the number comes from
 `packages/cli/core/ports.js`, project id 8), `OUTPOST_PUBLIC_URL`,
 `OUTPOST_HEARTBEAT_MS`, `OUTPOST_REPORT_MS`, `OUTPOST_WORK_DIR`, and the four
 that belong to the static half — `OUTPOST_STATIC_DIR`, `OUTPOST_STATIC_PORT`
-(8181 dev, 7181 test; `0` turns it off) and `OUTPOST_STATIC_URL`.
+(8181 dev, 7181 test; `0` turns it off) and `OUTPOST_STATIC_URL` — and
+`OUTPOST_CADDY_ADMIN`, the machine's Caddy admin API (`http://127.0.0.1:2019`),
+which a `/deploy` naming `hosts` pushes its route to. A machine with no Caddy
+deploys an app with no hostname as before.
 
 `OUTPOST_PUBLIC_URL` is stated rather than derived, because this process cannot
-see the address the world reaches it at. It is what the heartbeat registers as
+see the address the world reaches it at. It must be `https`, and the process
+refuses to start otherwise: Basecamp registers no target for a plain-http one. It is what the heartbeat registers as
 the Conduit target, and until that lands Basecamp refuses every release for the
 machine — with a message saying so, rather than a green deploy that ran nothing.
 
@@ -45,9 +55,9 @@ process's user, so the default is refuse and a route opts out rather than in.
 | | |
 | --- | --- |
 | `POST /pull` | `{ image }` → `{ digest }` |
-| `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }` |
+| `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }`; `config` is `port`, `containerPort`, `volumePath`, `cpuLimit` (`--cpus`), `memLimitMb` (`--memory`), `env` and `logs` |
 | `POST /stop` | `{ app_id }` → `{ stopped }` |
-| `POST /health-check` | `{ app_id }` → `{ healthy }` |
+| `POST /health-check` | `{ app_id, port, path }` → `{ healthy }`, plus `reason` when it is not; with a `path`, running is not enough — `127.0.0.1:<port><path>` must answer 2xx |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |
 | `POST /logs` | `{ app_id, tail, since }` → `{ running, tail, since, stdout, stderr }`, plus `error` when there is no such container |
 | `POST /static/publish` | `{ app_id, files }` → `{ digest, files, bytes }` — written, not yet live |

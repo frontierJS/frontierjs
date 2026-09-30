@@ -9,6 +9,8 @@
   "//structure": "Architecture-rule exceptions for the `structure` phase, which runs packages/cli/core/checks.js — the same engine `fli check` gives a client app. Keyed by app directory (or `.` for the repo-wide package rules), then by `<rule>:<path-relative-to-that-root>`. A rule is what every app gets on the next release, so an exception is never a loosened rule: it is one named path with a reason, and a stale one is reported.",
   "structure": {
     ".": {
+      "drive-opens-chrome:packages/mesa/test/drive.test.js": "The driver's own test: it passes the flag to prove openChrome() refuses it.",
+      "drive-opens-chrome:packages/cli/test/checks.test.js": "The rule's own fixtures: a launch it must find.",
       "package-root-md:packages/frontierjs-vscode": "CHANGELOG.md. The VS Code marketplace renders a Changelog tab and reads that name and no other, so it is the one root file here with an audience outside this tree — written for somebody deciding whether to install the extension. CHANGES.md beside it is the engineering history in the house voice and is .vscodeignore'd out of the .vsix along with PROJECT_STATE.md. Two audiences is why it is two files rather than one: folding them would either put defect archaeology on a marketplace page or take the tab away."
     },
     "packages/basecamp": {

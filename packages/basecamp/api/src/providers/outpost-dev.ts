@@ -39,6 +39,7 @@ import { createConnection }                         from 'node:net'
 import { hostname }                                 from 'node:os'
 import { dirname, join }                            from 'node:path'
 import { fileURLToPath }                            from 'node:url'
+import { ensureCert }                               from '@frontierjs/outpost/cert'
 
 const API          = (process.env.BASECAMP_URL ?? 'http://localhost:8120').replace(/\/$/, '')
 const EMAIL        = process.env.BASECAMP_EMAIL    ?? 'sam@example.com'
@@ -131,7 +132,12 @@ if (!workspace)
 
 // ─── The machine ─────────────────────────────────────────────────────────
 
-interface Machine { api: string; workspaceId: string; serverId: string; secret: string }
+interface Machine { api: string; workspaceId: string; serverId: string; secret: string; cert?: string }
+
+// The command port's certificate. Kept across runs, because the enrolled row
+// pins exactly this one — the same TLS a fleet machine speaks, not a loopback
+// exemption beside it (`FJS-1603`).
+const tls = ensureCert(join(HOME, 'tls'))
 
 function remembered(): Machine | null {
   if (!existsSync(MACHINE_FILE)) return null
@@ -172,10 +178,10 @@ async function enroll(): Promise<Machine> {
 
   // `token` beside the command, not scraped out of it: this is an installer,
   // and the command is written for a person pasting into a shell.
-  const exchanged = await call(`/servers/${server.id}/enroll`, { body: { token: issued.data.token } })
+  const exchanged = await call(`/servers/${server.id}/enroll`, { body: { token: issued.data.token, cert: tls.cert } })
   if (!exchanged.ok) fail(`the enrollment was refused: ${said(exchanged)}`)
 
-  const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.data.secret }
+  const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.data.secret, cert: tls.cert }
   mkdirSync(HOME, { recursive: true })
   // This machine's own key: whoever reads it can sign as it.
   writeFileSync(MACHINE_FILE, JSON.stringify(machine, null, 2) + '\n', { mode: 0o600 })
@@ -183,7 +189,10 @@ async function enroll(): Promise<Machine> {
 }
 
 let machine = remembered()
-if (!machine || machine.api !== API || machine.workspaceId !== workspace.id || !(await stillThere(machine.serverId)))
+// A different certificate is a different machine as far as the pin is
+// concerned, and one remembered from before the pin existed holds none.
+if (!machine || machine.api !== API || machine.workspaceId !== workspace.id || machine.cert !== tls.cert
+    || !(await stillThere(machine.serverId)))
   machine = await enroll()
 
 // ─── The Outpost ─────────────────────────────────────────────────────────
@@ -200,7 +209,9 @@ const child = spawn(process.execPath, [entry], {
     OUTPOST_SECRET:      machine.secret,
     BASECAMP_URL:        API,
     OUTPOST_PORT:        String(PORT),
-    OUTPOST_PUBLIC_URL:  `http://localhost:${PORT}`,
+    OUTPOST_PUBLIC_URL:  `https://localhost:${PORT}`,
+    OUTPOST_TLS_CERT:    tls.certPath,
+    OUTPOST_TLS_KEY:     tls.keyPath,
     OUTPOST_STATIC_PORT: String(STATIC_PORT),
     OUTPOST_STATIC_URL:  `http://localhost:${STATIC_PORT}`,
     OUTPOST_STATIC_DIR:  join(HOME, 'static'),

@@ -384,6 +384,49 @@ export class UniqueConflictError extends Error {
   }
 }
 
+// ─── A refused foreign key ───────────────────────────────────────────────────
+//
+// SQLite's `FOREIGN KEY constraint failed` names no table, no column and no
+// value, so a loader could not tell a missing verse from a missing lemma, and a
+// retention job could not tell which child held the row it was deleting
+// (FJS-1454). Both directions are one class (FJS-D521): a write naming a parent
+// that is not there carries `relation`/`field`/`value`, and a delete a Restrict
+// child refuses carries `child` — `{ model, id }`, found through any cascade.
+// Either may be absent when the client could not find the culprit; the class
+// alone still separates this from a datatype or a unique refusal.
+export class ForeignKeyError extends Error {
+  constructor(model, { relation, field, value, target, child } = {}) {
+    const msg = child
+      ? `${model}: cannot delete — ${child.model} ${JSON.stringify(child.id)} still refers to it.`
+      : relation
+        ? `${model}: ${field} ${JSON.stringify(value)} names no ${target} (relation \`${relation}\`).`
+        : `${model}: a foreign key names a row that does not exist, or a row that still refers to it blocks the delete.`
+    super(msg)
+    this.name     = 'ForeignKeyError'
+    this.model    = model
+    this.relation = relation
+    this.field    = field
+    this.value    = value
+    this.target   = target
+    this.child    = child
+    // A composite key's `field` and `value` are parallel arrays, and every
+    // column of it is marked, since no one of them is wrong on its own.
+    this.errors   = Array.isArray(field)
+      ? field.map(f => ({ path: [f], message: `this combination names no ${target} (${field.join(' + ')})` }))
+      : field
+      ? [{ path: [field], message: `${JSON.stringify(value)} does not exist` }]
+      :[{ path: [], message: child ? `${child.model} ${JSON.stringify(child.id)} still refers to this record` : 'a related record does not exist' }]
+    // The identical request fails identically until the caller changes it.
+    this.status    = 422
+    this.retryable = false
+  }
+}
+
+export function isForeignKeyFailure(err) {
+  return err?.name === 'ForeignKeyError' ||
+         !!(err?.message && err.message.includes('FOREIGN KEY constraint failed'))
+}
+
 // Uniqueness over a RANGE rather than a value (`FJS-D474`): two rows sharing a
 // scope's key whose ranges overlap. A 409 for the reason a taken value is one —
 // the other row is there, and the same write fails the same way until one of

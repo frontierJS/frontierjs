@@ -499,7 +499,7 @@ Refused at startup, each naming the column:
 
 | Written | Why |
 | --- | --- |
-| `docs.id == …` | a to-many. *Any child matches* is a different question and is not expressible yet |
+| `docs.id == …` | a to-many. *Any child matches* is a different question, written `docs.some(…)` — below |
 | `owner.usrId == …` | not a field on the target model — the message lists the target's fields, not this one's |
 | `owner.tag == …` where `tag` is `@computed`/`@transient` | no column to correlate on |
 | `owner.tok == …` where `tok` is `@encrypted`/`@hashed`/`@secret` | the column holds an encoding, so the comparison would match nothing — an empty screen with a 200 |
@@ -511,6 +511,61 @@ Refused at startup, each naming the column:
 as `check()`. The grader makes one row and what admits it is on another, so
 *skipped* and *graded, and every row landed on one side* would otherwise read
 identically from the summary while only one of them is a broken policy.
+
+### Any row of a to-many — `relation.some(condition)`
+
+*The caller is one of this row's members* is a question about the CHILD rows:
+does any of them match.
+
+```prisma
+model Team {
+  private Boolean      @default(false)
+  members TeamMember[]
+  @@allow('read', private == false || members.some(userId == auth().id))
+}
+
+model Lens {
+  grants Grant[]
+  @@allow('read', ownerId == auth().id || grants.some(granteeId == auth().id && status == 'active'))
+}
+```
+
+Without it the rule had two homes, and both are copies. A principal resolver
+filled a `claim teamIds` per request, so a job, a seed and `fli tinker` graded
+against a list they had to recompute. A `readerIds String[] @system` on the
+parent was kept by the one service that moved it, so a revoke made on the model
+left the grantee reading (`FJS-1291`). Here the membership row is the only
+origin: revoke it, soft-delete it or stamp it, and the next read and the next
+broadcast frame both see the change (`FJS-D566`).
+
+It is the query `where`'s `{ members: { some: … } }` under the same word, and
+it compiles to the same correlated `EXISTS`: the children are reached through
+their foreign key, and **a soft-deleted child is not one of the relation's
+rows**. On `create` there is no child yet, so the test is false and a create
+rule that needs a member refuses. The JS half runs the same `EXISTS` with the
+parent's key bound, which is how `$readAs` grades a broadcast against the live
+membership row rather than a snapshot.
+
+**Index the child's foreign key.** The `EXISTS` looks children up by it, and
+SQLite indexes no foreign key on its own. Unindexed, every parent row read builds
+a throwaway index. `litestone advise` names the column (`foreign-key-without-index`).
+
+**Inside the parentheses a name is a column of the CHILD**, and the relation has
+spent the one hop. Refused, each naming the rule:
+
+| Written | Why |
+| --- | --- |
+| `members.some(team.private == false)` | a dot inside is a second hop |
+| `members.some(check(team))` | a delegation from the child is a second hop |
+| `team.members.some(…)` | rows two relations away. Put the rule on the model `team` points at |
+| `members.some(private == false)` where `private` is the parent's | not a field on the child. The message lists the child's fields |
+| `team.some(…)` on a to-one | one row, so there is no *some*. Read it as `team.<column>` |
+| `tags.some(…)` over an implicit many-to-many | the join table is a second hop. Declare the join model and test it |
+| `members.some()` | a test needs a condition |
+| `@derived(members.some(…))`, `@@index(…, where: members.some(…))` | as for a path: a derived field reads with `@from`, and an index predicate reads its own row |
+
+**`verifyRowPolicies` reports it as not-graded**, by name, like a path and
+`check()`.
 
 ### Field-level policies
 

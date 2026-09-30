@@ -269,6 +269,19 @@ async function main() {
       scopesOf(tk, '@id').join(' '))
   }
 
+  // A model body ends at the first `}`, so a brace inside a quoted default
+  // closed the model and every field below it rendered as plain text. Paired
+  // with the same field after an unquoted default.
+  for (const [dflt, label] of [['"{}"', 'a brace in a string'], ['false', 'no brace']]) {
+    const tk = tokenize(lite, `model Secret {\n  data String @default(${dflt})\n  isVerified Boolean\n}\n`)
+    ok(`${label}: the next field is still a field`,
+      scopesOf(tk, 'isVerified').includes('variable.other.field.litestone'),
+      scopesOf(tk, 'isVerified').join(' '))
+    ok(`${label}: the next field's type is still a type`,
+      scopesOf(tk, 'Boolean').includes('support.type.litestone'),
+      scopesOf(tk, 'Boolean').join(' '))
+  }
+
   console.log(`\n${'─'.repeat(60)}`)
   console.log(`  ${pass} passed, ${fail} failed`)
   if (failures.length) {

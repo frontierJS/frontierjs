@@ -63,7 +63,8 @@ measured table of every declaration against every verb is
 - **4 · Row policy.** `@@allow` rules are ORed and admit only on TRUE. `@@deny` fires on
    TRUE or UNKNOWN, and an absent claim is UNKNOWN. Policies compile to SQL for reads
    and updates and to JS for creates, and the two halves must agree. A policy may reach
-   one relation away, not two (`FJS-D221`). Row tenancy compiles to `@@deny` and never
+   one relation away, not two: a column of a to-one (`FJS-D221`), or whether some row of
+   a to-many matches (`FJS-D566`). Row tenancy compiles to `@@deny` and never
    to `@@allow`, so no extra allow rule can widen it (`FJS-D05`). A null tenant column
    belongs to nobody. A model whose rows are shared across tenants declares
    `@@tenant(none)` (`FJS-D141`).

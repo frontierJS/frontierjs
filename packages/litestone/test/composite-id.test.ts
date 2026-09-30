@@ -111,7 +111,7 @@ model MembershipNote {
 
     // Half a key is not a key: the FK correlates on both columns.
     await expect(db.membershipNote.create({ data: { orgId: 'o1', userId: 'nobody', body: 'x' } }))
-      .rejects.toThrow(/FOREIGN KEY constraint failed/)
+      .rejects.toMatchObject({ name: 'ForeignKeyError', relation: 'member', field: ['orgId', 'userId'] })
   })
 })
 

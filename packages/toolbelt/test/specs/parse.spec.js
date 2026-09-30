@@ -80,6 +80,48 @@ test('parse: a refusal is the caller\'s error, at the token it failed on', funct
   assert.equal(threw.at.col, 4)
 })
 
+// `members.some(…)` (`FJS-D566`). The condition is a full expression, and the
+// relation has spent the one hop — so a dot or a check() inside is refused at
+// the token that makes it, and so is a to-many test two relations away.
+const SOME = (inner) => [
+  tok(T.IDENT, 'members'), tok(T.DOT, '.'), tok(T.IDENT, 'some'), tok(T.LPAREN, '('),
+  ...inner, tok(T.RPAREN, ')'),
+]
+
+test('parse: rel.some(expr) is its own node, the condition parsed whole', function () {
+  const ast = parseExpression(cursor(SOME([
+    tok(T.IDENT, 'userId'), tok(T.EQ, '=='), tok(T.IDENT, 'auth'), tok(T.LPAREN, '('), tok(T.RPAREN, ')'),
+    tok(T.DOT, '.'), tok(T.IDENT, 'id'), tok(T.AND, '&&'), tok(T.IDENT, 'status'), tok(T.EQ, '=='), tok(T.STRING, 'active'),
+  ])))
+  assert.equal(ast.type, 'some')
+  assert.equal(ast.rel, 'members')
+  assert.equal(ast.where.type, 'and')
+})
+
+test('parse: a field NAMED some is still a path — only a call is the test', function () {
+  const ast = parseExpression(cursor([tok(T.IDENT, 'owner'), tok(T.DOT, '.'), tok(T.IDENT, 'some'), tok(T.EQ, '=='), tok(T.NUMBER, 1)]))
+  assert.equal(JSON.stringify(ast.left), JSON.stringify({ type: 'path', rel: 'owner', name: 'some' }))
+})
+
+test('parse: inside rel.some(…) a dot is a second hop, and so is check()', function () {
+  assert.throws(() => parseExpression(cursor(SOME([
+    tok(T.IDENT, 'team'), tok(T.DOT, '.'), tok(T.IDENT, 'private'), tok(T.EQ, '=='), tok(T.BOOL, false),
+  ]))), /inside 'members.some\(…\)' crosses a second relation/)
+  assert.throws(() => parseExpression(cursor(SOME([
+    tok(T.IDENT, 'check'), tok(T.LPAREN, '('), tok(T.IDENT, 'team'), tok(T.RPAREN, ')'),
+  ]))), /second hop/)
+})
+
+test('parse: a to-many test two relations away names the test, not the hops', function () {
+  assert.throws(() => parseExpression(cursor([
+    tok(T.IDENT, 'interview'), tok(T.DOT, '.'), ...SOME([tok(T.IDENT, 'done'), tok(T.EQ, '=='), tok(T.BOOL, true)]),
+  ])), /two relations away.*'members\.some\(…\)'/)
+})
+
+test('parse: rel.some() with no condition is refused', function () {
+  assert.throws(() => parseExpression(cursor(SOME([]))), /needs a condition/)
+})
+
 test('parse: a word where an operator belongs names the operators', function () {
   assert.throws(
     () => parseExpression(cursor([tok(T.IDENT, 'status'), tok(T.IDENT, 'like'), tok(T.STRING, 'a%')])),

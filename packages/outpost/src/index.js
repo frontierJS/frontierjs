@@ -25,6 +25,7 @@ const reporter  = createReporter(config, { inspector })
 
 const server = Bun.serve({
   port:  config.port,
+  tls:   { cert: Bun.file(config.tlsCert), key: Bun.file(config.tlsKey) },
   fetch: req => outpost.handle(req),
 })
 

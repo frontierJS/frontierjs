@@ -182,6 +182,16 @@
 
 /* ── Labels ──────────────────────────────────────────────────────── */
 
+/* A word wider than its track otherwise spills into the neighbor's label
+   and the two overprint — the tracks are equal by design, so a long word
+   in a narrow stepper has nowhere else to go. Past a few steps in a
+   narrow column, use .vertical. */
+.step-label,
+.step-hint {
+  overflow-wrap: anywhere;
+  hyphens:       auto;
+}
+
 .step-label {
   font-size:   var(--text-md);
   font-weight: 500;

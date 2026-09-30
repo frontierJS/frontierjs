@@ -1,5 +1,5 @@
 {
-  "//": "FJS-D476 — the floor under `litestone mutate` per app, read by the CI `mutate` phase (full tier). `score` is the percent of graded mutants killed and ratchets UP only, the way typecheck-baselines.json ratchets down (Invariant 14). `kinds` narrows an app whose whole run is too long for the tier; absent means every kind. basecamp's subset is 22 mutants at ~30s each; its 2 survivors are FJS-1595.",
+  "//": "FJS-D476 — the floor under `litestone mutate` per app, read by the CI `mutate` phase (full tier). `score` is the percent of graded mutants killed and ratchets UP only, the way typecheck-baselines.json ratchets down (Invariant 14). `kinds` narrows an app whose whole run is too long for the tier; absent means every kind. basecamp's subset is 22 mutants at ~30s each.",
   "example": { "score": 100, "kinds": ["deny-drop", "encrypted-drop", "guarded-drop", "relator-loosen", "relator-tighten"] },
-  "packages/basecamp": { "score": 91, "kinds": ["deny-drop", "encrypted-drop", "guarded-drop", "relator-loosen", "relator-tighten"] }
+  "packages/basecamp": { "score": 100, "kinds": ["deny-drop", "encrypted-drop", "guarded-drop", "relator-loosen", "relator-tighten"] }
 }

@@ -6,7 +6,7 @@ export { createClient, ValidationError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError,
-         UniqueConflictError, OverlapConflictError, SealedDocumentError,
+         UniqueConflictError, ForeignKeyError, OverlapConflictError, SealedDocumentError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'

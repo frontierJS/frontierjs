@@ -85,6 +85,7 @@ title: Home
       error = e.message
     }
   }
+  loadSummary()
   $: session.workspaceId, srv(), dep(), () => {
     clearTimeout(summaryTimer)
     summaryTimer = setTimeout(loadSummary, 500)

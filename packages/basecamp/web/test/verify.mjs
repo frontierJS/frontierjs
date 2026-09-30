@@ -35,19 +35,22 @@ import { signRequest } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer } from '@frontierjs/outpost/server'
 import { createStaticServer }  from '@frontierjs/outpost/serve'
 import { createDocker } from '@frontierjs/outpost/docker'
+import { ensureCert }   from '@frontierjs/outpost/cert'
 import { spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../../mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '../..')            // packages/basecamp
 
-const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
-const API_PORT = 8120
-const WEB_PORT = 8020
+// The dev slot by default; `API_PORT`/`UI_PORT` move the drive (the test slot
+// is 7120/7020) so it can run beside a dev server holding 8120/8020.
+const API_PORT = Number(process.env.API_PORT ?? 8120)
+const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
 // The fake Basecamp outpost. `volumes.remove` refuses to forget a row until the
 // machine says the disk is gone, so proving the happy path needs something
 // that answers as an outpost — the same reason the channels checks send a real
@@ -76,17 +79,16 @@ function machineOf(path, body) {
   return inPath ?? body?.server_id ?? null
 }
 const BASE     = `http://localhost:${WEB_PORT}`
-// Per run, never a fixed path. A Chrome orphaned by a hard kill keeps the
-// directory open, so a shared one is deleted out from under a live browser and
-// every later run inherits the wreckage — five of them, one 22 hours old, were
-// found sharing this path.
-const PROFILE  = mkdtempSync(join(tmpdir(), 'fjs-basecamp-verify-'))
 // Where an inline release lands. A temp directory per run: a shared one would
 // serve the last run's bytes and the drive would pass against a broken tree,
 // which is the hazard `scaffold`'s per-run cache exists for one layer out.
-// Declared beside PROFILE because cleanup() removes both and runs on a throw
-// from anywhere below.
+// Declared up here because cleanup() removes it and runs on a throw from
+// anywhere below.
 const STATIC_DIR = mkdtempSync(join(tmpdir(), 'basecamp-static-'))
+// The command port's certificate. The sink below serves it, enrollment hands
+// it over, and Basecamp's conduit target pins it — the TLS a fleet machine
+// speaks, which is the only way the app will send it a command (FJS-1603).
+const OUTPOST_TLS = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-outpost-tls-')))
 
 const ACCOUNT = {
   workspace: 'Acme',
@@ -97,7 +99,7 @@ const ACCOUNT = {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
-let chromePid = null                        // set once Chrome is spawned
+let browser = null
 
 function fail(message) {
   console.error(`\n  ${message}\n`)
@@ -106,12 +108,7 @@ function fail(message) {
 
 async function cleanup() {
   for (const c of children) { try { c.kill() } catch {} }
-  await sleep(300)
-  // A SIGTERM to the browser process leaves its zygote, GPU and renderer
-  // children alive; they are reparented to init and never noticed. Chrome is
-  // spawned into its own process group so the group can be reaped here.
-  if (chromePid) { try { process.kill(-chromePid, 'SIGKILL') } catch {} }
-  await rm(PROFILE, { recursive: true, force: true }).catch(() => {})
+  await browser?.close()
   // The inline releases this run wrote. Per-run, so nothing here can be served
   // to the next one — see STATIC_DIR.
   await rm(STATIC_DIR, { recursive: true, force: true }).catch(() => {})
@@ -189,8 +186,12 @@ children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
   MAIL_API_KEY: 'dev-mail-key',
   MAIL_FROM:    'basecamp@example.test',
   APP_URL:      BASE,
+  PORT:         String(API_PORT),
 } }))
-children.push(spawn('bun', ['run', 'web'],       { cwd: PKG, stdio: 'ignore' }))
+children.push(spawn('bun', ['run', 'web'], {
+  cwd: PKG, stdio: 'ignore',
+  env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
+}))
 
 // ─── The mail sink ──────────────────────────────────────────────────────────
 // The mail provider, over a real socket. It speaks Resend's `POST /emails`,
@@ -234,7 +235,7 @@ const mailbox = []
 //
 // It is not asked to be a good outpost — no HMAC verification, no real disk. What
 // it proves is that the request was MADE, and with which name.
-const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [] }
+const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [], routed: [] }
 
 // The bytes this sink claims to be running. A real outpost answers the digest
 // docker resolved; the point of asserting on it is that Basecamp records what
@@ -255,7 +256,7 @@ let realOutpost = null
  *  cannot exist before the exchange. */
 const buildOutpost = (secret) => createOutpostServer(
   { serverId: 'drive', secret, version: '0.4.1',
-    publicUrl: `http://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive',
+    publicUrl: `https://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive',
     // An inline release writes real files. The store is the shipped one over a
     // real directory — faking it would assert this drive's idea of a symlink.
     staticDir: STATIC_DIR, staticUrl: `http://localhost:${OUTPOST_PORT + 1}` },
@@ -267,12 +268,19 @@ const buildOutpost = (secret) => createOutpostServer(
         return { exitCode: 0, stdout: '', stderr: '' }
       },
     }),
+    // Caddy is the machine's, and `outpost`'s own verify:docker drives a real
+    // one. What this grades is what Basecamp SENDS it: the app's hostnames.
+    ingress: {
+      route:   async ({ appId, hosts, port }) => { outpostSaw.routed.push({ appId, hosts, port }); return { hosts } },
+      unroute: async () => ({ removed: false }),
+    },
     log: { warn: (m) => console.log(`    outpost: ${m}`), error: (m) => console.log(`    outpost: ${m}`) },
   }
 )
 {
-  const http  = await import('node:http')
-  const outpost = http.createServer((req, res) => {
+  const https = await import('node:https')
+  const { readFileSync } = await import('node:fs')
+  const outpost = https.createServer({ cert: OUTPOST_TLS.cert, key: readFileSync(OUTPOST_TLS.keyPath) }, (req, res) => {
     let body = ''
     req.on('data', c => { body += c })
     req.on('end', async () => {
@@ -373,76 +381,18 @@ if (!probe.needs_setup) {
 }
 
 // ─── Browser ──────────────────────────────────────────────────────────────
-// The debugging port is asked for as 0 and read back off stderr, which is what
-// `example/`'s harnesses already do. A FIXED port is not merely a collision
-// risk: Chrome refuses to start a second browser on a bound one and exits
-// quietly, so the `/json/list` poll below finds the OTHER browser's tabs and
-// this file then drives those. It failed twice as `no field #workspace on
-// /packages/css/guide/index.html` — a page from another package, in another
-// session's Chrome, with every check up to that point green.
-const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0',
-  `--user-data-dir=${PROFILE}`,
-  '--window-size=1280,800',
-  'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
-chromePid = chrome.pid
-children.push({ kill: () => { try { process.kill(-chrome.pid, 'SIGTERM') } catch {} } })
-chrome.on('error', e => fail(`Could not launch ${CHROME}: ${e.message}. Set $FJS_CHROME.`))
-
-const browserWsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15_000)
-  chrome.stderr.on('data', d => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-}).catch(e => fail(`${e.message}. Is ${CHROME} installed? Set $FJS_CHROME.`))
-
-// The port is in the browser's own WebSocket URL, so the page list is asked of
-// THIS browser rather than of whatever is listening on a number.
-const cdpPort = new URL(browserWsUrl).port
-let target = null
-for (let i = 0; i < 60; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
-    target = list.find(t => t.type === 'page')
-    if (target) break
-  } catch {}
-  await sleep(250)
-}
-if (!target) fail(`No Chrome debug target on :${cdpPort}. Is ${CHROME} installed? Set $FJS_CHROME.`)
-
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise(r => ws.addEventListener('open', r))
-
-let msgId = 0
-const pending = new Map()
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+browser = await openChrome({ windowSize: '1280,800' }).catch(async (e) => {
+  console.error(`\n  ${e.message}\n`)
+  await cleanup()
+  process.exit(1)
 })
-// A reply that never comes is the failure that costs an hour: a starved or
-// crashed renderer answers nothing, and an untimed promise hangs the whole run
-// with no output, so the wrapper is killed and its Chrome orphaned. Name it
-// instead — an uncaught throw runs cleanup.
-const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
-  const n = ++msgId
-  const timer = setTimeout(() => {
-    pending.delete(n)
-    rej(new Error(`CDP ${method} timed out after ${ms}ms — the page stopped answering`))
-  }, ms)
-  pending.set(n, msg => { clearTimeout(timer); res(msg) })
-  ws.send(JSON.stringify({ id: n, method, params }))
-})
+const send = browser.cmd
 
 async function evaluate(expression) {
   const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-  const ex = r.result?.exceptionDetails
+  const ex = r.exceptionDetails
   if (ex) throw new Error(ex.exception?.description ?? JSON.stringify(ex))
-  return r.result?.result?.value
+  return r.result?.value
 }
 
 // A navigation, then time for the guard to resolve `ready` and commit a route.
@@ -500,8 +450,6 @@ const heading  = () => evaluate(`document.querySelector('h1')?.textContent ?? nu
 const badges   = () => evaluate(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`)
 const hasToken = () => evaluate(`!!localStorage.getItem('basecamp_token')`)
 
-await send('Page.enable')
-await send('Runtime.enable')
 await evaluate(`window.__errs = []; addEventListener('error', e => __errs.push(String(e.message)))`)
 
 console.log('\nBasecamp — auth flow\n')
@@ -743,47 +691,42 @@ check('protected environments say so',
   await evaluate(`document.querySelector('.alert.warning')?.textContent ?? ''`),
   t => t.includes('protected'))
 
-// Variables ride a custom method — X-Service-Method, not a sub-path.
+// Variables are rows of their own (`Variable`), edited from the environment.
 await fill({ 'var-key': 'DATABASE_URL', 'var-value': 'sqlite://./db/app.db' })
 await click('Set variable')
-await waitFor(`document.getElementById('variable-rows')?.textContent ?? ''`, t => t.includes('DATABASE_URL'))
+await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.includes('DATABASE_URL'))
 check('the variable is saved',
-  await evaluate(`[...document.querySelectorAll('#variable-rows td')].map(t => t.textContent.trim()).join('|')`),
+  await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
   t => t.includes('DATABASE_URL') && t.includes('sqlite://./db/app.db'))
-
-// The page assigns the method's result to the record it is rendering. When
-// setVariable answered a partial row ({id, variables}), that assignment wiped
-// name and tier and the heading rendered "undefined" — with every variable
-// assertion above still passing. Checking what the screen says afterwards is
-// the only thing that catches it.
 check('…and the page still knows what it is showing', await heading(), 'Production')
 
-// A masked value is hidden in the table but still present in the response —
-// display, not secrecy. The check is that the mask renders.
+// A secret is encrypted at rest and absent from the response, so the table
+// can say it is set and nothing more — there is no value in the page to reveal.
 await fill({ 'var-key': 'API_TOKEN', 'var-value': 'tok_live_123' })
 await evaluate(`
   (() => {
-    const box = document.querySelector('.field-check input[type=checkbox]')
+    const box = document.getElementById('var-secret')
     box.checked = true
     box.dispatchEvent(new Event('change', { bubbles: true }))
   })()
 `)
 await click('Set variable')
-await sleep(2000)
-check('a masked variable renders masked',
-  await evaluate(`[...document.querySelectorAll('#variable-rows td')].map(t => t.textContent.trim()).join('|')`),
-  t => t.includes('API_TOKEN') && t.includes('••••••••') && !t.includes('tok_live_123'))
+await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.includes('API_TOKEN'))
+check('a secret variable says it is set and carries no value',
+  await evaluate(`document.body.innerHTML`),
+  t => t.includes('secret · set') && !t.includes('tok_live_123'))
 
 await click('Remove')
 await sleep(2000)
 check('removing a variable leaves the other',
-  await evaluate(`[...document.querySelectorAll('#variable-rows td')].map(t => t.textContent.trim()).join('|')`),
+  await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
   t => !t.includes('DATABASE_URL') && t.includes('API_TOKEN'))
 
 // A reload proves it was persisted rather than held in the component.
 await goto(envPath)
+await waitFor(`document.getElementById('var-rows')?.textContent ?? ''`, t => t.includes('API_TOKEN'))
 check('variables survive a reload',
-  await evaluate(`[...document.querySelectorAll('#variable-rows td')].map(t => t.textContent.trim()).join('|')`),
+  await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
   t => t.includes('API_TOKEN'))
 
 // ── 10. Deployments, and the live channel ─────────────────────────────
@@ -989,7 +932,7 @@ async function enrollAs(id, workspaceId, { announce = false } = {}) {
 
   const exchanged = await fetch(`http://localhost:${API_PORT}/servers/${id}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: enrollToken }),
+    body: JSON.stringify({ token: enrollToken, cert: OUTPOST_TLS.cert }),
   })
   const enrolled = await exchanged.json()
   if (!enrolled.secret) throw new Error(`enrollAs(${id}): ${exchanged.status} ${JSON.stringify(enrolled)}`)
@@ -1105,7 +1048,7 @@ await apiCall(`/servers/${releaseServer.id}`, {
   method: 'POST', workspace: secondWs.id, outpost: true,
   // The URL is what registers the Conduit target `outpost:<id>`; without it the
   // machine is online and unreachable, and the release below is refused.
-  body: { outpost_version: '0.4.1', outpost_url: `http://localhost:${OUTPOST_PORT}`,
+  body: { outpost_version: '0.4.1', outpost_url: `https://localhost:${OUTPOST_PORT}`,
           health: { cpu: 8, memory: 30 } },
   header: { 'x-service-method': 'heartbeat' },
 })
@@ -1385,6 +1328,13 @@ check('…and the release records the digest the MACHINE reported, not the tag i
 check('…and the health check was addressed by it',
   outpostSaw.deploy.filter(d => d.path === '/health-check').map(d => d.body.digest).join(','),
   SINK_DIGEST)
+// FJS-D564: every /deploy names the hostnames Caddy on the machine fronts the
+// app by. This app's only one was deleted on the domains tab, so none is sent
+// and nothing is routed — a deleted name that still reached the machine would
+// be a certificate requested for a name nobody points here.
+check('…and the machine was told the app has no hostname, since its only one was deleted',
+  JSON.stringify([outpostSaw.deploy.find(d => d.path === '/deploy')?.body.hosts, outpostSaw.routed]),
+  JSON.stringify([[], []]))
 
 // ── 11c. Shell chrome — the attention system and ⌘K ───────────────────
 // The mock's NoticeBar / ActionQueue / CommandPalette, over real rows. The
@@ -2037,7 +1987,7 @@ check('…and the volume is still listed',
 await apiCall(`/servers/${serverId}`, {
   method: 'POST', workspace: secondWs.id, outpost: true,
   body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 },
-          outpost_url: `http://localhost:${OUTPOST_PORT}` },
+          outpost_url: `https://localhost:${OUTPOST_PORT}` },
   header: { 'x-service-method': 'heartbeat' },
 })
 
@@ -3035,7 +2985,7 @@ check('no uncaught page errors', await evaluate('JSON.stringify(window.__errs ??
 
 if (process.env.FJS_SHOT) {
   const shot = await send('Page.captureScreenshot', { format: 'png' })
-  await Bun.write(process.env.FJS_SHOT, Buffer.from(shot.result.data, 'base64'))
+  await Bun.write(process.env.FJS_SHOT, Buffer.from(shot.data, 'base64'))
   console.log(`\n  screenshot → ${process.env.FJS_SHOT}`)
 }
 

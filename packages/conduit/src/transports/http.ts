@@ -4,6 +4,7 @@
 // Hetzner, GitHub, NetBird, Cloudflare etc.
 // ============================================================
 
+import { X509Certificate } from 'node:crypto'
 import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
@@ -101,8 +102,27 @@ const MAX_REDIRECT_HOPS = 5
 const PRESERVE_METHOD_STATUSES = new Set([307, 308])
 const REDIRECT_STATUSES        = new Set([301, 302, 303, 307, 308])
 
+// A pinned target trusts one certificate. `ca` alone is the pin: Bun then
+// verifies against that certificate INSTEAD of the public roots, so anything
+// else is refused. The callback is there for the hostname check it replaces —
+// a machine reached by bare IP holds a certificate naming no address, and the
+// default check refuses it. The obvious spelling, `rejectUnauthorized: false`
+// plus a fingerprint callback, accepts every certificate: Bun never calls the
+// callback once verification is off (probed on 1.4.2).
+function pinFor(pem: string | undefined) {
+  if (!pem) return undefined
+  const fingerprint = new X509Certificate(pem).fingerprint256
+  return {
+    ca: pem,
+    checkServerIdentity: (_host: string, cert: { fingerprint256?: string }) => cert.fingerprint256 === fingerprint
+      ? undefined
+      : Object.assign(new Error(`certificate ${cert.fingerprint256} is not the one pinned`), { code: 'CERT_PIN_MISMATCH' }),
+  }
+}
+
 export class HttpTransport extends BaseTransport {
   readonly protocol: Protocol = 'http'
+  private readonly pin = pinFor(this.descriptor.pinned_cert)
 
   constructor(
     descriptor:  TargetDescriptor,
@@ -522,7 +542,8 @@ export class HttpTransport extends BaseTransport {
 
   /** Last chance to adjust fetch options before the request goes out. */
   protected fetchInit(init: RequestInit): RequestInit {
-    return init
+    // @ts-ignore — Bun-specific TLS option
+    return this.pin ? { ...init, tls: this.pin } : init
   }
 
   protected buildUrl(req: ConduitRequest): string {

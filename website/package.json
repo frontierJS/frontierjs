@@ -10,7 +10,7 @@
     "preview": "cd site && bunx sierra site --serve --port 8790",
     "verify": "node site/test/verify.mjs",
     "clean": "rm -rf site/dist",
-    "test": "bun run build",
+    "test": "bun run build && bun run verify",
     "typecheck": "node ../scripts/typecheck.mjs"
   },
   "dependencies": {

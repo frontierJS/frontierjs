@@ -24,6 +24,7 @@ title: App
   import { at, ago } from '../../../datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
+  import VariablesEditor from '../../../components/VariablesEditor.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -786,15 +787,26 @@ title: App
     </Card>
 
     <Card>
-      <h2 class="h4">Config</h2>
-      <Json id="app-config" value={app.config} empty="No config set." copy />
+      <h2 class="h4">Runtime</h2>
+      <p class="text-sm text-muted">How the machine starts the container. A release keeps the settings it shipped with.</p>
+      <dl class="facts" id="app-runtime">
+        <dt>Port</dt><dd><code>{app.port ?? 'none published'}</code>{#if app.port && app.containerPort && app.containerPort !== app.port} → <code>{app.containerPort}</code> in the container{/if}</dd>
+        <dt>Volume</dt><dd><code>{app.volumePath ?? 'none — stateless'}</code></dd>
+        <dt>Health check</dt><dd><code>{app.healthCheck ?? 'running is healthy'}</code></dd>
+        <dt>CPU</dt><dd>{app.cpuLimit ?? 'no limit'}</dd>
+        <dt>Memory</dt><dd>{app.memLimitMb != null ? `${app.memLimitMb} MiB` : 'no limit'}</dd>
+      </dl>
+      <Button variant="outlined" onclick={() => editing = true}>Edit</Button>
     </Card>
 
-    <Callout tone="info" title="Environment variables live on the Environment">
-      The mock puts them on the app. Here they are
-      <a href={`/environments/${app.environmentId}/`}>the environment's</a>, shared by every app in
-      it — the schema has no per-app override, so this screen does not pretend to offer one.
-    </Callout>
+    <Card>
+      <h2 class="h4">Variables</h2>
+      <p class="text-sm text-muted">
+        This app's own. It also starts with <a href={`/environments/${app.environmentId}/`}>its environment's</a>,
+        and one set here wins over the environment's of the same key.
+      </p>
+      <VariablesEditor appId={app.id} idPrefix="app-var" />
+    </Card>
   {/if}
 
   {#if tab === 'releases'}
@@ -885,7 +897,7 @@ title: App
     build — build output and history need a build record; `Deployment` carries
       `builtImage` and no log, so "Build history" would be the releases table
       under a second name.
-    advanced — restart policy, health check and the nginx template are all
-      config the schema does not describe. They would be `App.config` keys, and
-      inventing the key names here would make this screen their only definition.
+    advanced — the health check is a column and on the Config tab; restart
+      policy and the nginx template are not, and inventing them here would make
+      this screen their only definition.
 -->

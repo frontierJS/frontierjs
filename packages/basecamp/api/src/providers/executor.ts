@@ -131,10 +131,14 @@ export async function resolveExecutor(app: BasecampApp, appId: string): Promise<
   // Conduit is optional on the app type, and an app configured without it can
   // reach no machine at all — which is a refusal rather than a crash five steps
   // into a release.
+  //
+  // An unpinned target is no target: a release carries decrypted secrets, and
+  // without the pin they cross the network in the clear (`FJS-1603`). The
+  // heartbeat registers none, so this refuses whatever put one there anyway.
   if (app.conduit)
     for (const p of online) {
       const target = `outpost:${p.serverId}`
-      if (await app.conduit.resolve(target).catch(() => null))
+      if ((await app.conduit.resolve(target).catch(() => null))?.pinned_cert)
         return outpostExecutor(app, p.serverId as string, target)
     }
 
@@ -144,7 +148,7 @@ export async function resolveExecutor(app: BasecampApp, appId: string): Promise<
   return {
     kind:   'none',
     reason: online.length === 1
-      ? `No outpost is registered for ${names} — it has never reported a URL`
-      : `No outpost is registered for any of ${names} — none has reported a URL`,
+      ? `No outpost is registered for ${names} — it has not reported an https URL since it enrolled`
+      : `No outpost is registered for any of ${names} — none has reported an https URL since it enrolled`,
   }
 }

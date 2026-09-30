@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-41 services · 39 routes · 16 plugins · prefix (none)
+43 services · 39 routes · 16 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -43,7 +43,7 @@ and what it does.
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 
-### A service hook runs in front of the body (93)
+### A service hook runs in front of the body (91)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -91,8 +91,6 @@ name, and is as unread as the body.
 | `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `environments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `environments.setVariable` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
-| `environments.deleteVariable` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `flags.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
@@ -499,14 +497,30 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
+### `edge` · model `edge`
+
+- **methods** — `zones`, `records`
+- **custom methods** — `zones`, `records`
+- **who may call** —
+  - `zones` — standing 2 or above — declared `gate: 2`
+  - `records` — standing 2 or above — declared `gate: 2`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `environments` · model `Environment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
-- **custom methods** — `setVariable`, `deleteVariable`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `setVariable` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
-  - `deleteVariable` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -516,8 +530,6 @@ name when it declares none.
 | before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
 | before | `patch` | `requireWorkspaceRole` → `autoValidate` |
 | before | `remove` | `requireWorkspaceRole` |
-| before | `setVariable` | `requireWorkspaceRole` |
-| before | `deleteVariable` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -1024,6 +1036,23 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `variables` · model `Variable`
+
+- **methods** — `find`, `get`, `create`, `patch`, `remove`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `scopeFromPayload` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
 ### `volumes` · model `Volume`

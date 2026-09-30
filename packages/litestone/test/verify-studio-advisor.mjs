@@ -35,6 +35,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { tempDir } from '../src/tmp-dirs.js'
+import { openChrome } from '../../mesa/src/drive.js'
 import { join, resolve as pathResolve } from 'node:path'
 
 const PORT_FLEET = process.env.STUDIO_PORT       ?? '7508'
@@ -43,7 +44,6 @@ const PORT_CTRL  = process.env.STUDIO_PORT_CTRL  ?? '7510'
 const FLEET  = `http://localhost:${PORT_FLEET}`
 const STALE  = `http://localhost:${PORT_STALE}`
 const CTRL   = `http://localhost:${PORT_CTRL}`
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 const CLI    = pathResolve(import.meta.dirname, '../src/tools/cli.js')
 const ENV    = { ...process.env, ENCRYPTION_KEY: 'a'.repeat(64) }
 
@@ -128,18 +128,8 @@ const fleet = startStudio(PORT_FLEET, FLEET_SCHEMA, join(APP, 'fleet'))
 const stale = startStudio(PORT_STALE, PLAIN_NEXT,   join(APP, 'plain'))
 const ctrl  = startStudio(PORT_CTRL,  PLAIN_SCHEMA, join(APP, 'plain'))
 
-let chromeProc = null
-let chromeProfile = null
 function cleanup() {
   for (const p of [fleet, stale, ctrl]) { try { process.kill(-p.pid) } catch {} }
-  if (chromeProc) { try { chromeProc.kill('SIGKILL') } catch {} ; chromeProc = null }
-  if (chromeProfile) {
-    // Removing the profile straight after the kill SUCCEEDS and Chrome writes
-    // the directory back while it shuts down. An exit handler cannot await.
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
-    try { rmSync(chromeProfile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
-    chromeProfile = null
-  }
   try { rmSync(APP, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
 }
 process.on('exit', cleanup)
@@ -206,70 +196,10 @@ t('current.namesTheFile',     (current.source?.path ?? '').endsWith('plain.db'),
 
 // ─── the panel ────────────────────────────────────────────────────────────
 
-const profile = tempDir('fjs-studio-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-  'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
-chromeProc = chrome
-chromeProfile = profile
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((res, rej) => {
-  let buf = ''
-  const timer = setTimeout(() => rej(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); res(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((res, rej) => {
-    pending.set(id, { resolve: res, reject: rej })
-    setTimeout(() => pending.has(id) && rej(new Error(`${method} timed out`)), 30000)
-  })
-}
-
-const consoleErrors = []
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve: rs, reject: rj } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? rj(new Error(msg.error.message)) : rs(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    consoleErrors.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error'].includes(msg.params.type))
-    consoleErrors.push('error: ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
-})
-
-const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-const cmd = (m, p) => send(m, p, sessionId)
-await cmd('Page.enable')
-await cmd('Runtime.enable')
-
-async function evaluate(expression) {
-  const r = await cmd('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  })
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
+// Exceptions and console.error, which is this drive's policy on the console.
+const consoleErrors = browser.errors
 
 await cmd('Page.navigate', { url: FLEET })
 await evaluate(`

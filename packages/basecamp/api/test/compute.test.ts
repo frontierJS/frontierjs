@@ -35,6 +35,9 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
+import { ensureCert }  from '@frontierjs/outpost/cert'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir }      from 'node:os'
 import { createTestEnv, session } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
@@ -44,6 +47,10 @@ import { startHzSink }             from '../src/providers/compute/hetzner-sink.t
 import { connectorFor, targetFor, markFor, fleetMark, priceIn } from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia } from '../src/providers/compute/accounts.ts'
 import type { ProviderKind }       from '../../db/schema.d.ts'
+
+// The certificate a machine's command port answers with, which enrollment pins
+// on its Conduit target (FJS-1603). Every enrollment below presents it.
+const CERT = ensureCert(mkdtempSync(join(tmpdir(), 'basecamp-outpost-cert-'))).cert
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -536,7 +543,7 @@ describe('a machine claims its own credential', () => {
   test('the cloud-init carries the TOKEN and no credential', async () => {
     const { mintEnrollToken, cloudInit } = await import('../src/providers/compute/enrollment.ts')
     const t  = mintEnrollToken()
-    const ci = cloudInit({ serverId: 's1', basecampUrl: 'http://basecamp', token: t.token, outpostPort: 8180 })
+    const ci = cloudInit({ serverId: 's1', basecampUrl: 'https://basecamp', token: t.token, outpostPort: 8180 })
 
     // What must be in it: the one-time token and where to spend it. The URL is
     // assembled from variables now, because the same script is what a person
@@ -544,7 +551,7 @@ describe('a machine claims its own credential', () => {
     // rather than baked through the body.
     expect(ci).toContain(t.token)
     expect(ci).toContain('SERVER_ID="s1"')
-    expect(ci).toContain('BASECAMP_URL="http://basecamp"')
+    expect(ci).toContain('BASECAMP_URL="https://basecamp"')
     expect(ci).toContain('"$BASECAMP_URL/servers/$SERVER_ID/enroll"')
     // What must NOT be: the fleet secret. Metadata is readable by anything on
     // the box, so baking it in hands every machine the key to forge every
@@ -552,6 +559,30 @@ describe('a machine claims its own credential', () => {
     expect(ci).not.toContain(process.env.OUTPOST_SECRET ?? 'outpost-dev-secret')
     // And the hash is not in there either — it is what the DATABASE keeps.
     expect(ci).not.toContain(t.hash)
+  })
+
+  // FJS-D564: the Outpost configures Caddy through its admin API and keeps no
+  // copy of the routes, so the unit that runs it must be the one that resumes
+  // the last saved config. The plain `caddy` unit loads a Caddyfile and starts
+  // with no routes after every restart.
+  test('the install runs Caddy as the resuming admin-API unit', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    expect(script).toContain('apt-get install -yqq caddy')
+    expect(script).toContain('systemctl disable --now caddy.service')
+    expect(script).toContain('systemctl enable --now caddy-api.service')
+  })
+
+  // The enrollment answer is the machine's key. Over plain http to anything
+  // but loopback it crosses the network readable (FJS-1603), so neither way a
+  // machine is handed the install will point it there.
+  test('the install is refused for a Basecamp that is not https, loopback aside', async () => {
+    const { cloudInit, installCommand } = await import('../src/providers/compute/enrollment.ts')
+    const opts = { serverId: 's1', token: 'bcen_x', outpostPort: 8180 }
+    expect(() => cloudInit({ ...opts, basecampUrl: 'http://basecamp.example' })).toThrow(/must be https/)
+    expect(() => installCommand({ ...opts, basecampUrl: 'http://203.0.113.9:8120' })).toThrow(/must be https/)
+    expect(() => installCommand({ ...opts, basecampUrl: 'http://localhost:8120' })).not.toThrow()
+    expect(() => installCommand({ ...opts, basecampUrl: 'https://basecamp.example' })).not.toThrow()
   })
 })
 
@@ -781,7 +812,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
   })
 
   test('the exchange answers a secret and the address the world reaches it at', async () => {
-    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted })
+    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT })
 
     expect(res.status).toBe(200)
     const body = res.body as any
@@ -789,8 +820,13 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     // Not the token back. A route that echoed what it was given would satisfy
     // every other assertion here.
     expect(body.secret).not.toBe(minted)
-    expect(body.publicUrl).toBe('http://203.0.113.7:8180')
+    expect(body.publicUrl).toBe('https://203.0.113.7:8180')
     expect(body.serverId).toBe(target.id)
+  })
+
+  test('the certificate it presented is kept on the row, to be pinned', async () => {
+    const row = await (env.system as any).server.findFirst({ where: { id: target.id } })
+    expect(row.outpostCert).toBe(CERT)
   })
 
   test('the secret is kept as a Secret row, and the machine points at it', async () => {
@@ -805,7 +841,7 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
   test('the token is BURNED — the same request a second time is refused', async () => {
     // The claim the conditional update exists for. Paired with the 200 above:
     // a route that refused everybody would pass this row alone.
-    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted })
+    const res = await env.http.post(`/servers/${target.id}/enroll`).send({ token: minted, cert: CERT })
     expect(res.status).toBe(401)
   })
 
@@ -824,8 +860,8 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     })
 
     const both = await Promise.all([
-      env.http.post(`/servers/${server.id}/enroll`).send({ token }),
-      env.http.post(`/servers/${server.id}/enroll`).send({ token }),
+      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT }),
+      env.http.post(`/servers/${server.id}/enroll`).send({ token, cert: CERT }),
     ])
     const ok = both.filter(r => r.status === 200)
     expect(ok).toHaveLength(1)
@@ -858,10 +894,10 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     })
 
     const answers = await Promise.all([
-      env.http.post(`/servers/${target.id}/enroll`).send({ token: 'bcen_wrong' }),
-      env.http.post('/servers/00000000-0000-0000-0000-000000000000/enroll').send({ token: 'bcen_wrong' }),
-      env.http.post(`/servers/${expired.id}/enroll`).send({ token: stale }),
-      env.http.post(`/servers/${target.id}/enroll`).send({}),
+      env.http.post(`/servers/${target.id}/enroll`).send({ token: 'bcen_wrong', cert: CERT }),
+      env.http.post('/servers/00000000-0000-0000-0000-000000000000/enroll').send({ token: 'bcen_wrong', cert: CERT }),
+      env.http.post(`/servers/${expired.id}/enroll`).send({ token: stale, cert: CERT }),
+      env.http.post(`/servers/${target.id}/enroll`).send({ cert: CERT }),
     ])
 
     const shapes = new Set(answers.map(r => `${r.status} ${JSON.stringify(r.body)}`))
@@ -876,6 +912,27 @@ describe('a machine enrolls itself, over HTTP, holding nothing else', () => {
     const row = await (env.system as any).server.findFirst({ where: { name: 'too-late' } })
     expect(row.enrollTokenHash).toBeTruthy()
     expect(row.outpostSecretId).toBeNull()
+  })
+
+  // A machine with no certificate could never be sent a command, and one that
+  // is not a certificate would be refused by conduit at the first heartbeat —
+  // either way after the token was spent. So neither spends it.
+  test('no certificate, or not a certificate, is refused before the token is spent', async () => {
+    const { mintEnrollToken, hashEnrollToken } = await import('../src/providers/compute/enrollment.ts')
+    const sys   = env.system as any
+    const token = mintEnrollToken().token
+    const row   = await sys.server.create({ data: {
+      workspaceId: target.workspaceId, name: 'no-cert', slug: `no-cert-${Math.random().toString(36).slice(2, 7)}`,
+      role: 'general', providerKind: 'custom', registerMethod: 'manual',
+      enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
+    }})
+
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token })).status).toBe(400)
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: 'not a cert' })).status).toBe(400)
+    expect((await sys.server.findFirst({ where: { id: row.id } })).enrollTokenHash).toBeTruthy()
+
+    // Paired: the same token still works once a certificate comes with it.
+    expect((await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT })).status).toBe(200)
   })
 })
 
@@ -932,7 +989,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     await sys.server.update({ where: { id: row.id }, data: {
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
     }})
-    const res = await env.http.post(`/servers/${row.id}/enroll`).send({ token })
+    const res = await env.http.post(`/servers/${row.id}/enroll`).send({ token, cert: CERT })
     return { id: row.id as string, secret: (res.body as any).secret as string }
   }
 
@@ -962,7 +1019,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     await sys.server.update({ where: { id: m.id }, data: {
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
     }})
-    const res = await env.http.post(`/servers/${m.id}/enroll`).send({ token })
+    const res = await env.http.post(`/servers/${m.id}/enroll`).send({ token, cert: CERT })
     expect(res.status).toBe(200)
     const fresh = (res.body as any).secret as string
     expect(fresh).not.toBe(m.secret)
@@ -1040,7 +1097,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const { signRequest } = await import('@frontierjs/toolbelt/signature')
     const body = JSON.stringify({
       outpost_version: '0.4.1', health: { cpu: 1, memory: 1 },
-      outpost_url: 'http://203.0.113.5:8180',
+      outpost_url: 'https://203.0.113.5:8180',
     })
     const path = `/servers/${m.id}`
     const headers = await signRequest({
@@ -1055,6 +1112,20 @@ describe('a machine signs with its OWN key, and only its own', () => {
     // A REF, never the material — and the ref names this machine's Secret row.
     expect(target.auth.ref).toBe(`secret:${row.outpostSecretId}#secret`)
     expect(target.auth.ref).not.toContain('env:')
+    // And pinned to the certificate it enrolled with (FJS-1603).
+    expect(target.pinned_cert).toBe(CERT)
+
+    // A machine that then reports plain http loses its target rather than
+    // keeping one that would carry commands in the clear.
+    const plain = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 1, memory: 1 },
+      outpost_url: 'http://203.0.113.5:8180' })
+    const again = env.http.post(path).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signRequest({
+      secret: m.secret, method: 'POST', path, query: '', body: plain,
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    }))) again.set(k, v as string)
+    expect((await again.send(JSON.parse(plain))).status).toBe(200)
+    expect(await app.conduit.resolve(`outpost:${m.id}`)).toBeNull()
   })
 
   test('there is no outbound fleet-key branch left to take', async () => {
@@ -1588,5 +1659,35 @@ describe('two clouds, one vocabulary', () => {
     // at the other, which is a difference the boundary carries rather than hides.
     expect(doCat.regions.some((r: any) => !r.available)).toBe(true)
     expect(hzCat.regions.every((r: any) => r.available)).toBe(true)
+  })
+})
+
+// ─── What a machine is told to route ─────────────────────────────────────
+
+describe('the hostnames a release routes', () => {
+  // FJS-D564: each name here becomes a Caddy route and a certificate request,
+  // so the read is graded against the real schema: a deleted row, a redirect
+  // and another app's name must not reach the machine.
+  test('are the app\'s live, non-redirecting Domains, and nothing else', async () => {
+    const { routedHosts } = await import('../src/core/runtime.ts')
+    const sys  = env.system as any
+    const tag  = Math.random().toString(36).slice(2, 8)
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'P', slug: `p-${tag}` } })
+    const e    = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'E', slug: `e-${tag}` } })
+    const mk   = (name: string) => sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name, slug: `${name}-${tag}`,
+      source: { kind: 'image', image: 'nginx:alpine' } } })
+    const web = await mk('web'), api = await mk('api')
+    const domain = (appId: string, hostname: string, extra = {}) =>
+      sys.domain.create({ data: { workspaceId: ws.id, appId, hostname: `${hostname}-${tag}.test`, ...extra } })
+
+    await domain(web.id, 'shop')
+    await domain(web.id, 'store')
+    await domain(web.id, 'www', { redirectTo: `https://shop-${tag}.test` })
+    await domain(api.id, 'api')
+    const gone = await domain(web.id, 'old')
+    await sys.domain.delete({ where: { id: gone.id } })
+
+    expect(await routedHosts(app.db, web.id)).toEqual([`shop-${tag}.test`, `store-${tag}.test`])
+    expect(await routedHosts(app.db, api.id)).toEqual([`api-${tag}.test`])
   })
 })

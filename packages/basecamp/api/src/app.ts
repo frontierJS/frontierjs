@@ -35,7 +35,7 @@ import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
-import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
+import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
@@ -778,7 +778,15 @@ export async function buildBasecampApp(
       // where the parsed body is `body` — `data` is the service pipeline's name
       // for it and is undefined here, which reads as a caller who sent no
       // token and refuses every request identically.
-      const token = ((ctx.body ?? {}) as { token?: string }).token
+      const { token, cert } = (ctx.body ?? {}) as { token?: string; cert?: string }
+
+      // The certificate the machine's command port answers with, pinned on its
+      // Conduit target: no other certificate reaches it, and a machine that
+      // sends none has no way to be sent a command (`FJS-1603`). Checked before
+      // the lookup so the answer says nothing about which ids are real, and
+      // before the burn so a malformed one does not spend the token.
+      if (!isCertificate(cert))
+        return ctx.json({ error: 'enrollment needs the command port certificate, as PEM, in `cert`' }, 400)
 
       // asSystem(): there is no principal — the caller is a machine that has
       // never authenticated and is asking for the credential that would let it.
@@ -832,7 +840,7 @@ export async function buildBasecampApp(
       // and nothing will verify. The token is already burned, so the answer is
       // the same refusal as everything above; the machine asks for another.
       if (!row) return refuse()
-      if (!held) await sys.server.update({ where: { id }, data: { outpostSecretId: row.id } })
+      await sys.server.update({ where: { id }, data: { outpostCert: cert, ...(held ? {} : { outpostSecretId: row.id }) } })
 
       logger.info('outpost enrolled', { server_id: id, secret_id: row.id })
 
@@ -842,7 +850,7 @@ export async function buildBasecampApp(
       // because the vendor said so when the machine came up.
       return ctx.json({
         secret,
-        publicUrl: server.ipAddress ? `http://${server.ipAddress}:8180` : null,
+        publicUrl: server.ipAddress ? `https://${server.ipAddress}:8180` : null,
         serverId:  id,
       })
     })

@@ -64,7 +64,7 @@ schema a process migrates TO is read later than the schema it is serving, so a
 long-running app can move its own database ahead of its code on an ordinary
 request, and the next boot inherits a migration it never ran (`FJS-566`).
 
-No migration files generated. Handles: add/drop columns, add/drop tables, add/drop indexes, change defaults. Does not run data migrations — for those, use JS migration files.
+No migration files generated. Handles: add/drop columns, add/drop tables, add/drop indexes, change defaults. Does not run data changes — see [Data changes are not migrations](#data-changes-are-not-migrations).
 
 ```bash
 litestone migrate dry-run   # preview what autoMigrate would do, no changes
@@ -155,7 +155,7 @@ in silence — see `litestone migrate status`.
 
 Litestone generates no down migration and will not. A rebuild is a `DROP TABLE`,
 so the inverse of *drop a column* is *invent the values it held*; the inverse of
-a JS migration that rewrote every row is unwritable by anything but the person
+a data script that rewrote every row is unwritable by anything but the person
 who wrote it. What a generated down would reliably do is run, report success,
 and leave a database that looks restored.
 
@@ -191,28 +191,28 @@ previous release* is the other question, and `litestone release --from <ref>`
 is what answers it: an **expand** is taken back by redeploying the code, a
 **contract** is the pivot after which only forward.
 
-## JS migrations
+## Data changes are not migrations
 
-For data migrations — backfills, transformations, seeding — create `.js` files alongside SQL files:
+`migrations/` holds `.sql` only (`FJS-D518`). A `.js` file could change the schema
+through `sys.sql` and cannot be replayed into the shadow that `migrate create`,
+`migrate check` and the deploy guard read, so one anywhere in the history is
+refused by all of them, with a nonzero exit, and `migrate apply` runs nothing.
 
-```js
-// migrations/20240102000001_backfill-slugs.js
-export async function up(db) {
-  // db = full Litestone client — all ORM operations available
-  const posts = await db.post.findMany({ where: { slug: null } })
-  for (const post of posts) {
-    await db.post.update({
-      where: { id: post.id },
-      data:  { slug: post.title.toLowerCase().replace(/\s+/g, '-') },
-    })
-  }
-}
+A backfill, transformation or corpus correction is an app script chained after
+`migrate apply`, idempotent by the rows it expects:
+
+```json
+{ "scripts": { "db:migrate": "litestone migrate apply && bun db/backfill-slugs.js" } }
 ```
 
-JS and SQL files run in filename order. Pass the client to `apply()`:
-
 ```js
-await apply(rawDb, './migrations', client)
+// db/backfill-slugs.js — touches only the rows that still need it, so a rerun is a no-op
+import { createClient } from '@frontierjs/litestone'
+const db  = await createClient({ schema: './db/schema.lite' })
+const sys = db.asSystem()
+for (const post of await sys.post.findMany({ where: { slug: null } }))
+  await sys.post.update({ where: { id: post.id }, data: { slug: post.title.toLowerCase().replace(/\s+/g, '-') } })
+db.$close()
 ```
 
 ## Multi-database schemas

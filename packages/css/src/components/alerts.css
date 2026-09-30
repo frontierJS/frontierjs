@@ -38,3 +38,11 @@
 /* `pretty` avoids a one-word last line; an alert is short enough that
    a widow is a large share of it. */
 .alert-content > p      { margin: 0; text-wrap: pretty; }
+
+/* An action beside the content centers on it; at the row's flex-start it
+   sits a button-height below a one-line message's baseline and reads as
+   misaligned. */
+.alert > :is(button, .btn, a.btn) {
+  flex-shrink: 0;
+  align-self:  center;
+}

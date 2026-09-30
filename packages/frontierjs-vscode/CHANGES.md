@@ -1,5 +1,13 @@
 # Changes — frontierjs-vscode
 
+## 2026-09-29 — a brace in a string no longer closes a model in the grammar
+
+The `model` and `function` rules in `litestone.tmLanguage.json` end at the first
+`}` and had no string rule, so `@default("{}")` on basecamp's `Secret.data`
+closed the model mid-body and every later field fell to the top level, where no
+field rule applies. Both bodies include `#string` now. `test/grammar.test.js`
+pairs the quoted-brace default with an unquoted one.
+
 ## 2026-09-26 — `@@anonymous` highlights as a model attribute (`FJS-1247`)
 
 The grammar's `@@` word list gains `anonymous`, the model attribute litestone

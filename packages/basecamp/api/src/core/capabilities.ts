@@ -50,7 +50,8 @@ const ROLE_GRANTS: Record<string, readonly string[]> = {
   // at `@gate(5)` are absent rather than dead.
   developer: [
     'Server.create', 'Server.update', 'Server.reboot',
-    'Environment.create', 'Environment.update', 'Environment.variables',
+    'Environment.create', 'Environment.update',
+    'Variable.create', 'Variable.update', 'Variable.delete',
   ],
   // ADMINISTRATOR(5) — everything a developer holds, plus the destructive half
   // and the two gated moves.
@@ -61,7 +62,8 @@ const ROLE_GRANTS: Record<string, readonly string[]> = {
     // drain and undrain they are absent from `developer` rather than dead
     // there — and both spend money, which is the same authority the gate says.
     'Server.provision', 'Server.destroy',
-    'Environment.create', 'Environment.update', 'Environment.delete', 'Environment.variables',
+    'Environment.create', 'Environment.update', 'Environment.delete',
+    'Variable.create', 'Variable.update', 'Variable.delete',
   ],
   // OWNER(6) — the same grid. What separates an owner from an administrator is
   // the workspace itself (delete it, remove the last admin), which is the
@@ -70,7 +72,8 @@ const ROLE_GRANTS: Record<string, readonly string[]> = {
     'Server.create', 'Server.update', 'Server.delete',
     'Server.reboot', 'Server.drain', 'Server.undrain',
     'Server.provision', 'Server.destroy',
-    'Environment.create', 'Environment.update', 'Environment.delete', 'Environment.variables',
+    'Environment.create', 'Environment.update', 'Environment.delete',
+    'Variable.create', 'Variable.update', 'Variable.delete',
   ],
 }
 

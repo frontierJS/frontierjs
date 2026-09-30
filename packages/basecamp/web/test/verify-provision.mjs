@@ -48,10 +48,10 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../../mesa/src/drive.js'
 
 const HERE      = dirname(fileURLToPath(import.meta.url))
 const PKG       = join(HERE, '..', '..')
-const CHROME    = process.env.FJS_CHROME ?? 'google-chrome'
 // The dev slot by default; `API_PORT`/`UI_PORT` move the drive (the test slot
 // is 7120/7020) so it can run beside a dev server holding 8120/8020.
 const API_PORT  = Number(process.env.API_PORT ?? 8120)
@@ -71,6 +71,7 @@ const HZ_TOKEN  = 'hz'.padEnd(64, '0')
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
 let passed = 0, failed = 0
+let browser = null
 
 function ok(label)          { passed++; console.log(`  ✓ ${label}`) }
 function bad(label, detail) { failed++; console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`) }
@@ -87,6 +88,7 @@ async function cleanup() {
   }
   await sleep(500)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
+  await browser?.close()
 }
 function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => process.exit(1)) }
 
@@ -205,61 +207,18 @@ await waitFor(`${API}/health`, 'the API')
 await waitFor(BASE, 'the web server')
 
 // ─── Chrome ──────────────────────────────────────────────────────────────
-const PROFILE = mkdtempSync(join(tmpdir(), 'basecamp-provision-chrome-'))
-const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${PROFILE}`,
-  '--window-size=1280,900', 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
-children.push(chrome)
-chrome.on('error', e => fail(`Could not launch ${CHROME}: ${e.message}. Set $FJS_CHROME.`))
-
-const browserWsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15_000)
-  chrome.stderr.on('data', d => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-}).catch(e => fail(`${e.message}. Is ${CHROME} installed? Set $FJS_CHROME.`))
-
-const cdpPort = new URL(browserWsUrl).port
-let target = null
-for (let i = 0; i < 60; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()
-    target = list.find(t => t.type === 'page')
-    if (target) break
-  } catch {}
-  await sleep(250)
-}
-if (!target) fail(`No Chrome debug target on :${cdpPort}`)
-
-const ws = new WebSocket(target.webSocketDebuggerUrl)
-await new Promise(r => ws.addEventListener('open', r))
-
-let msgId = 0
-const pending = new Map()
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
+browser = await openChrome().catch(async (e) => {
+  console.error(`\n✗ ${e.message}\n`)
+  await cleanup()
+  process.exit(1)
 })
-const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
-  const n = ++msgId
-  const timer = setTimeout(() => {
-    pending.delete(n)
-    rej(new Error(`CDP ${method} timed out after ${ms}ms`))
-  }, ms)
-  pending.set(n, msg => { clearTimeout(timer); res(msg) })
-  ws.send(JSON.stringify({ id: n, method, params }))
-})
+const send = browser.cmd
 
 async function evaluate(expression) {
   const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-  const ex = r.result?.exceptionDetails
+  const ex = r.exceptionDetails
   if (ex) throw new Error(ex.exception?.description ?? JSON.stringify(ex))
-  return r.result?.result?.value
+  return r.result?.value
 }
 
 /** Poll until an expression settles rather than sleeping a guessed amount. */
@@ -379,11 +338,9 @@ async function destinationSays() {
 }
 
 const consoleErrors = []
-await send('Runtime.enable')
-ws.addEventListener('message', e => {
-  const msg = JSON.parse(e.data)
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type)) {
-    const t = msg.params.args.map(a => a.value ?? a.description ?? '').join(' ')
+browser.on('Runtime.consoleAPICalled', (params) => {
+  if (['error', 'warning'].includes(params.type)) {
+    const t = params.args.map(a => a.value ?? a.description ?? '').join(' ')
     if (/favicon|\[vite\]|Download the .* DevTools/i.test(t)) return
     consoleErrors.push(t)
   }
@@ -679,7 +636,10 @@ try {
 
   const enrolled = await fetch(`${API}/servers/${serverId}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: enrollToken }),
+    // The certificate the machine's command port would answer with. Nothing
+    // here sends it a command; enrollment refuses a machine that has none.
+    body: JSON.stringify({ token: enrollToken, cert: (await import('@frontierjs/outpost/cert'))
+      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert }),
   })
   const credential = (await enrolled.json()).secret
   check('the exchange hands back a credential of its own', enrolled.status === 200 && !!credential)
@@ -732,7 +692,8 @@ try {
   console.log('\n  enrollment')
   const wrong = await fetch(`${API}/servers/${serverId}/enroll`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token: 'bcen_not_the_one' }),
+    body: JSON.stringify({ token: 'bcen_not_the_one', cert: (await import('@frontierjs/outpost/cert'))
+      .ensureCert(join(tmpdir(), `basecamp-provision-tls-${process.pid}`)).cert }),
   })
   check('a wrong token is refused by the route — which is REACHED, not 405',
     wrong.status === 401, `${wrong.status}`)
@@ -992,5 +953,4 @@ try {
 console.log(`\n${failed ? '✗' : '✓'} ${passed}/${passed + failed} checks passed\n`)
 await cleanup()
 await rm(SCRATCH, { recursive: true, force: true })
-await rm(PROFILE, { recursive: true, force: true })
 process.exit(failed ? 1 : 0)

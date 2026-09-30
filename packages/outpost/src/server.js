@@ -18,6 +18,7 @@
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector } from './docker.js'
 import { createStatic } from './static.js'
+import { createIngress, hostsOf } from './ingress.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -40,6 +41,7 @@ export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir }),
   inspector = createInspector(),
   statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
+  ingress   = createIngress({ admin: config.caddyAdmin }),
   log       = console,
 } = {}) {
 
@@ -53,26 +55,49 @@ export function createOutpostServer(config, {
     // called `fjs-undefined`, which exists on no machine and reports healthy
     // nowhere.
     'POST /pull':          (body) => docker.pull({ image: body.image }),
-    'POST /stop':          (body) => docker.stop({ appId: body.app_id }),
-    'POST /health-check':  (body) => docker.healthCheck({ appId: body.app_id }),
+    // The route goes with the container: left behind, Caddy answers the app's
+    // hostnames with a 502 from a port nothing holds. A redeploy's own stop
+    // takes it too, and its `/deploy` puts it back.
+    'POST /stop': async (body) => {
+      const stopped = await docker.stop({ appId: body.app_id })
+      const { removed } = await ingress.unroute({ appId: body.app_id })
+      return { ...stopped, unrouted: removed }
+    },
+    'POST /health-check':  (body) => docker.healthCheck({ appId: body.app_id, port: body.port, path: body.path }),
 
     // Build-then-run, or run what it was told to. A `source.kind === 'git'`
     // deploy builds on this machine — V1's answer, and the reason the digest
     // comes back from here rather than being stated by the caller.
+    //
+    // `hosts` are the app's hostnames, and naming any puts Caddy in front of it
+    // (`FJS-D564`) and its port on loopback (`FJS-D565`). The route is pushed
+    // before the container starts: a hostname another app holds, or a Caddy
+    // that is down, then fails the release rather than leaving a container on
+    // loopback that nothing can reach.
     'POST /deploy': async (body) => {
+      const appId = body.app_id ?? body.deployment_id
+      const hosts = hostsOf(body.hosts)
+      const port  = body.config?.port
+      if (hosts.length && !port) throw new Error('hosts need a published port to route to — config.port is not set')
+
       const image = body.image ?? `fjs-${body.deployment_id}`
       let built   = { digest: body.digest ?? null }
       if (body.source?.kind === 'git' && body.source.repo)
-        built = await docker.build({ appId: body.app_id ?? body.deployment_id, source: body.source, image })
+        built = await docker.build({ appId, source: body.source, image })
+
+      // A release that dropped its last hostname drops its route too.
+      if (hosts.length) await ingress.route({ appId, hosts, port })
+      else await ingress.unroute({ appId })
 
       const started = await docker.deploy({
-        appId:  body.app_id ?? body.deployment_id,
+        appId,
         image,
-        digest: built.digest ?? body.digest,
-        config: body.config ?? {},
-        port:   body.config?.port,
+        digest:   built.digest ?? body.digest,
+        config:   body.config ?? {},
+        port,
+        loopback: hosts.length > 0,
       })
-      return { ...started, commit_sha: built.commitSha ?? null }
+      return { ...started, hosts, commit_sha: built.commitSha ?? null }
     },
 
     // Two callers, two shapes: `fleet.engine.ts` sends a recipe as `command`,

@@ -1,9 +1,9 @@
 // src/providers/index.ts
-// The parties this app speaks to — the 10 beyond Junction's built-ins. Eight
-// are self-hosted appliances; `edge` and `cloudSpend` are somebody else's
-// service, which changes nothing here and one thing for an operator: an
-// appliance is installed and pointed at, a hosted service is an account with a
-// bill behind it. (IQueue is gone — replaced by @frontierjs/caravan via app.jobs)
+// The parties this app speaks to — the nine beyond Junction's built-ins. Eight
+// are self-hosted appliances; `cloudSpend` is somebody else's service, which
+// changes nothing here and one thing for an operator: an appliance is installed
+// and pointed at, a hosted service is an account with a bill behind it. The
+// edge is hosted too and is not here — a workspace's own account, `providers/edge/`. (IQueue is gone — replaced by @frontierjs/caravan via app.jobs)
 //
 // They live under `providers/` because that is what FJS-D06 rules the word to
 // mean: a party outside the app that a capability speaks to. Infisical, Unleash
@@ -17,8 +17,7 @@ import type {
   BasecampProviders,
   ISecrets, IFlags, ISearch,
   IRegistry, IGit, IObservability, INetworking, IIntegrations,
-  IEdge, ICloudSpend, GitRepo, GitPullRequest,
-  EdgeZone, EdgeRecord, EdgeAnalytics, SpendPeriod, SpendLine
+  ICloudSpend, GitRepo, GitPullRequest, SpendPeriod, SpendLine
 } from '../basecamp.types.ts'
 
 // ─── Stub helpers ────────────────────────────────────────────────────────
@@ -94,23 +93,6 @@ class StubObservability implements IObservability {
   async queryMetrics() { stubWarn('Observability', 'queryMetrics'); return [] }
 }
 
-// ── Edge (DNS, TLS termination) ───────────────────────────────────────────
-// Empty answers, never invented ones. A stub that returned a plausible zone
-// would put a hostname on /dns/ that this app cannot reach and nobody owns.
-class StubEdge implements IEdge {
-  async listZones(): Promise<EdgeZone[]>   { stubWarn('Edge', 'listZones');   return [] }
-  async listRecords(zoneId: string): Promise<EdgeRecord[]> {
-    stubWarn('Edge', `listRecords(${zoneId})`); return []
-  }
-  async analytics(zoneId: string): Promise<EdgeAnalytics> {
-    stubWarn('Edge', `analytics(${zoneId})`)
-    // Zeroes are a lie of a different kind — "no requests" reads as an outage.
-    // The screen asks whether the adapter is configured BEFORE it asks this,
-    // so nothing renders these; they exist because the signature must return.
-    return { requests: 0, cached: 0, bandwidthBytes: 0, threats: 0 }
-  }
-}
-
 // ── Cloud spend ───────────────────────────────────────────────────────────
 class StubCloudSpend implements ICloudSpend {
   async monthToDate(): Promise<SpendPeriod> {
@@ -169,17 +151,15 @@ export async function buildProviders(
   // TODO: if (cfg.integrations?.nango_url) → NangoIntegrations(...)
   const integrations: IIntegrations = new StubIntegrations()
 
-  // The two that are somebody else's service rather than an appliance. Both
-  // are a `@frontierjs/conduit` target when they land — a declared target with
-  // its token held as a `Secret`, never a `fetch()` in a service.
-  // TODO: if (cfg.edge?.api_token) → CloudflareEdge(cfg.edge)
-  const edge: IEdge = new StubEdge()
-
+  // Somebody else's service rather than an appliance: a `@frontierjs/conduit`
+  // target when it lands, with its token held as a `Secret`, never a `fetch()`
+  // in a service. The edge, the other hosted one, is a workspace ACCOUNT and not
+  // in this container at all (`FJS-D558`, `providers/edge/`).
   // TODO: if (cfg.cloud_spend?.api_token) → DigitalOceanSpend(cfg.cloud_spend)
   const cloudSpend: ICloudSpend = new StubCloudSpend()
 
   return {
     secrets, flags, search, registry, git, observability, networking, integrations,
-    edge, cloudSpend,
+    cloudSpend,
   }
 }

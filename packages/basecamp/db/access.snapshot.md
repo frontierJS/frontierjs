@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-59 models · 1 view · 60 gated · 0 unrestricted
-45 with row policies · 16 with protected fields · 31 declared moves · 13 @system · 0 @seals
+60 models · 1 view · 61 gated · 0 unrestricted
+46 with row policies · 17 with protected fields · 31 declared moves · 13 @system · 0 @seals
 ```
 
 ## Gates
@@ -76,6 +76,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ServerNetwork` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `User` | 1 VISITOR | 8 SYSTEM | 1 VISITOR | 5 ADMINISTRATOR |
+| `Variable` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Volume` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Wait` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -467,6 +468,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `id == auth().id || auth().level >= 4`
 - allow **update** — `id == auth().id`
 
+### `Variable`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
 ### `Volume`
 
 - deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
@@ -528,6 +537,7 @@ rather than refusing the row.
 | `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `scopes` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
+| `Variable` | `secretValue` | `@encrypted` |
 | `Verification` | `value` | `@guarded` |
 
 ## State transitions
@@ -599,8 +609,9 @@ derived rather than authored: a capability cannot be misspelled into existence.
 
 | Model | Read | Capabilities |
 | --- | --- | --- |
-| `Environment` | — | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` |
+| `Environment` | — | `Environment.create` · `Environment.delete` · `Environment.update` |
 | `Server` | — | `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` |
+| `Variable` | — | `Variable.create` · `Variable.delete` · `Variable.update` |
 
 A move the ENGINE makes is absent — `@system`, or a gate of 8 or 9. No caller asks
 for one, so it is nobody's grant.

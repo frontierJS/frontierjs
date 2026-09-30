@@ -127,13 +127,17 @@ export interface MachineSpec {
   mark:     MachineMark
 }
 
-/** The send half, bound to one target. Handed to a connector so a connector
- *  never holds `app` and can be exercised against a function in a test. */
-export type ComputeSend = (req: {
+/** The send half, bound to one ACCOUNT's target. Handed to a connector so a
+ *  connector never holds `app` and can be exercised against a function in a
+ *  test. An edge connector takes the same one: an account is an account
+ *  whichever realm of the vendor's it opens (`providers/edge/index.ts`). */
+export type AccountSend = (req: {
   method: 'GET' | 'POST' | 'DELETE'
   path:   string
   body?:  unknown
 }) => Promise<{
+  /** The answer's body — on an `error`, the vendor's refusal, which is where
+   *  it says why. */
   data:   unknown
   /** The HTTP status the target answered with, where it answered at all.
    *  Carried because conduit's `kind` deliberately does not split 4xx by code
@@ -158,19 +162,19 @@ export interface ComputeConnector {
    *  resolver reads at send time; the material never reaches the registry. */
   descriptor(opts: { accountId: string; ref: string; address?: string }): TargetDescriptor
   /** Regions, sizes and images, as a picker needs them. */
-  catalog(send: ComputeSend): Promise<ComputeCatalog>
+  catalog(send: AccountSend): Promise<ComputeCatalog>
   /** One machine, or null where the vendor says it is gone. */
-  machine(send: ComputeSend, providerServerId: string): Promise<ComputeMachine | null>
+  machine(send: AccountSend, providerServerId: string): Promise<ComputeMachine | null>
   /** Does this token work? The call is deliberately the cheapest read the
    *  vendor offers, because it runs when somebody presses Verify. */
-  verify(send: ComputeSend): Promise<boolean>
+  verify(send: AccountSend): Promise<boolean>
 
   /**
    * Make a machine. Answers the vendor's id for it, which is the only thing
    * that has to survive: with the id the row can be finished later, and
    * without it the machine is an orphan the tag has to find.
    */
-  create(send: ComputeSend, spec: MachineSpec): Promise<{ providerServerId: string }>
+  create(send: AccountSend, spec: MachineSpec): Promise<{ providerServerId: string }>
 
   /**
    * Unmake one. Answers whether the vendor accepted the instruction — NOT
@@ -179,7 +183,7 @@ export interface ComputeConnector {
    * and *it is destroyed* are the same outcome and a destroy that cannot be
    * retried to completion is worse than one that is idempotent.
    */
-  destroy(send: ComputeSend, providerServerId: string): Promise<boolean>
+  destroy(send: AccountSend, providerServerId: string): Promise<boolean>
 
   /**
    * Every machine at this account carrying this mark.
@@ -189,7 +193,7 @@ export interface ComputeConnector {
    * an orphan has no id on this side to look up with. A mark with no `serverId`
    * asks about the whole fleet, which is what a sweep has to be able to ask.
    */
-  marked(send: ComputeSend, mark: MachineMark): Promise<ComputeMachine[]>
+  marked(send: AccountSend, mark: MachineMark): Promise<ComputeMachine[]>
 }
 
 // ─── The registry ────────────────────────────────────────────────────────

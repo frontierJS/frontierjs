@@ -83,7 +83,7 @@ executed by litestone's `verifyGateLadder`.
 
 | | Count | Models |
 | --- | --- | --- |
-| Scoped by column | 21 | `Flow` · `FlowCredential` · `KvEntry` · `Invitation` · `Secret` · `ApiKey` · `Server` · `Network` · `Project` · `Environment` · `App` · `Domain` · `Deployment` · `Job` · `Recipe` · `FeatureFlag` · `NotificationChannel` · `AlertRule` · `Dashboard` · `AuditEvent` · `RegistryImage` |
+| Scoped by column | 22 | `Flow` · `FlowCredential` · `KvEntry` · `Invitation` · `Secret` · `ApiKey` · `Server` · `Network` · `Project` · `Environment` · `App` · `Variable` · `Domain` · `Deployment` · `Job` · `Recipe` · `FeatureFlag` · `NotificationChannel` · `AlertRule` · `Dashboard` · `AuditEvent` · `RegistryImage` |
 | Scoped by delegation | 19 | `FlowVersion` · `FlowLayout` · `Run` · `RunStep` · `Wait` · `ServerEvent` · `Volume` · `ServerNetwork` · `AppServer` · `AppNetwork` · `DeploymentStep` · `JobRun` · `RecipeRun` · `DiskUsage` · `CleanupRun` · `FlagOverride` · `AlertRuleChannel` · `AlertEvent` · `DashboardWidget` |
 | Exempt — `@@tenant(none)` | 19 | `Credential` · `Session` · `Verification` · `LoginChallenge` · `OauthFlow` · `MetricSeries` · `MetricPoint` · `MetricHour` · `User` · `Account` · `Workspace` · `WorkspaceMember` · `OutpostNonce` · `Blueprint` · `BlueprintParam` · `Backup` · `HubConfig` · `Notification` · `NotificationPreference` |
 

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-30 — `PROJECT_STATE.md` no longer calls orion private (`FJS-1369`)
+
+The status line said "private, unpublished". The `private` flag left `package.json` on purpose in 35ba5615, so it now says publishable and never released. It also names what the first release owes: delete orion's `HELD_BACK` entry in `website/site/src/data/packages.js` and write its page. `fli ws:publish` prints that as a `website-held-back` note.
+
 ## 2026-09-29 — a flow is drawn and edited as a graph (`FJS-1198`)
 
 `web/components/FlowCanvas.mesa` is the canvas `FJS-D510` placed in orion: an

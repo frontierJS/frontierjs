@@ -274,6 +274,67 @@ model Doc {
     db.$close()
   })
 
+  // `FJS-D566` — any row of a to-many. The oracle is `$readAs`, not create:
+  // a row being created has no children, so create answers false for every
+  // rule and would agree with any SQL half that also said false. `$readAs`
+  // runs the SAME JS evaluator over a STORED row, and it is what grades a
+  // broadcast — so this is also the proof a live socket is graded against the
+  // membership row rather than a snapshot of it.
+  it('agrees across a to-many test, in every shape the node sits in', async () => {
+    const schema = `
+model Team {
+  id      String       @id
+  private Boolean      @default(false)
+  members TeamMember[]
+  @@allow('read', EXPR)
+}
+model TeamMember {
+  id        String    @id
+  teamId    String
+  team      Team      @relation(fields: [teamId], references: [id])
+  userId    String
+  status    String    @default("active")
+  deletedAt DateTime?
+  @@softDelete
+}
+`
+    for (const expr of [
+      `members.some(userId == auth().id)`,
+      `members.some(userId == auth().id && status == 'active')`,
+      `members.some(userId == auth().id || status == 'revoked')`,
+      `!members.some(userId == auth().id)`,
+      `private == false || members.some(userId == auth().id)`,
+      `members.some(userId in auth().teamIds)`,
+      `members.some(status != 'active')`,
+      `members.some(userId == auth().id) && members.some(status == 'active')`,
+    ]) {
+      const db: any = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:', claims: ['teamIds'] })
+      const sys = db.asSystem()
+      for (const t of [{ id: 'ENG' }, { id: 'SEC', private: true }, { id: 'DES', private: true }, { id: 'EMPTY', private: true }])
+        await sys.team.create({ data: t })
+      for (const m of [
+        { id: 'm1', teamId: 'SEC', userId: 'u1' },
+        { id: 'm2', teamId: 'DES', userId: 'u2' },
+        { id: 'm3', teamId: 'DES', userId: 'u1', status: 'revoked' },
+        { id: 'm4', teamId: 'ENG', userId: 'u2' },
+        { id: 'm5', teamId: 'EMPTY', userId: 'u1' },
+      ]) await sys.teamMember.create({ data: m })
+      // A removed membership is not one of the relation's rows, in either half.
+      await sys.teamMember.remove({ where: { id: 'm5' } })
+
+      const all = await sys.team.findMany()
+      for (const p of [{ id: 'u1', teamIds: ['u2'] }, { id: 'u2', teamIds: [] }, { id: 'u9', teamIds: ['u1'] }, null]) {
+        const sql = new Set((await db.$setAuth(p).team.findMany()).map((x: any) => x.id))
+        for (const row of all) {
+          const js = (await db.$readAs('team', row, p)) != null
+          expect({ expr, who: p?.id ?? null, row: row.id, js })
+            .toEqual({ expr, who: p?.id ?? null, row: row.id, js: sql.has(row.id) })
+        }
+      }
+      db.$close()
+    }
+  }, 30000)
+
   it('agrees with a @@deny standing beside the @@allow', async () => {
     const schema = `
 model Doc {

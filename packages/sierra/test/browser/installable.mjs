@@ -20,15 +20,14 @@
  */
 
 import { createServer } from 'node:http'
-import { spawn } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, extname } from 'node:path'
 import { deflateSync } from 'node:zlib'
 
 import { gradeManifest } from '../../src/postbuild/manifest.js'
+import { openChrome } from '../../../mesa/src/drive.js'
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 const SCRATCH = mkdtempSync(join(tmpdir(), 'fjs-installable-'))
 
 // ─── fixtures ─────────────────────────────────────────────────────────────────
@@ -133,43 +132,9 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(0, 'localhost', r))
 const origin = `http://localhost:${server.address().port}`
 
-const chrome = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${join(SCRATCH, 'profile')}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
-chrome.on('error', (e) => { console.error(`Chrome could not be started (${CHROME}): ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const timer = setTimeout(() => reject(new Error('Chrome did not report a debugging port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); resolve(m[0]) }
-  })
-})
-
-const ws = new WebSocket(wsUrl)
-await new Promise(r => ws.addEventListener('open', r))
-let id = 0
-const pending = new Map()
-const waiters = []
-ws.addEventListener('message', (e) => {
-  const msg = JSON.parse(e.data)
-  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
-  for (const w of waiters.splice(0)) if (w.method === msg.method) w.done(); else waiters.push(w)
-})
-const send = (method, params = {}, sessionId) => new Promise(r => {
-  const n = ++id
-  pending.set(n, r)
-  ws.send(JSON.stringify({ id: n, method, params, sessionId }))
-})
-const next = (method) => new Promise(done => waiters.push({ method, done }))
-
-const { result: target } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: attach } = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true })
-const session = attach.sessionId
-await send('Page.enable', {}, session)
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd } = browser
+const next = (method) => new Promise((done) => { const off = browser.on(method, () => { off(); done() }) })
 
 // Chrome names one missing icon twice, and a manifest it could not read fails
 // every rule after that one as well; the grader stops at the first.
@@ -192,9 +157,9 @@ for (const [i, [name, manifest, expected, opts = {}]] of CASES.entries()) {
 
   served = dir
   const loaded = next('Page.loadEventFired')
-  await send('Page.navigate', { url: `${origin}/?case=${i}` }, session)
+  await cmd('Page.navigate', { url: `${origin}/?case=${i}` })
   await loaded
-  const { result } = await send('Page.getInstallabilityErrors', {}, session)
+  const result = await cmd('Page.getInstallabilityErrors')
   const chromeSays = normalize(result?.installabilityErrors ?? [{ errorId: 'no answer from Chrome' }])
 
   const want = [...expected].sort()
@@ -213,18 +178,16 @@ for (const [i, [name, manifest, expected, opts = {}]] of CASES.entries()) {
   writeFileSync(join(dir, 'index.html'), '<!doctype html><title>t</title><body>app</body>')
   served = dir
   const loaded = next('Page.loadEventFired')
-  await send('Page.navigate', { url: `${origin}/?nothing` }, session)
+  await cmd('Page.navigate', { url: `${origin}/?nothing` })
   await loaded
-  const { result } = await send('Page.getInstallabilityErrors', {}, session)
+  const result = await cmd('Page.getInstallabilityErrors')
   const same = gradeManifest(dir, dir) === null && JSON.stringify(normalize(result.installabilityErrors)) === JSON.stringify([NONE])
   if (!same) failed++
   console.log(`  ${same ? 'ok  ' : 'FAIL'} no manifest at all: the grader is silent and Chrome says ${NONE}`)
 }
 
-const exited = new Promise(r => chrome.on('exit', r))
-chrome.kill()
+await browser.close()
 server.close()
-await exited
 rmSync(SCRATCH, { recursive: true, force: true })
 
 // The control: a run where the grader refused nothing agrees with Chrome only

@@ -30,6 +30,7 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { glow } from '@frontierjs/toolbelt/glow';
+import { findChrome } from '../../mesa/src/drive.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, '..');
@@ -43,31 +44,16 @@ const filters = argv.filter((a) => !a.startsWith('--'));
 
 /* ── Locate a browser ──────────────────────────────────────────────── */
 
-const CANDIDATES = [
-  process.env.FJS_CHROME,
-  'google-chrome-stable',
-  'google-chrome',
-  'chromium',
-  'chromium-browser',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-].filter(Boolean);
-
-function findBrowser() {
-  for (const c of CANDIDATES) {
-    const r = spawnSync(c, ['--version'], { encoding: 'utf8' });
-    if (r.status === 0) return { bin: c, version: (r.stdout || '').trim() };
-  }
-  return null;
-}
-
-const browser = findBrowser();
-if (!browser) {
-  console.error(
-    'No Chrome/Chromium found. Install one, or point FJS_CHROME at a binary.\n' +
-    'Tried: ' + CANDIDATES.join(', ')
-  );
+/* The lookup is the driver's, so $FJS_CHROME means the same thing here as in
+   every other drive: the binary named, or none. */
+const bin = findChrome();
+if (!bin) {
+  console.error(process.env.FJS_CHROME
+    ? `$FJS_CHROME names ${process.env.FJS_CHROME} and there is no such binary.`
+    : 'No Chrome/Chromium found. Install one, or point FJS_CHROME at a binary.');
   process.exit(2);
 }
+const browser = { bin, version: (spawnSync(bin, ['--version'], { encoding: 'utf8' }).stdout || '').trim() };
 
 /* ── Collect specs ─────────────────────────────────────────────────── */
 

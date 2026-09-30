@@ -3,10 +3,11 @@
  *
  * Every value is an environment variable because an Outpost is installed on a
  * machine by something else (ring 1 in `IDEAS/deploy-plane.md`) and has no
- * config file of its own to edit. Two of them have no safe default and the
+ * config file of its own to edit. Five of them have no safe default and the
  * process exits rather than starting half-configured: an Outpost that cannot
- * name its server reports as nobody, and one with no secret would either
- * refuse every command or — far worse — accept every one.
+ * name its server reports as nobody, one with no secret would either refuse
+ * every command or — far worse — accept every one, and one with no certificate
+ * would take commands in the clear.
  */
 
 /** Ports are derived, not chosen: `packages/cli/core/ports.js`, project id 8,
@@ -35,6 +36,11 @@ export function readConfig(env = process.env) {
     secret:     need('OUTPOST_SECRET'),
     /** Where Basecamp answers. No default — a wrong guess reports into a void. */
     basecampUrl: need('BASECAMP_URL')?.replace(/\/$/, ''),
+    /** The command port's certificate and key — `cert.js`. No default and no
+     *  plain-HTTP fallback: that port carries every deploy's decrypted env, and
+     *  Basecamp refuses a machine whose URL is not https (`FJS-1603`). */
+    tlsCert:    need('OUTPOST_TLS_CERT'),
+    tlsKey:     need('OUTPOST_TLS_KEY'),
 
     port:       Number(env.OUTPOST_PORT ?? DEFAULT_PORT),
     /** How often to check in. Basecamp reads `lastHeartbeatAt` to decide
@@ -47,7 +53,7 @@ export function readConfig(env = process.env) {
     version:     env.OUTPOST_VERSION ?? '0.1.0',
     /** The URL Basecamp should send commands to. Stated rather than derived:
      *  this process cannot see the address the world reaches it at. */
-    publicUrl:   env.OUTPOST_PUBLIC_URL ?? `http://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,
+    publicUrl:   env.OUTPOST_PUBLIC_URL ?? `https://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,
     /** Where a git build is checked out. One directory per app. */
     workDir:     env.OUTPOST_WORK_DIR ?? '/var/lib/outpost/apps',
     /** Where published static releases live. One directory per app, one
@@ -63,6 +69,9 @@ export function readConfig(env = process.env) {
      *  rather than being assembled by a console that is guessing. */
     staticUrl:   (env.OUTPOST_STATIC_URL ?? `http://localhost:${env.OUTPOST_STATIC_PORT ?? DEFAULT_STATIC_PORT}`)
                    .replace(/\/$/, ''),
+    /** Caddy's admin API — `ingress.js`. Loopback-only by Caddy's default, and
+     *  nothing else on the machine speaks to it. */
+    caddyAdmin:  env.OUTPOST_CADDY_ADMIN ?? 'http://127.0.0.1:2019',
   }
 
   if (missing.length) {
@@ -70,8 +79,14 @@ export function readConfig(env = process.env) {
       `outpost: ${missing.join(', ')} must be set.\n` +
       `  OUTPOST_SERVER_ID  the id of this machine's Server row in Basecamp\n` +
       `  OUTPOST_SECRET     this machine's own key, from enrolling\n` +
-      `  BASECAMP_URL       where Basecamp answers, e.g. https://basecamp.internal`
+      `  BASECAMP_URL       where Basecamp answers, e.g. https://basecamp.internal\n` +
+      `  OUTPOST_TLS_CERT   the command port's certificate, from enrolling\n` +
+      `  OUTPOST_TLS_KEY    its private key`
     )
   }
+  // Basecamp would never register it, so every command would be refused with
+  // the machine looking healthy.
+  if (!/^https:\/\//i.test(config.publicUrl))
+    throw new Error(`outpost: OUTPOST_PUBLIC_URL must be https, got '${config.publicUrl}'`)
   return config
 }

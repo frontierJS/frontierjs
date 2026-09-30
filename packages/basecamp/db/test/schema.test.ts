@@ -162,7 +162,7 @@ function as(memberRole: string, extra: Record<string, unknown> = {}) {
 /**
  * A cross-workspace move, well-formed.
  *
- * Twelve models declare `@version` and refuse an update that carries none, and
+ * A model declaring `@version` refuses an update that carries none, and
  * that refusal lands BEFORE the policy — so a payload of `{ workspaceId }`
  * alone grades the version check rather than the tenancy rule these tests are
  * about. Reading the version through `sys` is also the honest shape: a real
@@ -307,7 +307,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 59 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 60 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -348,8 +348,9 @@ describe('generated migration', () => {
     // 59 with orion's eight — Flow, FlowVersion, FlowLayout, FlowCredential,
     // Run, RunStep, Wait and KvEntry — imported from `@frontierjs/orion`, three
     // of them extended here with `workspaceId` because a fragment cannot name
-    // the host's tenant column (`FJS-D310`).
-    expect(tables.length).toBe(59)
+    // the host's tenant column (`FJS-D310`). 60 with `Variable`, which took
+    // an environment's and an app's variables out of two Json columns.
+    expect(tables.length).toBe(60)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

@@ -32,6 +32,7 @@ import { markdownLayoutsPlugin } from './markdown-layouts.js'
 import { expandGlobs } from './glob-expand.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
+import { fsAllowPlugin } from './fs-allow-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
 
@@ -162,6 +163,8 @@ export function createSierraViteConfig(config = {}) {
   // Mesa compiler for all targets
   // Devtools toolbar — dev only, no bundle impact in production
   sierraPlugins.push(devtoolsPlugin(config))
+  // Dev only: a linked checkout's worker files sit outside Vite's allow list (FJS-1601)
+  sierraPlugins.push(fsAllowPlugin())
 
   // `@` → the surface's own src/. A plugin rather than an alias entry below,
   // because the base is the Vite root and that is not known until the app's own

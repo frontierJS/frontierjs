@@ -19,17 +19,34 @@
   <div class="container topbar-inner">
     <a class="brand" href="/">Frontier<span>JS</span></a>
     <nav class="navset" aria-label="Site">
-      <a href="/#idea">Idea</a>
-      <a href="/#code">See it</a>
       <a href="/tutor/">Tutorial</a>
-      <a href="/showroom/">Showroom</a>
-      <a href="/showroom2/">Walkthrough</a>
-      <a href="/showroom3/">The ripple</a>
-      <a href="/showroom4/">The loop</a>
-      <a href="/showroom5/">The stack</a>
-      <a href="/journey/">The journey</a>
-      <a href="/flow/">The flow</a>
-      <a href="/landscape/">Landscape</a>
+      <!-- A <details>, so the menu opens and closes with no script on the page. -->
+      <details class="popover-anchor showmenu">
+        <summary>Showroom</summary>
+        <div class="popover align-end">
+          <div class="navlist-label">The tour</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/showroom/">Showroom</a></li>
+            <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
+            <li><a class="navlink" href="/showroom3/">The ripple</a></li>
+            <li><a class="navlink" href="/showroom4/">The loop</a></li>
+            <li><a class="navlink" href="/showroom5/">The stack</a></li>
+            <li><a class="navlink" href="/journey/">The journey</a></li>
+            <li><a class="navlink" href="/flow/">The flow</a></li>
+          </ul>
+          <div class="navlist-label">Compared</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
+            <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
+            <li><a class="navlink" href="/landscape/">Landscape</a></li>
+          </ul>
+          <div class="navlist-label">Hero drafts</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/index2/">Round one</a></li>
+            <li><a class="navlink" href="/index3/">Round two</a></li>
+          </ul>
+        </div>
+      </details>
       <a href="/#start">Start</a>
     </nav>
     <ThemeSwitch client:load />
@@ -66,6 +83,9 @@
     background: color-mix(in srgb, var(--surface) 88%, transparent);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--rule);
+    /* @frontierjs/css sets no font on body, so the bar took the browser's
+       serif while the menu's popover, a surface, took --font-primary. */
+    font-family: var(--font-primary);
   }
   .topbar-inner { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
 
@@ -75,6 +95,19 @@
   .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
   .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
   .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+
+  /* The summary is dressed as a nav link, and the menu's own links are
+     .navlink, so the .navset a rule must not reach into the popover. */
+  .showmenu summary {
+    padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft);
+    font-size: .875rem; list-style: none; cursor: pointer;
+  }
+  .showmenu summary::-webkit-details-marker { display: none; }
+  .showmenu summary::after { content: ' ▾'; font-size: .7em; }
+  .showmenu summary:hover, .showmenu[open] summary { background: var(--surface-sunken); color: var(--ink); }
+  .showmenu .popover { min-width: 13rem; padding: var(--space-sm); }
+  .showmenu .popover a { padding: .3rem .6rem; font-size: .875rem; }
+  .showmenu .navlist-label:not(:first-child) { margin-top: var(--space-sm); }
 
   /* A page's own section nav. Five pages carry one, so the rule is here rather
      than repeated — but it is :global() because the markup is in the PAGE, and

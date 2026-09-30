@@ -164,7 +164,7 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ dirty = [], drift = [], cycles = [], force = {} } = {}) {
+export function publishRefusals({ dirty = [], drift = [], cycles = [], heldBack = [], force = {} } = {}) {
   const out = []
 
   if (dirty.length && !force.dirty) {
@@ -218,6 +218,21 @@ export function publishRefusals({ dirty = [], drift = [], cycles = [], force = {
       fix:      'publish them in two runs if the order matters',
       override: null,
       detail:   cycles.map(c => c.join(' → ')),
+    })
+  }
+
+  if (heldBack.length) {
+    // A note: the release is the event that makes the site's reason false, and
+    // the site's own staleness check cannot see a registry, so nothing else
+    // notices that a package just became installable and is still undescribed.
+    out.push({
+      check:    'website-held-back',
+      note:     true,
+      message:  `${heldBack.length} package(s) in this release are held back from the website: ${heldBack.map(h => h.name).join(', ')}`,
+      because:  'the website names each package it does not describe with a reason, and a first release is what makes that reason stale',
+      fix:      'after publishing, delete the HELD_BACK entry in website/site/src/data/packages.js and describe the package in website/packages.js',
+      override: null,
+      detail:   heldBack.map(h => `${h.name} — ${h.reason}`),
     })
   }
 

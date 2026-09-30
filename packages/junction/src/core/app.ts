@@ -631,6 +631,13 @@ export interface AppOptions {
   logger?:      ILogger             // custom logger — defaults to createLogger()
   logLevel?:    import('./logger.ts').LogLevel   // override log level
   auth?:        SessionVerifier
+  /**
+   * Credentials that are not a bearer token — a signed request — each turned
+   * into a principal by the transport, in order, before the bearer path
+   * (`FJS-D475`). A machine identity is declared here once instead of guarded
+   * per method.
+   */
+  credentials?: import('../auth/credentials.ts').CredentialVerifier[]
 
   /**
    * The principal the app's OWN background work runs as.
@@ -1002,6 +1009,7 @@ export function createApp(opts: AppOptions = {}): App {
     wsMaxQueued: config.http.wsMaxQueued,
     ws:          config.http.ws,
     auth:        opts.auth,
+    credentials: opts.credentials,
     // Cookie mode is normally declared by the auth plugin, which calls
     // http.setAuthCookie() from its own register(). This is the path for a
     // hand-rolled IAuth that issues its own cookie.

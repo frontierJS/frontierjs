@@ -137,6 +137,7 @@ export const env = defineEnv({
   // is about.
   DIGITALOCEAN_URL: {},
   HETZNER_URL:      {},
+  CLOUDFLARE_URL:   {},
 
   // Saying, once, that this process may create and destroy machines somebody
   // pays for. Unset is REFUSE, and `NODE_ENV=production` is the other way

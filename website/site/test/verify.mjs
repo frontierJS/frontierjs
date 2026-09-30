@@ -18,14 +18,15 @@
  *   bun run build
  *   node site/test/verify.mjs
  *
+ * Prints every check's value, then exits 1 naming the ones that failed.
+ *
  * Needs Chrome on PATH or $FJS_CHROME. Nothing to sign in to, no API.
  */
 
-import { spawn }                       from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, mkdtempSync } from 'node:fs'
-import { tmpdir }                      from 'node:os'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname, relative }     from 'node:path'
 import { fileURLToPath }               from 'node:url'
+import { openChrome }                  from '../../../packages/mesa/src/drive.js'
 
 import { serveSite } from '@frontierjs/sierra/site/serve'
 
@@ -36,7 +37,6 @@ const SRC_ROUTES = join(SITE, 'src', 'routes')
 // test / siteServe / project 9 (`website`) — its own slot, so it cannot collide
 // with a dev server somebody has open on 8790.
 const PORT   = Number(process.env.SITE_SERVE_PORT ?? 7790)
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 if (!existsSync(join(DIST, 'index.html'))) {
   console.error(`No build at ${DIST}.\nRun: bun run build`)
@@ -51,8 +51,22 @@ const pkgHtml = readFileSync(join(DIST, 'litestone', 'index.html'), 'utf8')
 const server = await serveSite({ dir: DIST, port: PORT })
 const ORIGIN = `http://localhost:${PORT}`
 
+// A check passes when its value holds no `false` at any depth, unless it states
+// its own test. A check whose failure is not a `false` states one: a list of
+// offenders is clean when EMPTY, a count when it is the count. Left on the
+// default, those print their failure in the report and pass.
+const noFalse = (v) => v !== false &&
+  (v === null || typeof v !== 'object' || Object.values(v).every(noFalse))
+const none     = (v) => v.length === 0
+const counted  = (v) => typeof v === 'number' ? v > 0 : Object.values(v).every((n) => n > 0)
+const balanced = (v) => new Set(Object.values(v)).size === 1
+
 const got = {}
-const t = (label, value) => { got[label] = value }
+const failed = []
+const t = (label, value, ok = noFalse) => {
+  got[label] = value
+  if (!ok(value)) failed.push(label)
+}
 
 // Every built page as one string, for the questions that are about the COPY
 // rather than about one page.
@@ -66,16 +80,16 @@ const allHtml = (function all(dir) {
 
 t('raw.headline',   html.includes('The schema<br') && html.includes('is the app.'))
 t('raw.everySection', ['idea', 'code', 'packages', 'extend', 'vision', 'start']
-  .filter(id => html.includes(`id="${id}"`)))
+  .filter(id => !html.includes(`id="${id}"`)), none)
 t('raw.packagesTable', (() => {
   const tbl = (html.match(/<table[^>]*class="table[^>]*>[\s\S]*?<\/table>/) ?? [''])[0]
   return (tbl.match(/<tr[ >]/g) ?? []).length
-})())
+})(), counted)
 
 // The samples went through {@html}. A miss there is `undefined` in a <pre>, or
 // escaped tags where highlighting should be — both of which render as a page.
 const pres = html.match(/<pre[^>]*>[\s\S]*?<\/pre>/g) ?? []
-t('samples.count',      pres.length)
+t('samples.count',      pres.length, counted)
 t('samples.noUndefined', !/<pre[^>]*>\s*undefined/.test(html))
 // The five named entities the samples use, `&amp;` last so an escape written
 // by the escaper is not decoded twice.
@@ -129,7 +143,7 @@ t('samples.noLocalPalette', (() => {
       bad.push(f)
   }
   return bad
-})())
+})(), none)
 
 // Every sample is the same TEXT it was when the page was hand-written. glow may
 // only add tags: a highlighter's one catastrophic failure is silent — it eats a
@@ -186,11 +200,11 @@ t('links.internal', (() => {
     }
   }
   return bad
-})())
+})(), (v) => none(v.unresolved) && none(v.relative))
 
 // One layout, one copy.
 t('layout.wrapped',  html.includes('class="brand') && html.includes('site-footer'))
-t('layout.navOnce',  (html.match(/Frontier<span/g) ?? []).length)
+t('layout.navOnce',  (html.match(/Frontier<span/g) ?? []).length, (n) => n === 1)
 
 // The design system, the baked theme, and the pre-paint script.
 t('head.stylesheet',  /<link rel="stylesheet" href="\/assets\/[^"]+\.css">/.test(html))
@@ -201,8 +215,8 @@ t('head.bodyClass',   (html.match(/<body class="([^"]*)"/) ?? [])[1])
 
 // One island, and only one — a page that accidentally shipped its whole self as
 // a client bundle would still look right.
-t('island.markers', (html.match(/mesa-island \{/g) ?? []).length)
-t('island.chunks',  readdirSync(join(DIST, 'assets')).filter(f => /^island-/.test(f)))
+t('island.markers', (html.match(/mesa-island \{/g) ?? []).length, (n) => n === 1)
+t('island.chunks',  readdirSync(join(DIST, 'assets')).filter(f => /^island-/.test(f)), (l) => l.length > 0)
 
 // Every package the site tells a visitor to install is one npm has.
 //
@@ -252,7 +266,7 @@ t('install.published', await (async () => {
     if (res.status === 404) out.missing.push(pkg)
   }
   return out
-})())
+})(), (v) => none(v.missing))
 
 // ─── the package pages ────────────────────────────────────────────────────
 // One page per entry in packages.js, and the count is asked of the DATA rather
@@ -264,7 +278,7 @@ const slugFor  = (p) => p.page.replace(/\.html$/, '')
 t('pkg.onePerPackage', {
   emitted: PKGS.filter((p) => existsSync(join(DIST, slugFor(p), 'index.html'))).length,
   declared: PKGS.length,
-})
+}, balanced)
 
 // The features are IN THE FILE. `litestone` carries twelve, each with its
 // label, its prose and its "replaces" list.
@@ -272,7 +286,7 @@ const litestone = PKGS.find((p) => p.id === 'litestone')
 t('pkg.everyFeature', {
   declared: litestone.rows.length,
   present:  litestone.rows.filter((r) => pkgHtml.includes(r.k) && pkgHtml.includes(r.why)).length,
-})
+}, balanced)
 t('pkg.replacesInFile', pkgHtml.includes('Prisma Migrate') && pkgHtml.includes('CASL'))
 t('pkg.codeHighlighted', /<code language="lite">[\s\S]*?<strong>model<\/strong>/.test(pkgHtml))
 t('pkg.installLine',     pkgHtml.includes('npm i @frontierjs/litestone'))
@@ -306,7 +320,12 @@ t('pages.allEmitted', {
   emitted:  [...PAGES.map((n) => (n === 'index' ? 'index.html' : join(n, 'index.html'))),
              ...PKGS.map((p) => join(slugFor(p), 'index.html'))]
               .filter((f) => existsSync(join(DIST, f))).length,
-})
+}, balanced)
+
+// Every page is reachable from the site nav. A page left out of the menu still
+// builds, serves and passes every check here, and nobody finds it to read it.
+const navHtml = (html.match(/<nav aria-label="Site"[\s\S]*?<\/nav>/) ?? [''])[0]
+t('pages.inNav', PAGES.filter((n) => n !== 'index' && !navHtml.includes(`href="/${n}/"`)), none)
 
 // Every page carries the layout and the pre-paint theme script — the two things
 // thirteen hand-written files each had their own copy of.
@@ -326,14 +345,14 @@ const countIn = (n, re) => (bodyOf(n).match(re) ?? []).length
 
 t('demos.prerendered', {
   showroom:   countIn('showroom',  /class="ln[ "]/g),        // the seed, line by line
-  showroom2:  countIn('showroom2', /class="step[ "]/g),      // fifteen walkthrough steps
+  showroom2:  countIn('showroom2', /class="panel[ "]/g),     // fifteen walkthrough steps
   showroom3:  countIn('showroom3', /class="hop\b/g),         // eighteen seams
   showroom4:  countIn('showroom4', /phasepanel/g),           // six phases
   showroom5:  countIn('showroom5', /role="tab"/g),           // every feature row
   journey:    countIn('journey',   /class="ex[ "]/g),        // seventeen explanations
   landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-one projects
   tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
-})
+}, counted)
 
 // The tutorial page's argument is that the tutorial runs, so its samples are
 // transcripts of runs rather than prose about them. A paraphrase would be the
@@ -356,73 +375,22 @@ const head = async (p) => {
   const r = await fetch(`${ORIGIN}${p}`)
   return { status: r.status, cache: r.headers.get('cache-control') }
 }
-t('serve.root',   (await head('/')).status)
-t('serve.missing', (await head('/no-such-page/')).status)
+t('serve.root',   (await head('/')).status, (s) => s === 200)
+t('serve.missing', (await head('/no-such-page/')).status, (s) => s === 404)
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
-const profile = mkdtempSync(join(tmpdir(), 'fjs-web-'))
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const timer = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); resolve(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every warning as well, so it reads the events itself.
 const consoleErrors = []
-
-function send(socket, method, params = {}, sessionId) {
-  const id = nextId++
-  socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    consoleErrors.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type))
-    consoleErrors.push(msg.params.type + ': ' + msg.params.args.map((a) => a.value ?? a.description ?? '').join(' '))
+browser.on('Runtime.exceptionThrown', (p) =>
+  consoleErrors.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'warning'].includes(p.type))
+    consoleErrors.push(p.type + ': ' + p.args.map((a) => a.value ?? a.description ?? '').join(' '))
 })
-
-const { targetId }  = await send(browser, 'Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send(browser, 'Target.attachToTarget', { targetId, flatten: true })
-const cmd = (m, p) => send(browser, m, p, sessionId)
-
-await cmd('Page.enable')
-await cmd('Runtime.enable')
-
-const evaluate = async (expression) => {
-  const r = await cmd('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`, awaitPromise: true, returnByValue: true,
-  })
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
 
 const HARNESS = `
   if (document.readyState !== 'complete')
@@ -694,10 +662,17 @@ try {
              filtered: visible, cloudAfter: document.querySelectorAll('[data-cloud] a').length };
   `))
 
-  t('console.clean', consoleErrors)
+  t('console.clean', consoleErrors, none)
 } finally {
-  chrome.kill()
+  await browser.close()
   await server.close()
 }
 
 console.log(JSON.stringify(got, null, 2))
+
+// The report above is for reading; the exit code is the verdict. A drive that
+// prints `false` and exits 0 is a gate nothing can fail (FJS-1079).
+if (failed.length) {
+  console.error(`\n${failed.length} check(s) failed: ${failed.join(', ')}`)
+  process.exit(1)
+}

@@ -22,8 +22,8 @@ import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, restoreScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
-import { connectorFor, targetFor } from '../../providers/compute/index.ts'
-import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD }
+import { targetFor } from '../../providers/compute/index.ts'
+import { registerAccount, unregisterAccount, sendVia, tokenDocument, TOKEN_FIELD, accountConnectorFor }
   from '../../providers/compute/accounts.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ProviderKind }   from '../../../../db/schema.d.ts'
@@ -59,7 +59,7 @@ export function createSecretsService(app: BasecampApp) {
 
     if (!data.providerKind)
       throw new BadRequest('providerKind is required on a provider key — which cloud this token opens')
-    if (!connectorFor(data.providerKind as ProviderKind))
+    if (!accountConnectorFor(data.providerKind as ProviderKind))
       throw new BadRequest(`Basecamp has no connector for '${data.providerKind}'`)
 
     const raw = String(data.data ?? '').trim()
@@ -193,7 +193,7 @@ export function createSecretsService(app: BasecampApp) {
     async verify() {
       const secret    = await getScoped('secret', 'Secret')
       const connector = secret.kind === 'provider_key'
-        ? connectorFor(secret.providerKind as ProviderKind | null)
+        ? accountConnectorFor(secret.providerKind as ProviderKind | null)
         : null
 
       let ok     = true

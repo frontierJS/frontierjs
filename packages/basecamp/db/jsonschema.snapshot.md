@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-99 definitions · 59 models · 1 view · 39 enums · 0 other
+100 definitions · 60 models · 1 view · 39 enums · 0 other
 ```
 
 ## Definitions
@@ -57,6 +57,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Project` | model |
 | `Environment` | model |
 | `App` | model |
+| `Variable` | model |
 | `Domain` | model |
 | `AppServer` | model |
 | `AppNetwork` | model |
@@ -146,7 +147,7 @@ validates, and a select that silently drops an option.
 - `ServerStatus` — `pending`, `provisioning`, `installing`, `online`, `unreachable`, `draining`, `stopped`, `destroying`, `destroyed`
 - `ServerRole` — `general`, `build`, `database`, `gateway`, `worker`
 - `ServerEventKind` — `created`, `removed`, `reboot_requested`, `drain_started`, `drain_cancelled`, `provision_requested`, `provision_created`, `provision_ready`, `provision_timeout`, `destroy_requested`, `destroy_finished`, `enrollment_issued`, `sync_requested`, `status_synced`, `status_sync_ignored`, `sync_failed`, `sync_no_account`, `sync_unsupported`, `sync_unrecognized`, `came_online`, `unreachable`, `recipe_ran`, `recipe_failed`, `cleanup_queued`, `cleanup_ran`, `cleanup_failed`, `volume_removed`, `volumes_pruned`
-- `ProviderKind` — `custom`, `hetzner`, `digitalocean`
+- `ProviderKind` — `custom`, `hetzner`, `digitalocean`, `cloudflare`
 - `EnvironmentTier` — `development`, `test`, `preview`, `staging`, `production`
 - `AppType` — `container`, `worker`, `database`, `daemon`, `cron`, `static`, `function`
 - `AppStatus` — `unknown`, `stopped`, `starting`, `running`, `stopping`, `deploying`, `error`
@@ -168,7 +169,7 @@ validates, and a select that silently drops an option.
 - `BackupDestination` — `local`, `s3`
 - `NotificationContext` — `Deployment`, `AlertEvent`, `JobRun`, `Server`, `Workspace`
 - `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `server_unreachable`, `member_joined`, `job_failed`, `weekly_digest`
-- `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Environment.variables`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`
+- `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
 
 ## Models
 
@@ -628,6 +629,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `lastHeartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
 | `enrollExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `outpostSecretId` | `string`? | — | — | — | — |
+| `outpostCert` | `string`? | — | — | — | — |
 | `plan` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `actualSpecs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `health` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -747,7 +749,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `flagOverrides` — hasMany `FlagOverride`
-- capabilities — `Environment.create` · `Environment.update` · `Environment.delete` · `Environment.variables` · read is not graded
+- relation `variables` — hasMany `Variable`
+- capabilities — `Environment.create` · `Environment.update` · `Environment.delete` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -758,7 +761,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
 | `isProtected` | `boolean` = `false` | — | — | — | — |
-| `variables` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `projectId`, `name`, `slug` · not accepted — `id`, `version`
@@ -773,6 +775,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `appServers` — hasMany `AppServer`
 - relation `appNetworks` — hasMany `AppNetwork`
 - relation `domains` — hasMany `Domain`
+- relation `variables` — hasMany `Variable`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -784,12 +787,37 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `type` | `AppType` = `"container"` | — | — | — | — |
 | `status` | `AppStatus` = `"unknown"` | — | — | `x-litestone-kind` | — |
 | `source` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `port` | `integer`? | — | — | — | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
+| `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
+| `containerPort` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
+| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` | `pattern` `regex` |
+| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` | `pattern` `regex` |
+| `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
+| `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
+
+### `Variable`
+
+- gate `read:2 create:4 update:4 delete:4` · version field `version` · closed (`additionalProperties: false`)
+- relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade · optional
+- capabilities — `Variable.create` · `Variable.update` · `Variable.delete` · read is not graded
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `environmentId` | `string` | yes | — | — | — |
+| `appId` | `string`? | — | — | — | — |
+| `key` | `string` | yes | — | `pattern: "^[A-Za-z_][A-Za-z0-9_]{0,99}$"` | `pattern` `regex` |
+| `secret` | `boolean` = `false` | — | — | — | — |
+| `value` | `string`? | — | — | `minLength: 0` `maxLength: 10000` | — |
+| `secretValue` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `environmentId`, `key` · not accepted — `id`, `version`
 
 ### `Domain`
 
@@ -1243,12 +1271,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `brandColor` | `string`? | — | — | `minLength: 4` `maxLength: 9` | — |
 | `appType` | `AppType` = `"container"` | — | — | — | — |
 | `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
-| `persistent` | `boolean` = `false` | — | — | — | — |
-| `volumePath` | `string`? | — | — | `minLength: 1` `maxLength: 255` | — |
-| `healthCheck` | `string`? | — | — | `minLength: 1` `maxLength: 255` | — |
-| `replicas` | `integer` = `1` | — | — | `minimum: 1` `maximum: 50` | — |
-| `cpuLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
-| `memLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
+| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` | `pattern` `regex` |
+| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` | `pattern` `regex` |
+| `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
+| `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
 | `links` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |

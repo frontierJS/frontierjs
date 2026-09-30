@@ -21,6 +21,8 @@
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { edgeAccounts, edgeHealth } from '../edge/edge.service.ts'
+import { edgeProviders }           from '../../providers/edge/index.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -41,10 +43,12 @@ export interface PortalEntry {
 type ProviderKey = keyof BasecampApp['providers']
 
 const SERVICES: Array<{
-  id:          ProviderKey
+  id:          ProviderKey | 'edge'
   name:        string
   description: string
-  config_key:  string
+  /** Where the adapter's setting is read. Absent for `edge`, which is a
+   *  workspace ACCOUNT rather than configuration (`FJS-D558`). */
+  config_key?: string
   ui_port?:    number
   /** Installed here, or somebody else's account. Absent means self-hosted —
    *  the eight that were here first, where a `ui_port` is a screen an operator
@@ -60,10 +64,10 @@ const SERVICES: Array<{
   { id: 'networking',    name: 'NetBird',    description: 'Private mesh networking',         config_key: 'providers.networking.url',            ui_port: 80   },
   { id: 'integrations',  name: 'Nango',      description: '3rd-party OAuth & integrations',  config_key: 'providers.integrations.nango_url',    ui_port: 3003 },
 
-  // Hosted. No `ui_port` — there is no screen on this machine to open, and the
-  // config key is a token rather than a URL, which is why `url` reads null for
-  // both of these even once they are wired.
-  { id: 'edge',          name: 'Edge & DNS', description: 'Zones, records, TLS at the edge', config_key: 'providers.edge.api_token',         hosted: true },
+  // Hosted. No `ui_port` — there is no screen on this machine to open, and
+  // what wires one is a token rather than a URL, which is why `url` reads null
+  // for both of these even once they are wired.
+  { id: 'edge',          name: 'Edge & DNS', description: 'Zones, records, TLS at the edge', hosted: true },
   { id: 'cloudSpend',    name: 'Cloud spend', description: 'What the provider is billing',   config_key: 'providers.cloud_spend.api_token',  hosted: true },
 ]
 
@@ -105,10 +109,34 @@ function buildEntry(svc: typeof SERVICES[0], adapter: unknown, status: ServiceSt
     name:        svc.name,
     description: svc.description,
     status,
-    url:         getConfigValue(config, svc.config_key) ?? null,
+    url:         svc.config_key ? getConfigValue(config, svc.config_key) ?? null : null,
     adapter:     (adapter as { constructor?: { name?: string } })?.constructor?.name ?? 'unknown',
     configured:  !isStub(adapter),
     hosted:      svc.hosted ?? false,
+    checked_at:  Date.now(),
+  }
+}
+
+/**
+ * The `edge` entry, which is the workspace's edge ACCOUNTS and not an adapter
+ * in `app.providers` (`FJS-D558`). Configured means this workspace holds one;
+ * `adapter` names the vendors, so the portal reports what is really behind it.
+ * `ping` asks each account's vendor, the way `pingAdapter` asks an appliance.
+ */
+async function edgeEntry(app: BasecampApp, svc: typeof SERVICES[0], ping: boolean): Promise<PortalEntry> {
+  const accounts = await edgeAccounts()
+  const labels   = new Map(edgeProviders().map(p => [p.kind, p.label]))
+  const status: ServiceStatus = accounts.length === 0 ? 'unconfigured'
+    : ping ? await edgeHealth(app, accounts) : 'healthy'
+  return {
+    id:          svc.id,
+    name:        svc.name,
+    description: svc.description,
+    status,
+    url:         null,
+    adapter:     [...new Set(accounts.map(a => labels.get(a.providerKind) ?? a.providerKind))].join(', ') || 'none',
+    configured:  accounts.length > 0,
+    hosted:      true,
     checked_at:  Date.now(),
   }
 }
@@ -135,10 +163,11 @@ export function createPortalService(app: BasecampApp) {
     ],
 
     async find(_ctx: ServiceContext) {
-      const entries = SERVICES.map(svc => {
+      const entries = await Promise.all(SERVICES.map(svc => {
+        if (svc.id === 'edge') return edgeEntry(app, svc, false)
         const adapter = app.providers[svc.id]
         return buildEntry(svc, adapter, isStub(adapter) ? 'unconfigured' : 'healthy', app.config)
-      })
+      }))
       return { total: entries.length, limit: entries.length, offset: 0, data: entries }
     },
 
@@ -162,8 +191,9 @@ export function createPortalService(app: BasecampApp) {
 
       const svc = SERVICES.find(s => s.id === $.id)
       if (!svc) throw new NotFound(`Portal service '${$.id}' not found`)
+      if (svc.id === 'edge') return edgeEntry(app, svc, true)
 
-      const adapter = app.providers[svc.id as ProviderKey]
+      const adapter = app.providers[svc.id]
       return buildEntry(svc, adapter, await pingAdapter(adapter), app.config)
     },
 
@@ -176,8 +206,13 @@ export function createPortalService(app: BasecampApp) {
           `portal ping needs an appliance id and was given ${JSON.stringify(id)}.`)
       const svc = SERVICES.find(s => s.id === id)
       if (!svc) throw new NotFound(`Portal service '${id}' not found`)
+      if (svc.id === 'edge') {
+        const entry = await edgeEntry(app, svc, true)
+        app.logger.info(`Portal ping: ${svc.name}`, { status: entry.status })
+        return entry
+      }
 
-      const adapter = app.providers[svc.id as ProviderKey]
+      const adapter = app.providers[svc.id]
       const status  = await pingAdapter(adapter)
       app.logger.info(`Portal ping: ${svc.name}`, { status })
       return buildEntry(svc, adapter, status, app.config)

@@ -155,7 +155,7 @@ None of these exists in `db/schema.lite`.
 | `RegistryView` | 112 | **Model built 2026-08-25** — `RegistryImage`, one row per TAG, OBSERVED like `Volume`. That commits to MIRRORING a registry rather than querying it live, which is what makes `inUse` answerable at all: it is a join against this workspace's deployments and a registry API knows nothing about who deployed what. `observedAt` is what keeps the staleness visible. No `RegistryRepo` — a repository is `distinct(repository)` plus a `SUM`, and a stored total is a second answer. Needs a service and a sync |
 | `VolumesView` | 120 | **Built** — `/volumes/`, over `Volume`. The first OBSERVED model here: no `create`, a row appears because an outpost reported it, and deleting one asks that outpost to delete the disk before the record is forgotten. See § Phase 7 |
 | `DiskCleanupView` | 431 | **Built** — `/cleanup/`, over `DiskUsage` (observed, one row per server) + `CleanupRun` (what a sweep actually freed). A sweep names targets from a list the service owns and never carries a command. See § Phase 9 |
-| `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | **Models built 2026-08-25** — `Blueprint` + `BlueprintParam`. Hub-curated, so `@@tenant(none)` and no workspace column: every entry in the mock is third-party software, and a per-workspace copy of the same nine rows is not a marketplace. Params are a CHILD model, not a Json array, because the deploy form is generated from them and they are ordered. Needs a service and the two screens |
+| `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | **Models built 2026-08-25** — `Blueprint` + `BlueprintParam`. Hub-curated, so `@@tenant(none)` and no workspace column: every entry in the mock is third-party software, and a per-workspace copy of the same nine rows is not a marketplace. Params are a CHILD model, not a Json array, because the deploy form is generated from them and they are ordered. **Built** — `/blueprints/`, with the deploy modal as its drawer over `apps.fromBlueprint` |
 | `RecipesView` | 191 | **Built** — `/recipes/`, over `Recipe` + `RecipeRun`. Arbitrary code on a machine, so authoring is admin and every run keeps the script it ran, one row per server. See § Phase 9 |
 | `HubBackupView` | 179 | **Model built 2026-08-25** — `Backup`, `@@tenant(none)`, reusing `RunStatus` rather than restating five words. Outcome columns are SYSTEM-write, like every other *Run here. The schedule lives on `HubConfig`, not here: a cron describes the schedule and a `Backup` row is one thing that already happened. Needs a service, a job and the screen |
 | `HubSettingsView` | 115 | **Model built 2026-08-25** — `HubConfig`, ONE row keyed by a constant, typed columns rather than key/value (a key/value table is a schema this seed does not describe). The mock's four CREDENTIALS are deliberately absent: they are read at boot before any database, rotating one is a deploy, and `Secret` already models credential material. Needs a service and the screen |
@@ -174,7 +174,7 @@ because whichever provider gains an adapter first is the one that fills them.
 
 | View | Lines | Adapter | Screen |
 | --- | --- | --- | --- |
-| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode | **Built** — `/dns/`. The real half is this app's own `Domain` rows: hostname, primary, certificate status, proxied. The zone's records and its analytics are the skeleton |
+| `CloudflareView` | 220 | Cloudflare zones, DNS, SSL mode | **Built** — `/dns/`. The real half is this app's own `Domain` rows: hostname, primary, certificate status, proxied. The zone's records come from the workspace's edge account through `edge`, with the hostnames that have no record; analytics is the skeleton |
 | `DigitalOceanView` | 258 | DO droplets, volumes, floating IPs, **spend** | **Built** — `/cloud-spend/`. The real half is the inventory a bill is computed from — machines by provider and region, planned vCPU and RAM, attached disk. There is no DigitalOcean in `providers/index.ts` and no price column anywhere, so the money is the skeleton |
 | `GitActivityView` | 304 | Git host — repos, CI status | **Built** — `/git-activity/`, reporting the adapter's own state off `/portal/`. `IGit.listRepos()` answers a name and a clone URL, so even a wired adapter could not fill the table — widening the interface is the work |
 | `ObservabilityView` | 24 | A metrics source. The mock reads `LOGS`; nothing here stores or streams metrics | **Built** — `/observability/`, the same portal read. `IObservability` declares `queryLogs` and `queryMetrics` and no service exposes either, deliberately: a read here needs a window, a service and a level, which is a service to design rather than a pass-through to ship |
@@ -461,9 +461,9 @@ imports `certStatusOf` from the domains service rather than computing it again.
 log-analysis need an observability adapter; build output and history need a
 build record (`Deployment` carries `builtImage` and no log, so a "build
 history" tab would be the releases table under another name); advanced —
-restart policy, health check, the nginx template — would be `App.config` keys,
-and inventing the key names in a screen would make that screen their only
-definition.
+the health check is an `App` column now and on the Config tab (`FJS-1605`);
+restart policy and the nginx template are not, and inventing them in a screen
+would make that screen their only definition.
 
 ## Phase 5 — where an alert goes, and what is behind a flag ✅ done 2026-08-08
 
@@ -1073,7 +1073,8 @@ a model nobody has opened a screen onto is two guesses stacked.
 
 `Blueprint` also has no relation to `App`. The mock's deploy modal builds an App
 out of a blueprint and forgets which one it came from; a `blueprintId` on `App`
-is the honest version and is a schema change nobody has asked for yet.
+is the honest version. It was added with the deploy path — see § The arguments
+each screen carries.
 
 ---
 
@@ -1220,11 +1221,11 @@ asks `querySelector` for an overlay.
 
 ### The arguments each screen carries
 
-**Deploying from a blueprint is not wired, and the screen says so.** The mock's
-Deploy button builds an App and forgets which blueprint it came from. Doing it
-properly needs a `blueprintId` on `App` and a path that turns the params into an
-app's environment; neither is invented. What the detail pane shows instead is
-the whole of what such a step would send.
+**Deploying from a blueprint records where the app came from.** The mock's
+Deploy button builds an App and forgets which blueprint it came from. Here
+`apps.fromBlueprint` writes `App.blueprintId`. Every param becomes a `Variable`
+on the app; a secret one keeps its value in an `@encrypted` column, so the typed
+value is in no read and no release snapshot, and it goes when the app does.
 
 **The registry screen marks aliased tags rather than hiding them.** `latest` and
 the newest version tag share a digest, and the repository total charges it once
@@ -1276,7 +1277,7 @@ that is missing and a screen whose subject is missing.
 | --- | --- | --- |
 | `/infra-graph/` | `InfraGraphView` | `infra.graph` — servers, apps, networks, domains and the three join tables |
 | `/onboarding/` | `OnboardingView` | `infra.onboarding` — six counts |
-| `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` · skeleton for the zone |
+| `/dns/` | `CloudflareView` | `domains` + `apps` + `portal.get('edge')` + `edge.zones` / `edge.records` · skeleton for analytics |
 | `/cloud-spend/` | `DigitalOceanView` | `servers` + `volumes.usage` + `portal.get('cloudSpend')` · skeleton for the money |
 | `/git-activity/` | `GitActivityView` | `portal.get('git')` · skeleton for the repositories |
 | `/observability/` | `ObservabilityView` | `portal.get('observability')` · skeleton for metrics and logs |

@@ -22,7 +22,8 @@
 import { secretRef }                 from '../../core/credentials.ts'
 import { env }                       from '../../core/env.ts'
 import { connectorFor, targetFor }   from './index.ts'
-import type { ComputeSend }          from './index.ts'
+import { edgeConnectorFor }          from '../edge/index.ts'
+import type { AccountSend, ComputeConnector } from './index.ts'
 import type { BasecampApp }          from '../../basecamp.types.ts'
 import type { ProviderKind }         from '../../../../db/schema.d.ts'
 
@@ -42,6 +43,24 @@ export function tokenRef(secretId: string): string {
 }
 
 type SecretRow = { id: string; providerKind?: ProviderKind | null; kind?: string | null }
+
+/** What every account's connector has, whichever realm of the vendor it opens:
+ *  a name, a descriptor to register and a cheapest read to verify with. A
+ *  compute connector and an edge connector are both one. */
+export type AccountConnector = Pick<ComputeConnector, 'kind' | 'label' | 'descriptor' | 'verify'>
+
+/**
+ * The connector an ACCOUNT registers through, or null where this app speaks to
+ * nothing at that vendor. The one lookup `secrets` and this file ask, so a
+ * vendor with a connector in either realm is a key a workspace may hold.
+ *
+ * A vendor with connectors in both realms would register once, as compute.
+ * None has both yet; the day one does, its account needs one descriptor that
+ * serves both, which is a question for that day.
+ */
+export function accountConnectorFor(kind: ProviderKind | null | undefined): AccountConnector | null {
+  return connectorFor(kind) ?? edgeConnectorFor(kind)
+}
 
 /**
  * Register one account as a Conduit target. A no-op — reported, not thrown —
@@ -63,7 +82,7 @@ export async function registerAccount(
   if (!app.conduit) return null
   if (secret.kind && secret.kind !== 'provider_key') return null
 
-  const connector = connectorFor(secret.providerKind)
+  const connector = accountConnectorFor(secret.providerKind)
   if (!connector) return null
 
   const target = targetFor(connector.kind, secret.id)
@@ -77,7 +96,7 @@ export async function registerAccount(
  *  key stops being a registered address rather than an address that fails. */
 export async function unregisterAccount(app: BasecampApp, secret: SecretRow): Promise<void> {
   if (!app.conduit) return
-  const connector = connectorFor(secret.providerKind)
+  const connector = accountConnectorFor(secret.providerKind)
   if (!connector) return
   await app.conduit.deregister(targetFor(connector.kind, secret.id))
 }
@@ -106,7 +125,7 @@ export async function registerAllAccounts(app: BasecampApp, db: any): Promise<nu
       // One unregistrable account must not stop the others, and must not be
       // silent either — a fleet whose provider target is missing answers
       // `target_not_found` on a screen with no explanation otherwise.
-      app.logger.warn('compute: account not registered', {
+      app.logger.warn('accounts: account not registered', {
         secret_id: row.id, provider: row.providerKind, error: String(err),
       })
     }
@@ -144,7 +163,8 @@ function isStandIn(address: string | undefined): boolean {
  * May this process spend money at a real cloud?
  *
  * A GET costs nothing but rate limit. A POST or a DELETE at a vendor creates or
- * destroys a machine somebody pays for, and the way that goes wrong is not a bug
+ * destroys a machine somebody pays for, or rewrites a live DNS record that a
+ * customer's site and mail resolve through, and the way that goes wrong is not a bug
  * in a connector — it is a test, a script or a `bun run dev` that meant to be
  * pointed at a stand-in and was not. P1 measured exactly that: three tests sent
  * their reads to the real DigitalOcean because an environment variable did not
@@ -167,7 +187,15 @@ function maySpend(): boolean {
 /** The methods that can cost money. A GET is not one of them. */
 const SPENDING = new Set(['POST', 'DELETE', 'PUT', 'PATCH'])
 
-export function sendVia(app: BasecampApp, target: string): ComputeSend {
+/** A refusal's body, parsed where it is JSON. Conduit keeps it as `raw` text
+ *  beside `client_error`, and it is the only place a vendor says WHICH rule the
+ *  request broke — without it a refused write reaches the screen as `HTTP 400`. */
+function vendorSaid(raw: unknown): unknown {
+  if (typeof raw !== 'string' || raw === '') return null
+  try { return JSON.parse(raw) } catch { return raw }
+}
+
+export function sendVia(app: BasecampApp, target: string): AccountSend {
   return async (req) => {
     if (!app.conduit) throw new Error('compute: app.conduit is not configured')
 
@@ -181,7 +209,8 @@ export function sendVia(app: BasecampApp, target: string): ComputeSend {
       if (!isStandIn(descriptor?.address)) {
         throw new Error(
           `compute: refusing to ${req.method} ${req.path} at ${descriptor?.address ?? 'an unknown address'} — `
-          + 'this creates or destroys machines somebody pays for, and this process has not said it means to. '
+          + 'this changes something real at the vendor — a machine somebody pays for, or live DNS — '
+          + 'and this process has not said it means to. '
           + 'Point the account at a stand-in on localhost, set ALLOW_CLOUD_SPEND=1, or run with NODE_ENV=production.',
         )
       }
@@ -194,7 +223,7 @@ export function sendVia(app: BasecampApp, target: string): ComputeSend {
       ...(req.body === undefined ? {} : { body: req.body }),
     })
     return {
-      data:   res.data as unknown,
+      data:   res.error ? vendorSaid((res.error as { raw?: unknown }).raw) : res.data as unknown,
       status: res.meta?.status,
       error:  res.error as { kind: string; message?: string } | undefined,
     }

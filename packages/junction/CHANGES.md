@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-30 — a signed request becomes a principal in the transport (`FJS-371`)
+
+`createApp({ credentials: [signedRequest({ keyFor, window, seenNonce })] })`, per `FJS-D475`. `credentials` is an ordered list of `CredentialVerifier`s, `(req) => SessionContext | null | REFUSE`, which the HTTP transport asks before the bearer path. `null` means *not mine* and the next one is asked. `REFUSE`, or a throw, answers 401 at once, so a forged signature cannot fall through to anonymous. `signedRequest` verifies `@frontierjs/toolbelt/signature` over the received bytes. A request carrying no signature header goes on to the bearer path unchanged. `keyFor` names the secret and the principal, and a caller it does not know is refused. `test/credentials.test.ts` covers it. Still open: the WS upgrade does not consult the list, and `verifyApiKey` is not in it yet.
+
 ## 2026-09-30 — the outbound-URL guard is `@frontierjs/junction/public-url` (`FJS-1579`, `FJS-1578`)
 
 `webhooks/url.ts` moved to `src/core/public-url.ts` and is exported: `assertPublicUrl(raw, policy)` and `PublicUrlError`, with `PublicUrlPolicy` as the policy type. `assertDeliverableTarget`, `WebhookTargetError` and webhooks' `TargetPolicy` are gone; webhooks imports the new names, and `webhooks({ targets })` takes the same three fields. Portal had written its own guard because this one was private, and its copy fetched loopback spelled `[::ffff:127.0.0.1]`.

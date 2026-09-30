@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-59 model(s) · 39 enum(s) · 2 database(s)
+60 model(s) · 39 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -29,7 +29,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
 | `BackupDestination` | `local` · `s3` |
 | `BackupKind` | `manual` · `scheduled` |
-| `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` |
+| `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Server.create` · `Server.delete` · `Server.destroy` · `Server.drain` · `Server.provision` · `Server.reboot` · `Server.undrain` · `Server.update` · `Variable.create` · `Variable.delete` · `Variable.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `ComparisonOp` | `gt` · `gte` · `lt` · `lte` |
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
@@ -45,7 +45,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NotificationContext` | `AlertEvent` · `Deployment` · `JobRun` · `Server` · `Workspace` |
 | `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `server_unreachable` · `weekly_digest` |
 | `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
-| `ProviderKind` | `custom` · `digitalocean` · `hetzner` |
+| `ProviderKind` | `cloudflare` · `custom` · `digitalocean` · `hetzner` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerEventKind` | `came_online` · `cleanup_failed` · `cleanup_queued` · `cleanup_ran` · `created` · `destroy_finished` · `destroy_requested` · `drain_cancelled` · `drain_started` · `enrollment_issued` · `provision_created` · `provision_ready` · `provision_requested` · `provision_timeout` · `reboot_requested` · `recipe_failed` · `recipe_ran` · `removed` · `status_sync_ignored` · `status_synced` · `sync_failed` · `sync_no_account` · `sync_requested` · `sync_unrecognized` · `sync_unsupported` · `unreachable` · `volume_removed` · `volumes_pruned` |
@@ -217,16 +217,19 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `appServers` | `AppServer[]` | — | — | relation |
 | `blueprint` | `Blueprint` | — | — | relation |
 | `blueprintId` | `String` | yes | — | @system |
-| `config` | `Json` | no | `'{}'` | — |
+| `containerPort` | `Int` | yes | — | — |
+| `cpuLimit` | `Float` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
 | `domains` | `Domain[]` | — | — | relation |
 | `environment` | `Environment` | — | — | relation |
 | `environmentId` | `String` | no | — | **required on write** |
+| `healthCheck` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isPublic` | `Boolean` | no | `0` | — |
 | `jobs` | `Job[]` | — | — | relation |
+| `memLimitMb` | `Int` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `port` | `Int` | yes | — | — |
 | `slug` | `String` | no | — | **required on write** |
@@ -234,6 +237,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `status` | `AppStatus` | no | `'unknown'` | @system |
 | `type` | `AppType` | no | `'container'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `variables` | `Variable[]` | — | — | relation |
+| `volumePath` | `String` | yes | — | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
@@ -373,7 +378,7 @@ table `blueprint` · db `main` · gate `1.7`
 | `appType` | `AppType` | no | `'container'` | — |
 | `brandColor` | `String` | yes | — | — |
 | `category` | `String` | no | — | **required on write** |
-| `cpuLimit` | `String` | yes | — | — |
+| `cpuLimit` | `Float` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deprecatedAt` | `DateTime` | yes | — | — |
 | `description` | `String` | no | — | **required on write** |
@@ -382,13 +387,11 @@ table `blueprint` · db `main` · gate `1.7`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `image` | `String` | no | — | **required on write** |
 | `links` | `Json` | no | `'[]'` | — |
-| `memLimit` | `String` | yes | — | — |
+| `memLimitMb` | `Int` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `notes` | `String` | yes | — | — |
 | `params` | `BlueprintParam[]` | — | — | relation |
-| `persistent` | `Boolean` | no | `0` | — |
 | `port` | `Int` | yes | — | — |
-| `replicas` | `Int` | no | `1` | — |
 | `revision` | `Int` | no | `1` | — |
 | `slug` | `String` | no | — | unique · **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -709,7 +712,7 @@ table `environment` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `slug` | `String` | no | — | **required on write** |
 | `tier` | `EnvironmentTier` | no | `'development'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `variables` | `Json` | no | `'[]'` | — |
+| `variables` | `Variable[]` | — | — | relation |
 | `version` | `Int` | no | `1` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -1510,6 +1513,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 | `labels` | `Json` | no | `'{}'` | — |
 | `lastHeartbeatAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
+| `outpostCert` | `String` | yes | — | — |
 | `outpostSecretId` | `String` | yes | — | — |
 | `outpostVersion` | `String` | yes | — | — |
 | `plan` | `Json` | no | `'{}'` | — |
@@ -1535,6 +1539,7 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@index(lastHeartbeatAt)
 @@index(status)
 @@index(workspaceId)
+@@check(providerKind != 'cloudflare')
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
@@ -1662,6 +1667,39 @@ table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 @@index(email)
 @@allow('read', id == auth().id || auth().level >= 4)
 @@allow('update', id == auth().id)
+```
+
+### `Variable`
+
+table `variable` · db `main` · gate `2.4.4.4` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `environment` | `Environment` | — | — | relation |
+| `environmentId` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `key` | `String` | no | — | **required on write** |
+| `secret` | `Boolean` | no | `0` | — |
+| `secretValue` | `String` | yes | — | @encrypted |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `value` | `String` | yes | — | — |
+| `version` | `Int` | no | `1` | — |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(appId, key)
+@@unique(environmentId, key), where: "appId" IS NULL
+@@index(environmentId)
+@@check(secret = 0 OR value IS NULL)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Verification`

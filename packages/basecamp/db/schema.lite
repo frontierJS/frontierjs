@@ -91,10 +91,10 @@
 ///
 /// CONCURRENCY — @version is on the rows a PERSON owns, and only those.
 ///
-/// Twelve models declare it: Workspace, Project, Environment, Secret, Network,
-/// Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard, Blueprint
-/// (as `revision`, since `version` there is the upstream software's) and
-/// HubConfig. Every one is a row a form edits. Two people on one both PATCH and the second silently
+/// Thirteen models declare it: Workspace, Project, Environment, Variable, Secret,
+/// Network, Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard,
+/// Blueprint (as `revision`, since `version` there is the upstream software's)
+/// and HubConfig. Every one is a row a form edits. Two people on one both PATCH and the second silently
 /// erases the first; with the column, the second gets a 409 it can retry off a
 /// fresh read.
 ///
@@ -241,7 +241,7 @@ enum ServerEventKind {
   // Disks.
   volume_removed volumes_pruned
 }
-enum ProviderKind   { custom hetzner digitalocean }
+enum ProviderKind   { custom hetzner digitalocean cloudflare }
 enum EnvironmentTier { development test preview staging production }
 enum AppType        { container worker database daemon cron static function }
 enum AppStatus      { unknown stopped starting running stopping deploying error }
@@ -1012,6 +1012,14 @@ model Server {
   /// does: provisioned or imported, it is created first and enrolls after.
   outpostSecretId  String?
 
+  /// The certificate this machine's command port answers with, PEM, handed
+  /// over in the enrollment exchange and pinned on its Conduit target — the
+  /// one certificate a command to it will accept (`FJS-1603`). Public by
+  /// nature, so no protection. Null means no command can reach the machine:
+  /// no target is registered without it, and the only way to change it is to
+  /// enroll again.
+  outpostCert      String?
+
   plan             Json         @default("{}")
   actualSpecs      Json?
   health           Json?
@@ -1134,6 +1142,10 @@ model Server {
     reportStopped:    [pending, provisioning, installing, online, unreachable, draining]         -> stopped      @system @gate(5),
     reportRebuilding: [pending, installing, online, unreachable, draining, stopped]              -> provisioning @system @gate(5),
     reportDestroyed:  [destroying]                                                               -> destroyed    @system @gate(5))
+  // `ProviderKind` is also what an ACCOUNT opens, and some of those vendors sell
+  // no machines. A vendor that joins the enum without making servers joins this
+  // list too, or a Server can claim to run somewhere nothing runs (FJS-D559).
+  @@check("providerKind != 'cloudflare'", "Cloudflare sells no machines")
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1327,10 +1339,6 @@ model Environment {
   slug        String          @trim @length(1, 64) @immutable
   tier        EnvironmentTier @default(development)
   isProtected Boolean         @default(false)
-  /// The environment's variables — a separate grant from editing the
-  /// environment itself. Renaming a staging environment and reading its
-  /// secrets are the same `update` to the gate and are not the same act.
-  variables   Json            @default([]) @capability
 
   version     Int             @version
   createdAt   DateTime        @default(now())
@@ -1341,13 +1349,9 @@ model Environment {
   deployments Deployment[]
   jobs        Job[]
   flagOverrides FlagOverride[]
+  variables   Variable[]
 
   @@gate("2.4.4.5")
-
-  // `setVariable` is one write to `Environment` and the gate has one word for
-  // it, so granting somebody the ability to set a variable granted every other
-  // edit to the environment with it. `@capability` on the column is the finer
-  // place to bind the rule, which is what the column tier is for (`FJS-D147`).
   @@capabilities
 
   // Environment carries its own workspaceId rather than reaching through
@@ -1381,13 +1385,33 @@ model App {
   status        AppStatus   @default(unknown) @system
 
   source        Json        @default("{}")
-  config        Json        @default("{}")
-  port          Int?
   isPublic      Boolean     @default(false)
+
+  // How the machine starts the container: each column is a `docker run` flag,
+  // built into the release by `core/runtime.ts`, the one reader. Columns and not
+  // a `Json` config (`FJS-D227`): the blob they replaced was read by the machine
+  // to decide `-p` and `-v`, while `port` sat beside it unread and a blueprint's
+  // limits were copied into it and applied by nothing (`FJS-1605`).
+  //
+  // `port` is published on the machine; `containerPort` is what the image
+  // listens on, and null means the same number.
+  port          Int?        @gte(1) @lte(65535)
+  containerPort Int?        @gte(1) @lte(65535)
+  // A named volume that outlives every container, mounted here. Refused at the
+  // write and not only on the machine, which checks after the old container is
+  // already gone.
+  volumePath    String?     @trim @regex("^/[^:,]*$", "an absolute path with no ':' or ','")
+  // A path asked of the published port once the container runs; null means
+  // running is healthy. Needing a `port` is `apps.service.ts`'s `checkRuntime`,
+  // not a `@@check`: the generic verifier fills this column and leaves an
+  // optional Int null, so it could build no App row at all.
+  healthCheck   String?     @trim @regex("^/[^ ]*$", "a path beginning with '/'")
+  cpuLimit      Float?      @gt(0) @lte(256)
+  memLimitMb    Int?        @gte(6)
 
   // The catalog entry this app was made from, or null for one a person
   // described by hand. A record of origin and never a live link: what the
-  // blueprint said was COPIED into `type`, `source` and `config` when the app
+  // blueprint said was COPIED into `type`, `source` and the columns above when the app
   // was made (`apps.fromBlueprint`, the only writer), so a later edit to the
   // catalog changes no running app. SetNull because the catalog withdraws
   // rather than deletes; a hard delete by the hub loses the pointer, not the app.
@@ -1403,6 +1427,7 @@ model App {
   appServers    AppServer[]
   appNetworks   AppNetwork[]
   domains       Domain[]
+  variables     Variable[]
 
   @@gate("2.4.4.5")
   // The deploy job writes App.status through asSystem(), which is how it
@@ -1413,6 +1438,59 @@ model App {
   @@index([workspaceId])
   @@index([environmentId])
   @@index([status])
+}
+
+// An environment variable a container is started with — set on an
+// Environment for every app in it, or on one App (`appId`), which wins over the
+// environment's of the same key.
+//
+// A row rather than `Json` (`FJS-D227`): the deploy reads INTO it to decide what
+// a container gets. It was two blobs, `Environment.variables` and
+// `App.config.env`, and only the second ever reached a machine.
+//
+// **A secret value is `@encrypted` on the row itself**, not a `Secret` the row
+// points at: the variable is the only thing that holds it, so deleting an app
+// cascades to its variables and a restore brings them back, where a `Secret`
+// outlived its app in `/secrets/` (`FJS-1599`).
+model Variable {
+  id            String       @id @default(uuid())
+  workspaceId   String
+  // Set on every row, the app's own environment for an app's variable, so
+  // "what does this environment's container get" is one read.
+  environmentId String       @immutable
+  environment   Environment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  // Null is environment-wide.
+  appId         String?      @immutable
+  app           App?         @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  // Reaches `docker run -e KEY=value`, where an `=` or a space in a key is a
+  // different variable than the one somebody typed.
+  key           String       @trim @immutable
+                             @regex("^[A-Za-z_][A-Za-z0-9_]{0,99}$", "a variable name is up to 100 letters, digits and underscores, not starting with a digit")
+  // Whether the value is a credential. Frozen: a plain value made secret has
+  // already been in every read, so masking it later hides nothing.
+  secret        Boolean      @default(false) @immutable
+  value         String?      @length(0, 10000)
+  // Absent from every read but a system one; the release reads it when it
+  // sends `/deploy`, and nothing else does.
+  secretValue   String?      @encrypted
+
+  version       Int          @version
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+  deletedAt     DateTime?
+
+  @@check("secret = 0 OR value IS NULL", "a secret variable keeps its value encrypted")
+
+  // Reading them is reading the environment; writing one is its own grant, as
+  // setting production's DATABASE_URL and renaming production are not one act.
+  @@gate("2.4.4.4")
+  @@capabilities
+  @@softDelete
+  @@log(audit)
+  @@unique([environmentId, key], where: appId == null)
+  @@unique([appId, key], nullsDistinct: true)
+  @@index([environmentId])
 }
 
 // A hostname the App answers on, and the certificate that terminates it.
@@ -2290,16 +2368,15 @@ model Blueprint {
   icon           String?    @trim @length(1, 8)
   brandColor     String?    @trim @length(4, 9)
 
-  // The App this blueprint becomes. Column for column what `App` and its
-  // deployment config already hold.
+  // The App this blueprint becomes: each is `App`'s column of the same name and
+  // rule, so `apps.fromBlueprint` is a copy. No replica count — an app's
+  // replicas are its placements, and a number here would be applied by nothing.
   appType        AppType    @default(container)
   port           Int?       @gte(1) @lte(65535)
-  persistent     Boolean    @default(false)
-  volumePath     String?    @trim @length(1, 255)
-  healthCheck    String?    @trim @length(1, 255)
-  replicas       Int        @default(1) @gte(1) @lte(50)
-  cpuLimit       String?    @trim @length(1, 16)
-  memLimit       String?    @trim @length(1, 16)
+  volumePath     String?    @trim @regex("^/[^:,]*$", "an absolute path with no ':' or ','")
+  healthCheck    String?    @trim @regex("^/[^ ]*$", "a path beginning with '/'")
+  cpuLimit       Float?     @gt(0) @lte(256)
+  memLimitMb     Int?       @gte(6)
 
   // Operator-facing prose shown once, on the deploy modal.
   notes          String?    @length(0, 1000)

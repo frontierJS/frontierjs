@@ -1,6 +1,25 @@
 # Changes — @frontierjs/conduit
 
 
+## 2026-09-30 — the trace reaches only a target that declares `trace: true` (`FJS-1413`, `FJS-D507`)
+
+The junction plugin's default trace handed every target the inbound correlation id, as
+`X-Request-Id` and as `traceparent`'s trace id. Junction writes that id on every audit row of
+the request, so a provider holding a user's query held the join to who typed it. A target now
+gets the trace only when its descriptor states `trace: true`, meaning one of our own services;
+absent fails closed. `trace` is in `EXTRA_KEYS`, so it survives the SQLite registry.
+
+## 2026-09-30 — `pinned_cert`: one certificate, and nothing else (`FJS-1603`, `FJS-D557`)
+
+A target can name the only certificate it may present, as PEM. The transport sends
+`tls: { ca: <pem> }`, which in Bun replaces the public roots, plus a `checkServerIdentity`
+comparing `fingerprint256` in place of the hostname check. That lets a machine reached by
+bare IP, holding a certificate that names no address, be reached at all. A fingerprint
+callback on its own would not have worked: Bun never calls it under
+`rejectUnauthorized: false`, so that spelling accepts every certificate. `put()` refuses a
+pin on a non-`http` protocol, on an address that is not `https`, or when the value does not
+parse as a certificate. It is in `EXTRA_KEYS`, so it survives the SQLite registry.
+
 ## 2026-09-25 — `management: { gate }` (`FJS-D408`)
 
 The management service is over no model, so a hook was the only way to grade it, and a

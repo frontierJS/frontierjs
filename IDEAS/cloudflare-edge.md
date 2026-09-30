@@ -1,12 +1,16 @@
 ---
 id: cloudflare-edge
-status: proposed
+status: partial
 dated: 2026-09-29
 ---
 
 # Idea — Cloudflare as basecamp's first edge adapter, with DNS writes
 
-**Status: PROPOSAL. Nothing here is built.** Dated 2026-09-29. Basecamp declares
+**Status: PROPOSAL, Phases 1–4 and 6 built for reads, and the connector's
+writes** (2026-09-30: a Cloudflare token is an account, the `edge` service reads
+zones and records, `/dns/` shows them beside the `Domain` rows, and the connector
+writes marked records and refuses unmarked ones; D1–D6 are ruled). Nothing calls
+a write yet — `sync`, `adopt` and the job are Phases 4–5. Dated 2026-09-29. Basecamp declares
 `IEdge` with a stub behind it and `/dns/` renders a skeleton where the zone goes
 (`packages/basecamp/docs/ADAPTERS.md` § `edge`). This fills it with Cloudflare, and
 widens it from reading a zone to managing one — DNS is among the first connections
@@ -38,7 +42,7 @@ versus one token per client writing SendGrid's records.
 
 ## Owed before building
 
-- **D1 — where the token lives.** **Recommend a workspace account** (`Secret`,
+- **D1 — where the token lives.** **Ruled `FJS-D558`: a workspace account** (`Secret`,
   `provider_key`). `edge` then leaves the global `BasecampProviders` container, and
   the portal's `edge` entry reports accounts instead of `providers.edge.api_token`.
   Every tool in § Prior art holds one install-wide token, so per-workspace goes
@@ -47,15 +51,15 @@ versus one token per client writing SendGrid's records.
   their seat. A client's own zone can be written without holding their token at
   all through Domain Connect, which Cloudflare supports once a template is
   onboarded with them — the maid.tech case, later.
-- **D2 — `ProviderKind`.** `{ custom hetzner digitalocean }` types both
+- **D2 — `ProviderKind`.** **Ruled `FJS-D559`, as recommended below.** `{ custom hetzner digitalocean }` types both
   `Server.providerKind` and `Secret.providerKind`, so adding `cloudflare` widens
   `Server`'s CHECK to a value no machine can have. **Recommend adding it with a
   `@@check("providerKind != 'cloudflare'")` on `Server`**, so the refusal sits at
   the Data boundary with the enum rather than in a service. Its cost: the next
   edge vendor has to join that check, and a forgotten one is silent. The
   alternative is a compute-only enum for `Server`, which restates three values.
-- **D3 — who owns a record.** **Recommend: `Domain` rows are intent, basecamp
-  pushes.** Every record basecamp writes carries a mark in Cloudflare's per-record
+- **D3 — who owns a record.** **Ruled `FJS-D560`, as recommended, with refuse
+  for the owed case.** `Domain` rows are intent, basecamp pushes. Every record basecamp writes carries a mark in Cloudflare's per-record
   `comment` (`basecamp:domain:<id>`), the way compute marks a machine it made.
   Basecamp updates and deletes marked records only; an unmarked one (MX, a
   SendGrid CNAME) is reported as drift and left as found.
@@ -72,7 +76,9 @@ versus one token per client writing SendGrid's records.
     adopts it; external-dns and Cloudflare Tunnel both refuse. **Recommend
     refuse** — report it as a conflict in drift, and give admins an explicit
     `adopt(domainId)` that writes the mark.
-- **D4 — what a record points at.** A `Domain` belongs to an App whose replicas land
+- **D4 — what a record points at.** **Ruled `FJS-D561`: a CNAME to a per-APP
+  ingress record** (not per server or group; the ruling says why), in an ingress
+  zone the `Workspace` names. A `Domain` belongs to an App whose replicas land
   on servers through `AppServer`: an A record per placement IP, or a CNAME to a fleet
   ingress. **Recommend the CNAME, over an ingress record basecamp also owns.** It is
   the consensus: external-dns publishes an ingress or load-balancer address and
@@ -83,17 +89,23 @@ versus one token per client writing SendGrid's records.
   server or group holding the placement IPs, and each `Domain` a CNAME to it.
   Cloudflare flattens a CNAME at the apex, so an apex `Domain` needs nothing
   extra. A Cloudflare Tunnel (CNAME to `<uuid>.cfargotunnel.com`, the Coolify and
-  Dokploy path) is the variant for a server with no public IP.
-- **D5 — widening `IEdge` with writes** runs `decision-rules`. The shape to start
+  Dokploy path) is the variant for a server with no public IP. The ingress
+  itself — Caddy on each machine, and where its certificates come from — is
+  `IDEAS/fleet-ingress.md`.
+- **D5 — widening `EdgeConnector` with writes.** **Ruled `FJS-D562`, as below**;
+  the connector refuses to change an unmarked record. The shape to start
   from is libdns's, the interface Caddy's DNS providers share:
   `getRecords` · `appendRecords` · `setRecords` · `deleteRecords`, where
   `setRecords` makes each given (name, type) set match its input and touches no
   other record. That replaces a per-record `upsertRecord`, and fixes the legacy
   first-by-type-and-name match at the interface rather than in the connector.
-- **D6 — `proxied` for a record basecamp creates.** external-dns defaults it off,
-  with a global flag and a per-record override. On moves TLS to Cloudflare's edge,
-  which changes what `certStatusOf()` in `domains.service.ts` is measuring.
-  Unargued.
+- **D6 — `proxied` for a record basecamp creates.** **Ruled `FJS-D563`, as
+  recommended.** The per-record value already
+  exists — `Domain.proxied`, default `false`, the external-dns default — so
+  **recommend pushing it as stated, with no global flag.** On moves public TLS
+  to Cloudflare's edge while `full_strict` still needs a valid origin cert, which
+  is what `certStatusOf()` keeps measuring; `IDEAS/fleet-ingress.md` D4 is what a
+  flip does to that cert.
 
 ## Phases
 
@@ -102,6 +114,17 @@ versus one token per client writing SendGrid's records.
    target string is built). HTTP target at `api.cloudflare.com/client/v4`, bearer
    ref, its own policy. Methods: `verifyToken`, `listZones`, `listRecords`,
    `upsertRecord`, `deleteRecord`.
+   - **Built, reads only:** `verify` · `zones` · `records`, with `targetFor` and
+     the send half (`AccountSend`) imported from compute rather than restated.
+     **Writes built** (`FJS-D562`): `appendRecords` · `setRecords` ·
+     `deleteRecords`, each one batch; the caller passes a `RecordMark`
+     (`domainMark(id)`) and the connector spells it in `comment` and reads it
+     back as `EdgeRecord.mark`. A set already true is no request. A 4xx now
+     carries Cloudflare's message, which `sendVia` had been dropping (`FJS-1611`
+     is the compute half).
+     `success:false` THROWS with Cloudflare's message, the DigitalOcean
+     connector's convention, rather than mapping to `client_error`; a typed kind
+     waits for the caller that branches on it — Phase 5's retry.
    - **Keep from legacy:** the envelope check (a `200` can carry `success:false`),
      upsert that survives a retry, zone lookup by registrable domain, scope
      Zone:Read + DNS:Edit.
@@ -116,10 +139,15 @@ versus one token per client writing SendGrid's records.
    - List with a large `per_page` — external-dns defaults to 5,000 — so most zones
      are one page and the walk is the rare path.
 2. **Sink** — `cloudflare-sink.ts` beside `digitalocean-sink.ts`, speaking the
-   envelope, pagination and `comment`.
+   envelope, pagination and `comment`. **Built** — `providers/edge/`, port 8127
+   (7127 in `api/test/edge.test.ts`); it pages at 2 so the walk is always taken.
+   Writes: the batch route, all or nothing, refusing a missing id and a CNAME
+   beside an A/AAAA/CNAME; each listener holds its own copy of the zones.
 3. **Account registration** — `registerAccount` / `registerAllAccounts` learn edge
    connectors; connect verifies the token and that it sees at least one zone (the
-   legacy `connect()` flow).
+   legacy `connect()` flow). **Built** — `accountConnectorFor` in
+   `compute/accounts.ts` answers compute or edge, `secrets` accepts and verifies
+   through it, and the machine wizard lists compute accounts only.
 4. **Service** — `edge.service.ts`: `zones`, `records(zoneId)`, `drift(zoneId)`
    (a `Domain` with no record · a marked record with no `Domain` · unmarked
    records), and `sync(domainId)` for admins. This is the adapter ADAPTERS.md's
@@ -129,11 +157,18 @@ versus one token per client writing SendGrid's records.
    DNSControl all make; `sync` returns the diff it applied.
    It is visible on `/dns/` and red nowhere; an alert rule over it is the artefact
    that would make it one, and is not part of this.
+   - **Built, reads only:** `zones` and `records(accountId, zoneId)`. `records`
+     carries drift's first kind, the one D3 does not decide: a serving record's
+     `domainId`, and `missing` — a `Domain` in the zone with no A/AAAA/CNAME.
+     The other two kinds and `sync` wait on D3. Graded at `Domain`'s read gate,
+     the account read `asSystem()` confined to the workspace. `edge` left
+     `BasecampProviders`, and the portal's entry reads the accounts.
 5. **Job** — `domain-dns.job.ts`, dispatched on a `Domain` write with
    `id: dns:<domainId>:<version>` so a repeat is a no-op; retry follows
    `error.retryable`; a soft delete removes the marked record.
 6. **Screen** — `/dns/` renders records and drift in place of the skeleton;
-   analytics keeps its skeleton.
+   analytics keeps its skeleton. **Built** for records and `missing`;
+   `verify:screens` connects an account at the sink and asserts both.
 7. **Proof** — an API test over the sink (the `compute.test.ts` shape);
    `verify-screens.mjs`'s *the edge adapter reports its real state* asserts against
    the sink (ADAPTERS.md § *What wiring one will break*); a `verify:dns` drive or an
@@ -179,7 +214,7 @@ hard) · writing SSL mode · extracting the package.
 
 ## Cost
 
-Phases 1–3 are about a day on the compute pattern. 4–5 wait on D3 and D4. The sink
+Phases 1–3 are about a day on the compute pattern. 4–5 are ruled (D3, D4); 5's pointing waits on `IDEAS/fleet-ingress.md` Phase 1. The sink
 and the drive are most of the rest.
 
 ## Found on the way

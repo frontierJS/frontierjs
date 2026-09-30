@@ -33,7 +33,7 @@ import { env }                    from '../../core/env.ts'
 import type { TargetDescriptor }  from '@frontierjs/conduit'
 import { FLEET }                  from './index.ts'
 import type {
-  ComputeConnector, ComputeSend, ComputeCatalog, ComputeMachine, MachineState,
+  ComputeConnector, AccountSend, ComputeCatalog, ComputeMachine, MachineState,
   ComputeRegion, ComputeSize, ComputeImage, MachineSpec, MachineMark,
 } from './index.ts'
 

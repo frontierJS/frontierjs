@@ -6173,36 +6173,6 @@ describe('raw SQL and the access rules it cannot enforce', () => {
     g.$close()
   })
 
-  test('a JS migration still runs — a migration is a system operation', async () => {
-    // The regression this refusal introduced, caught by running one. JS
-    // migrations were handed the unscoped client, whose `sql` is now guarded,
-    // so the first migration on a gated schema failed with advice ("use
-    // asSystem()") that a migration cannot act on. A migration is schema
-    // surgery by an operator, outside any request and usually before the rows
-    // it touches have an owner, so it runs as the system by construction.
-    const { mkdtempSync, writeFileSync, mkdirSync } = await import('fs')
-    const { tmpdir } = await import('os')
-    const { resolve: rp } = await import('path')
-
-    const d = tmpSub('lite-mig-gate-')
-    const sp = rp(d, 's.lite')
-    writeFileSync(sp, `model Inv { id Int @id  ownerId Int  ssn String @guarded  @@gate("4") }`)
-    const c = await createClient({ schema: sp, db: rp(d, 'a.db') })
-    const { autoMigrate: am } = await import('../src/core/migrations.js')
-    am(c)
-
-    const mdir = rp(d, 'migrations')
-    mkdirSync(mdir, { recursive: true })
-    writeFileSync(rp(mdir, '20260806000000_view.js'),
-      'export async function up(tx) {\n' +
-      '  await tx.sql`CREATE VIEW IF NOT EXISTS v_inv AS SELECT id FROM inv`\n' +
-      '}\n')
-
-    const res: any = await apply(c.$rawDbs.main, mdir, c)
-    expect(res.applied[0].ok).toBe(true)
-    c.$close()
-  })
-
   test('@@gate alone is enough to trigger it', async () => {
     const g = await makeDb(`model Q { id Int @id  x String  @@gate("4") }`, 'raw-sql-gate')
     let err: any = null
@@ -22348,122 +22318,35 @@ describe('ExternalRefPlugin — select resolve: false', () => {
 })
 
 
-// ─── JS migration API ─────────────────────────────────────────────────────────
+// ─── A .js file in migrations/ ───────────────────────────────────────────────
+// A data change is not a migration (FJS-D518): a .js file is listed so it can be
+// named, and refused before anything in the directory runs.
 
-describe('JS migration API', () => {
+describe('a .js file in migrations/', () => {
   const SCHEMA = `model Post { id Int @id; title String; slug String? }`
 
-  test('listMigrationFiles picks up .js files', () => {
+  test('listMigrationFiles still lists it, so the refusal can name it', () => {
     const { listMigrationFiles } = require('../src/core/migrations.js')
     const dir = tmpDir('js-migrate-list')
     writeFileSync(join(dir, '20240101000000_init.sql'), 'CREATE TABLE t (id INTEGER);')
     writeFileSync(join(dir, '20240101000001_backfill.js'), 'export async function up(db) {}')
-    writeFileSync(join(dir, '20240101000002_indexes.sql'), 'CREATE INDEX i ON t(id);')
-    const files = listMigrationFiles(dir)
-    expect(files).toHaveLength(3)
-    expect(files[1]).toBe('20240101000001_backfill.js')
+    expect(listMigrationFiles(dir)).toEqual(['20240101000000_init.sql', '20240101000001_backfill.js'])
   })
 
-  test('apply() runs JS migration up() function', async () => {
+  test('apply() refuses the directory and runs neither file', async () => {
     const { apply } = require('../src/core/migrations.js')
     const dir = tmpDir('js-migrate-apply')
     const { db } = await makeTestClient(SCHEMA)
+    writeFileSync(join(dir, '20240101000000_t.sql'), 'CREATE TABLE t (id INTEGER);')
+    writeFileSync(join(dir, '20240101000001_seed.js'),
+      `export async function up(db) { await db.post.create({ data: { id: 1, title: 'x' } }) }`)
 
-    // Write a JS migration that creates rows via the ORM client
-    writeFileSync(join(dir, '20240101000001_seed.js'), `
-      export async function up(db) {
-        await db.post.create({ data: { id: 1, title: 'Hello', slug: 'hello' } })
-      }
-    `)
-
-    await apply(db.$db, dir, db)
-    const posts = await db.post.findMany({})
-    expect(posts).toHaveLength(1)
-    expect(posts[0].title).toBe('Hello')
-    db.$close()
-  })
-
-  test('apply() records JS migration in tracking table', async () => {
-    const { apply, appliedMigrations } = require('../src/core/migrations.js')
-    const dir = tmpDir('js-migrate-record')
-    const { db } = await makeTestClient(SCHEMA)
-
-    writeFileSync(join(dir, '20240101000001_noop.js'), `
-      export async function up(db) {}
-    `)
-
-    await apply(db.$db, dir, db)
-    const applied = appliedMigrations(db.$db)
-    expect(applied.some((m: any) => m.name === '20240101000001_noop.js')).toBe(true)
-    db.$close()
-  })
-
-  test('apply() JS and SQL migrations interleaved in order', async () => {
-    const { apply } = require('../src/core/migrations.js')
-    const dir = tmpDir('js-migrate-interleave')
-    const { db } = await makeTestClient(SCHEMA)
-
-    const order: string[] = []
-    writeFileSync(join(dir, '20240101000001_first.js'), `
-      export async function up(db) {
-        await db.post.create({ data: { id: 1, title: 'First' } })
-      }
-    `)
-    writeFileSync(join(dir, '20240101000002_second.sql'),
-      `INSERT INTO post (id, title) VALUES (2, 'Second');`)
-
-    await apply(db.$db, dir, db)
-    const posts = await db.post.findMany({ orderBy: { id: 'asc' } })
-    expect(posts).toHaveLength(2)
-    expect(posts[0].title).toBe('First')
-    expect(posts[1].title).toBe('Second')
-    db.$close()
-  })
-
-  test('apply() throws if JS migration has no up export', async () => {
-    const { apply } = require('../src/core/migrations.js')
-    const dir = tmpDir('js-migrate-noexport')
-    const { db } = await makeTestClient(SCHEMA)
-
-    writeFileSync(join(dir, '20240101000001_bad.js'), `
-      // no up export
-      export const foo = 1
-    `)
-
-    const result = await apply(db.$db, dir, db)
-    expect(result.failed).toBe('20240101000001_bad.js')
-    expect(result.error).toContain('up')
-    db.$close()
-  })
-
-  test('apply() without client throws for JS migration', async () => {
-    const { apply } = require('../src/core/migrations.js')
-    const dir = tmpDir('js-migrate-noclient')
-    const { db } = await makeTestClient(SCHEMA)
-
-    writeFileSync(join(dir, '20240101000001_needs_client.js'), `
-      export async function up(db) {}
-    `)
-
-    const result = await apply(db.$db, dir)  // no client passed
-    expect(result.failed).toBe('20240101000001_needs_client.js')
-    expect(result.error).toContain('client')
-    db.$close()
-  })
-
-  test('status() shows JS migration with sql: null', async () => {
-    const { apply, status } = require('../src/core/migrations.js')
-    const dir = tmpDir('js-migrate-status')
-    const { db } = await makeTestClient(SCHEMA)
-
-    writeFileSync(join(dir, '20240101000001_js.js'), `export async function up(db) {}`)
-    await apply(db.$db, dir, db)
-
-    const rows = status(db.$db, dir)
-    const jsRow = rows.find((r: any) => r.file.endsWith('.js'))
-    expect(jsRow?.state).toBe('applied')
-    expect(jsRow?.sql).toBeNull()
-    expect(jsRow?.tampered).toBe(false)
+    const res = await apply(db.$db, dir)
+    expect(res.refused).toBe(true)
+    expect(res.failed).toBe('20240101000001_seed.js')
+    expect(res.error).toContain('not a migration')
+    expect(db.$db.query(`SELECT name FROM sqlite_master WHERE name = 't'`).all()).toEqual([])
+    expect(await db.post.findMany({})).toHaveLength(0)
     db.$close()
   })
 })

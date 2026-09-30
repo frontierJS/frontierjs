@@ -140,6 +140,20 @@ export function roleOf(ctx: ServiceContext): string | undefined {
 }
 
 /**
+ * A protected environment is the production guard: a developer may deploy to
+ * it but not reshape it — its own columns, or the variables set on it.
+ *
+ * One check for every writer. The capability grid cannot say it — a developer
+ * holds `Variable.update` on every environment, protected or not — so a writer
+ * that skips this lets a developer rewrite production's `DATABASE_URL` that
+ * `patch` refuses them (`FJS-1087`).
+ */
+export function refuseProtectedForDeveloper(env: { isProtected?: boolean }, ctx: ServiceContext) {
+  if (env.isProtected && roleOf(ctx) === 'developer')
+    throw new Forbidden('Protected environments require admin or owner role to modify')
+}
+
+/**
  * Re-resolve the standing against a DIFFERENT workspace, mid-call.
  *
  * One caller: the workspaces service, where the workspace IS the id being

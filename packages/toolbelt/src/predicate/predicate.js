@@ -43,13 +43,14 @@
  *
  * ── What the caller injects ──────────────────────────────────────────────────
  *
- * Two node types read ANOTHER MODEL — `check(field)` and a relation path — and
- * neither can be answered from a record: on the server each opens a database.
- * They are resolvers rather than branches for that reason, and their defaults
- * are the answers litestone gives when the hop cannot be made: a path yields
- * `null` (a scalar subquery over no row IS NULL, so an allow fails closed and a
- * deny fires) and a `check()` answers `true` (it is a predicate, and the SQL
- * half allows when the target has no policy).
+ * Three node types read ANOTHER MODEL — `check(field)`, a relation path and
+ * `rel.some(…)` — and none can be answered from a record: on the server each
+ * opens a database. They are resolvers rather than branches for that reason,
+ * and their defaults are the answers litestone gives when the hop cannot be
+ * made: a path yields `null` (a scalar subquery over no row IS NULL, so an
+ * allow fails closed and a deny fires), a `some` yields `null` for the same
+ * reason in the direction a predicate needs, and a `check()` answers `true`
+ * (it is a predicate, and the SQL half allows when the target has no policy).
  *
  * `affinityOf` is the third and it is not decoration — see `compare` below.
  */
@@ -164,6 +165,7 @@ export function compare(L, op, R, affL = null, affR = null) {
  *   `affinityOf`    (node) → 'NUMERIC' | 'TEXT' | 'BLOB' | null
  *   `resolvePath`   (node) → value, for a one-hop read. Default null.
  *   `resolveCheck`  (node) → boolean, for `check(field)`. Default true.
+ *   `resolveSome`   (node) → boolean, for `rel.some(…)`. Default null.
  *   `claimOf`       field → the value `auth().field` reads. Default: the
  *                   principal's own property. Litestone answers `level` here,
  *                   which is graded per model and carried by no principal.
@@ -191,6 +193,7 @@ export function evaluate(node, env = {}) {
     affinityOf   = () => null,
     resolvePath  = () => null,
     resolveCheck = () => true,
+    resolveSome  = () => null,
     claimOf      = (field) => auth?.[field] ?? null,
   } = env
 
@@ -206,6 +209,7 @@ export function evaluate(node, env = {}) {
     case 'field':   return record?.[node.name] ?? null
     case 'path':    return resolvePath(node)
     case 'check':   return resolveCheck(node)
+    case 'some':    return resolveSome(node)
     case 'now':     return now
 
     case 'auth':

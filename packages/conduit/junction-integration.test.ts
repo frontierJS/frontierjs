@@ -402,8 +402,8 @@ function headerRecorder() {
 async function appCalling(rec: { url: string }, opts: Record<string, unknown> = {}, calls = 1) {
   const app = await createTestApp()
   app.configure(conduitPlugin({
-    ...opts,
-    targets: [providerTarget({ id: 'provider:x', address: rec.url, auth: { type: 'none' } })],
+    ...Object.fromEntries(Object.entries(opts).filter(([k]) => k !== 'traced')),
+    targets: [providerTarget({ id: 'provider:x', address: rec.url, auth: { type: 'none' }, trace: opts.traced !== false })],
   }))
   app.get('/go', async () => {
     for (let i = 0; i < calls; i++) {
@@ -416,6 +416,23 @@ async function appCalling(rec: { url: string }, opts: Record<string, unknown> = 
 }
 
 describe('an outbound call carries the request that caused it', () => {
+  // The id reaching a third party is the join from its log of the query to the
+  // audit row naming who typed it (`FJS-1413`, `FJS-D507`).
+  it('a target that did not declare trace: true gets neither header', async () => {
+    const rec = headerRecorder()
+    try {
+      const app = await appCalling(rec, { traced: false })
+      await request(app).get('/go')
+        .set('x-request-id', 'req-abc-123')
+        .set('traceparent', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
+
+      expect(rec.seen[0]!['x-request-id']).toBeUndefined()
+      expect(rec.seen[0]!.traceparent).toBeUndefined()
+    } finally {
+      rec.stop()
+    }
+  })
+
   it('continues an upstream trace rather than starting a new one', async () => {
     const rec = headerRecorder()
     try {

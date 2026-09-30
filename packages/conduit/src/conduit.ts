@@ -2,6 +2,7 @@
 // Conduit — Core
 // ============================================================
 
+import { X509Certificate }    from 'node:crypto'
 import { createMemoryStore }  from './stores/memory.ts'
 import { createEnvResolver }  from './credentials.ts'
 import { Resilience, countsAsTargetFault } from './resilience.ts'
@@ -62,6 +63,26 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
 
   assertIdempotency(descriptor)
   assertPolicy(descriptor)
+  assertPinnedCert(descriptor)
+}
+
+// A pin the transport would not apply is worse than none: the descriptor reads
+// as pinned and the bytes go out however the address says. `unix` builds its
+// own fetch options and `http:` has no handshake to pin.
+function assertPinnedCert(descriptor: TargetDescriptor): void {
+  const pem = descriptor.pinned_cert
+  if (pem === undefined) return
+
+  const where = `Target '${descriptor.id}' pinned_cert`
+  if (descriptor.protocol !== 'http')
+    throw new TypeError(`${where}: only an 'http' target can pin, this one is '${descriptor.protocol}'`)
+  if (!/^https:\/\//i.test(descriptor.address))
+    throw new TypeError(`${where}: the address must be https, got '${descriptor.address}'`)
+  try {
+    new X509Certificate(pem)
+  } catch {
+    throw new TypeError(`${where}: not a PEM certificate`)
+  }
 }
 
 function assertIdempotency(descriptor: TargetDescriptor): void {
@@ -163,9 +184,9 @@ export function createConduit(
 
   // Trace headers sit under the caller's headers, which sit under auth —
   // so a caller can override a traceparent, but nobody can displace a
-  // credential.
-  function withTrace(req: ConduitRequest): ConduitRequest {
-    if (!opts.trace) return req
+  // credential. A target that has not declared `trace: true` gets none.
+  function withTrace(req: ConduitRequest, transport: { traced: boolean }): ConduitRequest {
+    if (!opts.trace || !transport.traced) return req
     const headers = opts.trace(req)
     if (!headers) return req
     return { ...req, headers: { ...headers, ...req.headers } }
@@ -336,7 +357,7 @@ export function createConduit(
         })
       }
 
-      const result = await transport.send<T>(withTrace(req))
+      const result = await transport.send<T>(withTrace(req, transport))
 
       // The whole call — every attempt, and the waits between them. Measured
       // here because this is the only frame that spans them: a transport's
@@ -431,7 +452,7 @@ export function createConduit(
 
     let chunks = 0
     try {
-      for await (const chunk of transport!.stream(withTrace(req))) {
+      for await (const chunk of transport!.stream(withTrace(req, transport!))) {
         chunks++
         yield chunk
       }

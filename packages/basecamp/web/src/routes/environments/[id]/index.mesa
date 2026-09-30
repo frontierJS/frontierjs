@@ -15,9 +15,9 @@ title: Environment
   import Drawer   from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'
-  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Table    from '@frontierjs/ui/components/display/Table.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
+  import VariablesEditor from '../../../components/VariablesEditor.mesa'
   import { offerUndo } from '../../../resources/Trash.mesa'
 
   $: page.params
@@ -174,58 +174,6 @@ title: Environment
     }
   }
 
-  // ── Variables ─────────────────────────────────────────────────────────
-  // Variables live in a Json column on the environment, and are edited through
-  // custom methods rather than a PATCH of the whole array: two people editing
-  // different keys at once would otherwise overwrite each other, because the
-  // last full array to arrive wins.
-  //
-  // A custom method dispatches on the X-Service-Method HEADER, not a sub-path.
-  // POST /environments/:id/setVariable is a 404 — resource.service.invoke()
-  // sends the header for us.
-  let newKey    = ''
-  let newValue  = ''
-  let newSecret = false
-  let busyKey   = null
-
-  // One row at a time is edited in place, and a masked value is shown only
-  // when asked — it is in the response either way (see the note on the cell).
-  let editKey   = null
-  let editValue = ''
-  let revealed  = new Set()
-
-  function startEdit(variable) { editKey = variable.key; editValue = variable.value ?? '' }
-  function toggleReveal(key) {
-    const next = new Set(revealed)
-    next.has(key) ? next.delete(key) : next.add(key)
-    revealed = next
-  }
-
-  async function setVariable(key, value, secret) {
-    error = null; busyKey = key
-    try {
-      environment = await environments.service.invoke('setVariable', environment.id, { key, value, secret })
-      if (key === editKey) editKey = null
-      else { newKey = ''; newValue = ''; newSecret = false }
-    } catch (e) {
-      error = e.message
-    } finally {
-      busyKey = null
-    }
-  }
-
-  async function deleteVariable(key) {
-    error = null; busyKey = key
-    try {
-      environment = await environments.service.invoke('deleteVariable', environment.id, { key })
-    } catch (e) {
-      error = e.message
-    } finally {
-      busyKey = null
-    }
-  }
-
-  $: variables = environment?.variables ?? []
   const RELEASE_COLUMNS = [
     { name: 'queued', label: 'Queued' },
     { name: 'app',    label: 'App' },
@@ -238,12 +186,6 @@ title: Environment
     { name: 'type',    label: 'Type' },
     { name: 'status',  label: 'Status' },
     { name: 'domain',  label: 'Domain' },
-    { name: 'actions', label: 'Actions', hideLabel: true },
-  ]
-
-  const VARIABLE_COLUMNS = [
-    { name: 'key',     label: 'Key' },
-    { name: 'value',   label: 'Value' },
     { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 </script>
@@ -272,11 +214,9 @@ title: Environment
     </div>
   </div>
 
-  <!-- `variables` is left out: it has its own editor below, which writes one
-       key at a time so two people on this screen do not erase each other. -->
   <Drawer open={editing} title={`Edit ${environment.name}`} onclose={() => editing = false}>
     {#if editing}
-      <Environment record={environment} except={['variables']} oncancel={() => editing = false}
+      <Environment record={environment} oncancel={() => editing = false}
                    ondone={saved} submitId="env-edit-save" />
     {/if}
   </Drawer>
@@ -377,60 +317,8 @@ title: Environment
   {/if}
 
   <h2 class="h4">Variables</h2>
-
-  {#if variables.length}
-    <Table id="variable-rows" columns={VARIABLE_COLUMNS} rows={variables} striped hover={false}>
-      {#snippet row(variable)}
-        <tr>
-          <td><code>{variable.key}</code></td>
-          <!-- `secret: true` is a display decision made by the service's own
-               data, not a security boundary: the value is in this response.
-               Anything that must not reach the browser belongs in Secret,
-               whose data column is @encrypted and system-only. -->
-          <td>
-            {#if editKey === variable.key}
-              <form class="cluster" on:submit|preventDefault={() => setVariable(variable.key, editValue, variable.secret)}>
-                <Input label="" aria-label={`Value of ${variable.key}`} id={`var-edit-${variable.key}`} value={editValue}
-                       oninput={(e) => editValue = e.target.value} />
-                <Button type="submit" variant="primary" disabled={busyKey === variable.key}>Save</Button>
-                <Button variant="ghost" onclick={() => editKey = null}>Cancel</Button>
-              </form>
-            {:else}
-              <code>{variable.secret && !revealed.has(variable.key) ? '••••••••' : variable.value}</code>
-            {/if}
-          </td>
-          <td class="cluster">
-            {#if variable.secret}
-              <Button variant="ghost" onclick={() => toggleReveal(variable.key)}>
-                {revealed.has(variable.key) ? 'Hide' : 'Reveal'}
-              </Button>
-            {/if}
-            {#if editKey !== variable.key}
-              <Button variant="ghost" onclick={() => startEdit(variable)}>Edit</Button>
-            {/if}
-            <Button variant="ghost" tone="danger" disabled={busyKey === variable.key}
-                    data-confirm={`${variable.key} is removed; the next deploy of this environment runs without it.`}
-                    data-confirm-title="Remove this variable?" data-confirm-label="Remove"
-                    onclick={() => deleteVariable(variable.key)}>Remove</Button>
-          </td>
-        </tr>
-      {/snippet}
-    </Table>
-  {:else}
-    <p class="text-sm text-muted">No variables set.</p>
-  {/if}
-
-  <form class="card stack" novalidate on:submit|preventDefault={() => setVariable(newKey, newValue, newSecret)}>
-    <div class="field-row">
-      <Input label="Key" name="var-key" id="var-key" placeholder="DATABASE_URL"
-             required bind:value={newKey} />
-      <Input label="Value" name="var-value" id="var-value" required bind:value={newValue} />
-    </div>
-    <Checkbox label="Mask this value in the UI" bind:checked={newSecret} />
-    <div class="cluster">
-      <Button variant="primary" type="submit" disabled={busyKey !== null}>Set variable</Button>
-    </div>
-  </form>
+  <p class="text-sm text-muted">Every app in {environment.name} starts with these. An app's own variable of the same key wins.</p>
+  <VariablesEditor environmentId={environment.id} idPrefix="var" />
 {:else}
   <NoRecord error={loadError} noun="Environment" onretry={load}
             backHref="/projects/" backLabel="Back to projects" />

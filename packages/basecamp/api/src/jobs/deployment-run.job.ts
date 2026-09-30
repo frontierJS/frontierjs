@@ -11,8 +11,8 @@ import { $ } from '@frontierjs/junction'
 // Outpost protocol (Conduit → outpost:<server-id>). Every reply may carry a
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
-//   POST /deploy       { deployment_id, image, digest, … } → { digest }
-//   POST /stop         { app_id }                          → stop old container
+//   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }
+//   POST /stop         { app_id }                          → stop old container, drop its route
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //
@@ -41,7 +41,8 @@ import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import { isInline, inlineFilesFor } from '../core/app-source.ts'
-import { resolveSecretEnv } from '../core/credentials.ts'
+import { releaseEnv } from '../core/variables.ts'
+import { runtimeOf, routedHosts, type Runtime } from '../core/runtime.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -54,6 +55,12 @@ import type { StepStatus } from '../../../db/schema.d.ts'
 type DeploymentRow = any
 type StepRow       = any
 type ServiceRow    = any
+
+/** How the release's container starts — the snapshot's, falling back to the
+ *  app's columns only for a release that recorded none. */
+function runtimeFor(snapshot: Record<string, unknown>, service: Record<string, unknown>): Runtime {
+  return (snapshot.runtime as Runtime | undefined) ?? runtimeOf(service)
+}
 
 function runner(app: BasecampApp) {
 
@@ -266,26 +273,32 @@ function runner(app: BasecampApp) {
         // The snapshot, not the app. `rollback` exists to put back the config
         // that shipped with those bytes, and reading the live row here undid
         // exactly that — the old image with the new config is neither release.
-        // Refs become values here and nowhere earlier: the snapshot keeps the
-        // refs, so a release record never holds the credential it shipped with.
-        config:        await resolveSecretEnv(app.db as never,
-                         (ctx.config.config ?? service.config ?? {}) as Record<string, unknown>),
+        // Secrets become values here and nowhere earlier: the snapshot keeps
+        // their ids, so a release record never holds the credential it shipped with.
+        config: {
+          ...runtimeFor(ctx.config, service),
+          env: await releaseEnv(app.db as never, ctx.config as never),
+        },
         source:        ctx.config.source ?? service.source ?? {},
+        hosts:         await routedHosts(app.db, deploy.appId),
       })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
     } else if (name.includes('health')) {
-      // Poll up to 10 times with 3s between attempts.
+      // Poll up to 10 times with 3s between attempts. The path, where the app
+      // names one, is asked of the port the release published.
+      const { port, healthCheck } = runtimeFor(ctx.config, service)
       let last: { data?: Record<string, unknown> } = {}
       for (let i = 0; i < 10; i++) {
         const reply = await executor.call('/health-check',
-          { app_id: deploy.appId, digest }, { timeoutMs: 5_000 })
+          { app_id: deploy.appId, digest, port, path: healthCheck }, { timeoutMs: 5_000 })
         last = reply
         if (!reply.error && reply.data?.healthy) return { output: note(reply), digest }
         await new Promise(r => setTimeout(r, 3_000))
       }
-      throw new Error(`Health check failed after 10 attempts${last.data?.stubbed ? ' (stub executor)' : ''}`)
+      const why = last.data?.stubbed ? ' (stub executor)' : last.data?.reason ? ` — ${last.data.reason}` : ''
+      throw new Error(`Health check failed after 10 attempts${why}`)
 
     } else {
       // Build, migration, CDN steps etc. — forwarded as a generic step.

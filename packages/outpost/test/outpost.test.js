@@ -16,13 +16,20 @@ import { signRequest }            from '@frontierjs/toolbelt/signature'
 import { createOutpostServer }    from '../src/server.js'
 import { createDocker, createInspector, isDigest } from '../src/docker.js'
 import { createReporter }         from '../src/report.js'
+import { createIngress }          from '../src/ingress.js'
 import { createVitals }           from '../src/vitals.js'
 import { readConfig }             from '../src/config.js'
+import { ensureCert }             from '../src/cert.js'
+import { mkdtempSync, statSync }  from 'node:fs'
+import { tmpdir }                 from 'node:os'
+import { join }                   from 'node:path'
 
 const CONFIG = {
   serverId: 'srv-1', secret: 'fleet-secret', basecampUrl: 'http://basecamp.test',
-  port: 7180, version: '0.1.0', publicUrl: 'http://outpost.test:7180',
+  port: 7180, version: '0.1.0', publicUrl: 'https://outpost.test:7180',
   heartbeatMs: 30_000, reportMs: 300_000, workDir: '/tmp/outpost-test',
+  // Nothing listens on port 1: a machine with no Caddy, refused at once.
+  caddyAdmin: 'http://127.0.0.1:1',
 }
 
 const DIGEST = 'sha256:' + 'ab'.repeat(32)
@@ -202,6 +209,47 @@ describe('what the machine is asked to do', () => {
     expect(fake.calls.some(c => c.join(' ').startsWith('docker rm'))).toBe(false)
   })
 
+  test('limits reach docker run, and a bad one removes nothing', async () => {
+    // A blueprint's limits were once copied into the app and applied by
+    // nothing, so a container started with none and no one was told.
+    const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      log: { warn() {}, error() {} },
+    })
+    const ok = await send(server, 'POST', '/deploy', {
+      deployment_id: 'dep-5', app_id: 'n8n', image: 'n8n:1', config: { cpuLimit: 0.5, memLimitMb: 512 },
+    })
+    expect(ok.status).toBe(200)
+    const argv = fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run'))
+    expect(argv).toContain('--cpus 0.5')
+    expect(argv).toContain('--memory 512m')
+
+    for (const config of [{ cpuLimit: '500m' }, { memLimitMb: '512Mi' }]) {
+      fake.calls.length = 0
+      const bad = await send(server, 'POST', '/deploy', { deployment_id: 'dep-6', app_id: 'n8n', image: 'n8n:1', config })
+      expect(bad.status).toBe(500)
+      expect(fake.calls.some(c => c.join(' ').startsWith('docker rm'))).toBe(false)
+    }
+  })
+
+  test('a health path is asked of the published port, and running is not enough', async () => {
+    const fake  = fakeRunner({ 'docker inspect': { stdout: 'true\n' } })
+    const asked = []
+    let status  = 503
+    const fetch = async (url) => { asked.push(url); return { ok: status < 300, status } }
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run, fetch }), inspector: createInspector({ run: fake.run }),
+    })
+    const down = await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()
+    expect(down).toMatchObject({ healthy: false })
+    expect(down.reason).toContain('503')
+    expect(asked).toEqual(['http://127.0.0.1:5678/healthz'])
+
+    status = 200
+    expect((await (await send(server, 'POST', '/health-check', { app_id: 'app-1', port: 5678, path: '/healthz' })).json()).healthy).toBe(true)
+  })
+
   test('a deploy of an image that exists elsewhere pulls it', async () => {
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
@@ -272,6 +320,170 @@ describe('what the machine is asked to do', () => {
     const body = await res.json()
     expect(res.status).toBe(409)
     expect(body.error).toContain('pg-1')
+  })
+})
+
+describe('the ingress — Caddy, through its admin API', () => {
+
+  /** Caddy's admin API as a real one answered it (`verify-docker.mjs` drives
+   *  the real one): a path that does not exist yet is a 400, an `@id` it has
+   *  not seen is a 404, and PUT creates the levels above it. */
+  function fakeCaddy(initial = null) {
+    let config = structuredClone(initial)
+    const asked = []
+    const routes = () => config?.apps?.http?.servers?.ingress?.routes
+    const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
+    const fetch = async (url, { method = 'GET', body } = {}) => {
+      const path = new URL(url).pathname
+      asked.push(`${method} ${path}`)
+      const data = body ? JSON.parse(body) : undefined
+      const id   = path.startsWith('/id/') ? path.slice(4) : null
+      const at   = id ? routes()?.findIndex(r => r['@id'] === id) ?? -1 : -1
+      if (method === 'GET' && path === '/config/') return answer(200, config)
+      if (method === 'PUT' && path === '/config/apps/http/servers/ingress') {
+        config ??= {}; config.apps ??= {}; config.apps.http ??= {}; config.apps.http.servers ??= {}
+        config.apps.http.servers.ingress = data
+        return answer(200)
+      }
+      if (method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
+        if (!routes()) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
+        routes().push(data)
+        return answer(200)
+      }
+      if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
+      if (method === 'PATCH') { routes()[at] = data; return answer(200) }
+      if (method === 'DELETE') { routes().splice(at, 1); return answer(200) }
+      return answer(400, { error: `unexpected ${method} ${path}` })
+    }
+    return { fetch, asked, get config() { return config } }
+  }
+
+  const serverWith = (caddy, fake = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })) => ({
+    fake,
+    server: createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      ingress: createIngress({ fetch: caddy.fetch }),
+      log: { warn() {}, error() {} },
+    }),
+  })
+  const deploy = (server, extra = {}) => send(server, 'POST', '/deploy', {
+    deployment_id: 'dep-1', app_id: 'app-1', image: 'acme-web', digest: DIGEST,
+    config: { port: 7300, containerPort: 80 }, ...extra,
+  })
+  const runArgv = (fake) => fake.calls.find(c => c[1] === 'run')?.join(' ') ?? ''
+
+  test('a deploy with hostnames routes them, and binds its port to loopback', async () => {
+    const caddy = fakeCaddy()
+    const { server, fake } = serverWith(caddy)
+    const res  = await deploy(server, { hosts: ['Shop.Example.com', 'shop.example.com', 'www.example.com'] })
+    const body = await res.json()
+    expect(res.status).toBe(200)
+    expect(body.hosts).toEqual(['shop.example.com', 'www.example.com'])
+
+    // The raw port on every interface is the app over plain HTTP, around the
+    // certificate (FJS-D565).
+    expect(runArgv(fake)).toContain('-p 127.0.0.1:7300:80')
+    const server_ = caddy.config.apps.http.servers.ingress
+    expect(server_.listen).toEqual([':443'])
+    expect(server_.routes).toEqual([{
+      '@id': 'fjs-app-1',
+      match: [{ host: ['shop.example.com', 'www.example.com'] }],
+      handle: [{ handler: 'reverse_proxy', upstreams: [{ dial: '127.0.0.1:7300' }] }],
+      terminal: true,
+    }])
+  })
+
+  test('a redeploy replaces the route rather than adding a second', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    await deploy(server, { hosts: ['store.example.com'], config: { port: 7301, containerPort: 80 } })
+    const routes = caddy.config.apps.http.servers.ingress.routes
+    expect(routes).toHaveLength(1)
+    expect(routes[0].match[0].host).toEqual(['store.example.com'])
+    expect(routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7301')
+  })
+
+  test('the ingress listens where the machine set https_port, not where outpost guesses', async () => {
+    const caddy = fakeCaddy({ apps: { http: { https_port: 7185 } } })
+    await deploy(serverWith(caddy).server, { hosts: ['shop.example.com'] })
+    expect(caddy.config.apps.http.servers.ingress.listen).toEqual([':7185'])
+  })
+
+  test('a hostname another app holds is refused, and nothing is started', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+
+    const { server: other, fake } = serverWith(caddy)
+    const res = await deploy(other, { app_id: 'app-2', hosts: ['shop.example.com'] })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('shop.example.com is already routed to fjs-app-1')
+    expect(fake.calls).toEqual([])
+  })
+
+  test('a hostname Caddy cannot route is refused before anything runs', async () => {
+    for (const hosts of [['*.example.com'], ['shop example.com'], ['localhost'], 'shop.example.com']) {
+      const caddy = fakeCaddy()
+      const { server, fake } = serverWith(caddy)
+      const res = await deploy(server, { hosts })
+      expect(res.status).toBe(500)
+      expect(fake.calls).toEqual([])
+      expect(caddy.asked).toEqual([])
+    }
+  })
+
+  test('hostnames with no published port are refused', async () => {
+    const { server } = serverWith(fakeCaddy())
+    const res = await deploy(server, { hosts: ['shop.example.com'], config: {} })
+    expect((await res.json()).error).toContain('config.port')
+  })
+
+  test('with no Caddy on the machine, an app with hostnames fails and one without deploys as before', async () => {
+    const fake   = fakeRunner({ 'docker run': { stdout: 'container-1\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      log: { warn() {}, error() {} },
+    })
+    const refused = await deploy(server, { hosts: ['shop.example.com'] })
+    expect(refused.status).toBe(500)
+    expect((await refused.json()).error).toContain("caddy's admin API at http://127.0.0.1:1 did not answer")
+    expect(fake.calls).toEqual([])
+
+    const plain = await deploy(server)
+    expect(plain.status).toBe(200)
+    expect(runArgv(fake)).toContain('-p 7300:80')
+  })
+
+  test('dropping the last hostname drops the route and opens the port again', async () => {
+    const caddy = fakeCaddy()
+    const { server, fake } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    fake.calls.length = 0
+    await deploy(server, { hosts: [] })
+    expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+    expect(runArgv(fake)).toContain('-p 7300:80')
+  })
+
+  test('a stop takes the route with the container', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    const stopped = await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()
+    expect(stopped).toMatchObject({ stopped: true, unrouted: true })
+    expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+    // A second stop has nothing to remove, and says so rather than failing.
+    expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: false })
+  })
+
+  test('Caddy refusing a route answers in Caddy\'s words', async () => {
+    const caddy = fakeCaddy()
+    const refusing = async (url, init) => init?.method === 'PUT'
+      ? new Response(JSON.stringify({ error: 'loading new config: listen tcp :443: bind: permission denied' }), { status: 400 })
+      : caddy.fetch(url, init)
+    const { server } = serverWith({ fetch: refusing })
+    const res = await deploy(server, { hosts: ['shop.example.com'] })
+    expect((await res.json()).error).toContain('bind: permission denied')
   })
 })
 
@@ -410,7 +622,7 @@ describe('what this machine tells basecamp', () => {
     expect(call.init.headers['x-service-method']).toBe('heartbeat')
     // Until this lands, basecamp has no address for the machine and refuses
     // every release for it.
-    expect(call.body.outpost_url).toBe('http://outpost.test:7180')
+    expect(call.body.outpost_url).toBe('https://outpost.test:7180')
     expect(call.init.headers['X-Fjs-Signature']).toMatch(/^v1-sha256=[0-9a-f]{64}$/)
   })
 
@@ -644,16 +856,38 @@ describe('what the machine feels like', () => {
 
 describe('it refuses to start half-configured', () => {
   test('the three values with no safe default are named together', () => {
-    expect(() => readConfig({})).toThrow(/OUTPOST_SERVER_ID, OUTPOST_SECRET, BASECAMP_URL/)
+    expect(() => readConfig({})).toThrow(/OUTPOST_SERVER_ID, OUTPOST_SECRET, BASECAMP_URL, OUTPOST_TLS_CERT, OUTPOST_TLS_KEY/)
   })
 
+  const required = {
+    OUTPOST_SERVER_ID: 'srv-9', OUTPOST_SECRET: 's', BASECAMP_URL: 'https://bc.test/',
+    OUTPOST_TLS_CERT: '/etc/basecamp/outpost.crt', OUTPOST_TLS_KEY: '/etc/basecamp/outpost.key',
+  }
+
   test('a stated port and URL win over the defaults', () => {
-    const config = readConfig({
-      OUTPOST_SERVER_ID: 'srv-9', OUTPOST_SECRET: 's', BASECAMP_URL: 'https://bc.test/',
-      OUTPOST_PORT: '7180',
-    })
+    const config = readConfig({ ...required, OUTPOST_PORT: '7180' })
     expect(config.port).toBe(7180)
     // The trailing slash goes, or every path is built with a double one.
     expect(config.basecampUrl).toBe('https://bc.test')
+    expect(config.publicUrl).toBe('https://localhost:7180')
+  })
+
+  // Basecamp registers no target for a plain-http URL, so this machine would
+  // heartbeat as online and refuse to exist for every deploy (FJS-1603).
+  test('a public URL that is not https is refused', () => {
+    expect(() => readConfig({ ...required, OUTPOST_PUBLIC_URL: 'http://203.0.113.7:8180' }))
+      .toThrow(/OUTPOST_PUBLIC_URL must be https/)
+  })
+})
+
+describe('the command port certificate', () => {
+  // Basecamp pins the certificate it was handed at enrollment, so a restart
+  // that minted a new one would cut the machine off from every command.
+  test('is made once and kept across restarts', () => {
+    const dir   = mkdtempSync(join(tmpdir(), 'outpost-cert-'))
+    const first = ensureCert(dir)
+    expect(first.cert).toStartWith('-----BEGIN CERTIFICATE-----')
+    expect(statSync(first.keyPath).mode & 0o777).toBe(0o600)
+    expect(ensureCert(dir).cert).toBe(first.cert)
   })
 })

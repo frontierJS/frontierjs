@@ -746,15 +746,16 @@ model Vault {
     expect(readdirSync(join(dir, 'db', 'backups'))).toHaveLength(1)
   }, 30_000)
 
-  // A `.js` migration is where a data migration lives, and the CLI is what a
-  // deployed image runs. `apply()` called directly was never the broken path:
-  // the CLI handed the client its raw handle as `db`, which names main's PATH,
-  // and every pending `.js` file died in `resolve` before `up` ran (FJS-1472).
+  // A data change is not a migration (FJS-D518): `migrations/` holds `.sql`
+  // only, because a `.js` file can change the schema through `sys.sql` and
+  // cannot be replayed into the shadow every guard reads. One in the history is
+  // refused by every command that reads it, with a nonzero exit, and nothing in
+  // it runs.
   const JS_MIGRATION = `export async function up(sys) {
     await sys.post.create({ data: { title: 'seeded' } })
   }\n`
 
-  test('migrate apply runs a pending .js migration (single-database config)', async () => {
+  test('migrate apply refuses a .js file in the history and runs nothing', async () => {
     const dir = makeFixtureDir('apply-js', {
       schema: `model Post {\n  id    Int    @id\n  title String\n}\n`,
     })
@@ -762,29 +763,28 @@ model Vault {
     writeFileSync(join(dir, 'migrations', '29990101000000_seed.js'), JS_MIGRATION, 'utf8')
 
     const applied = await runCli(dir, ['migrate', 'apply'])
-    expect(applied.stderr).not.toContain('paths[0]')
-    expect(applied.exit).toBe(0)
+    expect(applied.exit).not.toBe(0)
+    expect(applied.stderr).toContain('29990101000000_seed.js')
+    expect(applied.stderr).toContain('not a migration')
     const db = new Database(join(dir, 'test.db'), { readonly: true })
-    const titles = db.query('SELECT title FROM post').all().map((r: { title: string }) => r.title)
+    const tables = db.query(`SELECT name FROM sqlite_master WHERE name = 'post'`).all()
     db.close()
-    expect(titles).toEqual(['seeded'])
+    expect(tables).toEqual([])
   }, 30_000)
 
-  test('migrate apply runs a pending .js migration (declared database main)', async () => {
-    const dir = makeFixtureDir('apply-js-db', {
-      schema: `database main {\n  path "./app.db"\n}\n\nmodel Post {\n  id    Int    @id\n  title String\n}\n`,
-      config: `export default { schema: './schema.lite', migrations: './migrations' }\n`,
+  test('migrate check and migrate create refuse a .js file in the history', async () => {
+    const dir = makeFixtureDir('check-js', {
+      schema: `model Post {\n  id    Int    @id\n  title String\n}\n`,
     })
     await runCli(dir, ['migrate', 'create', 'init'])
-    writeFileSync(join(dir, 'migrations', 'main', '29990101000000_seed.js'), JS_MIGRATION, 'utf8')
+    writeFileSync(join(dir, 'migrations', '29990101000000_seed.js'), JS_MIGRATION, 'utf8')
 
-    const applied = await runCli(dir, ['migrate', 'apply'])
-    expect(applied.stderr).not.toContain('paths[0]')
-    expect(applied.exit).toBe(0)
-    const db = new Database(join(dir, 'app.db'), { readonly: true })
-    const titles = db.query('SELECT title FROM post').all().map((r: { title: string }) => r.title)
-    db.close()
-    expect(titles).toEqual(['seeded'])
+    const checked = await runCli(dir, ['migrate', 'check'])
+    expect(checked.exit).not.toBe(0)
+    expect(checked.stderr).toContain('not a migration')
+    const created = await runCli(dir, ['migrate', 'create', 'more'])
+    expect(created.exit).not.toBe(0)
+    expect(created.stdout).not.toContain('✓')
   }, 30_000)
 })
 

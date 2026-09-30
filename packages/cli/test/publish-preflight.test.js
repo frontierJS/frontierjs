@@ -162,6 +162,13 @@ describe('the verdict', () => {
     expect(r.some(x => !x.note)).toBe(false)
   })
 
+  test('a package the website holds back is a note naming the reason', () => {
+    const r = publishRefusals({ heldBack: [{ name: '@frontierjs/orion', reason: 'never released' }] })
+    expect(r.map(x => x.check)).toEqual(['website-held-back'])
+    expect(r[0].note).toBe(true)
+    expect(r[0].detail).toEqual(['@frontierjs/orion — never released'])
+  })
+
   test('an undecidable range refuses under its own name', () => {
     const r = publishRefusals({ drift: [{ kind: 'undecidable', by: 'ui', dep: 'mesa', range: '>=0.1', version: '0.2.0' }] })
     expect(r.map(x => x.check)).toEqual(['peer-range-undecidable'])

@@ -5,14 +5,17 @@
 //   bun bench/studio-sidebar.mjs <schema> <cwd>      # any other app
 //
 // Starts studio and Chrome itself and kills both.
-// Real Chrome over CDP (fetch + WebSocket, no puppeteer) because this is a
+// Real Chrome over CDP (@frontierjs/mesa/drive) because this is a
 // computed-layout question: scrollHeight vs clientHeight and whether the Tools
 // nav is inside the viewport. Asserting on the CSS text would prove nothing.
 import { spawn } from 'node:child_process'
-const R = '/home/j/code/FRONTIER/frontierjs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../mesa/src/drive.js'
+const R = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 const SCHEMA = process.argv[2] ?? `${R}/packages/basecamp/db/schema.lite`
 const CWD    = process.argv[3] ?? `${R}/packages/basecamp/db`
-const PORT = 7503, CDP = 7504
+const PORT = 7503
 let fails = 0
 const ok = (n, c, x = '') => { console.log((c ? 'ok   ' : 'FAIL ') + n + (c ? '' : '  → ' + x)); if (!c) fails++ }
 
@@ -20,8 +23,7 @@ const studio = spawn('bun', [`${R}/packages/litestone/src/tools/cli.js`, 'studio
   { cwd: CWD, env: { ...process.env, ENCRYPTION_KEY: 'a'.repeat(64) }, stdio: ['ignore','pipe','pipe'] })
 let slog = ''; studio.stdout.on('data', d => slog += d); studio.stderr.on('data', d => slog += d)
 
-const chrome = spawn('google-chrome', ['--headless=new', `--remote-debugging-port=${CDP}`,
-  `--window-size=1400,${process.env.H ?? 700}`, '--no-sandbox', '--disable-gpu', 'about:blank'], { stdio: 'ignore' })
+const browser = await openChrome({ windowSize: `1400,${process.env.H ?? 700}` })
 
 const waitFor = async (fn, tries = 60) => {
   for (let i = 0; i < tries; i++) { await new Promise(r => setTimeout(r, 250)); const v = await fn().catch(() => null); if (v) return v }
@@ -29,24 +31,12 @@ const waitFor = async (fn, tries = 60) => {
 }
 try {
   if (!await waitFor(() => fetch(`http://127.0.0.1:${PORT}/`).then(r => r.ok))) { console.log('studio down\n' + slog.slice(0, 900)); process.exit(1) }
-  // a profile with extensions lists background_page targets first — take the PAGE
-  const targets = await waitFor(() => fetch(`http://127.0.0.1:${CDP}/json/list`).then(r => r.json()).then(t => { const p = t.filter(x => x.type === 'page'); return p.length ? p : null }))
-  if (!targets) { console.log('chrome down'); process.exit(1) }
-
-  const ws = new WebSocket(targets[0].webSocketDebuggerUrl)
-  await new Promise(r => ws.addEventListener('open', r))
-  let id = 0
-  const send = (method, params = {}) => new Promise(res => {
-    const mine = ++id
-    const on = e => { const m = JSON.parse(e.data); if (m.id === mine) { ws.removeEventListener('message', on); res(m.result) } }
-    ws.addEventListener('message', on); ws.send(JSON.stringify({ id: mine, method, params }))
-  })
+  const send = browser.cmd
   const evaluate = async expr => {
     const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })
     return r?.result?.value
   }
 
-  await send('Page.enable')
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` })
   // studio fills #tableList from an async /api/info — wait for the rows, not load
   const n = await waitFor(async () => {
@@ -82,7 +72,6 @@ try {
   ok('Tools heading is on screen', m.toolsBottom !== null && m.toolsBottom <= m.vh, `${m.toolsBottom} vs ${m.vh}`)
   ok('last nav item reachable', m.liteAfterScroll <= m.vh + 1,
      `${m.liteAfterScroll} vs ${m.vh} after scrolling the sidebar (sidebar scrolls: ${m.barScrolls})`)
-  ws.close()
-} finally { studio.kill('SIGKILL'); chrome.kill('SIGKILL') }
+} finally { studio.kill('SIGKILL'); await browser.close() }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)

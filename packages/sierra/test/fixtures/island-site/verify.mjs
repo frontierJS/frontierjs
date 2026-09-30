@@ -28,11 +28,13 @@ import { join, extname, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { findChrome } from '../../../../mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DIST = join(HERE, 'dist/client')
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
+const CHROME = findChrome()
+if (!CHROME) { console.error('No Chrome on this machine — install Chrome or Chromium, or point $FJS_CHROME at a binary'); process.exit(1) }
 const TYPES  = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
 
 if (!existsSync(join(DIST, 'index.html'))) {

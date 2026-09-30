@@ -517,7 +517,7 @@ litestone tenant list | create <id> | delete <id> | migrate
 `@@external` marks a model whose table is managed outside Litestone — a SQLite view, an FTS5 virtual table, a table created by a migration tool, or a shared table from another process. Litestone skips DDL and migrations for it entirely, but exposes full query support: `findMany`, `findFirst`, `count`, `exists`, `aggregate`, `search`, etc.
 
 ```prisma
-// SQLite view — created manually or via a JS migration
+// SQLite view — created manually or in a .sql migration
 model active_users {
   id        Int @id
   email     String
@@ -560,21 +560,14 @@ const posts = await db.post.findMany({ include: { author: true } })
 
 **Common patterns:**
 
-A SQLite view is the most useful form — define the view in a JS migration, then query it through the ORM with full type safety:
+A SQLite view is the most useful form — define the view in a `.sql` migration, then query it through the ORM with full type safety:
 
-```js
-// migrations/20240101000000_create-active-users-view.js
-// `db` here is the SYSTEM client — a migration is schema surgery by an operator,
-// outside any request, so it bypasses every access rule by construction. This is
-// the one place raw `db.sql` is correct on a schema that declares them.
-export async function up(db) {
-  await db.sql`
-    CREATE VIEW IF NOT EXISTS active_users AS
-    SELECT id, email, name, accountId
-    FROM user
-    WHERE deletedAt IS NULL
-  `
-}
+```sql
+-- migrations/20240101000000_create-active-users-view.sql
+CREATE VIEW IF NOT EXISTS active_users AS
+SELECT id, email, name, accountId
+FROM user
+WHERE deletedAt IS NULL;
 ```
 
 ```prisma
@@ -667,7 +660,7 @@ db.post.findMany({ where: { $raw: sql`…` } })  // keeps every policy — reach
 Raw statements enforce no gate, no row policy, no field guard and no soft-delete
 filter, because all of those live above SQLite. It is coarse per schema on
 purpose: deciding per statement means parsing it, and a wrong validator grants a
-*false* guarantee. A JS migration is exempt — the runner hands it the system client.
+*false* guarantee. A data script run after `migrate apply` takes `asSystem()`.
 
 ---
 
@@ -1731,29 +1724,9 @@ await db.$setAuth(req.user).customer.mine.aggregate({ _count: true })
 
 ---
 
-## JS migrations
+## Data changes are not migrations
 
-Migrations can be `.js` files alongside SQL files in the migrations directory:
-
-```js
-// migrations/20240101000001_backfill-slugs.js
-export async function up(db) {
-  // db = full Litestone client — all ORM operations available
-  const posts = await db.post.findMany({ where: { slug: null } })
-  for (const post of posts) {
-    await db.post.update({
-      where: { id: post.id },
-      data:  { slug: post.title.toLowerCase().replace(/\s+/g, '-') },
-    })
-  }
-}
-```
-
-JS migrations run in order alongside SQL migrations. Pass the client to `apply()` when using JS migrations programmatically:
-
-```js
-await apply(rawDb, './migrations', client)
-```
+`migrations/` holds `.sql` only; a `.js` file there is refused by `migrate create`, `check` and `apply` with a nonzero exit (`FJS-D518`). A backfill is an app script chained after `migrate apply`, idempotent by the rows it expects — [docs/migrations.md](./docs/migrations.md#data-changes-are-not-migrations).
 
 ---
 

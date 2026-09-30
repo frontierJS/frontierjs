@@ -257,10 +257,10 @@ describe('the release pipeline an inline app runs', () => {
 
     const first   = await shipped({
       builtImage: 'sha256:' + 'a'.repeat(64),
-      configSnapshot: { source: inline(), config: {} } })
+      configSnapshot: { source: inline(), runtime: {} } })
     const current = await shipped({
       builtImage: 'sha256:' + 'b'.repeat(64), previousDeploymentId: first.id,
-      configSnapshot: { source: inline(), config: {} } })
+      configSnapshot: { source: inline(), runtime: {} } })
 
     await sys.app.update({ where: { id: target.id }, data: {
       type: 'container', source: { kind: 'image', image: 'nginx:alpine' } } })
