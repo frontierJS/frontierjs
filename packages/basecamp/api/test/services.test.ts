@@ -31,6 +31,7 @@ import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
 import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
 import { notifyPeople }           from '../src/core/notify.ts'
 import { createJunctionClient }   from '@frontierjs/junction/client'
+import { resolveSecretEnv }       from '../src/core/credentials.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -1734,6 +1735,227 @@ describe('an alert rule says whether anything writes the metric it watches', () 
   })
 })
 
+describe('snoozing a rule silences it for a while, and the server keeps the clock', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let rule: any
+
+  beforeAll(async () => {
+    rule = await (env.system as any).alertRule.create({
+      data: { workspaceId: ws.id, name: `snooze-${tag()}`, metricName: 'snooze.metric',
+              severity: 'warning', operator: 'gt', threshold: 10 },
+    })
+  })
+
+  test('a snooze is minutes from NOW, and unsnooze clears it', async () => {
+    const before = Date.now()
+    const r = await env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 60 }) as any
+    const until = Date.parse(r.snoozedUntil)
+    expect(until).toBeGreaterThanOrEqual(before + 60 * 60_000)
+    expect(until).toBeLessThan(Date.now() + 60 * 60_000 + 5_000)
+    // The rule comes back with its delivery, like attach/detach, so a card
+    // assigning the answer keeps the sections it was drawing.
+    expect(Array.isArray(r.channels)).toBe(true)
+
+    const cleared = await env.as(owner).service('alerts').call('unsnooze', rule.id) as any
+    expect(cleared.snoozedUntil).toBe(null)
+  })
+
+  test('a snooze past a week is refused, and so is none at all', async () => {
+    await expect(env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 + 1 }))
+      .rejects.toThrow(/1 to 10080/)
+    await expect(env.as(owner).service('alerts').call('snooze', rule.id, {}))
+      .rejects.toThrow(/1 to 10080/)
+    // Paired: the ceiling itself is allowed.
+    const r = await env.as(owner).service('alerts').call('snooze', rule.id, { minutes: 7 * 24 * 60 }) as any
+    expect(r.snoozedUntil).toBeTruthy()
+    await env.as(owner).service('alerts').call('unsnooze', rule.id)
+  })
+
+  test('a developer cannot silence the pager, and a patch cannot write the column', async () => {
+    await expect(env.as(developer).service('alerts').call('snooze', rule.id, { minutes: 5 }))
+      .rejects.toThrow(/admin or owner/)
+    // `@system`: the ordinary edit is not a second door to the same silence.
+    // It carries the version it read, so the refusal is the column's and not
+    // the compare-and-swap's.
+    const far = new Date(Date.now() + 365 * 24 * 60 * 60_000).toISOString()
+    const { version } = await (env.system as any).alertRule.findFirst({ where: { id: rule.id } })
+    await expect(env.as(owner).service('alerts').patch(rule.id, { snoozedUntil: far, version }))
+      .rejects.toThrow(/snoozedUntil/)
+    const row = await (env.system as any).alertRule.findFirst({ where: { id: rule.id } })
+    expect(row.snoozedUntil).toBe(null)
+  })
+})
+
+describe('an app made from a blueprint', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let bp: any, gone: any, environment: any
+
+  beforeAll(async () => {
+    const sys = env.system as any
+    bp = await sys.blueprint.create({ data: {
+      slug: `kv-${tag()}`, name: 'KV', category: 'Data', description: 'A store', version: '7',
+      image: 'redis:7.2-alpine', appType: 'database', port: 6379,
+      persistent: true, volumePath: '/data', replicas: 1,
+    } })
+    for (const [i, p] of [
+      { key: 'KV_PASSWORD', label: 'Password',      required: true,  secret: true },
+      { key: 'KV_POLICY',   label: 'Policy',        defaultValue: 'allkeys-lru' },
+      { key: 'KV_KEY',      label: 'Encryption key', required: true, secret: true, generate: 'random_hex_16' },
+      { key: 'KV_NOTE',     label: 'Note' },
+    ].entries())
+      await sys.blueprintParam.create({ data: { blueprintId: bp.id, position: i, ...p } })
+    gone = await sys.blueprint.create({ data: {
+      slug: `old-${tag()}`, name: 'Old', category: 'Data', description: 'x', version: '1',
+      image: 'old:1', deprecatedAt: new Date().toISOString(),
+    } })
+    const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'BP', slug: `bp-${tag()}` } })
+    environment = await sys.environment.create({ data: {
+      workspaceId: ws.id, projectId: project.id, name: 'Prod', slug: `prod-${tag()}` } })
+  })
+
+  const make = (who: any, payload: Record<string, unknown>) =>
+    env.as(who).service('apps').call('fromBlueprint', null, payload)
+
+  test('a developer makes one; it records the blueprint and copies what it said', async () => {
+    const r = await make(developer, {
+      blueprintId: bp.id, environmentId: environment.id, name: 'Cache',
+      values: { KV_PASSWORD: 'hunter2-kv' },
+    }) as any
+
+    expect(r.blueprintId).toBe(bp.id)
+    expect(r.type).toBe('database')
+    expect(r.port).toBe(6379)
+    expect(r.source).toEqual({ kind: 'image', image: 'redis:7.2-alpine' })
+    expect(r.config.volumePath).toBe('/data')
+    // A default stands in for a blank field; a blank optional one is absent.
+    expect(r.config.env).toEqual({ KV_POLICY: 'allkeys-lru' })
+    expect(Object.keys(r.config.secretEnv).sort()).toEqual(['KV_KEY', 'KV_PASSWORD'])
+
+    // The typed password is in no column an app read returns — paired with
+    // the release resolving it, so "not there" is not "not anywhere".
+    const row = await (env.system as any).app.findFirst({ where: { id: r.id } })
+    expect(JSON.stringify(row)).not.toContain('hunter2-kv')
+    const resolved = await resolveSecretEnv(env.db, row.config) as any
+    expect(resolved.env.KV_PASSWORD).toBe('hunter2-kv')
+    expect(resolved.env.KV_POLICY).toBe('allkeys-lru')
+    // `random_hex_16` is sixteen BYTES, the way `openssl rand -hex 16` reads.
+    expect(resolved.env.KV_KEY).toMatch(/^[0-9a-f]{32}$/)
+    expect(resolved.secretEnv).toBeUndefined()
+
+    // The secrets are this workspace's rows, which is where /secrets/ lists them.
+    const secrets = await (env.system as any).secret.findMany({ where: { workspaceId: ws.id } })
+    expect(secrets.filter((x: any) => x.name.startsWith('cache/KV_')).length).toBe(2)
+  })
+
+  test('a gone secret fails the release by name rather than starting without it', async () => {
+    const r = await make(developer, {
+      blueprintId: bp.id, environmentId: environment.id, name: 'Cache two',
+      values: { KV_PASSWORD: 'x' },
+    }) as any
+    const ref = r.config.secretEnv.KV_PASSWORD as string
+    await (env.system as any).secret.remove({ where: { id: ref.slice('secret:'.length).split('#')[0] } })
+    await expect(resolveSecretEnv(env.db, r.config)).rejects.toThrow(/KV_PASSWORD/)
+  })
+
+  test('a required parameter is refused by its label, an unknown one by its key', async () => {
+    await expect(make(developer, { blueprintId: bp.id, environmentId: environment.id, name: 'No pw' }))
+      .rejects.toThrow(/Required: Password/)
+    await expect(make(developer, { blueprintId: bp.id, environmentId: environment.id, name: 'Typo',
+      values: { KV_PASSWORD: 'x', KV_PASWORD: 'y' } }))
+      .rejects.toThrow(/KV_PASWORD/)
+    // Neither left an app behind.
+    expect(await (env.system as any).app.count({ where: { name: { in: ['No pw', 'Typo'] } } })).toBe(0)
+  })
+
+  test('a withdrawn blueprint is not offered, and a viewer cannot make an app', async () => {
+    await expect(make(developer, { blueprintId: gone.id, environmentId: environment.id, name: 'Old' }))
+      .rejects.toThrow(/withdrawn/)
+    await expect(make(viewer, { blueprintId: bp.id, environmentId: environment.id, name: 'V',
+      values: { KV_PASSWORD: 'x' } }))
+      .rejects.toThrow(/you have: viewer/)
+  })
+
+  test('where an app came from is not a column its editor writes', async () => {
+    const plain = await env.as(developer).service('apps').create({
+      environmentId: environment.id, name: 'Plain', type: 'container',
+      source: { kind: 'image', image: 'nginx:alpine' },
+    }) as any
+    await expect(env.as(developer).service('apps').patch(plain.id, { blueprintId: bp.id }))
+      .rejects.toThrow(/blueprintId/)
+  })
+})
+
+describe('infra.summary counts the fleet Home opens on', () => {
+  const tag = () => Math.random().toString(36).slice(2, 8)
+  let me: any
+
+  test('counts are this workspace, live rows, and the last day of releases', async () => {
+    // A workspace of its own, so every number below is exact rather than
+    // "at least" — and the shared one beside it holds rows that must not count.
+    const sys  = env.system as any
+    const acct = await sys.account.create({ data: { slug: `sum-${tag()}`, displayName: 'Sum' } })
+    const u    = await sys.user.create({ data: { email: `sum-${tag()}@x.co`, accountId: acct.id } })
+    const w    = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sum', slug: `sum-${tag()}`, ownerId: u.id } })
+    await sys.workspaceMember.create({ data: { workspaceId: w.id, userId: u.id, role: 'viewer',
+      capabilities: grantsFor('viewer'), acceptedAt: new Date().toISOString() } })
+    me = session({ userId: u.id, workspaceId: w.id })
+
+    await serverAt('online',  { workspaceId: w.id, name: 'a', slug: `a-${tag()}` })
+    await serverAt('online',  { workspaceId: w.id, name: 'b', slug: `b-${tag()}` })
+    const gone = await serverAt('pending', { workspaceId: w.id, name: 'c', slug: `c-${tag()}` })
+    await sys.server.transition(gone.id, 'destroy')
+    await sys.server.transition(gone.id, 'reportDestroyed')
+
+    const project = await sys.project.create({ data: { workspaceId: w.id, name: 'P', slug: `p-${tag()}` } })
+    const e       = await sys.environment.create({ data: { workspaceId: w.id, projectId: project.id, name: 'E', slug: `e-${tag()}` } })
+    const mkApp   = (name: string, status: string) => sys.app.create({ data: {
+      workspaceId: w.id, environmentId: e.id, name, slug: `${name}-${tag()}`, status } })
+    const running = await mkApp('run', 'running')
+    await mkApp('err', 'error')
+    const deleted = await mkApp('del', 'running')
+    await sys.app.remove({ where: { id: deleted.id } })
+
+    // A release is born `pending` and walks its declared moves to the rest.
+    const WALK: Record<string, string[]> = { success: ['build', 'succeed'], failed: ['fail'] }
+    const release = async (status: string, hoursAgo: number, workspaceId = w.id, a = running) => {
+      const d = await sys.deployment.create({ data: {
+        workspaceId, appId: a.id, environmentId: a.environmentId, trigger: 'manual',
+        queuedAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString() } })
+      for (const move of WALK[status]!) await sys.deployment.transition(d.id, move)
+    }
+    await release('success', 1)
+    await release('failed', 2)
+    await release('success', 30)    // outside the day
+
+    const rule = await sys.alertRule.create({ data: { workspaceId: w.id, name: 'r', metricName: 'm',
+      severity: 'warning', operator: 'gt', threshold: 1,
+      snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() } })
+    const ev = (acknowledgedAt: string | null, status = 'firing') => sys.alertEvent.create({ data: {
+      ruleId: rule.id, status, severity: 'warning', subjectType: 'series', subjectId: 's',
+      message: 'm', acknowledgedAt } })
+    await ev(null)
+    await ev(new Date().toISOString())
+    await ev(null, 'resolved')
+
+    const r = await env.as(me).service('infra').call('summary', null) as any
+    expect(r.servers.total).toBe(2)
+    expect(r.servers.byStatus.online).toBe(2)
+    expect(r.apps.total).toBe(2)
+    expect(r.apps.byStatus).toEqual({ running: 1, error: 1 })
+    expect(r.releases.total).toBe(2)
+    expect(r.releases.byStatus).toEqual({ success: 1, failed: 1 })
+    expect(r.alerts).toEqual({ firing: 2, unacknowledged: 1, snoozed: 1 })
+
+    // Paired: a release in the shared workspace, and this one's count holds.
+    const op    = await sys.project.create({ data: { workspaceId: ws.id, name: 'OP', slug: `op-${tag()}` } })
+    const oe    = await sys.environment.create({ data: { workspaceId: ws.id, projectId: op.id, name: 'OE', slug: `oe-${tag()}` } })
+    const other = await sys.app.create({ data: { workspaceId: ws.id, environmentId: oe.id, name: 'x', slug: `x-${tag()}` } })
+    await release('failed', 0, ws.id, other)
+    const again = await env.as(me).service('infra').call('summary', null) as any
+    expect(again.releases.byStatus).toEqual({ success: 1, failed: 1 })
+  })
+})
+
 // ─── Accepting an invitation ─────────────────────────────────────────────
 //
 // The whole of `accept` was covered by the browser drive and by nothing else,
@@ -2619,6 +2841,7 @@ describe('users — a person edits their own profile, at any standing', () => {
     await env.as(developer).service('users').patch('me', {
       email: 'taken@x.co', accountId: null, emailVerified: true,
       isSystemAdmin: true, status: 'suspended', kind: 'bot', displayName: 'Dev',
+      deletedAt: new Date().toISOString(), id: 'hijack', createdAt: '2000-01-01T00:00:00.000Z',
     })
     const row = await sys().user.findUnique({ where: { id: developer.userId } })
     expect(row.email).toBe(before.email)
@@ -2626,6 +2849,8 @@ describe('users — a person edits their own profile, at any standing', () => {
     expect(row.emailVerified).toBe(before.emailVerified)
     expect([row.isSystemAdmin, row.status, row.kind]).toEqual([before.isSystemAdmin, before.status, before.kind])
     expect(row.displayName).toBe('Dev')
+    expect(row.deletedAt).toBeNull()
+    expect(row.createdAt).toBe(before.createdAt)
   })
 
   test('there is no list of people here', async () => {
@@ -2636,6 +2861,87 @@ describe('users — a person edits their own profile, at any standing', () => {
   // unlike notifications, whose read is 0.
   test('signed out is refused, not answered with nobody', async () => {
     await expect(env.service('users').get('me')).rejects.toThrow(/Authentication required/)
+  })
+})
+
+describe('leaving a workspace, and handing one over', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  const sys  = () => env.system as any
+
+  /** A workspace of its own per test, so a transfer never moves the shared
+   *  `ws` owner every other test signs in as. */
+  async function crew(...roles: string[]) {
+    const acct = await sys().account.create({ data: { slug: `crew-${uniq()}`, displayName: 'Crew' } })
+    const people: { id: string; role: string }[] = []
+    for (const role of roles) {
+      const u = await sys().user.create({ data: { email: `${role}-${uniq()}@x.co`, accountId: acct.id } })
+      people.push({ id: u.id, role })
+    }
+    const w = await sys().workspace.create({
+      data: { accountId: acct.id, name: 'Crew', slug: `crew-${uniq()}`, ownerId: people[0].id },
+    })
+    for (const p of people)
+      await sys().workspaceMember.create({ data: {
+        workspaceId: w.id, userId: p.id, role: p.role,
+        capabilities: grantsFor(p.role), acceptedAt: new Date().toISOString(),
+      } })
+    const as = (i: number) => env.as(session({ userId: people[i].id, workspaceId: w.id })).service('workspaces')
+    const roleOf = async (i: number) =>
+      (await sys().workspaceMember.findFirst({ where: { workspaceId: w.id, userId: people[i].id } }))?.role ?? null
+    const ownerId = async () => (await sys().workspace.findUnique({ where: { id: w.id } })).ownerId
+    return { w, people, as, roleOf, ownerId }
+  }
+
+  test('a viewer leaves, and is no longer a member', async () => {
+    const c = await crew('owner', 'viewer')
+    await c.as(1).call('leave', c.w.id)
+    expect(await c.roleOf(1)).toBeNull()
+    expect(await c.roleOf(0)).toBe('owner')
+  })
+
+  test('the only owner cannot leave, and is told what to do instead', async () => {
+    const c = await crew('owner', 'admin')
+    await expect(c.as(0).call('leave', c.w.id)).rejects.toThrow(/Hand ownership to another member/)
+    expect(await c.roleOf(0)).toBe('owner')
+  })
+
+  test('one of two owners leaves, and the workspace names the other', async () => {
+    const c = await crew('owner', 'owner')
+    await c.as(0).call('leave', c.w.id)
+    expect(await c.roleOf(0)).toBeNull()
+    expect(await c.ownerId()).toBe(c.people[1].id)
+  })
+
+  test('leaving a workspace you are not in is a 404, not a success', async () => {
+    const c = await crew('owner')
+    await expect(env.as(developer).service('workspaces').call('leave', c.w.id)).rejects.toThrow(/not found/)
+  })
+
+  test('an owner hands over and steps down to admin, in one write', async () => {
+    const c = await crew('owner', 'developer')
+    await c.as(0).call('transferOwnership', c.w.id, { userId: c.people[1].id })
+    expect([await c.roleOf(0), await c.roleOf(1)]).toEqual(['admin', 'owner'])
+    expect(await c.ownerId()).toBe(c.people[1].id)
+    // Stepped down means graded down: the grid moved with the word.
+    const row = await sys().workspaceMember.findFirst({ where: { workspaceId: c.w.id, userId: c.people[0].id } })
+    expect(row.capabilities).toEqual(grantsFor('admin'))
+    // …and the one who stepped down can now leave, since somebody holds it.
+    await c.as(0).call('leave', c.w.id)
+    expect(await c.roleOf(0)).toBeNull()
+  })
+
+  test('an admin cannot hand over what they do not hold', async () => {
+    const c = await crew('owner', 'admin', 'developer')
+    await expect(c.as(1).call('transferOwnership', c.w.id, { userId: c.people[2].id }))
+      .rejects.toThrow(/Requires owner role/)
+    expect(await c.roleOf(2)).toBe('developer')
+  })
+
+  test('nor to somebody outside the workspace', async () => {
+    const c = await crew('owner')
+    await expect(c.as(0).call('transferOwnership', c.w.id, { userId: developer.userId }))
+      .rejects.toThrow(/Member not found/)
+    expect(await c.roleOf(0)).toBe('owner')
   })
 })
 

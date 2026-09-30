@@ -3017,6 +3017,18 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d556"></a>2026-09-29 · `FJS-D556` — `@money` states its currency: a bare `@money` is refused at parse, and there is no app default currency.
+
+Asked in [`FJS-1589`](ISSUES.md#fjs-1589). **Refusing** was picked over a new top-level `.lite` declaration naming a default, and over a `sierra.config.js` key.
+
+A bare `@money` meant *the app's default currency*, and nothing stated one. So `<Cell>`, `MoneyInput`, `FilterBar` and `formatMoney` each fell back to a literal `USD`, and a shop keeping its books in pounds would have shown and taken dollars on every bare column. A default in sierra's config reaches the UI alone, so an email formatted in the API picks its own. A schema-level default is one origin, but it is a new word in the language to save writing `USD` beside each amount. No app schema used the bare form, only three mcp test fixtures.
+
+**Now:** the parser refuses a bare `@money` by name, and `x-money` is always `{ currency }` or `{ field }`. The kit's `USD` fallbacks are gone. A per-row amount whose row holds no code renders as empty in `<Cell>` and asks for the currency in `MoneyInput`. **A `@money(field: …)` column offers no range filter**: its amounts share no scale, so `resource.filters()` answers `op: null` with the reason. `formatMoney`'s own `USD` parameter default stays: it is a formatter's signature, not a statement of what a column holds.
+
+§ V: origin (1) and derivation (5) decide it, because the currency is on the column where the scale is derived from it. No concept is added (2). Failure (8): a refusal at parse, naming both spellings that pass. Question 9: a bare `@money` must not parse, and `exact-numbers.test.ts` asserts the refusal and that both stated shapes still pass. No adjudication is in tension: nothing shipped depends on the old spelling, so there is nothing to preserve. Tier: Register.
+
+— `packages/litestone/src/core/parser.js` (validation), `jsonschema.js`, `packages/sierra/src/junction/resource.js` (`filters()`).
+
 ### <a id="fjs-d513"></a>2026-09-29 · `FJS-D513` — Does the shared predicate language grow a value-assembling form, or do orion's assembling shapes stay documents — Grow `template` and `object` in the shared parser; litestone's policy compiler refuses both by name at parse of a `.lite` policy (a value-assembling form is not a predicate).
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Orion-only layer: orion parses a superset over predicate's tokens; the shared grammar stays predicates. Splits FJS-D271's one-language clause), **C** (Accept: assembling shapes are documents, the inspector keeps showing JSON; close FJS-1209 as won't-fix).
@@ -6225,8 +6237,7 @@ fixes one app and catches only the spellings its pattern knows.
 **What it does not catch.** A body that reads a key and discards it passes. The
 check proves a key was read, not that it narrowed the where. It fires on a request
 that sends the key, so a test that never sends one proves nothing about it. The
-base `get` by id reads its query and does not apply it, which is that gap in
-junction's own code (`FJS-1585`).
+base `get` by id was that gap in junction's own code, closed as `FJS-1585`.
 
 **Where it lives.** `junction/src/core/litestone.ts` (`watchFilterReads`, beside
 `autoFilter`) and `junction/src/core/service.ts` (`callService`). Pinned by
@@ -9575,6 +9586,8 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 ## UI substrate (Mesa)
 
 ### <a id="fjs-d555"></a>2026-09-29 · `FJS-D555` — `@money` has a built-in form control: sierra's table answers `money` and the kit binds it to `MoneyInput`. `@scale` keeps no control.
+
+**Status:** amended-by [`FJS-D556`](#fjs-d556) — the bare-`@money` clause. There is no `USD` fallback, because a bare `@money` is refused at parse.
 
 Asked in [`FJS-1582`](ISSUES.md#fjs-1582). A built-in control was picked over shipping `MoneyInput` for the app to register, which would have left a form putting cents in a dollar box until an app added two lines. It amends how `FJS-D17` was applied, not what it says: the table answered `control: null` for `@money` and left the control to the app, and every app that met that answer wrote the same box. An app still replaces it by registering `money`.
 

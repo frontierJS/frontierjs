@@ -347,6 +347,42 @@ describe('alert-evaluate — the job between a rule and an event', () => {
     expect(await db.alertEvent.count({ where: { ruleId: twin.rule.id } })).toBe(1)
   })
 
+  it('a snoozed rule opens nothing, and fires once the snooze has run out', async () => {
+    // Paired twice: the identical unsnoozed rule fires in the same pass, and
+    // the same rule fires on the pass after its snooze is in the past — a
+    // snooze that outlived its window is a rule that stopped without a word.
+    const { app, db } = await makeApp()
+    const { rule } = await fixture(db, { values: [600, 610], metricName: 'l.snoozed' })
+    await db.alertRule.update({ where: { id: rule.id },
+      data: { snoozedUntil: new Date(Date.now() + 60 * MINUTE).toISOString() } })
+    const twin = await fixture(db, { values: [600, 610], metricName: 'm.awake' })
+
+    await run(app)
+    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(0)
+    expect(await db.alertEvent.count({ where: { ruleId: twin.rule.id } })).toBe(1)
+
+    await db.alertRule.update({ where: { id: rule.id },
+      data: { snoozedUntil: new Date(Date.now() - MINUTE).toISOString() } })
+    await run(app)
+    expect(await db.alertEvent.count({ where: { ruleId: rule.id } })).toBe(1)
+  })
+
+  it('a snooze does not hold an open event open', async () => {
+    // The incident was already paged; closing it pages nobody new, and a
+    // PagerDuty incident left open for the length of a snooze is a lie.
+    const { app, db } = await makeApp()
+    const { rule, series: s } = await fixture(db, { values: [600, 610], metricName: 'n.resolves' })
+    await run(app)
+    const open = (await db.alertEvent.findMany({ where: { ruleId: rule.id } }))[0]
+    expect(open.status).toBe('firing')
+
+    await db.alertRule.update({ where: { id: rule.id },
+      data: { snoozedUntil: new Date(Date.now() + 60 * MINUTE).toISOString() } })
+    await db.metricPoint.create({ data: { seriesId: s.id, at: Date.now() + MINUTE, value: 1 } })
+    await run(app)
+    expect((await db.alertEvent.findFirst({ where: { id: open.id } })).status).toBe('resolved')
+  })
+
   it('a stale series cannot fire on the number it last wrote', async () => {
     // Bounded by MIN_WINDOW_MS. Without it a `forMinutes: 0` rule reads the
     // newest point whenever it was written, so an exporter that died a week ago

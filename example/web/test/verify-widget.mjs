@@ -32,7 +32,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -52,7 +52,6 @@ const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const WIDGETS = 7310
 const HOST    = 7311
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── Servers ───────────────────────────────────────────────────────────────
 
@@ -234,59 +233,18 @@ check('and carries its own CSS rather than asking for a second file',
 
 console.log('\n  widget — on somebody else\'s page')
 
-// Chrome picks the debugging port and the profile is this run's own. A FIXED
-// port is answered by whichever browser bound it first, so a second drive
-// attaches to the first one's session and grades that browser's screen
-// (`FJS-740` one layer over, measured in `verify:stock`); and the default
-// profile carries the previous run's sign-in into this one.
-const profile = chromeProfile('fjs-widget-')
-const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
-  'about:blank',
-], 'chrome')
-
-const wsUrl = await new Promise((resolve) => {
-  let buf = ''
-  const t = setTimeout(() => resolve(null), 20000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
+  console.error(e.message); stopAll(); process.exit(1)
 })
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
+const { cmd } = browser
+// Asked as an EXPRESSION that answers a value; the driver evaluates a body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const pending = new Map()
+// Every console error and warning, not only the driver's [Mesa] ones.
 const consoleErrors = []
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
-  else if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning'))
-    consoleErrors.push(m.params.args?.map(a => a.value ?? a.description).join(' '))
-}
-function send(method, params = {}, sessionId) {
-  const id = ++msgId
-  return new Promise(res => { pending.set(id, res); ws.send(JSON.stringify({ id, method, params, sessionId })) })
-}
-
-const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (p.type === 'error' || p.type === 'warning') consoleErrors.push(p.args?.map(a => a.value ?? a.description).join(' '))
+})
 
 async function until(fn, tries = 120) {
   for (let i = 0; i < tries; i++) {
@@ -298,7 +256,7 @@ async function until(fn, tries = 120) {
 }
 
 async function goto(url) {
-  await send('Page.navigate', { url }, sessionId)
+  await cmd('Page.navigate', { url })
   await until(async () => await evaluate(`document.readyState === 'complete'`))
 }
 

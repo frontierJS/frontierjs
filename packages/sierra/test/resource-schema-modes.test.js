@@ -508,4 +508,24 @@ describe('a search box is offered only where the boundary will answer', () => {
     expect(articles.search.fields).toEqual(['body', 'title'])
     expect(articles.filters.find(f => f.name === 'slug').op).toBe('contains')
   })
+
+  test('a per-row currency offers no range, and a stated one does', async () => {
+    // Amounts in each row's own currency share no scale, so one range over
+    // them compares cents with yen (`FJS-D556`). Asserted as a PAIR: a table
+    // that refused every money column would satisfy the first row alone.
+    await build(`
+      model Payment {
+        id       Int    @id @default(autoincrement())
+        amount   Int    @money(field: currency)
+        currency String
+        fee      Int    @money(USD)
+        @@gate("0.0.0.0")
+      }
+    `)
+    const filters = createResource('payments', { model: 'Payment' }).filters({ limit: 99 }).filters
+    const amount  = filters.find(f => f.name === 'amount')
+    expect(amount.op).toBe(null)
+    expect(amount.reason).toMatch(/share no range/)
+    expect(filters.find(f => f.name === 'fee').op).toEqual(['gte', 'lte'])
+  })
 })

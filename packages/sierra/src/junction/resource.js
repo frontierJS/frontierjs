@@ -1843,6 +1843,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         const refused = readModel?.properties?.[c.name]?.['x-filterable']
         if (refused) return { ...c, op: null, kind: null, reason: refused }
 
+        // Amounts held in several currencies share no scale, so one range
+        // over them compares cents with yen. `FJS-D556`.
+        if (c.display === 'money' && !c.currency) {
+          return { ...c, op: null, kind: null, reason: `${c.name} holds amounts in the currency of each row, which share no range` }
+        }
+
         const f = filterOpFor(c.display)
         if (!f) return { ...c, op: null, kind: null, reason: `no filter for a ${c.display ?? 'column of unknown kind'}` }
         return { ...c, ...f }

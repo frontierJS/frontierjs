@@ -37,9 +37,10 @@ src/
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
   css-inliner.js       — scoped-style extraction and inlining
-  drive.js             — Chrome over CDP, @frontierjs/mesa/drive. Published: an
-                         app's drive and every in-repo drive import it
-                         (`FJS-D554`). No framework import, no dependency
+  drive.js             — Chrome over CDP, @frontierjs/mesa/drive: openChrome,
+                         findChrome, createNetwork. Published: an app's drive
+                         and every in-repo drive import it (`FJS-D554`). No
+                         framework import, no dependency
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite

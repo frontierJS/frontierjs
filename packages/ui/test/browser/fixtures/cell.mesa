@@ -10,8 +10,8 @@
   // integer. One value, two declarations, two answers — which is the whole
   // claim, and it is unfalsifiable from either cell alone.
   //
-  // The currency rows are three because `x-money` has three shapes: a stated
-  // currency, one held per ROW in a sibling column, and neither. JPY is here
+  // The currency rows are two because `x-money` has two shapes: a stated
+  // currency, and one held per ROW in a sibling column. JPY is here
   // because it has no minor unit at all, so an implementation that divided by
   // 100 always is right about dollars and wrong about yen.
   import Cell from '../../../components/display/Cell.mesa'
@@ -26,7 +26,6 @@
   const money    = { name: 'total', display: 'money', currency: 'USD' }
   const yen      = { name: 'total', display: 'money', currency: 'JPY' }
   const perRow   = { name: 'total', display: 'money', currencyField: 'ccy' }
-  const noCcy    = { name: 'total', display: 'money' }
   const count    = { name: 'total', display: 'number' }
   const status   = { name: 'status', display: 'enum', options: [
     { value: 'awaiting_payment', label: 'Awaiting payment' },
@@ -48,7 +47,7 @@
 <div id="count"><Cell value={1299} column={count} /></div>
 <div id="yen"><Cell value={1299} column={yen} /></div>
 <div id="perrow"><Cell value={1299} column={perRow} record={{ ccy: 'JPY' }} /></div>
-<div id="noccy"><Cell value={1299} column={noCcy} /></div>
+<div id="noccy"><Cell value={1299} column={perRow} record={{ ccy: null }} /></div>
 <div id="badccy"><Cell value={1299} column={perRow} record={{ ccy: 'NOPE' }} /></div>
 <div id="nanmoney"><Cell value={'oops'} column={money} /></div>
 

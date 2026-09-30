@@ -613,7 +613,7 @@ describe('an argument schema resolves on its own', () => {
   })
 
   test('a money column says it is minor units, because the integer alone is a trap', () => {
-    // `{"type":"integer","x-money":{}}` reads as an ordinary number, and the
+    // `{"type":"integer","x-money":{...}}` reads as an ordinary number, and the
     // mistake that shape invites is a factor of a hundred on somebody's refund.
     const total = ((at(8).why('orders_create')?.input.schema?.properties ?? {}) as Record<string, { description?: string }>).total
     expect(total.description).toContain('minor units')

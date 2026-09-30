@@ -1,5 +1,14 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-30 — the outbound-URL guard is `@frontierjs/junction/public-url` (`FJS-1579`, `FJS-1578`)
+
+`webhooks/url.ts` moved to `src/core/public-url.ts` and is exported: `assertPublicUrl(raw, policy)` and `PublicUrlError`, with `PublicUrlPolicy` as the policy type. `assertDeliverableTarget`, `WebhookTargetError` and webhooks' `TargetPolicy` are gone; webhooks imports the new names, and `webhooks({ targets })` takes the same three fields. Portal had written its own guard because this one was private, and its copy fetched loopback spelled `[::ffff:127.0.0.1]`.
+
+- v6 is graded as eight numeric words rather than by string prefix. Every form that carries a v4 address — mapped (dotted, hex, expanded), SIIT, IPv4-compatible, NAT64 and 6to4 — is graded as that v4 address. Teredo, `2001:db8::/32`, `100::/64`, `64:ff9b:1::/48` and `fec0::/10` are refused.
+- The v4 ranges are a CIDR table. It adds `198.51.100/24` and `203.0.113/24` and narrows `192.0/16`, which refused public addresses, to `192.0.0/24` and `192.0.2/24`.
+- Messages name the host and never a config key: `127.0.0.1 is a private address`, `localhost resolves to a private address (127.0.0.1)`, `url must be https`. A caller shows them to the person who pasted the URL.
+- `test/webhook-targets.test.ts` pairs each v4-in-v6 form carrying loopback with the same form carrying a public address.
+
 ## 2026-09-29 — `ctx.sse()` writes toolbelt's frame (`FJS-1581`)
 
 `send` formats with `formatEvent` from `@frontierjs/toolbelt/sse`, which sierra's `readEvents` reads with, so the stream has one frame format rather than a writer here and a reader in each page. Two changes follow. An `event` or `id` holding a line break now throws: before, it framed a second event nobody sent. The throw is outside the closed-stream catch, so it reaches the caller. And `retry: 0` is written, where the old truthiness test dropped it. `SseEvent` extends toolbelt's type.
@@ -11,6 +20,16 @@ A by-id restore returned litestone's array: `[row]` where the client's
 deleted, so an Undo that brought nothing back looked like it worked. By id it now
 answers what `remove` does. A filtered restore still answers the array.
 `test/real-litestone-client.test.ts` § restore by id covers both.
+
+## 2026-09-29 — the base `get` by id applies its filters (`FJS-1585`)
+
+`GET /posts/2?status=draft` answered the live row: the by-id branch parsed the
+query for its directives and never put the filters in its where, while the list
+branch beside it did. The same gap let a get by id slip past a before hook that
+scopes reads by writing `ctx.query`. The filters now join the where under `AND`,
+so a row they exclude is a 404 and a filter on the key cannot replace the id
+the URL named. `FJS-D553`'s read check could not see this one, since reading
+every key is what it counts. `test/unread-filters.test.ts` covers it.
 
 ## 2026-09-29 — a filter the method never read is refused by name (`FJS-1577`, `FJS-D553`)
 

@@ -20,9 +20,10 @@ title: Flow
   // thing back — so there is no second copy to keep in step, and a definition
   // that does not parse disables the inspector rather than diverging from it.
   //
-  // The inspector is per NODE and the document is what holds the structure:
-  // adding a node, an edge or a name is the textarea's until the canvas exists
-  // ([`FJS-1198`](../../../../../ISSUES.md#fjs-1198)).
+  // The canvas writes STRUCTURE through the same document — a node added, an
+  // edge drawn or removed — and the inspector writes one node's config. Where
+  // a node sits is not the definition: it is `FlowLayout`, saved on release by
+  // `saveLayout`, so moving a node never writes a version.
   //
   // Saving writes a NEW version, which the compiler checks first — a flow that
   // does not compile is refused with the compiler's own sentence, shown here —
@@ -45,6 +46,9 @@ title: Flow
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
 
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+
+  import FlowCanvas    from '../../components/FlowCanvas.mesa'
   import NodeInspector from '../../components/NodeInspector.mesa'
 
   $: (page.params, session.level, session.user)
@@ -69,6 +73,8 @@ title: Flow
   let types      = null
   let typesError = null
   let selected   = ''
+  let positions  = {}
+  let adding     = ''
 
   function watch() {
     row?.release()
@@ -98,10 +104,16 @@ title: Flow
     catch (e) { typesError = e.message }
   }
 
+  // A layout that did not arrive draws every node at its computed place.
+  async function loadLayout() {
+    try { positions = (await flows.service.invoke('layout', page.params.flowId))?.layout?.nodes ?? {} }
+    catch { positions = {} }
+  }
+
   async function boot() {
     error = null
     selected = ''
-    try { await watch(); await loadDefinition(); await loadTypes(); await loadRuns() }
+    try { await watch(); await loadDefinition(); await loadTypes(); await loadLayout(); await loadRuns() }
     catch (e) { error = e.message }
   }
   boot()
@@ -131,6 +143,44 @@ title: Flow
       nodes: { ...parsed.nodes, [current.id]: { ...parsed.nodes[current.id], config } },
     }, null, 2)
   }
+
+  $: edgeList    = (parsed?.edges ?? []).filter(e => e && e.from && e.to)
+  $: typeOptions = (types ?? []).map(t => ({ value: t.type, label: t.label ?? t.type }))
+
+  // Structure, written back the same way a config is.
+  const rewrite = (fn) => { if (parsed) source = JSON.stringify(fn(parsed), null, 2) }
+  const freshId = (base, taken) => { let i = 1; while (taken.has(base + i)) i++; return base + i }
+
+  function addNode() {
+    if (!adding) return
+    const base = adding.split('.').pop().replace(/[^a-z0-9]/gi, '') || 'node'
+    const id = freshId(base, new Set(Object.keys(parsed?.nodes ?? {})))
+    rewrite(d => ({ ...d, nodes: { ...d.nodes, [id]: { id, type: adding, config: {} } } }))
+    selected = id
+  }
+  function removeNode(id) {
+    rewrite(d => {
+      const { [id]: _, ...nodes } = d.nodes
+      return { ...d, nodes, edges: (d.edges ?? []).filter(e => e.from !== id && e.to !== id) }
+    })
+    selected = ''
+  }
+  function link(from, to) {
+    rewrite(d => {
+      const edges = d.edges ?? []
+      return { ...d, edges: [...edges, { id: freshId('e', new Set(edges.map(e => e.id))), from, to }] }
+    })
+  }
+  const unlink = (edgeId) => rewrite(d => ({ ...d, edges: (d.edges ?? []).filter(e => e.id !== edgeId) }))
+
+  // A position the server refused is said once and kept on the screen.
+  async function place(next) {
+    positions = next
+    if (!mayChange) return
+    try { await flows.service.invoke('saveLayout', page.params.flowId, { layout: { nodes: next } }) }
+    catch (e) { error = e.message }
+  }
+
   $: moves       = !flow ? [] : [
     ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', 'primary']] : []),
     ...(flow.status === 'active' && mayChange ? [['pause', 'Pause', 'ghost']] : []),
@@ -237,6 +287,32 @@ title: Flow
     <Alert tone="warning" id="flow-unparsed">
       The definition below is not JSON, so there is nothing to inspect yet. Fix it and the nodes come back.
     </Alert>
+  {/if}
+  {#if parsed && mayChange && types}
+    <div class="cluster" id="flow-add">
+      <Select id="flow-add-type" options={typeOptions} placeholder="Node type…" bind:value={adding} />
+      <Button size="sm" id="flow-add-node" disabled={!adding} onclick={addNode}>Add node</Button>
+      {#if current}
+        <Button size="sm" variant="ghost" id="flow-remove-node" onclick={() => removeNode(current.id)}>Remove {current.id}</Button>
+      {/if}
+    </div>
+  {/if}
+  {#if parsed && nodeList.length}
+    <FlowCanvas
+      nodes={nodeList}
+      edges={edgeList}
+      {types}
+      {positions}
+      selected={current?.id ?? ''}
+      disabled={!mayChange}
+      select={(id) => selected = id}
+      move={place}
+      connect={link}
+      {unlink}
+    />
+    <p class="text-muted text-sm">Drag a node to move it, the background to pan, the wheel to zoom; drag from a node's port onto another to connect them, and double-click an edge to remove it.</p>
+  {/if}
+  {#if !parsed}
   {:else if !nodeList.length}
     <Alert tone="muted" id="flow-no-nodes">This definition has no nodes.</Alert>
   {:else}

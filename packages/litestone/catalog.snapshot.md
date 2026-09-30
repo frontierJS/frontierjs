@@ -66,7 +66,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@version` | Record who and when |  | on a model's field · on a trait's field |  |  |
 | `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
-| `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
+| `@money` | Shape the table | (<CURRENCY>) \| (field: <column>) | on a model's field · on a trait's field |  |  |
 | `@unit` | Shape the table | (<symbol>) |  |  |  |
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |

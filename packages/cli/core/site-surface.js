@@ -374,6 +374,6 @@ export function siteScripts({ dir = 'site', servePort = 8700 } = {}) {
     // at all. A missing file here is silently fine.
     'dev:site':   `cd ${dir} && bun --bun --env-file=../.env vite -c config/vite.config.js`,
     'build:site': `cd ${dir} && bun --bun --env-file=../.env vite build -c config/vite.config.js`,
-    'serve:site': `cd ${dir} && bunx sierra site --serve --port ${servePort}`,
+    'serve:site': `cd ${dir} && sierra site --serve --port ${servePort}`,
   }
 }

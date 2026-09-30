@@ -29,8 +29,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { writeFileSync, rmSync } from 'node:fs'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
-import { createNetwork } from './lib/offline.mjs'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -43,7 +42,6 @@ const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const PORT = process.env.PREVIEW_PORT ?? '7011'
 const UI   = `http://localhost:${PORT}`
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // Written into the SOURCE tree for one rebuild and removed in `finally`. It is
 // the only way to make a second build emit a different precache list, since a
@@ -108,71 +106,16 @@ if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
-// Chrome picks the debugging port and the profile is this run's own. A FIXED
-// port is answered by whichever browser bound it first, so a second drive
-// attaches to the first one's session and grades that browser's screen
-// (`FJS-740` one layer over, measured in `verify:stock`); and the default
-// profile carries the previous run's sign-in into this one.
-const profile = chromeProfile('fjs-shell-')
-const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
-  'about:blank',
-], 'chrome')
-
-const wsUrl = await new Promise((resolve) => {
-  let buf = ''
-  const t = setTimeout(() => resolve(null), 20000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+// Chrome picks the debugging port and the profile is this run's own, so a
+// second drive never attaches to this one's browser (`FJS-740`) and no sign-in
+// carries over from the last run. Removing it at exit is the driver's.
+const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
+  console.error(e.message); stopAll(); process.exit(1)
 })
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
+const { cmd } = browser
 
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const inflight = new Map()
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data)
-  if (m.id && inflight.has(m.id)) { inflight.get(m.id)(m); inflight.delete(m.id) }
-}
-// Bounded, and the bound is the lesson of `FJS-1179`. Two of the things under
-// test here run OUTSIDE the page — a service worker and the local database's
-// own worker — and when one of them takes the renderer down with it, every
-// renderer-bound CDP call simply never answers. An unbounded `send` turns that
-// into a drive that sits there forever with no output, which is how a renderer
-// crash was filed as a hang and stayed one. A method name and a number is a
-// place to start.
-const CDP_TIMEOUT = 30000
-function send(method, params = {}, sessionId) {
-  const id = ++msgId
-  return new Promise((res, rej) => {
-    const timer = setTimeout(() => {
-      inflight.delete(id)
-      rej(new Error(`${method} did not answer in ${CDP_TIMEOUT}ms — the renderer is gone or wedged`))
-    }, CDP_TIMEOUT)
-    inflight.set(id, (m) => { clearTimeout(timer); res(m) })
-    ws.send(JSON.stringify({ id, method, params, sessionId }))
-  })
-}
-
-const { result: { targetId } }  = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
+// An EXPRESSION, answered by value — the driver evaluates a function body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
 async function until(expr, label, tries = 120) {
   for (let i = 0; i < tries; i++) {
@@ -195,7 +138,7 @@ function check(name, actual, expected) {
 }
 
 try {
-  const net = await createNetwork(send, sessionId, evaluate)
+  const net = await createNetwork(browser)
 
   // ─── the build wrote one ────────────────────────────────────────────────
 
@@ -215,7 +158,7 @@ try {
 
   console.log('\n  it registers')
 
-  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/' })
   await until(`!!document.querySelector('header button')`, 'the shell')
   check('the page registers a worker', await evaluate(`
     navigator.serviceWorker.ready.then(r => !!r.active).catch(() => false)
@@ -225,7 +168,7 @@ try {
   // reload is what puts the page under it, and every assertion below depends
   // on that — a drive that skipped it would measure a page the worker is not
   // in front of and pass for the wrong reason.
-  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/' })
   await until(`!!navigator.serviceWorker.controller`, 'the worker to take control')
   await until(`!!document.querySelector('header button')`, 'the shell again')
   check('and the page is under it', await evaluate(`!!navigator.serviceWorker.controller`), true)
@@ -295,7 +238,7 @@ try {
 
   console.log('\n  offline — a screen this device has never opened')
 
-  await send('Page.addScriptToEvaluateOnNewDocument', {
+  await cmd('Page.addScriptToEvaluateOnNewDocument', {
     source: `
       (() => {
         const seen = { asked: null, done: false }
@@ -322,9 +265,9 @@ try {
         })
       })()
     `,
-  }, sessionId)
+  })
 
-  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/' })
   await until(`!!document.querySelector('header button')`, 'the shell under the tap')
   await until(
     `!!globalThis.__fjsWarm && (__fjsWarm.done
@@ -365,7 +308,7 @@ try {
         }
       })
     `)
-    await send('Page.navigate', { url: UI + '/inventory' }, sessionId)
+    await cmd('Page.navigate', { url: UI + '/inventory' })
     await until(`!!document.querySelector('header button')`, 'the shell on a screen never opened')
     for (let i = 0; i < 40; i++) {
       if (await evaluate(`document.querySelectorAll('tr.movement').length > 0`)) break
@@ -379,7 +322,7 @@ try {
 
   check('back online after the hydration block', await net.waitOnline({ socket: false }), true)
 
-  await send('Page.navigate', { url: UI + '/inventory' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/inventory' })
   await until(`!!document.querySelector('#adjust-form #aj-submit')`, 'the inventory screen')
   check('a real screen renders with the network up', await evaluate(`
     document.querySelectorAll('.level-row').length
@@ -398,7 +341,7 @@ try {
   const opened = await net.withOffline(async () => {
     // A navigation, not a reload: this is the case that produced Chrome's error
     // page for the whole of phases 0 to 2.
-    await send('Page.navigate', { url: UI + '/stocktake' }, sessionId)
+    await cmd('Page.navigate', { url: UI + '/stocktake' })
     await until(`!!document.body && document.body.innerText.length > 0`, 'something to be on screen')
 
     // What the API does with no network, asked from the page. It has to FAIL.
@@ -440,7 +383,7 @@ try {
   console.log('\n  offline — and the screen is not empty')
 
   const kept = await net.withOffline(async () => {
-    await send('Page.navigate', { url: UI + '/inventory' }, sessionId)
+    await cmd('Page.navigate', { url: UI + '/inventory' })
     await until(`!!document.querySelector('header button')`, 'the shell with no network')
     // Give the load its chance to fail and fall back. There is nothing to wait
     // FOR if the feature is absent, so this is a bounded settle.
@@ -503,7 +446,7 @@ try {
       })
     `)
 
-    await send('Page.navigate', { url: UI + '/inventory' }, sessionId)
+    await cmd('Page.navigate', { url: UI + '/inventory' })
     await until(`!!document.querySelector('header button')`, 'the shell with an empty cache')
     for (let i = 0; i < 40; i++) {
       if (await evaluate(`document.querySelectorAll('tr.movement').length > 0`)) break
@@ -541,7 +484,7 @@ try {
 
   console.log('\n  a rebuild does not leave the old shell behind')
 
-  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/' })
   await until(`!!document.querySelector('header button')`, 'the shell')
   const before = await evaluate(`caches.keys().then(ks => ks.filter(k => k.startsWith('fjs-shell-')))`)
 
@@ -563,7 +506,7 @@ try {
   // without it the new one sat in `waiting` forever, because a navigation in
   // the same tab does not release the old worker's client.
   for (let i = 0; i < 2; i++) {
-    await send('Page.navigate', { url: UI + '/' }, sessionId)
+    await cmd('Page.navigate', { url: UI + '/' })
     await until(`!!document.querySelector('header button')`, 'the shell after the rebuild')
     await new Promise(r => setTimeout(r, 1500))
   }

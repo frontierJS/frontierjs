@@ -134,9 +134,12 @@ index.ts     public API
   gate is per MODEL, so that alone says *any signed-in caller may write any user
   row*. The fragment ships the two declarations that bound it:
   `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and
-  `@allow('write', auth().isAdmin)` on `role` and `emailVerified` for the columns
-  a resolver grades on — a column the caller can write is not a column a level
-  can be graded from. `8` stays on `Credential` / `Session` / `Verification` /
+  `@allow('write', auth().isAdmin)` on `role` and `emailVerified`, the columns
+  a resolver grades on, and on `email` and `accountId`, which a password reset
+  and a tenant are keyed by — a column the caller can write is not a column a
+  level can be graded from. Nothing in this package writes the row as a caller,
+  so a missing one shows first in an app's profile form
+  (`test/user-policy.test.ts`, `FJS-1591`). `8` stays on `Credential` / `Session` / `Verification` /
   `OauthFlow` / `LoginChallenge`, which is what 8 is for: a model nothing
   outside `asSystem()` has anything to say to. Ruled in `DECISIONS.md` § Access control.
 - **An app says what `'admin'` means once, in `sessionFields`.** The policies

@@ -35,7 +35,7 @@ import { fileURLToPath } from 'node:url'
 import { serveSite } from '@frontierjs/sierra/site/serve'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
-import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -45,8 +45,6 @@ const API  = process.env.API_URL ?? 'http://localhost:8110'
 // test / siteServe / project 1 / service 2 — its own slot, so it collides with
 // neither `verify:site` (7710) nor a dev server on 8710.
 const PORT   = 7712
-const DEBUG_PORT = 9225
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 const BUYER = { email: 'robin@buyer.test', password: 'correct-horse-battery' }
 
@@ -296,46 +294,17 @@ check('staff changing the same plan moves the quantity and issues the invoice fo
 
 // ─── the browser ──────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-account-')
-start(CHROME, [
-  '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu', '--no-sandbox',
-  `--user-data-dir=${profile}`, 'about:blank',
-], 'chrome')
+const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const { cmd } = browser
+// Asked as an EXPRESSION that answers a value; the driver evaluates a body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
-let wsUrl = null
-for (let i = 0; i < 80 && !wsUrl; i++) {
-  try { wsUrl = (await (await fetch(`http://localhost:${DEBUG_PORT}/json/version`)).json()).webSocketDebuggerUrl }
-  catch { await sleep(250) }
-}
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
+const pageErrors = []
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (p.type === 'error') pageErrors.push(p.args?.map(a => a.value ?? a.description).join(' ') ?? '')
+})
+browser.on('Runtime.exceptionThrown', (p) => pageErrors.push(p.exceptionDetails?.exception?.description ?? ''))
 
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-let msgId = 0
-const pending = new Map(), pageErrors = []
-ws.onmessage = e => {
-  const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return }
-  if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error')
-    pageErrors.push(m.params.args?.map(a => a.value ?? a.description).join(' ') ?? '')
-  if (m.method === 'Runtime.exceptionThrown')
-    pageErrors.push(m.params.exceptionDetails?.exception?.description ?? '')
-}
-const send = (method, params = {}, sessionId) =>
-  new Promise(res => { const id = ++msgId; pending.set(id, res); ws.send(JSON.stringify({ id, method, params, sessionId })) })
-
-const { result: { targetId } }  = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
 async function until(fn, tries = 120) {
   for (let i = 0; i < tries; i++) {
     let v = null
@@ -346,7 +315,7 @@ async function until(fn, tries = 120) {
   return null
 }
 async function goto(url) {
-  await send('Page.navigate', { url }, sessionId)
+  await cmd('Page.navigate', { url })
   await until(async () => await evaluate(`document.readyState === 'complete' || null`))
 }
 

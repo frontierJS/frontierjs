@@ -1,5 +1,44 @@
 # Changes — example
 
+## 2026-09-30 — `User` polices `email` and `accountId` (`FJS-1591`)
+
+The pasted `User` moved with `@frontierjs/auth`'s fragment. Before, a shopper's `PATCH /users/<own id>` could change their own address, which password reset mails to, while `emailVerified` stayed true. Now `email` and `accountId` are admin-written like `role`, and a shopper's write drops them. `verify:users` passed every boundary check over HTTP, 67 in all. Its screen section stopped twice with *Inspected target navigated or closed* inside `packages/mesa/src/drive.js`, which another session has uncommitted edits in, so the screen half was not proved. It ran on 7115/7015 with its own mail and psp sinks on 7116/7117, because another session's API held 8110 through 8112.
+
+## 2026-09-29 — Every browser drive here runs on `@frontierjs/mesa/drive` (`FJS-1588`)
+
+The other 18 drives that launched Chrome themselves now open `openChrome`: fourteen in `web/test`, three in `site/test` and the extension's. `lib/chrome-profile.mjs` is deleted, since the driver's sweep does what it did. Each drive keeps its own console policy through `browser.on`, because most fail on every error or warning and not only on a `[Mesa]` one. `verify:live` counts frames the same way. The expression-form drives keep a one-line `evaluate` that returns `(expr)`. `verify:extension` and `verify:account` had used fixed debugging ports, 9224 and 9225, which are gone. The extension loads through `args` plus the handle's browser-level `send`.
+
+`verify:money` had never reached its screen half since `FJS-361`. That change inserted the profile import after the first `import` line in the file, which is inside a `bun -e` template string, so the drive died on a `ReferenceError` at `chromeProfile`. The import is now at the top, and the drive passes 107.
+
+Results, run one at a time on fresh servers:
+
+- **Green:** reports 14, payroll 64, automations 72, `verify:ui` 35, cart 34, catalog 39, stock 41, users 98, money 107, widget 40, shop 13, extension 20.
+- **Failing the same way at HEAD, so not this change:**
+  - `verify` (`FJS-1376`)
+  - `verify:live` (`FJS-1371`)
+  - `verify:revisions`, one step earlier than `FJS-1382` records
+  - `verify:values` (`FJS-1366`)
+  - `verify:site`: `pricing.agreed` and `pricing.saidSo`. The baked `site/dist` is older than one price.
+  - `verify:account`: its invoices step.
+- **Flaky:** automations failed twice in six runs with *Inspected target navigated or closed*, which is `FJS-1086`, another session editing `web/src` under vite. Widget hung once, and then passed three times.
+
+## 2026-09-29 — `verify:offline` and `verify:shell` run on `@frontierjs/mesa/drive` (`FJS-1588`)
+
+Both drives launched Chrome themselves and took the network away through `web/test/lib/offline.mjs`. They now open `openChrome` and `createNetwork` from the driver, and `offline.mjs` is deleted. Each keeps a one-line `evaluate` that answers an expression. `lib/chrome-profile.mjs` stays until the other verify files move. `verify:offline` passes 55 and `verify:shell` 30. `verify:shell` was run with the baseline file written for that one run and then restored, because the shell is 933 kB against a 930 kB baseline from uncommitted `web/src` work.
+
+## 2026-09-29 — `verify:automations` drives the flow canvas (`FJS-1198`)
+
+The drive drags a node and reloads to find it where it was left, with no
+version written. It adds a node, connects a port to it and removes it again,
+and each step is read back from the definition JSON the compiler grades.
+
+## 2026-09-29 — the offline-shell baseline is 930 kB (`FJS-1272`)
+
+The shell had grown past its 899 kB baseline, so `verify:build` and
+`verify:shell` failed at the build. The growth is accepted and the baseline
+rewritten: 926 kB was already committed, the kit's money control added 3 kB,
+and other uncommitted work 1 kB.
+
 ## 2026-09-29 — `money-control.js` is gone; the kit draws the money box (`FJS-1582`)
 
 `web/src/money-control.js` registered a `money` control that the kit now ships

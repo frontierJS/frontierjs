@@ -43,7 +43,7 @@ it is the one with an owner already in the tree.
 ## 1 · The outbound-URL guard — one owner, private, and the copy drifted
 
 **The owner exists.** `assertDeliverableTarget` in
-[`webhooks/url.ts`](../packages/junction/src/plugins/webhooks/url.ts) grades a URL
+`webhooks/url.ts` (now [`core/public-url.ts`](../packages/junction/src/core/public-url.ts), `FJS-1579`) grades a URL
 someone else chose: scheme, the resolved address against private, loopback,
 link-local, CGNAT and reserved ranges, and the IPv4-mapped IPv6 forms — including
 the hex spelling `new URL()` normalizes `[::ffff:127.0.0.1]` into. It re-runs before
@@ -94,8 +94,8 @@ sierra, the cli and the website. Mesa's `test/browser/` harness is the shared on
 inside the repo, and it is a spec runner that is not published.
 
 connectteam's copy says where it came from: the `drive-browser` skill's `drive.mjs`
-plus `example/web/test/lib/offline.mjs`. What it added is the part an app's drive
-actually needs — **a profile directory that outlives a tab**, because IndexedDB, the
+plus example's offline helper, now `createNetwork` in `@frontierjs/mesa/drive`. What
+it added is the part an app's drive actually needs — **a profile directory that outlives a tab**, because IndexedDB, the
 service worker's Cache Storage and the OPFS database belong to the profile, and a
 drive that relaunches Chrome between a write and a reopen is measuring a new phone.
 

@@ -3,7 +3,7 @@ import { $ } from '@frontierjs/junction'
 // Workspaces — the multi-tenancy boundary. Every other resource belongs to one.
 //
 // Mounted at /workspaces. Custom methods dispatch on X-Service-Method:
-//   members · addMember · setMemberRole · removeMember
+//   members · addMember · setMemberRole · removeMember · leave · transferOwnership
 //
 // This service is the one exception to the workspace-scoped pattern: it does
 // not live INSIDE a workspace, it is the workspace. So it does not use
@@ -133,7 +133,11 @@ export function createWorkspacesService(app: BasecampApp) {
         orderBy: { createdAt: 'desc' },
         limit, offset,
       })
-      return { total, limit, offset, data: rows }
+      // The caller's role in each, off the rows already read. A person's list of
+      // workspaces is also where they read what they hold in each, and a
+      // Workspace row has no column that says it.
+      const roleIn = new Map(mine.map((m: any) => [m.workspaceId, m.role]))
+      return { total, limit, offset, data: rows.map((w: any) => ({ ...w, role: roleIn.get(w.id) })) }
     },
 
     // Non-membership is reported as 404, not 403 — a workspace you cannot see
@@ -310,6 +314,67 @@ export function createWorkspacesService(app: BasecampApp) {
       return { workspace_id: wsId, user_id: target, removed: true }
     },
 
+    // ── leave · transferOwnership ─────────────────────────────────────
+    // The two acts on your OWN membership. `setMemberRole` refuses your own row
+    // because a person must not promote themselves; stepping down is the other
+    // direction and is only safe while somebody else holds the workspace, so it
+    // happens here, inside the act that hands it over.
+
+    /** End your own membership. Any role may; the last owner may not, because
+     *  a workspace with no owner is one nobody can administer or delete. */
+    async leave() {
+      const me     = sessionOf().userId as string
+      const wsId   = $.id as string
+      const mine   = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
+      if (!mine) throw new NotFound(`Workspace '${wsId}' not found`)
+
+      const heir = mine.role === 'owner'
+        ? await members().findFirst({
+            where:   { workspaceId: wsId, role: 'owner', userId: { not: me } },
+            orderBy: { createdAt: 'asc' },
+          })
+        : null
+      if (mine.role === 'owner' && !heir)
+        throw new Forbidden('You are the only owner. Hand ownership to another member before you leave.')
+
+      return db().asSystem().$transaction(async (tx: any) => {
+        await tx.workspaceMember.delete({ where: { id: mine.id } })
+        // `ownerId` is who the hub names as the owner. Left pointing at
+        // somebody outside the workspace, it names a person nobody can reach.
+        const ws = await tx.workspace.findUnique({ where: { id: wsId } })
+        if (heir && ws.ownerId === me)
+          await tx.workspace.update({ where: { id: wsId }, data: { ownerId: heir.userId, version: ws.version } })
+        return { workspace_id: wsId, user_id: me, left: true }
+      })
+    },
+
+    /** Hand the workspace to another member and step down to admin, in one
+     *  write: two steps would leave a window with no owner, or two. */
+    async transferOwnership() {
+      const me     = sessionOf().userId as string
+      const { userId, user_id } = ($.data ?? {}) as Record<string, string>
+      const target = userId ?? user_id
+      if (!target)       throw new BadRequest('userId is required')
+      if (target === me) throw new BadRequest('You already own this workspace')
+
+      const wsId  = $.id as string
+      const heir  = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
+      if (!heir) throw new NotFound('Member not found')
+      const mine  = await members().findFirst({ where: { workspaceId: wsId, userId: me } })
+
+      return db().asSystem().$transaction(async (tx: any) => {
+        const owner = await tx.workspaceMember.update({
+          where: { id: heir.id }, data: { role: 'owner', capabilities: grantsFor('owner') },
+        })
+        await tx.workspaceMember.update({
+          where: { id: mine.id }, data: { role: 'admin', capabilities: grantsFor('admin') },
+        })
+        const ws = await tx.workspace.findUnique({ where: { id: wsId } })
+        await tx.workspace.update({ where: { id: wsId }, data: { ownerId: target, version: ws.version } })
+        return owner
+      })
+    },
+
     hooks: {
       before: {
         // stampSelfAsWorkspace must run BEFORE the role hooks — they read the
@@ -324,6 +389,7 @@ export function createWorkspacesService(app: BasecampApp) {
         addMember:     [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
         setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
         removeMember:  [requireWorkspaceRole(app, 'admin', 'owner')],
+        transferOwnership: [requireWorkspaceRole(app, 'owner')],
       },
     },
   })

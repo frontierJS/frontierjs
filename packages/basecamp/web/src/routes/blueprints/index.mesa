@@ -10,7 +10,9 @@ title: Blueprints
   //   switcher has no bearing on what is here and this screen does not reload
   //   when it moves. Every other list in this app is keyed on
   //   `session.workspaceId`; this one deliberately is not, and the absence is
-  //   the thing to notice rather than an omission.
+  //   the thing to notice rather than an omission. Deploy is the one part that
+  //   lands IN a workspace — the switcher's, read when the drawer opens — so
+  //   a person with no membership sees the catalog and no Deploy button.
   //
   //   Reading it is VISITOR(1) and writing it is the hub tier. A person with no
   //   membership anywhere can browse the catalog — which is what somebody who
@@ -18,18 +20,23 @@ title: Blueprints
   //   The write controls are rendered for a sysadmin only; the refusal is the
   //   server's either way, which is where a refusal has to live.
   //
-  // ─── What this screen cannot do yet, and says so ────────────────────────
+  // ─── Deploying one ──────────────────────────────────────────────────────
   //
-  // The mock's card has a Deploy button that builds an App out of the blueprint
-  // and forgets which one it came from. Deploying from here needs two things
-  // that do not exist: a `blueprintId` on `App`, so the record of what something
-  // was built from survives, and a path that turns the params into the app's own
-  // environment. Neither is invented here. What the detail pane shows instead is
-  // the whole of what would be sent — image, ports, storage and every parameter
-  // with its rule — because a catalog whose entries cannot be inspected is a
-  // list of logos.
+  // Three calls, each the one an app described by hand would make:
+  // `apps.fromBlueprint` makes the app (and records which blueprint), `place`
+  // puts it on a machine, and `deployments.create` queues its first release.
+  // The last two are optional — an app with nowhere to run is still an app,
+  // and its own screen is where it gets placed. A failure after the app exists
+  // lands on that screen with the reason, rather than leaving a person to
+  // wonder whether pressing Deploy again makes a second one.
   import { session } from '../../session.js'
+  import { goto } from '@frontierjs/sierra/router'
   import Blueprint, { blueprints } from '../../resources/Blueprint.mesa'
+  import { apps }         from '../../resources/App.mesa'
+  import { environments } from '../../resources/Environment.mesa'
+  import { projects }     from '../../resources/Project.mesa'
+  import { servers }      from '../../resources/Server.mesa'
+  import { deployments }  from '../../resources/Deployment.mesa'
   import { schemaFor, buildFieldRules } from '@frontierjs/sierra/junction'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -46,6 +53,9 @@ title: Blueprints
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.user
+  // Watched for the Deploy button alone; nothing on this screen reloads when
+  // it moves (see the header).
+  $: session.workspaceId
 
   let rows       = []
   let categories = []
@@ -209,6 +219,73 @@ title: Blueprints
     }
   }
 
+  // ─── Deploy ──────────────────────────────────────────────────────────
+  let deploying   = null     // the blueprint whose drawer is open
+  let deployForm  = null     // { environmentId, name, serverId, values }
+  let envOptions  = []
+  let srvOptions  = []
+  let deployError = null
+  let sending     = false
+
+  async function openDeploy(bp) {
+    deployError = null
+    deploying   = bp
+    deployForm  = { environmentId: '', name: bp.name, serverId: '',
+                    values: Object.fromEntries(bp.params.map(p => [p.key, ''])) }
+    try {
+      // The workspace's own environments and machines — the catalog is shared,
+      // where it lands is not.
+      const [envs, prjs, srvs] = await Promise.all([
+        environments.service.find({}, { limit: 200 }),
+        projects.service.find({}, { limit: 200 }),
+        servers.service.find({}, { limit: 200 }),
+      ])
+      const projectName = Object.fromEntries(prjs.data.map(p => [p.id, p.name]))
+      envOptions = envs.data.map(e => ({ value: e.id, label: `${projectName[e.projectId] ?? '—'} / ${e.name}` }))
+      srvOptions = srvs.data.filter(x => x.status === 'online')
+                            .map(x => ({ value: x.id, label: x.name }))
+      if (envOptions.length === 1) deployForm = { ...deployForm, environmentId: envOptions[0].value }
+    } catch (e) {
+      deployError = e.message
+    }
+  }
+
+  const setValue = (key, v) => deployForm = { ...deployForm, values: { ...deployForm.values, [key]: v } }
+
+  async function deploy() {
+    deployError = null; sending = true
+    let made = null
+    try {
+      made = await apps.service.invoke('fromBlueprint', null, {
+        blueprintId:   deploying.id,
+        environmentId: deployForm.environmentId,
+        name:          deployForm.name,
+        values:        deployForm.values,
+      })
+    } catch (e) {
+      deployError = e.message
+      sending = false
+      return
+    }
+    // The app exists from here on, so anything after this goes to its screen
+    // with the reason rather than back to a form that would make a second one.
+    let note = `${made.name} created`
+    if (deployForm.serverId) {
+      try {
+        await apps.service.invoke('place', made.id, { serverId: deployForm.serverId })
+        await deployments.service.create({ appId: made.id })
+        note = `${made.name} created — its first release is queued`
+      } catch (e) {
+        toasts.error(`${made.name} was created, but not released: ${e.message}`)
+        note = null
+      }
+    }
+    if (note) toasts.success(note)
+    sending = false
+    deploying = null
+    goto(`/apps/${made.id}/`)
+  }
+
   function storage(bp) {
     return bp.persistent ? (bp.volumePath ?? 'persistent') : 'stateless'
   }
@@ -241,13 +318,45 @@ title: Blueprints
   </article>
 {/if}
 
-<Callout tone="info" title="Deploying from a blueprint is not wired yet">
-  What a blueprint holds is real and complete — the image, the ports, the storage and every
-  parameter with its rule. What is missing is the step that turns one into a running app: an
-  <code>App</code> has no <code>blueprintId</code>, so nothing would record what it was built
-  from, and there is no path that turns these parameters into an app's own environment. The
-  detail pane below is the whole of what such a step would send.
-</Callout>
+<Drawer open={!!deploying} title={deploying ? `Deploy ${deploying.name}` : ''} onclose={() => deploying = null}>
+  {#if deploying && deployForm}
+    <div class="stack" id="blueprint-deploy">
+      {#if deployError}
+        <article class="alert danger" id="deploy-error"><div class="alert-content">{deployError}</div></article>
+      {/if}
+      {#if deploying.notes}
+        <Callout tone="info" title="Before you deploy this">{deploying.notes}</Callout>
+      {/if}
+      <Select id="deploy-environment" label="Environment" value={deployForm.environmentId}
+              placeholder="Choose an environment…" options={envOptions}
+              onchange={(e) => deployForm = { ...deployForm, environmentId: e.target.value }} />
+      <Input id="deploy-name" label="App name" value={deployForm.name}
+             oninput={(e) => deployForm = { ...deployForm, name: e.target.value }} />
+      <Select id="deploy-server" label="Run it on" value={deployForm.serverId}
+              placeholder="Place it later" options={srvOptions}
+              hint={srvOptions.length ? 'Picking a machine queues the first release too.' : 'No machine in this workspace is online, so the app is made and placed later.'}
+              onchange={(e) => deployForm = { ...deployForm, serverId: e.target.value }} />
+
+      {#each deploying.params as p}
+        <!-- A secret is masked and lands in a Secret; everything else is the
+             app's plain environment. A blank field takes the default, then a
+             minted value where the blueprint says how to mint one. -->
+        <Input id={`deploy-param-${p.key}`} label={`${p.label}${p.required && !p.generate && !p.defaultValue ? ' *' : ''}`}
+               type={p.secret ? 'password' : 'text'} autocomplete="off"
+               value={deployForm.values[p.key]}
+               placeholder={p.generate ? 'Generated if left blank' : (p.defaultValue ?? '')}
+               hint={p.hint ? `${p.key} — ${p.hint}` : p.key}
+               oninput={(e) => setValue(p.key, e.target.value)} />
+      {/each}
+
+      <div class="cluster">
+        <Button variant="primary" id="deploy-save" disabled={sending || !deployForm.environmentId}
+                onclick={deploy}>{deployForm.serverId ? 'Create and release' : 'Create app'}</Button>
+        <Button variant="ghost" onclick={() => deploying = null}>Cancel</Button>
+      </div>
+    </div>
+  {/if}
+</Drawer>
 
 <div class="cluster" id="blueprint-filters">
   <label class="visually-hidden" for="blueprint-search">Search blueprints</label>
@@ -310,6 +419,9 @@ title: Blueprints
           <Button variant="outlined" onclick={() => open(bp)}>
             {selected?.id === bp.id ? 'Hide details' : 'Details'}
           </Button>
+          {#if session.workspaceId && !bp.deprecatedAt}
+            <Button variant="primary" aria-label={`Deploy ${bp.name}`} onclick={() => openDeploy(bp)}>Deploy</Button>
+          {/if}
           {#if session.user?.isSystemAdmin && !bp.deprecatedAt}
             <Button variant="ghost" aria-label={`Withdraw ${bp.name}`}
                     data-confirm={`${bp.name} is no longer offered to any workspace. There is no button to bring it back.`}

@@ -28,10 +28,9 @@
  * `undefined` — wrap it in an object), and never start an evaluated expression
  * with `return` on its own line (ASI turns it into `return;`).
  */
-import { spawn } from 'node:child_process'
 import { requireServers } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -53,86 +52,22 @@ const PSP    = process.env.PSP_URL ?? 'http://localhost:8112'
 const RUN    = Date.now().toString(36).slice(-6).toUpperCase()
 const REF    = `ORD-U${RUN}`      // the pending order: menu, modal, cancel
 const REF_B  = `ORD-V${RUN}`      // the settled one: payments and the refund
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-verify-ui-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-  'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-
-function send(socket, method, params = {}, sessionId) {
-  const id = nextId++
-  socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error and warning, so it reads the events itself.
 const consoleErrors = []
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    consoleErrors.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type))
-    consoleErrors.push(msg.params.type + ': ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
+browser.on('Runtime.exceptionThrown', (p) =>
+  consoleErrors.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'warning'].includes(p.type)) consoleErrors.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
-
-const { targetId } = await send(browser, 'Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send(browser, 'Target.attachToTarget', { targetId, flatten: true })
-const cmd = (method, params) => send(browser, method, params, sessionId)
-
-// A headless window's FOCUS belongs to the browser, not the page: about thirty
-// seconds after launch Chrome starts its component extensions, the window blurs,
-// and from then on `el.focus()` moves `activeElement` and fires no `focus`
-// event. A combobox that opens on focus then never opens, and the failure lands
-// on whichever step the drive reached at that second (FJS-1084). Emulated focus
-// keeps the page focused whatever the browser does with its window.
-await cmd('Emulation.setFocusEmulationEnabled', { enabled: true })
-await cmd('Page.enable')
-await cmd('Runtime.enable')
-
-async function evaluate(expression) {
-  const r = await cmd('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  })
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
 /** Press a key through the input pipeline — a dispatched KeyboardEvent is not
  *  trusted and will not move focus or type into a field.
  *
@@ -808,13 +743,11 @@ try {
   console.error('\nThe drive threw:', e.message)
   console.error('collected so far:', JSON.stringify(got, null, 2))
   console.error('console errors:', consoleErrors)
-  chrome.kill()
-  await new Promise(r => chrome.on('close', r))
+  await browser.close()
   process.exit(1)
 }
 
-chrome.kill()
-await new Promise(r => chrome.on('close', r))
+await browser.close()
 
 // ─── assertions ───────────────────────────────────────────────────────────
 

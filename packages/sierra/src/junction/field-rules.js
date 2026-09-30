@@ -894,12 +894,10 @@ function _builtinDisplay(rule) {
   if (rule['x-litestone-file']) return { display: 'file' }
 
   // The declaration decides, never the JS type. Both of these are integers.
-  // `x-money` has THREE shapes and a renderer has to tell them apart: a stated
-  // currency, one held per ROW in a sibling column, and neither. Only the first
-  // was carried, so `field:` reached a cell as `currency: undefined` and the
-  // column that holds the answer was never named — a prop the cell reads and
-  // nothing sets, which renders as the app default on every row of a
-  // multi-currency table.
+  // `x-money` has two shapes and a renderer has to tell them apart: a stated
+  // currency, and one held per ROW in a sibling column. Without `currencyField`
+  // a cell has no way to find the row's code, and renders every row of a
+  // multi-currency table in one currency.
   if (rule['x-money']) return {
     display: 'money',
     currency:      rule['x-money'].currency,

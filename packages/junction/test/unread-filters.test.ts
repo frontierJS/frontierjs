@@ -165,8 +165,6 @@ describe('a hand-written find must read every filter autoFilter admitted', () =>
   })
 
   test('the base get and aggregate are not refused', async () => {
-    // Not refused is all this asserts. The base get by id reads the query and
-    // does not apply it, which a read check cannot see (FJS-1585).
     const app = await appWith()
     expect((await request(app).get('/posts/2?status=live')).status).toBe(200)
     const agg = await app.service('posts').aggregate({ _count: true }, { query: { status: 'live' } } as never)
@@ -183,5 +181,30 @@ describe('a hand-written find must read every filter autoFilter admitted', () =>
     await request(app).get('/posts?status=live')
     expect(seen).toEqual({ status: 'live' })
     expect(require('node:util').types.isProxy(seen)).toBe(false)
+  })
+})
+
+// The base get by id enumerated the query for its directives and never put
+// the filters in its where, so the read check above passed it while every
+// filter went unapplied (`FJS-1585`).
+describe('the base get by id applies the filters it reads', () => {
+  test('a filter the row fails is a 404', async () => {
+    const app = await appWith()
+    expect((await request(app).get('/posts/2?status=draft')).status).toBe(404)
+    const res = await request(app).get('/posts/2?status=live')
+    expect(res.status).toBe(200)
+    expect((res.body as Row).id).toBe(2)
+  })
+
+  test('a filter on the key cannot replace the id the URL named', async () => {
+    expect((await request(await appWith()).get('/posts/2?id=3')).status).toBe(404)
+  })
+
+  test('a hook that narrows reads through ctx.query narrows a get by id', async () => {
+    const app = await appWith({
+      hooks: { before: { get: [(c: ServiceContext) => { c.query = { ...c.query, status: 'live' } }] } },
+    })
+    expect((await request(app).get('/posts/3')).status).toBe(404)
+    expect((await request(app).get('/posts/1')).status).toBe(200)
   })
 })

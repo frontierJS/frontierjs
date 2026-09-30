@@ -213,13 +213,16 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   which erases the other person's write with the guard in place and nothing
   said. `<Form record={row}>` is already right; the hand-rolled editors are not
   unless they carry it.
-- **`User` reads and updates at USER(4), and the level is not what makes that
-  safe.** A gate is per MODEL, so 4 on update is *any signed-in caller rewrites
+- **`User` reads and updates at VISITOR(1), and the level is not what makes that
+  safe.** A gate is per MODEL, so 1 on update is *any signed-in caller rewrites
   any person's row*. `@@allow('update', id == auth().id)` narrows it to their
-  own, and `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status`
-  and `kind` keeps the three columns `basecampGateLevel()` grades on out of the
-  caller's reach — a column the caller can write is not a column a level can be
-  graded from. Both are bypassed by `asSystem()`, which is every legitimate
+  own, the read policy gives everyone else's only at 4, and
+  `@allow('write', auth().isSystemAdmin)` on `isSystemAdmin`, `status`, `kind`,
+  `email`, `accountId` and `scopes` keeps what a person may not write about
+  themselves out of reach — a column the caller can write is not a column a level can be
+  graded from. `users.patch('me')` is the one caller-scoped write, and it names
+  no columns: a new column is self-writable the moment it lands unless it
+  carries a field policy. Both are bypassed by `asSystem()`, which is every legitimate
   write here (`/setup`, the hub). **`@guarded` would not have done it**: it is a
   read-side lock, the write lands and the answer comes back with the column
   missing, which reads exactly like a refusal (`FJS-248`). This is the shape `@frontierjs/auth`'s own fragment now ships (`DECISIONS.md` § Access control); what differs here is the standing, deliberately — auth writes the policy against `auth().isAdmin`, this app has no app-wide admin (a level is per WORKSPACE) and its hub reads through `asSystem()`, so the row policy is self-only with no admin exception and the guarded columns are the three its own resolver grades on.

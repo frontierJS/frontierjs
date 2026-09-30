@@ -194,13 +194,14 @@ describe('a framework bin as a shell prefix', () => {
     expect(binCommand('litestone', dir)).toBeNull()
   })
 
-  // The refusal half: a command body that EXECUTES `bunx litestone|sierra|junction`.
-  // A scaffolded package.json script, a string printed for a person to type and
-  // a `docker exec` into an installed image are not a fetch fli makes, and are
-  // not matched: the pattern is an exec'd command string.
-  test('no fli command executes one through bunx', () => {
+  // The refusal half: a command body that EXECUTES `bunx litestone|sierra|junction`,
+  // or a package.json script the scaffold writes — `bun run` puts the app's own
+  // bins on PATH, so a bare name runs the installed copy and fails loudly in a
+  // fresh clone, where `bunx` would fetch. A string printed for a person to type
+  // and a `docker exec` into an installed image are not matched.
+  test('no fli command or scaffolded script executes one through bunx', () => {
     const cli  = join(import.meta.dir, '..')
-    const exec = /(command:|execSync\().*bunx (litestone|sierra|junction)/
+    const exec = /(command:|execSync\(|^\s*'[\w:]+':.*|['"])bunx (litestone|sierra|junction)/
     const hits = []
     for (const top of ['commands', 'core']) {
       for (const rel of readdirSync(join(cli, top), { recursive: true })) {

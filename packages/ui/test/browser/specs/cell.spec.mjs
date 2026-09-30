@@ -41,14 +41,16 @@ export async function run(t) {
   t.is(await t.evaluate(`return ${text('yen')}`), '¥1,299',
     'a currency with no minor unit is not divided')
 
-  // `x-money` has three shapes and only the stated-currency one was carried:
+  // `x-money` has two shapes and only the stated-currency one was carried:
   // `field:` reached the cell as `currency: undefined` and the column holding
   // the answer was never named, so every row of a multi-currency table rendered
   // in the app default.
   t.is(await t.evaluate(`return ${text('perrow')}`), '¥1,299',
     'a currency held per ROW is read off the record')
-  t.is(await t.evaluate(`return ${text('noccy')}`), '$12.99',
-    'and with neither, the default still converts')
+  // There is no default currency (`FJS-D556`), so a row holding no code has
+  // no scale, and an amount in no currency is not shown as dollars.
+  t.is(await t.evaluate(`return ${text('noccy')}`), '—',
+    'a row that holds no currency renders no amount')
 
   // A per-row currency is a value out of the data, so it can be anything a row
   // holds. `fromMinor` refuses a non-ISO code by THROWING, and an exception in

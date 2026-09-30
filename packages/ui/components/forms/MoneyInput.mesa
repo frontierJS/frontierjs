@@ -12,11 +12,6 @@
 
   import { minorUnits } from '@frontierjs/toolbelt/units'
 
-  // `@money` with no code is the app's default currency, and nothing yet
-  // states one: this is the fallback `<Cell>` and `formatMoney` also use
-  // (`FJS-1589`).
-  export const FALLBACK_CURRENCY = 'USD'
-
   // An optional sign, a whole part grouped by commas in threes or not grouped,
   // and a fraction after a point. `12,50` is refused rather than read as 1250:
   // it is a decimal comma, and reading it as grouping charges a hundred times
@@ -156,10 +151,9 @@
   const rule = resolveRule(form, name)
   const resolvedRequired = stated(required, rule?.required)
 
-  const code = String(
-    currency ?? field?.currency ?? rule?.['x-money']?.currency
-      ?? (field?.currencyField || rule?.['x-money']?.field ? '' : FALLBACK_CURRENCY),
-  ).toUpperCase()
+  // Every `@money` states its currency (`FJS-D556`). A per-row code arrives
+  // through `currency`; with none yet the box asks for it.
+  const code = String(currency ?? field?.currency ?? rule?.['x-money']?.currency ?? '').toUpperCase()
   const symbol = code ? currencySymbol(code) : ''
 
   // What the box holds. Owned by the control once typing starts: `12.` is on

@@ -26,7 +26,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -39,7 +39,6 @@ const UI_PORT  = process.env.UI_PORT  ?? '7010'
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── Servers ───────────────────────────────────────────────────────────────
 
@@ -107,53 +106,15 @@ if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
-// Chrome picks the debugging port and the profile is this run's own. A FIXED
-// port is answered by whichever browser bound it first, so a second drive
-// attaches to the first one's session and grades that browser's screen
-// (`FJS-740` one layer over, measured in `verify:stock`); and the default
-// profile carries the previous run's sign-in into this one.
-const profile = chromeProfile('fjs-cart-')
-const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
-  'about:blank',
-], 'chrome')
-
-const wsUrl = await new Promise((resolve) => {
-  let buf = ''
-  const t = setTimeout(() => resolve(null), 20000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
+  console.error(e.message); stopAll(); process.exit(1)
 })
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
-
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const pending = new Map()
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
-}
-function send(method, params = {}, sessionId) {
-  const id = ++msgId
-  return new Promise(res => {
-    pending.set(id, res)
-    ws.send(JSON.stringify({ id, method, params, sessionId }))
-  })
-}
-
-const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
+const { cmd } = browser
+// Asked as an EXPRESSION that answers a value; the driver evaluates a body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
 async function goto(path, waitSel, atLeast = 1) {
-  await send('Page.navigate', { url: UI + path }, sessionId)
+  await cmd('Page.navigate', { url: UI + path })
   // Settle on the CONTENT this page is about, never on a fixed sleep and never
   // on the shell. The layout's nav and heading are in `main` before a single
   // row has been fetched, so a text-length check passes while the table is
@@ -181,14 +142,6 @@ async function settleImages(sel) {
   }
 }
 
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
 
 // ─── Assertions ────────────────────────────────────────────────────────────
 

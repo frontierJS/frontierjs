@@ -120,3 +120,16 @@ const SYMBOL: Record<ComparisonOp, string> = { gt: '>', gte: '>=', lt: '<', lte:
 function round(n: number): number {
   return Number(n.toPrecision(6))
 }
+
+/** The longest a rule may be snoozed. A snooze is a maintenance window, and
+ *  one longer than a week is a rule somebody has turned off without saying so
+ *  — which is what `isActive` is for, and where it shows as *paused*. */
+export const MAX_SNOOZE_MINUTES = 7 * 24 * 60
+
+/** Is this rule snoozed at `now`? A `snoozedUntil` in the past is not: nothing
+ *  clears the column when a snooze runs out, so the comparison is the only
+ *  thing that ends one. */
+export function isSnoozed(rule: { snoozedUntil?: string | null }, now: number): boolean {
+  const until = Date.parse(rule.snoozedUntil ?? '')
+  return Number.isFinite(until) && until > now
+}

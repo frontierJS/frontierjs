@@ -1,5 +1,27 @@
 # Changes — Basecamp
 
+## 2026-09-30 — Tier 4: leaving a workspace, and handing one over
+
+Nobody below admin could leave a workspace, an owner could never leave or step down, and `Workspace.ownerId`, which is the owner the hub names, never moved after creation.
+
+- **`workspaces.leave`** ends your own membership at any role. The only owner is refused with *Hand ownership to another member before you leave*. When one of several owners leaves and `ownerId` named them, it moves to the longest-standing owner who is left.
+- **`workspaces.transferOwnership({ userId })`** is owner only. The member becomes owner and you become admin, and `ownerId` follows. All three writes happen in one transaction, so there is never a moment with no owner or with two. Each membership is re-stamped with its role's grants. `setMemberRole` still refuses your own row, since stepping down is only safe inside the act that hands the workspace over.
+- **Settings** has *Leave <workspace>* beside your standing. After leaving, the shell moves to another workspace. **Admin** has *Hand over* on each other member's row when you are the owner. Both actions ask for confirmation first.
+- **The standing on `/settings/` always read *no membership here*** ([`FJS-1593`](../../ISSUES.md#fjs-1593)). The pill looked up `w.workspaceId` on rows that are `Workspace` rows, and no row carried a role at all. `workspaces.find` now answers each workspace with the caller's `role` in it, taken off the membership rows it already reads.
+
+`bun run test` 484/484, with seven new tests: a viewer leaves, the only owner cannot, one of two owners leaves and `ownerId` follows, leaving a workspace you are not in is a 404, a handover moves both roles and both grids and `ownerId`, an admin cannot hand over, and nobody can hand to a non-member. `verify:screens` 206/206. Its new section makes a workspace with a second member, reads *owner here* on settings, is refused leaving, hands over from admin and checks both roles through the API, reads *admin here*, and leaves. `verify:mcp` 15/15.
+
+## 2026-09-30 — Tier 4: editing your own profile
+
+The Profile card on `/settings/` was read-only. It showed `client.auth.me()`, which is the session and not the row, and no service wrote a person's own row.
+
+- **A `users` service** answers `get` and `patch` on `me`, and the caller's own id as its second spelling. Any other id is a 404. It takes no workspace, and it has no `find`: a list of people is a workspace's members or the hub's, and both read through `asSystem()`.
+- **The profile card is `User.mesa`'s default form**, narrowed to `displayName` and `username`. The address and the standing stay read-only beside it, since both come from the session.
+- **A viewer could not have used it** ([`FJS-1590`](../../ISSUES.md#fjs-1590)). `User` read and updated at 4, which is DEVELOPER on this ladder, for `FJS-1574`'s reason. The gate is now `1.8.1.5`. The read policy is your own row at any standing and everyone's at 4, so what developers could read before is unchanged. Create is SYSTEM, because every creator already went through `asSystem()`.
+- **Which columns a person may write is the schema's, and three were missing.** `email`, `accountId` and `scopes` had no field policy. With a write path open, a session holder could have changed the address, with `emailVerified` still true for an address nobody verified. All three now carry `@allow('write', auth().isSystemAdmin)`. The service names no columns, and a patch naming `email`, `deletedAt`, `id` or a graded column lands with those dropped. auth's own fragment has the same gap, filed as [`FJS-1591`](../../ISSUES.md#fjs-1591). The cross-workspace breadth of the read at 4 is [`FJS-1592`](../../ISSUES.md#fjs-1592), and it is still latent.
+
+`bun run test` 477/477. There are two new db tests: a viewer and a visitor read and edit their own row and see no other, and a person cannot change their own address, organization or scopes. That second test fails with the `email` policy removed. There are six new `users` API tests. `verify:screens` 201/201: the form offers no address box, a save lands on the row as the API reads it, and the change survives a reload. `verify:mcp` 15/15.
+
 ## 2026-09-30 — Tier 4: a trash view, and Undo on every delete
 
 Twelve models soft-delete, and nothing on any screen could bring a row back.

@@ -23,6 +23,8 @@ title: Alerts
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import { page } from '@frontierjs/sierra/router'
 
@@ -135,9 +137,48 @@ title: Alerts
   async function toggle(rule) {
     error = null; busy = rule.id
     try {
-      const updated = await alerts.service.patch(rule.id, { isActive: !rule.isActive })
-      const i = rows.findIndex(r => r.id === rule.id)
-      if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+      replaceRow(await alerts.service.patch(rule.id, { isActive: !rule.isActive }))
+    } catch (e) {
+      error = messageFor(alerts, e)
+    } finally {
+      busy = null
+    }
+  }
+
+  // A snooze is asked for as a duration; the server turns it into an instant
+  // on its own clock, which is the one the evaluator compares against.
+  const SNOOZES = [
+    { minutes: 60,        label: '1 hour' },
+    { minutes: 4 * 60,    label: '4 hours' },
+    { minutes: 24 * 60,   label: '1 day' },
+    { minutes: 7 * 24 * 60, label: '1 week' },
+  ]
+
+  // A past `snoozedUntil` is not a snooze — nothing clears the column when one
+  // runs out — so the card asks the same question the evaluator does.
+  const snoozed = (rule) => Date.parse(rule.snoozedUntil ?? '') > Date.now()
+
+  function replaceRow(updated) {
+    const i = rows.findIndex(r => r.id === updated.id)
+    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
+  }
+
+  async function snooze(rule, s) {
+    error = null; busy = rule.id
+    try {
+      replaceRow(await alerts.service.invoke('snooze', rule.id, { minutes: s.minutes }))
+      toasts.success(`${rule.name} snoozed for ${s.label}`)
+    } catch (e) {
+      error = messageFor(alerts, e)
+    } finally {
+      busy = null
+    }
+  }
+
+  async function unsnooze(rule) {
+    error = null; busy = rule.id
+    try {
+      replaceRow(await alerts.service.invoke('unsnooze', rule.id))
     } catch (e) {
       error = messageFor(alerts, e)
     } finally {
@@ -238,6 +279,9 @@ title: Alerts
           <span class="cluster">
             <Pill tone={TONE[rule.severity] ?? ''}>{rule.severity}</Pill>
             {#if !rule.isActive}<Badge tone="muted">paused</Badge>{/if}
+            {#if snoozed(rule)}
+              <Badge tone="warning" data-snoozed={rule.id}>snoozed until {at(rule.snoozedUntil)}</Badge>
+            {/if}
           </span>
         </div>
 
@@ -339,6 +383,22 @@ title: Alerts
           <Button variant="ghost" disabled={busy === rule.id} onclick={() => toggle(rule)}>
             {rule.isActive ? 'Pause' : 'Resume'}
           </Button>
+          <!-- Pause is until somebody resumes it; a snooze ends by itself, and
+               a breach still holding then fires. -->
+          {#if snoozed(rule)}
+            <Button variant="ghost" disabled={busy === rule.id} data-unsnooze={rule.id}
+                    onclick={() => unsnooze(rule)}>Unsnooze</Button>
+          {:else}
+            <DropdownMenu>
+              {#snippet trigger()}
+                <Button variant="ghost" disabled={busy === rule.id} data-snooze={rule.id}
+                        aria-label={`Snooze ${rule.name}`}>Snooze</Button>
+              {/snippet}
+              {#each SNOOZES as s}
+                <DropdownItem onclick={() => snooze(rule, s)}>{s.label}</DropdownItem>
+              {/each}
+            </DropdownMenu>
+          {/if}
           <Button variant="ghost" disabled={busy === rule.id}
                   data-confirm={`${rule.name} stops being evaluated and nobody is paged by it.`}
                   data-confirm-title="Delete this alert rule?" data-confirm-label="Delete"

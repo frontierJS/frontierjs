@@ -2,7 +2,7 @@
 title: Members
 ---
 <script>
-  import { session } from '../../session.js'
+  import { session, reloadWorkspaces } from '../../session.js'
   import { workspaces }  from '../../resources/Workspace.mesa'
   import { invitations } from '../../resources/Invitation.mesa'
   import { day }         from '../../datetime.js'
@@ -14,6 +14,7 @@ title: Members
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
 
   $: (session.workspaceId, session.user)
 
@@ -143,6 +144,23 @@ title: Members
     }
   }
 
+  // Promoting somebody to owner through the role picker leaves you an owner
+  // too; this is the act that also steps you down, which the picker cannot
+  // do because nobody moves their own role there.
+  async function handOver(member) {
+    error = null; busy = member.id
+    try {
+      await workspaces.service.invoke('transferOwnership', session.workspaceId, { userId: member.userId })
+      await load()
+      await reloadWorkspaces()
+      toasts.success(`${member.user?.displayName ?? member.user?.email ?? 'That member'} owns this workspace now`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   const expired = (row) => Date.parse(row.expiresAt) < Date.now()
 
   const MEMBER_COLUMNS = [
@@ -260,6 +278,12 @@ title: Members
           </td>
           <td class="text-sm text-muted">{day(member.acceptedAt ?? member.createdAt)}</td>
           <td>
+            {#if member.userId !== session.user?.userId && myRole === 'owner'}
+              <Button variant="ghost" disabled={busy === member.id} id={`hand-over-${member.id}`}
+                      data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} becomes the owner, and you become an admin.`}
+                      data-confirm-title="Hand over ownership?" data-confirm-label="Hand over" data-confirm-tone="warning"
+                      onclick={() => handOver(member)}>Hand over</Button>
+            {/if}
             {#if member.userId !== session.user?.userId}
               <Button variant="ghost" tone="danger" disabled={busy === member.id}
                       data-confirm={`${member.user?.displayName ?? member.user?.email ?? 'This person'} loses access to this workspace.`}

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@frontierjs/css": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "linkedom": "^0.18.12",
     "minimist": "^1.2.8",

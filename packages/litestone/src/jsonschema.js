@@ -1224,14 +1224,11 @@ function applyValidators(schema, attributes) {
         break
 
       case 'money':
-        // Three shapes and a reader has to tell them apart: a stated currency,
-        // one held per row in a sibling column, and the app's default. The
-        // scale is NOT resolved here — for `field:` it is not knowable from the
-        // schema, and a number that is right two thirds of the time is worse
-        // than an absent one.
-        schema['x-money'] = attr.currency
-          ? { currency: attr.currency }
-          : attr.field ? { field: attr.field } : {}
+        // Two shapes and a reader has to tell them apart: a stated currency,
+        // and one held per row in a sibling column. The scale is NOT resolved
+        // here: for `field:` it is not knowable from the schema, and a number
+        // that is right for most rows is worse than an absent one.
+        schema['x-money'] = attr.currency ? { currency: attr.currency } : { field: attr.field }
         break
 
       // Beside `x-money` for its reason, and carrying the same two facts it

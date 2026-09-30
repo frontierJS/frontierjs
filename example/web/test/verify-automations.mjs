@@ -45,7 +45,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -56,7 +56,6 @@ const API_PORT = process.env.API_PORT ?? '8110'
 const UI_PORT  = process.env.UI_PORT  ?? '7010'
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // Every flow this drive writes carries it, which is how the next run finds the
 // ones a crashed run left active.
@@ -128,76 +127,23 @@ for (const want of ['flows', 'runs', 'flowCredentials', 'customers']) {
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-automations-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-process.on('exit', () => { try { chrome.kill('SIGTERM') } catch {} })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-const noise   = []
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 60000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    noise.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error')
-    noise.push('error: ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error, so it reads the events itself.
+const noise = []
+browser.on('Runtime.exceptionThrown', (p) =>
+  noise.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error'].includes(p.type)) noise.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
 
 const results = []
 const t = (name, actual, expected) => results.push({ name, actual, expected })
-
-const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expression) {
-  const r = await send('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
 /** Navigate and wait for the shell — the SPA boots once and routes after. */
 async function go(path) {
-  await send('Page.navigate', { url: UI + path }, sessionId)
+  await cmd('Page.navigate', { url: UI + path })
   await evaluate(`
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {
@@ -408,6 +354,63 @@ try {
     return JSON.stringify(d.nodes.welcome.config.id);
   `), '{"type":"fn","name":"upper","args":[{"type":"ref","path":"$.trigger.record.id"}]}')
 
+  // ─── the canvas ───────────────────────────────────────────────────────────
+  //
+  // Structure is the definition and position is FlowLayout, so each gesture is
+  // asserted in the document it must land in: a drag survives a reload with no
+  // version written, and a connection is an edge in the JSON the compiler reads.
+
+  const centre = (sel) => evaluate(`
+    const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  `)
+  const pointer = (sel, kind, at) => evaluate(`
+    document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new PointerEvent(${JSON.stringify(kind)},
+      { bubbles: true, pointerId: 1, clientX: ${at.x}, clientY: ${at.y} }));
+    return true;
+  `)
+
+  t('canvas.everyNodeIsDrawn', await waitFor('[data-canvas-node="welcome"]') && await exists('[data-canvas-node="t"]'), true)
+  t('canvas.andTheEdgeBetweenThem', await exists('[data-edge][data-from="t"][data-to="welcome"]'), true)
+
+  const x0 = Number(await attr('[data-canvas-node="welcome"]', 'data-x'))
+  const grab = await centre('[data-canvas-node="welcome"] rect')
+  await pointer('[data-canvas-node="welcome"]', 'pointerdown', grab)
+  await pointer('#flow-canvas svg', 'pointermove', { x: grab.x + 60, y: grab.y + 30 })
+  await pointer('#flow-canvas svg', 'pointerup', { x: grab.x + 60, y: grab.y + 30 })
+  t('canvas.aDragMovesTheNode', Number(await attr('[data-canvas-node="welcome"]', 'data-x')) - x0, 60)
+
+  await new Promise(r => setTimeout(r, 400))
+  await go(`/automations/flows/${flowId}/`)
+  t('canvas.andTheMoveSurvivesAReload',
+    await until(`Number(document.querySelector('[data-canvas-node="welcome"]')?.getAttribute('data-x')) === ${x0 + 60}`), true)
+  t('canvas.withNoVersionWritten', (await text('#flow-version')).includes('1'), true)
+
+  await evaluate(`
+    const el = document.querySelector('#flow-add-type');
+    el.value = 'flow.error';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  `)
+  await click('#flow-add-node')
+  t('canvas.aNodeIsAdded', await waitFor('[data-canvas-node="error1"]'), true)
+  t('canvas.intoTheDefinition', await evaluate(`
+    return JSON.parse(document.querySelector('#flow-definition').value).nodes.error1?.type ?? ''
+  `), 'flow.error')
+
+  await pointer('[data-port="welcome"]', 'pointerdown', await centre('[data-port="welcome"]'))
+  await pointer('#flow-canvas svg', 'pointerup', await centre('[data-canvas-node="error1"] rect'))
+  t('canvas.aDragFromAPortIsAnEdge', await evaluate(`
+    return JSON.parse(document.querySelector('#flow-definition').value).edges.some(e => e.from === 'welcome' && e.to === 'error1')
+  `), true)
+
+  await click('#flow-remove-node')
+  t('canvas.removingANodeTakesItsEdges', await evaluate(`
+    const d = JSON.parse(document.querySelector('#flow-definition').value);
+    return !d.nodes.error1 && !d.edges.some(e => e.to === 'error1')
+  `), true)
+
   // Put it back, through the document, since the rest of this drive runs the
   // flow for real.
   await type('#flow-definition', JSON.stringify(definition('Customer'), null, 2))
@@ -576,6 +579,6 @@ for (const { name, actual, expected } of results) {
 }
 console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${results.length} assertions passed`)
 
-try { browser.close() } catch {}
+await browser.close()
 stopAll()
 process.exit(failed ? 1 : 0)

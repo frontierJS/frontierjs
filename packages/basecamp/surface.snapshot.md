@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-40 services · 39 routes · 16 plugins · prefix (none)
+41 services · 39 routes · 16 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -43,7 +43,7 @@ and what it does.
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 
-### A service hook runs in front of the body (88)
+### A service hook runs in front of the body (93)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -55,6 +55,8 @@ name, and is as unread as the body.
 | `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `alerts.snooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `alerts.unsnooze` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
@@ -62,6 +64,7 @@ name, and is as unread as the body.
 | `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
 | `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `apps.fromBlueprint` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `apps.place` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `apps.unplace` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
@@ -139,6 +142,8 @@ name, and is as unread as the body.
 | `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
 | `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
 | `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
+| `workspaces.leave` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
+| `workspaces.transferOwnership` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 
 ## App hooks
 
@@ -201,13 +206,15 @@ name when it declares none.
 
 ### `alerts` · model `AlertRule`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
-- **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `snooze`, `unsnooze`, `acknowledge`, `resolve`
+- **custom methods** — `events`, `attachChannel`, `detachChannel`, `snooze`, `unsnooze`, `acknowledge`, `resolve`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `snooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `unsnooze` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
@@ -221,6 +228,8 @@ name when it declares none.
 | before | `remove` | `requireWorkspaceRole` |
 | before | `attachChannel` | `requireWorkspaceRole` |
 | before | `detachChannel` | `requireWorkspaceRole` |
+| before | `snooze` | `requireWorkspaceRole` |
+| before | `unsnooze` | `requireWorkspaceRole` |
 | before | `acknowledge` | `requireWorkspaceRole` |
 | before | `resolve` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
@@ -253,11 +262,12 @@ name when it declares none.
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
-- **custom methods** — `logs`, `place`, `unplace`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `fromBlueprint`, `place`, `unplace`
+- **custom methods** — `logs`, `fromBlueprint`, `place`, `unplace`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fromBlueprint` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `place` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
@@ -269,6 +279,7 @@ name when it declares none.
 | before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
 | before | `patch` | `requireWorkspaceRole` → `autoValidate` |
 | before | `remove` | `requireWorkspaceRole` |
+| before | `fromBlueprint` | `requireWorkspaceRole` |
 | before | `place` | `requireWorkspaceRole` |
 | before | `unplace` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
@@ -646,12 +657,13 @@ name when it declares none.
 
 ### `infra` · model `infra`
 
-- **methods** — `graph`, `onboarding`, `launch`
-- **custom methods** — `graph`, `onboarding`, `launch`
+- **methods** — `graph`, `onboarding`, `launch`, `summary`
+- **custom methods** — `graph`, `onboarding`, `launch`, `summary`
 - **who may call** —
   - `graph` — standing 2 or above — declared `gate: 2`
   - `onboarding` — standing 2 or above — declared `gate: 2`
   - `launch` — standing 2 or above — declared `gate: 2`
+  - `summary` — standing 2 or above — declared `gate: 2`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -999,6 +1011,21 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `users` · model `User`
+
+- **methods** — `get`, `patch`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `ownRow` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `volumes` · model `Volume`
 
 - **methods** — `find`, `get`, `remove`, `usage`, `prune`, `report`
@@ -1024,14 +1051,16 @@ name when it declares none.
 
 ### `workspaces` · model `Workspace`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
-- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
+- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`, `leave`, `transferOwnership`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
   - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
   - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
+  - `leave` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
+  - `transferOwnership` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -1043,6 +1072,7 @@ name when it declares none.
 | before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
 | before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
 | before | `removeMember` | `requireWorkspaceRole` |
+| before | `transferOwnership` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

@@ -32,7 +32,6 @@ model Order {
   id       Int    @id @default(autoincrement())
   total    Int    @money(USD)
   tip      Int    @money(JPY)
-  fee      Int    @money
   refund   Int    @money(field: currency)
   currency String
   discount Int    @scale(2)
@@ -57,13 +56,12 @@ describe('a scaled integer never gets the integer spinner', () => {
     expect(fields.discount['x-scale']).toBe(2)
   })
 
-  test('@money answers the money box, carrying each of the three shapes', () => {
+  test('@money answers the money box, carrying both shapes', () => {
     // The currency rides on the answer in `displayFor`'s spelling, so a form
     // never parses `x-money` itself.
     const at = (name) => controlFor(fields[name], { field: name, model: 'Order' })
     expect(at('total')).toEqual({ control: 'money', task: 'quantify', currency: 'USD', currencyField: undefined })
     expect(at('tip')).toMatchObject({ control: 'money', currency: 'JPY' })
-    expect(at('fee')).toMatchObject({ control: 'money', currency: undefined, currencyField: undefined })
     expect(at('refund')).toMatchObject({ control: 'money', currency: undefined, currencyField: 'currency' })
   })
 

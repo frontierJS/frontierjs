@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-09-29 — no `USD` fallback (`FJS-D556`)
+
+Every `@money` states its currency now, so `Cell`, `MoneyInput` and
+`FilterBar` no longer fall back to `USD`. A per-row amount whose row holds no
+code renders as `—` in `Cell`, and `MoneyInput` asks for the currency. The
+`cell` spec's "neither" row asserts the dash.
+
 ## 2026-09-29 — `MoneyInput`, the control a `@money` column gets (`FJS-1582`, `FJS-D555`)
 
 `forms/MoneyInput.mesa` is a text box in major units over a column in minor

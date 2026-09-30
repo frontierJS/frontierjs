@@ -23,7 +23,7 @@
   const filters = [
     col('title',  'Title',  'text'),
     col('status', 'Status', 'enum', { rule: { enum: ['open', 'paid'] } }),
-    col('total',  'Total',  'money'),
+    col('total',  'Total',  'money', { currency: 'USD' }),
     col('rate',   'Rate',   'number'),
     col('active', 'Active', 'boolean'),
   ]

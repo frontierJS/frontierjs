@@ -270,8 +270,8 @@ function makePackageJson(spec) {
   // convenience — without it the container exits non-zero on every start.
   // `--schema` also fixes the migrations directory: litestone resolves it as a
   // sibling of the schema, so this finds db/migrations without a second flag.
-  scripts['db:migrate'] = 'bunx litestone migrate apply --schema db/schema.lite'
-  scripts['db:backup']  = 'bunx litestone backup db/backups --schema db/schema.lite'
+  scripts['db:migrate'] = 'litestone migrate apply --schema db/schema.lite'
+  scripts['db:backup']  = 'litestone backup db/backups --schema db/schema.lite'
 
   // The schema's own TypeScript. Two files because they are two AUDIENCES and
   // the difference is what a caller may read: the API holds a system client and
@@ -283,8 +283,8 @@ function makePackageJson(spec) {
   // schema declares, which is otherwise the one place the seed stops
   // propagating (FJS-018). Only on the web file: the augmentation names
   // @frontierjs/junction/client, which is the browser's module.
-  const dbTypes = ['bunx litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
-  if (useWeb) dbTypes.push('bunx litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
+  const dbTypes = ['litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
+  if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
   scripts['db:types'] = dbTypes.join(' && ')
 
   // lint · typecheck · test · check — see core/app-config.js for what each is
@@ -2684,7 +2684,7 @@ if (useInstall) {
     // Not fatal: the app runs from `db push` in development either way, and a
     // scaffold that stops here over a deploy-time concern is the worse trade.
     log.warn(`could not write the initial migration: ${e.message}`)
-    log.warn('run `bunx litestone migrate create initial --schema db/schema.lite` before deploying')
+    log.warn('run `fli db:migrate --create-only` before deploying')
   }
 }
 

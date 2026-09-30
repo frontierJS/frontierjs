@@ -2,7 +2,7 @@
 // Alert rules and the events they fire.
 //
 // Mounted at /alerts. Custom methods dispatch on X-Service-Method:
-//   events · attachChannel · detachChannel · acknowledge · resolve
+//   events · attachChannel · detachChannel · snooze · unsnooze · acknowledge · resolve
 //
 // This is the service, not the evaluator. What decides a rule has been breached
 // is `jobs/alert-evaluate.job.ts`, a cron reading the metric store — never a
@@ -16,6 +16,7 @@ import { createService, NotFound, BadRequest, Conflict, $, isStale } from '@fron
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
+import { MAX_SNOOZE_MINUTES } from '../../core/alerting.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 export function createAlertsService(app: BasecampApp) {
@@ -191,6 +192,40 @@ export function createAlertsService(app: BasecampApp) {
       return ruleWithDelivery(rule)
     },
 
+    // ── snooze / unsnooze ─────────────────────────────────────────────
+    // A snooze is a duration and never an instant, so the clock that decides
+    // when it ends is the server's — the same clock the evaluator compares it
+    // against. Both answer the rule the way attach/detach do. `snoozedUntil` is
+    // `@system`, so this is the only door, and it keeps the gate and the audit
+    // actor: who silenced the pager is exactly what the trail is for.
+    async snooze() {
+      const rule    = await getScoped('alertRule', 'Alert rule')
+      const minutes = Number(($.data as Record<string, unknown>)?.minutes)
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_SNOOZE_MINUTES)
+        throw new BadRequest(
+          `minutes must be a whole number from 1 to ${MAX_SNOOZE_MINUTES} — ` +
+          'a longer silence is a paused rule, and Pause says so')
+
+      const updated = await db().alertRule.update({
+        where:  { id: rule.id },
+        data:   { snoozedUntil: new Date(Date.now() + minutes * 60_000).toISOString(),
+                  version: rule.version },
+        system: ['snoozedUntil'],
+      })
+      return ruleWithDelivery(updated)
+    },
+
+    async unsnooze() {
+      const rule = await getScoped('alertRule', 'Alert rule')
+      if (!rule.snoozedUntil) return ruleWithDelivery(rule)
+      const updated = await db().alertRule.update({
+        where:  { id: rule.id },
+        data:   { snoozedUntil: null, version: rule.version },
+        system: ['snoozedUntil'],
+      })
+      return ruleWithDelivery(updated)
+    },
+
     // ── acknowledge ───────────────────────────────────────────────────
     // A person says "seen". The event stays firing — acknowledging is not
     // resolving, and collapsing the two would let a page-out be silenced by
@@ -230,6 +265,10 @@ export function createAlertsService(app: BasecampApp) {
         // who gets woken up, which is the same call as writing the rule.
         attachChannel: [requireWorkspaceRole(app, 'admin', 'owner')],
         detachChannel: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // Silencing a rule decides who is NOT woken up, which is the same call
+        // as writing it — and the same level `isActive` already takes.
+        snooze:        [requireWorkspaceRole(app, 'admin', 'owner')],
+        unsnooze:      [requireWorkspaceRole(app, 'admin', 'owner')],
         // Acknowledging is not authoring — anyone carrying a pager can do it.
         acknowledge: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         resolve:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],

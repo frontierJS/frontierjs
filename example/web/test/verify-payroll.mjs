@@ -53,7 +53,7 @@ import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -65,7 +65,6 @@ const API_PORT = process.env.API_PORT ?? '8110'
 const UI_PORT  = process.env.UI_PORT  ?? '7010'
 const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
@@ -152,74 +151,22 @@ for (const want of ['employees', 'payRuns', 'payslips', 'journalEntries']) {
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-payroll-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error, so it reads the events itself.
+const noise = []
+browser.on('Runtime.exceptionThrown', (p) =>
+  noise.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error'].includes(p.type)) noise.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-const noise   = []
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 60000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    noise.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error'].includes(msg.params.type))
-    noise.push(msg.params.type + ': ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
-})
-
-const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expression) {
-  const r = await send('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
 /** Navigate and wait for the shell — the SPA boots once and routes after. */
 async function go(path) {
   await evaluate(`window.__nav = ${JSON.stringify(path)}; location.href = ${JSON.stringify(UI + path)}`)
     .catch(() => {})
-  await send('Page.navigate', { url: UI + path }, sessionId)
+  await cmd('Page.navigate', { url: UI + path })
   await evaluate(`
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {
@@ -827,7 +774,7 @@ t('console.noErrorsAnywhere', noise.length === 0)
   try { await sweepPayroll(sys, fixtures) }
   catch (e) { console.log(`  note  sweep: ${e.message}`) }
 
-  try { chrome.kill() } catch {}
+  await browser.close().catch(() => {})
   stopAll()
 }
 

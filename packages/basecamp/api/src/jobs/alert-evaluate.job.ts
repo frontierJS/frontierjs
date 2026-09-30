@@ -43,7 +43,7 @@
 import { defineJob }        from '@frontierjs/caravan'
 import { isStale }          from '@frontierjs/junction'
 import { runsAsApp }        from './context.ts'
-import { evaluateWindow, describeBreach } from '../core/alerting.ts'
+import { evaluateWindow, describeBreach, isSnoozed } from '../core/alerting.ts'
 import { deliverToChannel } from '../core/delivery.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import type { Message }     from '../core/delivery.ts'
@@ -109,7 +109,11 @@ export default defineJob(
         orderBy: { firedAt: 'desc' },
       })
 
-      if (verdict.breached && !open) {
+      // A snoozed rule opens nothing, and that is the whole of what snoozing
+      // does: a breach that is still holding when the snooze runs out fires on
+      // the next pass, and an open event still resolves, because closing the
+      // incident a page already opened is not paging anybody.
+      if (verdict.breached && !open && !isSnoozed(rule, now)) {
         const message = describeBreach(rule.metricName, rule, verdict.value)
         const event   = await db.alertEvent.create({
           data: {

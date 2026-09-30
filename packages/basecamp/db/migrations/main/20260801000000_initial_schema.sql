@@ -637,6 +637,7 @@ CREATE TABLE IF NOT EXISTS "alert_rule" (
   "threshold" REAL NOT NULL,
   "forMinutes" INTEGER NOT NULL DEFAULT 0,
   "isActive" INTEGER NOT NULL DEFAULT 1,
+  "snoozedUntil" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -891,13 +892,15 @@ CREATE TABLE IF NOT EXISTS "app" (
   "config" TEXT NOT NULL DEFAULT '{}',
   "port" INTEGER,
   "isPublic" INTEGER NOT NULL DEFAULT 0,
+  "blueprintId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   CHECK ("type" IN ('container', 'worker', 'database', 'daemon', 'cron', 'static', 'function')),
   CHECK ("status" IN ('unknown', 'stopped', 'starting', 'running', 'stopping', 'deploying', 'error')),
   UNIQUE ("environmentId", "slug"),
-  FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE
+  FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_workspaceId" ON "app" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_environmentId" ON "app" ("environmentId") WHERE "deletedAt" IS NULL;

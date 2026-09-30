@@ -58,7 +58,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serveSite } from '@frontierjs/sierra/site/serve'
 import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
-import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -68,7 +68,6 @@ const API  = process.env.API_URL ?? 'http://localhost:8110'
 // test / siteServe / project 1 / service 3 — its own slot, so it collides with
 // neither `verify:site` (7710) nor `verify:account` (7712).
 const PORT   = 7713
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── plumbing ─────────────────────────────────────────────────────────────
 
@@ -147,53 +146,14 @@ check('the basket link is in the layout, on every page',
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-shop-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
-chrome.on('error', e => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-procs.push(chrome)
+const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+const { cmd, evaluate } = browser
 
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const timer = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', d => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); resolve(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise(r => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
+// Every console error and failed assert, not only the driver's [Mesa] warnings.
 const consoleErrors = []
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-browser.addEventListener('message', ev => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const p = pending.get(msg.id); pending.delete(msg.id)
-    msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result)
-  }
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'assert'].includes(msg.params.type))
-    consoleErrors.push(msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'assert'].includes(p.type)) consoleErrors.push(p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
-
-const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
 
 const HARNESS = `
   window.sleep   = (ms) => new Promise(r => setTimeout(r, ms));
@@ -210,17 +170,8 @@ const HARNESS = `
   true
 `
 
-async function evaluate(expr) {
-  const { result, exceptionDetails } = await send('Runtime.evaluate', {
-    expression: `(async () => { ${expr} })()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
-  return result.value
-}
-
 async function goto(path) {
-  await send('Page.navigate', { url: `${ORIGIN}${path}` }, sessionId)
+  await cmd('Page.navigate', { url: `${ORIGIN}${path}` })
   await sleep(400)
   await evaluate(HARNESS)
 }
@@ -403,7 +354,7 @@ try {
   console.error(`\nDrive threw: ${err.message}`)
   failed = 1
 } finally {
-  try { chrome.kill() } catch {}
+  await browser.close().catch(() => {})
   stopAll()
 }
 

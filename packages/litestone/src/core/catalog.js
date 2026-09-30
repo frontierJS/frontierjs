@@ -635,8 +635,8 @@ const FIELD = [
     'money',
     'field',
     'shape',
-    '[(<CURRENCY>)] | [(field: <column>)]',
-    "An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. Bare @money is the app's default currency. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.",
+    '(<CURRENCY>) | (field: <column>)',
+    "An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO 4217 table is shipped by @frontierjs/toolbelt rather than read off the host, because Intl answers how an amount is DISPLAYED and node and bun disagree about fourteen currencies including the dinar, so a code ISO does not carry is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. A bare @money is refused: with no currency there is no scale. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.",
     'total Int @money(USD)',
     { seeAlso: ['scale'] }
   ),

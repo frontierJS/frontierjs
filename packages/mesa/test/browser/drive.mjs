@@ -107,7 +107,12 @@ export async function runSpecs({
     return { results: [], infra: 1, failures: 1 }
   }
 
-  const browser = await openChrome({ windowSize, bootstrap })
+  // Exit 2 is the runner's infrastructure answer, the same as a page that
+  // never boots; the driver itself throws.
+  const browser = await openChrome({ windowSize, bootstrap }).catch((e) => {
+    console.error(e.message)
+    process.exit(2)
+  })
 
   await browser.navigate(origin, ready).catch((e) => {
     console.error(`The page never booted: ${e.message}`)

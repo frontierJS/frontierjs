@@ -652,7 +652,7 @@ export async function createTestEnv(opts = {}) {
      * no principal can read it, so no principal can exercise its policy.
      */
     verifyRowPolicies: async ({ against = null, principal = null,
-                                ops = ['read', 'update', 'delete'] } = {}) => {
+                                ops = ['read', 'update', 'delete', 'create'] } = {}) => {
       const schema     = against ?? built.parsed.schema
       const who        = withDeclaredCapabilities(principal ?? DEFAULT_POLICY_PRINCIPAL, schema)
       const policyMap  = buildPolicyMap(schema, buildRelationMap(schema))
@@ -680,6 +680,21 @@ export async function createTestEnv(opts = {}) {
                 model: model.name, op, got: 'skipped', row: null,
                 message: `${model.name}.${op} — not graded: gated at ${gate[op]} (${levelLabel(gate[op])}), which no principal can hold, so its ${rules.length} polic(ies) cannot be exercised`,
               })
+              continue
+            }
+
+            if (op === 'create') {
+              // Without `against` the verdict and the create are one evaluator
+              // grading itself, so there is nothing to grade.
+              if (!against) continue
+              const level = rules.some(r => _readsLevel(r.expr)) ? (gate?.create ?? 0) : 7
+              ctx.levelFor = () => level
+              try {
+                mismatches.push(...await _gradeCreateDenies({
+                  schema, model, rules, who, ctx, policyMap, chain,
+                  client: await env.atLevel(level, who),
+                }))
+              } finally { restore(built.db, before) }
               continue
             }
 
@@ -1250,12 +1265,22 @@ export async function createTestEnv(opts = {}) {
           // the whole claim is that no place on the ladder reaches the column.
           //
           // A model gated at SYSTEM refuses the read outright, which is the row
-          // boundary answering before the field one is reached. Not an exposure
-          // and not a miss — there is no reader to hide the column from.
+          // boundary answering before the field one is reached. No reader is
+          // left to hide the column from, but the audit trail and an app's own
+          // trail still are, and both redact by `$protectedFields`. Grading
+          // nothing here let every guarded-drop on auth's @@gate("8") fragment
+          // survive (`FJS-1594`).
           let row
           try { [row] = await (await env.atLevel(7, who))[acc].findMany({ limit: 1 }) }
           catch (err) {
             if (!(err instanceof AccessDeniedError || err?.name === 'AccessDeniedError')) throw err
+            const redacted = sys.$protectedFields(acc)
+            for (const field of protectedFields) {
+              if (!(field.name in redacted)) mismatches.push({
+                model: model.name, field: field.name, level: null, got: 'unredacted', thrown: null,
+                message: `${model.name}.${field.name} is protected in the schema and the client no longer names it protected, so the audit trail writes it in plain text`,
+              })
+            }
             restore(built.db, before)
             continue
           }
@@ -2599,13 +2624,122 @@ function withDeclaredCapabilities(who, schema) {
   return { ...who, capabilities: [...capabilityNames(schema)] }
 }
 
+// The `@@deny` half of a create policy, graded by payload.
+//
+// A create has no WHERE, so `evalJs` is the only implementation, and this runs
+// only under `against`: the verdict comes off the ORIGINAL schema and the create
+// runs on the built one. Without it `litestone mutate` dropped orion's owner
+// deny on basecamp's `Flow` and `FlowVersion` unnoticed (`FJS-1595`).
+//
+// Only the admitted-where-denied direction is a verdict. The allows still run,
+// and a refusal on the other side may be one of them or a validator, so it
+// says nothing about the deny. A path allow (`flow.ownerId == auth().id`) is
+// made to hold by building the parent to match; without that every payload is
+// refused by the allow and a dropped deny is invisible.
+async function _gradeCreateDenies({ schema, model, rules, who, ctx, policyMap, chain, client }) {
+  const denies = rules.filter(r => r.kind === 'deny' && !_hasCheckNode(r.expr))
+  if (!denies.length) return []
+
+  // A required column only SYSTEM writes (basecamp's `Invitation.token`) makes
+  // every principal's create a validation failure, whatever the deny says.
+  const locked = model.fields.find(f => !f.type.optional && !f.type.array && f.type.kind !== 'relation' &&
+    f.attributes.some(a => a.kind === 'guarded' || a.kind === 'system') &&
+    !f.attributes.some(a => a.kind === 'default'))
+  if (locked) return [{
+    model: model.name, op: 'create', got: 'skipped', row: null,
+    message: `${model.name}.create — not graded: its required column ${locked.name} is written only at SYSTEM(8), which no principal can hold`,
+  }]
+
+  const acc     = modelToAccessor(model.name)
+  const factory = chain(model.name)
+  const claim   = who[schema.tenancy?.claim]
+  const tCol    = _tenantColumn(schema, model)
+  const tenant  = tCol ? { [tCol]: claim } : {}
+  const parents = _parentsAllowsNeed(model, rules, who)
+
+  // A parent in another tenant refuses every payload through the delegated
+  // tenancy rule, which is a `check()` and not the deny under grade.
+  for (const field of model.fields) {
+    if (field.type.kind !== 'relation' || field.type.array) continue
+    const target = schema.models.find(m => m.name === field.type.name)
+    const col    = _tenantColumn(schema, target)
+    if (!col) continue
+    await _ensureParent(schema, target, col, claim, chain)
+    parents[field.name] = { [col]: claim, ...parents[field.name] }
+  }
+
+  const payloads = [{}]
+  for (const [field, candidates] of Object.entries(_interestingValues(denies, who, model)))
+    for (const { value } of candidates) payloads.push({ [field]: value })
+
+  const out = []
+  let denied = 0, admitted = 0, lastRefusal = null
+  for (const over of payloads) {
+    let data
+    try {
+      for (const [field, value] of Object.entries({ ...tenant, ...over }))
+        await _ensureParent(schema, model, field, value, chain)
+      const fks = await _freshParents(schema, model.name, chain, parents)
+      data = factory.buildOne({ ...fks, ...tenant, ...over })
+      // What a caller sends: the required columns and the ones under test. A
+      // factory fills `@system` and `@guarded` columns too, and the boundary
+      // refuses those by name before any policy is asked.
+      const keep = new Set([...Object.keys(fks), ...Object.keys(tenant), ...Object.keys(over)])
+      for (const f of model.fields) {
+        if (keep.has(f.name) || !(f.name in data)) continue
+        if (f.type.optional || f.attributes.some(a =>
+          ['default', 'system', 'guarded', 'updatedAt'].includes(a.kind))) delete data[f.name]
+      }
+    } catch (err) { lastRefusal = err.message; continue }
+
+    const expected = _policyAdmits(denies, ctx, data, model.name, policyMap)
+    let got = true
+    try { await client[acc].create({ data }) }
+    catch (err) { got = false; lastRefusal = err.message }
+
+    if (!expected) denied++
+    if (got) admitted++
+    if (!expected && got) out.push({
+      model: model.name, op: 'create', got: 'admitted', row: null,
+      message: `${model.name}.create — the @@deny fires on ${JSON.stringify(over)} and the create went through`,
+    })
+  }
+
+  // Both sides, or the grade is empty: no denied payload means the deny was
+  // never asked, and no admitted one means something else refuses every
+  // create, so a dropped deny would read identically.
+  if (!denied || !admitted) out.push({
+    model: model.name, op: 'create', got: 'skipped', row: null,
+    message: `${model.name}.create — the @@deny was not graded: ${!denied ? 'no payload fired it' : `no payload was admitted, so a refusal cannot be told from the deny (${lastRefusal})`}`,
+  })
+  return out
+}
+
+// Parent values that make a create allow's `rel.column == auth().x` hold, by
+// relation name — the parent is built carrying them.
+function _parentsAllowsNeed(model, rules, who) {
+  const out  = {}
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'compare' && node.op === '==') {
+      for (const [p, v] of [[node.left, node.right], [node.right, node.left]]) {
+        if (p?.type !== 'path') continue
+        const value = v?.type === 'auth' ? (v.field ? who[v.field] : who.id)
+                    : v?.type === 'literal' ? v.value : undefined
+        if (value !== undefined) (out[p.rel] ??= {})[p.name] = value
+      }
+    }
+    for (const v of Object.values(node)) Array.isArray(v) ? v.forEach(walk) : walk(v)
+  }
+  rules.filter(r => r.kind === 'allow').forEach(r => walk(r.expr))
+  return out
+}
+
 // Which of these rows the operation actually reached, as a Set of ids.
 //
 // All three compile the policy into a WHERE, so "reached" is observable without
 // a throw: a read omits the row, an update or delete matches nothing and answers
-// null. `create` is deliberately absent — it is checked by `evalJs` and nothing
-// else, so grading it with `evalJs` would be the oracle problem, and there is no
-// second implementation to compare against.
+// null. `create` has no WHERE and is `_gradeCreateDenies`'s.
 async function _runPolicyOp(op, client, acc, schema, model, rows) {
   if (op === 'read') {
     const seen = await client[acc].findMany({ limit: rows.length + 10 })
@@ -3101,7 +3235,7 @@ function _rowId(schema, modelName, row) {
 // One new parent row per required belongsTo, and the FK values pointing at
 // them. Parents only — the child is what the caller is about to try to create,
 // and creating it here would be answering the question.
-async function _freshParents(schema, modelName, chain) {
+async function _freshParents(schema, modelName, chain, overrides = {}) {
   const model = schema.models.find(m => m.name === modelName)
   const out   = {}
   for (const field of model?.fields ?? []) {
@@ -3113,7 +3247,7 @@ async function _freshParents(schema, modelName, chain) {
     if (fkDef?.type.optional) continue
     const parent = chain(field.type.name)
     if (!parent) continue
-    const row = await parent.createOne()
+    const row = await parent.createOne(overrides[field.name] ?? {})
     out[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
   }
   return out

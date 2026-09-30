@@ -1,0 +1,33 @@
+<script module>
+  // src/resources/User.mesa — the caller's own row, and nobody else's.
+  //
+  // No `model:` — `users` is the regular plural of `User`. The service answers
+  // `get` and `patch` on `me` alone, so this resource is never loaded as a
+  // list; a workspace's people are its members, read through `workspaces`.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const users = createResource('users')
+
+  /** What a person edits about themselves. Most other columns are dropped at
+   *  the Data boundary for this caller (`email`, `accountId`, the three the
+   *  gate grades on), and a box over one saves nothing. `name` is auth's, set
+   *  at registration, and every screen shows `displayName` ahead of it. */
+  export const PROFILE_FIELDS = ['displayName', 'username']
+</script>
+
+<script>
+  // The markup half — this model's DEFAULT form (repo Invariant 18), which is
+  // the profile form: <User record={row} />. `only` narrows it further, and a
+  // caller that passes its own replaces PROFILE_FIELDS.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let only        = PROFILE_FIELDS
+  export let submitLabel = 'Save'
+  export let submitId    = undefined
+</script>
+
+<Form resource={users} bind:record={record} method="patch" {only} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+</Form>

@@ -88,8 +88,8 @@ describe('a default the column cannot hold', () => {
     // thousand the other.
     refuses(`model D { id Int @id\n  p Int @money(JPY) @default(1.5) }`, /@default\(2\)/)
     refuses(`model D { id Int @id\n  p Int @money(KWD) @default(1.5) }`, /@default\(1500\)/)
-    // A bare @money is the app's own currency and is not knowable here.
-    refuses(`model D { id Int @id\n  p Int @money @default(12.99) }`, /@default\(1299\)/)
+    // A per-row currency is not knowable here, so it keeps the two-place reading.
+    refuses(`model D { id Int @id\n  p Int @money(field: c) @default(12.99)\n  c String }`, /@default\(1299\)/)
   })
 
   it('accepts the same default written in minor units', () => {

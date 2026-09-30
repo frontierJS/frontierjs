@@ -610,12 +610,12 @@ describe('the gate ladder', () => {
     const other = await sys.user.create({ data: { email: 'other@example.com', name: 'Other' } })
     await sys.user.create({ data: { id: 'u1', email: 'u1@example.com', name: 'Me' } })
 
-    for (const who of [as('viewer'), { id: 'u1', userId: 'u1' }]) {
+    for (const [label, who] of [['viewer', as('viewer')], ['visitor', { id: 'u1', userId: 'u1' }]] as const) {
       const me = db.$setAuth(who)
       expect((await me.user.findMany({ limit: 10 })).map((u: any) => u.id)).toEqual(['u1'])
       expect(await me.user.findUnique({ where: { id: other.id } })).toBeNull()
-      expect((await me.user.update({ where: { id: 'u1' }, data: { displayName: `as ${who.memberRole ?? 'visitor'}` } })).displayName)
-        .toBe(`as ${who.memberRole ?? 'visitor'}`)
+      expect((await me.user.update({ where: { id: 'u1' }, data: { displayName: `as ${label}` } })).displayName)
+        .toBe(`as ${label}`)
     }
     db.$close()
   })

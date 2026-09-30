@@ -1844,6 +1844,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // ── Read helpers ──────────────────────────────────────────────────────────
   // Pre-compute per-table flags for read()
+  //
+  // The @@extensible mirror is the blob re-keyed by slot: an index's copy,
+  // rebuilt from the blob on every write and never read back. A reader has the
+  // blob, and one handed the mirror too gets an object under a name its JSON
+  // Schema never declared, which a browser then takes for composed data
+  // (`FJS-1426`). So no read answers it.
+  const _extMirror = (() => {
+    const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+    return ext?.max ? `${ext.column}Slots` : null
+  })()
+  const _dropMirror = (r) => {
+    if (!_extMirror || !r || !(_extMirror in r)) return r
+    const { [_extMirror]: _m, ...rest } = r
+    return rest
+  }
   const _hasJson     = jsonFields.size > 0
   const _hasBool     = boolFields.size > 0
   const _hasComputed = (computedSets[modelName]?.size ?? 0) > 0
@@ -1916,7 +1931,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function read(row, opts = {}) {
     if (!row) return null
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return row
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _dropMirror(row)
     let r = opts.hydrateFrom ? hydrateFromFields(row) : row
     // Row references resolve before applyComputed below, so a @computed field
     // over `row.lastOrder.amount` still sees a row rather than its id.
@@ -1944,11 +1959,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
     if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
-    return r
+    return _dropMirror(r)
   }
   function readAll(rows, opts = {}) {
     // Fast path — no transforms needed, return rows as-is
-    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return rows
+    if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(_dropMirror) : rows
     const wanted = computedWanted(opts)
     // Two passes when a row reference is in play: every row's id is resolved in
     // one query, then the per-row transforms run. One pass would be a query per
@@ -1959,7 +1974,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return staged.map(r => {
         let out = _hasComputed ? applyComputed(r, modelName, computedFns, ctx, wanted) : r
         if (hasFieldPolicy) out = applyFieldPolicy(out, opts)
-        return out
+        return _dropMirror(out)
       })
     }
     return rows.map(r => {
@@ -1984,7 +1999,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (_hasFrom)      r = deserializeFromFields(r)
       if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx, wanted)
       if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
-      return r
+      return _dropMirror(r)
     })
   }
 

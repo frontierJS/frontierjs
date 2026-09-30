@@ -16,7 +16,9 @@ title: Home
   import ActionQueue from '../components/ActionQueue.mesa'
   import LaunchSteps from '../components/LaunchSteps.mesa'
   import { computeNotices } from '../notices.js'
+  import { infra } from '../resources/Infra.mesa'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import StatCard from '@frontierjs/ui/components/display/StatCard.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
@@ -67,6 +69,30 @@ title: Home
 
   load()
 
+  // ─── The fleet in four numbers ─────────────────────────────────────────
+  // Counted by the server (`infra.summary`), not tallied from the stores
+  // above: those hold a page of each list, and a tally over a page is wrong
+  // from the first row past it without saying so. The stores are still what
+  // says the fleet MOVED — a push lands in one and the counts are asked for
+  // again, a beat later so a burst of pushes is one read.
+  let summary = null
+  let summaryTimer = null
+  async function loadSummary() {
+    try {
+      summary = await infra.service.invoke('summary', null)
+    } catch (e) {
+      summary = null
+      error = e.message
+    }
+  }
+  $: session.workspaceId, srv(), dep(), () => {
+    clearTimeout(summaryTimer)
+    summaryTimer = setTimeout(loadSummary, 500)
+  }
+  $.onDestroy(() => clearTimeout(summaryTimer))
+
+  const n = (m, k) => m?.[k] ?? 0
+
   // Explicit-dependency effect (Mesa §4.2): the handler runs untracked, so the
   // reads inside load() add no subscriptions of their own.
   $: session.workspaceId, () => load()
@@ -91,6 +117,25 @@ title: Home
 <!-- The mock's Basecamp home opens with the queue, and so does this one:
      the first question an operator has is "what is broken", not "what exists". -->
 <ActionQueue notices={notices} />
+
+<section class="tiles" id="fleet-summary" aria-label="Fleet summary">
+  <StatCard label="Machines" loading={!summary} href="/servers/"
+            value={summary?.servers.total}
+            sub={`${n(summary?.servers.byStatus, 'online')} online · ${n(summary?.servers.byStatus, 'unreachable')} unreachable`}
+            tone={n(summary?.servers.byStatus, 'unreachable') ? 'danger' : ''} />
+  <StatCard label="Apps" loading={!summary} href="/apps/"
+            value={summary?.apps.total}
+            sub={`${n(summary?.apps.byStatus, 'running')} running · ${n(summary?.apps.byStatus, 'error')} in error`}
+            tone={n(summary?.apps.byStatus, 'error') ? 'danger' : ''} />
+  <StatCard label="Releases today" loading={!summary} href="/deployments/"
+            value={summary?.releases.total}
+            sub={`${n(summary?.releases.byStatus, 'success')} shipped · ${n(summary?.releases.byStatus, 'failed')} failed`}
+            tone={n(summary?.releases.byStatus, 'failed') ? 'warning' : ''} />
+  <StatCard label="Alerts firing" loading={!summary} href="/alerts/"
+            value={summary?.alerts.firing}
+            sub={`${summary?.alerts.unacknowledged ?? 0} unacknowledged · ${summary?.alerts.snoozed ?? 0} rules snoozed`}
+            tone={summary?.alerts.unacknowledged ? 'danger' : ''} />
+</section>
 
 <LaunchSteps />
 

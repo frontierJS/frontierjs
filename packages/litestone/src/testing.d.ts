@@ -291,7 +291,7 @@ export interface ProtectionMismatch {
   model:   string
   field:   string | null
   level:   number | null
-  got:     'exposed' | 'hidden' | 'error'
+  got:     'exposed' | 'hidden' | 'unredacted' | 'error'
   thrown:  string | null
   message: string
 }
@@ -364,15 +364,17 @@ export interface TestEnv {
    * two independent implementations of one rule, which is the opposite of the
    * oracle problem.
    *
-   * `create` is absent: it is checked by `evalJs` alone, so there is no second
-   * implementation to compare against. A `check()` predicate, a model gated
+   * `create` has no WHERE and one evaluator, so it is graded only under
+   * `against`, and only its column-only `@@deny` rules: a payload the original's
+   * deny fires on that the built schema admits is a mismatch (`FJS-1595`). A
+   * create `@@allow` is not graded. A `check()` predicate, a model gated
    * above SYSADMIN(7), and a predicate every seeded row falls the same side of
    * are all reported rather than graded.
    */
   verifyRowPolicies(opts?: {
     against?:   ParseResult['schema'] | null
     principal?: unknown
-    ops?:       Array<'read' | 'update' | 'delete'>
+    ops?:       Array<'read' | 'update' | 'delete' | 'create'>
   }): Promise<PolicyMismatch[]>
 
   /**

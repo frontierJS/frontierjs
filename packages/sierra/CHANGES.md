@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-29 — a per-row currency offers no range filter (`FJS-D556`)
+
+`resource.filters()` answers `op: null` with a reason for a
+`@money(field: …)` column. Its amounts are in each row's own currency and
+share no scale, so a range over them compared cents with yen. The new test in
+`resource-schema-modes.test.js` pairs it with a stated-currency column, which
+keeps its range.
+
 ## 2026-09-29 — `@money` answers the `money` control (`FJS-1582`, `FJS-D555`)
 
 `controlFor` answers `{ control: 'money', task: 'quantify', currency, currencyField }` for a column carrying `x-money`, where it answered `control: null` and a reason telling the app to register one. The currency is on the answer in `displayFor`'s spelling, so a form never parses `x-money`'s three shapes. `@scale` still answers `null`. `field-control-scaled.test.js` asserts all three shapes, and `control-task.test.js` lists `money`.

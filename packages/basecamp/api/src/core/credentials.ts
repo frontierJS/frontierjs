@@ -104,3 +104,32 @@ export function createSecretResolver(db: BasecampDb): CredentialResolver {
     },
   }
 }
+
+/**
+ * An app's `config` as the machine needs it: every `secretEnv` ref resolved
+ * into `env`, and `secretEnv` itself gone.
+ *
+ * `App.config` is on every app read and in every release snapshot, so it holds
+ * `secret:<id>#value` and never the value. This is the one place the material
+ * is read for a release, and it goes to the machine and nowhere else. A ref
+ * that no longer resolves THROWS, naming the variable: a container started
+ * without its database password comes up and fails somewhere far less legible
+ * than the release that sent it.
+ */
+export async function resolveSecretEnv(
+  db:     BasecampDb,
+  config: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const { secretEnv, ...rest } = config as { secretEnv?: Record<string, string> }
+  const refs = Object.entries(secretEnv ?? {})
+  if (!refs.length) return rest
+  const resolver = createSecretResolver(db)
+  const env = { ...((rest.env ?? {}) as Record<string, string>) }
+  for (const [key, ref] of refs) {
+    const value = await resolver.get(ref)
+    if (value == null)
+      throw new Error(`${key} names a secret that is gone or unreadable, and the container would start without it`)
+    env[key] = value
+  }
+  return { ...rest, env }
+}

@@ -71,7 +71,8 @@
   function money(v) {
     const currency = column?.currency
       ?? (record && column?.currencyField ? record[column.currencyField] : null)
-      ?? 'USD'
+    // No currency is no scale (`FJS-D556`), so there is no amount to show.
+    if (!currency) return EMPTY
     // A per-ROW currency is a value out of the data, so it can be anything a
     // row holds; `fromMinor` refuses a code that is not ISO 4217 by throwing,
     // and an exception in one cell takes the whole table down. A cell renders

@@ -57,7 +57,7 @@ import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
-import { findChrome }                          from '../packages/cli/core/browser.js'
+import { findChrome }                          from '../packages/mesa/src/drive.js'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
@@ -184,14 +184,14 @@ const started = Date.now()
 // learn to stop running CI at all.
 const PHASES = {
   hygiene, structure, registers, snapshots, access, coverage,
-  registry, advisories, scaffold, typecheck, deploy, tutor, tests,
+  registry, advisories, scaffold, typecheck, deploy, mutate, tutor, tests,
 }
 
 // Which tier a phase belongs to, and the ONLY statement of it. The order above
 // and the tier here are what `main()` and `--help` both read, so a phase cannot
 // be added to the run and left out of the printed list, or described in help as
 // something the tier it is in does not do.
-const FULL_ONLY = new Set(['deploy', 'tutor', 'tests'])
+const FULL_ONLY = new Set(['deploy', 'mutate', 'tutor', 'tests'])
 
 async function main() {
   if (args.includes('--help') || args.includes('-h')) { usage(); return }
@@ -1565,6 +1565,58 @@ function tests() {
 
   if (update && fixed.length) saveAllowances()
   ok(`${passed.length} suite(s) green`)
+}
+
+// ─── phase 8b · mutate ──────────────────────────────────────
+// `litestone mutate` over each app named in scripts/mutate-baselines.json, its
+// score held to that file's floor (FJS-D476). A survivor is a rule no check can
+// see; a phase failing on any survivor would fail on the first schema anybody
+// adds, and one printing a percentage nobody reads is no ratchet. So the floor
+// fails a DROP and a rise is a note asking for the file to be raised.
+//
+// Full tier, each app under the `kinds` its entry names: a mutant costs ~30s,
+// and example alone is ~490 of them, so neither whole run fits any tier.
+function mutate() {
+  const from   = phase('mutate')
+  const file   = 'scripts/mutate-baselines.json'
+  const floors = readJson(join(ROOT, file))
+
+  for (const [app, floor] of Object.entries(floors)) {
+    if (app.startsWith('//')) continue
+    const args = ['litestone', 'mutate', '--schema', 'db/schema.lite', '--json']
+    if (floor.kinds?.length) args.push(`--kinds=${floor.kinds.join(',')}`)
+
+    const started = Date.now()
+    const run = spawnSync('bunx', args, {
+      cwd: join(ROOT, app), encoding: 'utf8', shell: false, maxBuffer: MAX_BUFFER,
+      timeout: Math.max(TIMEOUT_MS, 45 * 60 * 1000),
+      // The mutants are built in memory, so any key opens them; basecamp
+      // declares `@secret` and cannot be built without one (FJS-597).
+      env: { ...process.env, CI: '1', FORCE_COLOR: '0', ENCRYPTION_KEY: process.env.ENCRYPTION_KEY ?? 'a'.repeat(64) },
+    })
+    const ms     = Date.now() - started
+    const result = parseJsonOr(run.stdout ?? '', null)
+    if (!result) {
+      fail(`${app} — litestone mutate did not report\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite\`.`,
+           { stdout: run.stdout ?? '', stderr: run.stderr ?? '' })
+      continue
+    }
+
+    const line = `${app} — ${result.score}% killed, ${result.killed}/${result.graded} graded` +
+                 (floor.kinds?.length ? ` (${floor.kinds.length} kinds)` : '')
+    if (result.errored.length)
+      fail(`${line}: ${result.errored.length} mutant(s) the checks fell over on`,
+           { stdout: result.errored.map(e => `${e.kind} line ${e.lineNo}: ${e.describe} — ${e.thrown}`).join('\n'), stderr: '' })
+    else if (result.score < floor.score)
+      fail(`${line}, below the floor of ${floor.score} in ${file}\n      A surviving mutant is a rule nothing grades — add the check, never lower the floor.`,
+           { stdout: result.survived.map(s => `${s.kind} line ${s.lineNo}: ${s.describe}`).join('\n'), stderr: '' })
+    else {
+      if (result.score > floor.score) note(`${app} mutation score ${result.score} is above its floor of ${floor.score} — raise it in ${file}.`)
+      ok(line, ms)
+    }
+  }
+
+  if (clean(from)) ok(`mutation floors held`)
 }
 
 // ─── phase 9 · tutor ────────────────────────────────────────

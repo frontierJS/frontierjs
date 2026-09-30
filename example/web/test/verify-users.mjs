@@ -66,7 +66,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from './lib/authenticator.mjs'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -80,7 +80,6 @@ const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 const BASE   = `${API}/api`
 const MAIL   = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 const PASSWORD = 'correct-horse-battery'
 const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test', OPS = 'kit@shop.test'
@@ -512,65 +511,21 @@ check('…with no secret and no recovery code in any of it',
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
-// Chrome picks the debugging port and the profile is this run's own. A FIXED
-// port is answered by whichever browser bound it first, so a second drive
-// attaches to the first one's session and grades that browser's screen
-// (`FJS-740` one layer over, measured in `verify:stock`); and the default
-// profile carries the previous run's sign-in into this one.
-const profile = chromeProfile('fjs-users-')
-const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
-  'about:blank',
-], 'chrome')
-
-const wsUrl = await new Promise((resolve) => {
-  let buf = ''
-  const t = setTimeout(() => resolve(null), 20000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
+  console.error(e.message); stopAll(); process.exit(1)
 })
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
-
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const pendingMsg = new Map()
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data)
-  if (m.id && pendingMsg.has(m.id)) { pendingMsg.get(m.id)(m); pendingMsg.delete(m.id) }
-}
-function send(method, params = {}, sessionId) {
-  const id = ++msgId
-  return new Promise(res => { pendingMsg.set(id, res); ws.send(JSON.stringify({ id, method, params, sessionId })) })
-}
-
-const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails)
-    throw new Error(result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
+const { cmd } = browser
+// Asked as an EXPRESSION that answers a value; the driver evaluates a body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
 // The token is planted rather than typed, so the browser half costs no further
 // sign-ins against the 10-per-15-minutes limiter — the three above are the
 // whole budget.
 async function open(path, token, waitSel, atLeast = 1) {
-  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/' })
   await evaluate(`(async () => { if (document.readyState !== 'complete') await new Promise(r => addEventListener('load', r, { once: true })); return true })()`)
   await evaluate(`(localStorage.setItem('shop_token', ${JSON.stringify(token)}), true)`)
-  await send('Page.navigate', { url: UI + path }, sessionId)
+  await cmd('Page.navigate', { url: UI + path })
   for (let i = 0; i < 120; i++) {
     const n = await evaluate(`document.querySelectorAll('${waitSel}').length`)
     if (n >= atLeast) return
@@ -696,7 +651,7 @@ check('…and the server agrees', (await account(screenJoin.body.token, 'totpSta
 // Signed out, the long way round: no token in storage and a fresh load, so the
 // app boots as a stranger and nothing from the enrollment survives in memory.
 await evaluate(`(localStorage.removeItem('shop_token'), true)`)
-await send('Page.navigate', { url: UI + '/sign-in/' }, sessionId)
+await cmd('Page.navigate', { url: UI + '/sign-in/' })
 await until(has('#si-email'))
 await fill('#si-email', onScreen2)
 await fill('#si-password', PASSWORD)
@@ -746,7 +701,7 @@ await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
 
 const askForLink = async (email) => {
   await evaluate(`(localStorage.removeItem('shop_token'), true)`)
-  await send('Page.navigate', { url: UI + '/sign-in/' }, sessionId)
+  await cmd('Page.navigate', { url: UI + '/sign-in/' })
   await until(has('#si-forgot'))
   await click('#si-forgot')
   await until(has('#fp-email'))
@@ -769,7 +724,7 @@ check('one link reached that address, and none reached the address with no accou
         .some(m => JSON.stringify(m).includes(`nobody-${tag}`))], [1, false])
 check('…and it opens THIS console\'s reset page, not a path on the API', link?.startsWith(`${UI}/reset/?token=`), true)
 
-await send('Page.navigate', { url: link }, sessionId)
+await cmd('Page.navigate', { url: link })
 await until(has('#rp-password'))
 await fill('#rp-password', 'Forgot-Passw0rd')
 await fill('#rp-again', 'Forgot-Passw0rX')
@@ -786,7 +741,7 @@ const newIn = await post('/auth/login', { email: forgetful, password: 'Forgot-Pa
 check('…the new one signs in and the old one does not',
       [typeof newIn.body?.token, (await password(forgetful)).status], ['string', 401])
 
-await send('Page.navigate', { url: link }, sessionId)
+await cmd('Page.navigate', { url: link })
 await until(has('#rp-password'))
 await fill('#rp-password', 'Second-Passw0rd')
 await fill('#rp-again', 'Second-Passw0rd')

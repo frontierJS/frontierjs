@@ -1,5 +1,13 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-29 — Scaffolded scripts name the bin, never `bunx` (`FJS-1586`)
+
+The `package.json` scripts `fli new` writes, `db:migrate`, `db:backup` and `db:types`, ran `bunx litestone …`. `siteScripts` and `widgetScripts` ran `bunx sierra …`. Before `bun install`, `bunx` fetches whatever the registry holds under the bare name. They now say `litestone …` and `sierra …`. `bun run` puts the app's bins on `PATH`, including after a `cd` into a surface, so the installed copy runs. A fresh clone never fetches. It runs a globally linked copy if there is one, and otherwise fails with *command not found*. The warning printed when the first migration cannot be written now says `fli db:migrate --create-only`. The guard in `snapshots.test.js` now also matches a script key or a string that begins with `bunx`. It catches all seven old lines. The earlier entry's "Not moved" list shrinks to the Dockerfile `RUN`, `docker exec` and the tutor's `reproduce:` strings.
+
+## 2026-09-29 — `core/browser.js` is a layer over `@frontierjs/mesa/drive` (`FJS-1588`)
+
+The tutor's page driver was a second CDP client with its own launch, sweep and error collection. `openPage` now opens `openChrome` from `@frontierjs/mesa/drive`, a new dependency. It keeps only a lesson's shape: `eval(expr)` answers an expression, and a stale-context retry that a drive must not have, since there the evaluate may be the click that navigated. `findChrome` is re-exported from mesa, and its tests moved there. `scripts/ci.mjs` imports it from mesa directly. One behavior moved with it: `page.errors` promotes only `[Mesa]` warnings, as every drive does, rather than every console warning. The unused `chrome` and `timeoutMs` options are gone. `tutor:ui` passes on it.
+
 ## 2026-09-29 — `context.bin(name)`: no fli command runs `bunx` litestone or sierra (`FJS-1586`)
 
 About twenty commands built `cd <root> && bunx litestone …` or `bunx sierra …`.

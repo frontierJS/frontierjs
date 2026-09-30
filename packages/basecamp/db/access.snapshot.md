@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 59 models · 1 view · 60 gated · 0 unrestricted
-45 with row policies · 15 with protected fields · 31 declared moves · 13 @system · 0 @seals
+45 with row policies · 16 with protected fields · 31 declared moves · 13 @system · 0 @seals
 ```
 
 ## Gates
@@ -75,7 +75,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ServerEvent` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `ServerNetwork` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `User` | 1 VISITOR | 8 SYSTEM | 1 VISITOR | 5 ADMINISTRATOR |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Volume` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Wait` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -464,6 +464,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `User`
 
+- allow **read** — `id == auth().id || auth().level >= 4`
 - allow **update** — `id == auth().id`
 
 ### `Volume`
@@ -498,9 +499,11 @@ rather than refusing the row.
 
 | Model | Field | Rule |
 | --- | --- | --- |
+| `AlertRule` | `snoozedUntil` | `@system` |
 | `ApiKey` | `credentialId` | `@system` |
 | `ApiKey` | `tokenHint` | `@system` |
 | `App` | `status` | `@system` |
+| `App` | `blueprintId` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
@@ -517,10 +520,13 @@ rather than refusing the row.
 | `Secret` | `data` | `@encrypted` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
+| `User` | `email` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
+| `User` | `accountId` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `kind` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
+| `User` | `scopes` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
 | `Verification` | `value` | `@guarded` |
 

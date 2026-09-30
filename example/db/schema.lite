@@ -3529,23 +3529,30 @@ model Notification {
 // `package-model-drift` compares the two and names a column that differs.
 model User {
   id             String    @id @default(uuid())
-  email          String    @email @unique @lower
+  // The address a password reset is mailed to. Written by its owner it is an
+  // account taken over by whoever holds a session, with `emailVerified` still
+  // true for an address nobody proved; a new one has to be verified before it
+  // is kept, and a flow that does that writes through asSystem().
+  email          String    @email @unique @lower @allow('write', auth().isAdmin)
   name           String?   @trim
-  // The two columns a caller must not write about themselves. role is what an
+  // The columns a caller must not write about themselves. role is what an
   // app's own resolver grades on, and marking your own address verified is
   // skipping the verification. auth().isAdmin is the standing
   // FrontierGateGetLevel and sessionGateLevel() both read for ADMINISTRATOR(5),
   // so the level that may delete a person is the level that may set their role
-  // — one idea, not two. asSystem() writes both regardless, which is how this
-  // package sets them.
+  // — one idea, not two. asSystem() writes all of them regardless, which is how
+  // this package sets them.
   emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
   role           String    @default("user") @allow('write', auth().isAdmin)
   // The app's own Account, if it has one. STRING, because every id this package
   // declares is a uuid and an app that followed the scaffold has uuids too — an
   // Int here could not hold one, which is what made this column unusable for the
   // one app that reached for it. An app keyed on integers stores the digits;
-  // `SessionContext.accountId` has always been a string either way.
-  accountId      String?
+  // `SessionContext.accountId` has always been a string either way. It is
+  // policed like `role`: every session carries it, so an app scoping by
+  // account reads it from there, and moving yourself into another
+  // organization is not yours to do.
+  accountId      String?   @allow('write', auth().isAdmin)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
 

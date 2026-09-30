@@ -1385,6 +1385,15 @@ model App {
   port          Int?
   isPublic      Boolean     @default(false)
 
+  // The catalog entry this app was made from, or null for one a person
+  // described by hand. A record of origin and never a live link: what the
+  // blueprint said was COPIED into `type`, `source` and `config` when the app
+  // was made (`apps.fromBlueprint`, the only writer), so a later edit to the
+  // catalog changes no running app. SetNull because the catalog withdraws
+  // rather than deletes; a hard delete by the hub loses the pointer, not the app.
+  blueprintId   String?     @system @immutable
+  blueprint     Blueprint?  @relation(fields: [blueprintId], references: [id], onDelete: SetNull)
+
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
   deletedAt     DateTime?
@@ -2022,6 +2031,14 @@ model AlertRule {
 
   isActive    Boolean   @default(true)
 
+  // Until when a breach opens no event and pages nobody. Evaluation carries on
+  // — an open event still resolves — and the rule wakes by itself, which is
+  // the whole difference from `isActive`: a rule paused for a maintenance
+  // window and then forgotten is an alerting system that has quietly stopped.
+  // A past value is not a snooze and nothing clears it; the clock does. The
+  // application writes it (`alerts.snooze`), so no form offers it.
+  snoozedUntil DateTime? @system
+
   version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
@@ -2310,6 +2327,7 @@ model Blueprint {
   revision       Int        @version
 
   params         BlueprintParam[]
+  apps           App[]
 
   // Read by anyone signed in — VISITOR(1), because browsing the catalog is
   // what a person with no workspace yet is doing. Written by the hub tier only.

@@ -479,8 +479,11 @@ DevTools server hooks — no separate import needed.
 
 A real Chrome over CDP, for an app's own drive: launch, navigate, evaluate, send
 input the browser trusts, collect what the page threw. No dependency — the
-protocol goes over the global `WebSocket`. Chrome comes from `$FJS_CHROME`, or
-`google-chrome` on `PATH`.
+protocol goes over the global `WebSocket`. Chrome is `$FJS_CHROME` when it is
+set, and otherwise the first of `google-chrome`, `google-chrome-stable`,
+`chromium` and `chromium-browser` on `PATH`, then the macOS app bundles.
+`findChrome()` answers that binary or `null`, so a drive that should skip on a
+machine without Chrome asks it first; `openChrome` throws when there is none.
 
 ```js
 import { openChrome } from '@frontierjs/mesa/drive'
@@ -500,13 +503,48 @@ await page.close()
 | `profile` | a temp directory, removed on close | A directory you keep. IndexedDB, Cache Storage, the service worker and OPFS live in it, so a drive that closes and reopens an offline app needs one |
 | `bootstrap` | — | A script run before anything else in every document |
 | `windowSize` | `'1280,900'` | |
+| `args` | `[]` | Further Chrome flags, appended — `--enable-unsafe-extension-debugging` for a drive that loads an extension. `--remote-debugging-port` and `--user-data-dir` are the driver's and are refused |
 
-The handle is `{ navigate, evaluate, clickAt, press, type, key, newPage, cmd, errors, close }`.
+The handle is `{ navigate, evaluate, clickAt, press, type, key, newPage, cmd, send, on, errors, close }`.
 `errors` holds what the page threw, its `console.error` calls, and any console
 warning starting `[Mesa]` — a render the framework survived but corrupted.
+A drive with a stricter policy, or one counting WebSocket frames, reads the
+events itself: `on('Runtime.consoleAPICalled', (params) => …)` answers its own
+unsubscribe. `cmd(method, params)` is a CDP call on the page; `send(method,
+params, sessionId)` is the browser-level one, for a drive that attaches targets
+of its own — an extension's popup or its service worker.
+
 Chrome picks its own debugging port, so two drives never attach to each other's
 browser, and a crashed run's browser and temp profile are cleaned up on exit
-and on the next launch.
+and on the next launch. Focus is emulated: a headless window blurs about thirty
+seconds in, and after that `el.focus()` fires no `focus` event.
+
+### Taking the network away
+
+`createNetwork(browser)` is Chrome's own offline mode, the one the DevTools
+network panel switches, plus the step the emulation leaves out: **an open
+WebSocket keeps carrying frames**, so going offline also closes the sockets the
+page opened. A vite-hmr socket is left alone, because closing it reloads the
+page onto Chrome's offline screen. Call it before the first navigation, so the
+page's sockets are registered.
+
+```js
+import { openChrome, createNetwork } from '@frontierjs/mesa/drive'
+
+const page = await openChrome()
+const net  = await createNetwork(page)
+await page.navigate('http://localhost:8700/')
+await net.withOffline(async () => {
+  // the network refuses, and the app's socket is closed
+})
+await net.waitOnline()   // the browser, then the app's socket reconnecting
+```
+
+`goOffline()` answers how many sockets it severed, or `null` when the page
+loaded before `createNetwork`. `withOffline(fn, { sever: false })` leaves the
+socket open, which is a real outage's first seconds. The emulation is per
+page, so a `newPage()` stays online, and a service worker's own network is
+not covered.
 
 ## Tests
 

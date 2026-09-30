@@ -61,12 +61,12 @@
 
 ## What is not
 
-- **The canvas** — a node, an edge and the flow's name are still added by
-  editing the JSON ([`FJS-1198`](../../ISSUES.md#fjs-1198)), and
-  `@frontierjs/ui` has no graph component under it. The metrics, templates and
-  plugins screens are [`FJS-1196`](../../ISSUES.md#fjs-1196).
-  `mockup/ui/components/` is the specification for both rows, and everything in
-  it the port superseded is deleted, so what is left is what is owed.
+- **The canvas's finer half** — `web/components/FlowCanvas.mesa` draws, moves,
+  pans, zooms, connects and removes, but a conditional or fan-out edge, an
+  error edge and snapping are still the JSON's, and the flow's name is too.
+  The metrics, templates and plugins screens are
+  [`FJS-1196`](../../ISSUES.md#fjs-1196). `mockup/ui/components/` is the
+  specification for what is left.
 - **The expression text grammar is a subset of what the engine runs** — a
   template, an object, a pipeline, an array, a let and a match have no line
   form, measured at 44 of 471 nodes across this repo's own flows

@@ -55,7 +55,6 @@
  * `return` on its own line.
  */
 
-import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -64,7 +63,7 @@ import { serveSite } from '@frontierjs/sierra/site/serve'
 // column is `@money(USD)`, so what the database holds and what `data-baked`
 // carries is a whole number of CENTS, and what the page prints is dollars.
 import { formatMoney, fromMinor, toMinor } from '@frontierjs/toolbelt/units'
-import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
@@ -73,7 +72,6 @@ const API    = process.env.API_URL ?? 'http://localhost:8110'
 // test / siteServe / project 1 — the drive's own slot, so it cannot collide
 // with a dev server somebody has open on 8710.
 const PORT   = Number(process.env.SITE_SERVE_PORT ?? 7710)
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── preflight ────────────────────────────────────────────────────────────
 if (!existsSync(join(DIST, 'index.html'))) {
@@ -209,72 +207,17 @@ t('serve.assetImmutable',  await (async () => {
 })())
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
-const profile = chromeProfile('fjs-site-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-  'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const timer = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(timer); resolve(m[0]) }
-  })
-})
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error and warning, so it reads the events itself.
 const consoleErrors = []
-
-function send(socket, method, params = {}, sessionId) {
-  const id = nextId++
-  socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    consoleErrors.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type))
-    consoleErrors.push(msg.params.type + ': ' + msg.params.args.map((a) => a.value ?? a.description ?? '').join(' '))
+browser.on('Runtime.exceptionThrown', (p) =>
+  consoleErrors.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'warning'].includes(p.type)) consoleErrors.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
-
-const { targetId }  = await send(browser, 'Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send(browser, 'Target.attachToTarget', { targetId, flatten: true })
-const cmd = (method, params) => send(browser, method, params, sessionId)
-
-await cmd('Page.enable')
-await cmd('Runtime.enable')
-
-async function evaluate(expression) {
-  const r = await cmd('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  })
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
 const HARNESS = `
   if (document.readyState !== 'complete')
     await new Promise(r => window.addEventListener('load', r, { once: true }));
@@ -614,7 +557,7 @@ try {
       await sys.planVersion.update({ where: { id: victimWindow.id }, data: { effectiveTo: null } })
     } catch (e) { console.error(`\n!! could not restore ${victimPlan.code}'s price window: ${e.message}`) }
   }
-  chrome.kill()
+  await browser.close()
   await server.close()
 }
 

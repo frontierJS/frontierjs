@@ -31,13 +31,11 @@
 //  · Never start an evaluated expression with `return` on its own line: ASI
 //    makes it `return;` and the assertion reads back `undefined`.
 
-import { spawn } from 'node:child_process'
 import { requireServers } from './lib/preflight.mjs'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 
@@ -187,69 +185,17 @@ ok('…because @@transitions already guards the column two writers contend for',
 
 section('the screen')
 
-const profile = chromeProfile('fjs-revisions-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error and warning, so it reads the events itself.
+const noise = []
+browser.on('Runtime.exceptionThrown', (p) =>
+  noise.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'warning'].includes(p.type)) noise.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
-
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-const noise   = []
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    noise.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type))
-    noise.push(msg.params.type + ': ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
-})
-
-const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expression) {
-  const r = await send('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
 const WAIT = `
   const waitFor = async (fn, ms = 10000) => {
     const t0 = Date.now();
@@ -259,7 +205,7 @@ const WAIT = `
 `
 
 async function goto(path) {
-  await send('Page.navigate', { url: UI + path }, sessionId)
+  await cmd('Page.navigate', { url: UI + path })
   await evaluate(`${WAIT} await waitFor(() => document.querySelector('#app .shell') && location.pathname === '${path}'); return true;`)
 }
 
@@ -454,12 +400,7 @@ ok('no console errors', noise, [])
 await del(`/orders/${order.id}`)
 await del(`/customers/${CID}`)
 
-// Chrome writes its profile out as it goes down, so removing it the instant
-// after kill() races the last write and throws ENOTEMPTY about a directory that
-// is about to be empty. Wait for the exit, and treat the sweep as best-effort:
-// a temp directory left behind is not a failed drive.
-chrome.kill()
-await new Promise((r) => chrome.once('exit', r))
+await browser.close()
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`)
 process.exit(fail ? 1 : 0)

@@ -27,7 +27,7 @@ model Order {
   id         Int         @id
   reference  String      @length(3, 20) @unique
   status     OrderStatus @default(pending)
-  total      Int         @money
+  total      Int         @money(USD)
   note       String?
   customerId Int?
   customer   Customer?   @relation(fields: [customerId], references: [id])
@@ -49,7 +49,7 @@ model Order {
 model Invoice {
   id     Int           @id
   status InvoiceStatus @default(draft)
-  amount Int           @money
+  amount Int           @money(USD)
 
   @@gate("1.8.8.8")
   @@transitions(status,
@@ -62,7 +62,7 @@ model Invoice {
 model Ledger {
   id     Int    @id
   memo   String
-  amount Int    @money
+  amount Int    @money(USD)
 
   @@gate("5.8.9.9")
 }

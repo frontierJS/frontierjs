@@ -168,6 +168,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./testing` | `src/testing/index.ts` | yes |
 | exports | `./openapi` | `src/plugins/openapi/index.ts` | yes |
 | exports | `./webhooks` | `src/plugins/webhooks/index.ts` | yes |
+| exports | `./public-url` | `src/core/public-url.ts` | yes |
 | exports | `./manifest` | `src/plugins/manifest/index.ts` | yes |
 | exports | `./outbox` | `src/plugins/outbox/index.ts` | yes |
 | exports | `./backfill` | `src/plugins/backfill/index.ts` | yes |

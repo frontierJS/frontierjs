@@ -1,5 +1,19 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-29 — a flow is drawn and edited as a graph (`FJS-1198`)
+
+`web/components/FlowCanvas.mesa` is the canvas `FJS-D510` placed in orion: an
+SVG of the definition's nodes and edges on the flow page. Drag moves a node,
+the background pans, the wheel zooms, a drag from a node's port onto another
+adds an edge, and a double-click removes one. The page adds a node of any
+type the registry lists and removes the selected node with its edges.
+Structure is written through the same JSON document the inspector and
+textarea share. Position is `FlowLayout`, saved by `saveLayout` on release, so
+a move writes no version. A node with no saved position is placed by its depth
+from a root, below every node already placed, so an added node never lands on
+top of a laid-out one. Proved by nine `canvas.*` assertions in `verify:automations`
+(72 in all), including a drag that survives a reload.
+
 ## 2026-09-29 — the activation poll starts in `work()` (`FJS-D551`)
 
 The first `syncActivations()` stays in `boot()`. A flow's model trigger is an

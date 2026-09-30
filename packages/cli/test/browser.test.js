@@ -1,57 +1,13 @@
-// browser.test.js — finding Chrome, and the two probes that read a page.
+// browser.test.js — the two probes that read a page.
 //
 // The launch itself is not tested here and must not be: `packages/cli`'s `test`
 // script runs on a machine with no browser, and a suite that needed one would
-// be a suite that is skipped. What IS testable without Chrome is everything
-// that decides — which binary, and what a probe does with an answer — so both
-// take their world as an argument.
-//
-// `$FJS_CHROME` being AUTHORITATIVE rather than preferred is the one worth
-// pinning: somebody who names a binary names it for a reason, and falling
-// through to whatever else is installed answers a different question silently.
+// be a suite that is skipped. What IS testable without Chrome is what a probe
+// does with an answer, so a probe takes its page as an argument. Which binary
+// is found is `@frontierjs/mesa/drive`'s, and tested there.
 
 import { describe, test, expect } from 'bun:test'
-import { findChrome }             from '../core/browser.js'
 import { pageEval, pageClean }    from '../core/probe.js'
-
-const world = ({ have = [], files = [], env = {} } = {}) => ({
-  run:    (bin) => have.includes(bin),
-  exists: (p)   => files.includes(p),
-  env,
-})
-
-describe('findChrome', () => {
-  test('takes the first candidate on PATH', () => {
-    expect(findChrome({ ...world({ have: ['chromium'] }) })).toBe('chromium')
-  })
-
-  test('takes an absolute candidate that exists', () => {
-    const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-    expect(findChrome({ ...world({ files: [mac] }) })).toBe(mac)
-  })
-
-  test('null when there is none — a fact about the machine, not a failure', () => {
-    expect(findChrome({ ...world() })).toBe(null)
-  })
-
-  test('$FJS_CHROME wins over anything installed', () => {
-    const named = '/opt/chrome-131/chrome'
-    expect(findChrome({ ...world({ have: ['google-chrome'], files: [named], env: { FJS_CHROME: named } }) }))
-      .toBe(named)
-  })
-
-  test('$FJS_CHROME naming nothing is null, NOT a fallback', () => {
-    // The whole point: an installed google-chrome must not answer here, or a
-    // person who pinned a version silently gets a different browser.
-    expect(findChrome({ ...world({ have: ['google-chrome'], env: { FJS_CHROME: '/gone/chrome' } }) }))
-      .toBe(null)
-  })
-
-  test('$FJS_CHROME may name something on PATH', () => {
-    expect(findChrome({ ...world({ have: ['my-chrome'], env: { FJS_CHROME: 'my-chrome' } }) }))
-      .toBe('my-chrome')
-  })
-})
 
 /** A page that answers a scripted sequence, so a probe's retry is observable. */
 const fakePage = (answers, errors = []) => {

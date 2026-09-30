@@ -437,6 +437,23 @@ try {
     (sessionsText ?? '').slice(0, 120))
 
   check('the profile shows the signed-in address', (await text('#settings-profile')).includes(EMAIL))
+
+  // The profile form. Read back through the API, never off the form, which
+  // shows what was typed whether or not the write landed.
+  const nameBox = `document.querySelector('#settings-profile [name=displayName]')`
+  await until(`!!${nameBox}`, v => v, 'the profile form never rendered')
+  check('the form offers no address box — a new address is proven first, and that is auth\'s',
+    !(await evaluate(`!!document.querySelector('#settings-profile [name=email]')`)))
+  await evaluate(`(() => { const el = ${nameBox}
+    el.value = 'Sam Drive'; el.dispatchEvent(new Event('input', { bubbles: true })) })()`)
+  await click('#profile-save')
+  await until(`document.body.textContent`, t => t.includes('Profile saved'), 'the profile save never reported')
+  const mine = (await apiGet('/users/me')).body
+  check('a profile save lands on the caller\'s own row', mine?.displayName === 'Sam Drive',
+    JSON.stringify(mine)?.slice(0, 120))
+  await goto('/settings/')
+  await until(`${nameBox}?.value ?? ''`, v => v === 'Sam Drive', 'the name did not survive a reload')
+  ok('and it survives a reload')
   check('two-step sign-in is offered, and is off', await evaluate(
     `document.getElementById('settings-totp')?.dataset.totpState`) === 'off')
 
@@ -1209,6 +1226,62 @@ try {
   await click('#ws-delete')
   await until(`localStorage.getItem('basecamp_workspace')`, v => v !== scratchWs, 'deleting never moved off the workspace')
   check('and typing it deletes it', !(await apiGet('/workspaces')).body?.data?.some(w => w.id === scratchWs))
+  await evaluate(`localStorage.setItem('basecamp_workspace', ${JSON.stringify(homeWs)})`)
+
+  // ─── Handing a workspace over, and leaving it ──────────────────────────
+  // On a workspace of its own, so the seeded owner every later section signs
+  // in as keeps the home one.
+  console.log('\n  handing a workspace over, and leaving it')
+  const callWs = (id, method, payload = {}) => evaluate(`
+    fetch('/workspaces/' + ${JSON.stringify(id)}, { method: 'POST', headers: {
+      'content-type': 'application/json', accept: 'application/json',
+      'x-service-method': ${JSON.stringify(method)},
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+    }, body: JSON.stringify(${JSON.stringify(payload)}) })
+      .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+  const handWs = (await apiPost('/workspaces', { name: 'Drive handover' })).body
+  const homeMembers = (await callWs(homeWs, 'members')).body?.data ?? []
+  const kim = homeMembers.find(m => m.user?.email === 'kim@example.com')
+  const added = await callWs(handWs?.id, 'addMember', { userId: kim?.userId, role: 'developer' })
+  check('a workspace to hand over, with a second member', added.status < 300, JSON.stringify(added).slice(0, 160))
+
+  await evaluate(`localStorage.setItem('basecamp_workspace', ${JSON.stringify(handWs?.id)})`)
+  await goto('/settings/')
+  const standing = await until(`document.getElementById('standing-role')?.textContent ?? ''`,
+    t => /here/.test(t), 'the standing never rendered')
+  check('settings says what you hold in the workspace you are in', standing.trim() === 'owner here', standing)
+  await click('#leave-workspace')
+  await confirmIt()
+  const onlyOwner = await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.length > 0,
+    'leaving as the only owner was not refused')
+  check('the only owner is refused, and told to hand it over first', /Hand ownership/.test(onlyOwner), onlyOwner)
+
+  await goto('/admin/')
+  const kimRow = await until(`[...document.querySelectorAll('#member-rows tbody tr')]
+    .find(r => r.textContent.includes('kim@example.com'))?.querySelector('[id^=hand-over-]')?.id ?? ''`,
+    v => v, 'no Hand over on the other member')
+  await click(`#${kimRow}`)
+  await confirmIt()
+  const handed = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const rows = (await callWs(handWs.id, 'members')).body?.data ?? []
+      const roles = Object.fromEntries(rows.map(m => [m.user?.email, m.role]))
+      if (roles['kim@example.com'] === 'owner') return roles
+      await sleep(250)
+    }
+    return null
+  })()
+  check('handing over makes them the owner and you an admin',
+    handed?.['kim@example.com'] === 'owner' && handed?.[EMAIL] === 'admin', JSON.stringify(handed))
+
+  await goto('/settings/')
+  await until(`document.getElementById('standing-role')?.textContent ?? ''`, t => t.trim() === 'admin here',
+    'settings never showed the new standing')
+  await click('#leave-workspace')
+  await confirmIt()
+  await until(`localStorage.getItem('basecamp_workspace')`, v => v !== handWs.id, 'leaving never moved off the workspace')
+  check('and then you can leave it, and it is gone from your list',
+    !(await apiGet('/workspaces')).body?.data?.some(w => w.id === handWs.id))
   await evaluate(`localStorage.setItem('basecamp_workspace', ${JSON.stringify(homeWs)})`)
 
   // A bot, then a key that belongs to it.

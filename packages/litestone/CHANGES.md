@@ -1,5 +1,49 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-29 — `verifyFieldProtection` grades a protected column on a model no reader reaches (`FJS-1594`)
+
+A model gated at SYSTEM refuses the SYSADMIN(7) read, and the check used to
+move on without looking at a column. Every model in auth's fragment is
+`@@gate("8")`, so all eight guarded-drop mutants of basecamp's credential,
+session, verification, login-challenge and OAuth-flow secrets survived. The
+check now asks `$protectedFields` there. That is the list the audit trail
+redacts by, and it is still what `@guarded` does when no reader is left. A
+field the original declares protected and the client no longer names comes
+back `got: 'unredacted'`. `litestone mutate --kinds=guarded-drop` in basecamp
+went from 0/8 to 8/8 killed (225s). A new test in `test/litestone.test.ts`
+fails without the fix. `bun run test` 5484 pass, 0 fail. Over the CI kinds,
+basecamp scores 91% (20/22). The floor in `scripts/mutate-baselines.json` goes
+from 64 to 91. The two survivors are the Flow/FlowVersion `@@deny` drops (`FJS-1595`).
+
+## 2026-09-29 — `litestone mutate --json` reports the score as data, and CI holds it to a floor (`FJS-598`)
+
+`--json` prints `{ mutants, graded, killed, score, refused, missing, errored,
+survived }` and nothing else, which is what the new full-tier `mutate` phase in
+`scripts/ci.mjs` reads against `scripts/mutate-baselines.json` (`FJS-D476`).
+Both apps run under a five-kind subset: measured today a mutant costs ~30s and
+`example` alone is ~490 mutants, so no whole run fits a tier. The subset scores
+`example` 100% (17/17, 5m) and `basecamp` 64% (14/22, ~11m); basecamp's eight
+survivors are filed rather than hidden by the floor.
+
+## 2026-09-29 — no read answers the `@@extensible` slot mirror (`FJS-1426`)
+
+`read()` and `readAll()` drop `<column>Slots`, the mirror `@@extensible(max:)`
+generates. It is the index's copy of the blob, rebuilt on every write and
+never read back, and the JSON Schema already leaves it out. So a read handed
+every caller an object under a name the schema did not declare, and a browser
+resource warned that the row was composed, failing `example`'s `verify` and
+`verify:ui` on console errors. The slot columns (`t1`, `n1`, …) still read.
+`extensible.test.ts` asserts both, and fails with the drop disabled.
+
+## 2026-09-29 — a bare `@money` is refused (`FJS-1589`, `FJS-D556`)
+
+`@money` states its currency: `@money(USD)`, or `@money(field: currency)` for a
+code held per row. A bare `@money` meant the app's default currency, which
+nothing stated, so every reader fell back to its own `USD`. Validation now
+refuses it by name, and `x-money` is always `{ currency }` or `{ field }`, never
+`{}`. `exact-numbers.test.ts` asserts the refusal and that both stated shapes
+still pass. The catalog and the three generated snapshots say so.
+
 ## 2026-09-30 — a cascade restore brings back only what that cascade removed (`FJS-1583`)
 
 `remove()` stamps the parent and every live child with one timestamp and leaves

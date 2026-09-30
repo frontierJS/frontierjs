@@ -41,6 +41,7 @@ import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import { isInline, inlineFilesFor } from '../core/app-source.ts'
+import { resolveSecretEnv } from '../core/credentials.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -265,7 +266,10 @@ function runner(app: BasecampApp) {
         // The snapshot, not the app. `rollback` exists to put back the config
         // that shipped with those bytes, and reading the live row here undid
         // exactly that — the old image with the new config is neither release.
-        config:        ctx.config.config ?? service.config ?? {},
+        // Refs become values here and nowhere earlier: the snapshot keeps the
+        // refs, so a release record never holds the credential it shipped with.
+        config:        await resolveSecretEnv(app.db as never,
+                         (ctx.config.config ?? service.config ?? {}) as Record<string, unknown>),
         source:        ctx.config.source ?? service.source ?? {},
       })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)

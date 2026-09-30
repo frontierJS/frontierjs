@@ -175,7 +175,6 @@ model Order {
   tip       Int    @money(JPY)              // scale 0 — the yen has no minor unit
   refund    Int    @money(field: currency)  // the code is on the row
   currency  String @length(3, 3) @upper
-  fee       Int    @money                   // the app's default currency
 }
 ```
 
@@ -337,7 +336,6 @@ the name is a complete answer.
 { "type": "integer", "x-scale": 6 }
 { "type": "integer", "x-money": { "currency": "USD" } }
 { "type": "integer", "x-money": { "field": "currency" } }
-{ "type": "integer", "x-money": {} }
 ```
 
 `@big` is the one attribute that changes its field's JSON **type**, because the

@@ -127,6 +127,7 @@ table `alert_rule` · db `main` · gate `2.5`
 | `name` | `String` | no | — | **required on write** |
 | `operator` | `ComparisonOp` | no | `'gt'` | — |
 | `severity` | `AlertSeverity` | no | `'warning'` | — |
+| `snoozedUntil` | `DateTime` | yes | — | @system |
 | `threshold` | `Float` | no | — | **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `version` | `Int` | no | `1` | — |
@@ -214,6 +215,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | --- | --- | --- | --- | --- |
 | `appNetworks` | `AppNetwork[]` | — | — | relation |
 | `appServers` | `AppServer[]` | — | — | relation |
+| `blueprint` | `Blueprint` | — | — | relation |
+| `blueprintId` | `String` | yes | — | @system |
 | `config` | `Json` | no | `'{}'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
@@ -366,6 +369,7 @@ table `blueprint` · db `main` · gate `1.7`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `apps` | `App[]` | — | — | relation |
 | `appType` | `AppType` | no | `'container'` | — |
 | `brandColor` | `String` | yes | — | — |
 | `category` | `String` | no | — | **required on write** |
@@ -1627,19 +1631,19 @@ table `session` · db `main` · gate `8`
 
 ### `User`
 
-table `user` · db `main` · gate `4.4.4.5` · @@softDelete
+table `user` · db `main` · gate `1.8.1.5` · @@softDelete
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `account` | `Account` | — | — | relation |
-| `accountId` | `String` | yes | — | — |
+| `accountId` | `String` | yes | — | `@allow(write: auth().isSystemAdmin)` |
 | `apiKeys` | `ApiKey[]` | — | — | relation |
 | `avatarUrl` | `String` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
 | `displayName` | `String` | yes | — | — |
-| `email` | `String` | no | — | unique · **required on write** |
+| `email` | `String` | no | — | unique · `@allow(write: auth().isSystemAdmin)` · **required on write** |
 | `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
@@ -1647,7 +1651,7 @@ table `user` · db `main` · gate `4.4.4.5` · @@softDelete
 | `memberships` | `WorkspaceMember[]` | — | — | relation |
 | `name` | `String` | yes | — | — |
 | `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |
-| `scopes` | `Json` | no | `'[]'` | — |
+| `scopes` | `Json` | no | `'[]'` | `@allow(write: auth().isSystemAdmin)` |
 | `status` | `UserStatus` | no | `'pending_verification'` | `@allow(write: auth().isSystemAdmin)` |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `username` | `String` | yes | — | — |
@@ -1656,6 +1660,7 @@ table `user` · db `main` · gate `4.4.4.5` · @@softDelete
 @@unique(accountId, username)
 @@index(accountId)
 @@index(email)
+@@allow('read', id == auth().id || auth().level >= 4)
 @@allow('update', id == auth().id)
 ```
 

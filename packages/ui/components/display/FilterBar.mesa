@@ -55,7 +55,7 @@
   import Select      from '../forms/Select.mesa'
   import MultiSelect from '../forms/MultiSelect.mesa'
   import Button      from '../forms/Button.mesa'
-  import { readMoney, showMoney, FALLBACK_CURRENCY } from '../forms/MoneyInput.mesa'
+  import { readMoney, showMoney } from '../forms/MoneyInput.mesa'
   import { directiveParams, splitParams } from '@frontierjs/toolbelt/directives'
 
   // `resource.filters().filters` — the ranked columns, each with `op` and
@@ -119,9 +119,9 @@
   // every keystroke: the box is re-derived from the query, and `12.` shown
   // back as `12.00` mid-typing takes the point away.
   //
-  // A `@money(field: …)` column holds amounts in several currencies, which no
-  // one range compares; its bounds are read in the fallback currency.
-  const moneyCode = (f) => f.currency ?? FALLBACK_CURRENCY
+  // A `@money(field: …)` column holds amounts in several currencies and is
+  // offered no range (`FJS-D556`), so a money filter here has its currency.
+  const moneyCode = (f) => f.currency
 
   /** One bound's text → the query, or nothing while the text is not an amount. */
   function writeMoneyBound(f, key, text) {

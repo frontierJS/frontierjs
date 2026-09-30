@@ -149,6 +149,8 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
      */
     async deploy({ appId, image, digest, config = {}, port }) {
       const name = `fjs-${appId}`
+      if (config.volumePath != null && !/^\/[^:,]*$/.test(String(config.volumePath)))
+        throw new Error(`volumePath must be an absolute path with no ':' or ',' — got '${config.volumePath}'`)
       // Best-effort: a first deploy has nothing to remove, and `docker rm` on a
       // name that does not exist is an error rather than a no-op.
       await run(['docker', 'rm', '-f', name]).catch(() => {})
@@ -168,6 +170,13 @@ export function createDocker({ run = spawnRun, workDir = '/var/lib/outpost/apps'
       argv.push(...logArgs(config.logs))
       for (const [key, value] of Object.entries(config.env ?? {})) argv.push('-e', `${key}=${value}`)
       if (port) argv.push('-p', `${port}:${config.containerPort ?? port}`)
+      // The data a container keeps, on a NAMED volume that outlives it. Every
+      // deploy removes the container first, so a database started without one
+      // comes back empty after its next release. Named for the app, so the
+      // next container is handed the same one; a path docker would read as
+      // anything but a mount point was refused above, before the old container
+      // went.
+      if (config.volumePath != null) argv.push('-v', `${name}-data:${config.volumePath}`)
       // Addressed by digest where one is known — the tag is a name and two
       // builds share it. This is the half `Deployment.builtImage` records.
       argv.push(await reference(image, digest))

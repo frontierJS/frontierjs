@@ -216,7 +216,7 @@ model plus a Junction plugin exposing `app.features`.
 
 No Playwright or Puppeteer, and none wanted: mesa's CDP harness (`test/browser/`) is
 shared by mesa, `@frontierjs/ui`, junction's devtools drive and `fli gui`'s, and the
-cli ships a small page driver of its own (`core/browser.js`) for the tutor. CI runs
+tutor's page driver (cli `core/browser.js`) is a thin layer over it. CI runs
 on every push (`bun run ci`, `.github/workflows/ci.yml`). What is still missing is
 the Dusk half, and its driver now ships: `@frontierjs/mesa/drive` (`FJS-D554`), with
 a `profile` an offline app's drive can reopen. The copies still to fold onto it

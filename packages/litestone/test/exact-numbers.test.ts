@@ -26,7 +26,6 @@ describe('what parses', () => {
       qty      Int @scale(6)
       total    Int @money(USD)
       quoted   Int @money("JPY")
-      dflt     Int @money
       perRow   Int @money(field: currency)
       currency String
     }`)
@@ -38,12 +37,18 @@ describe('what parses', () => {
     expect(at('qty',    'scale')).toMatchObject({ places: 6 })
     expect(at('total',  'money')).toMatchObject({ currency: 'USD', field: null })
     expect(at('quoted', 'money')).toMatchObject({ currency: 'JPY' })
-    expect(at('dflt',   'money')).toMatchObject({ currency: null, field: null })
     expect(at('perRow', 'money')).toMatchObject({ currency: null, field: 'currency' })
   })
 })
 
 describe('what is refused at parse', () => {
+  test('a bare @money — the currency decides the scale, so it is stated', () => {
+    expect(errsOf(`model P { id Int @id  t Int @money }`)).toMatch(/@money needs its currency/)
+    // The pair: either stated shape passes the same rule.
+    expect(errsOf(`model P { id Int @id  t Int @money(USD) }`)).toBe('')
+    expect(errsOf(`model P { id Int @id  t Int @money(field: c)  c String }`)).toBe('')
+  })
+
   test('a type that is not Int — the storage class stays true', () => {
     expect(errsOf(`model P { id Int @id  t Float @money(USD) }`)).toMatch(/requires an Int field, got Float/)
     expect(errsOf(`model P { id Int @id  t String @scale(2) }`)).toMatch(/requires an Int field, got String/)
@@ -205,16 +210,13 @@ describe('on the wire', () => {
   test('the JSON type stays integer and the scale travels beside it', () => {
     const r = parse(`model P {
       id Int @id
-      qty Int @scale(6)  total Int @money(USD)  amt Int @money(field: cur)  cur String  fee Int @money
+      qty Int @scale(6)  total Int @money(USD)  amt Int @money(field: cur)  cur String
     }`)
     const props = (generateJsonSchema(r.schema) as any).$defs.P.properties
 
     expect(props.qty).toMatchObject({ type: 'integer', 'x-scale': 6 })
     expect(props.total).toMatchObject({ type: 'integer', 'x-money': { currency: 'USD' } })
     expect(props.amt).toMatchObject({ 'x-money': { field: 'cur' } })
-    // The default-currency form carries the marker and no answer, which is the
-    // honest shape: the app knows its default and the schema does not.
-    expect(props.fee['x-money']).toEqual({})
   })
 
   test('a per-row currency does NOT resolve a scale', () => {

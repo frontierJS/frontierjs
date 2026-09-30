@@ -1103,7 +1103,14 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         // unanswerable.
         assertNameable(ctx)
 
-        const where = { [idField]: ctx.id, ...softDeleteFilter() }
+        // The filters narrow the one row as they narrow the list, so a hook
+        // that scopes reads through `ctx.query` scopes this read too and a
+        // filter the row fails is a 404 (`FJS-1585`). Wrapped in AND so a
+        // filter on the key itself cannot replace the id the URL named.
+        const filtered = Object.keys(q.where).length > 0
+        const where = filtered
+          ? { AND: [q.where], [idField]: ctx.id, ...softDeleteFilter() }
+          : { [idField]: ctx.id, ...softDeleteFilter() }
         const args: Record<string, unknown> = { where }
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include

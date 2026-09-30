@@ -2660,7 +2660,9 @@ class Parser {
   }
 
   /**
-   * `@money` · `@money(USD)` · `@money("USD")` · `@money(field: currency)`
+   * `@money(USD)` · `@money("USD")` · `@money(field: currency)`
+   *
+   * A bare `@money` parses, and validation refuses it by name.
    *
    * A bare code and a quoted one are the same thing; the schema reads better
    * unquoted and a string is what somebody pasting from JSON will write.
@@ -6306,8 +6308,8 @@ function validate(schema) {
       if (!scale || typeof raw !== 'number' || Number.isInteger(raw)) continue
       // The suggested value is in the CURRENCY's minor units, which for the yen
       // is the yen: suggesting `raw * 100` there is advice that is wrong by a
-      // hundred. A bare @money is the app's default currency and is not knowable
-      // here, so it keeps the two-place reading.
+      // hundred. A per-row currency is not knowable here, so it keeps the
+      // two-place reading.
       let places = scale.places
       if (scale.kind === 'money') {
         try { places = scale.currency ? minorUnits(scale.currency) : 2 }
@@ -7015,6 +7017,13 @@ function validate(schema) {
       }
 
       if (money) {
+        // The currency decides where the point is, so an amount with no stated
+        // currency has no scale. A default resolved elsewhere would be a second
+        // origin for it: the UI and an email would each pick one, and a shop
+        // keeping its books in pounds would show dollars wherever one guessed.
+        if (!money.currency && !money.field)
+          errors.push(`${at}: @money needs its currency — @money(USD), or @money(field: currency) for a code held per row. The scale comes from the currency, so there is no default to fall back on`)
+
         if (money.currency && !isKnownCurrency(money.currency))
           errors.push(`${at}: @money(${money.currency}) — not an ISO 4217 currency. The scale comes from the currency, so a code nobody recognizes would silently take two places`)
 

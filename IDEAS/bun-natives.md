@@ -152,7 +152,7 @@ display, exposes `navigate`, `evaluate`, `screenshot`, `click`, `type` and a raw
 `cdp()` — but it is **not its own browser**: it reported
 `Chrome/150.0.7871.124`, byte-identical to this machine's `google-chrome`. It
 removes no prerequisite, only our launch plumbing, and that plumbing lives in
-mesa's harness (node) and `packages/cli/core/browser.js` (node). Nothing gains.
+one place, `@frontierjs/mesa/drive` (node). Nothing gains.
 
 **`Bun.YAML` → the two hand-rolled frontmatter parsers** in
 `packages/mesa/src/compiler-md.js` and `packages/sierra/src/scanner/parse-frontmatter.js`.

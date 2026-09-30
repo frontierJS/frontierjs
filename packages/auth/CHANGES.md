@@ -1,5 +1,11 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-30 — a person cannot rewrite their own address (`FJS-1591`)
+
+`db/user.lite` policed `emailVerified` and `role` and left `email` and `accountId` writable by the row's owner. The gate lets a signed-in caller update their own row, so an app's first self-edit of `User` would let a session holder move the account to an address nobody verified. That address is where a password reset goes, and `emailVerified` stayed true. Both columns now carry `@allow('write', auth().isAdmin)`, so a non-admin's write drops them and lands the rest. Nothing in this package writes the row as a caller, so nothing here had exercised it.
+
+`test/user-policy.test.ts` covers four cases: a name lands, the four policed columns do not, another person's row does not move, and an administrator's write does. It fails with the two new policies removed. `example` carried a pasted copy, and its `users` service made the gap live there. The copy moved with the fragment, and `fli check` reports no drift. The suite is 410 pass and 1 fail. The failure is the reauthentication rate-limit test hitting bun's 5s timeout at load average 12, and it passes alone under `--timeout 30000`.
+
 ## 2026-09-29 — the cleanup sweep is started from `work()` (`FJS-D551`)
 
 `cleanup.ts`'s usage comment and the README start `createAuthCleanupJobs(db)` from a

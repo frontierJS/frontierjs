@@ -15040,6 +15040,42 @@ describe('createTestEnv', () => {
     }
   })
 
+  test('verifyRowPolicies grades a create @@deny against the schema it is asked about', async () => {
+    // Orion's shape (FJS-1595): an owner deny on create, beside an allow one
+    // relation away that every payload must satisfy before the deny is
+    // reachable. Dropping either deny survived `litestone mutate` on basecamp.
+    const OWNED = `
+      model Flow {
+        id       String  @id @default(uuid())
+        ownerId  String? @default(auth().id)
+        versions FlowVersion[]
+        @@allow('create', true)
+        @@deny('create', ownerId != null && ownerId != auth().id)
+      }
+      model FlowVersion {
+        id       String  @id @default(uuid())
+        flowId   String
+        flow     Flow    @relation(fields: [flowId], references: [id])
+        authorId String? @default(auth().id)
+        @@allow('create', flow.ownerId == auth().id)
+        @@deny('create', authorId != null && authorId != auth().id)
+      }
+    `
+    const original = parse(OWNED).schema
+    const env = await createTestEnv({ schema: OWNED })
+    expect((await env.verifyRowPolicies({ against: original, ops: ['create'] })).map((m: any) => m.message)).toEqual([])
+    env.close()
+
+    for (const model of ['Flow', 'FlowVersion']) {
+      const dropped = OWNED.split('\n').filter(l =>
+        !(l.includes(`@@deny('create'`) && l.includes(model === 'Flow' ? 'ownerId' : 'authorId'))).join('\n')
+      const mutant = await createTestEnv({ schema: dropped })
+      const bad = await mutant.verifyRowPolicies({ against: original, ops: ['create'] })
+      expect(bad.map((m: any) => [m.model, m.got]), model).toContainEqual([model, 'admitted'])
+      mutant.close()
+    }
+  })
+
   test('verifyFieldProtection asks which COLUMNS come back, not who may read', async () => {
     // A separate boundary from the gate: basecamp's Secret.data is @guarded
     // under a gate that admits ADMINISTRATOR(5), so the field policy is the
@@ -15054,6 +15090,30 @@ describe('createTestEnv', () => {
     expect(bad.some((m: any) => m.field === 'name' && m.got === 'exposed')).toBe(true)
     expect(bad[0].message).toMatch(/came back to a SYSADMIN\(7\) reader/)
     env.close()
+  })
+
+  test('verifyFieldProtection grades a @guarded column on a model no reader reaches', async () => {
+    // Every model in auth's fragment is @@gate("8"), so the SYSADMIN read is
+    // refused before a column is looked at, and all eight guarded-drop mutants
+    // of basecamp's session and credential tokens survived (FJS-1594). What
+    // the attribute still does there is keep the value out of the audit trail.
+    const LOCKED = `
+      model Session {
+        id    Int    @id
+        token String @guarded
+        @@gate("8")
+      }
+    `
+    const original = parse(LOCKED).schema
+    const env = await createTestEnv({ schema: LOCKED })
+    expect(await env.verifyFieldProtection()).toEqual([])
+    env.close()
+
+    const mutant = await createTestEnv({ schema: LOCKED.replace('String @guarded', 'String') })
+    const bad = await mutant.verifyFieldProtection({ against: original })
+    expect(bad.map((m: any) => [m.field, m.got])).toEqual([['token', 'unredacted']])
+    expect(bad[0].message).toMatch(/audit trail/)
+    mutant.close()
   })
 
   test('verifyConstraints checks @unique, which is the one rule needing an existing row', async () => {

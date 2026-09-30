@@ -41,6 +41,7 @@
 import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -53,7 +54,6 @@ const UI_PORT  = process.env.UI_PORT  ?? '7010'
 const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 /** Every code this drive creates. Swept at the start, so a run that died half
  *  way does not poison the next one. */
@@ -250,7 +250,6 @@ check('…and a one-sided window is ordinary',
 // point: SQLite enforces this for whoever is writing.
 const dataBoundary = JSON.parse(execFileSync('bun', ['-e', `
 import { sys } from './api/src/core/db.ts'
-import { chromeProfile } from './lib/chrome-profile.mjs'
 
 const P   = 'CHK' + Date.now().toString(36).slice(-5).toUpperCase()
 const out = {}
@@ -677,68 +676,18 @@ check('…nor to delete one', erase.status, 405)
 
 // ─── Chrome ────────────────────────────────────────────────────────────────
 
-// Chrome picks the debugging port and the profile is this run's own. A FIXED
-// port is answered by whichever browser bound it first, so a second drive
-// attaches to the first one's session and grades that browser's screen
-// (`FJS-740` one layer over, measured in `verify:stock`); and the default
-// profile carries the previous run's sign-in into this one.
-const profile = chromeProfile('fjs-money-')
-const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
-  'about:blank',
-], 'chrome')
-
-const wsUrl = await new Promise((resolve) => {
-  let buf = ''
-  const t = setTimeout(() => resolve(null), 20000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
+  console.error(e.message); stopAll(); process.exit(1)
 })
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
+const { cmd } = browser
+// Asked as an EXPRESSION that answers a value; the driver evaluates a body.
+const evaluate = (expr) => browser.evaluate(`return (${expr})`)
 
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const pending = new Map()
-ws.onmessage = (e) => {
-  const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
-}
-function send(method, params = {}, sessionId) {
-  const id = ++msgId
-  return new Promise(res => {
-    pending.set(id, res)
-    ws.send(JSON.stringify({ id, method, params, sessionId }))
-  })
-}
-
-const { result: { targetId } } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
+// Every console error, not only the driver's [Mesa] warnings.
 const errors = []
-await send('Runtime.enable', {}, sessionId)
-ws.addEventListener('message', (e) => {
-  const m = JSON.parse(e.data)
-  if (m.method === 'Runtime.consoleAPICalled' && m.params?.type === 'error') {
-    errors.push((m.params.args ?? []).map(a => a.value ?? a.description).join(' '))
-  }
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (p.type === 'error') errors.push((p.args ?? []).map(a => a.value ?? a.description).join(' '))
 })
-
-async function evaluate(expr) {
-  const { result } = await send('Runtime.evaluate', {
-    expression: `(async () => (${expr}))()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
-}
 
 async function waitSel(sel, atLeast = 1, tries = 100) {
   for (let i = 0; i < tries; i++) {
@@ -767,11 +716,11 @@ console.log('\n  the basket screen')
 // the same shape `cart.js` uses, because there is no other way in: `Cart.token`
 // is `@guarded` and `open` is the one call that ever answers one.
 const shopper = await basket([{ variantId: HOOD.id, quantity: 1 }, { variantId: MUG.id, quantity: 1 }])
-await send('Page.navigate', { url: `${UI}/` }, sessionId)
+await cmd('Page.navigate', { url: `${UI}/` })
 await waitSel('body')
 await evaluate(`localStorage.setItem('shop_cart', ${JSON.stringify(JSON.stringify({ token: shopper.token, id: shopper.id }))})`)
 
-await send('Page.navigate', { url: `${UI}/cart/` }, sessionId)
+await cmd('Page.navigate', { url: `${UI}/cart/` })
 if (!await waitSel('#basket-total')) { console.error('the basket screen never rendered its total'); stopAll(); process.exit(1) }
 
 check('the screen shows the subtotal',   await text('#basket-subtotal'), t => /\d/.test(t ?? ''))
@@ -892,14 +841,14 @@ console.log('\n  the order screen')
 // Signed in as staff in the browser, because `Order` is `@@gate("1.4.4.5")`
 // with two allows — a stranger reading the ledger is exactly what `FJS-498`
 // closed, and this screen is staff's.
-await send('Page.navigate', { url: `${UI}/` }, sessionId)
+await cmd('Page.navigate', { url: `${UI}/` })
 await waitSel('body')
 // The key is the app's own — `tokenKey: 'shop_token'` in web/config/sierra.config.js
 // — and the value is the RAW token: `localTokenStore` calls `setItem(key, token)`
 // with no JSON around it, so a stringified one is a token with quotes in it and
 // every call comes back 401.
 await evaluate(`localStorage.setItem('shop_token', ${JSON.stringify(staffToken)})`)
-await send('Page.navigate', { url: `${UI}/orders/${placed.id}/` }, sessionId)
+await cmd('Page.navigate', { url: `${UI}/orders/${placed.id}/` })
 
 if (!await waitSel('#items-order-total')) {
   console.error('the order screen never rendered its total')

@@ -2172,6 +2172,7 @@ export interface App {
   config: unknown
   port?: number | null
   isPublic: boolean
+  blueprintId?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2189,6 +2190,7 @@ export interface AppCreate {
   config?: unknown
   port?: number | null
   isPublic?: boolean
+  blueprintId?: string | null
 }
 
 export interface AppUpdate {
@@ -2203,6 +2205,7 @@ export interface AppUpdate {
   config?: unknown
   port?: number | null
   isPublic?: boolean
+  blueprintId?: string | null
 }
 
 export interface AppWhere extends WhereBase {
@@ -2217,6 +2220,7 @@ export interface AppWhere extends WhereBase {
   config?: unknown | WhereOp<unknown> | null
   port?: number | WhereOp<number> | null
   isPublic?: boolean | WhereOp<boolean> | null
+  blueprintId?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -3218,6 +3222,7 @@ export interface AlertRule {
   threshold: number
   forMinutes: number
   isActive: boolean
+  snoozedUntil?: string | null
   /** @version */
   version: number
   createdAt: string
@@ -3235,6 +3240,7 @@ export interface AlertRuleCreate {
   threshold: number
   forMinutes?: number
   isActive?: boolean
+  snoozedUntil?: string | null
 }
 
 export interface AlertRuleUpdate {
@@ -3248,6 +3254,7 @@ export interface AlertRuleUpdate {
   threshold?: number
   forMinutes?: number
   isActive?: boolean
+  snoozedUntil?: string | null
   version: number
 }
 
@@ -3262,6 +3269,7 @@ export interface AlertRuleWhere extends WhereBase {
   threshold?: number | WhereOp<number> | null
   forMinutes?: number | WhereOp<number> | null
   isActive?: boolean | WhereOp<boolean> | null
+  snoozedUntil?: string | WhereOp<string> | null
   version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null

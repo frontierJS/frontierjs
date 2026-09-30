@@ -1,9 +1,9 @@
 /*
  * drive.js — a real Chrome, driven over CDP. `@frontierjs/mesa/drive`.
  *
- * Launch a browser, attach to a page, send it INPUT the browser trusts, and
- * collect everything the page threw. It knows nothing about what is being
- * tested: the caller brings a URL. The spec runner this repo's own drives use
+ * Launch a browser, attach to a page, send it INPUT the browser trusts, take
+ * its network away (`createNetwork`), and collect everything the page threw.
+ * It knows nothing about what is being tested: the caller brings a URL. The spec runner this repo's own drives use
  * sits on top of it in `test/browser/drive.mjs` and is not published.
  *
  * It lives in mesa because mesa is the leaf, so every package's drive and
@@ -99,11 +99,18 @@ let sweepInstalled = false
  *  optional — see sweepLaunched(). */
 function sleepSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }
 
+/** Kill every process holding a profile, Chrome's children included. Killing
+ *  the browser alone leaves a renderer or the GPU process winding down with
+ *  the profile open, and it writes the directory back after it is removed. The
+ *  pattern starts past the dashes, or pkill reads it as an option. */
+function killHolders(entry) {
+  try { entry.chrome.kill('SIGKILL') } catch { /* already gone */ }
+  try { spawnSync('pkill', ['-KILL', '-f', `user-data-dir=${entry.profile}`]) } catch { /* no pkill */ }
+}
+
 function sweepLaunched() {
   if (!launched.size) return
-  for (const entry of launched) {
-    try { entry.chrome.kill('SIGKILL') } catch { /* already gone */ }
-  }
+  for (const entry of launched) killHolders(entry)
   // Every browser dies BEFORE any profile is removed, and then the thread
   // waits. Removing straight after the kill does not fail — it SUCCEEDS, and
   // Chrome, still shutting down, writes the directory back: measured, a
@@ -167,11 +174,20 @@ function reapStaleProfiles() {
  *                 with it. Two browsers cannot hold one profile at once;
  *                 close() waits for Chrome to exit, so a relaunch after it is
  *                 safe
+ *    args       — further Chrome flags, appended. The port and the profile are
+ *                 the driver's and refused here: the attach reads the port
+ *                 Chrome picked, and the sweep finds its browsers by profile
+ *
+ *  The handle's `send(method, params, sessionId)` is the browser-level call,
+ *  for a drive that attaches targets of its own — an extension's popup or its
+ *  service worker; `cmd` is the same call bound to the page.
  *
  *  A launch that fails THROWS, with a sentence naming the fix. It never exits
  *  the process: the caller may be a long-lived one (fli, a lesson) for which
  *  no Chrome is a skip. */
-export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept } = {}) {
+export async function openChrome({ windowSize = '1280,900', bootstrap, profile: kept, args = [] } = {}) {
+  const owned = args.find((a) => /^--(remote-debugging-port|user-data-dir)\b/.test(a))
+  if (owned) throw new Error(`openChrome: ${owned.split('=')[0]} is the driver's own flag — the attach and the profile sweep depend on it`)
   const exe = findChrome()
   if (!exe)
     throw new Error(process.env.FJS_CHROME
@@ -182,6 +198,12 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   reapStaleProfiles()
   if (kept) mkdirSync(kept, { recursive: true })
   const profile = kept ?? mkdtempSync(join(tmpdir(), PROFILE_PREFIX))
+  // A port Chrome PICKS and a profile of its own, both. A fixed 9222 is held by
+  // whichever browser bound it first, so a second drive attaches to another
+  // run's session and grades that screen — measured in example's `verify:stock`,
+  // reading *Sign out* and 43 rows while asserting a signed-out visitor is
+  // refused (`FJS-740` one layer over). The default profile carries a previous
+  // run's `localStorage`, and with it that run's sign-in.
   const chrome  = spawn(exe, [
     '--headless=new', '--disable-gpu', '--no-sandbox',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
@@ -189,6 +211,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     // Specs read color and geometry; a non-sRGB profile or a scrollbar taking
     // width makes a hit test land on the wrong element.
     '--force-color-profile=srgb', '--hide-scrollbars',
+    ...args,
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] })
 
@@ -223,16 +246,36 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   let nextId = 1
   const pending = new Map()
 
+  // Bounded, because a service worker or a database worker that takes the
+  // renderer down with it leaves every renderer-bound call unanswered, and an
+  // unbounded one is a drive that sits silent forever — a renderer crash filed
+  // as a hang (`FJS-1179`). The message says which.
   function send(method, params = {}, sessionId) {
     const id = nextId++
     browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
     return new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject })
-      setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
+      setTimeout(() => {
+        if (!pending.delete(id)) return
+        reject(new Error(`${method} did not answer in 30s — the renderer is gone or wedged`))
+      }, 30000)
     })
   }
 
   const errors = []
+  const listeners = new Map()
+
+  /** Hear a CDP event — `on('Network.webSocketFrameReceived', (params) => …)`.
+   *  An Observer: it receives the event and cannot change what the page does.
+   *  Answers the unsubscribe. The collected `errors` are the driver's policy on
+   *  the console; a drive that holds a stricter one, or counts frames, reads
+   *  the events here instead of opening a second socket to the same browser.
+   *  A domain must be enabled for its events to arrive: Page and Runtime are. */
+  function on(method, fn) {
+    if (!listeners.has(method)) listeners.set(method, new Set())
+    listeners.get(method).add(fn)
+    return () => listeners.get(method).delete(fn)
+  }
 
   browser.addEventListener('message', (ev) => {
     const msg = JSON.parse(ev.data)
@@ -242,6 +285,7 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
       msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
       return
     }
+    for (const fn of listeners.get(msg.method) ?? []) fn(msg.params, msg.sessionId)
     if (msg.method === 'Runtime.exceptionThrown') {
       const d = msg.params.exceptionDetails
       errors.push('exception: ' + (d?.exception?.description ?? d?.text))
@@ -264,6 +308,13 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
   const cmd = (method, params) => send(method, params, sessionId)
 
+  // A headless window's FOCUS belongs to the browser, not the page: about thirty
+  // seconds after launch Chrome starts its component extensions, the window
+  // blurs, and from then on `el.focus()` moves `activeElement` and fires no
+  // `focus` event. A combobox that opens on focus then never opens, and the
+  // failure lands on whichever step the drive reached at that second
+  // (`FJS-1084`). Emulated focus keeps the page focused whatever the window does.
+  await cmd('Emulation.setFocusEmulationEnabled', { enabled: true })
   await cmd('Page.enable')
   await cmd('Runtime.enable')
 
@@ -435,10 +486,157 @@ export async function openChrome({ windowSize = '1280,900', bootstrap, profile: 
     // and 1.8GB by the time anyone looked (FJS-361). The extra wait is after
     // the browser is already gone, so it costs one run 300ms, once.
     await new Promise((r) => { chrome.once('exit', r); setTimeout(r, 3000) })
+    killHolders(entry)
     await new Promise((r) => setTimeout(r, 300))
     if (!entry.keep) try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
     launched.delete(entry)
   }
 
-  return { cmd, evaluate, navigate, newPage, key, press, type, clickAt, errors, close }
+  return { cmd, send, evaluate, navigate, newPage, key, press, type, clickAt, on, errors, close }
+}
+
+// ─── the network ──────────────────────────────────────────────────────
+//
+// An offline app makes claims about what it does with no server reachable, and
+// every one of them is easy to prove against a stub and wrong in a stockroom. A
+// `fetch` swapped for a throwing function drops no WebSocket, fails no request
+// already in flight and survives no reconnect, which is where the defects are.
+// So this is Chrome's own offline mode, the one the DevTools network panel
+// switches.
+//
+// **The emulation does not close a socket that is already open.** New
+// connections are refused and an existing one keeps carrying frames, so an app
+// is still talking to its server while the page is told it is offline, and
+// that reads green and means nothing. Going offline is therefore two things:
+// the emulation, and severing the sockets the page opened, through a registry
+// installed before the page's first script so the app's own socket is in it.
+// Severing is harsher than a real outage, which leaves a socket that looks
+// open and swallows a send; `withOffline(fn, { sever: false })` is that case.
+//
+// Vite's HMR socket is never severed: its client reloads the page when it
+// closes, and with the network down the reload lands on
+// ERR_INTERNET_DISCONNECTED and the app is gone mid-assertion. It is told apart
+// by its SUBPROTOCOL, `vite-hmr`, not its origin — a dev server that proxies
+// the API puts the app's socket on the page's origin too.
+//
+// The emulation is per TARGET: a page from `newPage()` stays on the network.
+// A service worker has a network of its own and is not covered.
+
+const OFFLINE = { offline: true,  latency: 0, downloadThroughput: 0,  uploadThroughput: 0 }
+const ONLINE  = { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }
+
+/** Network controls for a browser from `openChrome`. Call it BEFORE the first
+ *  navigation, or the page's sockets are not in the registry and
+ *  `goOffline()` answers null.
+ *
+ *    const net = await createNetwork(browser)
+ *    await net.withOffline(async () => { … })   // restored even on a throw */
+export async function createNetwork(browser) {
+  const { cmd, evaluate } = browser
+  await cmd('Network.enable')
+
+  // How many sockets the last going-offline cut: the difference between the
+  // app's connection being down and the page never having had one. Without it
+  // waitOnline waits out its budget on a page that opens no socket at all.
+  let lastSevered = 0
+
+  // A Proxy rather than a subclass, so `instanceof WebSocket` and the static
+  // constants still read through.
+  await cmd('Page.addScriptToEvaluateOnNewDocument', {
+    source: `
+      (() => {
+        const Native = WebSocket
+        const open = new Set()
+        globalThis.__fjsSockets = open
+        globalThis.WebSocket = new Proxy(Native, {
+          construct(target, args) {
+            const sock = new target(...args)
+            sock.__fjsVite = [].concat(args[1] ?? []).includes('vite-hmr')
+            open.add(sock)
+            sock.addEventListener('close', () => open.delete(sock))
+            return sock
+          },
+        })
+      })()
+    `,
+  })
+
+  const emulate = (conditions) => cmd('Network.emulateNetworkConditions', conditions)
+
+  /** Close the sockets the app opened; null when the page has no registry. */
+  const severSockets = () => evaluate(`
+    const open = globalThis.__fjsSockets
+    if (!open) return { n: null }
+    let n = 0
+    for (const s of [...open]) {
+      if (s.__fjsVite) continue
+      if (s.readyState === 0 || s.readyState === 1) { n++; s.close(4000, 'drive: offline') }
+      open.delete(s)
+    }
+    return { n }
+  `).then((r) => r.n)
+
+  /** Is the app's socket back? Asked of the registry, not of anything the app
+   *  renders: a status attribute is an app's choice and most do not make it,
+   *  so a wait on one silently never waits. Null is a page with no socket. */
+  const socketUp = () => evaluate(`
+    const open = globalThis.__fjsSockets
+    if (!open) return { up: null }
+    let any = false
+    for (const s of open) {
+      if (s.__fjsVite) continue
+      any = true
+      if (s.readyState === 1) return { up: true }
+    }
+    return { up: any ? false : null }
+  `).then((r) => r.up)
+
+  /** Wait for the network, and by default for the app's socket to come back
+   *  with it. They are not the same moment: the gap is the client's reconnect
+   *  backoff, and a drive that asserts the instant goOnline() resolves is
+   *  asking a client that is still down. */
+  async function waitOnline({ tries = 120, socket = true } = {}) {
+    // Nothing was cut, so there is no reconnect to wait for. A page that opens
+    // its socket lazily is the ordinary case, not a failure.
+    const wantSocket = socket && lastSevered > 0
+    for (let i = 0; i < tries; i++) {
+      if (await evaluate('return navigator.onLine')) {
+        if (!wantSocket) return true
+        const up = await socketUp()
+        if (up === null || up === true) return true
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    return false
+  }
+
+  return {
+    /** Refuse new connections and close the page's open sockets. Answers how
+     *  many it severed, or null when the page loaded before the registry. */
+    async goOffline() {
+      await emulate(OFFLINE)
+      const n = await severSockets()
+      lastSevered = n ?? 0
+      return n
+    },
+
+    /** The page can reach the network again; its socket may not be back yet. */
+    goOnline: () => emulate(ONLINE),
+
+    waitOnline,
+
+    /** How many sockets the last going-offline cut. */
+    get severed() { return lastSevered },
+
+    /** Run `fn` with the network down and put it back whatever happens — a
+     *  failed assertion inside would otherwise leave every later one running
+     *  against a dead network. `sever: false` leaves the app's socket open,
+     *  which is a real outage's first seconds, before the peer has noticed. */
+    async withOffline(fn, { sever = true } = {}) {
+      await emulate(OFFLINE)
+      lastSevered = sever ? ((await severSockets()) ?? 0) : 0
+      try { return await fn() }
+      finally { await emulate(ONLINE) }
+    },
+  }
 }

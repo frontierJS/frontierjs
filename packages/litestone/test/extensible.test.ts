@@ -218,6 +218,22 @@ describe('the pool at work', () => {
     expect((await db.customer.findUnique({ where: { id: r.id } })).t1).toBe('gold')
   })
 
+  // The mirror is an index's copy of the blob. A read that answered it handed
+  // every caller an object under a name the JSON Schema does not declare, which
+  // a browser resource then reported as composed data (`FJS-1426`). The slots
+  // themselves still read, because a query names them.
+  test('no read answers the mirror, and the slots still read', async () => {
+    const db = (await seeded()).asSystem()
+    const r = await db.customer.create({ data: { name: 'Ada', fields: { tier: 'gold' } } })
+    const one  = await db.customer.findUnique({ where: { id: r.id } })
+    const many = await db.customer.findMany()
+    expect(one).not.toHaveProperty('fieldsSlots')
+    expect(many.every((c: any) => !('fieldsSlots' in c))).toBe(true)
+    expect(r).not.toHaveProperty('fieldsSlots')
+    expect(one.t1).toBe('gold')
+    expect(one.fields.tier).toBe('gold')
+  })
+
   test('an unpromoted key stores and reads back, on a model with no pool at all', async () => {
     const db = (await seeded()).asSystem()
     const p = await db.product.create({ data: { name: 'Shirt', fields: { care: 'hand wash' } } })

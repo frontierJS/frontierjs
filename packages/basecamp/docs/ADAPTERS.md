@@ -60,7 +60,8 @@ that the zone has no record for is the bug nobody currently sees.
 Cloudflare is the obvious first vendor. What is actually hard: the zone id is
 not the hostname (`listZones` exists for that mapping), and analytics is a
 GraphQL endpoint at Cloudflare rather than a REST one, so the connector is not a
-one-line `fetch`.
+one-line `fetch`. The plan, with DNS writes and the owed choices, is
+`IDEAS/cloudflare-edge.md`.
 
 ### `cloudSpend` — `ICloudSpend`, behind `/cloud-spend/`
 

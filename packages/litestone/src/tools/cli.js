@@ -5322,12 +5322,17 @@ function gitBaselineRefs(schemaPath, { tags = 6, commits = 12 } = {}) {
 // derived from the ORIGINAL schema against it. A mutant nothing notices is a
 // hole in the checks, and it names itself.
 //
-// Run by hand, not in CI: basecamp is 232 mutants at several seconds each. It
-// answers "did my last change to a check make it weaker", which is a question
-// asked when something changes rather than on every push.
+// CI's full-tier `mutate` phase runs it over each app in
+// scripts/mutate-baselines.json and fails a score below that app's floor
+// (FJS-D476); basecamp only under a `--kinds` subset, since its whole run is
+// past 25 minutes.
 
 async function cmdMutate(cfg) {
-  header('litestone mutate')
+  // `--json` is what the CI `mutate` phase reads (FJS-598): the score as data,
+  // so a floor is compared against a number rather than a scraped line.
+  const asJson = flag('json')
+  const log    = asJson ? () => {} : console.log
+  if (!asJson) header('litestone mutate')
 
   const { schemaMutants, mutationScore, createTestEnv } = await import('../testing.js')
   const schemaPath = resolve(cfg.schema)
@@ -5348,7 +5353,7 @@ async function cmdMutate(cfg) {
   // A fragment that could not be read is named rather than skipped: its models
   // are absent, so every rule they declare is silently outside the run.
   const { text: schemaText, missing } = inlineImportsFromDisk(schemaPath)
-  if (missing.length) console.log(
+  if (missing.length) log(
     `  ${yellow('⚠')}  ${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read ` +
     `(${missing.join(', ')}) — the models they declare are outside this run`)
 
@@ -5358,8 +5363,8 @@ async function cmdMutate(cfg) {
     `A schema declaring no @@gate, @@allow, @guarded or field validator has nothing to mutate.`
   )
 
-  console.log(`  ${dim(`${all.length} mutants · ${basename(schemaPath)}`)}`)
-  console.log()
+  log(`  ${dim(`${all.length} mutants · ${basename(schemaPath)}`)}`)
+  log()
 
   // Progress as it goes: a 232-mutant run is minutes, and a silent one is
   // indistinguishable from a hung one.
@@ -5377,13 +5382,23 @@ async function cmdMutate(cfg) {
     // redirected run collected one progress line per tick on a single row.
     onMutant: () => {
       done++
-      if (!process.stdout.isTTY) return
+      if (asJson || !process.stdout.isTTY) return
       if (done % 5 === 0 || done === all.length) process.stdout.write(`\r  ${dim(`${done}/${all.length}`)}   `)
     },
   })
-  if (process.stdout.isTTY) process.stdout.write('\r                    \r')
+  if (!asJson && process.stdout.isTTY) process.stdout.write('\r                    \r')
 
   const pct   = result.graded ? Math.round(result.score * 100) : 100
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      mutants: all.length, graded: result.graded, killed: result.killed, score: pct,
+      refused: result.refused.length, missing,
+      errored:  result.errored.map(e => ({ kind: e.kind, lineNo: e.lineNo, describe: e.describe, thrown: String(e.thrown) })),
+      survived: result.survived.map(s => ({ kind: s.kind, lineNo: s.lineNo, describe: s.describe })),
+    }, null, 2))
+    return
+  }
   const mark  = result.survived.length ? yellow('!') : green('✓')
   const secs  = ((Date.now() - started) / 1000).toFixed(0)
 
@@ -5411,11 +5426,12 @@ async function cmdMutate(cfg) {
     console.log()
     console.log(`  ${dim('A survivor is a fact about the CHECKS, not the schema. Two are expected:')}`)
     console.log(`  ${dim('a nullable @unique (SQLite takes any number of NULLs) and a create-only')}`)
-    console.log(`  ${dim('policy (checked by evalJs alone, so nothing independent can grade it).')}`)
+    console.log(`  ${dim('@@allow (a create has no WHERE, so only its @@deny rules are graded).')}`)
   }
 
   hints([
     `  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`,
+    `  ${dim('--json')}         ${dim('the score and every survivor as data')}`,
   ])
 }
 

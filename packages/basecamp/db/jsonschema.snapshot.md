@@ -445,7 +445,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `User`
 
-- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:1 create:8 update:1 delete:5` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId` · optional
 - relation `memberships` — hasMany `WorkspaceMember`
 - relation `deployments` — hasMany `Deployment`
@@ -454,17 +454,17 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` | — |
+| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` | — |
 | `name` | `string`? | — | — | — | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
-| `accountId` | `string`? | — | — | — | — |
+| `accountId` | `string`? | — | — | `x-litestone-write-policy` | — |
 | `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-policy` | — |
 | `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | — | — |
 | `displayName` | `string`? | — | — | — | — |
 | `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
@@ -767,6 +767,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
+- relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete SetNull · optional
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `appServers` — hasMany `AppServer`
@@ -786,6 +787,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `port` | `integer`? | — | — | — | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
+| `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
@@ -1122,6 +1124,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `threshold` | `number` | yes | — | — | — |
 | `forMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 1440` | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
+| `snoozedUntil` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `name`, `metricName`, `threshold` · not accepted — `id`, `version`
@@ -1225,6 +1228,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:1 create:7 update:7 delete:7` · version field `revision` · closed (`additionalProperties: false`)
 - relation `params` — hasMany `BlueprintParam`
+- relation `apps` — hasMany `App`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |

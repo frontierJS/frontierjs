@@ -30,82 +30,29 @@
  *   bun run verify:values
  */
 
-import { spawn } from 'node:child_process'
 import { requireServers } from './lib/preflight.mjs'
-import { chromeProfile } from './lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 await requireServers([['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]])
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = chromeProfile('fjs-values-')
-const chrome  = spawn(CHROME, [
-  '--headless=new', '--disable-gpu', '--no-sandbox',
-  '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
+const browser = await openChrome().catch((e) => { console.error(e.message); process.exit(1) })
+const { cmd, evaluate } = browser
 
-chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
-
-const wsUrl = await new Promise((resolve, reject) => {
-  let buf = ''
-  const t = setTimeout(() => reject(new Error('Chrome never announced a DevTools port')), 15000)
-  chrome.stderr.on('data', (d) => {
-    buf += d
-    const m = buf.match(/ws:\/\/[^\s]+/)
-    if (m) { clearTimeout(t); resolve(m[0]) }
-  })
+// The driver's own `errors` promote only a [Mesa] warning; this drive fails on
+// every console error and warning, so it reads the events itself.
+const noise = []
+browser.on('Runtime.exceptionThrown', (p) =>
+  noise.push('exception: ' + (p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text)))
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (['error', 'warning'].includes(p.type)) noise.push(p.type + ': ' + p.args.map(a => a.value ?? a.description ?? '').join(' '))
 })
 
-const browser = new WebSocket(wsUrl)
-await new Promise((r) => browser.addEventListener('open', r, { once: true }))
-
-let nextId = 1
-const pending = new Map()
-const noise   = []
-
-function send(method, params = {}, sessionId) {
-  const id = nextId++
-  browser.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    setTimeout(() => pending.has(id) && reject(new Error(`${method} timed out`)), 30000)
-  })
-}
-
-browser.addEventListener('message', (ev) => {
-  const msg = JSON.parse(ev.data)
-  if (msg.id && pending.has(msg.id)) {
-    const { resolve, reject } = pending.get(msg.id)
-    pending.delete(msg.id)
-    msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    return
-  }
-  if (msg.method === 'Runtime.exceptionThrown')
-    noise.push('exception: ' + (msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text))
-  if (msg.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(msg.params.type))
-    noise.push(msg.params.type + ': ' + msg.params.args.map(a => a.value ?? a.description ?? '').join(' '))
-})
-
-const { targetId }  = await send('Target.createTarget', { url: 'about:blank' })
-const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
-await send('Page.enable', {}, sessionId)
-await send('Runtime.enable', {}, sessionId)
-
-async function evaluate(expression) {
-  const r = await send('Runtime.evaluate', {
-    expression: `(async () => { ${expression} })()`,
-    awaitPromise: true, returnByValue: true,
-  }, sessionId)
-  if (r.exceptionDetails)
-    throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text)
-  return r.result.value
-}
-
-await send('Page.navigate', { url: `${UI}/products/` }, sessionId)
+await cmd('Page.navigate', { url: `${UI}/products/` })
 await evaluate(`
   const t0 = Date.now();
   while (Date.now() - t0 < 15000) {
@@ -433,9 +380,7 @@ for (const r of results) {
   console.log(ok ? `  ok   ${r.name}` : `  FAIL ${r.name}\n         want ${JSON.stringify(r.want)}\n         have ${JSON.stringify(r.got)}`)
 }
 
-await send('Target.closeTarget', { targetId })
-browser.close()
-chrome.kill()
+await browser.close()
 
 if (failed) { console.error(`\n${failed} assertion(s) failed`); process.exit(1) }
 console.log(`\n${results.length} assertion(s) passed`)

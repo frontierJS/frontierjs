@@ -343,21 +343,20 @@ export function schemaViews(
  * What a `@money` column means, in words an agent can act on.
  *
  * The column is a whole number of MINOR units and nothing in the generated
- * schema says so: `total` arrives as `{"type":"integer","x-money":{}}`, which
- * reads as an ordinary integer. The mistake that shape invites is a factor of a
+ * schema says so: `total` arrives as `{"type":"integer","x-money":{"currency":"USD"}}`,
+ * which an MCP client reads as an ordinary integer. The mistake that shape invites is a factor of a
  * hundred on a refund, in the direction of the customer's money.
  *
  * The SCALE is deliberately not stated. `jsonschema.js` declines to resolve it
  * — JPY has no minor unit and KWD has three — and a number that is right two
  * thirds of the time is worse here than an absent one. So the description says
- * which currency when the column states one, names the sibling column when the
- * currency is per row, and otherwise says only what is certainly true.
+ * which currency when the column states one, and names the sibling column when
+ * the currency is per row. There is no third shape (`FJS-D556`).
  */
 function moneyNote(x: unknown): string {
   const spec = (x ?? {}) as { currency?: string; field?: string }
-  if (spec.currency) return `A whole number of ${spec.currency} minor units, not a decimal amount.`
-  if (spec.field)    return `A whole number of minor units, not a decimal amount. The currency is in this row's \`${spec.field}\`.`
-  return 'A whole number of minor units (the app\'s default currency), not a decimal amount.'
+  if (spec.field) return `A whole number of minor units, not a decimal amount. The currency is in this row's \`${spec.field}\`.`
+  return `A whole number of ${spec.currency} minor units, not a decimal amount.`
 }
 
 /**

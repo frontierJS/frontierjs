@@ -85,8 +85,8 @@ describe('the declaration decides, not the JS type', () => {
   })
 
   test('a currency held per ROW names the column that holds it', () => {
-    // `x-money` has THREE shapes — a stated currency, one per row, and neither
-    // — and only the first was carried. `field:` reached a cell as
+    // `x-money` has two shapes — a stated currency and one per row — and only
+    // the first was carried. `field:` reached a cell as
     // `currency: undefined` with nothing naming the column that has the answer,
     // so a renderer reading `column.currencyField` read a key nothing set and
     // every row of a multi-currency table rendered in the app default: a

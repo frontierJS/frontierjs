@@ -35,7 +35,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
-import { chromeProfile } from '../../web/test/lib/chrome-profile.mjs'
+import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const EXT  = join(HERE, '..')
@@ -49,8 +49,6 @@ const API    = process.env.API_URL ?? 'http://localhost:8110'
 // origin: a host permission is in a file the build emits, so a drive cannot
 // pick its port at run time the way every other one here does.
 const SITE_PORT = 7710
-const DEBUG_PORT = 9224
-const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // ─── plumbing ──────────────────────────────────────────────────────────────
 
@@ -162,68 +160,46 @@ console.log('\n  the extension — a surface loaded into a browser profile\n')
 
 // ─── Chrome, with the extension in it ──────────────────────────────────────
 
-const profile = chromeProfile('fjs-shop-desk-')
-start(CHROME, [
-  '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu', '--no-sandbox',
-  `--user-data-dir=${profile}`,
+const browser = await openChrome({
   // Without this the CDP command below is not registered, and `--load-extension`
   // is not an alternative: with a debugging port open it loads nothing.
-  '--enable-unsafe-extension-debugging',
-  'about:blank',
-], 'chrome')
+  args: ['--enable-unsafe-extension-debugging'],
+}).catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
+// Browser-level: this drive attaches the popup, the service worker and a page
+// of its own, each under its own session.
+const { send } = browser
 
-let wsUrl = null
-for (let i = 0; i < 80 && !wsUrl; i++) {
-  try { wsUrl = (await (await fetch(`http://localhost:${DEBUG_PORT}/json/version`)).json()).webSocketDebuggerUrl }
-  catch { await sleep(250) }
-}
-if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
-
-const ws = new WebSocket(wsUrl)
-await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej })
-
-let msgId = 0
-const pending  = new Map()
-const harborLog = []
 const pageErrors = []
-ws.onmessage = e => {
-  const m = JSON.parse(e.data)
-  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return }
-  if (m.method === 'Runtime.consoleAPICalled') {
-    const text = m.params.args?.map(a => a.value ?? a.description).join(' ') ?? ''
-    harborLog.push(text)
-    if (m.params.type === 'error') pageErrors.push(text)
-  }
-  if (m.method === 'Runtime.exceptionThrown')
-    pageErrors.push(m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text ?? '')
-}
-const send = (method, params = {}, sessionId) =>
-  new Promise(res => { const id = ++msgId; pending.set(id, res); ws.send(JSON.stringify({ id, method, params, sessionId })) })
+browser.on('Runtime.consoleAPICalled', (p) => {
+  if (p.type === 'error') pageErrors.push(p.args?.map(a => a.value ?? a.description).join(' ') ?? '')
+})
+browser.on('Runtime.exceptionThrown', (p) =>
+  pageErrors.push(p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text ?? ''))
 
 // The id is a hash of the absolute path, so it differs on every machine and
 // there is nothing to hardcode. This is the only thing that answers it.
-const loaded = await send('Extensions.loadUnpacked', { path: resolve(DIST) })
-const extId  = loaded.result?.id
+const extId = await send('Extensions.loadUnpacked', { path: resolve(DIST) })
+  .then((r) => r?.id, (e) => { console.error(e.message); return null })
 check('the built extension loads unpacked, manifest and all', typeof extId === 'string' && extId.length === 32, true)
-if (!extId) { console.error(JSON.stringify(loaded.error)); stopAll(); process.exit(1) }
+if (!extId) { stopAll(); process.exit(1) }
 
 // ─── the harbor ────────────────────────────────────────────────────────────
 //
 // The service worker is lazy. Opening the popup is what a person does and what
 // wakes it, so the dock is created first and the harbor asserted after.
 
-const { result: dockTarget } = await send('Target.createTarget', { url: `chrome-extension://${extId}/dock.html` })
-const { result: dockSession } = await send('Target.attachToTarget', { targetId: dockTarget.targetId, flatten: true })
+const dockTarget  = await send('Target.createTarget', { url: `chrome-extension://${extId}/dock.html` })
+const dockSession = await send('Target.attachToTarget', { targetId: dockTarget.targetId, flatten: true })
 const dock = dockSession.sessionId
 await send('Page.enable', {}, dock)
 await send('Runtime.enable', {}, dock)
 
 async function evaluate(expr, sessionId = dock) {
-  const { result } = await send('Runtime.evaluate', {
+  const r = await send('Runtime.evaluate', {
     expression: `(async () => (${expr}))()`, awaitPromise: true, returnByValue: true,
   }, sessionId)
-  if (result?.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails))
-  return result?.result?.value
+  if (r?.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails))
+  return r?.result?.value
 }
 async function until(fn, tries = 100) {
   for (let i = 0; i < tries; i++) {
@@ -237,12 +213,12 @@ async function until(fn, tries = 100) {
 
 const swTarget = await until(async () => {
   await send('Target.setDiscoverTargets', { discover: true })
-  const { result } = await send('Target.getTargets')
-  return result.targetInfos.find(t => t.type === 'service_worker' && t.url.includes(extId)) ?? null
+  const { targetInfos } = await send('Target.getTargets')
+  return targetInfos.find(t => t.type === 'service_worker' && t.url.includes(extId)) ?? null
 })
 check('opening the popup woke the harbor', !!swTarget, true)
 
-const { result: swSession } = await send('Target.attachToTarget', { targetId: swTarget.targetId, flatten: true })
+const swSession = await send('Target.attachToTarget', { targetId: swTarget.targetId, flatten: true })
 await send('Runtime.enable', {}, swSession.sessionId)
 
 // The harbor holds the ONLY connection, and this is the line that says whether
@@ -337,8 +313,8 @@ const slug = await (async () => {
   return (r?.data ?? r)[0]?.slug
 })()
 
-const { result: pageTarget } = await send('Target.createTarget', { url: 'about:blank' })
-const { result: pageSession } = await send('Target.attachToTarget', { targetId: pageTarget.targetId, flatten: true })
+const pageTarget = await send('Target.createTarget', { url: 'about:blank' })
+const pageSession = await send('Target.attachToTarget', { targetId: pageTarget.targetId, flatten: true })
 const page = pageSession.sessionId
 await send('Page.enable', {}, page)
 await send('Runtime.enable', {}, page)
@@ -388,8 +364,8 @@ check('…and the popup is not signed in', await evaluate(`!!document.querySelec
 
 // A second popup, opened after the first — the harbor's copy of the attempt is
 // what it renders from, since nothing of the first page survives.
-const { result: again } = await send('Target.createTarget', { url: `chrome-extension://${extId}/dock.html` })
-const { result: againSession } = await send('Target.attachToTarget', { targetId: again.targetId, flatten: true })
+const again = await send('Target.createTarget', { url: `chrome-extension://${extId}/dock.html` })
+const againSession = await send('Target.attachToTarget', { targetId: again.targetId, flatten: true })
 await send('Runtime.enable', {}, againSession.sessionId)
 const stillWaiting = await until(async () => await evaluate(`!!document.querySelector('[data-code-box]') || null`, againSession.sessionId))
 check('a popup opened after the password still asks for the code', stillWaiting, true)

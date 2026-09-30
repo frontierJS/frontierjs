@@ -1170,11 +1170,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` | — |
+| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` | — |
 | `name` | `string`? | — | — | — | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
-| `accountId` | `string`? | — | — | — | — |
+| `accountId` | `string`? | — | — | `x-litestone-write-policy` | — |
 | `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 

@@ -9,6 +9,8 @@
 // GET /infra dispatches on X-Service-Method, collection-level:
 //   graph        servers, apps, networks and domains as nodes and edges
 //   onboarding   the six setup questions, each answered by a count
+//   launch       the home screen's path to one app live on one machine
+//   summary      the fleet counted — machines, apps, releases, alerts
 //
 // ─── Why one service for two reads ────────────────────────────────────────
 //
@@ -29,11 +31,16 @@ import { createService, $ } from '@frontierjs/junction'
 import { LEVELS }            from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
+import { isSnoozed } from '../../core/alerting.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
 
 /** The ceiling on any one kind of node. A fleet past this is a graph nobody
  *  can read anyway, and the answer says it was cut rather than looking whole. */
 const MAX_NODES = 300
+
+/** How far back Home's release count reaches — a day, which is the question an
+ *  operator opening the console in the morning is asking. */
+const RELEASE_WINDOW_HOURS = 24
 
 type Node = {
   id:      string
@@ -62,7 +69,7 @@ export function createInfraService(app: BasecampApp) {
     // 500 rather than a refusal (hub.service.ts says the same thing). READER is
     // every workspace role; with no model to carry a @@gate, the declared level
     // is the only grade junction and an agent's tool list can read (FJS-D408).
-    methods: ['graph', 'onboarding', 'launch'].map(method => ({ method, gate: LEVELS.READER })),
+    methods: ['graph', 'onboarding', 'launch', 'summary'].map(method => ({ method, gate: LEVELS.READER })),
 
     // ── graph — the fleet as nodes and edges ──────────────────────────
     //
@@ -295,6 +302,52 @@ export function createInfraService(app: BasecampApp) {
         done:  steps.filter(s => s.done).length,
         total: steps.length,
         app:   app ? { id: app.id, name: app.name, slug: app.slug, type: app.type } : null,
+      }
+    },
+
+    // ── summary — the fleet in four numbers, for Home ─────────────────
+    //
+    // COUNTED here rather than tallied in the browser from the stores the
+    // shell already holds: those are pages of a list, and a tally over a page
+    // is silently wrong from the first row past it — what the fleet report
+    // ended for servers. Every count is the caller's own client, so the
+    // tenancy and the soft-delete filter are the Data boundary's, not this
+    // method's.
+    async summary() {
+      $.dispatch = false   // read-shaped
+
+      const since = new Date(Date.now() - RELEASE_WINDOW_HOURS * 3_600_000).toISOString()
+      const tally = (rows: { status: string; _count: number }[]) =>
+        Object.fromEntries(rows.map(r => [r.status, r._count])) as Record<string, number>
+
+      const [servers, apps, releases, rules] = await Promise.all([
+        db().server.groupBy({     by: ['status'], _count: true, where: { workspaceId: ws() } }),
+        db().app.groupBy({        by: ['status'], _count: true, where: { workspaceId: ws() } }),
+        db().deployment.groupBy({ by: ['status'], _count: true,
+                                  where: { workspaceId: ws(), queuedAt: { gte: since } } }),
+        db().alertRule.findMany({ where: { workspaceId: ws() }, select: { id: true, snoozedUntil: true } }),
+      ])
+
+      const ruleIds = rules.map((r: { id: string }) => r.id)
+      const firing  = ruleIds.length
+        ? await db().alertEvent.findMany({
+            where:  { ruleId: { in: ruleIds }, status: 'firing' },
+            select: { acknowledgedAt: true },
+          })
+        : []
+
+      const byServer = tally(servers)
+      const sum = (m: Record<string, number>) => Object.values(m).reduce((n, c) => n + c, 0)
+      return {
+        // A destroyed machine keeps its row for its history; it is not fleet.
+        servers:  { total: sum(byServer) - (byServer.destroyed ?? 0), byStatus: byServer },
+        apps:     { total: sum(tally(apps)), byStatus: tally(apps) },
+        releases: { windowHours: RELEASE_WINDOW_HOURS, total: sum(tally(releases)), byStatus: tally(releases) },
+        alerts:   {
+          firing:         firing.length,
+          unacknowledged: firing.filter((e: { acknowledgedAt: unknown }) => !e.acknowledgedAt).length,
+          snoozed:        rules.filter((r: { snoozedUntil: string | null }) => isSnoozed(r, Date.now())).length,
+        },
       }
     },
 

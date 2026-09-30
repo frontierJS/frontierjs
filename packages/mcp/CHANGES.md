@@ -1,6 +1,12 @@
 # Changes — @frontierjs/mcp
 
 
+## 2026-09-29 — a money column always names its currency (`FJS-D556`)
+
+Litestone refuses a bare `@money`, so a money argument's description names the
+currency or the row's currency column, and the "app's default currency"
+wording is gone. The `shop.lite` fixture states `@money(USD)`.
+
 ## 2026-09-28 — a tool result never carries a protected column (`FJS-D473`)
 
 `run` dispatches through `app.service()`, the in-process caller junction leaves ungraded, so a method returning a system write handed an agent its `@secret` and `@guarded` columns. The result now goes through junction's `withholdProtected` first. Proved in `plugin.test.ts`.

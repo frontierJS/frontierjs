@@ -8,6 +8,7 @@
 // with `X-Service-Method`, never a path segment:
 //   place · unplace — which machines the app runs on
 //   logs           — what the container is saying, read through the executor
+//   fromBlueprint  — an app made out of a catalog entry and its parameters
 //
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
@@ -19,10 +20,13 @@
 // spelled out — and it returns a nested object instead of flattened
 // `environment_name` / `environment_tier` columns.
 
+import { randomBytes } from 'node:crypto'
 import { createService, NotFound, BadRequest, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
+import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws,
+         slugify, actor }
   from '../../core/resource.ts'
+import { secretRef } from '../../core/credentials.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
 // detail screen received hostnames with no cert_status at all and every one of
@@ -35,6 +39,16 @@ import { parseAppSource, sourceKindOf, summarizeSource, describeSource } from '.
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const WITH_ENV = { environment: true }
+
+/** A value for a parameter that says how to mint one. The number is BYTES,
+ *  read the way `openssl rand -hex 32` reads it — so `random_hex_32` is 64
+ *  characters, and a key a vendor documents by that command is the length it
+ *  asked for. */
+function mint(generator: string): string {
+  const bytes = Number(/^random_hex_(\d+)$/.exec(generator)?.[1])
+  if (!bytes) throw new BadRequest(`No generator named '${generator}'`)
+  return randomBytes(bytes).toString('hex')
+}
 
 // The detail read. `domains` comes with the app because `App.domain` — one
 // nullable string — is gone: a hostname is a row now, and an app with an apex
@@ -115,6 +129,40 @@ export function createAppsService(app: BasecampApp) {
       recent_deployments: deployments,
       jobs,
     }
+  }
+
+  /**
+   * What a blueprint's parameters become: plain values in `config.env`, and
+   * each secret one as a `Secret` row that `config.secretEnv` names by ref.
+   *
+   * The split is the whole point. `App.config` reads at VIEWER on every list,
+   * and a password typed into the deploy form must not be one of the things it
+   * answers — so the material goes to a `@encrypted` column and the app holds
+   * `secret:<id>#value`, which the release resolves at the moment it is sent
+   * to the machine (`jobs/deployment-run.job.ts`). A blank field falls back to
+   * the blueprint's default, then to a minted value for a param that says how
+   * to mint one; a required param with none of the three is refused by label.
+   */
+  function paramValues(params: any[], values: Record<string, unknown>) {
+    const known   = new Set(params.map(p => p.key))
+    const unknown = Object.keys(values).filter(k => !known.has(k))
+    if (unknown.length)
+      throw new BadRequest(`This blueprint takes no parameter named ${unknown.map(k => `'${k}'`).join(', ')}`)
+
+    const env: Record<string, string> = {}, secret: Record<string, string> = {}
+    const missing: string[] = []
+    for (const p of params) {
+      const given = values[p.key]
+      if (given != null && typeof given !== 'string')
+        throw new BadRequest(`'${p.key}' must be text`)
+      const value = (given as string | undefined)?.trim()
+        || p.defaultValue
+        || (p.generate ? mint(p.generate) : '')
+      if (!value) { if (p.required) missing.push(p.label); continue }
+      ;(p.secret ? secret : env)[p.key] = value
+    }
+    if (missing.length) throw new BadRequest(`Required: ${missing.join(', ')}`)
+    return { env, secret }
   }
 
   return createService({
@@ -274,6 +322,89 @@ export function createAppsService(app: BasecampApp) {
       }
     },
 
+    // ── fromBlueprint — POST /apps  X-Service-Method: fromBlueprint ───
+    //
+    // The catalog entry is COPIED, column for column, into the app it becomes
+    // — the names on `Blueprint` are `App`'s own where they overlap, which is
+    // what makes this a copy rather than a translation — and `blueprintId`
+    // records where it came from. Nothing is placed and nothing is released:
+    // those are `place` and `deployments.create`, the same two steps an app
+    // described by hand takes, so a blueprint app is not a second kind of app.
+    async fromBlueprint() {
+      const data = ($.data ?? {}) as Record<string, unknown>
+      const { blueprintId, environmentId } = data as Record<string, string | undefined>
+      const name = typeof data.name === 'string' ? data.name.trim() : ''
+      if (!blueprintId)   throw new BadRequest('fromBlueprint needs a blueprintId')
+      if (!environmentId) throw new BadRequest('fromBlueprint needs an environmentId')
+
+      const bp = await db().blueprint.findFirst({
+        where:   { id: blueprintId },
+        include: { params: { orderBy: [{ position: 'asc' }, { key: 'asc' }] } },
+      })
+      if (!bp) throw new NotFound(`Blueprint '${blueprintId}' not found`)
+      if (bp.deprecatedAt) throw new BadRequest(`${bp.name} has been withdrawn from the catalog`)
+
+      await assertEnvironmentInWorkspace(environmentId)
+      const appName = name || bp.name
+      const slug    = typeof data.slug === 'string' && data.slug ? data.slug : slugify(appName)
+      await assertSlugFree('app', { environmentId, slug },
+        `App slug '${slug}' already exists in this environment`)
+
+      const values = (data.values ?? {}) as Record<string, unknown>
+      if (typeof values !== 'object' || Array.isArray(values))
+        throw new BadRequest('`values` must be an object of parameter → text')
+      const { env, secret } = paramValues(bp.params, values)
+
+      // The ids are chosen here so the app can name its secrets in the same
+      // write that creates it, rather than being written twice.
+      const appId     = crypto.randomUUID()
+      const secretIds = Object.fromEntries(Object.keys(secret).map(k => [k, crypto.randomUUID()]))
+
+      const created = await db().app.create({
+        data: {
+          id: appId, environmentId, name: appName, slug,
+          type:   bp.appType,
+          port:   bp.port ?? null,
+          source: parseAppSource({ kind: 'image', image: bp.image }),
+          config: {
+            env,
+            secretEnv: Object.fromEntries(Object.keys(secret).map(k => [k, secretRef(secretIds[k]!, 'value')])),
+            ...(bp.port        ? { port: bp.port } : {}),
+            ...(bp.persistent && bp.volumePath ? { volumePath: bp.volumePath } : {}),
+            ...(bp.healthCheck ? { healthCheck: bp.healthCheck } : {}),
+            replicas: bp.replicas,
+            ...(bp.cpuLimit    ? { cpuLimit: bp.cpuLimit } : {}),
+            ...(bp.memLimit    ? { memLimit: bp.memLimit } : {}),
+          },
+          blueprintId: bp.id,
+        },
+        system: ['blueprintId'],
+      })
+
+      // `Secret` writes at 5 and the deploy is a developer's act, so these go
+      // through `asSystem()` with the tenant from `ws()` — the rule for any
+      // system create on a scoped model. An app whose secrets did not land is
+      // an app whose first release fails naming them, so it is taken back.
+      try {
+        for (const [key, value] of Object.entries(secret))
+          await $.db.asSystem().secret.create({
+            data: {
+              id: secretIds[key], workspaceId: ws(), kind: 'generic', createdBy: actor(),
+              name: `${slug}/${key} · ${appId.slice(0, 8)}`,
+              data: JSON.stringify({ value }),
+            },
+          })
+      } catch (err) {
+        await $.db.asSystem().app.delete({ where: { id: appId } }).catch(() => {})
+        throw err
+      }
+
+      app.events.emit('app:created', {
+        id: created.id, workspace_id: ws(), environment_id: created.environmentId, type: created.type,
+      })
+      return detail(created.id)
+    },
+
     async place() {
       const data     = $.data as Record<string, unknown>
       const serverId = data.serverId as string | undefined
@@ -335,6 +466,8 @@ export function createAppsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // Making an app, which is create's authority.
+        fromBlueprint: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         // Topology, not content: the same authority that may patch the app.
         place:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         unplace: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],

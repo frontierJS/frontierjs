@@ -178,6 +178,30 @@ describe('what the machine is asked to do', () => {
     expect(argv.find(c => c.startsWith('docker run'))).toContain(`acme-web@${DIGEST}`)
   })
 
+  test('a volumePath is a named volume that outlives the container, and a bad one removes nothing', async () => {
+    // Every deploy removes the old container first, so a database started
+    // without a volume is empty after its next release. Paired with a refused
+    // path, which must be refused BEFORE the running container is taken away.
+    const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'docker run': { stdout: 'c\n' } })
+    const server = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run }), inspector: createInspector({ run: fake.run }),
+      log: { warn() {}, error() {} },
+    })
+    const ok = await send(server, 'POST', '/deploy', {
+      deployment_id: 'dep-3', app_id: 'pg', image: 'postgres:16', config: { volumePath: '/var/lib/postgresql/data' },
+    })
+    expect(ok.status).toBe(200)
+    expect(fake.calls.map(c => c.join(' ')).find(c => c.startsWith('docker run')))
+      .toContain('-v fjs-pg-data:/var/lib/postgresql/data')
+
+    fake.calls.length = 0
+    const bad = await send(server, 'POST', '/deploy', {
+      deployment_id: 'dep-4', app_id: 'pg', image: 'postgres:16', config: { volumePath: '/etc:/host' },
+    })
+    expect(bad.status).toBe(500)
+    expect(fake.calls.some(c => c.join(' ').startsWith('docker rm'))).toBe(false)
+  })
+
   test('a deploy of an image that exists elsewhere pulls it', async () => {
     const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' } })
     const server = createOutpostServer(CONFIG, {
