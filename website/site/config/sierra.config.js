@@ -1,10 +1,7 @@
-// site/config/sierra.config.js — frontierjs.dev, prerendered.
+// site/config/sierra.config.js — frontierjs.com, prerendered.
 //
-// The public site is `site/`, a surface of the `website/` app root, for the
-// reason Invariant 3 names: one Vite root is one `dist/`, and the legacy
-// hand-written pages at the app root are built by a different tool into a
-// different directory. A surface earns its own directory when its config, its
-// tests and its OUTPUT are different answers, and all three are.
+// The public site is `site/`, a surface of the `website/` app root (Invariant
+// 3). The app root holds the data the pages read, not pages.
 //
 // There is no `db` here and there must not be one. Nothing on this site reads
 // the framework's database — the only data it has is checked into the repo
@@ -19,13 +16,17 @@ export default {
   routesDir: 'src/routes',
   outDir:    'dist',
 
+  // Without it the sitemap's <loc>s are relative, which no crawler accepts, and
+  // robots.txt carries no Sitemap line.
+  siteUrl:   'https://frontierjs.com',
+
   // A directory per route, so `/showroom/` is a folder holding index.html and a
   // relative link resolves from where its author meant it to.
   trailingSlash: 'always',
 
   // The switcher doubles as a live demo of @frontierjs/css, which is half the
-  // reason this site exists — it is that package's second consumer. Six of the
-  // eleven shipped themes, the same six the hand-written page offered.
+  // reason this site exists — it is that package's second consumer. A subset of
+  // the themes it ships.
   theme: {
     themes:  ['theme-default', 'theme-sunset', 'theme-forest', 'theme-midnight', 'theme-dark', 'theme-elite'],
     default: 'theme-default',

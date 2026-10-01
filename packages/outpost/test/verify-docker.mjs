@@ -29,7 +29,10 @@
  *   (`FJS-D564`): the app answers over HTTPS BY THAT NAME, plain HTTP
  *   redirects, the route survives Caddy restarting on its own, and the
  *   container's port refuses a connection on any address but loopback
- *   (`FJS-D565`). A stop takes the route with it.
+ *   (`FJS-D565`). A stop takes the route with it. `/route` changes the
+ *   hostnames with the container left running (`FJS-1610`): a second name
+ *   answers over HTTPS, and the port it dials and the loopback bind are read
+ *   back off the daemon.
  *
  *   `reports.*` — the heartbeat, the volume report and the disk report as the
  *   stand-in received them: signed, and holding what the daemon holds.
@@ -68,6 +71,7 @@ const CADDY_ADMIN = 7186
 const CADDY    = 'fjs-verify-caddy'
 const CADDY_IMAGE = 'caddy:2'
 const HOST     = 'verify-docker.test'
+const ALSO     = 'also.verify-docker.test'
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const APP      = 'verify-docker'
 const NAME     = `fjs-${APP}`
@@ -118,12 +122,12 @@ const ADMIN = `http://127.0.0.1:${CADDY_ADMIN}`
 const admin = (path, init) => fetch(`${ADMIN}${path}`, init)
 /** An HTTPS request to the app BY ITS NAME. curl, because `--resolve` points a
  *  name at an address without touching DNS, and SNI is what picks the cert. */
-const overHttps = () => sh('curl', '-sS', '--max-time', '5',
-  '--resolve', `${HOST}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${HOST}:${CADDY_HTTPS}/`)
-const untilHttps = async () => {
+const overHttps = (host = HOST) => sh('curl', '-sS', '--max-time', '5',
+  '--resolve', `${host}:${CADDY_HTTPS}:127.0.0.1`, '--cacert', rootPath, `https://${host}:${CADDY_HTTPS}/`)
+const untilHttps = async (host = HOST) => {
   let r = null
   for (let i = 0; i < 40; i++) {
-    r = overHttps()
+    r = overHttps(host)
     if (r.status === 0 && /Name: fjs-drive/.test(r.stdout)) return true
     await sleep(250)
   }
@@ -274,6 +278,19 @@ try {
   const routes = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => null)
   t('ingress.redeployKeepsOneRoute', routes?.length === 1 && routes[0]['@id'] === NAME)
 
+  // ─── route, between releases ────────────────────────────────────────────
+
+  const rerouted = await call('/route', { app_id: APP, hosts: [HOST, ALSO] })
+  if (rerouted.status !== 200) console.log(rerouted.body)
+  // The port and the bind are the daemon's answer; a loopback bind with a
+  // route in front of it is the one state that needs no rebind.
+  t('route.readsThePublishedPort', rerouted.body?.port === APP_PORT && rerouted.body?.rebind === null)
+  t('route.restartsNothing',       inspect('{{.Id}}') === second.body?.containerId)
+  t('route.answersTheNewName',     await untilHttps(ALSO))
+  const unrouted = await call('/route', { app_id: APP, hosts: [] })
+  t('route.emptyTakesTheRoute',    (await admin(`/id/${NAME}`)).status === 404 && /loopback/.test(unrouted.body?.rebind ?? ''))
+  await call('/route', { app_id: APP, hosts: [HOST] })
+
   // ─── stop ───────────────────────────────────────────────────────────────
 
   const stopped = await call('/stop', { app_id: APP })
@@ -331,6 +348,7 @@ const expected = [
   'ingress.portRefusesOffLoopback', 'ingress.survivesACaddyRestart',
   'health.saysRunning', 'logs.readTheContainer', 'exec.runsOnTheMachine',
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
+  'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',
   'reports.areSigned', 'reports.heartbeatRegistersTheUrl', 'reports.heartbeatCarriesVitals',

@@ -157,9 +157,17 @@ Five framework defects came out of doing it — `FJS-500`, `FJS-501`, `FJS-508`,
 `FJS-509` and `FJS-515` in the root `ISSUES.md`. The first is the one worth
 reading: a prerendered page did not escape its own text.
 
-Deploy target is any static host: `bun run build`, publish `site/dist/`.
-The build writes `sitemap.xml`, `robots.txt` and a pre-paint theme script into
-every page.
+**Deploy is `bun run deploy`** — the build and the drive, then `wrangler deploy`
+of `site/dist/` as an assets-only Cloudflare Worker on frontierjs.com
+(`site/config/wrangler.jsonc`). A failing drive stops it before the upload.
+Wrangler signs in once with `wrangler login`, or reads `CLOUDFLARE_API_TOKEN`.
+`www.frontierjs.com` is a redirect rule on the zone, not a second route. The
+build writes `sitemap.xml` and `robots.txt` against `siteUrl` in
+`sierra.config.js`, and a pre-paint theme script into every page.
+
+`packages/site-kit/` is `@frontierjs/site-kit`, the engine a markdown-authored
+site depends on — private, unlisted, and empty until ksite's engine moves into
+it. It is a member through the root `website/packages/*` glob; see its `CLAUDE.md`.
 
 `website` is a root workspace member, so `bun run --filter '*' test` and CI's
 `tests` phase reach it. Its `test` script is the build followed by `verify`, the
@@ -189,20 +197,19 @@ Do not write a version number on this page. The root README's
 marketing copy is a second origin nothing regenerates — this file is where the
 last one rotted for months.
 
-Three things still to check on the way out, both of them the kind that go stale
-without rendering wrong:
+**The install commands pin.** An `npx` or `npm create` names the minor read
+off that package's manifest at build time (`site/src/data/pin.js`), so the copy
+carries no number and a visitor never runs whatever landed this morning.
+`install.published` fails a range npm has no version in — a manifest bumped and
+not yet published.
+
+One thing still to check on the way out, the kind that goes stale without
+rendering wrong:
 
 - **The package maturity notes in the table are a snapshot.** Re-verify against
   the root `CLAUDE.md` — per `VERIFYING.md`, status claims go stale fastest, and
   a table claiming a package is further along than it is burns the trust this
   page exists to earn. Nothing checks this and nothing can: it is a judgement.
-- **The install command should pin, not float.** Below 1.0 a caret pins the
-  minor, and `latest` on an alpha framework hands a visitor whatever landed this
-  morning. The drive proves the package EXISTS, not that the range is sane.
-- **Four pages are reachable only by URL** — `/index2/`, `/index3/` (earlier
-  drafts of the home page), `/vs-laravel/` and `/before-after/`, the last two real
-  content worth a nav entry. They were unlinked before the port too; the
-  question is editorial, not technical.
 
 ## Later
 

@@ -72,7 +72,7 @@ on — `running` and `online` (`servingAddresses`, `FJS-D561`). The ingress zone
 `Workspace.ingressAccountId` + `ingressZoneId`, set through `workspaces.patch`
 (no screen yet). `sync` refuses with a 409 before writing anything when there is
 no ingress zone, the App runs nowhere, no connected zone holds the hostname, the
-Domain redirects (`FJS-1610`), or an unmarked A/AAAA/CNAME sits at the name.
+Domain redirects (`FJS-1615`), or an unmarked A/AAAA/CNAME sits at the name.
 
 **Nobody has to press it.** The `domain:dns` job runs `edge.syncStep` on every
 `Domain` create, patch, remove and restore, and for each of an App's Domains

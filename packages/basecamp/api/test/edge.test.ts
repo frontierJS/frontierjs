@@ -21,6 +21,11 @@ import { edgeConnectorFor, domainMark } from '../src/providers/edge/index.ts'
 import { connectorFor }            from '../src/providers/compute/index.ts'
 import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/compute/accounts.ts'
 
+// Every Domain write also pushes its App's routes to the machines running it
+// (`FJS-1610`), and none of these machines has an outpost. The stub answers
+// for them, or every `domain:dns` job here would be a route push retrying.
+process.env.BASECAMP_STUB_OUTPOST = '1'
+
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const ENC_KEY    = '0'.repeat(64)
@@ -521,7 +526,7 @@ describe('sync', () => {
 
   test('a redirect, an app running nowhere, and a developer are each refused', async () => {
     await expect(edge(admin).call('sync', moved.id, {}))
-      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('FJS-1610') })
+      .rejects.toMatchObject({ code: 409, message: expect.stringContaining('FJS-1615') })
 
     const quiet = await (env.system as any).domain.create({ data: { workspaceId: site.id, appId: idle.id, hostname: 'idle.example.test' } })
     await expect(edge(admin).call('sync', quiet.id, {}))
@@ -595,6 +600,37 @@ describe('sync', () => {
       [{ type: 'CNAME', name: 'ghost.example.test', content: `${web.id}.shop.test` }])
     const answer = await edge(admin).call('records', null, { accountId: good.id, zoneId: 'zone-example' }) as any
     expect(answer.orphans.map((r: any) => r.name)).toContain('ghost.example.test')
+  })
+
+  // ─── the machines' routes ────────────────────────────────────────────
+  //
+  // The same job sends the App's hostnames to Caddy on each machine running it
+  // (`FJS-1610`), the set the ingress record names: a running placement on an
+  // online server, never a draining one or one nothing has deployed to.
+
+  test('a Domain\'s App is routed on every machine its ingress record names, with its live hostnames', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    const out = await routeDomainApp(app, api.id)
+    expect(out.failed).toEqual([])
+    expect(out.routed.map(r => r.serverId).sort()).toEqual([online1.id, online2.id].sort())
+    // The redirect is not routed, and the deleted Domain dropped out.
+    const hosts = out.routed[0].hosts.map(h => h.toLowerCase())
+    expect(hosts).toContain('www.shop.test')
+    expect(hosts).not.toContain('go.example.test')
+    expect(hosts).not.toContain('shop.example.test')
+  })
+
+  test('a machine with no outpost to take its route is a failure naming it, so the job retries', async () => {
+    const { routeDomainApp } = await import('../src/jobs/domain-dns.job.ts')
+    delete process.env.BASECAMP_STUB_OUTPOST
+    try {
+      const out = await routeDomainApp(app, api.id)
+      expect(out.routed).toEqual([])
+      expect(out.failed.map(f => f.server).sort()).toEqual(['one', 'two'])
+      expect(out.failed[0].error).toContain('No outpost is registered')
+    } finally {
+      process.env.BASECAMP_STUB_OUTPOST = '1'
+    }
   })
 
   // ─── a machine moving ────────────────────────────────────────────────

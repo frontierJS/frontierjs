@@ -15,7 +15,7 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 | `src/serve.js` | the origin those files answer on. A SECOND listener, its own port, nothing signed — see below |
 | `src/vitals.js` | what the machine feels like — cpu, memory, disk, load, read from `/proc` and `statfs`. It REMEMBERS: cpu is a delta |
 | `src/report.js` | the outbound half: heartbeat, volume report, disk report — one signed POST, three callers |
-| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy, DELETEd on stop, the ingress server made on the first one |
+| `src/ingress.js` | **the machine's front door** — Caddy's admin API: a route per app (`@id` `fjs-<app>`) PATCHed on deploy and on `/route`, DELETEd on stop, the ingress server made on the first one |
 | `src/cert.js` | the command port's self-signed certificate — made once, kept, and the argv the install script builds its own openssl line from |
 | `src/index.js` | the process: serve, start the timers, stop them on a signal |
 

@@ -15,6 +15,7 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { range } from './pin.js'
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const SOURCE   = resolve(HERE, '../../../packages.js')
@@ -32,7 +33,6 @@ const PACKAGES = resolve(HERE, '../../../../packages')
  * here; the first version of this list carried one and the check refused it.
  */
 export const HELD_BACK = {
-  '@frontierjs/mcp': 'projection only — no transport, so nothing a visitor installs can reach it',
   '@frontierjs/orion': 'mid-port and never released to npm, so a page would hand a visitor an install that 404s',
 }
 
@@ -47,8 +47,10 @@ export async function loadFJS() {
   // `document` is referenced by the `theme` helper's body, which is never
   // called here. Declared so the IIFE's own top level cannot trip over it if
   // that ever changes.
-  const run = new Function('window', 'document', `${src}\nreturn window.FJS`)
-  cached = run(win, undefined)
+  // `range` is the one thing the script cannot know for itself: the version an
+  // install command pins, which lives in the package's manifest (see pin.js).
+  const run = new Function('window', 'document', 'range', `${src}\nreturn window.FJS`)
+  cached = run(win, undefined, range)
 
   if (!cached?.PKGS?.length) {
     throw new Error(

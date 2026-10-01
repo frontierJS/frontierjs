@@ -464,8 +464,11 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   (`FJS-D564`). `routedHosts()` reads the LIVE `Domain` rows, not the release
   snapshot, and a hostname sent there is a certificate request — so a deleted
   row must drop out. A hostname with no `App.port` fails the release in
-  Outpost's words. A `Domain` changed between releases reaches no machine yet
-  (`FJS-1610`).
+  Outpost's words. A `Domain` changed between releases reaches the machine
+  through `domain:dns`, which sends `/route` to every running placement on an
+  online server — and a machine it cannot reach fails the job so it retries.
+  The container's BIND does not move until the next release (`FJS-1616`), and
+  a redirect or an inline app is routed nowhere (`FJS-1615`).
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

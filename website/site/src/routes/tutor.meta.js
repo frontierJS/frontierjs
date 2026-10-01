@@ -6,14 +6,15 @@
 // been executed. The step and the failure are copied out of real runs.
 
 import { block, sniff } from '../data/code.js'
+import { pinned } from '../data/pin.js'
 
 const SAMPLES = {
   // What a person types. `--source npm` is the default outside a checkout, so
   // there is nothing to pass.
-  START: `$ npx @frontierjs/cli tutor:app
+  START: `$ npx ${pinned('@frontierjs/cli')} tutor:app
 
 # or, keeping what it builds so you can read it afterwards
-$ npx @frontierjs/cli tutor:app --workspace ~/frontier-tutorial`,
+$ npx ${pinned('@frontierjs/cli')} tutor:app --workspace ~/frontier-tutorial`,
 
   // Lifted from a run of lesson 1, steps 7 and 8. The lines beginning ✓ are
   // probes against the running world, not echoes of a command that exited 0.

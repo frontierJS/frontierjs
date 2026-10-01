@@ -177,7 +177,7 @@ export function createEdgeService(app: BasecampApp) {
   // would otherwise reject with a message about neither).
   async function push(domain: DomainRow) {
     if (domain.redirectTo)
-      throw new NotYet(`${domain.hostname} redirects, and no machine routes a redirect yet (FJS-1610) — nothing to point it at`)
+      throw new NotYet(`${domain.hostname} redirects, and no machine routes a redirect yet (FJS-1615) — nothing to point it at`)
 
     const host     = fqdn(domain.hostname)
     const accounts = await edgeAccounts()

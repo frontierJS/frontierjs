@@ -2,7 +2,7 @@
   "name": "@frontierjs/website",
   "version": "0.1.0",
   "private": true,
-  "description": "frontierjs.dev — the public site. A Sierra `site/` surface: one HTML file per route, prerendered.",
+  "description": "frontierjs.com — the public site. A Sierra `site/` surface: one HTML file per route, prerendered.",
   "type": "module",
   "scripts": {
     "dev": "cd site && vite -c config/vite.config.js",
@@ -11,7 +11,8 @@
     "verify": "node site/test/verify.mjs",
     "clean": "rm -rf site/dist",
     "test": "bun run build && bun run verify",
-    "typecheck": "node ../scripts/typecheck.mjs"
+    "typecheck": "node ../scripts/typecheck.mjs",
+    "deploy": "bun run test && cd site && wrangler deploy -c config/wrangler.jsonc"
   },
   "dependencies": {
     "@frontierjs/css": "workspace:*",
@@ -20,6 +21,7 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "devDependencies": {
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "wrangler": "^4.145.0"
   }
 }

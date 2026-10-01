@@ -1931,7 +1931,10 @@ function selectedDirs() {
   return match
 }
 
-// A package.json more than one level under packages/ — invisible to the glob.
+// A package.json under any directory a workspace pattern starts in, that no
+// pattern names. `website/packages/` is one such parent: bun reads workspaces
+// only from the root manifest, so a package there outside the root glob is
+// uninstalled, and a walk of packages/ alone never sees it.
 function nestedPackageDirs() {
   const found = []
   const walk  = (dir, depth) => {
@@ -1943,7 +1946,8 @@ function nestedPackageDirs() {
       walk(child, depth + 1)
     }
   }
-  walk('packages', 1)
+  const roots = new Set((readJson(join(ROOT, 'package.json')).workspaces ?? []).map(p => p.split('/')[0]))
+  for (const root of roots) walk(root, 1)
   return found
 }
 

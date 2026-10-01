@@ -100,6 +100,34 @@ export function createOutpostServer(config, {
       return { ...started, hosts, commit_sha: built.commitSha ?? null }
     },
 
+    // The app's hostnames, changed between releases (`FJS-1610`): a Domain
+    // added, deleted or redirected. Same `hosts` as `/deploy`, and the route
+    // dials whatever port the running container published, so nothing is
+    // restarted.
+    //
+    // The container's BIND moves only with a release: an app deployed with no
+    // hostname keeps its port on every interface after its first route, and
+    // one that loses its last hostname stays on loopback where nothing reaches
+    // it. `rebind` says which, and the next release puts it right — routing
+    // anyway is the smaller harm than a hostname that answers nothing.
+    'POST /route': async (body) => {
+      const appId = body.app_id
+      if (!appId) throw new Error('a route needs the app_id it is for')
+      const hosts = hostsOf(body.hosts)
+      const live  = await docker.published({ appId })
+      if (hosts.length && !live) throw new Error(`no container fjs-${appId} on this machine to route to — deploy it first`)
+      if (hosts.length && !live.port) throw new Error(`fjs-${appId} publishes no port to route to — set the app's port and redeploy`)
+
+      if (hosts.length) await ingress.route({ appId, hosts, port: live.port })
+      else await ingress.unroute({ appId })
+
+      const rebind = !live?.port ? null
+        : hosts.length && !live.loopback ? `port ${live.port} still answers off this machine, around Caddy, until the next release binds it to loopback`
+        : !hosts.length && live.loopback ? `port ${live.port} is bound to loopback with no route in front of it, so nothing reaches the app until the next release`
+        : null
+      return { hosts, port: live?.port ?? null, rebind }
+    },
+
     // Two callers, two shapes: `fleet.engine.ts` sends a recipe as `command`,
     // and `deployment.engine.ts` forwards a build/migration STEP as `step`.
     // A step with no command is acknowledged and does nothing — the honest

@@ -7,7 +7,7 @@
   "// Same four phases in the API and the UI.\nhooks: {\n  around: { all:    [timing] },\n  before: { create: [setDefaults] },\n  after:  { create: [broadcast] },\n  error:  { all:    [report] },\n}",
   "export function audit(opts) {\n  return {\n    name: 'audit',\n    register(app) { app.provide('audit', inst) },\n    async boot(app)     { await inst.init() },\n    async shutdown(app) { await inst.close() },\n  }\n}\n\napp.configure(audit({ … }))",
   "// A Plugin adds. A Provider replaces.\nconst auth: IAuth = {\n  verifySession, login, logout,\n  createUser, deleteUser, createApiKey,\n}\n\ncreateApp({ db, auth })",
-  "# scaffold a new app\n$ npx @frontierjs/cli new my-app\n$ cd my-app\n\n# add a model, apply it, run both halves\n$ fli scaffold Note --fields \"title:string done:boolean\"\n$ fli db:push\n$ bun run dev\n\n  → api :3000   web :5173",
+  "# scaffold a new app\n$ npx @frontierjs/cli@<range> new my-app\n$ cd my-app\n\n# add a model, apply it, run both halves\n$ fli scaffold Note --fields \"title:string done:boolean\"\n$ fli db:push\n$ bun run dev\n\n  → api :3000   web :5173",
   "# or add pieces to an existing project\n$ npm i @frontierjs/litestone   # Data\n$ npm i @frontierjs/junction    # API\n$ npm i @frontierjs/sierra      # UI\n\n# batteries, when you want them\n$ npm i @frontierjs/auth @frontierjs/caravan"
  ],
  "vs-laravel": [

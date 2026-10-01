@@ -1,0 +1,16 @@
+{
+  "name": "@frontierjs/site-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The engine a markdown-authored marketing site takes as a dependency: blocks, layouts, themes and the build. The site that depends on it is its content/ folder.",
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@frontierjs/css": "*",
+    "@frontierjs/mesa": "*",
+    "@frontierjs/sierra": "*",
+    "vite": "^8.0.0"
+  }
+}

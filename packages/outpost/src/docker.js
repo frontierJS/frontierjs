@@ -246,6 +246,27 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
       return { stopped: result.exitCode === 0 }
     },
 
+    /**
+     * Where the running container answers on this machine: its published port
+     * and whether that port is bound to loopback, read off the daemon. `null`
+     * when there is no container. A route pushed between releases dials this,
+     * because the port the last release published is the one that is live, and
+     * the app row's port may have been edited since.
+     */
+    async published({ appId }) {
+      const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', `fjs-${appId}`])
+      if (result.exitCode !== 0) {
+        if (/No such (object|container)/i.test(result.stderr ?? '')) return null
+        throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
+      }
+      let bindings = null
+      try { bindings = JSON.parse(result.stdout) } catch {}
+      // `deploy` publishes one port at most, so the first binding is the app's.
+      const first = Object.values(bindings ?? {}).flat()[0]
+      if (!first?.HostPort) return { port: null, loopback: false }
+      return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
+    },
+
     /** Is the container up? `State.Running`, asked of the daemon rather than
      *  inferred from the fact that `docker run` returned. */
     /** Running, and — where the app names a path — answering it on the port

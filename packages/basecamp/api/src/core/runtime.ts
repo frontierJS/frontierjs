@@ -30,9 +30,9 @@ export function runtimeOf(row: Record<string, unknown>): Runtime {
  * The hostnames Caddy on the machine fronts an app by (`FJS-D564`), sent on
  * every `/deploy`. The live `Domain` rows and never a release's snapshot: a
  * rollback puts back old bytes and old config, not an old set of names on the
- * internet. A Domain that redirects is not routed yet, so it is not sent. A
- * name sent here is a certificate Caddy asks Let's Encrypt for, so a deleted
- * row must drop out — `@@softDelete` is what takes it out of this read.
+ * internet. A Domain that redirects is not routed yet (`FJS-1615`), so it is not
+ * sent. A name sent here is a certificate Caddy asks Let's Encrypt for, so a
+ * deleted row must drop out — `@@softDelete` is what takes it out of this read.
  */
 export async function routedHosts(db: any, appId: string): Promise<string[]> {
   const rows = await db.asSystem().domain.findMany({

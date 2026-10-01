@@ -99,7 +99,7 @@ export const PROJECTS = {
   // to the dynamic allocator because basecamp's drive starts one and needs the
   // same number tomorrow.
   outpost:            8,
-  // frontierjs.dev. Site-only — no api, no SPA — so the slots it uses are
+  // frontierjs.com. Site-only — no api, no SPA — so the slots it uses are
   // siteDev 8690 and siteServe 8790, and its drive takes 7790.
   website:            9,
 }

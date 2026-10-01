@@ -193,6 +193,9 @@ versus one token per client writing SendGrid's records.
      dispatched as the app, since the sweep and a check-in have no caller.
      An App left on no online machine keeps its record where it last ran,
      and drift names it `down` (`FJS-D567`).
+   - The same job sends the App's hostnames to Caddy on every machine running
+     it, as `/route` (`FJS-1610`), so a Domain written between releases is
+     routed as well as published.
    - The pushes run on their own one-wide `dns` queue. An App's Domains share
      its ingress record, and two pushes at once rewrite the same set.
 6. **Screen** — `/dns/` renders records and drift in place of the skeleton;

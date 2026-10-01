@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-30 — ports: the website's slot names frontierjs.com
+
+The public site's domain is frontierjs.com; the comment on `website`'s project slot in `core/ports.js` said `.dev`. No number moved.
+
 ## 2026-09-30 — `ws:publish` notes a package the website holds back (`FJS-1369`)
 
 The website names each workspace package it does not describe in `HELD_BACK`, with a reason. That list goes stale when the package gets a page or turns `private`, and never when it first reaches npm, because a build does not ask the registry. So the release now asks the question. `00-preflight` reads `HELD_BACK` from `website/site/src/data/packages.js`, which now exports it, and a planned package named there prints a `website-held-back` note with its reason and the fix: delete the entry and describe the package. It is a note, so the release still proceeds, and outside this workspace there is no file and no note. A dry run of `fli ws:pub patch --dry --filter orion` prints it.

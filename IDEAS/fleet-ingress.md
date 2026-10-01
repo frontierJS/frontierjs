@@ -98,7 +98,9 @@ A certificate reaches that Caddy from one of three places:
    only.~~ **Built 2026-09-30**, with Phase 2 in the same change as `FJS-D565`
    requires. `verify-docker.mjs` fetches the app over HTTPS by hostname through
    a real Caddy, across a Caddy restart. Routes move only on `/deploy` and
-   `/stop`; a `Domain` edited between releases is `FJS-1610`.
+   `/stop`, and a `Domain` edited between releases through `/route` from
+   `domain:dns` (`FJS-1610`, built). The bind still moves only on a release
+   (`FJS-1616`); redirects and inline apps are not routed (`FJS-1615`).
 2. ~~**Loopback bind** — D7.~~ **Built with Phase 1**, per app: an app with no
    hostname keeps its port on every interface.
 3. **Push** — `uploaded` through the channel D2 secured; D5's enum and report.

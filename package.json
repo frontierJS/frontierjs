@@ -9,7 +9,8 @@
     "packages/*",
     "packages/sierra/example",
     "example",
-    "website"
+    "website",
+    "website/packages/*"
   ],
   "scripts": {
     "build": "bun run --filter '*' build",

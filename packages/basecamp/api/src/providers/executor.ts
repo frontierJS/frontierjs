@@ -94,6 +94,28 @@ function outpostExecutor(app: BasecampApp, serverId: string, target: string): Ex
   }
 }
 
+/** The outpost on this one machine, when it holds a pinned target. */
+async function reachable(app: BasecampApp, serverId: string): Promise<Executor | null> {
+  if (!app.conduit) return null
+  const target = `outpost:${serverId}`
+  return (await app.conduit.resolve(target).catch(() => null))?.pinned_cert
+    ? outpostExecutor(app, serverId, target)
+    : null
+}
+
+/**
+ * Who speaks for one named machine — for a command every placement must get
+ * rather than the one a release picks, such as a route (`FJS-1610`). The same
+ * rules as `resolveExecutor`, asked of one server: its pinned outpost, else the
+ * stub where it is allowed, else a refusal naming the machine.
+ */
+export async function executorOn(app: BasecampApp, serverId: string, name = serverId): Promise<Executor | NoExecutor> {
+  const reached = await reachable(app, serverId)
+  if (reached) return reached
+  if (stubAllowed()) return stubExecutor(serverId)
+  return { kind: 'none', reason: `No outpost is registered for '${name}' — it has not reported an https URL since it enrolled` }
+}
+
 /**
  * Who runs this app's next release.
  *
@@ -135,12 +157,10 @@ export async function resolveExecutor(app: BasecampApp, appId: string): Promise<
   // An unpinned target is no target: a release carries decrypted secrets, and
   // without the pin they cross the network in the clear (`FJS-1603`). The
   // heartbeat registers none, so this refuses whatever put one there anyway.
-  if (app.conduit)
-    for (const p of online) {
-      const target = `outpost:${p.serverId}`
-      if ((await app.conduit.resolve(target).catch(() => null))?.pinned_cert)
-        return outpostExecutor(app, p.serverId as string, target)
-    }
+  for (const p of online) {
+    const reached = await reachable(app, p.serverId as string)
+    if (reached) return reached
+  }
 
   if (stubAllowed()) return stubExecutor(online[0].serverId as string)
 

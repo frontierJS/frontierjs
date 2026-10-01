@@ -13,6 +13,7 @@ import { $ } from '@frontierjs/junction'
 //   POST /pull         { image }                          → { digest }
 //   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }
 //   POST /stop         { app_id }                          → stop old container, drop its route
+//   POST /route        { app_id, hosts }                   → Caddy re-routed, no restart (sent by domain:dns)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //

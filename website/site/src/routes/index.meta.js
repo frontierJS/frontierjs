@@ -17,6 +17,7 @@
 // page ships marked-up HTML and no highlighter.
 
 import { block } from '../data/code.js'
+import { pinned } from '../data/pin.js'
 
 const SAMPLES = {
   SCHEMA: ['lite', `// db/schema.lite — the seed
@@ -102,7 +103,7 @@ const auth: IAuth = {
 
 createApp({ db, auth })`],
   SCAFFOLD: ['sh', `# scaffold a new app
-$ npx @frontierjs/cli new my-app
+$ npx ${pinned('@frontierjs/cli')} new my-app
 $ cd my-app
 
 # add a model, apply it, run both halves

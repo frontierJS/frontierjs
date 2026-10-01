@@ -1,5 +1,15 @@
 # Changes — Basecamp
 
+## 2026-09-30 — a Domain written between releases reaches the machine's Caddy (`FJS-1610`)
+
+- **`domain:dns` pushes routes as well as the zone.** After `edge.syncStep`, `routeDomainApp` sends `/route { app_id, hosts }` to every `running` placement of the Domain's App on an `online` server, the set the ingress record names. `hosts` is `routedHosts()`, the live rows, so a deleted Domain or one turned into a redirect drops out, and an App with none left is unrouted. The `FJS-1614` dispatch re-routes a machine returning to `online`. An inline App is skipped (`FJS-1615`).
+- **A machine with no reachable outpost fails the job**, naming the machine, and the job retries. A target missing because the API restarted is back with the next heartbeat. The zone is pushed either way, and pushing it again on a retry writes nothing.
+- **`executorOn(app, serverId)`** in `providers/executor.ts` answers for one named machine, for a command every placement must get. `resolveExecutor` walks it.
+- **The container's bind stays as the last release set it.** A first hostname leaves the port open off the machine, and the last one removed leaves the app on loopback. Outpost's reply says which (`rebind`), and the job logs it as a warning (`FJS-1616`).
+- **`verify:outpost`** stands in for Caddy's admin API on 7129, and checks that a Domain added after a release is routed with no release, dialing the published port, and that its route goes when the Domain is deleted.
+
+`api/test/edge.test.ts` 49/49, and both new cases fail with the online filter removed. `verify:outpost` 29/30: the four new checks pass, two of them fail with the route push removed, and the one failure is `FJS-1606`. `verify:dns` 25/25 and `bun run test` 558/558.
+
 ## 2026-09-30 — DNS follows the fleet between releases (`FJS-1614`, `FJS-D567`)
 
 - **A machine entering or leaving `online` pushes every App on it.** One tap on litestone's write events in `app.ts` (`basecamp-dns-follows-fleet`) dispatches `domain:dns` for each Domain of each App `running` on a Server whose transition crosses `online`: drain, undrain, reboot, destroy, the sweep's `loseContact`, the vendor's reports, and the heartbeat's `checkIn`. A plain update naming `status` is announced as a transition, so the heartbeat needs no call of its own. Id `dns:<domainId>:server:<serverId>:<status>:<at>`.

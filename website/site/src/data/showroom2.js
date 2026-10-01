@@ -9,6 +9,8 @@
 // only for the result panel, which is a different language from the file more
 // often than not, and defaults to js.
 
+import { pinned } from './pin.js'
+
 export const ACTS = [
   { id:'Data', name:'Data',  pkg:'@frontierjs/litestone', tone:'primary' },
   { id:'API',  name:'API',   pkg:'@frontierjs/junction',  tone:'info'    },
@@ -466,7 +468,7 @@ hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
     rlabel:'Where to go next',
     rlang:'sh',
     result:
-`$ npx @frontierjs/cli new my-app
+`$ npx ${pinned('@frontierjs/cli')} new my-app
 
 # then read, in this order:
 #   ARCHITECT.md    the mental model and the vocabulary

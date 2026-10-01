@@ -16,6 +16,9 @@
  *   why      one or two sentences of insight
  *   code     optional example
  *   r        what it replaces — [] means there is no common equivalent
+ *
+ * `range(name)` is supplied by the reader: the minor an `npm create` pins, read
+ * off that package's manifest so no version number is written here.
  */
 
 ;(function () {
@@ -219,6 +222,28 @@ const PKGS = [
     { k:'Introspection', v:'<code>app.notifications</code> answers what this app can send',
       why:'Formatters may be async and take the payload rather than closing over it, so the catalog can be listed with nothing actually sent.',
       r:['reading the source to find out'] },
+  ],
+},
+{
+  id:'mcp', install:'npm i @frontierjs/mcp', page:'mcp.html', name:'MCP', realm:'API · Agent', tone:'info', who:'@frontierjs/mcp',
+  pitch:'An MCP endpoint over the app you are already running, with the gate as the permission model.',
+  rows:[
+    { k:'Mounting', v:'One plugin, inside the running API',
+      why:'Stdio would have to boot the app a second time — a second job worker, a second migration check, and an event bus no browser tab is on. Mounted, a tool call is one more caller of the process that is already serving.',
+      code:"import { mcpPlugin } from '@frontierjs/mcp'\n\napp.configure(mcpPlugin())   // POST/GET/DELETE at {apiPrefix}/mcp",
+      r:['a separate MCP server process'] },
+    { k:'Scoping', v:'Tools are computed per standing, not described in a prompt',
+      why:'What an agent may do is the gate it is already graded by. A stranger sees a stranger’s tools; a prompt can be talked out of a rule, and the database layer cannot.',
+      r:['a system prompt listing what not to touch'] },
+    { k:'One path', v:'A tool call goes through <code>app.service(name)</code>',
+      why:'The same hooks, transaction and announcement an HTTP or WebSocket call gets, so nothing an agent does is invisible to a browser watching the same rows.',
+      r:['tool handlers that call the database directly'] },
+    { k:'Arguments', v:'The schema the browser already gets',
+      why:'Each tool’s input is the client-audience JSON Schema, and no call through this package can ask for the system audience — so a protected column cannot reach a tool description.',
+      r:['hand-written tool schemas'] },
+    { k:'Stateless', v:'Nothing is kept between two requests',
+      why:'The projection is rebuilt at the caller’s standing on every request, so nothing an agent was shown outlives a sign-out.',
+      r:[] },
   ],
 },
 {
@@ -480,7 +505,7 @@ const PKGS = [
   ],
 },
 {
-  id:'create', install:'npm create frontier@latest my-app', page:'create-frontier.html', name:'create-frontier', realm:'Tooling', tone:'warning', who:'create-frontier',
+  id:'create', install:'npm create frontier@' + range('create-frontier') + ' my-app', page:'create-frontier.html', name:'create-frontier', realm:'Tooling', tone:'warning', who:'create-frontier',
   pitch:'The front door, and nothing else — it resolves the CLI and runs it.',
   rows:[
     { k:'One implementation', v:'It resolves <code>@frontierjs/cli</code> and runs <code>fli new</code>',

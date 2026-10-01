@@ -476,6 +476,70 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(await (await send(server, 'POST', '/stop', { app_id: 'app-1' })).json()).toMatchObject({ unrouted: false })
   })
 
+  describe('/route — hostnames changed between releases (FJS-1610)', () => {
+    const bound = (HostIp, HostPort = '7300') => fakeRunner({
+      'docker run': { stdout: 'container-1\n' },
+      'docker inspect --format': { stdout: JSON.stringify({ '80/tcp': [{ HostIp, HostPort }] }) + '\n' },
+    })
+    const route = (server, hosts, app_id = 'app-1') => send(server, 'POST', '/route', { app_id, hosts })
+
+    test('a hostname added reaches Caddy, dialing the port the container published', async () => {
+      const caddy = fakeCaddy()
+      const { server, fake } = serverWith(caddy, bound('127.0.0.1', '7302'))
+      await deploy(server, { hosts: ['shop.example.com'] })
+      fake.calls.length = 0
+
+      const body = await (await route(server, ['shop.example.com', 'New.Example.com'])).json()
+      expect(body).toEqual({ hosts: ['shop.example.com', 'new.example.com'], port: 7302, rebind: null })
+      const routes = caddy.config.apps.http.servers.ingress.routes
+      expect(routes).toHaveLength(1)
+      expect(routes[0].match[0].host).toEqual(['shop.example.com', 'new.example.com'])
+      expect(routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7302')
+      // Routing restarts nothing.
+      expect(fake.calls.filter(c => c[1] !== 'inspect')).toEqual([])
+    })
+
+    test('the last hostname removed takes the route out, and says nothing reaches the app now', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, bound('127.0.0.1'))
+      await deploy(server, { hosts: ['shop.example.com'] })
+      const body = await (await route(server, [])).json()
+      expect(caddy.config.apps.http.servers.ingress.routes).toEqual([])
+      expect(body.rebind).toContain('bound to loopback with no route')
+    })
+
+    test('a first hostname on an app published on every interface routes it, and says the port is still open', async () => {
+      const caddy = fakeCaddy()
+      const { server } = serverWith(caddy, bound('', '7300'))
+      const body = await (await route(server, ['shop.example.com'])).json()
+      expect(caddy.config.apps.http.servers.ingress.routes[0]['@id']).toBe('fjs-app-1')
+      expect(body.rebind).toContain('still answers off this machine')
+    })
+
+    test('no container, or no published port, is refused and nothing is routed', async () => {
+      const gone = fakeRunner({ 'docker inspect --format': { exitCode: 1, stderr: 'Error: No such object: fjs-app-1' } })
+      const caddy = fakeCaddy()
+      const res = await route(serverWith(caddy, gone).server, ['shop.example.com'])
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('no container fjs-app-1')
+
+      const unpublished = fakeRunner({ 'docker inspect --format': { stdout: '{}\n' } })
+      const res2 = await route(serverWith(caddy, unpublished).server, ['shop.example.com'])
+      expect((await res2.json()).error).toContain('publishes no port')
+      expect(caddy.asked).toEqual([])
+
+      // With no hostnames there is nothing to dial, so a missing container is no refusal.
+      expect((await route(serverWith(caddy, gone).server, [])).status).toBe(200)
+    })
+
+    test('a hostname another app holds is refused, as on /deploy', async () => {
+      const caddy = fakeCaddy()
+      await deploy(serverWith(caddy, bound('127.0.0.1')).server, { hosts: ['shop.example.com'] })
+      const res = await route(serverWith(caddy, bound('127.0.0.1', '7301')).server, ['shop.example.com'], 'app-2')
+      expect((await res.json()).error).toContain('already routed to fjs-app-1')
+    })
+  })
+
   test('Caddy refusing a route answers in Caddy\'s words', async () => {
     const caddy = fakeCaddy()
     const refusing = async (url, init) => init?.method === 'PUT'

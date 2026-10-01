@@ -56,7 +56,8 @@ process's user, so the default is refuse and a route opts out rather than in.
 | --- | --- |
 | `POST /pull` | `{ image }` → `{ digest }` |
 | `POST /deploy` | `{ deployment_id, app_id, image, digest, source, config }` → `{ containerId, digest, commit_sha }`; `config` is `port`, `containerPort`, `volumePath`, `cpuLimit` (`--cpus`), `memLimitMb` (`--memory`), `env` and `logs` |
-| `POST /stop` | `{ app_id }` → `{ stopped }` |
+| `POST /stop` | `{ app_id }` → `{ stopped, unrouted }` |
+| `POST /route` | `{ app_id, hosts }` → `{ hosts, port, rebind }`; the app's Caddy route replaced, or removed for no hosts, dialing the port the running container published. `rebind` is a sentence when the bind no longer matches, which only the next `/deploy` changes |
 | `POST /health-check` | `{ app_id, port, path }` → `{ healthy }`, plus `reason` when it is not; with a `path`, running is not enough — `127.0.0.1:<port><path>` must answer 2xx |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |
 | `POST /logs` | `{ app_id, tail, since }` → `{ running, tail, since, stdout, stderr }`, plus `error` when there is no such container |

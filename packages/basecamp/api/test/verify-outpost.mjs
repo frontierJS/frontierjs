@@ -24,6 +24,11 @@
  *     back at the end, or a run erases the identity their laptop enrolled as.
  *   - SIGTERM, then SIGKILL after a grace. A graceful shutdown that hangs
  *     leaves the port held for the next run, which then reports on it.
+ *   - Caddy is a stand-in on 7129, held by this process: the admin API's
+ *     config tree, answering as the real one does (outpost's own suite
+ *     drives the real Caddy). What it proves is that a Domain written with
+ *     no release reaches the machine as a route, dialing the port the
+ *     container published (FJS-1610).
  *   - The container release runs on the developer's REAL daemon. It removes
  *     only the container it started and the image only if it pulled it, and
  *     never calls a prune or volume route: on a workstation those delete
@@ -45,6 +50,7 @@ const OWN      = join(ROOT, '.outpost')
 const ASIDE    = join(ROOT, `.outpost.aside-${process.pid}`)
 const MACHINE  = join(OWN, 'machine.json')
 const APP_PORT = 7126
+const CADDY    = 7129
 const IMAGE    = 'traefik/whoami:v1.10.3'
 const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
 const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
@@ -56,7 +62,41 @@ const ENV = {
   AUDIT_PATH:   join(SCRATCH, 'audit/'),
   PORT:         String(API_PORT),
   BASECAMP_URL: API,
+  OUTPOST_CADDY_ADMIN: `http://127.0.0.1:${CADDY}`,
 }
+
+// ─── Caddy's admin API, stood in ─────────────────────────────────────────
+//
+// A path not created yet is a 400 and an @id never seen a 404, as the real
+// one answers; outpost's ingress branches on both.
+
+let caddyConfig = null
+const caddyRoutes = () => caddyConfig?.apps?.http?.servers?.ingress?.routes ?? []
+function startCaddy() {
+  const answer = (status, body) => new Response(body === undefined ? '' : JSON.stringify(body), { status })
+  return Bun.serve({ port: CADDY, hostname: '127.0.0.1', async fetch(req) {
+    const path = new URL(req.url).pathname
+    const text = await req.text()
+    const data = text ? JSON.parse(text) : undefined
+    const id   = path.startsWith('/id/') ? path.slice(4) : null
+    const at   = id ? caddyRoutes().findIndex(r => r['@id'] === id) : -1
+    if (req.method === 'GET' && path === '/config/') return answer(200, caddyConfig)
+    if (req.method === 'PUT' && path === '/config/apps/http/servers/ingress') {
+      caddyConfig = { apps: { http: { servers: { ingress: data } } } }
+      return answer(200)
+    }
+    if (req.method === 'POST' && path === '/config/apps/http/servers/ingress/routes') {
+      if (!caddyConfig) return answer(400, { error: 'invalid traversal path at: config/apps/http/servers/ingress' })
+      caddyRoutes().push(data)
+      return answer(200)
+    }
+    if (id && at < 0) return answer(404, { error: `unknown object ID '${id}'` })
+    if (req.method === 'PATCH')  { caddyRoutes()[at] = data; return answer(200) }
+    if (req.method === 'DELETE') { caddyRoutes().splice(at, 1); return answer(200) }
+    return answer(400, { error: `unexpected ${req.method} ${path}` })
+  } })
+}
+let caddy = null
 
 // ─── Harness ─────────────────────────────────────────────────────────────
 
@@ -93,14 +133,14 @@ function check(name, ok) {
   ok ? passed++ : failed++
 }
 
-async function call(path, { token, workspace, body, serviceMethod } = {}) {
+async function call(path, { token, workspace, body, serviceMethod, method } = {}) {
   const headers = { accept: 'application/json' }
   if (body)          headers['content-type']     = 'application/json'
   if (token)         headers.authorization       = `Bearer ${token}`
   if (workspace)     headers['x-workspace-id']   = workspace
   if (serviceMethod) headers['x-service-method'] = serviceMethod
   const res  = await fetch(API + path, {
-    method:  body || serviceMethod ? 'POST' : 'GET',
+    method:  method ?? (body || serviceMethod ? 'POST' : 'GET'),
     headers, body: body ? JSON.stringify(body) : undefined,
   })
   const text = await res.text()
@@ -121,6 +161,7 @@ async function released(appId, auth) {
 
 async function cleanup() {
   for (const c of children) { try { process.kill(-c.pid, 'SIGTERM') } catch {} }
+  caddy?.stop(true)
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   if (container) sh('docker', 'rm', '-f', container)
@@ -138,13 +179,14 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'])
 console.log('\nBasecamp — dev:outpost\n')
 
 try {
-  for (const port of [API_PORT, 8180, 8181, APP_PORT])
+  for (const port of [API_PORT, 8180, 8181, APP_PORT, CADDY])
     if (await answers(port))
       throw new Error(`port ${port} is already held — this would test a process it did not start`)
   if (sh('docker', 'info').status !== 0)
     throw new Error('no docker daemon answers — the container release needs one')
 
   if (existsSync(OWN)) renameSync(OWN, ASIDE)
+  caddy = startCaddy()
 
   const seed = start(['db/seed.js'])
   await exited(seed)
@@ -274,6 +316,26 @@ try {
   const again = await released(box?.id, auth)
   const held  = sh('docker', 'ps', '-a', '--filter', `name=^${container}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)
   check('a second release replaces the container rather than adding one', again?.status === 'success' && held.length === 1)
+
+  // ── A hostname added with no release reaches the machine's Caddy ──
+  // The domain:dns job pushes it; nothing here presses deploy. Its zone is
+  // skipped (no edge account), and the route is pushed anyway.
+  const runningId = sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim()
+  const releases  = (await call(`/deployments?appId=${box.id}`, auth))?.data?.length
+  const hostname  = `${name}.example.test`
+  const domain    = await call('/domains', { ...auth, body: { appId: box.id, hostname } })
+  const routeOf   = () => caddyRoutes().find(r => r['@id'] === container)
+  const routed    = await until(() => routeOf()?.match?.[0]?.host?.includes(hostname), 30_000)
+  check('a Domain added after the release is routed on the machine with no release', routed)
+  check('…dialing the port the container published',
+    routeOf()?.handle?.[0]?.upstreams?.[0]?.dial === `127.0.0.1:${APP_PORT}`)
+  check('…without restarting the container or making a release',
+    sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim() === runningId
+      && (await call(`/deployments?appId=${box.id}`, auth))?.data?.length === releases)
+
+  await call(`/domains/${domain?.id}`, { ...auth, method: 'DELETE' })
+  // Gone only counts after it was there.
+  check('…and deleted, its route goes with it', routed && await until(() => !routeOf(), 30_000))
 } catch (err) {
   console.log(`\n  ✗ ${err.message}`)
   failed++

@@ -1,5 +1,5 @@
 /**
- * site/test/verify.mjs — the frontierjs.dev drive.
+ * site/test/verify.mjs — the frontierjs.com drive.
  *
  * The site is a marketing page, so what has to be proved is narrow and the
  * failures are all silent ones:
@@ -29,6 +29,7 @@ import { fileURLToPath }               from 'node:url'
 import { openChrome }                  from '../../../packages/mesa/src/drive.js'
 
 import { serveSite } from '@frontierjs/sierra/site/serve'
+import sierraConfig  from '../config/sierra.config.js'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const SITE   = join(HERE, '..')
@@ -162,7 +163,10 @@ t('samples.textUnchanged', (() => {
     const now = (readFileSync(page === 'index'
       ? join(DIST, 'index.html') : join(DIST, page, 'index.html'), 'utf8')
       .match(/<pre[^>]*>[\s\S]*?<\/pre>/g) ?? [])
-      .map((p) => textOf(p).replace(/\u00a0/g, ' ').replace(/[ \t]+$/gm, ''))
+      .map((p) => textOf(p).replace(/\u00a0/g, ' ').replace(/[ \t]+$/gm, '')
+        // An install range is read off a manifest (pin.js) and moves with every
+        // minor, which is not the sample changing.
+        .replace(/((?:@frontierjs\/[\w-]+|frontier)@)\d+(?:\.\d+)?\b/g, '$1<range>'))
       .filter((t) => t.trim())
     const same = samples.length === now.length && samples.every((t, i) => t === now[i])
     out[page] = same ? samples.length : false
@@ -251,11 +255,15 @@ t('install.published', await (async () => {
   // several of these carry (`npm i @frontierjs/junction    # API`). The
   // question is whether the site names a package of OURS that does not
   // publish — a third-party typo is a different check and this cannot make it.
-  const named = [...new Set([...text.matchAll(/npm i(?:nstall)? (?:-g )?([^\n#]+)/g)]
-    .flatMap((m) => m[1].split(/\s+/))
-    .filter((w) => /^(?:@frontierjs\/[\w-]+|create-frontier)$/.test(w)))].sort()
+  const named = [...new Set([...text.matchAll(/npm i(?:nstall)? (?:-g )?([^\n#]+)|npx (\S+)|npm create (frontier@\S+)/g)]
+    .flatMap((m) => (m[1] ?? m[2] ?? `create-${m[3]}`).split(/\s+/))
+    .filter((w) => /^(?:@frontierjs\/[\w-]+|create-frontier)(?:@[\d.]+)?$/.test(w)))].sort()
   const out = { named, missing: [] }
-  for (const pkg of named) {
+  for (const spec of named) {
+    // A pinned `npx` or `npm create` reads its range off the local manifest
+    // (pin.js), so a version bumped here and not yet published renders a range
+    // npm has nothing in. The package exists and the command still fails.
+    const [, pkg, range] = spec.match(/^(@?[^@]+)(?:@(.+))?$/)
     const res = await fetch(`https://registry.npmjs.org/${pkg.replace('/', '%2f')}`)
       .catch(() => null)
     if (!res) {
@@ -263,7 +271,10 @@ t('install.published', await (async () => {
       if (process.env.FJS_REQUIRE_REGISTRY) out.missing.push('(registry unreachable)')
       return out
     }
-    if (res.status === 404) out.missing.push(pkg)
+    if (res.status === 404) { out.missing.push(spec); continue }
+    if (range && !Object.keys((await res.json()).versions ?? {}).some((v) => v.startsWith(range + '.'))) {
+      out.missing.push(spec)
+    }
   }
   return out
 })(), (v) => none(v.missing))
@@ -304,7 +315,7 @@ t('pkg.hasDescription', /<meta name="description" content="[^"]{10}/.test(pkgHtm
 // Every prerendered page is in the sitemap — `indexed` drops dynamic routes,
 // which on this target is every package page (`FJS-502`).
 const sitemap = readFileSync(join(DIST, 'sitemap.xml'), 'utf8')
-t('pkg.inSitemap', PKGS.every((p) => sitemap.includes(`<loc>/${slugFor(p)}/</loc>`)))
+t('pkg.inSitemap', PKGS.every((p) => sitemap.includes(`<loc>${sierraConfig.siteUrl}/${slugFor(p)}/</loc>`)))
 
 // ─── every page ───────────────────────────────────────────────────────────
 // The set is asked of the route tree rather than written here: a build that
