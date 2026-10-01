@@ -27,6 +27,24 @@ Explicit non-goals: it is not the docs, not an API reference, and not a changelo
 Those live in the repo and, later, on a docs subdomain. Every section should end by
 handing off to something deeper rather than trying to be it.
 
+## Routes that matter
+
+- `/` — the splash: what is coming, and two doors out. It is one screen and
+  hands off rather than arguing.
+- `/journey/` — the build-in-the-open journal. **A post is a file**:
+  `site/src/routes/journey/<slug>.mesa` with `title`, `description` and `date`
+  in its frontmatter, rendered inside `site/src/components/JourneyPost.mesa`.
+  The index reads every sibling's frontmatter (`site/src/data/journey.js`), so
+  publishing is adding the file; no `date` means a draft, built but unlisted.
+- `/pitch/` — the long-form page below, every anchor (`/pitch/#start`) included.
+- `/seams/` — one request, every seam it crosses.
+- `/splash-tune/` — live controls for the map tour behind the splash and the
+  three cloud decks over it, run against the real splash in a frame. Unlisted
+  (`robots: noindex`). Tuning ends with *Copy*, pasted over the tour variables
+  in `site/src/routes/index.mesa`. The decks are `site/public/map/clouds-*.webp`,
+  one horizontally-wrapping tile each, cut from a painted cloud sheet; a tile
+  that does not wrap shows as a hard edge sliding across the splash.
+
 ## The pitch, in the order a stranger needs it
 
 1. **What is it** — a schema-seeded fullstack framework. One `.lite` file seeds

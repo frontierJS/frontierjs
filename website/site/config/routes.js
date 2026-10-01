@@ -7,9 +7,9 @@ export const tree = {
   id: "root",
   path: "/",
   file: "src/routes/index.mesa",
-  companion: "src/routes/index.meta.js",
+  companion: null,
   layout: "src/routes/_module.mesa",
-  meta: JSON.parse("{\"title\":\"FrontierJS — the schema is the app\",\"description\":\"A schema-seeded fullstack framework. One .lite file seeds your database, your API, and your UI. CRUD, validation, authorization and live updates are derived, not written.\",\"render\":\"static\",\"isIndex\":true}"),
+  meta: JSON.parse("{\"title\":\"FrontierJS — coming soon\",\"description\":\"One schema file seeds your database, your API, and your UI. FrontierJS is coming soon — read the journey while it gets there.\",\"render\":\"static\",\"isIndex\":true}"),
   params: [],
   children: [
   {
@@ -65,12 +65,23 @@ export const tree = {
   {
       id: "journey",
       path: "/journey/",
-      file: "src/routes/journey.mesa",
-      companion: "src/routes/journey.meta.js",
+      file: "src/routes/journey/index.mesa",
+      companion: "src/routes/journey/index.meta.js",
       layout: "src/routes/_module.mesa",
-      meta: JSON.parse("{\"title\":\"FrontierJS — the journey\",\"description\":\"A single POST /api/leads, and every seam it crosses — seventeen named handoffs from the transport to the reactive UI.\",\"render\":\"static\"}"),
+      meta: JSON.parse("{\"title\":\"The journey — FrontierJS\",\"description\":\"Notes from building FrontierJS in the open — what got built, what broke, and what we decided.\",\"render\":\"static\",\"isIndex\":true}"),
       params: [],
-      children: [],
+      children: [
+      {
+          id: "journey.where-this-starts",
+          path: "/journey/where-this-starts/",
+          file: "src/routes/journey/where-this-starts.mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: JSON.parse("{\"title\":\"Where this starts — The journey\",\"description\":\"What FrontierJS is, why it exists, and what this journal is for.\",\"date\":\"2026-09-30T00:00:00.000Z\",\"render\":\"static\"}"),
+          params: [],
+          children: [],
+        }
+      ],
     },
   {
       id: "landscape",
@@ -89,6 +100,26 @@ export const tree = {
       companion: "src/routes/map.meta.js",
       layout: "src/routes/_module.mesa",
       meta: JSON.parse("{\"title\":\"FrontierJS — the territory map\",\"description\":\"Every FrontierJS package on one map: the three realms, what sits in each, and what depends on what. Zoom in, pick a territory, read about it.\",\"render\":\"static\"}"),
+      params: [],
+      children: [],
+    },
+  {
+      id: "pitch",
+      path: "/pitch/",
+      file: "src/routes/pitch.mesa",
+      companion: "src/routes/pitch.meta.js",
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"title\":\"FrontierJS — the schema is the app\",\"description\":\"A schema-seeded fullstack framework. One .lite file seeds your database, your API, and your UI. CRUD, validation, authorization and live updates are derived, not written.\",\"render\":\"static\"}"),
+      params: [],
+      children: [],
+    },
+  {
+      id: "seams",
+      path: "/seams/",
+      file: "src/routes/seams.mesa",
+      companion: "src/routes/seams.meta.js",
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"title\":\"FrontierJS — the seams\",\"description\":\"A single POST /api/leads, and every seam it crosses — seventeen named handoffs from the transport to the reactive UI.\",\"render\":\"static\"}"),
       params: [],
       children: [],
     },
@@ -143,6 +174,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "splash-tune",
+      path: "/splash-tune/",
+      file: "src/routes/splash-tune.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"title\":\"Splash tuner — FrontierJS\",\"description\":\"Live controls for the map tour behind the splash.\",\"render\":\"static\",\"robots\":\"noindex\"}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "tutor",
       path: "/tutor/",
       file: "src/routes/tutor.mesa",
@@ -183,25 +224,60 @@ export const components = {
   'flow': () => import('../src/routes/flow.mesa'),
   'index2': () => import('../src/routes/index2.mesa'),
   'index3': () => import('../src/routes/index3.mesa'),
-  'journey': () => import('../src/routes/journey.mesa'),
+  'journey': () => import('../src/routes/journey/index.mesa'),
+  'journey.where-this-starts': () => import('../src/routes/journey/where-this-starts.mesa'),
   'landscape': () => import('../src/routes/landscape.mesa'),
   'map': () => import('../src/routes/map.mesa'),
+  'pitch': () => import('../src/routes/pitch.mesa'),
+  'seams': () => import('../src/routes/seams.mesa'),
   'showroom': () => import('../src/routes/showroom.mesa'),
   'showroom2': () => import('../src/routes/showroom2.mesa'),
   'showroom3': () => import('../src/routes/showroom3.mesa'),
   'showroom4': () => import('../src/routes/showroom4.mesa'),
   'showroom5': () => import('../src/routes/showroom5.mesa'),
+  'splash-tune': () => import('../src/routes/splash-tune.mesa'),
   'tutor': () => import('../src/routes/tutor.mesa'),
   'vs-laravel': () => import('../src/routes/vs-laravel.mesa'),
   '[pkg]': () => import('../src/routes/[pkg].mesa'),
 }
 
 
+function __sierraDevStatic(routeId) {
+  let answered = null
+  return Promise.resolve({
+    async load({ params, url }) {
+      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
+      const res = await fetch('/__sierra/static-data?' + q)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
+      answered = body
+      return body.data
+    },
+    head: () => answered?.head ?? null,
+  })
+}
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
 
-
+  'before-after': () => __sierraDevStatic('before-after'),
+  'flow': () => __sierraDevStatic('flow'),
+  'index2': () => __sierraDevStatic('index2'),
+  'index3': () => __sierraDevStatic('index3'),
+  'journey': () => __sierraDevStatic('journey'),
+  'landscape': () => __sierraDevStatic('landscape'),
+  'map': () => __sierraDevStatic('map'),
+  'pitch': () => __sierraDevStatic('pitch'),
+  'seams': () => __sierraDevStatic('seams'),
+  'showroom': () => __sierraDevStatic('showroom'),
+  'showroom2': () => __sierraDevStatic('showroom2'),
+  'showroom3': () => __sierraDevStatic('showroom3'),
+  'showroom4': () => __sierraDevStatic('showroom4'),
+  'showroom5': () => __sierraDevStatic('showroom5'),
+  'tutor': () => __sierraDevStatic('tutor'),
+  'vs-laravel': () => __sierraDevStatic('vs-laravel'),
+  '[pkg]': () => __sierraDevStatic('[pkg]'),
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).
@@ -220,13 +296,17 @@ export const all = [
   "/index2/",
   "/index3/",
   "/journey/",
+  "/journey/where-this-starts/",
   "/landscape/",
   "/map/",
+  "/pitch/",
+  "/seams/",
   "/showroom/",
   "/showroom2/",
   "/showroom3/",
   "/showroom4/",
   "/showroom5/",
+  "/splash-tune/",
   "/tutor/",
   "/vs-laravel/",
   "/:pkg/"
@@ -240,13 +320,17 @@ export const published = [
   "/index2/",
   "/index3/",
   "/journey/",
+  "/journey/where-this-starts/",
   "/landscape/",
   "/map/",
+  "/pitch/",
+  "/seams/",
   "/showroom/",
   "/showroom2/",
   "/showroom3/",
   "/showroom4/",
   "/showroom5/",
+  "/splash-tune/",
   "/tutor/",
   "/vs-laravel/",
   "/:pkg/"
@@ -260,8 +344,11 @@ export const indexed = [
   "/index2/",
   "/index3/",
   "/journey/",
+  "/journey/where-this-starts/",
   "/landscape/",
   "/map/",
+  "/pitch/",
+  "/seams/",
   "/showroom/",
   "/showroom2/",
   "/showroom3/",

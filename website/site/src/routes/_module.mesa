@@ -19,6 +19,7 @@
   <div class="container topbar-inner">
     <a class="brand" href="/">Frontier<span>JS</span></a>
     <nav class="navset" aria-label="Site">
+      <a href="/journey/">Journey</a>
       <a href="/tutor/">Tutorial</a>
       <!-- A <details>, so the menu opens and closes with no script on the page. -->
       <details class="popover-anchor showmenu">
@@ -26,12 +27,13 @@
         <div class="popover align-end">
           <div class="navlist-label">The tour</div>
           <ul class="navlist">
+            <li><a class="navlink" href="/pitch/">The pitch</a></li>
             <li><a class="navlink" href="/showroom/">Showroom</a></li>
             <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
             <li><a class="navlink" href="/showroom3/">The ripple</a></li>
             <li><a class="navlink" href="/showroom4/">The loop</a></li>
             <li><a class="navlink" href="/showroom5/">The stack</a></li>
-            <li><a class="navlink" href="/journey/">The journey</a></li>
+            <li><a class="navlink" href="/seams/">The seams</a></li>
             <li><a class="navlink" href="/flow/">The flow</a></li>
             <li><a class="navlink" href="/map/">The map</a></li>
           </ul>
@@ -48,7 +50,7 @@
           </ul>
         </div>
       </details>
-      <a href="/#start">Start</a>
+      <a href="/pitch/#start">Start</a>
     </nav>
     <ThemeSwitch client:load />
   </div>
@@ -70,6 +72,10 @@
      to a design-system class takes here. */
   :global(.container) { max-width: 68rem; }
   :global(html) { scroll-behavior: smooth; }
+  /* How much of the viewport's top the sticky topbar holds. A page's sticky
+     element sits at this offset; a hand-measured number goes stale the moment
+     the bar's contents change, and the bar slides over whatever is pinned. */
+  :global(:root) { --sticky-offset: 4rem; }
   :global(body) { background: var(--surface); color: var(--ink); }
 
   .skip-link { position: absolute; left: -9999px; }
@@ -87,13 +93,23 @@
     /* @frontierjs/css sets no font on body, so the bar took the browser's
        serif while the menu's popover, a surface, took --font-primary. */
     font-family: var(--font-primary);
+    box-sizing: border-box; height: var(--sticky-offset);
   }
-  .topbar-inner { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+  .topbar-inner { display: flex; align-items: center; gap: 1.5rem; height: 100%; padding: 0 1.25rem; }
 
   .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
   .brand span { color: var(--color-primary); }
 
-  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset { display: flex; gap: .25rem; }
+
+  /* Below this the bar cannot hold one row, and a wrapped sticky bar is a
+     third of a phone screen — so it scrolls away and the subnav pins at 0. */
+  @media (max-width: 37rem) {
+    :global(:root) { --sticky-offset: 0px; }
+    .topbar { position: relative; height: auto; }
+    .topbar-inner { padding-block: .75rem; }
+    .navset { flex-wrap: wrap; }
+  }
   .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
   .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
 
@@ -114,10 +130,13 @@
      than repeated — but it is :global() because the markup is in the PAGE, and
      a scoped rule hashes against this component. */
   :global(.subnav) {
-    position: sticky; top: 3.05rem; z-index: 45;
+    position: sticky; top: var(--sticky-offset); z-index: 45;
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
   }
+  /* An anchor jump has to clear the topbar AND the subnav, so a page with one
+     gets the offset here rather than a scroll-margin it would tune by hand. */
+  :global(html:has(.subnav)) { scroll-padding-top: calc(var(--sticky-offset) + 3rem); }
   :global(.subnav .container) { display: flex; gap: .15rem; overflow-x: auto; padding: .45rem 1.25rem; }
   :global(.subnav a) {
     white-space: nowrap; font-size: .78rem; text-decoration: none; color: var(--ink-mute);

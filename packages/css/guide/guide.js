@@ -2830,6 +2830,55 @@ function cardsPage() {
       )}
 
       ${section(
+        "Glass",
+        `
+        <p>
+          A frosted fill for an app whose <code>--app-bg</code> is a gradient.
+          The fill is the surface at <code>--glass-alpha</code> with a blur
+          behind it — and 85% is not a taste, it is the floor at which body and
+          secondary text clear AA over <em>any</em> ground, black and white
+          included. So the guarantee holds where the blur does not render.
+        </p>
+        <p>
+          Two things change on glass to keep it: <code>--ink-mute</code> reads
+          as <code>--ink-soft</code>, and a tone is the edge and the text rather
+          than the fill. <code>prefers-reduced-transparency</code> makes it
+          opaque. It also composes onto <code>.btn</code>,
+          <code>.topbar</code> and <code>.sidebar</code>.
+        </p>
+        ${preview(`
+          <div style="padding: 24px; border-radius: var(--card-radius); background:
+              radial-gradient(22rem 14rem at 10% 10%, oklch(72% 0.19 300 / .75), transparent 60%),
+              radial-gradient(20rem 14rem at 90% 20%, oklch(78% 0.15 200 / .7), transparent 60%),
+              radial-gradient(18rem 12rem at 50% 110%, oklch(74% 0.18 350 / .65), transparent 60%),
+              var(--surface-sunken)">
+            <div class="tiles gap-lg sg-card-grid">
+              <div class="card glass">
+                <strong>Glass</strong>
+                <p class="sg-card-text">Translucent fill, blurred ground.</p>
+              </div>
+              <div class="card glass raised">
+                <strong>Glass, raised</strong>
+                <p class="sg-card-text">Composes with elevation.</p>
+              </div>
+              <div class="card glass danger">
+                <strong>Glass, danger</strong>
+                <p class="sg-card-text">The tone is the edge and the text.</p>
+              </div>
+            </div>
+            <div class="cluster" style="margin-top: 16px">
+              <button class="btn glass">Docs</button>
+              <button class="btn">Get started</button>
+            </div>
+          </div>`)}
+        ${code(`<body class="app" style="--app-bg: radial-gradient(...), var(--surface-sunken)">
+  <header class="topbar glass">...</header>
+  <div class="card glass">...</div>
+  <button class="btn glass">Docs</button>
+</body>`)}`,
+      )}
+
+      ${section(
         "Toned",
         `
         <p>
@@ -2955,6 +3004,10 @@ function cardsPage() {
           <li>
             <strong>Ghost</strong> — invisible containers. Layout-only padding
             without a visual surface.
+          </li>
+          <li>
+            <strong>Glass</strong> — over a gradient ground. Never over a plain
+            one, where it is a default card that cost a blur.
           </li>
           <li>
             <strong>Toned</strong> — communicate state through the surface
@@ -7932,7 +7985,7 @@ const KINDS = [
     "Treatment",
     "onto anything",
     "Orthogonal and element-agnostic. Works the same wherever you put it.",
-    ".primary .secondary .muted .info .success .warning .danger  ·  .raised .outlined .ghost  ·  .text-*  ·  .stack .cluster .center .split",
+    ".primary .secondary .muted .info .success .warning .danger  ·  .raised .outlined .ghost .glass  ·  .text-*  ·  .stack .cluster .center .split",
   ],
   [
     "Density",

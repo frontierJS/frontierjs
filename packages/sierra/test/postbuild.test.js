@@ -141,6 +141,23 @@ describe('runPostBuild — what counts as a page', () => {
     expect(xml.match(/<loc>/g)).toHaveLength(1)
   })
 
+  test('a noindex route beside a one-segment dynamic route stays out', async () => {
+    // `/:pkg/` matches `/secret/` by pattern, so a route's own noindex was
+    // overruled by its sibling and the page was advertised.
+    const sibling = {
+      all:       ['/', '/:pkg/', '/secret/'],
+      indexed:   ['/'],
+      indexable: ['/', '/:pkg/'],
+      redirects: [],
+    }
+    const outDir = await setup('sitemap-noindex-sibling', { 'index.html': page })
+    await runPostBuild({ llms: false }, sibling, outDir, outDir, ['/', '/litestone/', '/secret/'])
+
+    const xml = await readFile(join(outDir, 'sitemap.xml'), 'utf8')
+    expect(xml).toContain('<loc>/litestone/</loc>')
+    expect(xml).not.toContain('/secret/')
+  })
+
   test('the empty 404/ directory does not survive into the published site', async () => {
     // `rename` takes the file and leaves the directory. Harmless where a host
     // answers 404 for it, a directory listing where one does not — either way

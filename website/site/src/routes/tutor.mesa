@@ -333,16 +333,16 @@ render: static
     </p>
     <pre class="code">{@html sample.START}</pre>
     <div class="cluster">
-      <a class="btn primary raised" href="/#code">See the code it writes</a>
+      <a class="btn primary raised" href="/pitch/#code">See the code it writes</a>
       <a class="btn outlined" href="/flow/">Follow one field through it</a>
-      <a class="btn ghost" href="/#packages">The packages</a>
+      <a class="btn ghost" href="/pitch/#packages">The packages</a>
     </div>
   </div>
 </section>
 
 <div class="container pagenote">
   <span>Every sample on this page is a transcript or a verbatim lift from the step that produced it.</span>
-  <span><a href="/journey/">The journey →</a></span>
+  <span><a href="/seams/">The seams →</a></span>
 </div>
 
 <style>

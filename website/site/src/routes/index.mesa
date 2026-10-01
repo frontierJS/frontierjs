@@ -1,326 +1,218 @@
 ---
-title: FrontierJS — the schema is the app
-description: A schema-seeded fullstack framework. One .lite file seeds your database, your API, and your UI. CRUD, validation, authorization and live updates are derived, not written.
+title: FrontierJS — coming soon
+description: One schema file seeds your database, your API, and your UI. FrontierJS is coming soon — read the journey while it gets there.
 render: static
 ---
 <!--
-  The front page, prerendered. Every byte a visitor gets is in the file; there
-  is no JavaScript on this page except the theme swatches in the layout, which
-  are an island.
-
-  ── Why the code samples are not in this file ──────────────────────────
-
-  Two reasons, and only the second is Mesa's. Mesa reads `{` in markup as the
-  start of an expression, so a `<pre>` holding `{#each leads.data as lead}` is
-  not a code sample to the compiler — it is a block tag, and the page does not
-  compile. That alone would be an argument for hoisting them into a script.
-
-  The one that decides it is that a sample has to be HIGHLIGHTED, and this is
-  the page whose README says the code samples are the product. They are source
-  in `index.meta.js`, `@frontierjs/toolbelt/glow` marks them up at build time,
-  and `@frontierjs/css` themes what it emits — so nothing on this page is a
-  code palette, and copying a sample out of the source gives you code rather
-  than the HTML the hand-marked version gave you.
+  The splash. One screen that says what is coming and hands the reader to the
+  journey; the long-form case is /pitch/. No script beyond the layout's theme
+  island, so the motion here is CSS and stops under reduced-motion.
 -->
-<script>
-  export let data = null
 
-  // Already HTML by the time it arrives here, which is what {@html} is for.
-  const sample = data?.samples ?? {}
-</script>
-
-<!-- ─── Hero ────────────────────────────────────────────────────────── -->
-<section id="top">
-  <div class="container hero">
-    <div>
-      <p class="eyebrow">Schema-seeded fullstack framework</p>
-      <h1>The schema<br>is the app.</h1>
-      <p class="lede">
-        One <code>.lite</code> file seeds your database, your API, and your UI.
-        Write the schema and a six-line service — CRUD, validation, authorization,
-        pagination and live updates are <strong>derived, not written</strong>.
-      </p>
-      <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-        <a class="btn primary raised" href="#start">Get started</a>
-        <a class="btn outlined" href="#code">See the code</a>
-        <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
-      </div>
+<section id="top" class="splash">
+  <div class="backdrop" aria-hidden="true">
+    <div class="layer ground">
+      <div class="map"></div>
+      <div class="drift shadows"></div>
     </div>
-
-    <pre class="code">{@html sample.SCHEMA}</pre>
+    <div class="layer wisps"><div class="drift"></div></div>
+    <div class="layer lows"><div class="drift"></div></div>
   </div>
-</section>
+  <div class="veil" aria-hidden="true"></div>
+  <div class="glow" aria-hidden="true"></div>
 
-<!-- ─── The idea ────────────────────────────────────────────────────── -->
-<section id="idea">
-  <div class="container stack">
-    <p class="eyebrow">The idea</p>
-    <h2>One seed, three realms</h2>
-    <p class="lede" style="max-width:60ch">
-      Every framework helps you write the glue between database, server, and browser.
-      FrontierJS derives glue you never write — and everything traces back to one file.
+  <div class="container inner">
+    <!-- <p class="eyebrow">
+      <span class="badge warning">Coming soon</span>
+      FrontierJS
+    </p> -->
+
+    <h1>The Frontier<br><span class="accent">is coming.</span></h1>
+
+    <p class="lede">
+      One starting source of truth. Get your database, API and UI
+      …with validation, authorization, pagination, live updates, migrations, typed clients and forms
+      <strong>derived, not written</strong>.
     </p>
 
-    <div class="flow" style="margin:1.5rem 0 2rem">
-      <span class="hop"><strong>Data</strong> · Model</span>
-      <span class="arrow">→</span>
-      <span class="hop"><strong>API</strong> · Service</span>
-      <span class="arrow">→</span>
-      <span class="hop"><strong>UI</strong> · Resource</span>
-      <span class="arrow" style="margin-left:.5rem">+</span>
-      <span class="hop muted">Release</span>
-      <span class="hop muted">Suite</span>
+    <div class="cluster ctas">
+      <a class="btn primary raised" href="/journey/">Read the journey →</a>
     </div>
 
-    <div class="grid cols3">
-      <article class="card stack">
-        <h3>Derived, not declared</h3>
-        <p class="text-sm text-muted">
-          Other frameworks give you a config file to describe your routes and queries.
-          That is still glue you type. Here the schema already knows the shape, the rules,
-          and who may do what — so the API is read out of it, not written beside it.
-        </p>
-      </article>
-      <article class="card stack">
-        <h3>Authorization travels with the data</h3>
-        <p class="text-sm text-muted">
-          Gates and row policies live on the Model and compile into SQL. A query cannot
-          take a code path that forgot to check, because the check is not in the code path —
-          it is in the data layer, under every caller.
-        </p>
-      </article>
-      <article class="card stack">
-        <h3>One engine on both sides</h3>
-        <p class="text-sm text-muted">
-          Litestone is SQLite. The same schema, the same query API and the same gates can
-          run on the server and in the browser — which is what makes offline-first a
-          direction rather than a rewrite.
-        </p>
-      </article>
-    </div>
+    <ul class="promises">
+      <li><b>No glue.</b> The layers between your tables and your screens are derived.</li>
+      <li><b>Access on the model.</b> Who can read a row is written once, where the row is.</li>
+      <li><b>Yours to run.</b> Bun, SQLite, MIT. One box, or offline in the browser.</li>
+    </ul>
   </div>
 </section>
-
-<!-- ─── See it ──────────────────────────────────────────────────────── -->
-<section id="code">
-  <div class="container stack">
-    <p class="eyebrow">See it</p>
-    <h2>Schema → Service → Resource</h2>
-    <p class="lede" style="max-width:60ch">
-      The whole application below is the schema in the hero plus these three files.
-      Nothing is elided.
-    </p>
-
-    <div class="grid cols2" style="margin-top:1.5rem">
-      <div class="stack">
-        <h3><code>api/server.ts</code> — the API</h3>
-        <pre class="code">{@html sample.API}</pre>
-      </div>
-
-      <div class="stack">
-        <h3><code>src/routes/leads/index.mesa</code> — the UI</h3>
-        <pre class="code">{@html sample.UI}</pre>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:2rem">
-      <h3>What you did not write</h3>
-      <div class="grid cols3" style="margin-top:1rem">
-        <ul class="checks">
-          <li>Full CRUD at <code>/api/leads</code></li>
-          <li><code>400</code>s from the schema's own rules</li>
-          <li><code>401</code>/<code>403</code>s from the Model's gate</li>
-        </ul>
-        <ul class="checks">
-          <li>Pagination and a stable result envelope</li>
-          <li>Row policies compiled into every query</li>
-          <li>TypeScript types for every Model</li>
-        </ul>
-        <ul class="checks">
-          <li>Live WebSocket events on mutation</li>
-          <li>Migrations diffed from the schema</li>
-          <li>JSON Schema, shared by API and UI</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ─── Packages ────────────────────────────────────────────────────── -->
-<section id="packages">
-  <div class="container stack">
-    <p class="eyebrow">The map</p>
-    <h2>Twelve packages, one direction</h2>
-    <p class="lede" style="max-width:60ch">
-      <code>Litestone ← Junction ← Sierra</code>, never the reverse.
-      Mesa is a leaf with zero workspace dependencies. Use the whole stack, or one piece.
-    </p>
-
-    <div class="table-wrap" style="margin-top:1.5rem">
-      <table class="table">
-        <thead>
-          <tr><th>Package</th><th>Realm</th><th>What it is</th><th>State</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><strong>litestone</strong></td><td>Data</td><td><code>.lite</code> language, SQLite client, gates &amp; policies, migrations, tenants, Litestone Studio</td><td><span class="badge success">v1.1 · 1241 tests</span></td></tr>
-          <tr><td><strong>junction</strong></td><td>API</td><td>Services, hook pipeline, HTTP/WS transport, channels, browser client</td><td><span class="badge success">703 tests</span></td></tr>
-          <tr><td><strong>sierra</strong></td><td>UI</td><td>File-tree routing, Vite build, <code>createResource</code>, static prerender</td><td><span class="badge success">558 tests</span></td></tr>
-          <tr><td><strong>mesa</strong></td><td>UI</td><td>Reactive compiler + signal runtime. Renders to HTML, email, fragment or JS</td><td><span class="badge success">869 tests</span></td></tr>
-          <tr><td><strong>auth</strong></td><td>Identity</td><td>Native provider over Litestone, ships schema fragments and <code>/auth/*</code></td><td><span class="badge warning">thin coverage</span></td></tr>
-          <tr><td><strong>caravan</strong></td><td>Jobs</td><td>SQLite job queue and cron, exposed as <code>app.jobs</code></td><td><span class="badge success">67 tests</span></td></tr>
-          <tr><td><strong>conduit</strong></td><td>Egress</td><td>Outbound boundary — declared targets over http, ws or unix</td><td><span class="badge success">169 tests</span></td></tr>
-          <tr><td><strong>notifications</strong></td><td>Slice</td><td>In-app record + WebSocket event + email fan-out via <code>app.notify</code></td><td><span class="badge">working</span></td></tr>
-          <tr><td><strong>cli</strong> (<code>fli</code>)</td><td>Tooling</td><td>Markdown-native command runtime, scaffolds, deploy pipeline</td><td><span class="badge success">142 tests</span></td></tr>
-          <tr><td><strong>css</strong></td><td>UI</td><td>Semantics-first design system. Plain CSS, no build step — this page uses it</td><td><span class="badge success">v0.10 · 202 tests</span></td></tr>
-          <tr><td><strong>jetty</strong></td><td>UI</td><td>Browser-extension container — Mesa UI with a service-worker relay</td><td><span class="badge warning">pre-production</span></td></tr>
-          <tr><td><strong>vscode</strong></td><td>Tooling</td><td>Litestone language server and Mesa editor support</td><td><span class="badge warning">early</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ─── Extend ──────────────────────────────────────────────────────── -->
-<section id="extend">
-  <div class="container stack">
-    <p class="eyebrow">Extend</p>
-    <h2>Four concepts, everywhere</h2>
-    <p class="lede" style="max-width:60ch">
-      Learn these once and they hold across every realm. That is the whole design
-      constraint: keep the mental model small enough to fit in your head.
-    </p>
-
-    <div class="grid cols2" style="margin-top:1.5rem">
-      <article class="card stack">
-        <h3><span class="pill primary">Declaration</span> change the data's own rules</h3>
-        <pre class="code">{@html sample.DECLARATION}</pre>
-      </article>
-
-      <article class="card stack">
-        <h3><span class="pill primary">Hook</span> step into a pipeline</h3>
-        <pre class="code">{@html sample.HOOK}</pre>
-      </article>
-
-      <article class="card stack">
-        <h3><span class="pill primary">Plugin</span> attach a capability</h3>
-        <pre class="code">{@html sample.PLUGIN}</pre>
-      </article>
-
-      <article class="card stack">
-        <h3><span class="pill primary">Provider</span> swap an implementation</h3>
-        <pre class="code">{@html sample.PROVIDER}</pre>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ─── Vision ──────────────────────────────────────────────────────── -->
-<section id="vision">
-  <div class="container stack">
-    <p class="eyebrow">Direction</p>
-    <h2>Where this is going</h2>
-    <p class="lede" style="max-width:60ch">
-      Stated plainly as direction, not as shipped features. Everything above this
-      section runs today; everything in it does not yet.
-    </p>
-
-    <div class="grid cols3" style="margin-top:1.5rem">
-      <article class="card stack">
-        <h3>Slices — installable full-stack modules</h3>
-        <p class="text-sm text-muted">
-          One package that ships a Model, a Service, a Resource and its own conformance
-          tests — install only the parts you want. Take the API without the frontend, and
-          have that be checkable rather than hopeful.
-        </p>
-      </article>
-      <article class="card stack">
-        <h3>Offline-first, small, self-hosted</h3>
-        <p class="text-sm text-muted">
-          The same SQLite engine on both sides means the schema, the queries and the gates
-          come along. Local enforcement, a sync queue, and an app you can run as one
-          binary next to one file.
-        </p>
-      </article>
-      <article class="card stack">
-        <h3>One target axis</h3>
-        <p class="text-sm text-muted">
-          One component set, many outputs: SPA, static, widget, extension — and later
-          desktop and mobile. A new platform should be an entry on a list, not a new
-          framework to learn.
-        </p>
-      </article>
-    </div>
-
-    <p class="text-sm text-muted" style="margin-top:1.5rem">
-      MIT licensed. No account, no hosted service, no phone-home — self-hosting is the
-      default path, not the fallback.
-    </p>
-  </div>
-</section>
-
-<!-- ─── Start ───────────────────────────────────────────────────────── -->
-<section id="start">
-  <div class="container stack">
-    <p class="eyebrow">Start</p>
-    <h2>Five minutes to a running API</h2>
-
-    <div class="grid cols2" style="margin-top:1.5rem">
-      <div class="stack">
-        <pre class="code">{@html sample.SCAFFOLD}</pre>
-      </div>
-
-      <div class="stack">
-        <pre class="code">{@html sample.PIECEMEAL}</pre>
-      </div>
-    </div>
-
-    <div class="cluster" style="margin-top:2rem; gap:.75rem;">
-      <a class="btn primary raised" href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">Quickstart</a>
-      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs">GitHub</a>
-      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">Architecture</a>
-      <a class="btn outlined" href="https://github.com/frontierjs/frontierjs/blob/main/PHILOSOPHY.md">Philosophy</a>
-      <a class="btn ghost" href="https://github.com/frontierjs/frontierjs/tree/main/packages/junction/example">Runnable examples</a>
-    </div>
-  </div>
-</section>
-
 
 <style>
-  /* Page layout only. Everything visual comes from @frontierjs/css tokens.
-     The shell rules — topbar, brand, navset, footer — moved to _module.mesa. */
-  section { scroll-margin-top: 5rem; padding: 5rem 0; border-top: 1px solid var(--rule); }
-  section:first-of-type { border-top: 0; }
+  .splash {
+    position: relative; overflow: hidden; isolation: isolate;
+    min-height: calc(100svh - var(--sticky-offset, 4rem));
+    display: grid; align-items: center;
+    padding: 4rem 0 5rem;
+    font-family: var(--font-primary);
+  }
 
-  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 46ch; }
-  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
-  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .4em 0 .3em; }
-  h2 { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 .3em; }
-  h3 { font-size: 1rem; margin: 0 0 .5rem; }
+  /* The territory map, toured: six stops and back to the first, so the loop
+     has no seam. A stop is a zoom and the point it zooms toward, as a share of
+     the box; zooming toward a point inside the box never uncovers an edge,
+     which a translate past the scaled overhang would.
 
-  /* No code palette and no block rules here. A sample is the design
-     system's code block wrapping glow's own code element, and
-     @frontierjs/css styles both — a rule here would be a second answer
-     to what code looks like, and a scoped one would not reach the
-     samples anyway: they arrive through {@html} and carry no hash. */
+     Three cloud tiles ride the same tour. The shadows lie on the ground and
+     scale with the map; the wisps and the low clouds scale by --depth times as
+     much toward the same point, so on a dive they open past the camera faster
+     than the land below them. Each tile also drifts on its own clock, and
+     wraps, so the drift has no seam either.
+     /splash-tune/ edits all of this live and prints the block back to paste. */
+  .backdrop {
+    position: absolute; inset: 0; z-index: -3;
+    container-type: size;
+    --tour-length: 180s;
+    --tour-easing: ease-in-out;
+    --stop0-zoom: 1.9;   --stop0-x: 72%; --stop0-y: 42%;
+    --stop1-zoom: 2.3;   --stop1-x: 88%; --stop1-y: 24%;
+    --stop2-zoom: 1.15;  --stop2-x: 60%; --stop2-y: 50%;
+    --stop3-zoom: 2.0;   --stop3-x: 74%; --stop3-y: 74%;
+    --stop4-zoom: 1.7;   --stop4-x: 94%; --stop4-y: 86%;
+    --stop5-zoom: 1.0;   --stop5-x: 50%; --stop5-y: 50%;
+    --shadow-opacity: .8;  --shadow-drift: 300s;
+    --wisp-opacity: .7;    --wisp-drift: 200s;   --wisp-depth: 1.25;
+    --low-opacity: .9;     --low-drift: 140s;    --low-depth: 1.4;
+  }
+  .layer {
+    position: absolute; inset: 0;
+    will-change: transform, transform-origin;
+    animation: tour var(--tour-length) var(--tour-easing) infinite;
+  }
+  .ground { --depth: 1; }
+  .wisps  { --depth: var(--wisp-depth); opacity: var(--wisp-opacity); }
+  .lows   { --depth: var(--low-depth);  opacity: var(--low-opacity); }
 
-  .grid  { display: grid; gap: 1.5rem; }
-  .cols3 { grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
-  .cols2 { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
-  .hero  { display: grid; gap: 2.5rem; grid-template-columns: minmax(0,1fr); align-items: center; }
-  @media (min-width: 60rem) { .hero { grid-template-columns: 1.05fr .95fr; } }
+  .map {
+    position: absolute; inset: 0;
+    background: url('/fjs-map-2.png') 70% 40% / cover no-repeat;
+    filter: saturate(.9);
+  }
 
-  .flow  { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .9rem; }
-  /* .hop, not .step — @frontierjs/css owns .step as a stepper item and would
-     stretch these pills and draw a connector bar between them. */
-  .flow .hop { border: 1px solid var(--rule-strong); border-radius: 999px; padding: .3rem .8rem; background: var(--surface-raised); }
-  .flow .arrow { color: var(--ink-mute); }
+  /* One tile is at least as tall as the box, so it repeats only sideways, and
+     a drift of exactly one tile width lands where it started. */
+  .drift {
+    --tile: max(100cqw, 160cqh);
+    position: absolute; top: 0; left: 0; height: 100%;
+    width: calc(100% + var(--tile));
+    background: var(--sprites) 0 50% / var(--tile) auto repeat-x;
+    will-change: transform;
+    animation: wind var(--drift) linear infinite;
+  }
+  .shadows {
+    --sprites: url('/map/clouds-shadow.webp'); --drift: var(--shadow-drift);
+    opacity: var(--shadow-opacity); mix-blend-mode: multiply;
+  }
+  .wisps .drift { --sprites: url('/map/clouds-wisp.webp'); --drift: var(--wisp-drift); }
+  .lows .drift  { --sprites: url('/map/clouds-low.webp');  --drift: var(--low-drift); }
 
-  /* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
-     default theme and 1.99:1 in elite, both below AA. Take the neutral ink, as
-     .btn.ghost already does and for the same reason. */
-  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+  @keyframes tour {
+    0%, 100% { transform: scale(calc(1 + (var(--stop0-zoom) - 1) * var(--depth))); transform-origin: var(--stop0-x) var(--stop0-y); }
+    16.667%  { transform: scale(calc(1 + (var(--stop1-zoom) - 1) * var(--depth))); transform-origin: var(--stop1-x) var(--stop1-y); }
+    33.333%  { transform: scale(calc(1 + (var(--stop2-zoom) - 1) * var(--depth))); transform-origin: var(--stop2-x) var(--stop2-y); }
+    50%      { transform: scale(calc(1 + (var(--stop3-zoom) - 1) * var(--depth))); transform-origin: var(--stop3-x) var(--stop3-y); }
+    66.667%  { transform: scale(calc(1 + (var(--stop4-zoom) - 1) * var(--depth))); transform-origin: var(--stop4-x) var(--stop4-y); }
+    83.333%  { transform: scale(calc(1 + (var(--stop5-zoom) - 1) * var(--depth))); transform-origin: var(--stop5-x) var(--stop5-y); }
+  }
+  @keyframes wind {
+    to { transform: translateX(calc(-1 * var(--tile))); }
+  }
 
-  .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
-  .checks li { display: flex; gap: .6rem; align-items: flex-start; font-size: .92rem; }
-  .checks li::before { content: "✓"; color: var(--color-success); font-weight: 700; flex: none; }
+  /* Mixed from --surface rather than a fixed white, so a dark theme dims the
+     map instead of washing it out; the copy sits on the solid side. */
+  .veil {
+    position: absolute; inset: 0; z-index: -2;
+    background:
+      linear-gradient(to bottom, transparent 55%, var(--surface) 98%),
+      linear-gradient(100deg,
+        var(--surface) 0%,
+        color-mix(in srgb, var(--surface) 88%, transparent) 38%,
+        color-mix(in srgb, var(--surface) 55%, transparent) 70%,
+        color-mix(in srgb, var(--surface) 35%, transparent) 100%);
+  }
+  @media (max-width: 48rem) {
+    .veil {
+      background:
+        linear-gradient(to bottom, transparent 55%, var(--surface) 98%),
+        color-mix(in srgb, var(--surface) 84%, transparent);
+    }
+  }
+
+  /* Tinted from the theme's own primary, so every swatch in the topbar
+     retints the splash rather than leaving a fixed color behind. */
+  .glow {
+    position: absolute; inset: -20% -10% auto auto; z-index: -1;
+    width: min(60rem, 120vw); aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(closest-side,
+      color-mix(in srgb, var(--color-primary) 28%, transparent),
+      transparent 70%);
+    filter: blur(20px);
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(-12%, 18%) scale(1.15); }
+  }
+
+  .inner { display: grid; gap: 1.5rem; justify-items: start; padding-inline: 1.25rem; }
+
+  .eyebrow {
+    display: flex; align-items: center; gap: .75rem; margin: 0;
+    font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute);
+  }
+  .eyebrow .badge { letter-spacing: .06em; }
+
+  h1 {
+    font-size: clamp(2.75rem, 10vw, 6rem); line-height: .98; letter-spacing: -.04em;
+    margin: 0;
+  }
+  .accent { color: var(--color-primary); }
+
+  .lede { font-size: clamp(1.05rem, 2.2vw, 1.3rem); color: var(--ink-soft); max-width: 44ch; margin: 0; }
+
+  .realms {
+    list-style: none; padding: 0; margin: .5rem 0 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem;
+  }
+  .realms li:not(.arrow) {
+    display: flex; flex-direction: column; gap: .1rem;
+    padding: .55rem .95rem; border-radius: var(--radius, 10px);
+    border: 1px solid var(--rule-strong); background: var(--surface-raised);
+    animation: rise .6s ease-out both;
+  }
+  .realms li:nth-child(3) { animation-delay: .15s; }
+  .realms li:nth-child(5) { animation-delay: .3s; }
+  .realms b { font-size: 1rem; }
+  .realms span { font-size: .75rem; color: var(--ink-mute); }
+  .realms .arrow { color: var(--ink-mute); }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(.5rem); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .ctas { gap: .75rem; margin-top: .75rem; }
+  /* An untoned ghost takes --color-primary, which is below AA on --surface in
+     two shipped themes; the neutral ink is legible in all six. */
+  .btn.ghost { color: var(--ink); }
+
+  .promises {
+    list-style: none; padding: 0; margin: 2rem 0 0;
+    display: grid; gap: 1rem 2rem; width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    border-top: 1px solid var(--rule); padding-top: 1.5rem;
+  }
+  .promises li { font-size: .92rem; color: var(--ink-soft); }
+  .promises b { color: var(--ink); display: block; margin-bottom: .2rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .layer, .drift, .glow, .realms li { animation: none; }
+  }
 </style>

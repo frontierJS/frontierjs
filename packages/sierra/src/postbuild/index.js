@@ -185,6 +185,9 @@ function isIndexable(url, routeTable) {
   const ok = routeTable.indexable ?? routeTable.indexed ?? []
   if (!ok.length) return true
   if (ok.includes(url)) return true
+  // A URL that IS a route answers for itself. `/:pkg/` matches `/secret/` too,
+  // and asking the pattern overruled the page's own noindex.
+  if ((routeTable.all ?? []).includes(url)) return false
 
   const known = (routeTable.all ?? []).some((p) => p === url || matchesPattern(url, p))
   if (!known) return true

@@ -144,6 +144,19 @@
   z-index:  var(--z-topbar);
 }
 
+/*
+ * The sticky bar the page scrolls under — the one place glass is not
+ * decoration, because what passes beneath it is the content. Same tokens
+ * as the surface lineage, so the frame and a Card cannot frost differently;
+ * the blur and the text changes are surface.css's unscoped `.glass`.
+ */
+.topbar.glass {
+  background: color-mix(in srgb, var(--topbar-bg, var(--surface)) var(--glass-alpha), transparent);
+}
+.sidebar.glass {
+  background: color-mix(in srgb, var(--sidebar-bg, var(--surface)) var(--glass-alpha), transparent);
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────── */
 .sidebar {
   grid-area:         sidebar;

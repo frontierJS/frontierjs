@@ -18,6 +18,7 @@
   export let placeholder   = 'Search commands…'
   export let maxWidth      = 580
   export let maxHeight     = '62vh'
+  export let searchGroups  = true
 
   let open   = true
   let ran    = ''
@@ -56,6 +57,7 @@
     placeholder={placeholder}
     maxWidth={maxWidth}
     maxHeight={maxHeight}
+    searchGroups={searchGroups}
     data-fixture="modes"
     onclose={() => { open = false; closes++ }}
     onquery={(q) => { asked = q }}

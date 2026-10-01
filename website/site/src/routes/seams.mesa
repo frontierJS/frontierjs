@@ -1,15 +1,15 @@
 ---
-title: "FrontierJS — the journey"
+title: "FrontierJS — the seams"
 description: "A single POST /api/leads, and every seam it crosses — seventeen named handoffs from the transport to the reactive UI."
 render: static
 ---
 <!--
-  The journey. The board, the two nodes, the legend and all seventeen
+  The seams. The board, the two nodes, the legend and all seventeen
   explanations are prerendered; the island draws the connectors, which are
   measured from where the boxes land, and runs the playback timer.
 -->
 <script>
-  import JourneyBoard from '../islands/JourneyBoard.mesa'
+  import SeamsBoard from '../islands/SeamsBoard.mesa'
 
   export let data = null
 
@@ -17,7 +17,7 @@ render: static
 </script>
 
 <div class="wrap head">
-  <p class="eyebrow">The journey</p>
+  <p class="eyebrow">The seams</p>
   <h1>One request, every seam it crosses.</h1>
   <p>A single <code>POST /api/leads</code>. Click a step, or walk it with <kbd>←</kbd> <kbd>→</kbd>.</p>
 </div>
@@ -122,7 +122,7 @@ render: static
   <span><a class="link" href="/showroom5/">&larr; Every package</a></span>
 </div>
 
-<JourneyBoard client:load />
+<SeamsBoard client:load />
 
 <style>
 .wrap { max-width: 92rem; margin-inline: auto; padding-inline: 1.25rem; }

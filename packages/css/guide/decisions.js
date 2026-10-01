@@ -282,7 +282,7 @@ var OUTCOMES = {
     lead: 'An action, taken now, on this page.',
     markup: function (c) { return '<button class="' + c + '" type="button">Save changes</button>' },
     tones: true,
-    treatments: ['outlined', 'ghost', 'raised', 'link', 'square'],
+    treatments: ['outlined', 'ghost', 'raised', 'glass', 'link', 'square'],
     states: [
       { label: 'Disabled', apply: 'disabled', why: 'the native attribute — it removes the button from the tab order too' },
       { label: 'Busy', apply: 'aria-busy="true"', cls: 'loading', why: '.loading paints the spinner; aria-busy is what announces it' },
@@ -421,7 +421,7 @@ var OUTCOMES = {
       return '<article class="' + c + '">\n  <h3>Invoice #4021</h3>\n  <p>Due in 6 days.</p>\n</article>'
     },
     tones: true,
-    treatments: ['raised', 'outlined'],
+    treatments: ['raised', 'outlined', 'glass'],
     states: [],
     instead: [
       { term: 'Tile', when: 'it is one number and a label' },
@@ -436,7 +436,7 @@ var OUTCOMES = {
       return '<article class="' + c + '">\n  <span class="tile-label">Revenue</span>\n  <span class="tile-value">£48,120</span>\n</article>'
     },
     tones: true,
-    treatments: ['raised', 'outlined'],
+    treatments: ['raised', 'outlined', 'glass'],
     states: [],
     instead: [
       { term: 'Card', when: 'there is prose in it' },
@@ -1012,7 +1012,7 @@ var OUTCOMES = {
     lead: 'The global bar across the top. Persists across navigation.',
     markup: function (c) { return '<header class="' + c + '">\n  …\n</header>' },
     tones: false,
-    treatments: [],
+    treatments: ['glass'],
     states: [],
     instead: [{ term: 'Bar', when: 'it is a strip inside a Screen rather than the app frame' }],
   },
@@ -1023,7 +1023,7 @@ var OUTCOMES = {
     lead: 'The primary navigation column.',
     markup: function (c) { return '<nav class="' + c + '" aria-label="Main">\n  …\n</nav>' },
     tones: false,
-    treatments: [],
+    treatments: ['glass'],
     states: [],
     instead: [{ term: 'Drawer', when: 'it is temporary and slides over the page' }],
   },

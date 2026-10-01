@@ -113,7 +113,11 @@ the package has no root entry.
 
 `Toaster`, `AlertProvider` and `ConfirmProvider` are mounted **once**, in the
 root layout. `CommandPalette` renders under `{#if commandPalette.open}`, which
-needs a `$: commandPalette.open` line to update.
+needs a `$: commandPalette.open` line to update. It matches each typed word on
+its own, against `label`, `sub` and `group`. A palette that holds rows as well
+as commands — bookmarks, customers — passes `searchGroups={false}`, or every
+row matches its group's heading, and `minimumScore` (0–1) to drop rows that
+match only thinly.
 
 ---
 

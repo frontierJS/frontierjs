@@ -1,7 +1,7 @@
 <script>
   // CommandPalette.mesa
   // Full ⌘K command palette. Converted from React. Dark-themed, keyboard navigable,
-  // grouped results, fuzzy search across label + sub + group.
+  // grouped results, fuzzy search across label + sub + group, word by word.
   //
   // ITEM SHAPE:
   //   {
@@ -49,6 +49,8 @@
   export let emptyText    = undefined  // (query: string) => string
   export let onclose      = undefined
   export let onquery      = undefined  // Observer: (query: string) => void, untrimmed, on every change
+  export let minimumScore = 0          // a word scoring at or below this matches nothing (0–1)
+  export let searchGroups = true       // whether a group's heading matches its rows
 
   // export var — snapshot at mount, layout never changes after open
   export var maxHeight     = '62vh'
@@ -77,9 +79,14 @@
   // Ranked across all three fields. This was `includes()` with no ordering at
   // all, so every command that contained the query came back in registration
   // order — typing the exact name of a command could leave it below six others
-  // that merely mention the word.
+  // that merely mention the word. Each word on its own, in any order: "theme
+  // dark" finds "Switch to dark theme", and "orders new" finds New order in
+  // the Orders group. `searchGroups={false}` is for a palette that holds rows
+  // as well as commands: every row matches its heading, so "boo" in an app
+  // with a Bookmarks group lists every bookmark it holds.
+  const keys = searchGroups ? ['label', 'group', 'sub'] : ['label', 'sub']
   const ranked = query.trim()
-    ? rank(items, query, { keys: ['label', 'group', 'sub'] })
+    ? rank(items, query, { keys, words: true, minimumScore })
     : null
 
   const filtered = ranked ? ranked.map(r => r.item) : items

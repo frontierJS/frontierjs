@@ -9,8 +9,12 @@
 
   Do not write a literal body tag in this comment. Vite injects the built script
   and stylesheet at the first textual match for it and does not skip comments.
+
+  No theme class on the body: Sierra writes it to the html element, and one
+  here re-declares every theme token below it, so the swatches do nothing
+  (FJS-501).
 -->
-<body class="theme-default">
+<body>
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

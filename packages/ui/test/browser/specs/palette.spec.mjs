@@ -157,6 +157,18 @@ export async function run(t) {
   await t.press('Escape')
   await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
 
+  /* ── word by word ──────────────────────────────────────────────────── */
+
+  // Each word is matched on its own, so the order they are typed in does not
+  // matter. Read as one run of letters, "order refund" matched nothing.
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.type('order refund')
+  await t.eventually(`${rows}.map(r => r.querySelector('.item-title').textContent.trim()).join(',')`,
+    'Refund an order', 'words typed out of order still find the command')
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+
   // A search with no hits has to say so rather than render an empty box.
   await t.press('k', 2)
   await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)

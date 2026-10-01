@@ -103,7 +103,7 @@ test('overlay: .raised, .outlined and .ghost all do something on a .btn', functi
   };
   cleanup();
 
-  ['raised', 'outlined', 'ghost'].forEach(function (variant) {
+  ['raised', 'outlined', 'ghost', 'glass'].forEach(function (variant) {
     var b = el('<button class="btn ' + variant + '">Save</button>');
     var changed =
       toRGB(style(b, 'background-color')).join() !== toRGB(base.bg).join() ||

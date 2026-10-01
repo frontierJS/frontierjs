@@ -1,5 +1,18 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-30 — `search`: `rank()` takes `words` and `weights`
+
+`rank(items, q, { words: true })` scores each whitespace-separated word on its
+own, in any key and any order, and every word must match: "issues github" finds
+*GitHub Issues*, which the query read as one run of letters in order does not.
+An item scores the better of its words' mean and the whole query read in order,
+so a name typed out in full still comes first. With `words`, `minimumScore`
+applies to each word, and a word marks only the fields where it cleared it.
+`weights: { url: 0.5 }` scales one key's score, so a title outranks an address
+that holds the same letters. Neither option set, `rank()` is unchanged. The
+callers are `@frontierjs/ui`'s CommandPalette and portal's home search box.
+Proved in `search.spec.js`.
+
 ## 2026-09-30 — `predicate`: `rel.some(expr)` is a node, and `evaluate` takes `resolveSome` (`FJS-D566`)
 
 `members.some(userId == auth().id)` parses to `{ type: 'some', rel, where }`. Inside the parentheses the relation has spent the one hop, so a dot or `check()` is refused at the token that makes it. `a.b.some(…)` names the to-many test rather than *crosses two relations*, and an empty `some()` is refused. A field named `some` read without a call is still a path. `evaluate` answers the node through `resolveSome`, default `null`, so an allow fails closed where there is no database to ask. The litestone side is its own entry.

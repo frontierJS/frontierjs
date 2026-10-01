@@ -1,0 +1,59 @@
+---
+title: The journey — FrontierJS
+description: Notes from building FrontierJS in the open — what got built, what broke, and what we decided.
+render: static
+---
+<!--
+  The journey's index. Every entry is a sibling .mesa file; the companion
+  reads their frontmatter, so publishing a post is adding a file with a date.
+-->
+<script>
+  export let data = null
+
+  const posts = data?.posts ?? []
+</script>
+
+<section class="container head">
+  <p class="eyebrow">The journey</p>
+  <h1>Building it in the open.</h1>
+  <p class="lede">
+    FrontierJS is not out yet. This is where we write down what got built, what
+    broke, and what we decided on the way there.
+  </p>
+</section>
+
+<section class="container">
+  <ol class="posts">
+    {#each posts as p}
+      <li>
+        <a class="post" href={`/journey/${p.slug}/`}>
+          <time datetime={p.date}>{p.when}</time>
+          <h2>{p.title}</h2>
+          <p>{p.summary}</p>
+          <span class="more">Read →</span>
+        </a>
+      </li>
+    {/each}
+  </ol>
+</section>
+
+<style>
+  section { padding-inline: 1.25rem; font-family: var(--font-primary); }
+  .head { padding-block: 5rem 2rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2.25rem, 6vw, 3.5rem); line-height: 1.05; letter-spacing: -.03em; margin: .3em 0; }
+  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 50ch; margin: 0; }
+
+  .posts { list-style: none; padding: 0; margin: 0 0 5rem; display: grid; gap: 1rem; max-width: 46rem; }
+  .post {
+    display: grid; gap: .35rem; padding: 1.5rem; text-decoration: none; color: var(--ink);
+    border: 1px solid var(--rule); border-radius: var(--radius, 10px); background: var(--surface-raised);
+    transition: border-color .15s, transform .15s;
+  }
+  .post:hover { border-color: var(--rule-strong); transform: translateY(-2px); }
+  .post time { font-size: .8rem; color: var(--ink-mute); }
+  .post h2 { font-size: 1.35rem; letter-spacing: -.01em; margin: 0; }
+  .post p { color: var(--ink-soft); margin: 0; }
+  .post .more { font-size: .875rem; font-weight: 600; margin-top: .4rem; }
+  @media (prefers-reduced-motion: reduce) { .post { transition: none; } .post:hover { transform: none; } }
+</style>

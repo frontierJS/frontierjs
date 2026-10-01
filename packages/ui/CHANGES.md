@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-09-30 — `CommandPalette` matches word by word, and can leave the group out
+
+The palette ranks with `rank(…, { words: true })`: each typed word is scored on
+its own, in any field and any order, so "order refund" finds *Refund an order*,
+which read as one run of letters it did not. Two props. `searchGroups` (default
+`true`, as before) decides whether a group's heading matches its rows: portal's
+palette holds every bookmark under a Bookmarks group, and "boo" listed all of
+them. `minimumScore` drops a row whose words only match thinly. Proved in
+`palette.spec.mjs` and `palette-modes.spec.mjs`.
+
 ## 2026-09-30 — `CommandPalette` reports its query (`FJS-1318`, half)
 
 `onquery(query)` fires on every change to the typed words, the ✕ included.

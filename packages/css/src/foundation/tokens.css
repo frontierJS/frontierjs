@@ -163,6 +163,20 @@
   --surface-shadow: none;
 
   /*
+   * ── Glass — the .glass treatment's two numbers ────────────
+   *
+   * The package cannot know what is behind a glass surface, so the alpha
+   * is the floor at which --ink and --ink-soft clear AA over ANY ground,
+   * pure black and pure white included. 85% is that floor across every
+   * shipped theme (basecamp needs 84%); the blur is decoration and is not
+   * counted, which is why the guarantee holds where backdrop-filter does
+   * not render. A theme that lowers the alpha is graded by
+   * `glass: ink and ink-soft clear AA over any ground`.
+   */
+  --glass-alpha: 85%;
+  --glass-blur:  16px;
+
+  /*
    * --badge-radius is deliberately NOT declared here. Badges follow
    * --btn-radius via a use-site fallback in badges.css, so a theme that
    * squares off buttons squares off badges too, for free.
@@ -549,6 +563,22 @@
   --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  /* 24px */
   --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  /* 32px */
   --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  /* 48px */
+}
+
+/*
+ * ── Respect prefers-reduced-transparency ───────────────────
+ *
+ * The reader's setting beats the theme's, so it is !important on `*` for
+ * the same reason the motion guard below is: a theme sets --glass-alpha on
+ * `.theme-*`, which an inherited :root value would lose to.
+ */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  *,
+  *::before,
+  *::after {
+    --glass-alpha: 100% !important;
+    --glass-blur:  0px !important;
+  }
 }
 
 /* ── Respect prefers-reduced-motion ─────────────────────────── */

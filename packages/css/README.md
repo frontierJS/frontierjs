@@ -56,7 +56,7 @@ learning the system.
 | Kind | Composes | What it names |
 |---|---|---|
 | **Element** | onto valid markup | *What a thing is* — `btn` `card` `field` `table` `tabs` |
-| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost`, `stack` `cluster` |
+| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost` `glass`, `stack` `cluster` |
 | **Anatomy** | no — nests | *A position inside* an Element — `alert-icon`, `feed-dot`, `surface-header` |
 
 Chaining is for Treatments. Anatomy nests:
@@ -131,7 +131,8 @@ rule of its own, the token that would have carried it is missing.
 | `--density` | the whole space ladder, uniformly |
 | `--space-*-base` | the ladder's **shape** — a rung is `base × density`, so this is how a theme is tight at the small rungs and generous at the large ones |
 | `--text-*` · `--leading-*` · `--font-*` | the type scale, the leading ladder, both faces |
-| `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content |
+| `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content. `--app-bg` feeds the `background` shorthand, so it takes a gradient |
+| `--glass-alpha` · `--glass-blur` | the `.glass` treatment. **`--glass-alpha` is a contrast floor, not a look** — at the default 85% `--ink` and `--ink-soft` clear AA over any ground, and below it the guarantee is gone. The suite grades every shipped theme; it cannot grade an app's override |
 | `--label-font-weight` · `--label-text-transform` · `--label-letter-spacing` | the small caps that name a region — table head, tile label, nav group. One role, one triple |
 | `--heading-font-weight` · `--heading-letter-spacing` | all six heading levels at once. Unset, each keeps its own optical value |
 | `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` | how quickly the product moves. `--motion-spin` and `--motion-shimmer` are the two loops |
@@ -300,7 +301,7 @@ result wants Uno's `text-sm` as the body class.
 **Frame** `app` `shell` `topbar` `sidebar` `screen` `pane` `view`
 &nbsp;&nbsp;— the application grid, with `sidebar-first` and `viewport` variants
 
-**Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `link`,
+**Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `glass`, `link`,
 `loading`) · `pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` ·
 `icon`
 &nbsp;&nbsp;— one lineage, shared layout and auto-contrast

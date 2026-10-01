@@ -73,6 +73,10 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
   --surface-shadow: none;
 
   
+  --glass-alpha: 85%;
+  --glass-blur:  16px;
+
+  
 
   
   --btn-font-weight:    600;
@@ -203,6 +207,16 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
   --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  
   --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  
   --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  
+}
+
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  *,
+  *::before,
+  *::after {
+    --glass-alpha: 100% !important;
+    --glass-blur:  0px !important;
+  }
 }
 
 
@@ -725,13 +739,15 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
 *::before,
 *::after {
   --tone-ink: oklch(from var(--bg-mix)
-                clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+                clamp(calc(var(--tone-l-min) + var(--_tone-inset, 0)), l,
+                      calc(var(--tone-l-max) - var(--_tone-inset, 0))) c h);
 
   --tint-surface: color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --tint-rule:    color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
   
   --tint-ink:     oklch(from color-mix(in srgb, var(--bg-mix) 55%, var(--ink))
-                    clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+                    clamp(calc(var(--tone-l-min) + var(--_tone-inset, 0)), l,
+                          calc(var(--tone-l-max) - var(--_tone-inset, 0))) c h);
 }
 }
 @layer base {
@@ -796,6 +812,20 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
     --_surface-border: transparent;
     box-shadow:       none;
   }
+  
+  &.glass {
+    --surface-bg:     color-mix(in srgb,
+                        var(--surface-ground, var(--surface)) var(--glass-alpha), transparent);
+    --_surface-border: color-mix(in srgb,
+                        var(--surface-tint-border, var(--rule)) var(--glass-alpha), transparent);
+  }
+}
+
+
+.glass {
+  --ink-mute:      var(--ink-soft);
+  --_tone-inset:   0.06;
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
 }
 
 
@@ -970,6 +1000,14 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   position: sticky;
   inset-block-start: 0;
   z-index:  var(--z-topbar);
+}
+
+
+.topbar.glass {
+  background: color-mix(in srgb, var(--topbar-bg, var(--surface)) var(--glass-alpha), transparent);
+}
+.sidebar.glass {
+  background: color-mix(in srgb, var(--sidebar-bg, var(--surface)) var(--glass-alpha), transparent);
 }
 
 
@@ -1376,6 +1414,15 @@ code[language] > span::before {
   border-color: transparent;
   box-shadow:   none;
 }
+
+
+.btn.glass {
+  --btn-ink:       var(--tint-ink, var(--ink));
+  background:      color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  color:           var(--btn-ink);
+  border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
+}
+
 .btn.ghost:hover {
   background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
   

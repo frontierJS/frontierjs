@@ -1,0 +1,291 @@
+<!--
+  The splash tuner's controls, wired to the splash in its frame.
+
+  The tour is CSS on the splash's backdrop: a length, an easing and six stops,
+  each a zoom and the point it zooms toward. This writes those variables onto
+  the backdrop element inside the frame, so the frame shows the shipped CSS
+  with new numbers rather than a reimplementation of it.
+
+  The tour runs on three layers, the ground and two cloud decks, and they have
+  to stay on one clock: a deck a beat off its ground points its zoom at a
+  different spot. So every play, pause and seek goes to all three, and a
+  running tour is restarted after every change so its keyframes re-read the
+  stops, with the time it was at carried across, or the tour would jump back
+  to stop 1 on every slider move.
+
+  Aim shows the map unzoomed and takes a click as the stop's focus point. The
+  focus point holds still on screen as the map scales toward it, so the spot
+  clicked on the full map is the spot the stop closes in on. The clouds are
+  hidden while aiming, or a click would land on whatever drifted over it.
+-->
+<script>
+  $.onMount(() => {
+    const root  = document.querySelector('[data-tune]')
+    const frame = root?.querySelector('[data-frame]')
+    if (!root || !frame) return
+
+    const KEY    = 'fjs-splash-tune'
+    const STOPS  = 6
+    const CLOUDS = { shadow: ['opacity', 'drift'], wisp: ['opacity', 'drift', 'depth'], low: ['opacity', 'drift', 'depth'] }
+
+    const q       = (sel) => root.querySelector(sel)
+    const fields  = [...root.querySelectorAll('[data-stop]')]
+    const play    = q('[data-play]')
+    const clock   = q('[data-clock]')
+    const scrub   = q('[data-scrub]')
+    const length  = q('[data-length]')
+    const easing  = q('[data-easing]')
+    const veilOff = q('[data-veil-off]')
+    const out     = q('[data-out]')
+    const aimBox  = q('[data-aim]')
+    const aimName = q('[data-aim-label]')
+
+    let backdrop = null
+    let layers   = []
+    let decks    = []
+    let veil     = null
+    let defaults = null
+    let state    = null
+    let aiming   = -1
+    let raf      = 0
+
+    const round = (n, d) => +(+n).toFixed(d)
+    const clone = (s) => JSON.parse(JSON.stringify(s))
+
+    const fromCss = () => {
+      const cs   = frame.contentWindow.getComputedStyle(backdrop)
+      const read = (name) => cs.getPropertyValue(name).trim()
+      return {
+        length:  parseFloat(read('--tour-length')),
+        easing:  read('--tour-easing'),
+        veilOff: false,
+        stops:   Array.from({ length: STOPS }, (_, i) => ({
+          zoom: parseFloat(read(`--stop${i}-zoom`)),
+          x:    parseFloat(read(`--stop${i}-x`)),
+          y:    parseFloat(read(`--stop${i}-y`)),
+        })),
+        clouds: Object.fromEntries(Object.entries(CLOUDS).map(([deck, keys]) =>
+          [deck, Object.fromEntries(keys.map((k) => [k, parseFloat(read(`--${deck}-${k}`))]))])),
+      }
+    }
+
+    const load = () => {
+      try { return JSON.parse(localStorage.getItem(KEY)) } catch { return null }
+    }
+    const save = () => {
+      try { localStorage.setItem(KEY, JSON.stringify(state)) } catch {}
+    }
+
+    const tours = () => layers.flatMap((el) => el.getAnimations())
+    const lead  = () => tours()[0] ?? null
+    const total = () => state.length * 1000
+    const unit  = { opacity: '', drift: 's', depth: '' }
+
+    const block = () => [
+      `    --tour-length: ${state.length}s;`,
+      `    --tour-easing: ${state.easing};`,
+      ...state.stops.map((p, i) => {
+        const z = `--stop${i}-zoom: ${p.zoom};`
+        return `    ${z.padEnd(19)} --stop${i}-x: ${p.x}%; --stop${i}-y: ${p.y}%;`
+      }),
+      ...Object.entries(CLOUDS).map(([deck, keys]) => '    ' + keys
+        .map((k) => `--${deck}-${k}: ${state.clouds[deck][k]}${unit[k]};`.padEnd(k === 'depth' ? 0 : 22))
+        .join(' ').trimEnd()),
+    ].join('\n')
+
+    const paint = () => {
+      length.value    = state.length
+      easing.value    = state.easing
+      veilOff.checked = state.veilOff
+      if (easing.value !== state.easing) {
+        easing.append(new Option(state.easing, state.easing))
+        easing.value = state.easing
+      }
+      fields.forEach((f, i) => {
+        for (const input of f.querySelectorAll('[data-k]')) {
+          const v = state.stops[i][input.dataset.k]
+          input.value = v
+          input.nextElementSibling.value = input.dataset.k === 'zoom' ? `${v}×` : `${v}%`
+        }
+      })
+      for (const input of root.querySelectorAll('[data-cloud]')) {
+        const v = state.clouds[input.dataset.cloud][input.dataset.k]
+        input.value = v
+        input.nextElementSibling.value = input.dataset.k === 'opacity' ? `${Math.round(v * 100)}%`
+          : input.dataset.k === 'drift' ? `${v}s` : `${v}×`
+      }
+      out.value = block()
+    }
+
+    const apply = () => {
+      if (!backdrop) return
+      const s = backdrop.style
+      s.setProperty('--tour-length', `${state.length}s`)
+      s.setProperty('--tour-easing', state.easing)
+      state.stops.forEach((p, i) => {
+        s.setProperty(`--stop${i}-zoom`, p.zoom)
+        s.setProperty(`--stop${i}-x`, `${p.x}%`)
+        s.setProperty(`--stop${i}-y`, `${p.y}%`)
+      })
+      for (const [deck, keys] of Object.entries(CLOUDS)) {
+        for (const k of keys) s.setProperty(`--${deck}-${k}`, `${state.clouds[deck][k]}${unit[k]}`)
+      }
+      veil.style.opacity = state.veilOff ? '0' : ''
+
+      const was    = lead()
+      const at     = was?.currentTime ?? 0
+      const paused = was?.playState === 'paused'
+      for (const el of layers) el.style.animationName = 'none'
+      backdrop.getBoundingClientRect()
+      for (const el of layers) el.style.animationName = ''
+      for (const a of tours()) {
+        a.currentTime = at % total()
+        if (paused) a.pause()
+      }
+      paint()
+      save()
+    }
+
+    const seek = (ms) => {
+      for (const a of tours()) {
+        a.pause()
+        a.currentTime = ms
+      }
+    }
+
+    const tick = () => {
+      raf = requestAnimationFrame(tick)
+      const a = lead()
+      if (!a || !state) return
+      const L = total()
+      const t = (a.currentTime ?? 0) % L
+      const mmss = (ms) => {
+        const sec = Math.floor(ms / 1000)
+        return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+      }
+      clock.textContent = `${mmss(t)} / ${mmss(L)}`
+      if (document.activeElement !== scrub) scrub.value = Math.round(t / L * 1000)
+      play.textContent = a.playState === 'paused' ? 'Play' : 'Pause'
+      const leg = Math.round(t / L * STOPS) % STOPS
+      fields.forEach((f, i) => f.classList.toggle('now', i === leg))
+    }
+
+    // ─── aim ────────────────────────────────────────────────────────────────
+
+    const endAim = () => {
+      if (aiming < 0) return
+      fields[aiming].classList.remove('aiming')
+      aimBox.hidden = true
+      for (const el of layers) el.style.animation = ''
+      for (const el of decks) el.style.visibility = ''
+      aiming = -1
+    }
+
+    const startAim = (i) => {
+      endAim()
+      aiming = i
+      fields[i].classList.add('aiming')
+      aimName.textContent = String(i + 1)
+      aimBox.hidden = false
+      for (const el of layers) el.style.animation = 'none'
+      for (const el of decks) el.style.visibility = 'hidden'
+    }
+
+    const onAimClick = (e) => {
+      if (aiming < 0) return
+      const f = frame.getBoundingClientRect()
+      const b = backdrop.getBoundingClientRect()
+      const pct = (v) => Math.max(0, Math.min(100, Math.round(v * 100)))
+      const i = aiming
+      state.stops[i].x = pct((e.clientX - f.left - b.left) / b.width)
+      state.stops[i].y = pct((e.clientY - f.top - b.top) / b.height)
+      endAim()
+      apply()
+      seek(i / STOPS * total())
+    }
+
+    // ─── wiring ─────────────────────────────────────────────────────────────
+
+    const onInput = (e) => {
+      const t = e.target
+      if (t === scrub) return seek(scrub.value / 1000 * total())
+      if (t === length) {
+        if (+length.value >= 10) { state.length = +length.value; apply() }
+        return
+      }
+      if (t === easing)  { state.easing = easing.value; return apply() }
+      if (t === veilOff) { state.veilOff = veilOff.checked; return apply() }
+      if (t.dataset.cloud) {
+        state.clouds[t.dataset.cloud][t.dataset.k] = round(t.value, 2)
+        return apply()
+      }
+      const f = t.closest('[data-stop]')
+      if (f && t.dataset.k) {
+        state.stops[+f.dataset.stop][t.dataset.k] = round(t.value, 2)
+        apply()
+      }
+    }
+
+    const onClick = async (e) => {
+      const t = e.target
+      const f = t.closest('[data-stop]')
+      if (t.closest('[data-play]')) {
+        const paused = lead()?.playState === 'paused'
+        for (const a of tours()) paused ? a.play() : a.pause()
+      } else if (f && t.closest('[data-go]')) {
+        seek(+f.dataset.stop / STOPS * total())
+      } else if (f && t.closest('[data-aim-at]')) {
+        startAim(+f.dataset.stop)
+      } else if (t.closest('[data-copy]')) {
+        try { await navigator.clipboard.writeText(out.value) }
+        catch { out.select(); document.execCommand('copy') }
+        t.textContent = 'Copied'
+        setTimeout(() => { t.textContent = 'Copy' }, 1200)
+      } else if (t.closest('[data-reset]')) {
+        state = clone(defaults)
+        apply()
+      }
+    }
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') endAim()
+    }
+
+    // The frame reloads when a link inside it is followed, and a page that is
+    // not the splash has no backdrop to tune.
+    const attach = () => {
+      const doc = frame.contentDocument
+      backdrop = doc?.querySelector('.splash .backdrop') ?? null
+      veil     = doc?.querySelector('.splash .veil') ?? null
+      root.classList.toggle('detached', !backdrop)
+      if (!backdrop) return
+      layers = [...backdrop.querySelectorAll('.layer')]
+      decks  = layers.filter((el) => !el.classList.contains('ground'))
+      backdrop.removeAttribute('style')
+      defaults = fromCss()
+      const kept = load()
+      state = kept?.stops?.length === STOPS ? kept : clone(defaults)
+      state.clouds = { ...clone(defaults.clouds), ...state.clouds }
+      apply()
+    }
+
+    frame.addEventListener('load', attach)
+    if (frame.contentDocument?.readyState === 'complete') attach()
+    root.addEventListener('input', onInput)
+    root.addEventListener('change', onInput)
+    root.addEventListener('click', onClick)
+    aimBox.addEventListener('click', onAimClick)
+    addEventListener('keydown', onKey)
+    raf = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      frame.removeEventListener('load', attach)
+      root.removeEventListener('input', onInput)
+      root.removeEventListener('change', onInput)
+      root.removeEventListener('click', onClick)
+      aimBox.removeEventListener('click', onAimClick)
+      removeEventListener('keydown', onKey)
+    }
+  })
+</script>

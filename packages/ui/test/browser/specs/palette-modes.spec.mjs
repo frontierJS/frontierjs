@@ -58,6 +58,19 @@ export async function run(t) {
   await t.eventually(`${labels}.join(',')`, 'Switch theme',
     'a query matches the GROUP name, case-insensitively')
 
+  // A palette holding rows as well as commands turns that off: every row
+  // matches its heading, so a Bookmarks group answers "boo" with all of them.
+  await t.mount('palette-modes', { searchGroups: false })
+  await t.type('SETTINGS')
+  await t.eventually(`${labels}.length`, 0,
+    'searchGroups={false} leaves a group name matching none of its rows')
+
+  // A word can land in the group while another lands in the label.
+  await t.mount('palette-modes')
+  await t.type('new orders')
+  await t.eventually(`${labels}.join(',')`, 'New order',
+    'and one word may match the group while another matches the label')
+
   await t.mount('palette-modes')
   await t.type('ordered')
   await t.eventually(`${labels}.join(',')`, 'Customers',

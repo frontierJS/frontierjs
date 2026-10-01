@@ -99,6 +99,104 @@ test('search: an empty list is answered, not iterated', function () {
   assert.equal(rank(null, 'x').length, 0)
 })
 
+/* ── rank, by words ────────────────────────────────────────────────── */
+
+const SITES = [
+  { name: 'GitHub Issues', url: 'https://github.com/issues' },
+  { name: 'Hacker News',   url: 'https://news.ycombinator.com' },
+  { name: 'Rust std docs', url: 'https://doc.rust-lang.org/std' },
+]
+
+test('search: words match in any order, which one query read in order does not', function () {
+  // The query read as one run of letters needs them in order, so a person who
+  // types the words the other way round finds nothing.
+  assert.equal(rank(SITES, 'issues github', { keys: ['name'] }).length, 0)
+
+  const out = rank(SITES, 'issues github', { keys: ['name'], words: true })
+  assert.equal(out.length, 1)
+  assert.equal(out[0].item.name, 'GitHub Issues')
+})
+
+test('search: every word must match, each in whichever field it can', function () {
+  // `rust` lands in the name and `lang` only in the address: one row.
+  const out = rank(SITES, 'lang rust', { keys: ['name', 'url'], words: true })
+  assert.equal(out.length, 1)
+  assert.equal(out[0].item.name, 'Rust std docs')
+  assert.ok(out[0].byKey.name.length > 0 && out[0].byKey.url.length > 0, 'each field marks its own word')
+
+  assert.equal(rank(SITES, 'rust zzz', { keys: ['name', 'url'], words: true }).length, 0)
+})
+
+test('search: with words, each word must clear the minimum on its own', function () {
+  // `hn` finds Hacker News and, thinly, two addresses that hold an h then an n.
+  const loose = rank(SITES, 'hn', { keys: ['name', 'url'], words: true })
+  assert.ok(loose.length > 1)
+  const tight = rank(SITES, 'hn', { keys: ['name', 'url'], words: true, minimumScore: 0.2 })
+  assert.deepEqual(tight.map((r) => r.item.name), ['Hacker News'])
+})
+
+test('search: a word marks only the fields where it cleared the minimum', function () {
+  // `hn` scores 0.1 against this address: an h, then an n much later.
+  const rows = [{ name: 'Hacker News', url: 'https://doc.rust-lang.org/std' }]
+  assert.ok(score(rows[0].url, 'hn').score < 0.2)
+  const [hn] = rank(rows, 'hn', { keys: ['name', 'url'], words: true, minimumScore: 0.2 })
+  assert.equal(hn.key, 'name')
+  assert.deepEqual(segments(hn.item.name, hn.ranges).filter((p) => p.match).map((p) => p.text), ['H', 'N'])
+  assert.equal(hn.byKey.url, undefined)
+})
+
+test('search: the whole query in order still ranks a name typed out first', function () {
+  const rows = [{ name: 'News Hacker Digest' }, { name: 'Hacker News' }]
+  const out = rank(rows, 'hacker news', { keys: ['name'], words: true })
+  assert.equal(out[0].item.name, 'Hacker News')
+})
+
+test('search: one word with words on scores as the plain path does', function () {
+  const plain = rank(SITES, 'rust', { keys: ['name', 'url'] })
+  const byWord = rank(SITES, 'rust', { keys: ['name', 'url'], words: true })
+  assert.deepEqual(byWord.map((r) => [r.item.name, r.score, r.key]), plain.map((r) => [r.item.name, r.score, r.key]))
+})
+
+test('search: words over plain strings answer flat ranges and no key', function () {
+  const out = rank(['Grace Hopper', 'Ada Lovelace'], 'love ada', { words: true })
+  assert.equal(out.length, 1)
+  assert.equal(out[0].key, null)
+  assert.equal(out[0].byKey, undefined)
+  assert.ok(out[0].ranges.length >= 2)
+})
+
+test('search: an empty query with words answers every item, as the plain path does', function () {
+  assert.deepEqual(rank(['b', 'a'], '  ', { words: true }), rank(['b', 'a'], '  '))
+})
+
+/* ── rank, weighted ────────────────────────────────────────────────── */
+
+test('search: a weight scales one field, so a name outranks an address', function () {
+  const rows = [
+    { name: 'Some page',  url: 'https://example.com/fresh' },
+    { name: 'FreshBooks', url: 'https://freshbooks.com' },
+  ]
+  const out = rank(rows, 'fresh', { keys: ['name', 'url'], weights: { url: 0.5 } })
+  assert.equal(out[0].item.name, 'FreshBooks')
+  const page = out.find((r) => r.item.name === 'Some page')
+  assert.equal(page.key, 'url')
+  assert.ok(page.score <= 0.5, 'the address scored at most half')
+})
+
+test('search: a nested key is weighted by its dotted name', function () {
+  const rows = [{ who: { name: 'Ada' }, note: 'ada' }]
+  const [r] = rank(rows, 'ada', { keys: [['who', 'name'], 'note'], weights: { 'who.name': 0.1 } })
+  assert.equal(r.key, 'note')
+  assert.ok(r.byKey['who.name'].length > 0)
+})
+
+test('search: ties sort by the first key, case-insensitively', function () {
+  const rows = [{ name: 'beta x' }, { name: 'Alfa x' }]
+  const out = rank(rows, 'x', { keys: ['name'], words: true })
+  assert.equal(out[0].score, out[1].score)
+  assert.deepEqual(out.map((r) => r.item.name), ['Alfa x', 'beta x'])
+})
+
 /* ── mergeRanges ───────────────────────────────────────────────────── */
 
 test('search: overlapping and touching ranges merge into one run', function () {

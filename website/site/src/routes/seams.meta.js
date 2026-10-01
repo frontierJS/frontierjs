@@ -1,11 +1,11 @@
-// site/src/routes/journey.meta.js — the journey board, built.
+// site/src/routes/seams.meta.js — the seams board, built.
 //
 // The seventeen steps, the two nodes, the key and all seventeen explanations
 // are in the emitted page. What cannot be prerendered is the connectors: they
 // are measured from where the boxes actually land, so the island draws them at
 // mount and again on resize.
 
-import { T, STEPS, NODES } from '../data/journey.js'
+import { T, STEPS, NODES } from '../data/seams.js'
 
 export async function load() {
   return {

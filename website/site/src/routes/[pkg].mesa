@@ -110,7 +110,7 @@ render: static
 
 <style>
   .subnav {
-    position: sticky; top: 3.05rem; z-index: 45;
+    position: sticky; top: var(--sticky-offset); z-index: 45;
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
   }

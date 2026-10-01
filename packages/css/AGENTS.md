@@ -98,7 +98,7 @@ Tones are element-scoped (`inherits: false`) — an untoned button inside a
 
 ## Treatments — chain onto anything
 
-**Surface look** `raised` · `outlined` · `ghost` · `bordered`
+**Surface look** `raised` · `outlined` · `ghost` · `glass` · `bordered`
 **Density** `dense` · `roomy` — these **inherit**, unlike tones. `dense` on a
 Pane reaches every Card, Row and Field inside it. That asymmetry is deliberate:
 a tone is a fact about one element, density is a fact about a region.

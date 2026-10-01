@@ -83,6 +83,37 @@
     --_surface-border: transparent;
     box-shadow:       none;
   }
+  /*
+   * The fill is the UNTONED ground made translucent. A 10% tint behind
+   * frosted glass reads as nothing over a gradient, and it costs --ink-soft
+   * the margin it needs, so a tone on glass is its edge and its text.
+   */
+  &.glass {
+    --surface-bg:     color-mix(in srgb,
+                        var(--surface-ground, var(--surface)) var(--glass-alpha), transparent);
+    --_surface-border: color-mix(in srgb,
+                        var(--surface-tint-border, var(--rule)) var(--glass-alpha), transparent);
+  }
+}
+
+/*
+ * ── Glass — what it changes about text, on whatever carries it ──
+ *
+ * The fill is each tier's own (above, buttons.css, frame.css); this is the
+ * part that is the same everywhere, so it is written once and unscoped.
+ *
+ * Both text changes exist because the ground is unknown — an app's
+ * gradient — and `glass: ink and ink-soft clear AA over any ground` grades
+ * over pure black and pure white. --ink-mute folds into --ink-soft: no
+ * alpha short of opaque keeps a third step legible over both (it needs
+ * ~95%). The tone window narrows from both ends, which darkens the tone on
+ * a light theme and lightens it on a dark one without knowing which this
+ * is — tones.css reads --_tone-inset.
+ */
+.glass {
+  --ink-mute:      var(--ink-soft);
+  --_tone-inset:   0.06;
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
 }
 
 /*

@@ -331,3 +331,77 @@ test('contrast: body text clears AA on every theme surface', function () {
     failures.length + ' neutral text pairs below AA:\n        ' + failures.join('\n        ')
   );
 });
+
+/*
+ * ── Glass ───────────────────────────────────────────────────────────
+ *
+ * A glass surface lets the ground show through, and the package does not
+ * know the ground — it is an app's gradient. So legibility is graded over
+ * the two extremes any ground lies between: the measured fill composited
+ * on pure black and on pure white. Blur only averages the ground, which
+ * keeps it inside that range, so passing both is passing every ground.
+ *
+ * The probe children read the ramp the way a consumer does — `--ink-mute`
+ * by name — so the fold to --ink-soft on glass is what is being graded.
+ */
+var GLASS = [
+  { name: '.card.glass', html: '<div class="card glass TONE"><span>Body</span><span style="color: var(--ink-soft)">Soft</span><span style="color: var(--ink-mute)">Mute</span></div>' },
+  { name: '.btn.glass', html: '<button class="btn glass TONE">Save</button>' },
+  { name: '.topbar.glass', html: '<header class="topbar glass"><span style="color: var(--ink)">Body</span><span style="color: var(--ink-soft)">Soft</span><span style="color: var(--ink-mute)">Mute</span></header>' },
+];
+
+function over(fill, ground) {
+  var f = toRGB(fill);
+  return 'rgb(' + [0, 1, 2].map(function (i) {
+    return Math.round(f[i] * f[3] + ground[i] * (1 - f[3]));
+  }).join(', ') + ')';
+}
+
+test('glass: ink and ink-soft clear AA over any ground', function () {
+  var failures = [];
+
+  GLASS.forEach(function (subject) {
+    THEMES.forEach(function (theme) {
+      ['', 'danger', 'success'].forEach(function (tone) {
+        if (tone && /topbar/.test(subject.name)) return;
+        var node = themed(theme, subject.html.replace('TONE', tone));
+        var fill = style(node, 'background-color');
+        var inks = node.children.length ? [].slice.call(node.children) : [node];
+
+        inks.forEach(function (ink) {
+          [[0, 0, 0], [255, 255, 255]].forEach(function (ground) {
+            var ratio = contrast(style(ink, 'color'), over(fill, ground));
+            if (ratio < AA) {
+              failures.push(
+                subject.name + (tone ? '.' + tone : '') + ' "' + ink.textContent +
+                '" in theme-' + theme + ' over ' + (ground[0] ? 'white' : 'black') +
+                '  ' + ratio.toFixed(2) + ':1'
+              );
+            }
+          });
+        });
+        cleanup();
+      });
+    });
+  });
+
+  assert.equal(
+    failures.length,
+    0,
+    failures.length + ' glass text pairs below AA:\n        ' + failures.join('\n        ')
+  );
+});
+
+test('glass: the fill is translucent, and the reader can make it opaque', function () {
+  var node = el('<div class="card glass">x</div>');
+  var a = toRGB(style(node, 'background-color'))[3];
+  assert.ok(a > 0 && a < 1, '.card.glass paints an alpha of ' + a + ' — the treatment does nothing');
+  cleanup();
+
+  var guard = allRules().some(function (r) {
+    return r.parentRule && r.parentRule.media &&
+      /prefers-reduced-transparency/.test(r.parentRule.media.mediaText) &&
+      /--glass-alpha:\s*100%\s*!important/.test(r.cssText);
+  });
+  assert.ok(guard, 'no prefers-reduced-transparency guard sets --glass-alpha to 100%');
+});

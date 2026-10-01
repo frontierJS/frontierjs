@@ -177,7 +177,7 @@ const NOT_A_TERM = {
   /*
    * Treatments. Orthogonal, compose onto anything, name no component.
    */
-  treatment: ['raised', 'outlined', 'ghost', 'bordered'],
+  treatment: ['raised', 'outlined', 'ghost', 'glass', 'bordered'],
 
   /*
    * Density. The third axis, and the only one that INHERITS — a tone is a

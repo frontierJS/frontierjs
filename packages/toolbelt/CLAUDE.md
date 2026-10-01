@@ -160,7 +160,9 @@ src/predicate/       the `.lite` expression language, whole. `tokenize.js` is th
                      compilation (`FJS-D259`)
 src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
                      `LICENSE` beside it). Two callers, both in @frontierjs/ui:
-                     CommandPalette and MultiSelect
+                     CommandPalette and MultiSelect. `rank`'s `words` and
+                     `weights` call the scorer per word per field themselves,
+                     because QuickScore scores one query and keeps one key
 src/hooks/           the four-phase resource pipeline — before · after · around
                      · error — plus `hookContext`/`answered`, which is whether
                      anything ever produced a result, and `hookChainMessage`,

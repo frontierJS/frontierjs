@@ -1,0 +1,46 @@
+---
+title: Where this starts — The journey
+description: What FrontierJS is, why it exists, and what this journal is for.
+date: 2026-09-30
+render: static
+---
+<script>
+  import JourneyPost from '../../components/JourneyPost.mesa'
+</script>
+
+<JourneyPost>
+  <time datetime="2026-09-30">September 30, 2026</time>
+  <h1>Where this starts</h1>
+
+  <p>
+    Every app we have built had the same shape. A database. An API in front of
+    it. A UI in front of that. And between each pair, a layer of glue that
+    restated what the layer beside it already knew: the fields, the rules, who
+    may see what.
+  </p>
+
+  <p>
+    <strong>FrontierJS starts from the other end.</strong> You write the schema
+    — one <code>.lite</code> file — and the rest is derived from it. The model
+    knows its fields, so the API validates them. The model knows who may read a
+    row, so every query is filtered before it runs. The UI asks the same
+    schema what a form needs, so the form is already right.
+  </p>
+
+  <h2>Three realms, one seed</h2>
+  <ul>
+    <li><strong>Data</strong> — the Model, declared in the schema, with access on it.</li>
+    <li><strong>API</strong> — the Service, which a model gets for free and you extend.</li>
+    <li><strong>UI</strong> — the Resource, the same data in the browser, live.</li>
+  </ul>
+
+  <h2>What this journal is</h2>
+  <p>
+    FrontierJS is not released yet. It is pre-alpha, and we would rather show
+    the work than announce it. These entries are the decisions, the dead ends
+    and the things that broke — written while they are still fresh.
+  </p>
+  <p>
+    It is coming soon. Until then, this is where you can follow along.
+  </p>
+</JourneyPost>

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-30 — a `robots: noindex` page beside a one-segment dynamic route stays out of the sitemap
+
+`isIndexable` tested a prerendered URL against every dynamic pattern in `indexable`, so `/:pkg/` matched `/splash-tune/` and overruled that page's own `noindex`. frontierjs.com advertised its tuner page. Now a URL that is itself a route is decided by that route alone. Proof: `test/postbuild.test.js` › *a noindex route beside a one-segment dynamic route stays out*, which failed before the fix.
+
 ## 2026-09-30 — the dev watcher ignores dotfiles, so `.sierra-fresh-*` copies no longer feed back into it
 
 `classify` reads a `.sierra-fresh-<pid>-<n>-x.meta.js` copy as a `companion`, so the scanner plugin's `add`/`unlink` handlers ran a scan for each one. Each scan writes a fresh copy of every companion, and each copy triggered another scan. One `bun run dev` in `website/` wrote 44,550 files into `site/src/routes/` in 35 seconds before it was killed. `roleOf` now answers `ignored` for a dotfile, which matches `walk.js`. Proof: `test/scanner-plugin.test.js` › *the dev watcher*, red with the check removed.

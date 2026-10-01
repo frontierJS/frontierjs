@@ -105,6 +105,22 @@
   border-color: transparent;
   box-shadow:   none;
 }
+
+/*
+ * The secondary button that sits on a hero gradient. The fill is --surface,
+ * not the tone: a tone fill at 85% under white text is the chip contract
+ * with a hole in it. A tone is the TEXT, and through --tint-ink rather than
+ * --tone-ink — the raw tone at the narrowed window still clips out of gamut
+ * on a saturated red (dracula's danger, 3.55:1 over white), and the blend
+ * toward --ink is what a toned glass Card already reads.
+ */
+.btn.glass {
+  --btn-ink:       var(--tint-ink, var(--ink));
+  background:      color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  color:           var(--btn-ink);
+  border-color:    color-mix(in srgb, var(--rule) var(--glass-alpha), transparent);
+}
+
 .btn.ghost:hover {
   background: color-mix(in srgb, var(--bg-mix, var(--ink)) 8%, transparent);
   /* The brightness filter is for solid fills; on transparent it does nothing

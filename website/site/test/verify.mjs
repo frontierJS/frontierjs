@@ -44,7 +44,10 @@ if (!existsSync(join(DIST, 'index.html'))) {
   process.exit(1)
 }
 
-const html   = readFileSync(join(DIST, 'index.html'), 'utf8')
+// The pitch is the page the content checks are about; `/` is a splash that
+// hands off to it and to the journey.
+const html   = readFileSync(join(DIST, 'pitch', 'index.html'), 'utf8')
+const splash = readFileSync(join(DIST, 'index.html'), 'utf8')
 // One package page, read as a crawler reads it. The eight hand-written files
 // this replaces each shipped an empty <div id="page"> that a classic script
 // filled in on load, so this is the assertion the port exists for.
@@ -160,8 +163,7 @@ t('samples.textUnchanged', (() => {
   const was = JSON.parse(readFileSync(join(HERE, 'fixtures', 'samples.json'), 'utf8'))
   const out = {}
   for (const [page, samples] of Object.entries(was)) {
-    const now = (readFileSync(page === 'index'
-      ? join(DIST, 'index.html') : join(DIST, page, 'index.html'), 'utf8')
+    const now = (readFileSync(join(DIST, page, 'index.html'), 'utf8')
       .match(/<pre[^>]*>[\s\S]*?<\/pre>/g) ?? [])
       .map((p) => textOf(p).replace(/\u00a0/g, ' ').replace(/[ \t]+$/gm, '')
         // An install range is read off a manifest (pin.js) and moves with every
@@ -216,6 +218,12 @@ t('head.title',       (html.match(/<title>([^<]*)<\/title>/) ?? [])[1])
 t('head.description', /<meta name="description" content="A schema-seeded/.test(html))
 t('head.themeScript', html.includes('id="sierra-theme"'))
 t('head.bodyClass',   (html.match(/<body class="([^"]*)"/) ?? [])[1])
+
+// FJS-501 in the dev shell: a theme class on its body re-declares every theme
+// token under <html>, so the swatches do nothing in `bun run dev` while every
+// built-page probe below passes.
+t('devShell.noBodyTheme', readFileSync(join(SITE, 'index.html'), 'utf8')
+  .match(/<body[^>]*>/)?.[0], (tag) => !/theme-/.test(tag ?? ''))
 
 // One island, and only one — a page that accidentally shipped its whole self as
 // a client bundle would still look right.
@@ -279,6 +287,25 @@ t('install.published', await (async () => {
   return out
 })(), (v) => none(v.missing))
 
+// ─── the splash and the journey ───────────────────────────────────────────
+// The splash's one job is the hand-off, so the check is that both doors are
+// in the file. Every post file with a date is listed on the journey's index
+// and emitted at its own URL — the index is read off the post files, so a
+// post that builds and is not listed means the reader broke, not the post.
+t('splash.handsOff', {
+  journey: splash.includes('href="/journey/"'),
+  pitch:   splash.includes('href="/pitch/"'),
+  soon:    splash.includes('Coming soon'),
+})
+const { loadPosts } = await import('../src/data/journey.js')
+const posts = await loadPosts()
+const journeyHtml = readFileSync(join(DIST, 'journey', 'index.html'), 'utf8')
+t('journey.everyPost', {
+  declared: posts.length,
+  listed:   posts.filter((p) => journeyHtml.includes(`href="/journey/${p.slug}/"`)).length,
+  emitted:  posts.filter((p) => existsSync(join(DIST, 'journey', p.slug, 'index.html'))).length,
+}, (v) => v.declared > 0 && balanced(v))
+
 // ─── the package pages ────────────────────────────────────────────────────
 // One page per entry in packages.js, and the count is asked of the DATA rather
 // than written here: a build that emitted three would otherwise pass every
@@ -335,8 +362,11 @@ t('pages.allEmitted', {
 
 // Every page is reachable from the site nav. A page left out of the menu still
 // builds, serves and passes every check here, and nobody finds it to read it.
-const navHtml = (html.match(/<nav aria-label="Site"[\s\S]*?<\/nav>/) ?? [''])[0]
-t('pages.inNav', PAGES.filter((n) => n !== 'index' && !navHtml.includes(`href="/${n}/"`)), none)
+// A page declaring `robots: noindex` asked not to be found, and is exempt.
+const navHtml  = (html.match(/<nav aria-label="Site"[\s\S]*?<\/nav>/) ?? [''])[0]
+const unlisted = (n) => /^robots:\s*noindex\s*$/m.test(
+  readFileSync(join(SITE, 'src', 'routes', `${n}.mesa`), 'utf8').split(/^---$/m)[1] ?? '')
+t('pages.inNav', PAGES.filter((n) => n !== 'index' && !unlisted(n) && !navHtml.includes(`href="/${n}/"`)), none)
 
 // Every page carries the layout and the pre-paint theme script — the two things
 // thirteen hand-written files each had their own copy of.
@@ -360,7 +390,7 @@ t('demos.prerendered', {
   showroom3:  countIn('showroom3', /class="hop\b/g),         // eighteen seams
   showroom4:  countIn('showroom4', /phasepanel/g),           // six phases
   showroom5:  countIn('showroom5', /role="tab"/g),           // every feature row
-  journey:    countIn('journey',   /class="ex[ "]/g),        // seventeen explanations
+  seams:      countIn('seams',     /class="ex[ "]/g),        // seventeen explanations
   landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-one projects
   tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
 }, counted)
@@ -431,7 +461,7 @@ const goto = async (url) => {
 }
 
 try {
-  await goto(`${ORIGIN}/`)
+  await goto(`${ORIGIN}/pitch/`)
 
   // The design system reached the page. A missing stylesheet is not an error in
   // a browser, just an unstyled page — so this is measured, not looked for.
@@ -552,7 +582,7 @@ try {
     return { declaredKey: localStorage.getItem('fjs-theme'),
              written:     Object.keys(localStorage) };
   `))
-  await goto(`${ORIGIN}/`)
+  await goto(`${ORIGIN}/pitch/`)
   t('theme.afterReload', await evaluate(`
     return { html: document.documentElement.className,
              body: document.body.className,
@@ -657,14 +687,48 @@ try {
     return { id: on?.dataset.id, terminalLines: on?.querySelectorAll('.term span').length ?? 0 };
   `))
 
-  await goto(`${ORIGIN}/journey/`)
-  t('demo.journey', await evaluate(`
+  await goto(`${ORIGIN}/seams/`)
+  t('demo.seams', await evaluate(`
     // The connectors are measured, so they exist only once the island has run.
     await waitFor(() => document.querySelectorAll('[data-wires] path').length > 0);
     document.querySelector('[data-next]').click(); await sleep(120);
     return { wires: document.querySelectorAll('[data-wires] path').length,
              lit:   document.querySelectorAll('[data-wires] path.lit').length,
              shown: document.querySelector('.ex.is-shown')?.dataset.i };
+  `))
+
+  // The splash tuner writes the tour onto the REAL splash in its frame, so a
+  // control that stops reaching the backdrop still renders a panel that moves.
+  // Read back from the layers, never from the panel. The cloud decks run their
+  // own copy of the tour, and one left on another clock zooms toward a
+  // different spot than the land under it, which no single frame shows.
+  await goto(`${ORIGIN}/splash-tune/`)
+  t('demo.tuner', await evaluate(`
+    const frame = document.querySelector('[data-frame]');
+    const bd = await waitFor(() => frame.contentDocument?.querySelector('.splash .backdrop')?.style.getPropertyValue('--stop0-zoom') && frame.contentDocument.querySelector('.splash .backdrop'));
+    const ground = bd.querySelector('.ground'), lows = bd.querySelector('.lows');
+    const scale = (el) => parseFloat(getComputedStyle(el).transform.slice(7));
+    const zoom = document.querySelector('[data-stop="2"] [data-k="zoom"]');
+    zoom.value = '2.5'; zoom.dispatchEvent(new Event('input', { bubbles: true }));
+    const show = document.querySelector('[data-cloud="low"][data-k="opacity"]');
+    show.value = '0.3'; show.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-stop="2"] [data-go]').click(); await sleep(80);
+    const tours = [...bd.querySelectorAll('.layer')].flatMap(el => el.getAnimations());
+    const depth = parseFloat(getComputedStyle(bd).getPropertyValue('--low-depth'));
+    const zoomReached = getComputedStyle(ground).transform === 'matrix(2.5, 0, 0, 2.5, 0, 0)';
+    const deckDeeper  = Math.abs(scale(lows) - (1 + 1.5 * depth)) < .001;
+    const goSeeks = tours.length === 3 && tours.every(a => a.playState === 'paused' && Math.round(a.currentTime) === 60000);
+    const cloudShown = getComputedStyle(lows).opacity === '0.3';
+    const aim = document.querySelector('[data-aim]');
+    document.querySelector('[data-stop="4"] [data-aim-at]').click();
+    const aimClears = getComputedStyle(lows).visibility === 'hidden';
+    const f = frame.getBoundingClientRect(), b = bd.getBoundingClientRect();
+    aim.dispatchEvent(new MouseEvent('click', { bubbles: true,
+      clientX: f.left + b.left + b.width * .25, clientY: f.top + b.top + b.height * .75 }));
+    const out = document.querySelector('[data-out]').value;
+    return { zoomReached, deckDeeper, goSeeks, cloudShown, aimClears,
+             aimed:   ['x', 'y'].map(k => document.querySelector('[data-stop="4"] [data-k="' + k + '"]').value).join() === '25,75',
+             printed: out.includes('--stop2-zoom: 2.5;') && out.includes('--low-opacity: 0.3;') };
   `))
 
   await goto(`${ORIGIN}/landscape/`)
@@ -716,6 +780,31 @@ try {
     return { imageServed: img.ok, opened, zoomedIn, plainIgnored, ctrlZooms, reset,
              closed: panel.hidden && location.hash === '' };
   `))
+
+  // Both bars are sticky, so a subnav pinned higher than the topbar is tall
+  // slides under it and nothing errors; and a jump to a section has to clear
+  // both. Measured at desktop and at a width where the topbar wraps.
+  const stack = {}
+  for (const width of [1280, 390]) {
+    await cmd('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false })
+    await goto(`${ORIGIN}/tutor/`)
+    stack[width] = await evaluate(`
+      document.documentElement.style.scrollBehavior = 'auto';
+      window.scrollTo(0, 2000); await sleep(50);
+      const bottom = (sel) => document.querySelector(sel).getBoundingClientRect().bottom;
+      const subnavTop = document.querySelector('.subnav').getBoundingClientRect().top;
+      const underBars = [];
+      for (const a of document.querySelectorAll('.subnav a[href^="#"]')) {
+        document.getElementById(a.hash.slice(1)).scrollIntoView(); await sleep(30);
+        const h = document.getElementById(a.hash.slice(1)).querySelector('h1, h2');
+        if (h && h.getBoundingClientRect().top < bottom('.subnav')) underBars.push(a.hash);
+      }
+      return { subnavClearsTopbar: subnavTop >= Math.max(0, bottom('.topbar')) - 0.5,
+               anchorsClear: underBars.length === 0, underBars: underBars.join(' ') };
+    `)
+  }
+  await cmd('Emulation.clearDeviceMetricsOverride')
+  t('layout.stickyStack', stack)
 
   t('console.clean', consoleErrors, none)
 } finally {

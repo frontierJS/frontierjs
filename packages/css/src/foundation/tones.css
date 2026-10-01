@@ -154,7 +154,8 @@
 *::before,
 *::after {
   --tone-ink: oklch(from var(--bg-mix)
-                clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+                clamp(calc(var(--tone-l-min) + var(--_tone-inset, 0)), l,
+                      calc(var(--tone-l-max) - var(--_tone-inset, 0))) c h);
 
   --tint-surface: color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --tint-rule:    color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
@@ -172,5 +173,6 @@
    * in the package that had not applied it.
    */
   --tint-ink:     oklch(from color-mix(in srgb, var(--bg-mix) 55%, var(--ink))
-                    clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+                    clamp(calc(var(--tone-l-min) + var(--_tone-inset, 0)), l,
+                          calc(var(--tone-l-max) - var(--_tone-inset, 0))) c h);
 }

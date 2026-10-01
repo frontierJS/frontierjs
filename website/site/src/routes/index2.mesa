@@ -52,8 +52,8 @@ render: static
           <code>node_modules</code>, an MIT license, and a SQLite file you own.
         </p>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-          <a class="btn primary raised" href="/#start">Get started</a>
-          <a class="btn outlined" href="/#code">See the code</a>
+          <a class="btn primary raised" href="/pitch/#start">Get started</a>
+          <a class="btn outlined" href="/pitch/#code">See the code</a>
           <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
         </div>
       </div>
@@ -112,8 +112,8 @@ render: static
           knows the permission, because both read the file the migration came from.
         </p>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-          <a class="btn primary raised" href="/#start">Get started</a>
-          <a class="btn outlined" href="/#packages">The packages</a>
+          <a class="btn primary raised" href="/pitch/#start">Get started</a>
+          <a class="btn outlined" href="/pitch/#packages">The packages</a>
           <span class="badge warning">Alpha</span>
         </div>
       </div>
@@ -172,8 +172,8 @@ render: static
           <li>One CLI — scaffold, migrate, run, build, deploy</li>
         </ul>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-          <a class="btn primary raised" href="/#start">Get started</a>
-          <a class="btn outlined" href="/#idea">Why it works this way</a>
+          <a class="btn primary raised" href="/pitch/#start">Get started</a>
+          <a class="btn outlined" href="/pitch/#idea">Why it works this way</a>
           <span class="badge warning">Alpha</span>
         </div>
       </div>
@@ -225,8 +225,8 @@ render: static
           because none of them was ever a copy.
         </p>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-          <a class="btn primary raised" href="/#start">Get started</a>
-          <a class="btn outlined" href="/#code">See the ripple</a>
+          <a class="btn primary raised" href="/pitch/#start">Get started</a>
+          <a class="btn outlined" href="/pitch/#code">See the ripple</a>
           <span class="badge warning">Alpha</span>
         </div>
       </div>
@@ -284,8 +284,8 @@ render: static
           browser extension.
         </p>
         <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-          <a class="btn primary raised" href="/#start">Get started</a>
-          <a class="btn outlined" href="/#idea">One seed, three realms</a>
+          <a class="btn primary raised" href="/pitch/#start">Get started</a>
+          <a class="btn outlined" href="/pitch/#idea">One seed, three realms</a>
           <span class="badge warning">Alpha</span>
         </div>
       </div>

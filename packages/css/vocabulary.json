@@ -901,6 +901,7 @@
       "raised",
       "outlined",
       "ghost",
+      "glass",
       "bordered"
     ],
     "density": [

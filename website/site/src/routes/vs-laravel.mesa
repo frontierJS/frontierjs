@@ -413,8 +413,8 @@ render: static
     </div>
 
     <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
-      <a class="btn primary raised" href="/#start">Get started</a>
-      <a class="btn outlined" href="/#packages">See every package</a>
+      <a class="btn primary raised" href="/pitch/#start">Get started</a>
+      <a class="btn outlined" href="/pitch/#packages">See every package</a>
       <a class="btn ghost" href="https://laravel.com">Laravel</a>
       <span class="badge warning">FJS: Alpha</span>
     </div>
@@ -428,7 +428,7 @@ render: static
 </div>
 
 <style>
-section { padding: 4rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 4rem; }
+section { padding: 4rem 0; border-top: 1px solid var(--rule); }
   section:first-of-type { border-top: 0; }
 
   h1 { font-size: clamp(2.1rem, 5.4vw, 3.4rem); line-height: 1.05; letter-spacing: -.03em; margin: .35em 0 .3em; }

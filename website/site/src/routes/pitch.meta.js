@@ -1,4 +1,4 @@
-// site/src/routes/index.meta.js — the front page's nine code samples.
+// site/src/routes/pitch.meta.js — the pitch page's nine code samples.
 //
 // They live here, as SOURCE, for two reasons.
 //
