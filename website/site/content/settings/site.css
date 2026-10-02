@@ -1,0 +1,27 @@
+/* web/src/app.css — the app's own styles, after @frontierjs/css.
+   Unlayered, so a rule here beats every layer the kit ships in. */
+
+:root {
+  --heading-font-weight: 200;
+}
+
+@font-face {
+  font-family: 'FrontierJS Field';
+  src: url('../media/fonts/FrontierJS_Field_Regular.woff2') format('woff2');
+}
+
+h1 {
+  /* font-family: 'FrontierJS Field' !important; */
+}
+
+.app {
+  --app-bg: radial-gradient(
+      60rem 40rem at 15% -10%,
+      oklch(75% 0.06 300 / 0.1),
+      transparent 60%
+    ),
+    radial-gradient(50rem 35rem at 90% 10%, oklch(80% 0.05 200 / 0.08), transparent 60%),
+    radial-gradient(40rem 30rem at 50% 110%, oklch(78% 0.05 340 / 0.07), transparent 60%)
+      fixed,
+    var(--surface-sunken);
+}

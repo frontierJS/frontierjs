@@ -5,6 +5,7 @@
 import 'virtual:sierra'
 
 import '@frontierjs/css'
+import 'virtual:site-kit/styles'
 
 import { mount } from '@frontierjs/mesa/runtime'
 import { RouterView } from '@frontierjs/sierra/router'

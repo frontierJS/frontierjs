@@ -13,6 +13,9 @@
   import ThemeSwitch from '../islands/ThemeSwitch.mesa'
 </script>
 
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik+Dirt&display=swap">
+
 <a href="#top" class="skip-link">Skip to content</a>
 
 <header class="topbar">
@@ -77,6 +80,8 @@
      the bar's contents change, and the bar slides over whatever is pinned. */
   :global(:root) { --sticky-offset: 4rem; }
   :global(body) { background: var(--surface); color: var(--ink); }
+  /* html:root outranks a theme class on <html>, so every swatch keeps the face. */
+  :global(html:root) { --font-display: 'Rubik Dirt', system-ui, sans-serif; }
 
   .skip-link { position: absolute; left: -9999px; }
   .skip-link:focus {

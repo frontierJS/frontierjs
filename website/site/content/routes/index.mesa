@@ -40,7 +40,7 @@ render: static
     </p>
 
     <div class="cluster ctas">
-      <a class="btn raised glass" href="/journey/">Follow the journey →</a>
+      <a class="btn text-xl raised glass" href="/journey/">Follow the journey →</a>
     </div>
   </div>
 </section>

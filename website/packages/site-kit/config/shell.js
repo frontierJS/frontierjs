@@ -8,11 +8,17 @@
 // The entry is `/@site-kit/main.js`, resolved here to the kit's src/main.js. A
 // package name in a script `src` 404s in dev, and an inline module script
 // needs Vite's html-proxy, which keys on an index.html that is not on disk.
+//
+// `virtual:site-kit/styles` is the site's own `content/settings/site.css`,
+// imported by the entry after @frontierjs/css. Through the entry it lands in
+// the main build's stylesheets, which the prerender copies into every page;
+// a site without one gets an empty module.
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, extname, resolve } from 'node:path'
 
-const ENTRY = '/@site-kit/main.js'
+const ENTRY  = '/@site-kit/main.js'
+const STYLES = 'virtual:site-kit/styles'
 
 /**
  * @param {string} file — the kit's index.html
@@ -21,6 +27,7 @@ const ENTRY = '/@site-kit/main.js'
 export function siteShell(file) {
   const main = resolve(dirname(file), 'src/main.js')
   let html = ''
+  let styles = ''
 
   return {
     name: 'site-kit:shell',
@@ -28,15 +35,18 @@ export function siteShell(file) {
 
     configResolved(config) {
       html = resolve(config.root, 'index.html')
+      styles = resolve(config.root, 'content/settings/site.css')
     },
 
     resolveId(id) {
       if (id === ENTRY) return main
       if (id === html) return html
+      if (id === STYLES) return '\0' + STYLES
     },
 
     load(id) {
       if (id === html) return readFileSync(file, 'utf8')
+      if (id === '\0' + STYLES) return existsSync(styles) ? `import ${JSON.stringify(styles)}` : ''
     },
 
     configureServer(server) {

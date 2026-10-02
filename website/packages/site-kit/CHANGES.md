@@ -1,5 +1,12 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-01 — a site's own stylesheet
+
+`content/settings/site.css` is loaded after `@frontierjs/css` when it exists:
+the entry imports `virtual:site-kit/styles`, which `config/shell.js` resolves to
+that file or to nothing. Through the entry it is a main-build stylesheet, so the
+prerender links it into every page.
+
 ## 2026-10-01 — a site is its content/ folder
 
 `site-kit dev|build|preview <dir>` runs a site whose directory holds only

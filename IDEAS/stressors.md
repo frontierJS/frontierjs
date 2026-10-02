@@ -60,6 +60,7 @@ than started.
 | 17 | **Immich** — self-hosted photo library | a 4 GB upload held in memory whole; one upload fanning out into a pipeline of derived files; a backup from a phone that must resume and never send the same bytes twice | `overview.md` 2.7 · `untrusted-bytes.md` · `offline-first-and-release.md` · `bearer-access.md` |
 | 18 | **EventMark** — a staffing schedule written as a Markdown file | a text document that is the record while a screen writes back into it; a staff-to-child ratio broken from either side; a reference to a person who may not exist | `kernel-and-projections.md` · [`FJS-D474`](../DECISIONS.md#fjs-d474) · `time-and-recurrence.md` · `FJS-D305` |
 | 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
+| 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -705,6 +706,137 @@ rotation with one cipher missing is refused and changes nothing. A Send with
 `maxAccessCount: 1` opens exactly once under ten concurrent requests. An icon
 request for `169.254.169.254` is refused. The database file is grepped for a
 known plaintext password and it is not there.
+
+---
+
+### 20. Dragonfly — the first stressor whose first break is the UI realm
+
+*Added 2026-10-01, from a read of `~/code/Z/json.maverickmade.tech` (codename
+jsonfire): a Svelte 4 app, about 3,700 lines across seven components and six
+stores, plus a 3,061-line `App-single.svelte` it was split out of. Three commits,
+February 2026. `fjs-prototypes/dragonfly/dragonfly-json-editor.jsx` is a React
+copy of its `Editor.svelte` and nothing more. Nothing is built. The rank only
+reflects when it was appended.*
+
+**What it is.** jsongrid.com taken further. A JSON array is typed on the left
+and shown as a grid on the right, and both sides edit it. A nested object or
+array in a cell opens in place as a key/value table, or as a sub-grid when it
+is an array of objects. Around that sits a lot of tooling:
+
+- sort, a global search, and a per-column filter written in a small DSL
+  (`>N`, `N..M`, `^start`, `/re/`, `[a,b]`, `!` negates);
+- frozen, hidden, resized and drag-reordered columns, and a stats row;
+- conditional formatting rules, an inferred per-column schema with violations
+  highlighted, and a flatten that works as a view or as a rewrite;
+- row selection with bulk delete, duplicate, export and set-value;
+- a user-written JS transform over the rows, find and replace, and a command
+  palette;
+- sessions in `localStorage`, and the whole state shareable as a base64 `#s=`
+  URL.
+
+Every other stressor breaks in Data or API first. This one has an empty `db/`
+and an empty `api/`, so everything it tests is Mesa's runtime and
+`@frontierjs/ui`. That is why it earns a slot. It is not the IDE that *Not on
+this list* rules out: it is DOM, a table and a text box, which is the runtime
+this framework claims. The kit already has many of its parts:
+
+- `Json.mesa`: tree and raw modes, diff, search, edit, undo, and a
+  `role="treegrid"` keyboard;
+- `JsonInput.mesa`'s buffer rule;
+- `Table.mesa`, `CommandPalette.mesa`, and `{#virtual each}`;
+- `toolbelt/json`, `toolbelt/glow` (the same lineage as its `glow.js`), and
+  `toolbelt/search`.
+
+The question is whether those parts make this app, or whether it has to be
+built beside them.
+
+- **The text is the record, and a cell edit rewrites all of it.** `jsonText` is
+  the source and `parsed` is derived from it. A cell edit goes the other way
+  through `syncToText()`, which re-serializes the whole document at two-space
+  indent. A condensed document comes back pretty-printed. **Every row's keys are
+  also reordered to the column order**, so one edit changes every line of the
+  file. Splicing the text at the cell's source range instead needs a parser
+  that reports positions. `toolbelt/json`'s `tryParse` reports an error
+  position, never a value's range. **Is the text a projection of the document,
+  or the record?** That is EventMark's question (#18), asked at keystroke rate.
+- **Two history policies on one stack.** A keystroke in the text pushes a
+  snapshot after 600 ms of quiet. A keystroke in a cell calls `updateCell` on
+  `input`, which re-serializes and pushes at once, so typing `Austin` into a
+  cell is six undo steps. The stack holds texts. `Json.mesa`'s holds documents
+  compared by value. Which one owns ⌘Z when both views are open?
+- **A derived graph over the whole document, re-run on every keystroke.** One
+  keystroke in the text re-parses it, re-merges the key set, and re-highlights
+  all of it into `{@html}`. It then walks this chain: `parsed` → `sortedRows` →
+  `visibleRows` → `gridRows` → `txRows` → `schemaViolations` →
+  `schemaViolationMap` → `violationCount`, with `colStats` and `cfStyles` off
+  `txRows`. Each stage is O(rows × columns), and `txRows` is set from a
+  module-level `subscribe` rather than derived. The nested editors deep-clone
+  the whole document per keystroke (`JSON.parse(JSON.stringify($p))`), so every
+  row gets a new identity. The grid is an index-keyed `{#each}` with no
+  windowing. **This is the measurement Mesa's signals exist for.** Does a
+  cell edit in a 10,000-row document touch one row's DOM, and does a keystroke
+  in the text re-derive only what changed? Copy-on-write through `setIn` shares
+  untouched rows, and a `MutationObserver` can count the rest.
+- **Identity for rows that have none.** Selection, open cells
+  (`expandedKeys`, `${ri}::${col}`), raw-edit buffers, formatting and violation
+  maps are all keyed by array index. Deleting row 0 moves every open cell and
+  every selected row onto its neighbor. Sort and filter carry the index along
+  correctly, but insert and delete do not. FJS rows have a primary key. The
+  question is what keys a list whose data has no id, and `eachDefaultKey` is
+  the index.
+- **A second condition language, three times.** The column-filter DSL,
+  conditional formatting (which reuses it) and the inferred schema
+  (`string`/`number`/`boolean`, `required`) are each a way of saying *which
+  values are acceptable*. FJS already has two owners for that:
+  `toolbelt/predicate` is the `.lite` expression grammar (`FJS-D271`, *one
+  grammar*), and `toolbelt/query` owns what a filter value means
+  (Invariant 10). The port either spells these in that grammar or is the case
+  for a terse column dialect that compiles to it. *Infer schema from data* is
+  also `litestone import`'s problem on a JSON array, and its answer could be a
+  `.lite` model.
+- **Views that are writes, and writes that are views.** Sort is view-only and
+  keeps the source index. Flatten has both forms: `viewFlat` changes the view,
+  and `toggleFlatten` rewrites the document while holding the original aside.
+  The JS transform is view-only, but bulk set-value writes, and it accepts an
+  arrow function that is `new Function`'d. The kit has no move operation
+  (`Json.mesa` says so), and column drag-reorder is a write here. Each gesture
+  needs a stated side.
+- **A share link runs code it carries.** `captureState()` puts `transformCode`
+  and `transformActive` in the `#s=` hash. `initFromUrl()` → `applyState()` →
+  `applyTransform()` then compiles and runs it as soon as the page opens. So a
+  link someone sends you runs their JavaScript in your session. That is an
+  app bug and needs no ruling. The FJS-side question is narrower: what does a
+  static Sierra page do with state that arrives in a URL, and is a transform a
+  thing that may arrive that way at all (`static-safety.md`).
+- **Colors where tones belong.** `CF_PRESETS` and the schema highlights are
+  hex pairs, and conditional formatting gives people a color picker.
+  Invariant 13 says a tone and a treatment. Is a user-chosen highlight a
+  tone, or the one place a literal color is the data? This is ksite's theme
+  question (#16) with the user as the author.
+
+**Leave out** the React file, which is one component of this app. Leave out
+the Tauri wiring as well: `@tauri-apps/*` is in `package.json` but there is no
+`src-tauri/`. A desktop build would be FJS's `desktop/` surface, and it is a
+later question. Leave out persistence beyond what exists: if sessions move off
+`localStorage`, that is `FJS-D305`'s Litestone in a worker over OPFS, the same
+whole-app-in-the-tab shape as #18.
+
+**Gradable** in a browser, against the app's own three-row sample, a generated
+10,000 × 20 array, and a document nested four levels deep:
+
+- A cell edit changes only that row's lines in the text, and a
+  `MutationObserver` sees one row change in the grid.
+- Typing a word into a cell is one undo step.
+- Text that does not parse leaves the grid on the last good document and
+  reports the error's line.
+- Deleting row 0 leaves the open cells and the selection on the same records.
+- One keystroke in the 5 MB fixture stays inside a frame.
+- The ported filter `>80` and the `.lite` expression `score > 80` select the
+  same rows.
+- A shared link carrying a transform does not run it until the person
+  viewing it asks.
+
+Port in `fjs-prototypes/dragonfly`, with questions in its `PLAN.md`, as below.
 
 ## Not on this list, with reasons
 

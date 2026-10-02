@@ -31,7 +31,10 @@ what they mean in any app.
   plain data.
 - `config/shell.js` — serves `index.html` for a site whose root has none: a dev
   middleware for HTML requests, and a `load` of the root's `index.html` id in the
-  build, so it emits as `dist/index.html`, the file the prerender reads.
+  build, so it emits as `dist/index.html`, the file the prerender reads. Also
+  resolves `virtual:site-kit/styles` to the site's `content/settings/site.css`
+  (empty without one); the entry imports it after `@frontierjs/css`, so it
+  reaches every prerendered page as a main-build stylesheet.
 - `index.html`, `src/main.js` — the dev shell and the dev entry. The entry is
   `/@site-kit/main.js`: a package name in a script `src` 404s in dev, and an
   inline module script needs an `index.html` on disk.

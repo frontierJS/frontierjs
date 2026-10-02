@@ -424,6 +424,7 @@
         "@frontierjs/css": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/sierra": "workspace:*",
+        "@frontierjs/site-kit": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
       },
       "devDependencies": {
@@ -434,6 +435,12 @@
     "website/packages/site-kit": {
       "name": "@frontierjs/site-kit",
       "version": "0.0.0",
+      "bin": {
+        "site-kit": "./bin/site-kit.js",
+      },
+      "devDependencies": {
+        "acorn": "^8.0.0",
+      },
       "peerDependencies": {
         "@frontierjs/css": "*",
         "@frontierjs/mesa": "*",
