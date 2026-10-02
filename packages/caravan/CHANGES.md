@@ -1,5 +1,9 @@
 # Changes — @frontierjs/caravan
 
+## 2026-10-02 — `cron-dst.test.ts` gets a 30s timeout
+
+Each test steps a scheduler minute by minute across a day or more, 1–3s alone and past bun's 5s default when CI runs packages in parallel. Two timed out. `setDefaultTimeout(30_000)` at the top of the file; no source change.
+
 ## 2026-09-29 — workers start in `work()`, not `boot()` (`FJS-D551`)
 
 `boot()` now loads the job files and nothing else, so a dispatch routes to the job

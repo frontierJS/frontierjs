@@ -20,7 +20,7 @@
 // because `start()` would put a real interval between every assertion.
 // ============================================================
 
-import { describe, it, expect, afterEach } from 'bun:test'
+import { describe, it, expect, afterEach, setDefaultTimeout } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +30,10 @@ import { createCaravan } from '../src/index.ts'
 import type { CaravanInstance } from '../src/types.ts'
 
 const NY = 'America/New_York'
+
+// Each test steps a scheduler minute by minute across a day or more: ~1-3s alone,
+// past bun's 5s default when CI runs the packages in parallel.
+setDefaultTimeout(30_000)
 
 /**
  * Step a scheduler minute by minute across a span of real time and collect the
