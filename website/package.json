@@ -2,22 +2,23 @@
   "name": "@frontierjs/website",
   "version": "0.1.0",
   "private": true,
-  "description": "frontierjs.com — the public site. A Sierra `site/` surface: one HTML file per route, prerendered.",
+  "description": "frontierjs.com \u2014 the public site. site/ is its content/ folder; @frontierjs/site-kit builds it, one HTML file per route, prerendered.",
   "type": "module",
   "scripts": {
-    "dev": "cd site && vite -c config/vite.config.js",
-    "build": "cd site && bun --bun vite build -c config/vite.config.js",
-    "preview": "cd site && bunx sierra site --serve --port 8790",
-    "verify": "node site/test/verify.mjs",
+    "dev": "site-kit dev site --port 8690",
+    "build": "site-kit build site",
+    "preview": "site-kit preview site --port 8790",
+    "verify": "node tests/verify.mjs",
     "clean": "rm -rf site/dist",
     "test": "bun run build && bun run verify",
     "typecheck": "node ../scripts/typecheck.mjs",
-    "deploy": "bun run test && cd site && wrangler deploy -c config/wrangler.jsonc"
+    "deploy": "bun run test && wrangler deploy -c wrangler.jsonc"
   },
   "dependencies": {
     "@frontierjs/css": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
     "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/site-kit": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*"
   },
   "devDependencies": {

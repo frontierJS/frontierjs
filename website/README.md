@@ -2,9 +2,11 @@
 
 `website/` — the public site for FrontierJS.
 
-**It is a Sierra `site/` surface**: `website/` is the app root, `website/site/`
-is the surface, and `bun run build` prerenders one HTML file per route into
-`site/dist/`. The twenty-one hand-written HTML pages that used to be the site,
+**It is a Sierra `site/` surface run by `@frontierjs/site-kit`**: `website/`
+is the app root, and `website/site/` holds `content/` and nothing else — the
+routes, islands, components, data, `public/` and `settings/site.js`. The shell,
+the dev entry and the build are site-kit's, so `bun run build` is `site-kit
+build site`, prerendering one HTML file per route into `site/dist/`. The twenty-one hand-written HTML pages that used to be the site,
 and the `build.js` that vendored a stylesheet for them, are gone — every page
 has a ported equivalent.
 
@@ -32,16 +34,16 @@ handing off to something deeper rather than trying to be it.
 - `/` — the splash: what is coming, and two doors out. It is one screen and
   hands off rather than arguing.
 - `/journey/` — the build-in-the-open journal. **A post is a file**:
-  `site/src/routes/journey/<slug>.mesa` with `title`, `description` and `date`
-  in its frontmatter, rendered inside `site/src/components/JourneyPost.mesa`.
-  The index reads every sibling's frontmatter (`site/src/data/journey.js`), so
+  `site/content/routes/journey/<slug>.mesa` with `title`, `description` and `date`
+  in its frontmatter, rendered inside `site/content/components/JourneyPost.mesa`.
+  The index reads every sibling's frontmatter (`site/content/data/journey.js`), so
   publishing is adding the file; no `date` means a draft, built but unlisted.
 - `/pitch/` — the long-form page below, every anchor (`/pitch/#start`) included.
 - `/seams/` — one request, every seam it crosses.
 - `/splash-tune/` — live controls for the map tour behind the splash and the
   three cloud decks over it, run against the real splash in a frame. Unlisted
   (`robots: noindex`). Tuning ends with *Copy*, pasted over the tour variables
-  in `site/src/routes/index.mesa`. The decks are `site/public/map/clouds-*.webp`,
+  in `site/content/routes/index.mesa`. The decks are `site/content/public/map/clouds-*.webp`,
   one horizontally-wrapping tile each, cut from a painted cloud sheet; a tile
   that does not wrap shows as a hard edge sliding across the splash.
 
@@ -76,7 +78,7 @@ and it is held to a stricter version of *show, don't claim*: every sample on it
 is a transcript of a real run or a verbatim lift from the step that produced it.
 A paraphrase of `fli tutor`'s output would be the one thing on this site that has
 never been executed — on the page whose whole argument is that the tutorial
-executes. `site/test/verify.mjs` asserts two of those strings survive into the
+executes. `tests/verify.mjs` asserts two of those strings survive into the
 built page (`tutor.transcripts`), because a sample rewritten into nicer prose
 looks identical from every other angle.
 
@@ -120,7 +122,7 @@ nowhere else, so every deploy had to copy the file and rewrite twenty-one hrefs.
 ## Commands
 
 ```sh
-bun run dev       # vite dev on :8690 — the routes, client-routed
+bun run dev       # site-kit dev on :8690 — the routes, client-routed
 bun run build     # prerender site/dist/ — one HTML file per route
 bun run preview   # serve site/dist/ on :8790, as it deploys
 bun run verify    # the drive: the files, then a real browser; exits 1 on a failure
@@ -145,11 +147,11 @@ glow marks a token with the ELEMENT that means it (`<strong>` keyword, `<em>`
 value, `<sup>` comment) and puts the language on the wrapper, so `code.css`
 themes it with element selectors and the samples retint with the theme switcher
 — clamped into the tone-as-text window, which is why code stays legible in the
-dark themes. `site/src/data/code.js` is the whole of the site's side: `block()`,
+dark themes. `site/content/data/code.js` is the whole of the site's side: `block()`,
 `line()` for the pages that light one line at a time, and a sniffer for the
 samples that come out of `packages.js` and cannot carry a language of their own.
 
-`site/test/verify.mjs` asserts the round trip — every sample's text is compared
+`tests/verify.mjs` asserts the round trip — every sample's text is compared
 against `test/fixtures/samples.json`, lifted from the hand-written pages at the
 commit that deleted them, because a highlighter's one catastrophic failure is
 silent: it eats a character, the block still looks like code, and the reader
@@ -168,7 +170,7 @@ from JavaScript. So the site a crawler read was mostly empty divs.
 
 Now there is one layout, one theme switcher, and **every page's content is in
 its file**. The interactive parts are ten islands that move
-selections rather than build pages. `site/test/verify.mjs` asserts both halves:
+selections rather than build pages. `tests/verify.mjs` asserts both halves:
 what is in the files, and that each widget still works in a real browser.
 
 Five framework defects came out of doing it — `FJS-500`, `FJS-501`, `FJS-508`,
@@ -177,15 +179,14 @@ reading: a prerendered page did not escape its own text.
 
 **Deploy is `bun run deploy`** — the build and the drive, then `wrangler deploy`
 of `site/dist/` as an assets-only Cloudflare Worker on frontierjs.com
-(`site/config/wrangler.jsonc`). A failing drive stops it before the upload.
+(`wrangler.jsonc`). A failing drive stops it before the upload.
 Wrangler signs in once with `wrangler login`, or reads `CLOUDFLARE_API_TOKEN`.
 `www.frontierjs.com` is a redirect rule on the zone, not a second route. The
 build writes `sitemap.xml` and `robots.txt` against `siteUrl` in
-`sierra.config.js`, and a pre-paint theme script into every page.
+`site/content/settings/site.js`, and a pre-paint theme script into every page.
 
-`packages/site-kit/` is `@frontierjs/site-kit`, the engine a markdown-authored
-site depends on — private, unlisted, and empty until ksite's engine moves into
-it. It is a member through the root `website/packages/*` glob; see its `CLAUDE.md`.
+`packages/site-kit/` is `@frontierjs/site-kit`, the engine this site and later
+ksite's client sites depend on — private and unlisted. It is a member through the root `website/packages/*` glob; see its `CLAUDE.md`.
 
 `website` is a root workspace member, so `bun run --filter '*' test` and CI's
 `tests` phase reach it. Its `test` script is the build followed by `verify`, the
@@ -207,7 +208,7 @@ Both now say what you actually do. No network is a named skip;
 otherwise: the build is green, the stack page looks complete, and the only
 symptom is a visitor who never learns the thing exists. Fourteen of them sat
 that way. Holding one back is a named entry with a reason in
-`site/src/data/packages.js`, and a `private` package needs none, since its own
+`site/content/data/packages.js`, and a `private` package needs none, since its own
 manifest already says so.
 
 Do not write a version number on this page. The root README's
@@ -216,7 +217,7 @@ marketing copy is a second origin nothing regenerates — this file is where the
 last one rotted for months.
 
 **The install commands pin.** An `npx` or `npm create` names the minor read
-off that package's manifest at build time (`site/src/data/pin.js`), so the copy
+off that package's manifest at build time (`site/content/data/pin.js`), so the copy
 carries no number and a visitor never runs whatever landed this morning.
 `install.published` fails a range npm has no version in — a manifest bumped and
 not yet published.

@@ -10,5 +10,8 @@ because frontierjs.com is its first consumer and the place its kinks get found;
 the Kobami client template (`fjs-prototypes/ksite`) extends it next, with a
 cleaning-company theme and content over the same engine.
 
-Nothing is exported yet. The pieces arrive from ksite's `@kobami/ksite` engine
-as each one is made generic.
+A site is its `content/` folder: `site-kit dev site`, `site-kit build site`,
+`site-kit preview site`. The shell, the dev entry and the build config live
+here; the site's own settings are `content/settings/site.js`. Blocks are
+exported as `@frontierjs/site-kit/blocks/<Name>.mesa`. More arrive from ksite's
+`@kobami/ksite` engine as each piece is made generic.

@@ -2,15 +2,27 @@
   "name": "@frontierjs/site-kit",
   "version": "0.0.0",
   "private": true,
-  "description": "The engine a markdown-authored marketing site takes as a dependency: blocks, layouts, themes and the build. The site that depends on it is its content/ folder.",
+  "description": "The engine a marketing site takes as a dependency: the shell, the build, blocks and themes. The site that depends on it is its content/ folder.",
   "type": "module",
+  "bin": {
+    "site-kit": "./bin/site-kit.js"
+  },
   "exports": {
+    "./vite": "./config/vite.js",
+    "./blocks/*.mesa": "./src/blocks/*.mesa",
+    "./blocks/*": "./src/blocks/*.mesa",
     "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node test/blocks.mjs"
   },
   "peerDependencies": {
     "@frontierjs/css": "*",
     "@frontierjs/mesa": "*",
     "@frontierjs/sierra": "*",
     "vite": "^8.0.0"
+  },
+  "devDependencies": {
+    "acorn": "^8.0.0"
   }
 }

@@ -11,12 +11,12 @@ marketing site depends on.
 
 | | |
 |---|---|
-| Source | none yet — the package is a workspace member with no exports |
-| Tests | none; exempt in `scripts/ci-allowances.json` until the first piece lands |
-| Consumers | `website/site/` (planned), `fjs-prototypes/ksite` (after it) |
+| Source | the shell, dev entry and build (`bin/site-kit.js`, `config/`, `index.html`, `src/main.js`); one block, `src/blocks/Marquee.mesa` |
+| Tests | `test/blocks.mjs`: compile-and-parse every block, render assertions per block. The build itself is proved by `website/`'s `bun run test`; nothing here drives `site-kit dev` |
+| Consumers | `website/site/`, which is `content/` only and runs through this package; `fjs-prototypes/ksite` (planned) |
 | Published | no, and not listed anywhere |
 
 ## Next
 
-Move the first generic piece out of ksite's `packages/ksite/` engine, with the
-test that comes with it, and drop the CI exemption in the same change.
+Move the first generic piece out of ksite's `packages/ksite/` engine, so ksite
+depends on this package instead of only the website.

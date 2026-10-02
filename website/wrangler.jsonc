@@ -1,0 +1,22 @@
+// wrangler.jsonc — frontierjs.com on Cloudflare Workers.
+//
+// An assets-only Worker: no script, Cloudflare serves dist/ as it is. Paths
+// here resolve from this file, not from where wrangler was run.
+{
+  "name": "frontierjs-site",
+  "compatibility_date": "2026-09-30",
+  "assets": {
+    "directory": "site/dist",
+    // site-kit writes a directory per route (trailingSlash: 'always'),
+    // so /mcp must redirect to /mcp/ or its relative links resolve one level up.
+    "html_handling": "force-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  // custom_domain makes wrangler create the DNS record and the certificate; the
+  // frontierjs.com zone has to be on the same account.
+  // www is not here: serving it too would put every page at two addresses.
+  // It is a redirect rule on the zone instead.
+  "routes": [
+    { "pattern": "frontierjs.com", "custom_domain": true }
+  ]
+}

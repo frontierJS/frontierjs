@@ -1,0 +1,72 @@
+<script>
+  // Marquee.mesa
+  // A row of blocks sliding sideways forever. CSS only, so it works on a
+  // static page that ships no script — pausing on hover is a :hover rule, not
+  // a listener.
+  //
+  // The slot renders twice and the pair slides one copy's width plus one gap,
+  // which lands the second copy exactly where the first started: no seam. The
+  // second copy is aria-hidden, so a screen reader reads the items once.
+  //
+  // Usage:
+  //   <Marquee label="Features" duration="80s">
+  //     {#each items as item}<div class="card">{item.title}</div>{/each}
+  //   </Marquee>
+
+  export let label    = ''       // names the region; '' leaves it unnamed
+  export let duration = '60s'    // one full loop — slower for more items
+  export let gap      = '1rem'   // between items, and between the two copies
+  export let reverse  = false    // slide left-to-right instead
+  export let pause    = true     // stop while hovered or focused
+  export let fade     = true     // soften both edges
+</script>
+
+<div
+  class="marquee"
+  class:reverse
+  class:pause
+  class:fade
+  role={label ? 'region' : null}
+  aria-label={label || null}
+  style:--marquee-duration={duration}
+  style:--marquee-gap={gap}
+  {class}
+  {...$attributes}
+>
+  <div class="track"><slot /></div>
+  <div class="track" aria-hidden="true"><slot /></div>
+</div>
+
+<style>
+  .marquee {
+    display: flex; gap: var(--marquee-gap);
+    overflow: hidden;
+  }
+  /* A mask rather than a gradient in a fixed color, so the edges fade into
+     whatever surface the theme puts behind the row. */
+  .marquee.fade {
+    mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
+  }
+
+  .track {
+    display: flex; flex-shrink: 0; gap: var(--marquee-gap);
+    min-width: 100%;
+    animation: marquee-slide var(--marquee-duration) linear infinite;
+  }
+  .reverse .track { animation-direction: reverse; }
+  .pause:hover .track,
+  .pause:focus-within .track { animation-play-state: paused; }
+
+  @keyframes marquee-slide {
+    to { transform: translateX(calc(-100% - var(--marquee-gap))); }
+  }
+
+  /* Still, and scrollable by hand instead; the copy is only there for the
+     loop, so it goes too. */
+  @media (prefers-reduced-motion: reduce) {
+    .marquee { overflow-x: auto; }
+    .marquee.fade { mask-image: none; }
+    .track { animation: none; }
+    .track[aria-hidden] { display: none; }
+  }
+</style>
