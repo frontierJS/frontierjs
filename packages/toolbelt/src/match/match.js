@@ -321,20 +321,20 @@ function _every(fields, record, list) {
  * moment — neither changes as time passes. `withExpired`/`onlyExpired` step
  * outside the window, so they do not either.
  *
- * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean }|null} window
+ * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean }|null} span
  *        the model's `x-effective`
  * @param {object} record
  * @param {{ asOf?: unknown, withExpired?: boolean, onlyExpired?: boolean }} [directives]
  * @returns {number|null}  epoch ms at which the row leaves, or null for never
  */
-export function leavesAt(window, record, directives = {}) {
-  if (!window?.imposed || !window.to || !record) return null
+export function leavesAt(span, record, directives = {}) {
+  if (!span?.imposed || !span.to || !record) return null
   if (directives.asOf != null || directives.withExpired || directives.onlyExpired) return null
-  const edge = record[window.to]
+  const edge = record[span.to]
   if (edge == null) return null
-  // A day window compares the UTC date, the way the Data boundary reads `now`,
+  // A day span compares the UTC date, the way the Data boundary reads `now`,
   // and `to` is exclusive: the row is gone from that day's first UTC instant.
-  const ms = window.kind === 'day'
+  const ms = span.kind === 'day'
     ? Date.parse(`${String(edge).slice(0, 10)}T00:00:00Z`)
     : (edge instanceof Date ? edge.getTime() : Date.parse(String(edge)))
   return Number.isNaN(ms) ? null : ms

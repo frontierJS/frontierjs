@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-02 — `match`: `leavesAt`'s first parameter is `span`, not `window`
+
+The substrate purity rule reads `window.<name>` as a browser global, so a parameter called `window` failed CI on `window.to`. Renamed; behavior and callers are unchanged.
+
 ## 2026-09-30 — `search`: `rank()` takes `words` and `weights`
 
 `rank(items, q, { words: true })` scores each whitespace-separated word on its
