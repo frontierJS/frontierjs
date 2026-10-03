@@ -1509,7 +1509,7 @@ Grade this model by CAPABILITY as well as by @@gate — both, ANDed, the gate as
 
 tier: **essential** · legal in: in a model, in a trait · also called: permission, rbac, role, authorization · see also: `allow`, `deny`
 
-The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must be NON-DECREASING (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else's standing.
+The standing a caller needs, per operation, on the 0–9 ladder — read first, then create, update, delete. A missing position cascades from the left, so "4" is 4 for all four. Levels must hold read ≤ update ≤ delete and create ≤ delete (8 and 9 are sentinels and may appear anywhere), because a model easier to delete than to read is a mistake every time. Create is free relative to read, so a drop box — many may write, few may read — is "6.4.9.9", and a caller below the read level is refused by name rather than filtered to an empty list. A gate REFUSES — it throws naming the model and the level, where a policy filters. A schema declaring any gate auto-installs GatePlugin, since a declared-but-unenforced gate is fail-open. It is per MODEL, so a gate on the table getLevel reads from lets any signed-in caller rewrite anyone else's standing.
 
 ```lite
 @@gate("2.4.4.5")

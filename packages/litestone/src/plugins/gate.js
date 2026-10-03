@@ -97,23 +97,31 @@ export function parseGateString(str) {
 }
 
 // ─── Validate gate tuple ──────────────────────────────────────────────────────
-// Levels must be non-decreasing (read ≤ create ≤ update ≤ delete)
-// except for SYSTEM(8) and LOCKED(9) which are sentinels and can appear anywhere
+// Two chains must hold: read ≤ update ≤ delete, and create ≤ delete. Create
+// is free relative to read and update — a drop box (many may write, few may
+// read) is a gate with create below read, and it must be statable so the
+// refusal names the model instead of a policy filtering to an empty 200.
+// SYSTEM(8) and LOCKED(9) are sentinels and can appear anywhere.
 
 function isSentinel(n) { return n === 8 || n === 9 }
 
 export function validateGate(gate, modelName) {
-  const ops = ['read', 'create', 'update', 'delete']
   let prev = 0
-  for (const op of ops) {
+  for (const op of ['read', 'update', 'delete']) {
     const n = gate[op]
-    if (!isSentinel(n) && !isSentinel(prev) && n < prev) {
+    if (!isSentinel(n) && n < prev) {
       throw new Error(
-        `@@gate on "${modelName}": levels must be non-decreasing in R.C.U.D order ` +
-        `(${op}=${n} is less than previous=${prev})`
+        `@@gate on "${modelName}": ${op}=${n} is less than the level before it ` +
+        `(${prev}); levels must be non-decreasing across read ≤ update ≤ delete`
       )
     }
     if (!isSentinel(n)) prev = n
+  }
+  if (!isSentinel(gate.create) && !isSentinel(gate.delete) && gate.create > gate.delete) {
+    throw new Error(
+      `@@gate on "${modelName}": create=${gate.create} is greater than delete=${gate.delete}; ` +
+      `removing a row must never be easier than adding one`
+    )
   }
 }
 

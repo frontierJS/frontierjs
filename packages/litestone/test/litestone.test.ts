@@ -8349,9 +8349,41 @@ describe('GatePlugin', () => {
 
   test('validateGate rejects non-decreasing levels', async () => {
     const { validateGate } = await import('../src/plugins/gate.js')
-    expect(() => validateGate({ read: 4, create: 2, update: 4, delete: 6 }, 'Post')).toThrow()
-    expect(() => validateGate({ read: 2, create: 4, update: 3, delete: 6 }, 'Post')).toThrow()
+    expect(() => validateGate({ read: 4, create: 2, update: 3, delete: 6 }, 'Post')).toThrow()
+    expect(() => validateGate({ read: 2, create: 4, update: 5, delete: 4 }, 'Post')).toThrow()
+    expect(() => validateGate({ read: 2, create: 7, update: 3, delete: 6 }, 'Post')).toThrow()
     expect(() => validateGate({ read: 2, create: 4, update: 5, delete: 6 }, 'Post')).not.toThrow()
+  })
+
+  // FJS-1244 / FJS-D491: a drop box — many may write, few may read. Create is
+  // free relative to read; the ladder that holds is read ≤ update ≤ delete and
+  // create ≤ delete.
+  test('validateGate lets create sit below read (a drop box)', async () => {
+    const { validateGate, parseGateString } = await import('../src/plugins/gate.js')
+    for (const g of ['6.4.9.9', '5.1.6.6', '6.4.6.6', '7.0.7.7']) {
+      expect(() => validateGate(parseGateString(g), 'SurveyResponse')).not.toThrow()
+    }
+    // create may not outrank delete — removing a row is never easier than adding one
+    expect(() => validateGate(parseGateString('2.6.4.5'), 'Post')).toThrow(/create=6/)
+    // read still may not outrank update or delete
+    expect(() => validateGate(parseGateString('6.4.5.6'), 'Post')).toThrow(/update=5/)
+  })
+
+  test('a drop-box @@gate boots, and refuses a reader below it by name', async () => {
+    const { AccessDeniedError } = await import('../src/core/plugin.js')
+    const db = await makeGateDb(`
+      model SurveyResponse {
+        id   Int    @id
+        body String
+        @@gate("6.4.9.9")
+      }
+    `, 'gate-dropbox', (user: any) => user?.level ?? 0)
+    const employee = db.$setAuth({ id: 1, level: 4 })
+    await employee.surveyResponse.create({ data: { body: 'anon' } })
+    await expect(employee.surveyResponse.findMany()).rejects.toThrow(AccessDeniedError)
+    const hr = db.$setAuth({ id: 2, level: 6 })
+    expect((await hr.surveyResponse.findMany()).length).toBe(1)
+    db.$close()
   })
 
   test('LEVELS constants are correct', async () => {
@@ -25370,9 +25402,9 @@ model Person {
 
   test('a gate lowered out of order is refused by the parser, and counted as a kill', async () => {
     const { schemaMutants } = await import('../src/mutate.js')
-    // Levels must be non-decreasing in R.C.U.D order, so lowering `update`
-    // below `create` produces a schema the framework will not load. That is a
-    // kill — it cannot ship — but one nothing in the suite had to make.
+    // Lowering a position can produce a schema the framework will not load
+    // (read ≤ update ≤ delete). That is a kill — it cannot ship — but one
+    // nothing in the suite had to make.
     const lowered = schemaMutants(S, { kinds: ['gate-lower'] })
     expect(lowered.length).toBe(4)
     expect(lowered.every((m: any) => m.text.includes('@@gate'))).toBe(true)
@@ -25526,7 +25558,9 @@ model Person {
   test('a mutant the framework refuses to load is a kill, not an error', async () => {
     const { mutationScore } = await import('../src/mutate.js')
     const r = await mutationScore({
-      schema: S,
+      // update sits level with read, so lowering it leaves read ≤ update ≤
+      // delete broken; create is free and a lowered create stays legal.
+      schema: S.replace('@@gate("2.4.4.5")', '@@gate("2.4.2.4")'),
       kinds:  ['gate-lower'],
       build:  (t: string) => createTestEnv({ schema: t }),
     })

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-02 — `@@gate` may put create below read, so a drop box states itself and refuses by name (`FJS-1244`, `FJS-D491`)
+
+*Many may write, few may read* — a staff survey, a suggestion box, a job application — was unspellable: `@@gate("6.4.9.9")` was refused for non-decreasing levels, and only `8.4.9.9` booted because the sentinels do not advance the ladder. The workaround was a `@@allow('read', auth().isAdmin)` policy, which turns the refusal into an empty 200 that reads the same as *nobody has answered yet*.
+
+`validateGate` now holds two chains instead of one: `read ≤ update ≤ delete`, and `create ≤ delete`. Create is free relative to read and update; removing a row is still never easier than adding one, and a model easier to delete than to read is still refused. 8 and 9 stay sentinels. A caller below the read level of `6.4.9.9` gets an `AccessDeniedError` naming the model, where the policy form filtered to `[]`. The catalog text and the two generated snapshots say the new rule, and the `gate-lower` mutation test now uses a gate whose `update` sits level with `read`, since lowering a position on `2.4.4.5` no longer produces a refused schema.
+
+Proved by `test/litestone.test.ts` § `GatePlugin` — `validateGate lets create sit below read` and `a drop-box @@gate boots, and refuses a reader below it by name`, red before the change. The jazzhr applicant (a reader by claim, not by standing) stays a policy; this row's gate only grades the staff-by-standing reader.
+
 ## 2026-09-30 — a row policy asks whether ANY row of a to-many matches: `members.some(userId == auth().id)` (`FJS-1291`, `FJS-D566`)
 
 *The caller is one of this row's members* had no spelling, so linear, Portal and jazzhr each carried a copy: a resolver-filled `claim teamIds`, a `readerIds String[] @system`, a `submittedIds`. A revoke, a seed or a stamp made on the model left the reader stale. `rel.some(condition)` compiles to a correlated `EXISTS` over the child's foreign key (`someSql` in `core/policy.js`). The JS half (create, post-update, `$readAs`) runs the same `EXISTS` with the parent's key bound, so a broadcast is graded against the live membership row. A soft-deleted child is not one of the relation's rows, as in the query `where`'s `some`. On create the test is false, because nothing points at a row that does not exist yet.
