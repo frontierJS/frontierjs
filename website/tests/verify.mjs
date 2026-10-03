@@ -289,14 +289,13 @@ t('install.published', await (async () => {
 })(), (v) => none(v.missing))
 
 // ─── the splash and the journey ───────────────────────────────────────────
-// The splash's one job is the hand-off, so the check is that both doors are
-// in the file. Every post file with a date is listed on the journey's index
+// The splash's one job is the hand-off, so the check is that the journey door
+// is in the file and the splash says what is coming. Every post file with a date is listed on the journey's index
 // and emitted at its own URL — the index is read off the post files, so a
 // post that builds and is not listed means the reader broke, not the post.
 t('splash.handsOff', {
   journey: splash.includes('href="/journey/"'),
-  pitch:   splash.includes('href="/pitch/"'),
-  soon:    splash.includes('Coming soon'),
+  coming:  splash.includes('is coming.'),
 })
 // Every derived feature is in the file twice: once read, once the copy that
 // makes the loop seamless, hidden from a screen reader.
