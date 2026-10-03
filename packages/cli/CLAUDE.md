@@ -66,6 +66,14 @@ core/
                 was asked for), because the words differ by kind and belong to
                 the page. `stopped` is marked before the signal: a SIGTERM looks
                 the same whoever sent it
+  ci-log.js     the CI run log — `scripts/ci.mjs` appends events to
+                `.cache/ci-runs/` DURING the run, and `/api/ci` folds them. One
+                owner of the format, the test counts and the reading, so the
+                runner and the page cannot drift. A count is `null` when no
+                summary was readable and `partial` when part of the script was
+                not — never 0, which must mean *ran nothing*. Starting a run is
+                `node scripts/ci.mjs` with flags built from names, its own
+                process group so `stop` takes the suite too; one at a time
   release-view.js the Release realm read rather than typed — the pivot verdict
                 per app (local, free, on page load) and what is SERVING (remote,
                 a press). The split is the design: every other panel on that page
@@ -74,7 +82,10 @@ core/
                 verdict — `classifyPivot` and the revert refusals are reached by
                 running the command that owns them, because a second
                 implementation is how the GUI ends up disagreeing with the
-                terminal about whether a deploy can be undone
+                terminal about whether a deploy can be undone. It also owns
+                the release IN ORDER — `RELEASE_STEPS`, the allow-list the
+                Release screen runs from, each step `fli <argv>` in the root or
+                one app, looked up by key and never composed from a request
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
                 siblings are, then test-files-run, register:check and the

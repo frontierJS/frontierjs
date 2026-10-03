@@ -44,12 +44,14 @@ const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is no target to read a journal from')
+  context.config.abort = true
   return
 }
 
 const side = resolveSide(deployConf, target, 'api') ?? resolveSide(deployConf, target, 'web')
 if (!side) {
   log.error(`Cannot resolve a server and path for target: ${target}`)
+  context.config.abort = true
   return
 }
 

@@ -115,9 +115,8 @@ const t     = model.total
 console.log('')
 
 // ─── per place ─────────────────────────────────────────────────────────────
-// The bar is proportional to the heaviest place, not to an absolute scale: the
-// question it answers is *which of these is the big one*, which is the only one
-// a ten-cell bar can answer honestly.
+// The rule under a place is a divider, not a gauge: the file count beside it
+// already says which place is big.
 const QUIET   = new Set(['test', 'record', 'snapshot', 'docs'])
 const withNew = flag.all || flag['with-new']
 const visible = (f) => f.untracked ? withNew : flag.all || !QUIET.has(f.role)
@@ -131,8 +130,7 @@ const shown = model.zones
   })
   .filter(z => z.files.length)
 const hiddenRows = model.zones.reduce((a, z) => a + z.files.length, 0) - shown.reduce((a, z) => a + z.files.length, 0)
-const peak = Math.max(...shown.map(z => z.churn), 1)
-const BAR  = 12
+const RULE = chalk.dim('_'.repeat(12))
 
 // Widest place name, so the bars line up into a column the eye can compare.
 const nameCol = Math.min(24, Math.max(...shown.map(z => z.zone.length), 0))
@@ -169,8 +167,6 @@ const HOT  = 200, WARM = 100
 const heat = (v) => v > HOT ? (chalk.magenta ?? chalk.yellow) : v > WARM ? chalk.yellow : chalk.dim
 
 for (const z of shown) {
-  const filled = Math.max(1, Math.round((z.churn / peak) * BAR))
-  const bar    = chalk.dim('█'.repeat(filled) + '·'.repeat(BAR - filled))
   const marks  = [
     z.conflicts && chalk.red(`!${z.conflicts}`),
     z.staged    && chalk.green(`●${z.staged}`),
@@ -181,7 +177,7 @@ for (const z of shown) {
   console.log([
     '  ' + chalk.bold(z.zone.padEnd(nameCol)),
     String(z.files.length).padStart(3),
-    bar,
+    RULE,
     chalk.green(`+${n(z.added)}`.padStart(6)),
     chalk.red(`-${n(z.deleted)}`.padStart(6)),
     marks,

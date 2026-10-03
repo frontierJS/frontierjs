@@ -20,6 +20,11 @@
 //   GET  /api/decisions       → the open questions the registers hold
 //   GET  /api/next            → the open register ranked — `core/next.js`
 //   POST /api/decide          → rule on one — `core/decide.js`, the command's own writer
+//   GET  /api/ci              → the CI run log — `core/ci-log.js`
+//   POST /api/ci/run · POST /api/ci/stop
+//   GET  /api/release/steps   → the release in order — `core/release-view.js`
+//   POST /api/release/step    → SSE stream, one step as `fli` in its directory
+//   POST /api/release/step/stop
 //   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
 //
 // SSE event shapes sent to client:
@@ -174,6 +179,18 @@ function route(req, res) {
     return handleReleaseTarget(req, res)
   }
 
+  // The release in order, and one step of it run. POST for the same reason as
+  // the target: most steps reach a machine or write a file.
+  if (req.method === 'GET' && path === '/api/release/steps') {
+    return import('./release-view.js').then(m => json(res, 200, m.describeSteps()))
+  }
+  if (req.method === 'POST' && path === '/api/release/step') {
+    return handleReleaseStep(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/release/step/stop') {
+    return handleReleaseStepStop(req, res)
+  }
+
   // GET /api/health/:id — what the thing on that port says about itself
   const healthMatch = path.match(/^\/api\/health\/(.+)$/)
   if (req.method === 'GET' && healthMatch) {
@@ -196,6 +213,19 @@ function route(req, res) {
   const outMatch = path.match(/^\/api\/output\/(.+)$/)
   if (req.method === 'GET' && outMatch) {
     return handleOutput(req, res, decodeURIComponent(outMatch[1]))
+  }
+
+  // GET /api/ci — the CI run log: the run going now, history, each suite's latest
+  if (req.method === 'GET' && path === '/api/ci') {
+    return handleCi(req, res, url)
+  }
+
+  // POST /api/ci/run · POST /api/ci/stop — start `scripts/ci.mjs`, or stop it
+  if (req.method === 'POST' && path === '/api/ci/run') {
+    return handleCiRun(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/ci/stop') {
+    return handleCiStop(req, res)
   }
 
   // GET /api/ports — current session status
@@ -315,17 +345,10 @@ async function handleDecisions(req, res) {
   }
 }
 
-// This writes two register files, and the server answers every origin with
-// `Access-Control-Allow-Origin: *`. So a page on some other site could send it,
-// and the refusal is here: a browser always states the Origin of a cross-site
-// POST, and one naming any host but this server's own is refused.
+// This writes two register files.
 async function handleDecide(req, res) {
-  const origin = req.headers.origin
-  if (origin) {
-    let host = null
-    try { host = new URL(origin).host } catch {}
-    if (host !== req.headers.host) return json(res, 403, { ok: false, reason: `a decision is not taken from ${origin}` })
-  }
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { ok: false, reason: `a decision is not taken from ${foreign}` })
 
   let body
   try { body = await readBody(req) } catch { return json(res, 400, { ok: false, reason: 'Invalid JSON body' }) }
@@ -714,6 +737,51 @@ async function handleOutput(req, res, id) {
   }
 }
 
+// ─── the CI run log ──────────────────────────────────────────────────────────
+//
+// `core/ci-log.js` is the one reader of what `scripts/ci.mjs` writes, and a run
+// started here is that same script with flags, so the page and the terminal
+// cannot disagree about what ran.
+
+async function handleCi(req, res, url) {
+  try {
+    const { ciState } = await import('./ci-log.js')
+    json(res, 200, ciState(global.projectRoot, { runId: url.searchParams.get('run') }))
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleCiRun(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a CI run is not started from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  try {
+    const { startCiRun } = await import('./ci-log.js')
+    const out = await startCiRun(global.projectRoot, {
+      tier:   body?.tier ?? null,
+      phases: Array.isArray(body?.phases) ? body.phases : [],
+      only:   body?.only ?? null,
+    })
+    json(res, out.ok ? 200 : out.status, out.ok ? out : { error: out.error })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleCiStop(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a CI run is not stopped from ${foreign}` })
+  try {
+    const { stopCiRun } = await import('./ci-log.js')
+    const out = stopCiRun(global.projectRoot)
+    json(res, out.ok ? 200 : out.status, out.ok ? out : { error: out.error })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
 // ─── POST /api/ports/clean ───────────────────────────────────────────────────
 async function handlePortsClean(req, res) {
   try {
@@ -923,6 +991,55 @@ async function handleMeta(req, res, name) {
   }
 }
 
+// ─── POST /api/release/step ──────────────────────────────────────────────────
+//
+// One step at a time, whoever asked: two deploys racing for one journal is the
+// thing the journal's own lock refuses, and refusing it here says so sooner.
+// The step and target are checked against `RELEASE_STEPS` and `TARGETS` by key
+// in `runReleaseStep`; nothing from the body reaches argv another way.
+
+let releaseStep = null
+
+async function handleReleaseStep(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a release step is not run from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  if (releaseStep) return json(res, 409, { error: `${releaseStep.id} is still running` })
+
+  const { runReleaseStep } = await import('./release-view.js')
+  const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
+  const out = runReleaseStep({
+    root:     global.projectRoot,
+    fliRoot:  global.fliRoot,
+    id:       String(body?.step ?? ''),
+    app:      body?.app ? String(body.app) : null,
+    target:   String(body?.target ?? 'default'),
+    fix:      body?.fix === true,
+    approved: body?.approved === true,
+    onLine:   (text) => emit({ type: 'output', text }),
+  })
+  if (out.error) return json(res, 400, { error: out.error })
+
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  releaseStep = { id: String(body.step), child: out.child }
+  emit({ type: 'log', level: 'info', text: `$ cd ${out.cwd} && fli ${out.argv.join(' ')}` })
+  const code = await out.done
+  releaseStep = null
+  emit({ type: 'done', code })
+  res.end()
+}
+
+function handleReleaseStepStop(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a release step is not stopped from ${foreign}` })
+  if (!releaseStep) return json(res, 409, { error: 'no step is running' })
+  // The group, not the pid: `fli` is a launcher, and a drive's server or a
+  // deploy's ssh outlives a signal to the wrapper alone.
+  try { process.kill(-releaseStep.child.pid, 'SIGTERM') } catch {}
+  json(res, 200, { ok: true, step: releaseStep.id })
+}
+
 // ─── POST /api/run/:name ──────────────────────────────────────────────────────
 // Body: { args: [...], flags: {...} }
 // Response: SSE stream
@@ -969,6 +1086,18 @@ async function handleRun(req, res, name) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// The server answers every origin with `Access-Control-Allow-Origin: *`, so a
+// page on some other site can send a POST here. A browser always states the
+// Origin of a cross-site POST; one naming any host but this server's own is the
+// answer, and every POST that writes or starts something refuses it.
+function foreignOrigin(req) {
+  const origin = req.headers.origin
+  if (!origin) return null
+  let host = null
+  try { host = new URL(origin).host } catch {}
+  return host === req.headers.host ? null : origin
+}
 
 function json(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' })

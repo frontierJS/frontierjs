@@ -72,6 +72,37 @@
   padding: var(--space-lg);
 }
 
+/*
+ * Home shows the tiles and no panel; an open view shows one panel and no tiles.
+ * A class does it rather than `hidden`, because `hidden` on a panel already
+ * says something else — that it has nothing to show.
+ */
+.gui-home[data-view="home"] [data-panel],
+.gui-home:not([data-view="home"]) [data-panel]:not(.gui-open),
+.gui-home:not([data-view="home"]) #home-tiles { display: none; }
+
+.gui-tiles {
+  --tile-min: 15rem;
+  gap:        var(--space-md);
+}
+
+/* A tile is a button that opens a panel, so it reads left to right like the
+ * panel it opens rather than centered like a button label. */
+.gui-tile {
+  display:        flex;
+  flex-direction: column;
+  gap:            var(--space-2xs);
+  padding:        var(--space-lg);
+  text-align:     start;
+  font:           inherit;
+  cursor:         pointer;
+}
+.gui-tile .tile-value { font-size: var(--text-2xl); }
+
+/* The release's app and target pickers size to their options, like the theme
+ * picker in the topbar — a Field stretches to its container otherwise. */
+.gui-pick { inline-size: auto; }
+
 /* The last-run badge is a BUTTON, because clicking it prints what that run
  * said. A bare button carries the browser's own chrome, which fights the badge
  * it is wearing — so only the chrome is removed and the badge is left alone. */
@@ -322,7 +353,7 @@ button[data-health] {
 
   <header class="topbar">
     <div class="cluster gap-sm">
-      <strong class="text-lg">fli</strong>
+      <button class="btn ghost text-lg" onclick="goHome()" title="home"><strong>fli</strong></button>
       <span class="text-sm text-muted">command runner</span>
       <span class="text-xs text-muted" id="build-date"></span>
     </div>
@@ -355,20 +386,24 @@ button[data-health] {
       <!-- The front page. It is the dashboard rather than a fifth server on a
            fifth port: the complaint this answers is that there are too many
            things to keep track of, and a new tool would make it one worse. -->
-      <div class="gui-home stack gap-lg" id="dashboard">
+      <div class="gui-home stack gap-lg" id="dashboard" data-view="home">
         <div class="cluster gap-sm">
-          <strong class="text-lg">what can run here</strong>
+          <button class="btn ghost text-xs" id="home-back" onclick="openPanel(null)" hidden>← home</button>
+          <strong class="text-lg" id="home-title">home</strong>
           <span class="text-xs text-muted" id="dash-tick" role="status">reading the tree…</span>
         </div>
-        <!-- Above the tiles rather than beside them: what can run here is the
-             whole list, and this is the handful of it that is about the work
-             in front of you. Hidden on a clean tree — a panel that says
-             "nothing changed" on every page load is a panel people learn to
-             skip past. -->
-        <!-- What did I change. It sits ABOVE what proves it because that is the
-             order the two questions are asked in, and hidden on a clean tree
-             for the same reason the proves panel is. -->
-        <section class="surface" id="tree" hidden>
+
+        <!-- Home is one tile per panel and a tile opens its panel alone. Every
+             panel below at once was a page of lists nobody could take in. -->
+        <div class="tiles gui-tiles" id="home-tiles"></div>
+        <div class="empty" id="panel-empty" hidden>
+          <div class="empty-title">nothing here right now</div>
+          <div class="empty-text" id="panel-empty-text"></div>
+        </div>
+
+        <!-- What did I change. Hidden on a clean tree — its tile says "clean"
+             instead, and an open panel with nothing in it says so. -->
+        <section class="surface" id="tree" data-panel="tree" hidden>
           <div class="bar bordered dense">
             <strong class="text-sm">what you have changed</strong>
             <span class="text-xs text-muted" id="tree-note"></span>
@@ -377,7 +412,7 @@ button[data-health] {
           <ul class="rows divided" id="tree-rows"></ul>
         </section>
 
-        <section class="surface" id="proves" hidden>
+        <section class="surface" id="proves" data-panel="proves" hidden>
           <div class="bar bordered dense">
             <strong class="text-sm">what proves this change</strong>
             <span class="text-xs text-muted" id="proves-note"></span>
@@ -389,9 +424,37 @@ button[data-health] {
           </div>
         </section>
 
+        <!-- The workspace CI run, read from `.cache/ci-runs/` while it happens.
+             Each phase and suite shows its OWN latest result and the run it
+             came from, because a narrowed rerun answering one suite is not
+             the whole run passing. Hidden where there is no scripts/ci.mjs. -->
+        <section class="surface" id="ci" data-panel="ci" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">ci</strong>
+            <span id="ci-badge"></span>
+            <span class="text-xs text-muted" id="ci-note" role="status"></span>
+            <div class="cluster gap-2xs">
+              <button class="btn ghost text-xs" id="ci-fast" onclick="startCi({ tier: 'fast' })" title="bun run ci:fast — everything but the suites">run fast</button>
+              <button class="btn ghost text-xs" id="ci-full" onclick="startCi({})" title="bun run ci — every phase">run full</button>
+              <button class="btn ghost text-xs" id="ci-stop" onclick="stopCi()" hidden>stop</button>
+            </div>
+          </div>
+          <div class="bar dense stack gap-2xs" id="ci-live" hidden></div>
+          <span class="text-xs" id="ci-result" role="status"></span>
+          <ul class="rows divided" id="ci-rows"></ul>
+          <details class="disclosure" id="ci-notes-wrap" hidden>
+            <summary class="text-xs">notes from the last run</summary>
+            <ul class="rows divided" id="ci-notes"></ul>
+          </details>
+          <details class="disclosure">
+            <summary class="text-xs">history</summary>
+            <ul class="rows divided" id="ci-history"></ul>
+          </details>
+        </section>
+
         <!-- The open register ranked. Hidden when the project keeps no register,
              which is every project but one that files its own defects. -->
-        <section class="surface" id="next" hidden>
+        <section class="surface" id="next" data-panel="next" hidden>
           <div class="bar bordered dense">
             <strong class="text-sm">next up</strong>
             <span class="text-xs text-muted" id="next-note" role="status"></span>
@@ -403,7 +466,7 @@ button[data-health] {
         <!-- What only the owner can answer. Hidden when nothing can be picked:
              a question with no options is work for somebody else first, so its
              count is a note on this panel rather than a reason to show it. -->
-        <section class="surface" id="decisions" hidden>
+        <section class="surface" id="decisions" data-panel="decisions" hidden>
           <div class="bar bordered dense">
             <strong class="text-sm">waiting on you</strong>
             <span class="text-xs text-muted" id="decisions-note" role="status"></span>
@@ -417,7 +480,7 @@ button[data-health] {
              the rules this framework publishes, `fli doctor` grades the MACHINE
              the commands run on, and a missing `sqlite3` is not an
              architecture finding. -->
-        <section class="surface" id="checks">
+        <section class="surface" id="checks" data-panel="checks">
           <div class="bar bordered dense">
             <strong class="text-sm">checks</strong>
             <span class="text-xs text-muted" id="checks-note">reading…</span>
@@ -436,34 +499,51 @@ button[data-health] {
              TREE and is free; what is serving reaches a MACHINE and is a
              button. A panel that ssh'd on page load would be a monitoring
              agent, which is the orchestrator this realm refuses. -->
-        <section class="surface" id="release">
+        <section class="surface" id="release" data-panel="release">
           <div class="bar bordered dense">
             <strong class="text-sm">release</strong>
             <span class="text-xs text-muted" id="release-note">reading…</span>
             <button class="btn ghost text-xs" onclick="loadRelease()">recheck</button>
           </div>
-          <ul class="rows divided" id="release-rows"></ul>
 
-          <!-- Hidden until an app declares one: a section that says "none" on
-               every page load is a section people learn to scroll past. -->
-          <div class="bar dense" id="attach-bar" hidden><strong class="text-xs text-muted">attachments</strong></div>
-          <ul class="rows divided" id="attach-rows" hidden></ul>
-
+          <!-- Which app and which target the "know", "ship", "watch" and "undo"
+               steps run against. The gates above them are the workspace's. -->
           <div class="bar dense">
+            <label class="text-xs text-muted" for="release-app">app</label>
+            <select class="field text-xs gui-pick" id="release-app" onchange="updateReleaseSteps()"></select>
             <label class="text-xs text-muted" for="release-target">target</label>
-            <select class="field text-xs" id="release-target">
+            <select class="field text-xs gui-pick" id="release-target" onchange="updateReleaseSteps()">
               <option value="default">default (branch)</option>
               <option value="production">production</option>
               <option value="stage">stage</option>
             </select>
-            <select class="field text-xs" id="release-app"></select>
-            <button class="btn ghost text-xs" onclick="readTarget()" id="release-read">read the target</button>
-            <span class="text-xs text-muted" id="target-note">reaches the machine over ssh — nothing is read until you press it</span>
+            <span class="text-xs text-muted" id="release-progress" role="status"></span>
           </div>
-          <div id="target-out" hidden></div>
+
+          <div id="release-steps"><p class="text-xs text-muted">reading the steps…</p></div>
+
+          <!-- Moved into the "classify" step once the steps render; here, and
+               still working, if they never do. -->
+          <div id="release-verdict">
+            <ul class="rows divided" id="release-rows"></ul>
+            <!-- Hidden until an app declares one: a section that says "none" on
+                 every page load is a section people learn to scroll past. -->
+            <div class="bar dense" id="attach-bar" hidden><strong class="text-xs text-muted">attachments</strong></div>
+            <ul class="rows divided" id="attach-rows" hidden></ul>
+          </div>
+
+          <!-- Moved into the "what is serving" step. Reaches the machine over
+               ssh, so it waits for the press. -->
+          <div id="release-serving">
+            <div class="bar dense">
+              <button class="btn ghost text-xs" onclick="readTarget()" id="release-read">read the target</button>
+              <span class="text-xs text-muted" id="target-note">reaches the machine over ssh — nothing is read until you press it</span>
+            </div>
+            <div id="target-out" hidden></div>
+          </div>
         </section>
 
-        <div class="stack gap-lg" id="dash-groups"></div>
+        <div class="stack gap-lg" id="dash-groups" data-panel="run"></div>
       </div>
 
       <div class="empty" id="empty-state" hidden>
@@ -840,7 +920,8 @@ async function init() {
 
     // Deep link — /git/commit selects git:commit
     const title = titleFromPath(window.location.pathname)
-    if (title) selectCommand(title); else showHome(true)
+    if (title) selectCommand(title)
+    else { showHome(true); openPanel(location.hash.slice(1) || null, false) }
   } catch (err) {
     setStatus(false)
     appendOutput(`could not reach the fli server: ${err.message}`, 'error')
@@ -1438,27 +1519,31 @@ async function stream(title, body) {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     })
-
-    const reader  = res.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop()
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        try { handleEvent(JSON.parse(line.slice(6))) } catch {}
-      }
-    }
+    await readEvents(res, handleEvent)
   } catch (err) {
     appendOutput(`connection error: ${err.message}`, 'error')
   } finally {
     running = false
     btn.disabled = false
     btn.classList.remove('loading')
+  }
+}
+
+// The SSE body of a run, one parsed event at a time.
+async function readEvents(res, onEvent) {
+  const reader  = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop()
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try { onEvent(JSON.parse(line.slice(6))) } catch {}
+    }
   }
 }
 
@@ -1577,8 +1662,189 @@ function showHome(on) {
   // The empty state is for a project with nothing in it, not for "no command
   // selected" — that is what the dashboard is now.
   document.getElementById('empty-state').hidden = on ? dashRows.length > 0 : true
-  if (on) startStatePoll(); else stopStatePoll()
+  if (on) { startStatePoll(); loadCi() } else stopStatePoll()
 }
+
+// ─── home — a tile per panel ──────────────────────────────────────────────────
+//
+// Every panel loads and renders exactly as it did when they were all on screen
+// at once; home is a tile per panel, and a tile opens its panel alone. A tile
+// reads what its panel's loader kept and is redrawn whenever that panel's DOM
+// changes, so no loader knows the tiles exist and a panel cannot say one thing
+// while its tile says another for longer than a render.
+
+let treeBody     = null
+let nextBody     = null
+let checksBody   = null
+let provesFiles  = null
+let releaseWorst = null
+let dashState    = null
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+// A row's text is the register's markdown; a tile has room for the words only.
+const plain  = text => String(text ?? '').replace(/\*\*|`/g, '')
+
+// A read answers `null` until its panel has loaded. An optional tile is left
+// off home while its panel is hidden with nothing loaded — a project with no
+// scripts/ci.mjs has no ci, and a tile saying so on every load is noise.
+const TILES = [
+  { key: 'run', label: 'what can run here', read() {
+    if (!dashRows.length) return null
+    const up = dashState ? dashRows.filter(r => dashState[r.id]?.state === 'up').length : '…'
+    const byKind = {}
+    for (const r of dashRows) byKind[r.kind] = (byKind[r.kind] ?? 0) + 1
+    return {
+      value: up, word: `answering of ${dashRows.length}`, tone: up ? 'success' : 'muted',
+      sub: Object.entries(byKind).map(([k, n]) => `${n} ${KIND_TITLE[k] ?? k}`).join(' · '),
+    }
+  } },
+  { key: 'tree', label: 'what you have changed', read() {
+    if (!treeBody) return null
+    const zones = treeBody.zones ?? []
+    if (!zones.length) return { value: 'clean', word: 'nothing changed', tone: 'success', sub: treeBody.branch }
+    const t = treeBody.total
+    return {
+      value: t.files, word: `${plural(t.files, 'file')} · +${t.added} −${t.deleted}`,
+      tone: t.conflicts ? 'danger' : 'info',
+      sub: `${treeBody.branch} · ${zones.map(z => z.zone).join(', ')}`,
+    }
+  } },
+  { key: 'proves', label: 'what proves it', read() {
+    if (provesFiles == null) return null
+    if (!provesFiles) return { value: '—', word: 'nothing changed to prove', tone: 'muted' }
+    if (!provesRows.length) return { value: 0, word: 'no proof row covers this change', tone: 'warning' }
+    return {
+      value: provesRows.length, word: `${provesRows.length === 1 ? 'proof' : 'proofs'} for this change`, tone: 'info',
+      sub: provesRows.slice(0, 2).map(r => r.changed).join(' · '),
+    }
+  } },
+  { key: 'ci', label: 'ci', optional: true, read() {
+    if (!ciBody) return null
+    const { active, lastFull } = ciBody
+    if (active) return {
+      value: 'running', tone: 'info',
+      word: `phase ${Math.min(active.done + 1, active.planned.length)}/${active.planned.length} · ${active.phase ?? 'starting'}`,
+      sub: active.current ? `now: ${active.current.key}` : '',
+    }
+    const head = ciBody.runs[0]
+    if (!head) return { value: 'never', word: 'no run logged yet', tone: 'muted' }
+    return {
+      value: head.status, tone: CI_TONE[head.status] ?? 'muted',
+      word: `${ago(head.at)} · ${head.argv.join(' ') || 'full'}`,
+      sub: head.failures.length
+        ? head.failures.slice(0, 3).join(' · ')
+        : `last full run: ${lastFull ? `${lastFull.status} ${ago(lastFull.at)}` : 'never'}`,
+    }
+  } },
+  { key: 'checks', label: 'checks', read() {
+    if (!checksBody) return null
+    const { errors, warns, machineOk } = checksBody
+    return {
+      value: errors + warns || '✓',
+      word: errors || warns ? `${plural(errors, 'error')} · ${plural(warns, 'warning')}` : 'nothing to report',
+      tone: errors ? 'danger' : warns ? 'warning' : 'success',
+      sub: machineOk ? 'this machine can run fli' : 'this machine needs setup',
+    }
+  } },
+  { key: 'release', label: 'release', read() {
+    if (!releaseWorst) return null
+    const word = { contract: 'only forward after a deploy', unknown: 'counts as contract', expand: 'N-1 keeps working', nothing: 'no app declares a schema' }
+    const byVerdict = {}
+    for (const a of releaseApps) byVerdict[a.verdict] = (byVerdict[a.verdict] ?? 0) + 1
+    return {
+      value: releaseWorst === 'expand' ? 'reversible' : releaseWorst,
+      word: document.getElementById('release-progress').textContent || word[releaseWorst],
+      tone: releaseWorst === 'contract' ? 'danger' : releaseWorst === 'unknown' ? 'warning' : releaseWorst === 'expand' ? 'success' : 'muted',
+      sub: `${word[releaseWorst]} · ${Object.entries(byVerdict).map(([v, n]) => `${plural(n, 'app')} ${v}`).join(' · ')}`,
+    }
+  } },
+  { key: 'decisions', label: 'waiting on you', optional: true, read() {
+    if (!decisionsBody.sections.length && !decisionsBody.decidable.length) return null
+    const n = decisionsBody.decidable.length
+    return {
+      value: n, word: n ? 'to pick' : 'nothing to pick', tone: n ? 'warning' : 'success',
+      sub: decisionsBody.decidable[0]?.question ?? `${decisionsBody.open.length} still need options written`,
+    }
+  } },
+  { key: 'next', label: 'next up', optional: true, read() {
+    if (!nextBody) return null
+    const top = nextBody.ready[0]
+    return {
+      value: nextBody.readyCount, word: `ready · ${nextBody.blocked.length} blocked`, tone: 'muted',
+      sub: top ? `${top.id} ${top.title}` : '',
+    }
+  } },
+]
+
+let tilesHtml = ''
+
+function renderTiles() {
+  const html = TILES.map(tile => {
+    const panel = document.querySelector(`[data-panel="${tile.key}"]`)
+    const s = tile.read()
+    if (!s && tile.optional && panel.hidden) return ''
+    // Nothing read yet, or the read failed: the panel's own note says which.
+    const note = panel.querySelector('[id$="-note"]')?.textContent ?? ''
+    const { value = '…', word = '', tone = 'muted', sub = note } = s ?? {}
+    // Only a reason to look tints the whole tile; a good answer is the delta's tone alone.
+    const loud = tone === 'danger' || tone === 'warning' ? ` ${tone}` : ''
+    return `
+      <button class="tile gui-tile${loud}" type="button" data-tile="${tile.key}" onclick="openPanel('${tile.key}')">
+        <div class="tile-label">${esc(tile.label)}</div>
+        <div class="tile-value">${esc(String(value))}</div>
+        <div class="tile-delta ${tone}">${esc(word)}</div>
+        ${sub ? `<div class="text-xs text-muted gui-clamp">${esc(plain(sub))}</div>` : ''}
+      </button>`
+  }).join('')
+  // Redrawn on every state poll; an unchanged grid is left alone so a focused
+  // tile keeps its focus.
+  if (html !== tilesHtml) document.getElementById('home-tiles').innerHTML = tilesHtml = html
+  syncPanelEmpty()
+}
+
+function openPanel(key, push = true) {
+  const dash = document.getElementById('dashboard')
+  const tile = TILES.find(t => t.key === key)
+  if (!tile) key = null
+  dash.dataset.view = key ?? 'home'
+  for (const p of dash.querySelectorAll('[data-panel]')) p.classList.toggle('gui-open', p.dataset.panel === key)
+  document.getElementById('home-back').hidden = !key
+  document.getElementById('home-title').textContent = tile?.label ?? 'home'
+  syncPanelEmpty()
+  if (push) history.pushState(key ? { panel: key } : {}, '', key ? `/#${key}` : '/')
+  document.querySelector('.gui-work').scrollTop = 0
+}
+
+// A panel hides itself when it has nothing to say; opened on purpose, that
+// would be a blank page, so the tile's own sentence stands in for it.
+function syncPanelEmpty() {
+  const key   = document.getElementById('dashboard').dataset.view
+  const panel = key !== 'home' && document.querySelector(`[data-panel="${key}"]`)
+  const empty = document.getElementById('panel-empty')
+  empty.hidden = !(panel && panel.hidden)
+  if (!empty.hidden) document.getElementById('panel-empty-text').textContent = TILES.find(t => t.key === key)?.read()?.word ?? ''
+}
+
+function goHome() {
+  if (activeCommand || location.pathname !== '/') history.pushState({}, '', '/')
+  activeCommand = null
+  document.getElementById('cmd-form').hidden = true
+  markActive(null)
+  showHome(true)
+  openPanel(null, false)
+}
+
+// The panels only, never the dashboard: setting `hidden` to the value it
+// already has is still a mutation, so watching the tiles' own writes loops.
+// A step's status reads the same panels the tiles do, so it is refreshed here
+// too — except from inside the steps, whose own writes would come back round.
+const tileObserver = new MutationObserver(records => {
+  const fromSteps = records.every(r => (r.target.nodeType === 1 ? r.target : r.target.parentElement)?.closest('#release-steps'))
+  if (!fromSteps) updateReleaseSteps()
+  renderTiles()
+})
+for (const p of document.querySelectorAll('[data-panel]'))
+  tileObserver.observe(p, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['hidden'] })
 
 async function loadDashboard() {
   try {
@@ -1595,6 +1861,225 @@ async function loadDashboard() {
   loadDecisions()
   loadChecks()
   loadRelease()
+  loadReleaseSteps()
+  loadCi()
+}
+
+// ─── ci ───────────────────────────────────────────────────────────────────────
+//
+// `/api/ci` is `core/ci-log.js` over `.cache/ci-runs/`, which `scripts/ci.mjs`
+// appends to as it goes — whoever started the run. Polled fast while one is
+// going and slowly otherwise, so a run started from a terminal shows up too.
+
+const CI_POLL_LIVE_MS = 2000
+const CI_POLL_IDLE_MS = 20000
+let ciTimer = null
+let ciBody  = null
+// Page load and showHome both call loadCi; without a generation the two
+// in-flight calls each schedule a timer and the page polls twice forever.
+let ciGen   = 0
+const ciOpen = new Set()   // phases whose suites are unfolded, kept across polls
+
+async function loadCi() {
+  clearTimeout(ciTimer)
+  const gen = ++ciGen
+  const panel = document.getElementById('ci')
+  try {
+    const body = await fetch(`${API}/api/ci`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+    if (!body.available) { panel.hidden = true; return }
+    ciBody = body
+    panel.hidden = false
+    renderCi()
+  } catch (err) {
+    panel.hidden = false
+    document.getElementById('ci-note').textContent = `could not read the run log: ${err.message}`
+  }
+  // Only while the front page is showing: a poll behind a command's output is
+  // a request nobody reads.
+  if (gen === ciGen && !document.getElementById('dashboard').hidden)
+    ciTimer = setTimeout(loadCi, ciBody?.active ? CI_POLL_LIVE_MS : CI_POLL_IDLE_MS)
+}
+
+const CI_TONE = { ok: 'success', passed: 'success', warn: 'warning', fail: 'danger', failed: 'danger', aborted: 'muted', running: 'info' }
+
+function ciBadge(status, text = status) {
+  return `<span class="badge ${CI_TONE[status] ?? 'muted'} text-xs">${esc(text)}</span>`
+}
+
+// Slower than usual is the question "is it stuck" really asks.
+function ciTime(ms, usual) {
+  if (ms == null) return ''
+  const slow = usual && ms > usual * 1.5 && ms - usual > 5000
+  return `<span class="text-xs ${slow ? 'text-warning' : 'text-muted'}" title="${usual ? `usually ${duration(usual)}` : 'no history yet'}">${duration(ms)}${usual ? ` · usually ${duration(usual)}` : ''}</span>`
+}
+
+function ciCounts(c) {
+  if (!c) return '<span class="text-xs text-muted" title="this runner prints no summary ci-log can read">? tests</span>'
+  const total = c.pass + c.fail
+  // Zero is the answer that has to be loud: a suite that ran nothing passes.
+  if (total === 0 && !c.partial) return '<span class="badge danger text-xs" title="the runner ran no tests">0 tests</span>'
+  const pre = c.partial ? '≥' : ''
+  return `<span class="text-xs" title="${c.partial ? 'part of this script runs something whose summary is not read' : ''}">${pre}${c.pass} pass${c.fail ? ` · <strong class="text-danger">${c.fail} fail</strong>` : ''}${c.skip ? ` · ${c.skip} skip` : ''}</span>`
+}
+
+function ciFrom(item) {
+  return `<span class="text-xs text-muted">${ago(item.at)} · ${esc(item.commit ?? '?')}${item.dirty ? '*' : ''}${item.scope !== 'full' ? ` · ${esc(item.scope)}` : ''}</span>`
+}
+
+function renderCi() {
+  const b = ciBody
+  const { active, lastFull, selected } = b
+  const live = active ? selected : null   // the newest run is the one going
+
+  const head = active ?? b.runs[0]
+  document.getElementById('ci-badge').innerHTML = head ? ciBadge(head.status) : ''
+  document.getElementById('ci-note').textContent = head
+    ? `${active ? 'started' : 'last run'} ${ago(head.at)} · ${head.argv.join(' ') || 'full'}${head.ms != null ? ` · ${duration(head.ms)}` : ''}` +
+      ` · last full run: ${lastFull ? `${lastFull.status} ${ago(lastFull.at)}` : 'never'}`
+    : 'no run logged yet — runs from `bun run ci` and from here both land in .cache/ci-runs/'
+  document.getElementById('ci-stop').hidden = !active
+  document.getElementById('ci-fast').disabled = !!active
+  document.getElementById('ci-full').disabled = !!active
+
+  renderCiLive(active, b)
+
+  // Every phase a full run plans, then any only a narrowed run has touched.
+  const latest = b.latest
+  const phaseItem = Object.fromEntries(latest.filter(i => i.kind === 'phase').map(i => [i.key, i]))
+  const names = [...b.phases, ...Object.keys(phaseItem).filter(n => !b.phases.includes(n))]
+  const livePhase = Object.fromEntries((live?.phases ?? []).map(p => [p.name, p]))
+  const maxMs = Math.max(1, ...Object.values(phaseItem).map(i => i.ms ?? 0))
+
+  document.getElementById('ci-rows').innerHTML = names.map(name => {
+    const item = phaseItem[name]
+    const now  = livePhase[name]
+    const running = active && active.phase === name && now?.ms == null
+    const queued  = active && !now && active.planned.includes(name)
+
+    let status = item ? item.status : null
+    let ms     = item?.ms ?? null
+    if (running) { status = 'running'; ms = b.now - now.at }
+    else if (now?.ms != null) { status = now.ok ? 'ok' : 'fail'; ms = now.ms }
+
+    // The run going now answers ahead of history, suite by suite as it reaches them.
+    const stepMap = new Map(latest.filter(i => i.kind === 'step' && i.phase === name).map(i => [i.key, i]))
+    for (const s of now?.steps ?? []) if (s.key) stepMap.set(s.key, { ...stepMap.get(s.key), ...s, thisRun: true })
+    if (running && active.current?.phase === name)
+      stepMap.set(active.current.key, { ...stepMap.get(active.current.key), key: active.current.key, status: 'running', ms: b.now - active.current.at, thisRun: true })
+    const steps = [...stepMap.values()]
+      .sort((x, y) => (y.status === 'fail') - (x.status === 'fail') || (y.ms ?? 0) - (x.ms ?? 0))
+    const open = ciOpen.has(name)
+
+    return `
+      <li class="list-row" data-ci-phase="${esc(name)}">
+        <div class="stack gap-2xs">
+          <div class="cluster gap-sm">
+            ${status ? ciBadge(status, running ? 'running' : status) : queued ? ciBadge('aborted', 'queued') : ciBadge('aborted', 'never run')}
+            <strong class="text-sm">${esc(name)}</strong>
+            ${steps.length ? `<button class="btn ghost text-xs" aria-expanded="${open}" onclick="toggleCiPhase(${esc(JSON.stringify(name))})">${open ? '▾' : '▸'} ${steps.length}</button>` : ''}
+            ${ms != null ? `<progress class="progress muted gui-churn" max="${maxMs}" value="${Math.min(ms, maxMs)}"></progress>` : ''}
+            ${ciTime(ms, b.usual[name])}
+            ${running ? '' : now?.ms != null ? '<span class="text-xs text-muted">this run</span>' : item ? ciFrom(item) : ''}
+            ${item?.narrowed ? '<span class="badge muted text-xs" title="that run named --only, so it answered one package">narrowed</span>' : ''}
+          </div>
+          ${open ? `<ul class="rows divided">${steps.map(s => renderCiStep(s, name, active)).join('')}</ul>` : ''}
+        </div>
+        <div class="row-actions cluster gap-2xs">
+          <button class="btn ghost text-xs" ${active ? 'disabled' : ''} onclick="startCi({ phases: [${esc(JSON.stringify(name))}] })" title="bun run ci -- --phase ${esc(name)}">rerun</button>
+        </div>
+      </li>`
+  }).join('')
+
+  const notes = selected?.notes ?? []
+  document.getElementById('ci-notes-wrap').hidden = notes.length === 0
+  document.getElementById('ci-notes').innerHTML = notes.map(n => `<li class="list-row"><span class="text-xs">${esc(n)}</span></li>`).join('')
+
+  document.getElementById('ci-history').innerHTML = b.runs.map(r => `
+    <li class="list-row">
+      <div class="stack gap-3xs">
+        <div class="cluster gap-sm">
+          ${ciBadge(r.status)}
+          <code class="text-xs">${esc(r.argv.join(' ') || 'full')}</code>
+          <span class="text-xs text-muted">${ago(r.at)} · ${r.ms != null ? duration(r.ms) : `${r.done}/${r.planned.length} phases`} · ${esc(r.commit ?? '?')}${r.dirty ? '*' : ''}</span>
+        </div>
+        ${r.failures.length ? `<span class="text-xs text-danger">${r.failures.slice(0, 4).map(esc).join(' · ')}${r.failures.length > 4 ? ` · +${r.failures.length - 4}` : ''}</span>` : ''}
+      </div>
+    </li>`).join('')
+}
+
+function renderCiStep(s, phase, active) {
+  // Only a suite can be narrowed to: `--only` reaches typecheck and tests.
+  const rerun = phase === 'tests'
+    ? `<button class="btn ghost text-xs" ${active ? 'disabled' : ''} onclick="startCi({ phases: ['tests'], only: ${esc(JSON.stringify(s.key))} })" title="bun run ci -- --phase tests --only ${esc(s.key)}">rerun</button>`
+    : ''
+  const failed = s.counts?.failed?.length
+    ? `<ul class="text-xs text-danger">${s.counts.failed.map(f => `<li><code>${esc(f)}</code></li>`).join('')}</ul>`
+    : ''
+  return `
+    <li class="list-row" data-ci-step="${esc(s.key)}">
+      <div class="stack gap-3xs">
+        <div class="cluster gap-sm">
+          ${ciBadge(s.status)}
+          <span class="text-sm">${esc(s.key)}</span>
+          ${phase === 'tests' ? ciCounts(s.counts) : ''}
+          ${ciTime(s.ms, s.usualMs)}
+          ${s.thisRun ? '<span class="text-xs text-muted">this run</span>' : ciFrom(s)}
+        </div>
+        ${s.status === 'fail' && s.label !== s.key ? `<span class="text-xs text-muted">${esc(s.label)}</span>` : ''}
+        ${failed}
+      </div>
+      <div class="row-actions cluster gap-2xs">${rerun}</div>
+    </li>`
+}
+
+function renderCiLive(active, b) {
+  const el = document.getElementById('ci-live')
+  el.hidden = !active
+  if (!active) return
+  const elapsed = b.now - active.at
+  const cur = active.current
+  const curUsual = cur ? b.latest.find(i => i.kind === 'step' && i.phase === cur.phase && i.key === cur.key)?.usualMs : null
+  const phaseUsual = b.usual[active.phase]
+  el.innerHTML = `
+    <div class="cluster gap-sm">
+      <progress class="progress muted gui-churn" max="${active.planned.length}" value="${active.done}"></progress>
+      <span class="text-sm">phase ${Math.min(active.done + 1, active.planned.length)}/${active.planned.length} · <strong>${esc(active.phase ?? 'starting')}</strong>
+        ${active.phaseAt ? ciTime(b.now - active.phaseAt, phaseUsual) : ''}</span>
+    </div>
+    ${cur ? `<span class="text-sm">now: <code>${esc(cur.key)}</code> ${ciTime(b.now - cur.at, curUsual)}</span>` : ''}
+    <span class="text-xs text-muted">total ${duration(elapsed)}${b.usualRunMs ? ` of a usual ${duration(b.usualRunMs)}` : ''} · last output ${ago(active.lastAt)}</span>`
+}
+
+function toggleCiPhase(name) {
+  if (ciOpen.has(name)) ciOpen.delete(name); else ciOpen.add(name)
+  renderCi()
+}
+
+async function startCi(opts) {
+  const result = document.getElementById('ci-result')
+  result.textContent = 'starting…'
+  try {
+    const r = await fetch(`${API}/api/ci/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts) })
+    const body = await r.json()
+    result.textContent = r.ok ? `started · ${body.argv.join(' ') || 'full'}` : body.error
+    if (r.ok) for (const p of opts.phases ?? []) ciOpen.add(p)
+  } catch (err) {
+    result.textContent = err.message
+  }
+  loadCi()
+}
+
+async function stopCi() {
+  const result = document.getElementById('ci-result')
+  try {
+    const r = await fetch(`${API}/api/ci/stop`, { method: 'POST' })
+    const body = await r.json()
+    result.textContent = r.ok ? (body.group ? 'stopped' : 'stopped ci.mjs — it was started from a terminal, so the suite it was in finishes on its own') : body.error
+  } catch (err) {
+    result.textContent = err.message
+  }
+  loadCi()
 }
 
 // ─── next up ──────────────────────────────────────────────────────────────────
@@ -1608,6 +2093,7 @@ async function loadNext() {
   try {
     const body = await fetch(`${API}/api/next`).then(r => r.json())
     if (body.error) throw new Error(body.error)
+    nextBody = body
 
     panel.hidden = body.readyCount === 0 && body.blocked.length === 0
     note.textContent = `${body.readyCount} ready · ${body.blocked.length} blocked · fli next for the rest`
@@ -1737,6 +2223,7 @@ async function loadTree() {
   try {
     const body = await fetch(`${API}/api/status`).then(r => r.json())
     if (body.error) throw new Error(body.error)
+    treeBody = body
 
     const places = body.zones ?? []
     // A clean tree hides the panel rather than saying "nothing changed" — a
@@ -1865,6 +2352,7 @@ async function loadProves() {
     // row matching is worth showing — that is the table being behind, which is
     // the one thing this panel can report that nothing else does.
     const files = body.files?.length ?? 0
+    provesFiles = files
     panel.hidden = files === 0
     note.textContent = provesRows.length
       ? `${files} file(s) changed · the package's own suite first`
@@ -1999,6 +2487,7 @@ function dashRow(r) {
 async function pollState() {
   try {
     const { state, at } = await fetch(`${API}/api/state`).then(r => r.json())
+    dashState = state
 
     // Before the render, so the badge is drawn from this tick's answer rather
     // than from the one before it.
@@ -2110,6 +2599,7 @@ async function loadRelease() {
     const worst = releaseApps.some(a => a.verdict === 'contract') ? 'contract'
                 : releaseApps.some(a => a.verdict === 'unknown')  ? 'unknown'
                 : releaseApps.length ? 'expand' : 'nothing'
+    releaseWorst = worst
     note.textContent = worst === 'nothing'
       ? 'no app in this tree declares a schema'
       : worst === 'contract' ? 'a deploy of this tree crosses the pivot — after it, only forward'
@@ -2231,11 +2721,13 @@ async function readTarget() {
       // The command's own sentence, not a rewrite of it. A refusal that reaches
       // nobody is not a refusal (`FJS-D158`), and this is the same lesson.
       note.textContent = 'the target could not be read'
+      recordStep('serving', 1)
       out.innerHTML = `<div class="bar dense"><span class="text-xs" data-finding="error">${esc(body.error ?? 'no reason given')}</span></div>`
       return
     }
 
     note.textContent = `${esc(body.app)} · ${esc(body.target)}`
+    recordStep('serving', 0)
     out.innerHTML = `
       <ul class="rows divided">
         ${body.transitions.map(t => `
@@ -2258,6 +2750,216 @@ async function readTarget() {
   }
 }
 
+// ─── the release, in order ───────────────────────────────────────────────────
+//
+// `/api/release/steps` is the table and its order; this draws it once and then
+// only updates each step's status in place, because two blocks of the panel
+// above — the verdict and the target reading — are MOVED into their steps and
+// a redraw would take them with it.
+//
+// A step's status is one of three kinds of answer. A gate reads a panel the
+// page already loaded (the tree, CI, what is serving). A step this page ran
+// remembers how that run went, per app and target, in this browser only. And
+// a step nothing has answered says `not run` — never a guessed pass.
+
+const STEP_RESULTS_KEY = 'fli-release-steps'
+let releaseStages  = []
+let releaseSteps   = []
+let stepRunning    = null
+let stepResults    = {}
+try { stepResults = JSON.parse(localStorage.getItem(STEP_RESULTS_KEY) ?? '{}') } catch {}
+
+const releaseApp    = () => document.getElementById('release-app').value || null
+const releaseTarget = () => document.getElementById('release-target').value
+const stepKey = (step) => step.scope === 'app'
+  ? `${step.id}|${releaseApp() ?? '.'}|${step.targetless ? '' : releaseTarget()}`
+  : step.id
+
+function recordStep(id, code) {
+  const step = releaseSteps.find(s => s.id === id)
+  if (!step) return
+  stepResults[stepKey(step)] = { code, at: Date.now() }
+  try { localStorage.setItem(STEP_RESULTS_KEY, JSON.stringify(stepResults)) } catch {}
+  updateReleaseSteps()
+}
+
+async function loadReleaseSteps() {
+  try {
+    const body = await fetch(`${API}/api/release/steps`).then(r => r.json())
+    releaseStages = body.stages
+    releaseSteps  = body.steps
+    renderReleaseSteps()
+  } catch (err) {
+    document.getElementById('release-steps').innerHTML =
+      `<p class="text-xs text-danger">could not read the release steps: ${esc(err.message)}</p>`
+  }
+}
+
+function renderReleaseSteps() {
+  let n = 0
+  const list    = document.getElementById('release-steps')
+  const verdict = document.getElementById('release-verdict')
+  const serving = document.getElementById('release-serving')
+  // Out of the list before it is redrawn, or the redraw deletes them.
+  list.after(verdict, serving)
+  list.innerHTML = releaseStages.map(stage => `
+    <div class="bar dense"><strong class="text-xs text-muted">${esc(stage.title)}</strong></div>
+    <ol class="rows divided">
+      ${releaseSteps.filter(s => s.stage === stage.id).map(s => `
+        <li class="list-row" data-step="${esc(s.id)}">
+          <div class="stack gap-3xs">
+            <div class="cluster gap-sm">
+              <span class="text-xs text-muted">${++n}</span>
+              <span class="badge muted text-xs" data-step-badge>…</span>
+              <strong class="text-sm">${esc(s.title)}</strong>
+              ${s.remote ? '<span class="badge muted text-xs" title="reaches the target over ssh">remote</span>' : ''}
+              <span class="badge info text-xs" data-step-next hidden>next</span>
+            </div>
+            <span class="text-xs text-muted">${esc(plain(s.why))}</span>
+            <span class="text-xs" data-step-note></span>
+            <div data-step-slot></div>
+          </div>
+          <div class="row-actions cluster gap-2xs">
+            ${s.command ? `<code class="gui-cmd" title="${esc(s.command)}">${esc(s.command)}</code>` : ''}
+            ${stepActions(s)}
+          </div>
+        </li>`).join('')}
+    </ol>`).join('')
+
+  // The two blocks that already answer a step go INTO that step.
+  list.querySelector('[data-step="classify"] [data-step-slot]')?.append(verdict)
+  list.querySelector('[data-step="serving"] [data-step-slot]')?.append(serving)
+  updateReleaseSteps()
+}
+
+function stepActions(s) {
+  const id = esc(JSON.stringify(s.id))
+  if (s.gate === 'tree')   return `<button class="btn ghost text-xs" onclick="openPanel('tree')">see changes</button>`
+  if (s.gate === 'ci')     return `<button class="btn ghost text-xs" data-step-run onclick="startCi({})">run full</button>
+                                   <button class="btn ghost text-xs" onclick="openPanel('ci')">see ci</button>`
+  if (s.gate === 'target') return ''
+  return `
+    <button class="btn ${s.confirm ? 'outlined' : 'ghost'} text-xs" data-step-run onclick="runStep(${id})">${s.confirm ? s.title : 'run'}</button>
+    ${s.fixCommand ? `<button class="btn ghost text-xs" data-step-run title="${esc(s.fixCommand)}" onclick="runStep(${id}, { fix: true })">fix</button>` : ''}
+    <button class="btn ghost text-xs" data-step-stop hidden onclick="stopStep()">stop</button>`
+}
+
+// [tone, word, note] for one step — from its gate, else from the last run here.
+function stepStatus(s) {
+  if (stepRunning === s.id) return ['info', 'running', 'output is in the console']
+
+  if (s.gate === 'tree') {
+    if (!treeBody) return ['muted', '…', '']
+    const files = treeBody.total?.files ?? 0
+    return files
+      ? ['warning', 'uncommitted', `${plural(files, 'file')} not in a commit on ${treeBody.branch}`]
+      : ['success', 'clean', `everything is committed on ${treeBody.branch}`]
+  }
+  if (s.gate === 'ci') {
+    if (!ciBody) return ['muted', '…', '']
+    if (ciBody.active) return ['info', 'running', `phase ${ciBody.active.done + 1}/${ciBody.active.planned.length}`]
+    const f = ciBody.lastFull
+    if (!f) return ['warning', 'never', 'no full run is logged — a narrowed or fast run does not count']
+    return [CI_TONE[f.status] ?? 'muted', f.status, `${ago(f.at)} on ${f.commit ?? '?'}${f.dirty ? ' with uncommitted changes' : ''}`]
+  }
+
+  const last = stepResults[stepKey(s)]
+  let note = ''
+  if (s.id === 'prove' && provesFiles != null) note = provesRows.length ? `${plural(provesRows.length, 'proof')} named for this change` : 'nothing named for this change'
+  if (s.id === 'check' && checksBody) note = `the checks panel reads ${plural(checksBody.errors, 'error')} · ${plural(checksBody.warns, 'warning')}`
+  if (s.id === 'classify' && releaseWorst) note = document.getElementById('release-note').textContent
+  if (!last) {
+    // What the page already read stands in until somebody runs the step.
+    if (s.id === 'check' && checksBody) return checksBody.errors ? ['danger', 'failing', note] : ['success', 'passing', note]
+    if (s.id === 'classify' && releaseWorst) return [releaseWorst === 'contract' ? 'danger' : releaseWorst === 'unknown' ? 'warning' : 'success', releaseWorst === 'expand' ? 'reversible' : releaseWorst, note]
+    return ['muted', 'not run', note]
+  }
+  const when = ago(last.at)
+  if (last.code === 0) return ['success', 'passed', [note, `ran ${when}`].filter(Boolean).join(' · ')]
+  if (last.code == null) return ['muted', 'stopped', `stopped ${when}`]
+  return ['danger', 'failed', [`exit ${last.code} ${when} — the console has why`, note].filter(Boolean).join(' · ')]
+}
+
+function updateReleaseSteps() {
+  if (!releaseSteps.length) return
+  let next = null, ok = 0, counted = 0
+  for (const s of releaseSteps) {
+    const li = document.querySelector(`[data-step="${s.id}"]`)
+    if (!li) continue
+    // No ci script, no ci step: a gate nobody can pass is not a step.
+    if (s.gate === 'ci') li.hidden = !ciBody
+    if (li.hidden) continue
+    const [tone, word, note] = stepStatus(s)
+    const badge = li.querySelector('[data-step-badge]')
+    badge.className = `badge ${tone} text-xs`
+    badge.textContent = word
+    li.querySelector('[data-step-note]').textContent = note
+    for (const b of li.querySelectorAll('[data-step-run]')) b.disabled = Boolean(stepRunning) || Boolean(ciBody?.active && s.gate === 'ci')
+    const stop = li.querySelector('[data-step-stop]')
+    if (stop) stop.hidden = stepRunning !== s.id
+
+    // Next is the first step before the deploy that is not green. After the
+    // deploy the steps are things to read, not a sequence to finish.
+    const before = ['finish', 'green', 'know'].includes(s.stage)
+    if (before) { counted++; if (tone === 'success') ok++ }
+    if (before && !next && tone !== 'success') next = s.id
+  }
+  for (const li of document.querySelectorAll('[data-step-next]'))
+    li.hidden = li.closest('[data-step]').dataset.step !== next
+  // Outside the steps, so the observer sees this write: rewriting the same text
+  // is still a mutation, and an unconditional one loops forever.
+  const progress = document.getElementById('release-progress')
+  const text = `${ok} of ${counted} ready${next ? ` · next: ${releaseSteps.find(s => s.id === next).title}` : ' — ship it'}`
+  if (progress.textContent !== text) progress.textContent = text
+}
+
+async function runStep(id, { fix = false } = {}) {
+  const step = releaseSteps.find(s => s.id === id)
+  if (!step || stepRunning) return
+  const where = step.scope === 'app' ? ` — ${releaseApp() ?? 'the app'} · ${releaseTarget()}` : ''
+  let approved = false
+  if (step.confirm) {
+    if (!window.confirm(`${step.title}${where}\n\nThis ${step.confirm}. Run it?`)) return
+    approved = true
+  }
+
+  stepRunning = id
+  updateReleaseSteps()
+  appendOutput(`release · ${step.title}${fix ? ' (fix)' : ''}${where}`, 'info')
+  let code = null
+  try {
+    const res = await fetch(`${API}/api/release/step`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: id, app: releaseApp(), target: releaseTarget(), fix, approved }),
+    })
+    if (!res.ok) {
+      appendOutput((await res.json()).error, 'error')
+      stepRunning = null
+      updateReleaseSteps()
+      return
+    }
+    await readEvents(res, e => {
+      if (e.type === 'output') appendOutput(stripAnsi(e.text).trimEnd(), 'output')
+      else if (e.type === 'log') appendOutput(e.text, e.level || 'info')
+      else if (e.type === 'done') code = e.code
+    })
+    appendOutput(code === 0 ? 'passed' : code == null ? 'stopped' : `failed — exit ${code}`, code === 0 ? 'success' : 'error')
+  } catch (err) {
+    appendOutput(`connection error: ${err.message}`, 'error')
+  }
+  stepRunning = null
+  recordStep(id, code)
+
+  // What a step writes, the panels it feeds read again.
+  if (['done', 'snapshots', 'classify'].includes(id)) loadTree()
+  if (id === 'classify') loadRelease()
+  if (id === 'check') loadChecks()
+}
+
+async function stopStep() {
+  await fetch(`${API}/api/release/step/stop`, { method: 'POST' }).catch(() => {})
+}
+
 async function loadChecks() {
   const note = document.getElementById('checks-note')
   try {
@@ -2267,6 +2969,7 @@ async function loadChecks() {
     ])
     if (checks.error)  throw new Error(checks.error)
     if (machine.error) throw new Error(machine.error)
+    checksBody = { errors: checks.errors, warns: checks.warns, machineOk: machine.ok }
 
     // One list, strongest first, each finding carrying the scope it came from.
     checkRows = (checks.scopes ?? []).flatMap(sc => sc.findings.map(f => ({ ...f, scope: sc.label })))
@@ -2968,6 +3671,7 @@ window.addEventListener('popstate', e => {
   showHome(true)
   document.getElementById('cmd-form').hidden = true
   markActive(null)
+  openPanel(e.state?.panel ?? null, false)
 })
 </script>
 </body>

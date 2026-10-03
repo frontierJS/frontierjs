@@ -61,6 +61,7 @@ than started.
 | 18 | **EventMark** — a staffing schedule written as a Markdown file | a text document that is the record while a screen writes back into it; a staff-to-child ratio broken from either side; a reference to a person who may not exist | `kernel-and-projections.md` · [`FJS-D474`](../DECISIONS.md#fjs-d474) · `time-and-recurrence.md` · `FJS-D305` |
 | 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
 | 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
+| 21 | **Transit** — the data layer as a product: intake, normalize, report to screen, PDF and email | foreign data typed by a `.lite` held in a row and built on the fly; a sync cursor across a conduit target; one template to three outputs; a scheduled query run at each recipient's standing | `data-layer-v1.md` · `analytics-and-warehouse.md` · `stored-templates.md` · #9 |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -837,6 +838,38 @@ whole-app-in-the-tab shape as #18.
   viewing it asks.
 
 Port in `fjs-prototypes/dragonfly`, with questions in its `PLAN.md`, as below.
+
+### 21. Transit — the data layer, built as a product
+
+*Added 2026-10-03. The feature list, with the owner's V1 verdicts on every row,
+is `data-layer-v1.md`; this entry does not repeat it. Nothing is built. The rank
+only reflects when it was appended.*
+
+**What it is.** Pull data in from outside, normalize it, and report on it with
+`.mesa` templates — on screen, as a PDF, or emailed on a schedule, each
+recipient's copy at that recipient's own standing. Evidence's report-as-a-file
+plus Metabase's subscriptions, with the gate running through every stage.
+
+**What it breaks first.** Every other stressor's data starts inside the app.
+Transit's starts outside, so it breaks at the boundary nothing owns yet: a
+source's `.lite` held in a row and built into a database on the fly, a
+cursor and pagination across a conduit target, the rejects table where
+coercion fails. Then the render path: one template to three outputs, and a
+headless Chromium that must stay severable. Then the send: a query run under
+`app.runAs` per recipient, which no scheduled job has done before.
+
+**Not PostHog (#9).** That one breaks on write rate and a query a tenant wrote;
+Transit breaks on intake, render and send. They share
+`analytics-and-warehouse.md` and nothing else.
+
+**Where this one departs from the list's rule.** The rule says a half-built
+product is not kept in the tree. Transit is not: its code stays in
+`fjs-prototypes/transit` and is never committed here, and every fix it needs
+lands in FJS. After V1, the likely next step is a vertical slice, as `orion` is
+for automations, built into `example` and `basecamp`. That slice is the design
+record, not a copy of the product.
+
+Build in `fjs-prototypes/transit`, with questions in its `PLAN.md`, as below.
 
 ## Not on this list, with reasons
 

@@ -81,6 +81,39 @@ export async function run(t) {
   t.is(target.out, true, 'nothing reached a machine on page load')
   t.ok(/press|ssh/.test(target.note), 'and the panel says so rather than looking broken')
 
+  /* ── the release, in order ────────────────────────────────────────────── */
+
+  const steps = await t.evaluate(`
+    await loadReleaseSteps();
+    const ids = [...document.querySelectorAll('#release-steps [data-step]')].map(li => li.dataset.step);
+    return {
+      ids,
+      table:    releaseSteps.map(s => s.id),
+      verdictIn: document.getElementById('release-verdict').closest('[data-step]')?.dataset.step ?? null,
+      servingIn: document.getElementById('release-serving').closest('[data-step]')?.dataset.step ?? null,
+      deploy:   document.querySelector('[data-step="deploy"] [data-step-badge]').textContent,
+      next:     [...document.querySelectorAll('[data-step-next]')].filter(b => !b.hidden).length,
+      progress: document.getElementById('release-progress').textContent,
+    };
+  `)
+  t.is(steps.ids.join(','), steps.table.join(','), `every step is drawn, in the table's order (${steps.ids.length})`)
+  t.is(steps.verdictIn, 'classify', 'the pivot verdict sits in the step that classifies')
+  t.is(steps.servingIn, 'serving', 'and the target reading in the step that reads it')
+  // Never a guessed pass: a step nothing has answered says so.
+  t.ok(['not run', 'passed', 'failed', 'stopped'].includes(steps.deploy), `a step this page never ran reads as such — "${steps.deploy}"`)
+  t.ok(steps.next <= 1, 'at most one step is marked next')
+  t.ok(/of \d+ ready/.test(steps.progress), `and the panel says how far along it is — "${steps.progress}"`)
+
+  // A step that changes what is serving asks first, and the server holds the
+  // line without the page: an unapproved deploy is refused before any spawn.
+  const refused = await t.evaluate(`
+    const r = await fetch('/api/release/step', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'deploy', target: 'production' }) });
+    return { status: r.status, error: (await r.json()).error };
+  `)
+  t.is(refused.status, 400, 'an unapproved deploy is refused by the server')
+  t.ok(/approving/.test(refused.error), `by name — "${refused.error}"`)
+
   /* ── every class the panel adds resolves ──────────────────────────────── */
 
   const inertNames = await t.evaluate(`

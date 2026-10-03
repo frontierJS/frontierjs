@@ -173,7 +173,7 @@ installed where the app runs.
 | X2 | Streamed HTTP export | — | ✅ `exportPlugin` | **Keep** |
 | X3 | Scheduled subscriptions: cron, timezone, recipients, channel | Metabase, Grafana reporting | ◐ caravan cron; no subscription | **Keep** |
 | X4 | Attachments: a PDF or CSV, inline chart images | Metabase 63 (July 2026) | ✗ | **Keep** |
-| X5 | Each recipient's copy rendered at that recipient's own standing | — (Metabase sends every recipient the same file) | ◐★ `$readAs`, and broadcast cohorts | **Keep** — this is what makes the product FJS's own rather than a smaller Metabase |
+| X5 | Each recipient's copy rendered at that recipient's own standing | — (Metabase sends every recipient the same file) | ◐★ `app.runAs`, as webhooks grade an audience ([`FJS-D193`](../DECISIONS.md#fjs-d193)) | **Keep** — this is what makes the product FJS's own rather than a smaller Metabase |
 | X6 | Slack and webhook delivery | Metabase | ◐ conduit | **Keep** |
 | X7 | Alerts: threshold, goal, results exist | Metabase, Grafana | ◐ the metric-store alert evaluator | **Simpler** — X8: a scheduled report that returns rows only when a threshold is crossed *is* an alert |
 | X8 | Skip the send when there is nothing in it | Metabase | ✗ | **Keep** |
@@ -229,19 +229,71 @@ prototype only**. C stays the target.
 
 ## What this owes before it is built
 
-- **A noun, or the absence of one.** Is a report file a Resource with a query and
-  three outputs, or a noun of its own? Are a source and a subscription new nouns,
-  or a conduit target read in the other direction plus a caravan cron? Run
-  `decision-rules` on each; the source file's *coin no noun yet* still stands
-  until then.
-- **Who owns intake.** A conduit target is outbound today and
-  `inbound-integrations.md` splits receiving between two owners. A source is
-  either inside conduit or beside it, never both.
-- **X5's owner already exists.** A broadcast is graded per recipient, in cohorts
-  (`bridge-index`). A per-recipient render reads that and does not grade
-  recipients a second time.
-- **Chromium is a battery and must be severable** — one render worker behind one
-  seam, so an app that sends no PDF does not install it.
+- **No new noun — answered by the owner, 2026-10-03.** `Report`, `Source` and
+  `Subscription` are model names in the data product's own schema, not framework
+  vocabulary. The source file's *coin no noun yet* holds.
+- **Who owns intake — answered by the owner, 2026-10-03: split by the question
+  each part answers.** *How we reach them* is conduit's: a REST source names a
+  conduit target, so the credential, retry, breaker, rate limit and trace are
+  declared once. Conduit gains nothing, and one request stays one send.
+  *What we keep* is the product's: `streams()`, the cursor, the sync mode,
+  **pagination** (it shares the cursor on most APIs — Stripe's `starting_after`),
+  landing, rejects and freshness. *When it runs* is caravan's. A file or SQL
+  source never touches conduit. Consistent with `FJS-D177` (we dial) and with
+  `inbound-integrations.md` (a polled feed is a cursor, not a route).
+- **The product drives FJS from outside it — answered by the owner, 2026-10-03.**
+  The product is **Transit** (stressor #21) and its own code lives in
+  `fjs-prototypes/transit`, never committed here. **Every framework feature or fix it needs lands in FJS**, and
+  that is the point of building it: the Keep rows above are the framework's
+  worklist, and the product is what proves each one. **After V1, the likely
+  next step is a vertical slice** — as `orion` is for automations — baked into
+  `example` and `basecamp`. Nothing before V1 waits on it.
+- **A source's schema is a row — the owner's direction, 2026-10-03, probed.** A
+  `Source` row holds `.lite` text, and the landing database is built from it on
+  the fly. `createClient({ schema: text, db: ':memory:' })` works today: rows
+  load and a `view`'s `@@sql` reads them back, with no litestone change (probe
+  run 2026-10-03, not kept as a test). What it owes:
+  - **A memory database holds full replace only.** A restart empties it, so an
+    incremental cursor has nothing to resume against. Incremental sync needs a
+    file per source, built the same way.
+  - **`@@sql` names the TABLE, not the model**: `model StripeCharge` lands as
+    `stripe_charge`. A view written against the model name fails at query time,
+    not at parse.
+  - **A schema row is code a row-writer runs**, the same class as R9: `@@sql` is
+    raw SQL. The blast radius is the source's own database, which holds only
+    what that source landed. Prototype-only on the same three terms as R9.
+  - **Who grades it.** A side client does not know the app's principal; X5's
+    `runAs` must reach it by `$setAuth`, and the row's own `@@gate` is what
+    grades. Unprobed.
+  - **A schema edit is a rebuild, not a migration** — which is the appeal, and
+    is only true while the database is disposable.
+- **X5 reuses the owner that exists — answered by the owner, 2026-10-03; the
+  owner was misnamed here.** It is `app.runAs(userId, fn)`, not the broadcast's
+  `gradeRecipients`: that grades ONE row against open sockets, and a report is a
+  query whose aggregates a post-filter cannot correct — a sum over rows the
+  recipient may not see is wrong however it is redacted afterwards. Run the
+  report's query inside `runAs`, re-resolved at send time, as webhooks already do
+  for an audience (`FJS-D193`). What follows from it:
+  - **One run per recipient in V1.** The broadcast's cohort key is the
+    principal's value, and a value carries the user's id, so two people never
+    collapse. Collapsing them needs a coarser key — what the report's models
+    actually grade on — which is new grading work. V2.
+  - **A template never reads its recipient.** The greeting and the unsubscribe
+    link go in the per-recipient envelope, so cohorts stay possible later without
+    a template being rewritten.
+  - **A recipient with no user row** — an outside address — is graded at the
+    standing of whoever subscribed them, the webhook rule. ~~Owed: whether adding
+    one is gated beyond *could have forwarded it anyway*.~~ Answered by
+    [`FJS-D570`](../DECISIONS.md#fjs-d570): no `$protectedFields` in its copy,
+    and nothing sent until the address confirms once.
+  - **A subscription records its tenant.** A cron has no host or headers, so
+    `runAs(actor, { tenant })` is told it.
+  - **An app's `getLevel` that reads a login-only field** grades an emailed copy
+    differently from the screen. Webhooks share this today.
+  - **A deleted or unresolvable recipient** is skipped and logged (X11), never
+    sent.
+- **Chromium is severable — answered by the owner, 2026-10-03.** One render
+  worker behind one seam, so an app that sends no PDF does not install it.
 
 ---
 
@@ -250,8 +302,8 @@ prototype only**. C stays the target.
 - **Another origin of truth?** No. Landed data is typed by `.lite`, a report's
   params by the schema, and a chart's PNG by the same SVG component the screen
   draws. The *FJS today* column above is a copy and is dated, not authoritative.
-- **Concept budget?** Up to three candidates (report, source, subscription), each
-  owed a ruling above. The recommendation is to reuse a noun before adding one.
+- **Concept budget?** Zero. Report, source and subscription are the product's
+  model names, not framework nouns.
 - **Complexity ours or the problem's?** The problem's, where it is kept. Every
   item whose complexity is the field's enterprise scale is cut, and the reason
   is in its row.
@@ -260,7 +312,7 @@ prototype only**. C stays the target.
 - **Derived instead of restated?** Param controls come from `controlFor`, landing
   types from the schema, static charts from the live component.
 - **One owner?** Existing owners for scheduling (caravan), rendering (mesa),
-  export (`@@export`), per-recipient grading (broadcast cohorts) and outbound
+  export (`@@export`), per-recipient standing (`app.runAs`) and outbound
   delivery (conduit). New ones: the landing contract and the PDF render worker.
 - **Boundary explicit?** The landing contract is the boundary between foreign
   data and `.lite`, and the rejects table makes every crossing that failed
@@ -281,6 +333,54 @@ half-fit.
 **Tier.** Assessment. Nothing here may be cited as behavior.
 
 ---
+
+## Open questions
+
+- ~~**Does R9 still prototype A, now that the escape test it owes cannot pass under A?**~~ **Answered 2026-10-03 (`FJS-D569`): A — keep the A prototype on § R9's three terms, and ship Phase 5 with the escape test written and failing until C lands.**
+  Under A a template's braces are JavaScript, and
+  `"".constructor.constructor(…)` contains no forbidden word, so a compile-time
+  refusal over JavaScript is the denylist `stored-templates.md` calls a false
+  guarantee. The paired escape test passes only against C (Transit's PLAN Q9,
+  2026-10-03).
+  - **A** — keep the A prototype on § R9's three terms, and ship Phase 5 with
+    the escape test written and failing until C lands.
+  - **B** — drop A. Write the escape test now as C's spec, and make Phase 5 the
+    smallest C: the policy-expression parser moved into toolbelt, a mesa
+    expression mode where a `{…}` is evaluated and never executed, formatters
+    from `/units` only, and a registered component allowlist.
+  - **C** — move R9 to V2, and leave stored templates out of Transit's V1.
+  - **Recommend B** — A only defers C, and § R9's own done condition (the
+    escape test) cannot be met without C, so A ships an unsafe path whose exit
+    criterion it can never reach. Templates authored in C's subset from the
+    first one lose nothing in the switch. It costs predictability in one place:
+    a `{…}` in a stored template accepts less than one in a `.mesa` file, so
+    each JavaScript habit it refuses is refused by name, naming the
+    equivalent. C is the fallback if the parser move proves bigger than
+    Phase 5.
+- ~~**What does an emailed copy carry to an address with no user row, and who must agree to it?**~~ **Answered 2026-10-03 (`FJS-D570`): C — B, and the address confirms once, by a link, before its first send. An unconfirmed address is skipped and logged in the delivery log (X11), never mailed.**
+  X5 grades every copy at the subscriber's standing, re-resolved at each send,
+  so a demoted or deleted subscriber's feed stops. What is open is what an
+  outside copy may hold, and whether the address has a say (Transit's PLAN Q8,
+  2026-10-03).
+  - **A** — the subscriber's full standing and nothing more: *could have
+    forwarded it anyway*. `@encrypted`, `@guarded` and `@secret` fields are
+    mailed in plain text, and anyone who may subscribe can point the app's
+    sender at any address on a cron.
+  - **B** — A minus `$protectedFields`: `FJS-D193`'s floor for a webhook URL,
+    applied to an address, because an address is not a principal either.
+  - **C** — B, and the address confirms once, by a link, before its first
+    send. An unconfirmed address is skipped and logged in the delivery log
+    (X11), never mailed.
+  - **D** — no outside recipients in V1: every recipient is a user, invited,
+    graded at a standing of their own.
+  - **Recommend C** — B closes the data half, and the confirmation closes the
+    other: the app's mail sender can reach only an address that asked. D is
+    stricter and has no special case, but makes *send our accountant the
+    numbers* an access grant, which is a flow V1 does not otherwise need. A
+    mailed copy cannot be recalled, so strictness follows what a mistake
+    destroys. What must stay true has no artefact yet: Phase 4's two-recipient
+    test gains an outside address, asserting no protected field in its copy and
+    no send before confirmation.
 
 ## See also
 

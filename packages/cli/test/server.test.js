@@ -864,3 +864,28 @@ describe('GET /api/page/:id', () => {
     }
   })
 })
+
+describe('GET /api/ci · POST /api/ci/run · POST /api/ci/stop', () => {
+
+  test('a project with no scripts/ci.mjs has no CI panel — it is an app, and `bun run check` is its CI', async () => {
+    const body = await (await fetch(`${base}/api/ci`)).json()
+    expect(body).toEqual({ available: false })
+  })
+
+  test('a run is not started from another origin, and is refused before anything is read', async () => {
+    const r = await fetch(`${base}/api/ci/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://elsewhere.example' }, body: '{}',
+    })
+    expect(r.status).toBe(403)
+    // The pair: from no origin the same request reaches the starter, which
+    // answers that there is no ci.mjs here.
+    const same = await fetch(`${base}/api/ci/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    expect(same.status).toBe(404)
+  })
+
+  test('nor stopped from one', async () => {
+    const r = await fetch(`${base}/api/ci/stop`, { method: 'POST', headers: { Origin: 'https://elsewhere.example' } })
+    expect(r.status).toBe(403)
+  })
+
+})

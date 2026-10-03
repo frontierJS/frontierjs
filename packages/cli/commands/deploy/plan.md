@@ -44,6 +44,7 @@ const deployConf     = frontierConfig?.deploy
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is nothing to plan against')
   log.info('Run `fli make:deploy` to write one')
+  context.config.abort = true
   return
 }
 
@@ -57,6 +58,7 @@ const plan = await deployPlan(context, flag, { target, deployConf, doApi, doWeb 
 
 if (plan.error) {
   log.error(plan.error)
+  context.config.abort = true
   return
 }
 

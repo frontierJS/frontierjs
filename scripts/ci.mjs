@@ -57,6 +57,7 @@ import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
+import { openRunLog, parseCounts }             from '../packages/cli/core/ci-log.js'
 import { findChrome }                          from '../packages/mesa/src/drive.js'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
@@ -150,6 +151,7 @@ ${Object.keys(PHASES).map(n => `  ${n.padEnd(width)}  ${tier(n)}`).join('\n')}
 
 What fails each one: docs/CI.md.
 The last run's summary, failures and their output: .cache/ci-last.txt.
+Every run, live, phase by phase: .cache/ci-runs/ — the ci panel in fli gui.
 Every allowance is a named entry with a reason in scripts/ci-allowances.json.
 `.trim())
 }
@@ -173,6 +175,11 @@ let _dirs = null        // workspaceDirs() memo — declared here so the phases,
                         // which run at module top level, are not in its TDZ
 
 const started = Date.now()
+
+// `.cache/ci-runs/` — what `fli gui` reads to show the run while it happens.
+// Opened in main() so `--help` writes nothing.
+let runLog       = { emit() {} }
+let currentPhase = null
 
 // Called from the very bottom of the file. Function declarations hoist and
 // `const` does not, so running the phases from up here puts every helper
@@ -206,18 +213,42 @@ async function main() {
     }
     // Run in the table's order, never the order they were typed: the phases are
     // not independent — `scaffold` packs what `deploy` then installs.
-    for (const name of Object.keys(PHASES))
-      if (wantedPhases.includes(name)) await PHASES[name]()
+    const planned = Object.keys(PHASES).filter(name => wantedPhases.includes(name))
+    startRunLog(planned, 'partial')
+    for (const name of planned) await runPhase(name)
     report()
     return
   }
 
-  for (const name of Object.keys(PHASES)) {
-    if (testsOnly && name !== 'tests') continue
-    if (fast && FULL_ONLY.has(name)) continue
-    await PHASES[name]()
-  }
+  const planned = Object.keys(PHASES).filter(name =>
+    !(testsOnly && name !== 'tests') && !(fast && FULL_ONLY.has(name)))
+  startRunLog(planned, only ? 'partial' : testsOnly ? 'tests-only' : fast ? 'fast' : 'full')
+  for (const name of planned) await runPhase(name)
   report()
+}
+
+function startRunLog(phases, scope) {
+  const commit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim() || null
+  const status = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: ROOT, encoding: 'utf8', maxBuffer: MAX_BUFFER })
+  runLog = openRunLog(ROOT, {
+    commit, dirty: status.status === 0 ? status.stdout.trim() !== '' : null,
+    argv: args, scope, only: only ?? null, phases,
+  })
+}
+
+async function runPhase(name) {
+  const t0   = Date.now()
+  const from = problems.length
+  currentPhase = name
+  runLog.emit('phase', { name })
+  await PHASES[name]()
+  runLog.emit('phase-end', { name, ms: Date.now() - t0, ok: problems.length === from })
+}
+
+// Something long is about to start. The step that answers it carries the same
+// key, which is how the page knows it is no longer running.
+function begin(key) {
+  runLog.emit('begin', { phase: currentPhase, key })
 }
 
 // ─── phase 1 · hygiene ──────────────────────────────────────
@@ -1533,22 +1564,23 @@ function tests() {
     const pkg = readPackage(dir)
     if (!pkg?.scripts?.test) continue
 
-    const run = runScript(dir, 'test')
+    const run  = runScript(dir, 'test')
+    const meta = { key: dir, ms: run.ms, counts: run.counts }
 
     if (run.code === 0) {
       if (dir in known) fixed.push(dir)
       else passed.push(dir)
-      ok(`${dir}`, run.ms)
+      ok(`${dir}`, run.ms, meta)
       continue
     }
 
     if (dir in known) {
       note(`${dir} failed — known: ${known[dir]}`)
-      warn(`${dir} (known failure)`, run.ms)
+      warn(`${dir} (known failure)`, run.ms, meta)
       continue
     }
 
-    fail(`${dir} test exited ${run.code}`, run.output)
+    fail(`${dir} test exited ${run.code}`, run.output, meta)
   }
 
   for (const dir of fixed) {
@@ -1587,6 +1619,7 @@ function mutate() {
     if (floor.kinds?.length) args.push(`--kinds=${floor.kinds.join(',')}`)
 
     const started = Date.now()
+    begin(app)
     const run = spawnSync('bunx', args, {
       cwd: join(ROOT, app), encoding: 'utf8', shell: false, maxBuffer: MAX_BUFFER,
       timeout: Math.max(TIMEOUT_MS, 45 * 60 * 1000),
@@ -1598,7 +1631,7 @@ function mutate() {
     const result = parseJsonOr(run.stdout ?? '', null)
     if (!result) {
       fail(`${app} — litestone mutate did not report\n      Run \`cd ${app} && bunx litestone mutate --schema db/schema.lite\`.`,
-           { stdout: run.stdout ?? '', stderr: run.stderr ?? '' })
+           { stdout: run.stdout ?? '', stderr: run.stderr ?? '' }, { key: app, ms })
       continue
     }
 
@@ -1606,13 +1639,13 @@ function mutate() {
                  (floor.kinds?.length ? ` (${floor.kinds.length} kinds)` : '')
     if (result.errored.length)
       fail(`${line}: ${result.errored.length} mutant(s) the checks fell over on`,
-           { stdout: result.errored.map(e => `${e.kind} line ${e.lineNo}: ${e.describe} — ${e.thrown}`).join('\n'), stderr: '' })
+           { stdout: result.errored.map(e => `${e.kind} line ${e.lineNo}: ${e.describe} — ${e.thrown}`).join('\n'), stderr: '' }, { key: app, ms })
     else if (result.score < floor.score)
       fail(`${line}, below the floor of ${floor.score} in ${file}\n      A surviving mutant is a rule nothing grades — add the check, never lower the floor.`,
-           { stdout: result.survived.map(s => `${s.kind} line ${s.lineNo}: ${s.describe}`).join('\n'), stderr: '' })
+           { stdout: result.survived.map(s => `${s.kind} line ${s.lineNo}: ${s.describe}`).join('\n'), stderr: '' }, { key: app, ms })
     else {
       if (result.score > floor.score) note(`${app} mutation score ${result.score} is above its floor of ${floor.score} — raise it in ${file}.`)
-      ok(line, ms)
+      ok(line, ms, { key: app })
     }
   }
 
@@ -1737,6 +1770,8 @@ function tutor() {
     }
 
     const t0  = Date.now()
+    const key = lesson.id
+    begin(key)
     const run = spawnSync('bun', [fli, lesson.id, '--tmp', '--yes', ...lesson.args], {
       cwd:        ROOT,
       encoding:   'utf8',
@@ -1748,13 +1783,13 @@ function tutor() {
 
     if (run.status === 0) {
       if (lesson.id in known) fixed.push(lesson.id)
-      ok(lesson.id, Date.now() - t0)
+      ok(lesson.id, Date.now() - t0, { key })
       continue
     }
 
     if (lesson.id in known) {
       note(`${lesson.id} failed — known: ${known[lesson.id]}`)
-      warn(`${lesson.id} (known failure)`, Date.now() - t0)
+      warn(`${lesson.id} (known failure)`, Date.now() - t0, { key })
       continue
     }
 
@@ -1762,7 +1797,7 @@ function tutor() {
     // workspace, and this shell's /tmp may be private to it — the same
     // environment fact the deploy phase names, so it is named with the same
     // sentence rather than a second one.
-    fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output)
+    fail(`${lesson.id} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output, { key, ms: Date.now() - t0 })
   }
 
   // ── the course, taken as a course ──────────────────────────────────────────
@@ -1807,13 +1842,14 @@ function course(LESSONS, { fli, daemon, chrome, verbose }) {
 
   const runLesson = (id, args, label) => {
     const t0  = Date.now()
+    begin(label)
     const run = spawnSync('bun', [fli, id, '--workspace', dir, '--yes', ...args], {
       cwd: ROOT, encoding: 'utf8', stdio: verbose ? 'inherit' : 'pipe',
       timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER,
     })
     const output = verbose ? '' : `${run.stdout ?? ''}${run.stderr ?? ''}`
-    if (run.status === 0) { ok(label, Date.now() - t0); return true }
-    fail(`${label} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output)
+    if (run.status === 0) { ok(label, Date.now() - t0, { key: label }); return true }
+    fail(`${label} exited ${run.status}${daemonBlindHint(output, ciWorkBase())}`, output, { key: label, ms: Date.now() - t0 })
     return false
   }
 
@@ -1856,6 +1892,7 @@ function runScript(dir, script) {
   // watching it happen.
   const pending = process.stdout.isTTY ? `  · ${dir} ${script}…` : ''
   if (pending) process.stdout.write(pending)
+  begin(dir)
 
   const result = spawnSync(pm, ['run', script], {
     cwd,
@@ -1877,14 +1914,15 @@ function runScript(dir, script) {
   // end of stdout and every line shown was a mesa warning.
   const output = { stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
   const ms     = Date.now() - at
+  const counts = parseCounts(readPackage(dir)?.scripts?.[script], `${output.stdout}\n${output.stderr}`)
 
   if (verbose) console.log(`${output.stdout}${output.stderr}`)
 
-  if (result.error) return { code: 2, output: { ...output, ci: result.error.message }, ms }
+  if (result.error) return { code: 2, output: { ...output, ci: result.error.message }, ms, counts }
   // spawnSync reports a timeout as a null status plus the signal it used.
-  if (result.signal) return { code: 2, output: { ...output, ci: `killed by ${result.signal} after ${TIMEOUT_MS}ms` }, ms }
+  if (result.signal) return { code: 2, output: { ...output, ci: `killed by ${result.signal} after ${TIMEOUT_MS}ms` }, ms, counts }
 
-  return { code: result.status ?? 2, output, ms }
+  return { code: result.status ?? 2, output, ms, counts }
 }
 
 // Everything here runs under bun except the extension, whose own scripts shell
@@ -1999,21 +2037,31 @@ function clean(from) {
   return problems.length === from
 }
 
-function ok(message, ms) {
+// `meta.key` names the thing a step is about — a suite's directory, a lesson's
+// id — so its result can be found across runs; the message is prose and moves.
+function ok(message, ms, meta = {}) {
   console.log(`  ✓ ${message}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}`)
+  step('ok', message, { ms, ...meta })
 }
 
-function warn(message, ms) {
+function warn(message, ms, meta = {}) {
   console.log(`  ! ${message}${ms ? ` (${(ms / 1000).toFixed(1)}s)` : ''}`)
+  step('warn', message, { ms, ...meta })
 }
 
-function fail(message, output) {
+function fail(message, output, meta = {}) {
   problems.push({ message, output })
   console.log(`  ✗ ${message}`)
+  step('fail', message.split('\n')[0], meta)
+}
+
+function step(status, label, { key, ms, counts } = {}) {
+  runLog.emit('step', { phase: currentPhase, status, label, key, ms, counts })
 }
 
 function note(message) {
   notes.push(message)
+  runLog.emit('note', { text: message })
 }
 
 // ─── GitHub annotations ─────────────────────────────────────
@@ -2055,6 +2103,8 @@ function report() {
     say(`\n─── notes ${'─'.repeat(45)}`)
     for (const n of notes) { say(`  · ${n}`); annotate('notice', n) }
   }
+
+  runLog.emit('end', { ok: !problems.length, ms: Date.now() - started })
 
   if (!problems.length) {
     say(`\n✓ CI passed in ${seconds}s${fast ? ' (fast tier — suites not run)' : ''}\n`)

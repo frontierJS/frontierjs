@@ -24,7 +24,7 @@ import { tmpdir }                                        from 'node:os'
 import { join, resolve }                                 from 'node:path'
 import { fileURLToPath }                                 from 'node:url'
 
-import { releaseLocal, releaseTarget, TARGETS } from '../core/release-view.js'
+import { releaseLocal, releaseTarget, TARGETS, RELEASE_STEPS, RELEASE_STAGES, describeSteps, runReleaseStep } from '../core/release-view.js'
 
 const CLI = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
@@ -154,11 +154,11 @@ test('an app with no baseline reports unavailable with the reason, not silence',
 
 // ─── both streams ────────────────────────────────────────────────────────────
 
-test("a command that refuses and exits 0 still has its reason read (FJS-589)", async () => {
-  // `deploy:journal` against an app with no deploy block prints its refusal and
-  // exits 0. The first version of this module used execFileSync and only kept
-  // stderr from the catch, so the success path handed the panel an empty string
-  // and it reported *the journal answered nothing*.
+test("a command's refusal is read from whichever stream it went to (FJS-589)", async () => {
+  // `deploy:journal` against an app with no deploy block prints its refusal on
+  // stdout. The first version of this module used execFileSync and only kept
+  // stderr from the catch, so a refusal that exited 0 handed the panel an empty
+  // string and it reported *the journal answered nothing*.
   const out = await releaseTarget({ root, fliRoot: CLI, target: 'production', app: 'shop' })
   expect(out.ok).toBe(false)
   expect(out.error).toMatch(/deploy block|journal/i)
@@ -166,3 +166,55 @@ test("a command that refuses and exits 0 still has its reason read (FJS-589)", a
   // The refusal's own words, not a rewrite of them.
   expect(out.error).not.toBe('the journal answered nothing')
 })
+
+// ─── the release, in order ───────────────────────────────────────────────────
+
+test('every step is either a gate the page reads or a command, in a stage that exists', () => {
+  const stages = new Set(RELEASE_STAGES.map(s => s.id))
+  const ids    = RELEASE_STEPS.map(s => s.id)
+  expect(new Set(ids).size).toBe(ids.length)
+  for (const s of RELEASE_STEPS) {
+    expect(stages.has(s.stage)).toBe(true)
+    expect(Boolean(s.gate) !== Boolean(s.argv)).toBe(true)
+    expect(s.title.length).toBeGreaterThan(0)
+    expect(s.why.length).toBeGreaterThan(0)
+  }
+  // The order is the content: the gates come before anything is minted, and
+  // nothing changes what is serving before the plan has been read.
+  expect(ids.indexOf('commit')).toBeLessThan(ids.indexOf('mint'))
+  expect(ids.indexOf('classify')).toBeLessThan(ids.indexOf('deploy'))
+  expect(ids.indexOf('plan')).toBeLessThan(ids.indexOf('deploy'))
+})
+
+test('a step that changes what is serving asks first', () => {
+  for (const id of ['deploy', 'revert', 'rollback'])
+    expect(RELEASE_STEPS.find(s => s.id === id).confirm?.length ?? 0).toBeGreaterThan(0)
+})
+
+test('the page is shown the command as typed, never an argv to send back', () => {
+  const { steps } = describeSteps()
+  expect(steps.every(s => !('argv' in s) && !('fix' in s))).toBe(true)
+  expect(steps.find(s => s.id === 'snapshots').fixCommand).toBe('fli test:snapshots --fix')
+})
+
+test('a step runs only through the table — every other request is refused by name', () => {
+  const run = (o) => runReleaseStep({ root, fliRoot: CLI, ...o })
+  expect(run({ id: 'rm -rf /' }).error).toMatch(/unknown step/)
+  expect(run({ id: 'commit' }).error).toMatch(/unknown step/)            // a gate runs nothing
+  expect(run({ id: 'done', fix: true }).error).toMatch(/no fix/)
+  expect(run({ id: 'deploy', app: 'shop' }).error).toMatch(/approving/)
+  expect(run({ id: 'mint', app: 'shop', target: 'toString' }).error).toMatch(/unknown target/)
+  expect(run({ id: 'mint', app: '../shop' }).error).toMatch(/no app/)
+})
+
+test('a step streams its output and ends with the exit code', async () => {
+  const lines = []
+  const out = runReleaseStep({ root, fliRoot: CLI, id: 'mint', app: 'shop', target: 'production', onLine: l => lines.push(l) })
+  expect(out.error).toBeUndefined()
+  expect(out.argv).toEqual(['release:mint', '--production'])
+  expect(out.cwd).toBe('shop')
+  // No deploy block: the refusal is non-zero now, which is what lets the page
+  // show `failed` rather than `passed` beside it.
+  expect(await out.done).not.toBe(0)
+  expect(lines.join('\n')).toMatch(/deploy block/)
+}, 30_000)

@@ -1071,6 +1071,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d570"></a>2026-10-03 · `FJS-D570` — What does an emailed copy carry to an address with no user row, and who must agree to it — B, and the address confirms once, by a link, before its first send. An unconfirmed address is skipped and logged in the delivery log (X11), never mailed.
+
+Asked in [`IDEAS/data-layer-v1.md`](IDEAS/data-layer-v1.md) § Open questions. **C** was picked over **A** (the subscriber's full standing and nothing more: *could have forwarded it anyway*. `@encrypted`, `@guarded` and `@secret` fields are mailed in plain text, and anyone who may subscribe can point the app's sender at any address on a cron), **B** (A minus `$protectedFields`: `FJS-D193`'s floor for a webhook URL, applied to an address, because an address is not a principal either), **D** (no outside recipients in V1: every recipient is a user, invited, graded at a standing of their own).
+
+The owner's pick, 2026-10-03: an emailed copy to an address with no user row is graded at the subscriber's standing re-resolved per send, carries no $protectedFields (FJS-D193's floor, an address being no more a principal than a URL), and goes only to an address that confirmed once by a link; an unconfirmed one is skipped and logged. Owed: Phase 4's two-recipient test with an outside address.
+
 ### <a id="fjs-d566"></a>2026-09-30 · `FJS-D566` — A row policy asks whether ANY row of a to-many relation matches as `rel.some(condition)`, a correlated EXISTS. `claim … from` does not yield a list.
 
 `members.some(userId == auth().id)` on the parent. `condition` names only the CHILD's columns and `auth()`. The SQL half compiles it to `EXISTS (SELECT 1 FROM child AS __some WHERE __some.fk = parent.key AND …)`. The JS half (create, post-update, `$readAs`) runs the same EXISTS with the parent's key bound, which is `evalCheck`'s approach, so the two cannot disagree about which child counts. `FJS-D221`'s bound holds: one hop, so a dot or a `check()` inside the parentheses, and `a.b.some(…)`, are each refused at parse. The last one names the to-many test rather than *crosses two relations*. On `create` no child exists yet, so the test is false and a create rule needing a member refuses.
@@ -9596,6 +9602,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d569"></a>2026-10-03 · `FJS-D569` — Does R9 still prototype A, now that the escape test it owes cannot pass under A — Keep the A prototype on § R9's three terms, and ship Phase 5 with the escape test written and failing until C lands.
+
+Asked in [`IDEAS/data-layer-v1.md`](IDEAS/data-layer-v1.md) § Open questions. **A** was picked over **B** (drop A. Write the escape test now as C's spec, and make Phase 5 the smallest C: the policy-expression parser moved into toolbelt, a mesa expression mode where a `{…}` is evaluated and never executed, formatters from `/units` only, and a registered component allowlist), **C** (move R9 to V2, and leave stored templates out of Transit's V1).
+
+The owner's pick, 2026-10-03: Transit keeps the A prototype on § R9's three terms (C's subset from the first template, never on a deploy holding production secrets or data); the escape test is written in Phase 5 and stays red until C lands, which is the record that A is still standing.
 
 ### <a id="fjs-d555"></a>2026-09-29 · `FJS-D555` — `@money` has a built-in form control: sierra's table answers `money` and the kit binds it to `MoneyInput`. `@scale` keeps no control.
 

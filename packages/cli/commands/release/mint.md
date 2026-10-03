@@ -53,6 +53,7 @@ const deployConf     = frontierConfig?.deploy
 if (!deployConf) {
   log.error('No deploy block in frontier.config.js — there is no Environment to mint against')
   log.info('Run `fli make:deploy` to write one')
+  context.config.abort = true
   return
 }
 
@@ -63,6 +64,7 @@ try {
 } catch (e) {
   if (!(e instanceof ConfigurationError)) throw e
   log.error(e.message)
+  context.config.abort = true
   return
 }
 

@@ -31,7 +31,7 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync } from 'node:fs'
-import { spawnSync }                from 'node:child_process'
+import { spawn, spawnSync }         from 'node:child_process'
 import { join, relative, resolve }  from 'node:path'
 
 import { findApps } from './runnables.js'
@@ -65,6 +65,17 @@ function fli(fliRoot, cwd, argv, { timeout = 20_000 } = {}) {
     stderr: String(r.stderr ?? '') || (r.error ? String(r.error.message) : ''),
     code:   r.status ?? null,
   }
+}
+
+/**
+ * The last thing a command SAID — its reason, not the runtime's verdict on it.
+ * A refusal exits non-zero by printing a bare `✗ refused` after the command's
+ * own sentence, and that marker says nothing an exit code does not.
+ */
+function lastSaid(r) {
+  const lines = (r.stdout + '\n' + r.stderr).replace(/\x1b\[[0-9;]*m/g, '')
+    .split('\n').map(l => l.trim()).filter(l => l && !/^✗ refused$/.test(l))
+  return lines.pop() ?? null
 }
 
 /** The first well-formed JSON object in a stream, or null. A command may log around it. */
@@ -117,7 +128,7 @@ export async function releaseLocal({ root, fliRoot }) {
       apps.push({
         label, dir: label, verdict: 'unavailable', tone: 'muted',
         counts: null, findings: [], baseline: null,
-        note: (r.stdout + '\n' + r.stderr).trim().split('\n').filter(Boolean).pop() ?? 'no verdict',
+        note: lastSaid(r) ?? 'no verdict',
       })
       continue
     }
@@ -245,7 +256,7 @@ export async function releaseTarget({ root, fliRoot, target = 'default', app = n
 
   if (!body) return {
     ok: false, target, app: relative(root, dir) || '.',
-    error: (j.stdout + '\n' + j.stderr).trim().split('\n').filter(Boolean).pop() ?? 'the journal answered nothing',
+    error: lastSaid(j) ?? 'the journal answered nothing',
   }
 
   const transitions = body.transitions ?? []
@@ -285,4 +296,154 @@ function pickApp(root, label) {
   for (const dir of findApps(root))
     if ((relative(root, dir) || '.') === label) return dir
   return null
+}
+
+// ─── the release, in order ───────────────────────────────────────────────────
+//
+// What to do before, during and after a deploy, as one ordered list rather
+// than a dozen commands somebody has to remember the order of. The ORDER is
+// the content: a release minted from an uncommitted tree, or deployed before
+// the pivot was classified, is the mistake each step stands in front of.
+//
+// Every step is a command that already owns its answer, run as a child of the
+// directory it belongs in — the workspace root for the gates, one app for the
+// release itself. A `gate` step runs nothing here: its answer is a panel the
+// page already loaded (the tree, CI, what is serving), and the page reads it.
+//
+// The table is the allow-list. A caller names a step by id and a target by
+// key; neither becomes argv except through this table (Invariant 8).
+
+export const RELEASE_STAGES = [
+  { id: 'finish', title: 'finish the change' },
+  { id: 'green',  title: 'make it green' },
+  { id: 'know',   title: 'know what you are shipping' },
+  { id: 'ship',   title: 'ship it' },
+  { id: 'watch',  title: 'watch it land' },
+  { id: 'undo',   title: 'if it goes wrong' },
+]
+
+// `scope: 'app'` runs in the chosen app and takes the target's flags; `remote`
+// reaches the target over ssh; `confirm` is the sentence a person agrees to
+// before a step that changes what is serving.
+export const RELEASE_STEPS = [
+  { id: 'commit',    stage: 'finish', gate: 'tree',
+    title: 'commit what you mean to ship',
+    why:   'a Release is minted from a commit — anything uncommitted is not in it' },
+  { id: 'done',      stage: 'finish', scope: 'root', argv: ['test:done'],
+    title: 'is the change finished',
+    why:   'CHANGES entries, docs pointers, test wiring, snapshots and registers' },
+  { id: 'prove',     stage: 'finish', scope: 'root', argv: ['test:prove'],
+    title: 'run the drives that prove it',
+    why:   'every drive `fli proves` names, each after what it needs to start' },
+
+  { id: 'check',     stage: 'green',  scope: 'root', argv: ['fli:check'],
+    title: 'the architecture rules pass',
+    why:   'the rules this framework publishes, over this tree' },
+  { id: 'snapshots', stage: 'green',  scope: 'root', argv: ['test:snapshots'], fix: ['test:snapshots', '--fix'],
+    title: 'every committed snapshot matches its source',
+    why:   'a stale snapshot fails CI — fix reruns each generator; read the diff, then commit' },
+  { id: 'ci',        stage: 'green',  gate: 'ci',
+    title: 'a full CI run passes',
+    why:   'every phase, on the commit you are about to ship' },
+
+  { id: 'classify',  stage: 'know',   scope: 'app', argv: ['release:check'], targetless: true,
+    title: 'classify it — expand or contract',
+    why:   'writes db/release.snapshot.md; a contract is the pivot, after which only forward — commit the snapshot' },
+  { id: 'mint',      stage: 'know',   scope: 'app', argv: ['release:mint'],
+    title: 'mint the Release',
+    why:   'the content-addressed Release this tree would deploy — writes nothing' },
+  { id: 'plan',      stage: 'know',   scope: 'app', argv: ['deploy:plan'],
+    title: 'read the plan',
+    why:   'the journal rows the deploy would write — executes nothing' },
+  { id: 'doctor',    stage: 'know',   scope: 'app', argv: ['deploy:doctor', '--remote'], remote: true,
+    title: 'is the target ready',
+    why:   'local config, then the server side over ssh' },
+
+  { id: 'deploy',    stage: 'ship',   scope: 'app', argv: ['deploy:all'], remote: true,
+    confirm: 'deploys this tree to the target',
+    title: 'deploy',
+    why:   'builds and ships; journaled, so a failed attempt leaves the release before it serving' },
+
+  { id: 'serving',   stage: 'watch',  gate: 'target', scope: 'app',
+    title: 'what is serving, and can it come back',
+    why:   'the journal and the revert plan, read from the target' },
+  { id: 'status',    stage: 'watch',  scope: 'app', argv: ['deploy:status'], remote: true,
+    title: 'what is running on the server',
+    why:   'containers, the web release, disk, the last deploy' },
+
+  { id: 'revert-plan', stage: 'undo', scope: 'app', argv: ['deploy:revert', '--plan'], remote: true,
+    title: 'can it be taken back',
+    why:   'what a revert would restore, or the refusal by name — runs nothing' },
+  { id: 'revert',    stage: 'undo',   scope: 'app', argv: ['deploy:revert'], remote: true,
+    confirm: 'restores the Release and Generation before this one',
+    title: 'revert',
+    why:   'restores the pair from the journal; refused past the pivot' },
+  { id: 'rollback',  stage: 'undo',   scope: 'app', argv: ['deploy:rollback'], remote: true,
+    confirm: 'rolls web and API back to the previous release',
+    title: 'roll back',
+    why:   'the previous web release and API container, without the journal' },
+]
+
+/** The table as the page shows it — the command as it would be typed, and no argv function. */
+export function describeSteps() {
+  return {
+    stages: RELEASE_STAGES,
+    steps:  RELEASE_STEPS.map(({ argv, fix, ...s }) => ({
+      ...s,
+      command: argv ? `fli ${argv.join(' ')}` : null,
+      fixCommand: fix ? `fli ${fix.join(' ')}` : null,
+    })),
+  }
+}
+
+/**
+ * Start one step as `fli` in the directory it belongs in, output line by line.
+ *
+ * Returns `{ error }` for anything the table does not allow, or `{ child, done }`
+ * where `done` resolves to the exit code. Detached into its own process group
+ * so a stop takes what the step started (a drive's server, a deploy's ssh)
+ * rather than only the wrapper.
+ *
+ * Stdin is closed unless the person approved a `confirm` step — then it answers
+ * `y`, which is what `deploy:rollback` asks on a terminal.
+ */
+export function runReleaseStep({ root, fliRoot, id, app = null, target = 'default', fix = false, approved = false, onLine }) {
+  const step = RELEASE_STEPS.find(s => s.id === id)
+  if (!step || !step.argv) return { error: `unknown step: ${JSON.stringify(String(id).slice(0, 40))}` }
+  if (fix && !step.fix)    return { error: `${step.id} has no fix` }
+  if (step.confirm && !approved) return { error: `${step.id} ${step.confirm} — it needs approving` }
+  if (!Object.hasOwn(TARGETS, target))
+    return { error: `unknown target: ${JSON.stringify(String(target).slice(0, 40))}` }
+
+  let cwd = root
+  if (step.scope === 'app') {
+    cwd = app ? pickApp(root, app) : (findApps(root).length === 1 ? findApps(root)[0] : null)
+    if (!cwd) return { error: app ? `no app in this tree called ${JSON.stringify(String(app).slice(0, 60))}` : 'pick an app' }
+  }
+
+  const argv = [...(fix ? step.fix : step.argv), ...(step.scope === 'app' && !step.targetless ? TARGETS[target] : [])]
+  const child = spawn(process.execPath, [resolve(fliRoot, 'bin/fli.js'), ...argv], {
+    cwd, detached: true,
+    stdio: [step.confirm ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    env: { ...process.env, FORCE_COLOR: '0' },
+  })
+  if (step.confirm) child.stdin.end('y\n')
+
+  for (const stream of [child.stdout, child.stderr]) {
+    let buf = ''
+    stream.setEncoding('utf8')
+    stream.on('data', chunk => {
+      buf += chunk
+      const lines = buf.split('\n')
+      buf = lines.pop()
+      for (const l of lines) onLine?.(l)
+    })
+    stream.on('end', () => { if (buf) onLine?.(buf) })
+  }
+
+  const done = new Promise(ok => {
+    child.on('error', err => { onLine?.(err.message); ok(null) })
+    child.on('close', code => ok(code))
+  })
+  return { child, argv, cwd: relative(root, cwd) || '.', done }
 }
