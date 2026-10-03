@@ -1,5 +1,17 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-03 — three tutor lessons run again, and `css-raw-literal` stops reading a comment as a `<style>`
+
+**`css-raw-literal`** matched `<style\b` anywhere in a `.mesa`, so the scaffold home page's HTML comment *the `<style>` block at the bottom…* opened a block there and every `&#123;` in the markup below read as the color `#123`. HTML comments are blanked before the match, keeping every line number. Pinned in `test/checks.test.js` § *a comment that names a `<style>` block does not open one*, red before. The scaffold's own widths are `var(--grid-min, 20rem)` and `var(--auth-card-width, 24rem)` now, so a fresh app's `fli check` is clean and `tutor:tools` § *does anything fail a check* passes.
+
+**`tutor:fleet`** had fallen behind basecamp three times. Enrollment sends the command port's certificate, made with outpost's own `cert.js` and kept in the workspace, and the outpost starts with `OUTPOST_TLS_CERT`/`OUTPOST_TLS_KEY` and an https `OUTPOST_PUBLIC_URL` (`FJS-1603`); `probe.js`'s http probes take bun's `tls` option, so a probe of that port pins the same PEM. Step 6 no longer triggers the job it just created — a one-shot job is dispatched by its create, and the second run was refused as already running whenever it raced the first. Step 7 releases `nginx:alpine` as an image source instead of building a git repository, since basecamp refuses a source nothing builds, and patches `port: null` where it sent the deleted `config` column and a `0` the column now refuses.
+
+`tutor:test` passes with no change here — its failure was litestone's gate ladder (litestone `CHANGES.md`, same date).
+
+**`core/color.js` read `FORCE_COLOR=0` as on** — `Boolean('0')` is true — so under CI, which runs every suite with `FORCE_COLOR=0`, `tty.keys` styled its prompt and two `test/tty.test.js` cases failed only there. `0` and `false` are off, as chalk reads them, and an empty value is unset. Pinned in the new `test/color.test.js`, red before. The pty helper in `test/tty.test.js` drops the runner's `CI`, `FORCE_COLOR` and `NO_COLOR`, since chalk honors the first two and *without NO_COLOR chalk colors* otherwise fails for CI's reason.
+
+**`test/server.test.js`'s `/api/state` and `/api/health` cases took the first tool row**, `tool:devtools` on 8503 — the port a running app's dev API holds for devtools — and asserted it `down` or bound it, so all five failed whenever any app was in `bun run dev` on the machine. They take the first tool whose port is free now.
+
 ## 2026-10-02 — the graded `ask` questions cite open issues
 
 `FJS-1180` and `FJS-1193` had closed into `ISSUES_ARCHIVE.md`, so two `status` questions cited rows `ISSUES.md` no longer holds; they now cite `FJS-1262` and `FJS-1404`. The outpost question is worded so it resolves to `FJS-257` alone, where `FJS-1397` had tied with it. Twelve spread-4 terms were added to `VOCABULARY.md` as `open` rows, which is what `terms.test.js` counts.

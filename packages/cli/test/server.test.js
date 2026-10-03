@@ -16,6 +16,19 @@ const base = `http://localhost:${PORT}`
 
 const { startServer } = await import('../core/server.js')
 
+// The tool ports are the real 8500s, and an app's dev API holds 8503 for
+// devtools — so a test that binds one, or asserts it `down`, takes a tool
+// nothing on this machine is listening on.
+const { createServer: netServer } = await import('net')
+const portFree = (port) => new Promise(r => {
+  const s = netServer().once('error', () => r(false))
+  s.listen(port, '0.0.0.0', () => s.close(() => r(true)))
+})
+const freeTool = async (rows) => {
+  for (const r of rows) if (r.kind === 'tool' && await portFree(r.port)) return r
+  throw new Error('every tool port is held on this machine — nothing to bind for this test')
+}
+
 let server
 beforeAll(async () => {
   server = startServer()
@@ -401,7 +414,7 @@ describe('GET /api/state', () => {
 
   test('a tool moves down → up → down as something binds its port', async () => {
     const { rows } = await (await fetch(`${base}/api/runnables`)).json()
-    const tool = rows.find(r => r.kind === 'tool')
+    const tool = await freeTool(rows)
     const at   = async () => (await (await fetch(`${base}/api/state`)).json()).state[tool.id].state
 
     expect(await at()).toBe('down')
@@ -616,7 +629,7 @@ describe('GET /api/health/:id', () => {
 
   async function toolRow() {
     const { rows } = await (await fetch(`${base}/api/runnables`)).json()
-    return rows.find(r => r.kind === 'tool')
+    return freeTool(rows)
   }
 
   test('answers the health shape, and says which path answered', async () => {

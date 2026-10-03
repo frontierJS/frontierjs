@@ -1,14 +1,16 @@
 // FJS-1601: a linked checkout's local-db worker is outside Vite's allow list.
-import { test, expect } from 'bun:test'
+import { test, expect } from 'vitest'
 import { realpathSync } from 'fs'
-import { resolve } from 'path'
+import { dirname, resolve } from 'path'
+import { fileURLToPath } from 'url'
 import { resolveConfig } from 'vite'
 import { fsAllowPlugin } from '../src/build/fs-allow-plugin.js'
 
-const SIERRA = realpathSync(resolve(import.meta.dir, '..'))
+const HERE   = dirname(fileURLToPath(import.meta.url))
+const SIERRA = realpathSync(resolve(HERE, '..'))
 
 test('dev server allows sierra\'s real directory beside the workspace root', async () => {
-  const root = resolve(import.meta.dir, 'fixtures')
+  const root = resolve(HERE, 'fixtures')
   const c = await resolveConfig({ root, configFile: false, logLevel: 'silent', plugins: [fsAllowPlugin()] }, 'serve')
   expect(c.server.fs.allow).toContain(SIERRA)
   expect(c.server.fs.allow.length).toBeGreaterThan(1)

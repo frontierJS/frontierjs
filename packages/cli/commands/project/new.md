@@ -1652,7 +1652,7 @@ ${sc}
   .tour, .next { margin-top: var(--space-3xl) }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--grid-min, 20rem)), 1fr));
     gap: var(--space-lg);
   }
   h3 { margin: 0 }
@@ -1765,7 +1765,7 @@ ${sc}
 </div>
 
 <style>
-  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
   h1, p { margin: 0 }
 </style>
 `
@@ -1867,7 +1867,7 @@ ${sc}
 </div>
 
 <style>
-  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
   h1, p { margin: 0 }
 </style>
 `
@@ -2010,7 +2010,7 @@ ${withName ? `      <input class="field" bind:value={name} placeholder="Your nam
 <style>
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--grid-min, 20rem)), 1fr));
     gap: var(--space-lg);
     margin-top: var(--space-2xl);
   }
@@ -2076,7 +2076,7 @@ ${sc}
 </div>
 
 <style>
-  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  .auth-card { max-width: var(--auth-card-width, 24rem); margin: var(--space-3xl) auto }
   h1, p { margin: 0 }
 </style>
 `

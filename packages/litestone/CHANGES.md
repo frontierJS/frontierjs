@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-03 — `verifyGateLadder` grades the gate past a field write policy
+
+A field `@allow('write', …)` the synthetic principal fails DROPS its column, so a required one failed the create on NOT NULL and the ladder reported the harness as the finding: auth's `email @allow('write', auth().isAdmin)` did that to `User.create` at levels 4–7 on every `fli new --auth` app, whose own `access.test.ts` and `tutor:test` both assert an empty ladder. The ladder's clients are built from a parse with field write policies removed — the gate is the thing graded, and `atLevel` and every other client keep the policy. Only built when the schema declares one. Pinned in `test/litestone.test.ts` § *a required column under a field write policy does not stop the gate being graded*, red before, with a stricter-gate control so the change is a grade and not a pass.
+
 ## 2026-10-02 — `@@gate` may put create below read, so a drop box states itself and refuses by name (`FJS-1244`, `FJS-D491`)
 
 *Many may write, few may read* — a staff survey, a suggestion box, a job application — was unspellable: `@@gate("6.4.9.9")` was refused for non-decreasing levels, and only `8.4.9.9` booted because the sentinels do not advance the ladder. The workaround was a `@@allow('read', auth().isAdmin)` policy, which turns the refusal into an empty 200 that reads the same as *nobody has answered yet*.

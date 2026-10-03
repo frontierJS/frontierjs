@@ -287,8 +287,12 @@ describe('Command() closes the tty', () => {
       `await (await Command({ file: ${JSON.stringify(file)}, arg: [], flag: {} }))()`,
     ].join('\n'))
     // The byte waits a second for the command to get going; `-e` returns its status.
+    // The runner's own color switches are dropped: CI sets CI=1 and FORCE_COLOR=0,
+    // chalk honors both, and *without NO_COLOR chalk colors* then fails for CI's reason.
+    const inherited = { ...process.env }
+    for (const key of ['CI', 'FORCE_COLOR', 'NO_COLOR']) delete inherited[key]
     return spawnSync('sh', ['-c', `(sleep 1; printf '\\003'; sleep 2) | script -qec "${process.execPath} ${runner}" /dev/null`],
-      { encoding: 'utf8', timeout: 15000, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...env } })
+      { encoding: 'utf8', timeout: 15000, env: { ...inherited, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...env } })
   }
   const away = (mark) => `tty.onExit(async () => { await sleep(50); fs.writeFileSync(${JSON.stringify(mark)}, 'away') })`
 

@@ -36,7 +36,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 12 done — a machine that reported in, a command that ran on it, and a release it built')
+log.success('Lesson 12 done — a machine that reported in, a command that ran on it, and a release it ran')
 log.info('')
 log.info('  a Server row is the machine as a noun, and it starts at pending')
 log.info('  the heartbeat is what moves it, and nothing you type can')

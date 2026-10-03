@@ -187,7 +187,9 @@ same around hook and takes back both the client and the merged principal.
 views. No warehouse, no new storage. Studio keeps previewing and gains the disclosure
 [FJS-977](../ISSUES_ARCHIVE.md#fjs-977) is filed for.
 
-**Phase 3 — the rest, only when something strains.** Ingest from foreign sources is the
+**Phase 3 — overturned by `data-layer-v1.md` (2026-10-03)**, which builds the data
+layer as a product of its own, foreign ingest in V1. The original text:
+*the rest, only when something strains.* Ingest from foreign sources is the
 connector treadmill and `FJS-D153`'s rule applies unchanged: a vendor lives in its own
 package. Storage is ruled — SQLite ([FJS-D248](../DECISIONS.md#fjs-d248)) — and a second engine
 waits on a measurement rather than on evidence in general.

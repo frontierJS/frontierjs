@@ -15,9 +15,12 @@
 // Match chalk's default rather than picking our own: color when stdout is a
 // terminal, honouring NO_COLOR and FORCE_COLOR. A drive that pipes fli's output
 // and greps it would otherwise start seeing escape codes it never saw before.
+// `FORCE_COLOR=0` is OFF, as chalk reads it — a truthiness test turned it on,
+// and CI sets exactly that. An empty one is unset.
+const force   = process.env.FORCE_COLOR
 const enabled =
   !process.env.NO_COLOR &&
-  (Boolean(process.env.FORCE_COLOR) || Boolean(process.stdout?.isTTY))
+  (!force ? Boolean(process.stdout?.isTTY) : force !== '0' && force !== 'false')
 
 const wrap = (open, close) => (s) => (enabled ? `\x1b[${open}m${s}\x1b[${close}m` : String(s))
 

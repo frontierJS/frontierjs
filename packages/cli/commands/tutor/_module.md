@@ -269,7 +269,7 @@ const defaultSource = () =>
 // the lesson's own prose makes both unreadable, and the diagnosis on a failed
 // health check needs somewhere to point.
 
-const startServer = async (context, { name, script, argv, cwd, env = {}, port, path = '/', ready = 40, logs }) => {
+const startServer = async (context, { name, script, argv, cwd, env = {}, port, path = '/', ready = 40, logs, scheme = 'http', tls }) => {
   context.config.__servers ??= {}
   if (context.config.__servers[name]) return context.config.__servers[name]
 
@@ -299,8 +299,8 @@ const startServer = async (context, { name, script, argv, cwd, env = {}, port, p
 
   // The port answering is not the same as the app being up — vite binds before
   // it has a route table — so this asks the URL a caller would ask for.
-  const url = `http://127.0.0.1:${port}${path}`
-  rec.up = await probe.httpStatus({ url, retries: ready, everyMs: 500, name: `${name} answers ${path}` })
+  const url = `${scheme}://127.0.0.1:${port}${path}`
+  rec.up = await probe.httpStatus({ url, tls, retries: ready, everyMs: 500, name: `${name} answers ${path}` })
   return rec
 }
 
@@ -523,28 +523,48 @@ const startHub = (context) => startServer(context, {
   path:   '/setup/probe',
 })
 
-const startOutpost = (context) => startServer(context, {
-  name:   'outpost',
-  script: 'start',
-  cwd:    context.config.outpost,
-  logs:   join(context.config.ws.dir, '.tutor'),
-  env:    {
-    OUTPOST_SERVER_ID:  context.config.serverId,
-    // The machine's OWN secret, learned by enrolling, and never the fleet-wide
-    // one. Basecamp stopped accepting `OUTPOST_SECRET` as an authentication
-    // input when per-machine credentials landed — one string every machine
-    // holds means a compromised box can forge any other machine's check-in —
-    // and this lesson went on handing over the fleet key, so every heartbeat
-    // was answered 401 and the lesson died at step 5 (`FJS-1041`).
-    OUTPOST_SECRET:     context.config.outpostSecret,
-    BASECAMP_URL:       hubUrl(context),
-    OUTPOST_PORT:       String(context.config.outpostPort),
-    OUTPOST_PUBLIC_URL: `http://127.0.0.1:${context.config.outpostPort}`,
-    OUTPOST_WORK_DIR:   join(context.config.ws.dir, 'outpost-work'),
-  },
-  port:   context.config.outpostPort,
-  path:   '/health',
-})
+// The command port's certificate, made with the outpost's own `cert.js` — the
+// one `install.sh` runs — and kept in the workspace, because the row pins the
+// certificate it enrolled with and a new one is a machine Basecamp refuses.
+// It is the PEM the enroll exchange carries and the CA every probe of the port
+// trusts; the hostname check is off because the pin is the fingerprint.
+const outpostTls = async (context) => {
+  const { ensureCert } = await import(new URL('file://' + join(context.config.outpost, 'src', 'cert.js')))
+  const made = ensureCert(join(context.config.ws.dir, 'outpost-tls'))
+  return { ...made, pin: { ca: made.cert, checkServerIdentity: () => undefined } }
+}
+
+const outpostUrl = (context, path = '') => `https://127.0.0.1:${context.config.outpostPort}${path}`
+
+const startOutpost = async (context) => {
+  const tls = await outpostTls(context)
+  return startServer(context, {
+    name:   'outpost',
+    script: 'start',
+    cwd:    context.config.outpost,
+    logs:   join(context.config.ws.dir, '.tutor'),
+    scheme: 'https',
+    tls:    tls.pin,
+    env:    {
+      OUTPOST_SERVER_ID:  context.config.serverId,
+      // The machine's OWN secret, learned by enrolling, and never the fleet-wide
+      // one. Basecamp stopped accepting `OUTPOST_SECRET` as an authentication
+      // input when per-machine credentials landed — one string every machine
+      // holds means a compromised box can forge any other machine's check-in —
+      // and this lesson went on handing over the fleet key, so every heartbeat
+      // was answered 401 and the lesson died at step 5 (`FJS-1041`).
+      OUTPOST_SECRET:     context.config.outpostSecret,
+      BASECAMP_URL:       hubUrl(context),
+      OUTPOST_PORT:       String(context.config.outpostPort),
+      OUTPOST_PUBLIC_URL: outpostUrl(context),
+      OUTPOST_TLS_CERT:   tls.certPath,
+      OUTPOST_TLS_KEY:    tls.keyPath,
+      OUTPOST_WORK_DIR:   join(context.config.ws.dir, 'outpost-work'),
+    },
+    port:   context.config.outpostPort,
+    path:   '/health',
+  })
+}
 
 // Anything already answering is used as it stands, which is also what somebody
 // with the control plane open in another terminal wants.
@@ -556,7 +576,7 @@ const ensureFleet = async (context, { outpost = false } = {}) => {
   }
   if (!outpost) return up.ok ? up : { ok: true, name: 'the control plane is up' }
 
-  const machine = await probe.httpStatus({ url: `http://127.0.0.1:${context.config.outpostPort}/health`, name: 'the outpost is up' })
+  const machine = await probe.httpStatus({ url: outpostUrl(context, '/health'), tls: (await outpostTls(context)).pin, name: 'the outpost is up' })
   if (machine.ok) return machine
   const started = await startOutpost(context)
   return started.up.ok ? started.up : { ...started.up, detail: serverLog(started) }

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-03 — a static prune keeps `keep` releases when their mtimes tie
+
+Releases published within one millisecond tie on directory mtime, and the sort could put the new release or the live one past the `keep` cut, where both are spared — so one extra survived (`test/static.test.js` § *old releases are pruned*, red about one run in three). The release just written now ranks first, and the live one wins a tie.
+
 ## 2026-09-30 — `/route`: hostnames changed between releases (`FJS-1610`)
 
 `POST /route { app_id, hosts }` replaces the app's Caddy route without touching the container, or removes it when `hosts` is empty. It dials the port the running container published, read with `docker inspect` (`docker.published`), so a port edited on the app since the release is not used. No container, or one that publishes no port, is refused when there are hosts to route. Hostname checks and the refusal of a hostname another app holds are `/deploy`'s. The bind is left alone. The reply's `rebind` says when it no longer matches: a first hostname on a port open on every interface, or the last one removed from a loopback port (`FJS-1616`). `outpost.test.js` has five cases. `verify:docker` 36/36 adds four against the real Caddy and daemon: a second name answers over HTTPS, the port and the loopback bind are read back, the container keeps its id, and an empty set takes the route.

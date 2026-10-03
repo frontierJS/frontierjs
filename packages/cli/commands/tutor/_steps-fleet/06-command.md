@@ -102,16 +102,8 @@ const job = await post('/jobs', {
 })
 if (!await must(context, job)) return
 
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, `/jobs/${job.json.id}`),
-  method:   'POST',
-  headers:  { ...as, 'x-service-method': 'trigger' },
-  body:     '{}',
-  expect:   (j) => Boolean(j.id),
-  describe: 'the job accepted for running',
-  name:     'the command is dispatched',
-})) ) return
-
+// Creating a one-shot job IS the dispatch, so nothing triggers it: a second
+// run asked for while the first is going is refused as already running.
 // The dispatch is durable work: the call answers as soon as the job is queued,
 // so the ANSWER is polled rather than awaited.
 if (!await must(context, await probe.httpJson({

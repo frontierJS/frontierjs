@@ -68,15 +68,14 @@ Five things get built, in this order:
 - a **Server** row — the machine as a noun, before anything is on it
 - a real Outpost, on this machine, reporting in
 - a command, sent from the control plane, that really runs here
-- a **release** — sources built into an image on that machine, and the bytes
-  recorded
+- a **release** — an image started on that machine, and the bytes recorded
 
 The last two are the lesson. Everything before them is arranging for a machine
 to be reachable, and *reachable* turns out to have a precise meaning that a row
 cannot express.
 
-The release needs Docker, because it builds one; without a daemon the lesson
-stops there and says so.
+The release needs Docker, because it starts a container; without a daemon the
+lesson stops there and says so.
 
 **This lesson needs a checkout.** Basecamp is not published — it is an
 application built on the framework rather than a part of it — so the first step

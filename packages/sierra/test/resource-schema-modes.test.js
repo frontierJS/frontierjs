@@ -167,12 +167,17 @@ describe('the build emits both write modes', () => {
   })
 
   test('a column is marked only where something declared it', async () => {
-    // The scale claim, measured rather than asserted as a number. `basecamp`
-    // was the empty control until orion's `db/orion.lite` — which basecamp
-    // imports — stamped `Flow.ownerId @immutable` as an access grant
-    // (`FJS-D276`), so the control is now the NAMES rather than the count: a
-    // change that marks columns wholesale still fails here, and one app is
-    // still measured against a declaration it does not make.
+    // The scale claim, measured against the schema rather than a list of
+    // names: a hardcoded list went stale every time an app froze a column, and
+    // a stale list fails for the app's edit rather than for a build that marks
+    // columns wholesale — which is the one this exists to catch.
+    const declared = (app) => {
+      const names = new Set()
+      for (const m of parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema.models)
+        for (const f of m.fields)
+          if (f.attributes.some(a => a.kind === 'immutable')) names.add(`${m.name}.${f.name}`)
+      return names
+    }
     const marked = async (app) => {
       const g = await generateSchemas(resolve(REPO_ROOT, app, 'db', 'schema.lite'), () => {}, SIERRA_ROOT)
       const names = []
@@ -189,8 +194,12 @@ describe('the build emits both write modes', () => {
       }
       return names
     }
-    expect((await marked('example')).length).toBeGreaterThan(0)
-    expect(await marked('packages/basecamp')).toEqual(['Flow.ownerId'])
+    for (const app of ['example', 'packages/basecamp']) {
+      const names = await marked(app)
+      expect(names.length, app).toBeGreaterThan(0)
+      const decl = declared(app)
+      expect(names.filter(n => !decl.has(n)), `${app} — marked with no @immutable`).toEqual([])
+    }
   })
 })
 

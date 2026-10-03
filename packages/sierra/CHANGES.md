@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-03 — two suite fixes
+
+`test/resource-schema-modes.test.js` § *a column is marked only where something declared it* compared basecamp against a hardcoded `['Flow.ownerId']`, which went stale when basecamp froze ten columns with `@immutable`. It now asserts every marked column is one the schema declares `@immutable`, for both apps. `test/fs-allow-plugin.test.js` imported `bun:test` in a vitest package and collected zero tests; it imports `vitest`.
+
 ## 2026-09-30 — a `robots: noindex` page beside a one-segment dynamic route stays out of the sitemap
 
 `isIndexable` tested a prerendered URL against every dynamic pattern in `indexable`, so `/:pkg/` matched `/splash-tune/` and overruled that page's own `noindex`. frontierjs.com advertised its tuner page. Now a URL that is itself a route is decided by that route alone. Proof: `test/postbuild.test.js` › *a noindex route beside a one-segment dynamic route stays out*, which failed before the fix.

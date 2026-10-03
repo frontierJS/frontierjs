@@ -6,21 +6,17 @@ description: A release the control plane drove, and the bytes it can name
 ## The other half — a release
 
 The command in step 6 proved the machine takes orders. A **release** is the
-thing a control plane exists for, and it is a longer sentence: build these
-sources into an image on that machine, start it, and record which bytes ran.
+thing a control plane exists for, and it is a longer sentence: put this image
+on that machine, start it, and record which bytes ran.
 
-The app gets a source — a git repository, which for this lesson is one made
-here on disk:
-
-```console
-git init  →  a Dockerfile  →  one commit on main
-```
+The app gets a source — an image, `nginx:alpine`, which stays up on its own
+command and answers nothing this lesson needs.
 
 Then a deployment is created against it, and nothing else is typed. Basecamp
 writes a `Deployment` row and a `DeploymentStep` per stage, dispatches
 `deployment:run` to its own queue, and the job talks to the same Outpost the
-last step used — `POST /deploy` with `source.kind: 'git'`, which clones,
-`docker build`s and starts a container.
+last step used — `POST /pull`, which fetches the image and reports its digest,
+then `POST /deploy`, which starts a container of exactly those bytes.
 
 **The assertion that matters is the digest.** A tag is not an identity: two
 machines at the same commit hold two images called the same thing with different
@@ -54,7 +50,7 @@ if (!await must(context, await ensureFleet(context, { outpost: true }), {
   likely: 'the control plane or the machine is not answering — run this lesson from the start',
 })) return
 
-// A release BUILDS, so this half needs a daemon. Without one the lesson stops
+// A release runs a container, so this half needs a daemon. Without one the lesson stops
 // rather than fails: everything before this ran, and *no docker here* is a fact
 // about the machine and not about the framework — the same answer step 1 gives
 // somebody who installed from npm and has no basecamp.
@@ -62,7 +58,7 @@ if (!probe.commandExists({ bin: 'docker' }).ok) {
   log.warn('no docker on this machine — the release half needs one')
   log.info('')
   log.info('  Everything above happened: a machine reported in, and a command from the')
-  log.info('  control plane really ran on it. A RELEASE builds an image here, which is')
+  log.info('  control plane really ran on it. A RELEASE starts a container here, which is')
   log.info('  the one thing this machine cannot be asked to do.')
   log.info('')
   context.config.stop = true
@@ -78,50 +74,24 @@ const appId = context.config.appId
 
 // ─── something to release ─────────────────────────────────────────────────
 //
-// A real repository on disk, because `POST /deploy` hands `source.repo` to
-// `git clone` and a path is a legal git URL. Nothing is fetched from a network.
-const repo = join(context.config.ws.dir, 'hello-app')
-mkdirSync(repo, { recursive: true })
+// An image a registry holds, because `/pull` is `docker pull` and an image
+// built only on this machine is one it cannot fetch. A null port publishes
+// nothing: the app serves no traffic here, and a host port would collide with
+// whatever this machine already holds.
+const image = 'nginx:alpine'
 
-writeFileSync(join(repo, 'Dockerfile'), [
-  '# The smallest thing that can be built and then be seen running.',
-  'FROM busybox:1.36',
-  'RUN mkdir -p /www && echo "released by basecamp" > /www/index.html',
-  'EXPOSE 80',
-  'CMD ["httpd", "-f", "-p", "80", "-h", "/www"]',
-  '',
-].join('\n'), 'utf8')
-
-// `--depth 1 --branch main` is what the machine clones with, so the branch has
-// to be named and the commit has to exist.
-for (const argv of [
-  ['init', '--initial-branch', 'main'],
-  ['add', '.'],
-  ['-c', 'user.email=tutor@frontier.invalid', '-c', 'user.name=Tutor', 'commit', '-m', 'the app'],
-]) {
-  const r = probe.runArgv('git', argv, { cwd: repo })
-  if (r.code !== 0 && !/nothing to commit/.test(`${r.stdout}${r.stderr}`)) {
-    await must(context, {
-      ok: false, name: `git ${argv[0]}`, asked: 'a repository with one commit on main',
-      got: (r.stderr || r.stdout || `exit ${r.code}`).slice(0, 300),
-    }, { likely: 'git could not write here — the workspace may be read-only' })
-    return
-  }
-}
-
-// The app is told where its source is. `patch`, because everything else about
-// the row is already right and a release reads the row as it stands.
+// `patch`, because everything else about the row is already right and a
+// release reads the row as it stands.
 if (!await must(context, await probe.httpJson({
   url:     hubUrl(context, `/apps/${appId}`),
   method:  'PATCH',
   headers: as,
   body:    JSON.stringify({
-    source: { kind: 'git', repo, branch: 'main' },
-    config: { port: 0 },
-    port:   0,
+    source: { kind: 'image', image },
+    port:   null,
   }),
   expect:   (j) => Boolean(j.id),
-  describe: 'the app now knows what to build',
+  describe: 'the app now knows what to run',
   name:     `the app is given a source`,
 }), {
   likely: 'the patch was refused — a source is a developer-and-above write',
@@ -145,7 +115,7 @@ if (!await must(context, release, {
 const deploymentId = release.json.id
 
 // Durable work again: the call answered when the row was written, so the
-// verdict is polled. A build is minutes on a cold daemon.
+// verdict is polled. A pull is minutes on a cold daemon.
 const finished = await probe.httpJson({
   url:      hubUrl(context, `/deployments/${deploymentId}`),
   headers:  as,
@@ -161,27 +131,7 @@ if (!await must(context, finished, {
   reproduce: `curl -s ${hubUrl(context, `/deployments/${deploymentId}`)}`,
 })) return
 
-// A build context the DAEMON cannot see is an environment fact, not a release
-// that failed. A private /tmp — this shell has one, and so do most CI runners —
-// is invisible to a daemon running outside the namespace, so `docker build`
-// answers *unable to prepare context* about a directory that is plainly there.
-// `scripts/scaffold-build.mjs` names the same class for `fli deploy`.
 const machineLog = serverLog(context.config.__servers?.outpost ?? { logPath: '' }, 20)
-
-if (finished.json.status === 'failed' && /unable to prepare context/.test(machineLog)) {
-  log.warn('this workspace is somewhere the docker daemon cannot read')
-  log.info('')
-  log.info('  The machine cloned the app and the daemon could not open the directory to build it.')
-  log.info('  A private /tmp does this — the path exists for you and not for the daemon.')
-  log.info('')
-  log.info(`  fli tutor:fleet --workspace ~/frontier-tutorial   builds somewhere both can see`)
-  log.info('')
-  // A deliberate exit that SUCCEEDED (FJS-589): everything this lesson is about
-  // has already been proven, and the machine refused for a reason that is the
-  // machine's.
-  context.config.stop = true
-  return
-}
 
 if (!await must(context, {
   ok:    finished.json.status === 'success',
@@ -210,7 +160,7 @@ if (!await must(context, probe.sqliteRow({
   },
   name:   'the control plane recorded which bytes ran',
 }), {
-  likely: 'the executor answered without building — a stub reports digest: null, which is why this asks',
+  likely: 'the executor answered without pulling — a stub reports digest: null, which is why this asks',
 })) return
 
 // And the machine agrees. `fjs-<appId>` is the name outpost gives a container,
@@ -235,11 +185,11 @@ if (!await must(context, {
   asked: `the container to be running ${digest.slice(0, 20)}…`,
   got:   String(running.got ?? 'nothing').slice(0, 30),
 }, {
-  likely: 'the row and the machine disagree — a rebuild between the two would do this',
+  likely: 'the row and the machine disagree — a second release between the two would do this',
 })) return
 
 log.info('')
-log.info(`  ${digest.slice(0, 23)}…   built on this machine, recorded by the control plane`)
+log.info(`  ${digest.slice(0, 23)}…   pulled onto this machine, recorded by the control plane`)
 log.info(`  ${container}   still running — the finish step takes it down`)
 log.info('')
 

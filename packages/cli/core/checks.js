@@ -3058,8 +3058,11 @@ const CHECKS = {
           const file = join(dir, name)
           let text
           try { text = readFileSync(file, 'utf8') } catch { continue }
+          // A comment that says "the <style> block below" otherwise opens a
+          // block there, and every `&#123;` in the markup after it reads as a color.
+          const scan = text.replace(/<!--[\s\S]*?-->/g, s => s.replace(/[^\n]/g, ' '))
 
-          for (const block of text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)) {
+          for (const block of scan.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)) {
             const start = block.index + block[0].indexOf('>') + 1
             // Blanked rather than cut, so every index still maps to its line.
             const css = block[1]

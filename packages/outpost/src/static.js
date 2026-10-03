@@ -188,15 +188,19 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
     return slug
   }
 
-  /** Digest directories this app still has, newest first. */
-  async function digests(dir) {
+  /** Digest directories this app still has, newest first. Releases written in
+   *  the same millisecond tie on mtime, and `prefer` breaks the tie — without it
+   *  the live release can sort past the keep window and survive as one extra. */
+  async function digests(dir, prefer = null) {
     const found = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
     const dirs  = found.filter(e => e.isDirectory() && e.name.startsWith('sha256:'))
     const timed = await Promise.all(dirs.map(async e => ({
       name: e.name,
       at:   await fsp.stat(join(dir, e.name)).then(s => s.mtimeMs, () => 0),
     })))
-    return timed.sort((a, b) => b.at - a.at).map(e => e.name)
+    return timed
+      .sort((a, b) => b.at - a.at || (b.name === prefer) - (a.name === prefer))
+      .map(e => e.name)
   }
 
   /** What `current` points at, or null if this app has never been published. */
@@ -246,7 +250,8 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
       // app on the machine with it, and a prototyping surface is the one most
       // likely to redeploy forty times in an afternoon.
       const live = await currentDigest(appId)
-      const kept = await digests(dir)
+      // The release just written is the newest whatever its mtime ties with.
+      const kept = [digest, ...(await digests(dir, live)).filter(d => d !== digest)]
       for (const old of kept.slice(Math.max(keep, 1)))
         if (old !== digest && old !== live) await fsp.rm(join(dir, old), { recursive: true, force: true })
 
@@ -313,7 +318,8 @@ export function createStatic({ staticDir = '/var/lib/outpost/static', staticUrl 
      *  rollback can still reach without resending bytes. */
     async releases({ appId }) {
       const dir = appDir(appId)
-      return { current: await currentDigest(appId), digests: await digests(dir) }
+      const current = await currentDigest(appId)
+      return { current, digests: await digests(dir, current) }
     },
   }
 }

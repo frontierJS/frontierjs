@@ -61,8 +61,11 @@ export function runArgv(bin, args, opts = {}) {
 // otherwise write its own sleep, and the sleeps would be tuned to whichever
 // machine the author had.
 
-async function attempt(url, { method = 'GET', body, headers = {} } = {}) {
+// `tls` is bun's fetch option, for a server answering with a certificate no CA
+// signed — the outpost's command port, pinned the way Basecamp pins it.
+async function attempt(url, { method = 'GET', body, headers = {}, tls } = {}) {
   const init = { method, headers: { ...headers } }
+  if (tls) init.tls = tls
   if (body !== undefined) {
     init.body = typeof body === 'string' ? body : JSON.stringify(body)
     init.headers['content-type'] ??= 'application/json'
@@ -78,11 +81,11 @@ async function attempt(url, { method = 'GET', body, headers = {} } = {}) {
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms))
 
-export async function httpStatus({ url, method, body, headers, expect = 200, retries = 1, everyMs = 500, name }) {
+export async function httpStatus({ url, method, body, headers, tls, expect = 200, retries = 1, everyMs = 500, name }) {
   const label = name ?? `${method ?? 'GET'} ${url}`
   let last
   for (let i = 0; i < retries; i++) {
-    last = await attempt(url, { method, body, headers })
+    last = await attempt(url, { method, body, headers, tls })
     if (last.res && last.res.status === expect) {
       return ok(label, `status ${expect}`, `status ${last.res.status}`)
     }
@@ -98,11 +101,11 @@ export async function httpStatus({ url, method, body, headers, expect = 200, ret
 // The body, not the status. `expect` is a predicate over the parsed JSON, and
 // `describe` is what that predicate was looking for said in English — without
 // it a failure reads `expected (j) => j.token` at somebody who is learning.
-export async function httpJson({ url, method, body, headers, expect, describe, retries = 1, everyMs = 500, name }) {
+export async function httpJson({ url, method, body, headers, tls, expect, describe, retries = 1, everyMs = 500, name }) {
   const label = name ?? `${method ?? 'GET'} ${url}`
   let last
   for (let i = 0; i < retries; i++) {
-    last = await attempt(url, { method, body, headers })
+    last = await attempt(url, { method, body, headers, tls })
     if (last.res) {
       let json
       try { json = JSON.parse(last.text) } catch { json = undefined }
@@ -127,12 +130,12 @@ export async function httpJson({ url, method, body, headers, expect, describe, r
 // module is the case this exists for: a page that compiles is a fact about the
 // compiler, and asking the server for the module is the only way to get it
 // without a browser.
-export async function httpText({ url, method, body, headers, needle, describe, retries = 1, everyMs = 500, name }) {
+export async function httpText({ url, method, body, headers, tls, needle, describe, retries = 1, everyMs = 500, name }) {
   const label = name ?? `${method ?? 'GET'} ${url}`
   const want  = describe ?? `a body matching ${needle}`
   let last
   for (let i = 0; i < retries; i++) {
-    last = await attempt(url, { method, body, headers })
+    last = await attempt(url, { method, body, headers, tls })
     const hit = last.res && last.res.ok &&
       (typeof needle === 'string' ? last.text.includes(needle) : needle.test(last.text))
     if (hit) {

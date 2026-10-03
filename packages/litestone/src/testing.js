@@ -344,6 +344,50 @@ export async function createTestEnv(opts = {}) {
   let baseline  = null
   let scenarios = 0
 
+  // Clients are cached per level, because the level is fixed when a client is
+  // constructed and cannot be a property of a call.
+  const clientAt = async (cache, n, parsed) => {
+    if (!cache.has(n)) {
+      const others = (built.clientOpts.plugins ?? []).filter(p => !(p instanceof GatePlugin))
+      // Re-parsed rather than sharing the first client's AST: a plugin's
+      // onInit may decorate the schema it is given, and two clients quietly
+      // sharing one object is not a thing to find out later.
+      cache.set(n, await createClient({
+        parsed:    parsed(),
+        db:        built.path,
+        ...built.clientOpts,
+        now:       () => built.clock.now(),
+        plugins:   [...others, new GatePlugin({ getLevel: () => n })],
+        databases: { ...built.dbOverrides, ...(built.clientOpts.databases ?? {}) },
+      }))
+    }
+    return cache.get(n)
+  }
+
+  // The gate ladder's clients carry no field WRITE policy. One the synthetic
+  // principal fails drops its column without a word, so a required column
+  // fails NOT NULL and the gate is never asked — auth's
+  // `email @allow('write', auth().isAdmin)` did that to User.create at every
+  // level from 4 to 7. Built only when the schema declares one.
+  const unpoliced  = new Map()
+  const fieldWrite = (a) => a.kind === 'fieldAllow' && a.operations?.includes('write')
+  const hasFieldWrite = built.parsed.schema.models.some(m => m.fields.some(f => f.attributes?.some(fieldWrite)))
+  const parseUnpoliced = () => {
+    const parsed = parse(schemaText)
+    for (const m of parsed.schema.models)
+      for (const f of m.fields)
+        f.attributes = f.attributes
+          .map(a => fieldWrite(a) ? { ...a, operations: a.operations.filter(op => op !== 'write') } : a)
+          .filter(a => a.kind !== 'fieldAllow' || a.operations.length)
+    return parsed
+  }
+  const ladderAt = async (n) => {
+    if (!hasFieldWrite) return env.atLevel(n)
+    const client = await clientAt(unpoliced, n, parseUnpoliced)
+    if (n === 8) return client.asSystem()
+    return client.$setAuth({ id: 'test-principal', capabilities: [...capabilityNames(built.parsed.schema)] })
+  }
+
   const env = {
     db:        built.db,
     system:    built.db.asSystem(),
@@ -362,26 +406,13 @@ export async function createTestEnv(opts = {}) {
     actingAs: (user) => built.db.$setAuth(user),
 
     atLevel: async (n, principal = null) => {
-      if (!levels.has(n)) {
-        const others = (built.clientOpts.plugins ?? []).filter(p => !(p instanceof GatePlugin))
-        // Re-parsed rather than sharing the first client's AST: a plugin's
-        // onInit may decorate the schema it is given, and two clients quietly
-        // sharing one object is not a thing to find out later.
-        levels.set(n, await createClient({
-          parsed:    parse(schemaText),
-          db:        built.path,
-          ...built.clientOpts,
-          now:       () => built.clock.now(),
-          plugins:   [...others, new GatePlugin({ getLevel: () => n })],
-          databases: { ...built.dbOverrides, ...(built.clientOpts.databases ?? {}) },
-        }))
-      }
+      const client = await clientAt(levels, n, () => parse(schemaText))
       // SYSTEM is not reachable through getLevel — the plugin clamps to 0–7.
       // `principal` is for a caller that needs the gate held at a level AND a
       // real `auth()` for the row policies to compare against — the gate grid
       // does not care who the principal is, and `verifyRowPolicies` cares about
       // nothing else.
-      if (n === 8) return levels.get(n).asSystem()
+      if (n === 8) return client.asSystem()
       // The synthetic caller holds every capability the schema declares, so a
       // refusal at this level came from the GATE. The grid is ANDed with the
       // ladder (`FJS-D146`) and refuses with the same AccessDeniedError, so a
@@ -392,7 +423,7 @@ export async function createTestEnv(opts = {}) {
       // (`FJS-351`). A stated `principal` is left exactly as given: a caller
       // building one is asking about a specific person, and a set injected
       // under them is a grant they did not write.
-      return levels.get(n).$setAuth(
+      return client.$setAuth(
         principal ?? { id: 'test-principal', capabilities: [...capabilityNames(built.parsed.schema)] })
     },
 
@@ -496,7 +527,7 @@ export async function createTestEnv(opts = {}) {
 
         for (const row of modelRows) {
           const acc    = modelToAccessor(row.model)
-          const client = await env.atLevel(row.level)
+          const client = await ladderAt(row.level)
 
           // Every WRITE row starts from the same rows. The alternative is to
           // make thirty-six fixtures per model distinct from each other, and the
@@ -1722,8 +1753,9 @@ export async function createTestEnv(opts = {}) {
     },
 
     close: () => {
-      for (const client of levels.values()) client.$close()
+      for (const client of [...levels.values(), ...unpoliced.values()]) client.$close()
       levels.clear()
+      unpoliced.clear()
       built.db.$close()
     },
   }

@@ -10,14 +10,22 @@ FrontierJS app — its job is to run Docker commands and answer questions about 
 machine, and an app would put a schema, a migration runner and an ORM on every
 server in the fleet to do that.
 
-It takes three things with no defaults, and refuses to start without any of
+It takes five things with no defaults, and refuses to start without any of
 them:
 
 ```console
 OUTPOST_SERVER_ID   which row it is — one that cannot name its server reports as nobody
 OUTPOST_SECRET      this machine's OWN key, learned by enrolling
 BASECAMP_URL        where to report
+OUTPOST_TLS_CERT    the command port's certificate
+OUTPOST_TLS_KEY     and its private key
 ```
+
+**The command port is https and nothing else**, because every deploy sends an
+app's decrypted environment across it. Nobody signs the certificate: the machine
+makes its own, sends it in the enrollment exchange, and Basecamp pins it — the
+one certificate that port may answer with, checked by fingerprint rather than by
+hostname. A machine that sends none is refused before its token is spent.
 
 **The secret is per machine, and getting one is a step of its own.** There is no
 fleet-wide key that also works: one string every machine holds means a
@@ -29,13 +37,13 @@ caller which server ids are real.
 
 Enrolling is an exchange, and it happens twice below. `issueEnrollment` mints a
 **single-use** token and prints the command an operator would paste on a real
-box; `POST /servers/{id}/enroll` takes that token once and answers with the
-secret. The token is burned inside the same statement that reads it, so two
+box; `POST /servers/{id}/enroll` takes that token and the certificate once, and
+answers with the secret. The token is burned inside the same statement that reads it, so two
 machines racing the same token means exactly one enrolls. On a provisioned
 machine cloud-init does this and nobody types anything; here the lesson does what
 `install.sh` does, minus Docker, Bun and a systemd unit.
 
-`OUTPOST_PUBLIC_URL` is the fourth and it is **stated rather than derived**,
+`OUTPOST_PUBLIC_URL` is the sixth and it is **stated rather than derived**,
 because a process cannot see the address the world reaches it at. It is what the
 heartbeat registers, and until it lands the control plane will refuse to release
 anything to this machine — with a sentence saying so, rather than a green deploy
@@ -60,7 +68,8 @@ if (!needs(context, ['serverId', 'secret', 'outpost', 'basecamp', 'token', 'work
   },
 })) return
 
-const publicUrl = `http://127.0.0.1:${context.config.outpostPort}`
+const publicUrl = outpostUrl(context)
+const tls       = await outpostTls(context)
 
 if (!await must(context, await ensureFleet(context), {
   likely: 'the control plane is not answering — run this lesson from the start',
@@ -98,7 +107,7 @@ const enrolled = await probe.httpJson({
   url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
-  body:     JSON.stringify({ token: issued.json.token }),
+  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
   expect:   (j) => typeof j.secret === 'string' && j.secret.length > 0,
   describe: 'the machine trades its token for a key of its own',
   name:     'and the machine spends it, once',
@@ -106,7 +115,7 @@ const enrolled = await probe.httpJson({
 
 if (!await must(context, enrolled, {
   likely:    'the exchange was refused — every refusal here says the same sentence on purpose',
-  reproduce: `curl -s -X POST ${hubUrl(context, `/servers/${context.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…"}'`,
+  reproduce: `curl -s -X POST ${hubUrl(context, `/servers/${context.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…","cert":"…"}'`,
 })) return
 
 // The negative control, and it is the claim rather than tidiness: a token that
@@ -117,7 +126,7 @@ if (!await must(context, await probe.httpStatus({
   url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
-  body:     JSON.stringify({ token: issued.json.token }),
+  body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
   expect:   401,
   name:     'and it is worth nothing the second time',
 })) ) return
@@ -128,7 +137,7 @@ const machine = await startOutpost(context)
 
 if (!await must(context, machine.up, {
   likely:    'the outpost refused to start — it names the variable it wanted',
-  reproduce: `cd ${context.config.outpost} && OUTPOST_SERVER_ID=${context.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl(context)} bun run start`,
+  reproduce: `cd ${context.config.outpost} && OUTPOST_SERVER_ID=${context.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl(context)} OUTPOST_TLS_CERT=${tls.certPath} OUTPOST_TLS_KEY=${tls.keyPath} bun run start`,
   detail:    serverLog(machine),
 })) return
 

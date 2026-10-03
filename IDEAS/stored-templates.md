@@ -73,7 +73,8 @@ write gate a deploy gate that is not reviewed, diffed or released. **Refused as 
 stored shape.** The legitimate case, where a developer writes a template that
 runs code, already has its paved road: a `.mesa` file in the tree, rendered with
 `renderFile`, reviewed like everything else. A row adds nothing to that case
-except skipping review.
+except skipping review. *Taken as a prototype, kept off production deploys, by
+`data-layer-v1.md` § R9 (2026-10-03); C stays the target.*
 
 **B. Full Mesa, in a separate process under OS limits.** This bounds the damage,
 but it's a battery with tendrils: a process pool, a wire protocol for props and

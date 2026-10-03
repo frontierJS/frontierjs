@@ -14903,6 +14903,31 @@ describe('createTestEnv', () => {
     env.close()
   })
 
+  test('a required column under a field write policy does not stop the gate being graded', async () => {
+    // The policy drops the column for a caller it refuses, without a word, so
+    // the create failed NOT NULL at every allowed level and reported the
+    // harness as the finding — auth's User on every `fli new --auth` app.
+    const schema = `
+      model Person {
+        id    Int    @id @default(autoincrement())
+        email String @allow('write', auth().isAdmin)
+        @@gate("2.4.4.5")
+      }
+    `
+    const env = await createTestEnv({ schema })
+    expect(await env.verifyGateLadder()).toEqual([])
+
+    // Still a grade and not a pass: a stricter create is caught.
+    const stricter = parse(schema.replace('@@gate("2.4.4.5")', '@@gate("2.5.5.5")')).schema
+    const caught = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
+    expect(caught.map((m: any) => [m.level, m.got])).toEqual([[4, 'allow']])
+
+    // And the policy still holds everywhere else this env opens a client.
+    const user = await env.atLevel(4)
+    await expect(user.person.create({ data: { email: 'a@b.c' } })).rejects.toThrow(/NOT NULL/)
+    env.close()
+  })
+
   test('verifyGateLadder catches a gate the client grades differently', async () => {
     // The mutation-testing direction: expectations from one schema, database
     // from another. Here the client is built with delete at ADMINISTRATOR(5)

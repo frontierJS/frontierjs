@@ -3639,4 +3639,15 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
     const { findings } = only(root, 'css-raw-literal')
     expect(findings.map(f => f.message.split(' ')[0])).toEqual(['blue', 'DarkRed'])
   })
+
+  // The scaffold's home page: a comment naming the <style> block opened one
+  // there, and the markup's `&#123;#each&#125;` read as two colors.
+  test('a comment that names a <style> block does not open one', () => {
+    const root = tree('raw-comment', {
+      ...CLEAN,
+      'web/src/pages/panel.mesa': '<!--\n  The <style> block below holds no color.\n-->\n<p><code>&#123;#each&#125;</code></p>\n<style>\n  .p { gap: 16px }\n</style>\n',
+    })
+    const { findings } = only(root, 'css-raw-literal')
+    expect(findings.map(f => [f.line, f.message.split(' ')[0]])).toEqual([[6, '16px']])
+  })
 })

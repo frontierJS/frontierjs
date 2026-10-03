@@ -68,6 +68,10 @@ temp/
 **/db/audit/
 *.jsonl
 
+# `fli db push` writes the schema's JSON Schema here. Derived from the .lite on
+# every push, so a committed copy is only ever a stale one.
+**/db/.json/
+
 # `fli ws:atlas --live` writes this: the same page plus git and registry state.
 # It holds a clock and an answer from the network, so it can be neither
 # byte-compared nor committed — its sibling `repo-atlas.snapshot.html` is the

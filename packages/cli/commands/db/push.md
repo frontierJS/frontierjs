@@ -10,6 +10,10 @@ flags:
     type: boolean
     description: Preview the SQL that would be run without executing it
     defaultValue: false
+  accept-data-loss:
+    type: boolean
+    description: Apply a push that drops columns or tables and the values in them
+    defaultValue: false
 ---
 
 ```js
@@ -25,7 +29,7 @@ if (flag.dry) {
   // `db push` diffs the schema against the live database. `migrate apply`
   // replays migration FILES — on a project that has none it reports success
   // having done nothing, which is a new model that silently never got a table.
-  context.exec({ command: `${litestone(context)} db push --schema ${schema}` })
+  context.exec({ command: `${litestone(context)} db push --schema ${schema}${flag['accept-data-loss'] ? ' --accept-data-loss' : ''}` })
   log.success('Schema applied')
   // `<db>/.json/schema.json`, not beside the .lite. It is a DERIVED document
   // meant to be copied out — into an editor, a validator, a client generator —
