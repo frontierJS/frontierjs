@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-02 — the dropped-audit-write test breaks the trail with a directory
+
+`audit-provenance.test.ts` forced a dropped write with `chmod 0400`, which stopped working once the jsonl appender held its fd open. It now parks the trail file and puts a directory at its path. Test only; no source moved.
+
 ## 2026-09-30 — a custom method declares `read: true` (`FJS-D505`, `FJS-1412`, `FJS-1403`)
 
 `methods: [{ method: 'search', read: true }]` says the method writes no record, and junction then treats it as `find` and `get` are treated: an `Idempotency-Key` keeps no answer, and nothing is announced on the bus or a channel. Before, every custom method was a write, so a search whose answer echoed its query had the query kept for 24 hours in `app.cache` under a key, and published unless the method remembered `$.dispatch = false`. `isReadMethod(service, method)` is the one answer both checks read. `aggregate` joins `find` and `get` there, since an aggregate sent with a key was being kept too. `describe().readMethods` lists the declared reads. A declared read keeps its transaction under `transactional:`, and a write inside one runs again on a keyed retry. A `read:` that is not a boolean, or that sits on a CRUD verb, is refused at build. `test/read-method.test.ts` covers it. Portal's `search`, `prepare` and `searchFrames` declare `read: true` in place of `$.dispatch = false`.

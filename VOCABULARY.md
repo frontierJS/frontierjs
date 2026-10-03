@@ -198,3 +198,15 @@ before you meet it.
 | Overlay tier | open | UI | Container tier | floats above the page, beside the ladder — Dialog, Drawer, Popover, Tooltip, Toast | Placement from `IDEAS/ui-ontology.md` |
 | Base tier | open | UI | | the two shapes every Block and Inline term is built from — Chip, Surface. css says it is not a containment tier | Read from `packages/css/vocabulary.json` |
 | Layout tier | open | UI | | one arrangement each and no skin, composable onto any tier — Stack, Cluster, Center, Split, Container | Read from `packages/css/vocabulary.json`; across the ladder, not on it |
+| Detail | open | | | | |
+| Portal | open | | | | |
+| Session | open | | | | |
+| Reference | open | | | | |
+| Secret | open | | | | |
+| BigInt | open | | | | |
+| Undo | open | | | | |
+| Slider | open | | | | |
+| Toaster | open | | | | |
+| Pass | open | | | | |
+| Origin | open | | | | |
+| Start | open | | | | |

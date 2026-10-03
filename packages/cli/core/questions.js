@@ -82,12 +82,12 @@ export const QUESTIONS = [
     q: 'why is AGENTS.md permitted but not required' },
 
   // ─── status ────────────────────────────────────────────────────────────────
-  { intent: 'status', cite: 'FJS-1180',
-    q: 'is there an open issue about better-auth arriving with an empty body' },
+  { intent: 'status', cite: 'FJS-1262',
+    q: 'is there an open issue about a custom method with an empty payload over HTTP' },
   { intent: 'status', cite: 'FJS-257',
-    q: 'has outpost ever run on a real machine' },
-  { intent: 'status', cite: 'FJS-1193',
-    q: 'is vector search built' },
+    q: 'is there an open issue about the outpost existing but never having run on a real machine' },
+  { intent: 'status', cite: 'FJS-1404',
+    q: 'is there an open issue about the editor extension carrying a frozen litestone parser' },
   { intent: 'status', cite: 'FJS-1129',
     q: 'is there a known problem with fli proxy and a refused connection' },
 

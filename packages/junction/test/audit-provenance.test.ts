@@ -12,7 +12,7 @@
 // side of that closure, both pass with it unwired.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, chmodSync } from 'fs'
+import { mkdtempSync, rmSync, renameSync, mkdirSync, rmdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join }   from 'path'
 
@@ -244,8 +244,9 @@ describe('an audit row says where the write came from', () => {
     // quiet app from a broken trail, so the drop has to be counted separately
     // and has to carry WHY.
     //
-    // Broken by making the trail FILE unwritable, so the write fails inside the
-    // deferred, swallowed path rather than at the call.
+    // Broken by putting a directory where the trail FILE is, so the write fails
+    // inside the deferred, swallowed path rather than at the call. A chmod of the
+    // file stopped working once the appender held its fd open (`FJS-665`).
     //
     // It used to chmod the DIRECTORY, and that stopped forcing a drop once the
     // companion index moved to WAL (`FJS-665`): under a rollback journal the
@@ -261,10 +262,15 @@ describe('an audit row says where the write came from', () => {
       expect(before.written).toBeGreaterThan(0)
 
       const trail = join(h.dir, 'audit', 'auditLogs.jsonl')
-      chmodSync(trail, 0o400)
+      // The appender holds an open fd, which a chmod does not touch. Swapping
+      // the path for a directory fails its inode check and then its reopen.
+      const parked = `${trail}.parked`
+      renameSync(trail, parked)
+      mkdirSync(trail)
       await h.app.service('orders').create({ id: 2, status: 'new' })
       await tick(); await tick()
-      chmodSync(trail, 0o600)
+      rmdirSync(trail)
+      renameSync(parked, trail)
 
       const stats = (h.db as any).$logStats()
       expect(stats.dropped).toBeGreaterThan(0)

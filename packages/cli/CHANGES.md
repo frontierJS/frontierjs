@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-02 — the graded `ask` questions cite open issues
+
+`FJS-1180` and `FJS-1193` had closed into `ISSUES_ARCHIVE.md`, so two `status` questions cited rows `ISSUES.md` no longer holds; they now cite `FJS-1262` and `FJS-1404`. The outpost question is worded so it resolves to `FJS-257` alone, where `FJS-1397` had tied with it. Twelve spread-4 terms were added to `VOCABULARY.md` as `open` rows, which is what `terms.test.js` counts.
+
 ## 2026-09-30 — ports: the website's slot names frontierjs.com
 
 The public site's domain is frontierjs.com; the comment on `website`'s project slot in `core/ports.js` said `.dev`. No number moved.
