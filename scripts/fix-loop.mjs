@@ -7,11 +7,11 @@
 //   bun run fix:loop -- --budget 3 --dry-run
 //
 // Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
-// rung of LADDER, and a row that does not close is retried once on the next —
+// rung of FIX_LADDER, and a row that does not close is retried once on the next —
 // the outcome is checkable (the row moves to § Closed or it does not), so
-// paying for high effort only on the rows that need it is cheaper per solved
-// row than running everything high. An S1 or S2 row skips the low rung and
-// runs once, high. Model and effort are set per
+// paying for Opus only on the rows Sonnet did not close is cheaper per solved
+// row than running everything high. An S1 or S2 row skips the Sonnet rung and
+// runs once, on Opus. Model and effort are set per
 // session, never changed inside one, since a mid-session change drops the
 // prompt cache.
 //
@@ -62,7 +62,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join }                     from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { ROOT, LOG_DIR, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+
+// Not `LADDER`: frame-loop shares that one and stays on Opus.
+const FIX_LADDER = [{ model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }]
 
 const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
@@ -102,8 +105,8 @@ for (let n = 0; n < rows; n++) {
 
   const brief = await preBrief(row)
   let outcome
-  // An S1 or S2 that fails low is retried high anyway, so the low attempt is spend with no row at the end of it.
-  const ladder = /^S[12]$/.test(row.severity) ? LADDER.slice(1) : LADDER
+  // An S1 or S2 that fails on Sonnet is retried on Opus anyway, so the Sonnet attempt is spend with no row at the end of it.
+  const ladder = /^S[12]$/.test(row.severity) ? FIX_LADDER.slice(1) : FIX_LADDER
   let retried = false
   for (let rung = 0; rung < ladder.length; rung++) {
     const { model, effort } = ladder[rung]
@@ -113,7 +116,7 @@ for (let n = 0; n < rows; n++) {
 
     appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
     const run = await runSession(`${prompt}\n\n${brief}`, {
-      model, effort, permission, cap: effort === 'low' ? budget : budget * 2,
+      model, effort, permission, cap: ladder[rung] === FIX_LADDER[0] ? budget : budget * 2,
       tag: 'fix-loop', where: `${row.id} [${n + 1}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]

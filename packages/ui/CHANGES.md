@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-10-02 — `JsonInput` shows a document set from outside (`FJS-1620`)
+
+The text was seeded from `value` once, so a `Form.reset()`, a record that
+arrived after mount or a second editor over the same value left the box showing
+the old document over a record holding the new one, and the next submit stored
+what the screen did not show. A `$: value` watch now replaces the text, and
+clears a parse error, unless the text already reads as that value — the shape
+`MoneyInput` has, with `sameValue` as the test, so a person's own edit coming
+back keeps the formatting they typed and an emptied box is not refilled with
+`null`. Proved in `json.spec.mjs` against a controlled control with a
+replace-from-outside button; a stubbed watch that always replaced fails both
+the formatting and the empty-box assertions.
+
 ## 2026-09-30 — `CommandPalette` matches word by word, and can leave the group out
 
 The palette ranks with `rank(…, { words: true })`: each typed word is scored on

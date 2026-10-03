@@ -35,7 +35,7 @@
   //   <JsonInput name="payload" value={row.payload} onvalue={v => row.payload = v} />
 
   import CodeInput from './CodeInput.mesa'
-  import { format, tryParse } from '@frontierjs/toolbelt/json'
+  import { format, tryParse, sameValue } from '@frontierjs/toolbelt/json'
   import { humanize, uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
   export let value = undefined      // the document — an object, an array, a scalar
@@ -79,9 +79,9 @@
   const resolvedRequired = stated(required, rule?.required)
   const serverError      = resolveError(form, name, error, errors)
 
-  // Seeded once, then owned by the person typing. Re-deriving it from `value`
-  // would reformat the document under the caret on every keystroke — the write
-  // goes out, the prop comes back, and the text is replaced mid-word.
+  // Owned by the person typing. Re-deriving it from `value` would reformat the
+  // document under the caret on every keystroke — the write goes out, the prop
+  // comes back, and the text is replaced mid-word.
   let text = format(value)
 
   // A parse failure is local state and not a form error: the form's errors come
@@ -132,6 +132,25 @@
       if (parsed.ok) text = format(parsed.value)
     }
     onblur?.(e)
+  }
+
+  // An empty box reads as the absent document handleInput wrote for it, so a
+  // null coming back is not replaced by the text `null`.
+  function readsAs(v) {
+    if (text.trim() === '') return v == null
+    const parsed = tryParse(text)
+    return parsed.ok && sameValue(parsed.value, v)
+  }
+
+  // A value set from outside — a reset, a record that arrived after mount, a
+  // second editor over the same value — replaces the text, unless the text
+  // already reads as that value: the person's own edit coming back keeps the
+  // formatting they typed it in.
+  $: value, () => {
+    if (!readsAs(value)) {
+      text = format(value)
+      setParseError('')
+    }
   }
 </script>
 

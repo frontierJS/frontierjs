@@ -74,6 +74,10 @@
   // this is the form that only the control's own report can stop.
   let handSaves = 0
   let handDoc   = { keep: 1 }
+
+  // The control, controlled: what the caller holds is written back from
+  // onvalue AND replaced from outside, the two doors a document arrives by.
+  let jdoc = { a: 1 }
 </script>
 
 <h2>viewer — everything closed, so a toggle is the only thing that opens one</h2>
@@ -152,6 +156,11 @@
   value={{ keep: 1 }}
   onvalue={(v) => { written = v; writes++ }}
   oninvalid={() => refused++} />
+
+<h2>the control, controlled — a value can change from outside</h2>
+<JsonInput id="jcontrolled" value={jdoc} onvalue={(v) => { jdoc = v }} />
+<button type="button" id="replace-jdoc" on:click={() => { jdoc = { b: 2 } }}>replace from outside</button>
+<output id="jdoc">{JSON.stringify(jdoc)}</output>
 
 <h2>the same control inside a form</h2>
 <Form id="guarded" resource={RESOURCE} onsubmit={(r) => { saves++; sent = r.payload }}>

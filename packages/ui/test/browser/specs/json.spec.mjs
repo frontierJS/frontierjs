@@ -853,6 +853,37 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#hand-saves').textContent`, '1',
     'and it submits again once the box parses')
 
+  /* ── a document set from outside reaches the box ──────────────────────── */
+
+  // The text is seeded from `value`, and a seed alone leaves a reset, a record
+  // that arrived after mount or a second editor over the same value showing
+  // the old document over a record that holds the new one — the next submit
+  // stores what the screen does not show (`FJS-1620`).
+  const jc = `document.querySelector('#jcontrolled')`
+
+  // The person's own edit comes back as `value`, and must not be reformatted
+  // under them: the text already reads as that document.
+  await t.clickAt('#jcontrolled')
+  await t.evaluate(`${jc}.setSelectionRange(0, ${jc}.value.length); return true;`)
+  await t.type('{"a":2}')
+  await t.eventually(`document.querySelector('#jdoc').textContent`, '{"a":2}',
+    'a controlled control writes its document back to the caller')
+  t.is(await t.evaluate(`return ${jc}.value;`), '{"a":2}',
+    'and the document coming back leaves the text as typed')
+
+  await t.clickAt('#replace-jdoc')
+  await t.eventually(`${jc}.value`, '{\n  "b": 2\n}',
+    'a document replaced from outside replaces the text')
+
+  // An emptied box writes null, and null coming back is not the text `null`.
+  await t.clickAt('#jcontrolled')
+  await t.evaluate(`${jc}.setSelectionRange(0, ${jc}.value.length); return true;`)
+  await t.press('Backspace')
+  await t.eventually(`document.querySelector('#jdoc').textContent`, 'null',
+    'an emptied box writes an absent document')
+  t.is(await t.evaluate(`return ${jc}.value;`), '',
+    'and the box stays empty rather than reading null')
+
   /* ── the label came from the field name ───────────────────────────────── */
 
   // Standing outside a <Form> there is no schema to ask, so the control falls
