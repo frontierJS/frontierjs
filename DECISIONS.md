@@ -6226,6 +6226,34 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d573"></a>2026-10-03 · `FJS-D573` — A file leaves through a raw route that reads its records by calling a service as the requester, and only encodes them. A service answers JSON and nothing else.
+
+**Why.** `FJS-D13` put a stream outside the envelope and said nothing about a
+one-shot body that is not JSON — an invoice PDF, a CSV of a report. Such a body
+needs a raw route, and a raw route runs no gate, no hook and no `protect()`. A
+download is exactly where a `@guarded` column reaches a file. The export plugin
+had already answered it: a raw route that reads through the gate as its caller,
+so a refusal is a status code and the route is only an encoder. This makes that
+the rule for every file.
+
+**What was picked.** The owner picked **A** over **B** and **C**. **B** was
+encoding at the edge: a `$format` directive or an `Accept` header picks a
+serializer in the bridge, so the service keeps its whole pipeline. It adds a
+row to the directive table (Invariant 10) and an encoder to the bridge
+(Invariant 4), and export is the only consumer. Build it when a second one
+arrives. **C** was a declared binary or streaming method kind, the feature
+`FJS-D13` left open; nothing asks for it.
+
+**What it needs to be true.** A service called from a raw route runs as the
+requester, because `app.get`/`app.post` open the request scope with `ctx.user`
+and a call naming no `auth` inherits it. `test/request-scope.test.ts` pins that.
+Nothing yet catches a raw route reading the database directly; a `fli check`
+rule beside `raw-route-param` would.
+
+**Where it lives.** `packages/junction/AGENTS.md` (raw routes, checklist item
+10). The refusal of a stream that a hook assigned to `ctx.result` is the same
+ruling's other half: `FJS-1693`.
+
 ### <a id="fjs-d553"></a>2026-09-29 · `FJS-D553` — A method must read every filter `autoFilter` admitted, and junction refuses by name each one the method body never read.
 
 **Why.** `autoFilter` admits a query key because it names a column, and a

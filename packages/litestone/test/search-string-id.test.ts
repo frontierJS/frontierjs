@@ -32,7 +32,7 @@ for (const [label, id] of [
       expect(hits.map((r: any) => r.id).sort()).toEqual([a.id, b.id].sort())
       expect(hits.every((r: any) => typeof r._rank === 'number' && !('__fts_rowid' in r))).toBe(true)
 
-      const sorted = await db.issue.search('widget', { orderBy: { title: 'asc' }, select: { title: true } })
+      const sorted = await db.issue.search('widget', { orderBy: { title: 'asc' }, select: { title: true }, withRank: false })
       expect(sorted).toEqual([{ title: 'crash on save' }, { title: 'slow load' }])
 
       await db.issue.update({ where: { id: a.id }, data: { body: 'gadget' } })

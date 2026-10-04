@@ -196,7 +196,8 @@ export interface ServiceContext {
   /**
    * `null` until the method has run; a `ServiceResult` envelope after it; and
    * whatever a short-circuiting `before` hook assigned, which the framework
-   * passes through untouched (a cache hit, a `Response`, a bare string).
+   * passes through untouched (a cache hit, a bare string) — unless it is a
+   * stream, which `callService` refuses by name (`FJS-D13`).
    *
    * Typed `unknown` because the envelope is only one of those three, and
    * declaring it as the envelope alone made every honest assignment a cast —

@@ -219,6 +219,28 @@ function describeStream(raw: unknown): string | null {
   return null
 }
 
+/**
+ * A stream is not a result — `FJS-D13`. Refused by name rather than wrapped,
+ * because wrapping one is silent and total: a Response and a ReadableStream
+ * both have no enumerable own properties, so they serialize to `data: {}` and
+ * the caller gets an empty object with a 200. `arrived` says who produced it —
+ * the method, or a hook that assigned `ctx.result` and so never reached
+ * `wrapResult`.
+ */
+export function refuseStream(raw: unknown, object: string, method: string, arrived: string): void {
+  const streaming = describeStream(raw)
+  if (!streaming) return
+  throw new ResultShapeError(
+    object, method || 'method', raw,
+    `${arrived} ${streaming}. A stream is not a result: the envelope says what a ` +
+    `call RETURNED — one record or a page of them, with total/limit/offset — and ` +
+    `a stream returns nothing and then repeatedly. Stream from a raw route with ` +
+    `ctx.sse(), or announce on a channel, where each frame is a result and goes ` +
+    `through the hooks that protect it. A file download is a raw route too: call ` +
+    `this service from it as the caller and encode what it returns (FJS-D573).`
+  )
+}
+
 /** `{ data: [...], …pagination }` or not a list at all. `data` MUST be an array. */
 function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -252,21 +274,7 @@ function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
 export function wrapResult(raw: unknown, object: string, method = ''): ServiceResult {
   if (Array.isArray(raw)) return list(object, raw)
 
-  // A stream is not a result — `FJS-D13`. Refused by name rather than wrapped,
-  // because wrapping one is silent and total: a Response and a ReadableStream
-  // both have no enumerable own properties, so they serialize to `data: {}` and
-  // the caller gets an empty object with a 200.
-  const streaming = describeStream(raw)
-  if (streaming) {
-    throw new ResultShapeError(
-      object, method || 'method', raw,
-      `answered ${streaming}. A stream is not a result: the envelope says what a ` +
-      `call RETURNED — one record or a page of them, with total/limit/offset — and ` +
-      `a stream returns nothing and then repeatedly. Stream from a raw route with ` +
-      `ctx.sse(), or announce on a channel, where each frame is a result and goes ` +
-      `through the hooks that protect it.`
-    )
-  }
+  refuseStream(raw, object, method, 'answered')
 
   const shaped = listShape(raw)
   const isBulk = shaped !== null && Array.isArray((raw as Record<string, unknown>).errors)

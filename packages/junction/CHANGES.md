@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-03 — a hook cannot answer a call with a stream either (`FJS-1693`, `FJS-D573`)
+
+`wrapResult` refused a `Response`, a `ReadableStream` or an async iterable only when the method returned it. A before hook short-circuiting with a `Response`, or an after hook replacing the result with one, reached `bridge.toResponse`, which sent it as the reply: a non-JSON answer out of a service, past every after hook that protects a result. Over the socket the same value unwrapped to `{}`. The refusal is now `refuseStream()` in `envelope.ts`, called by `wrapResult` and again by `callService` once the pipeline has ended, so both paths throw `ResultShapeError` by name. The bridge no longer passes a `Response` through. The refusal also points a file download at a raw route that calls the service as the requester (`FJS-D573`). Proved by four cases in `test/envelope.test.ts` (before and after hooks over HTTP, an internal call, a socket call), all four failing with the old code. A case in `test/request-scope.test.ts` pins that a service called from a raw route runs as the requester.
+
 ## 2026-10-03 — the package root exports the mail asserters a test double needs (`FJS-1224`)
 
 `assertMessageAddresses`, `assertHeaderValue`, `assertHeaderName` and `assertContentId` were re-exported from the mail module for `IMail` test doubles, and the root did not carry them, with no subpath to reach around by. A double had to restate the address rule by hand, which made two owners of it. They are on the root beside `createSmtpMailer` now, so a double refuses what the real mailer refuses. Proved by `test/mail-test-double-door.test.ts`, which imports them from `index.ts` and calls each on a CRLF-injected value.

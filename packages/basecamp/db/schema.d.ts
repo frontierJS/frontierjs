@@ -2622,6 +2622,7 @@ export type DeploymentOrderBy =
 export interface DeploymentStep {
   id: string
   deploymentId: string
+  position: number
   name: string
   status: StepStatus
   output?: string | null
@@ -2633,6 +2634,7 @@ export interface DeploymentStep {
 export interface DeploymentStepCreate {
   id?: string
   deploymentId: string
+  position?: number
   name: string
   status?: StepStatus
   output?: string | null
@@ -2644,6 +2646,7 @@ export interface DeploymentStepCreate {
 export interface DeploymentStepUpdate {
   id?: string
   deploymentId?: string
+  position?: number
   name?: string
   status?: StepStatus
   output?: string | null
@@ -2655,6 +2658,7 @@ export interface DeploymentStepUpdate {
 export interface DeploymentStepWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   deploymentId?: string | WhereOp<string> | null
+  position?: number | WhereOp<number> | null
   name?: string | WhereOp<string> | null
   status?: StepStatus | WhereOp<StepStatus> | null
   output?: string | WhereOp<string> | null

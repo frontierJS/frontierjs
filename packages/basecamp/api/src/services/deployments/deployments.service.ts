@@ -65,7 +65,7 @@ export function createDeploymentsService(app: BasecampApp) {
   function steps(deploymentId: string) {
     return db().deploymentStep.findMany({
       where:   { deploymentId },
-      orderBy: { startedAt: 'asc' },
+      orderBy: { position: 'asc' },
     })
   }
 
@@ -175,8 +175,8 @@ export function createDeploymentsService(app: BasecampApp) {
       const deployment = await db().deployment.create({ data })
 
       await db().deploymentStep.createMany({
-        data: buildInitialSteps(target).map(name => ({
-          deploymentId: deployment.id, name, status: 'pending',
+        data: buildInitialSteps(target).map((name, position) => ({
+          deploymentId: deployment.id, position, name, status: 'pending',
         })),
       })
 
@@ -350,8 +350,8 @@ export function createDeploymentsService(app: BasecampApp) {
         // The step list the TARGET's source needs, not the app's current one.
         // An app switched from inline to a container since that release would
         // otherwise be rolled back through a pipeline its old bytes cannot run.
-        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }).map(name => ({
-          deploymentId: replacement.id, name, status: 'pending',
+        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }).map((name, position) => ({
+          deploymentId: replacement.id, position, name, status: 'pending',
         })),
       })
 
@@ -401,7 +401,7 @@ export function createDeploymentsService(app: BasecampApp) {
 
       const steps = await sys().deploymentStep.findMany({
         where:   { deploymentId: deploy.id },
-        orderBy: { startedAt: 'asc' },
+        orderBy: { position: 'asc' },
       })
       const target = await sys().app.findUnique({ where: { id: deploy.appId } })
 
@@ -476,12 +476,19 @@ export function createDeploymentsService(app: BasecampApp) {
           data:  { status: 'failed', output: error, finishedAt: new Date(finishedAt).toISOString() },
         })
 
-      // Any step still pending or running died with the release.
-      if (status === 'failed')
+      // A step still running died with the release. One still pending never ran,
+      // and marking it `failed` read as though the health check had failed
+      // when the release stopped two steps earlier (`FJS-1683`).
+      if (status === 'failed') {
         await sys().deploymentStep.updateMany({
-          where: { deploymentId: deploy.id, status: { in: ['pending', 'running'] } },
+          where: { deploymentId: deploy.id, status: 'running' },
           data:  { status: 'failed' },
         })
+        await sys().deploymentStep.updateMany({
+          where: { deploymentId: deploy.id, status: 'pending' },
+          data:  { status: 'skipped' },
+        })
+      }
 
       if (deploy.appId)
         await sys().app.update({

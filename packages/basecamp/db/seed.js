@@ -958,8 +958,9 @@ async function seedRegistry(sys, workspaceId, index) {
 const STEPS = ['prepare', 'build', 'push', 'configure', 'release', 'verify']
 
 async function seedSteps(db, deployment) {
-  // A failed deployment stops where it failed — the later steps never ran, and
-  // recording them as 'pending' is what a real interrupted run leaves behind.
+  // A failed deployment stops where it failed — the later steps never ran, so
+  // they are 'skipped', which is what `finishRun` leaves behind. A release still
+  // building has them 'pending'.
   const failedAt = deployment.status === 'failed'   ? 2
                  : deployment.status === 'building' ? 3
                  : -1
@@ -968,19 +969,20 @@ async function seedSteps(db, deployment) {
     const status = failedAt < 0            ? 'success'
                  : i <  failedAt           ? 'success'
                  : i === failedAt          ? (deployment.status === 'failed' ? 'failed' : 'running')
-                 : 'pending'
+                 : deployment.status === 'failed' ? 'skipped' : 'pending'
 
     await db.deploymentStep.create({
       data: {
         deploymentId: deployment.id,
+        position: i,
         name,
         status,
         output:     status === 'failed' ? 'exit status 1: build failed' : null,
-        startedAt:  status === 'pending' ? null : new Date(Date.now() - (6 - i) * 20_000).toISOString(),
-        finishedAt: status === 'pending' || status === 'running'
+        startedAt:  status === 'pending' || status === 'skipped' ? null : new Date(Date.now() - (6 - i) * 20_000).toISOString(),
+        finishedAt: status === 'pending' || status === 'skipped' || status === 'running'
           ? null
           : new Date(Date.now() - (6 - i) * 20_000 + 15_000).toISOString(),
-        durationMs: status === 'pending' || status === 'running' ? null : 15_000,
+        durationMs: status === 'pending' || status === 'skipped' || status === 'running' ? null : 15_000,
       },
     })
   }

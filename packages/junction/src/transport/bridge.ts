@@ -241,8 +241,6 @@ export const bridge = {
       return new Response(null, { status: ctx.statusCode ?? 204 })
     }
 
-    if (result instanceof Response) return result
-
     const status = ctx.statusCode ?? (ctx.method === 'create' ? 201 : 200)
 
     // The framework's one rule, stated once: a list keeps its envelope (it

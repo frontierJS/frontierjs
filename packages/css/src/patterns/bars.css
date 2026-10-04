@@ -90,8 +90,14 @@
   align-items:     center;
   justify-content: space-between;
   gap:             var(--space-sm);
-  margin-bottom:   0.5rem;
 }
+/*
+ * No margin of its own: the space under a Section Header belongs to the box
+ * it sits in. It carried `margin-bottom: 0.5rem`, which collapsed into a
+ * Card's or a Container's flow margin and ADDED to a Stack's gap, so a heading
+ * sat further from its own content (24px) than the sections sat from each
+ * other (16px) on every page that used `.stack`.
+ */
 
 /* ── Divider — a plain horizontal rule ─────────────────────────────
  * The Region-tier "Divider". <hr> is the element: it means "thematic

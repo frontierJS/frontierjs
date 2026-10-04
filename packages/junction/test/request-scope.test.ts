@@ -36,13 +36,15 @@ const SYS   = { userId: 'u-sys',   userType: 'system', roles: [], scopes: [] } a
 
 /** What the method saw, from inside the call. Overwritten per call. */
 let seen: RequestMeta | undefined
+/** The principal the CALL ran as — what a gate and every hook read. */
+let seenAuth: SessionContext | null | undefined
 
 // Two methods, because "the store is open" and "the store survives a nested
 // call" are different claims and a single method can only make the first.
 const probe = createService({
   name: 'probe',
   methods: ['find', 'create', 'nested'],
-  async find(_ctx: unknown)   { seen = requestMeta(); return [] },
+  async find(ctx: any)        { seen = requestMeta(); seenAuth = ctx.auth?.user; return [] },
   async create(_ctx: unknown) { seen = requestMeta(); return { ok: true } },
   async nested(_ctx: unknown) {
     await app.service('probe').find()
@@ -72,6 +74,12 @@ beforeAll(async () => {
   })
   app.services.register(probe)
   app.configure(channels())
+  // The shape FJS-D573 prescribes for a file: a raw route that reads through
+  // the service as its caller and only encodes what comes back.
+  app.get('/probe-download', async () => {
+    const rows = await app.service('probe').find()
+    return new Response(JSON.stringify(rows).length + ' bytes', { headers: { 'content-type': 'text/plain' } })
+  })
   await app.start()
 })
 
@@ -115,6 +123,20 @@ describe('the correlation id has one value per request', () => {
 })
 
 describe('every entry point opens the request scope', () => {
+
+  // FJS-D573: a download is a raw route, and what keeps it inside the Data
+  // boundary is that a service called from it runs as the requester. Were the
+  // call to arrive as nobody, every gate it met would grade a guest, and an
+  // app's fix would be to read the database directly — outside every gate.
+  test('a raw route that calls a service calls it AS the requester', async () => {
+    seen = undefined
+    seenAuth = undefined
+    const res = await fetch(`${BASE}/probe-download`, { headers: { authorization: 'Bearer alice' } })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/plain')
+    expect(seen!.origin).toBe('http')
+    expect((seenAuth as SessionContext | undefined)?.userId).toBe('u-alice')
+  })
 
   test('HTTP — the store is open, and carries who and where', async () => {
     seen = undefined

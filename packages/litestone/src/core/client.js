@@ -7453,8 +7453,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           : searchPolicy.sql
         filterParams.push(...searchPolicy.params)
       }
+      // Correlated on the hit's rowid, so the filter runs once per MATCH. As
+      // `rowid IN (SELECT rowid FROM t WHERE …)` SQLite built the list of every
+      // readable row and re-read it under the FTS scan: 300-800 ms for a
+      // two-hop policy over 12k rows that matched one or eight (FJS-1692).
       if (filterSql && filterSql !== '1=1') {
-        ftsSql += ` AND rowid IN (SELECT rowid FROM "${tableName}" WHERE ${filterSql})`
+        ftsSql += ` AND EXISTS (SELECT 1 FROM "${tableName}" WHERE "${tableName}".rowid = "${ftsTable}".rowid AND (${filterSql}))`
         ftsParams.push(...filterParams)
       }
 
@@ -7545,15 +7549,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // walked and the rows looked up. Under a caller's order step 2 already
       // sorted AND paged, so walking the hits would put rank back — the rows
       // are walked instead and the per-row extras looked up by rowid.
-      const result = []
+      const result = [], rids = []
 
       if (ordered) {
         for (const row of baseRows) {
-          const rid = row.__fts_rowid
+          rids.push(row.__fts_rowid)
           delete row.__fts_rowid
-          if (withRank)    row._rank      = rankByRowid.get(rid)
-          if (hlByRowid)   row._highlight = hlByRowid.get(rid)
-          if (snipByRowid) row._snippet   = snipByRowid.get(rid)
           result.push(row)
         }
       } else {
@@ -7561,18 +7562,23 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         for (const ftsRow of ftsRows) {
           const row = rowById.get(ftsRow.rowid)
           if (!row) continue  // filtered out by where clause or soft delete
-
-          if (withRank)  row._rank      = ftsRow.rank
-          if (hlByRowid) row._highlight = hlByRowid.get(ftsRow.rowid)
-          if (snipByRowid) row._snippet = snipByRowid.get(ftsRow.rowid)
-
+          rids.push(ftsRow.rowid)
           result.push(row)
         }
       }
 
-      // ── Step 4: resolve includes + trim select ────────────────────────────
+      // ── Step 4: resolve includes + trim select, then the extras ───────────
+      // The extras are not columns, so the trim to a `select` dropped them:
+      // `search(q, { select })` answered without `_rank` and said nothing
+      // (FJS-1693).
       withIncludes(result, ps, include)
-      return finalize(result, ps)
+      return finalize(result, ps).map((row, i) => {
+        const rid = rids[i]
+        if (withRank)    row._rank      = rankByRowid.get(rid)
+        if (hlByRowid)   row._highlight = hlByRowid.get(rid)
+        if (snipByRowid) row._snippet   = snipByRowid.get(rid)
+        return row
+      })
     },
 
     // ── delete ──────────────────────────────────────────────────────────────

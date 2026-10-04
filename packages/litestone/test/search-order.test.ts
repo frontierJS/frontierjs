@@ -152,6 +152,22 @@ describe('search() honors a caller order', () => {
     for (const r of rows) expect(typeof r._rank).toBe('number')
     db.$close()
   })
+
+  it('keeps _rank, _highlight and _snippet under a select, in both walks (FJS-1693)', async () => {
+    // The extras are not columns, and the trim to a `select` dropped them —
+    // linear's ⌘K asked for three columns and ranked nothing, with no error.
+    const db = await open()
+    const extras = { highlight: { field: 'title' }, snippet: { field: 'body' } }
+    for (const orderBy of [undefined, { title: 'asc' }]) {
+      const rows = await db.doc.search('widget', { ...extras, orderBy, select: { title: true } })
+      expect(rows.length).toBe(4)
+      for (const r of rows) {
+        expect(Object.keys(r).sort()).toEqual(['_highlight', '_rank', '_snippet', 'title'])
+        expect(typeof r._rank).toBe('number')
+      }
+    }
+    db.$close()
+  })
 })
 
 describe('search() grades the options it takes', () => {

@@ -10,7 +10,9 @@
 .card { padding: var(--space-3xl); }
 
 /*
- * A Card owns the space between its children, at Stack's rung.
+ * A box that holds blocks owns the space between them, at Stack's rung: a
+ * Card, the page body — Screen, and the Container inside it — and a Pane,
+ * the labeled section of a Screen.
  *
  * Without it every child sat flush, and the gap people saw was a UA `<p>`
  * margin standing in — headings are zeroed, a bare `p` is not — so a card
@@ -18,12 +20,27 @@
  * a table, a code block or a row of controls did not. `card stack` was written
  * by hand forty-odd times to get what the Card should have said.
  *
- * Not on a Card that also arranges its own children: a Stack's gap would
+ * The page body had the same hole one level up. A routed page is a run of
+ * sibling blocks — a Section Header, a Cluster of filters, a row of Tiles, a
+ * Table — and a page that left out a `.stack` around them drew them touching,
+ * with only `.section-header`'s own margin to hide it.
+ *
+ * Not on one that also arranges its own children: a Stack's gap would
  * double, and a margin on a Cluster's second item drops it below the first.
  * cards.spec.js derives the list from the vocabulary and fails on a term that
- * lays out children and is missing here.
+ * lays out children and is missing here, for each of the four owners.
+ *
+ * `:is` rather than `:where` on the owners keeps the rule at one class of
+ * weight, as it was when it was Card's alone. It lives here, in `components`,
+ * rather than beside Container in `layout`, because a rule in `layout` loses to
+ * every `components` declaration whatever its specificity: one rule in one
+ * layer is the only way the four owners space a child alike.
+ *
+ * Pane joined when `.section-header` gave up its own margin: the Frame
+ * anatomy puts one straight into a Pane, over a Card, and nothing else would
+ * have spaced the two.
  */
-.card:where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > * + * {
+:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > * + * {
   margin-block-start: var(--space-2xl);
 }
 

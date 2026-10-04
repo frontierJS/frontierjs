@@ -101,6 +101,9 @@
  *
  * Set --container-max on a theme or an ancestor to change the ceiling
  * without touching the gutters.
+ *
+ * A Container also owns the space between its children, as Card, Screen and
+ * Pane do. That rule is in cards.css, one rule for the four of them.
  */
 .container {
   width:          100%;

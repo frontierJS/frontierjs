@@ -235,7 +235,13 @@ const mailbox = []
 //
 // It is not asked to be a good outpost — no HMAC verification, no real disk. What
 // it proves is that the request was MADE, and with which name.
-const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [], routed: [] }
+const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [], routed: [], docker: [] }
+
+// Set to a sentence and the machine's Caddy refuses every route with it — the
+// way a release meets a Caddy that is down. Only `route`: Outpost's `unroute`
+// answers an unreachable Caddy as nothing to remove, so refusing it here would
+// be a failure the real machine never has.
+let caddyDown = null
 
 // The bytes this sink claims to be running. A real outpost answers the digest
 // docker resolved; the point of asserting on it is that Basecamp records what
@@ -263,6 +269,7 @@ const buildOutpost = (secret) => createOutpostServer(
   {
     docker: createDocker({
       run: async (argv) => {
+        outpostSaw.docker.push(argv.join(' '))
         if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
         if (argv.slice(0, 2).join(' ') === 'docker inspect')       return { exitCode: 0, stdout: 'true', stderr: '' }
         return { exitCode: 0, stdout: '', stderr: '' }
@@ -271,7 +278,11 @@ const buildOutpost = (secret) => createOutpostServer(
     // Caddy is the machine's, and `outpost`'s own verify:docker drives a real
     // one. What this grades is what Basecamp SENDS it: the app's hostnames.
     ingress: {
-      route:   async ({ appId, hosts, port }) => { outpostSaw.routed.push({ appId, hosts, port }); return { hosts } },
+      route:   async ({ appId, hosts, port }) => {
+        if (caddyDown) throw new Error(caddyDown)
+        outpostSaw.routed.push({ appId, hosts, port })
+        return { hosts }
+      },
       unroute: async () => ({ removed: false }),
     },
     log: { warn: (m) => console.log(`    outpost: ${m}`), error: (m) => console.log(`    outpost: ${m}`) },
@@ -1075,6 +1086,15 @@ check('an app can be placed on a machine',
   await evaluate(`document.getElementById('app-placement')?.textContent ?? ''`),
   t => t.includes('deploy-01') && t.includes('replica 0'))
 
+// An image to ship, and the port a hostname routes to. The app was created
+// with a name alone, and a container app naming no image is refused at create,
+// since nothing builds one yet. Without this the Deploy below never left the
+// environment screen (FJS-1602).
+await apiCall(`/apps/${appDetailPath.split('/')[2]}`, {
+  method: 'PATCH', workspace: secondWs.id,
+  body: { source: { kind: 'image', image: 'nginx:alpine' }, port: 18080 },
+})
+
 // Back to the environment, which is where a release is started from.
 await goto(appOwnerEnvPath)
 
@@ -1312,10 +1332,8 @@ check('…and the release is still exactly where it was',
 // What the machine was actually asked to do. A release that reports six green
 // steps having sent nothing is the exact failure this section exists for, and
 // the deployment row cannot see the difference — only the sink can.
-// A container app's steps are Validate · Build · Push · Start · Health, so
-// what leaves the process is /exec three times, then /deploy and
-// /health-check. There is no /pull: nothing here pulls an image it just built.
-// No /stop either: /deploy replaces the container after its own checks, and a
+// An image app's steps are Validate · Pull · Start · Health, so what leaves
+// the process is /exec, /pull, /deploy and /health-check. No /stop: /deploy replaces the container after its own checks, and a
 // stop sent first takes the app down for a release it then refuses (FJS-1682).
 check('the outpost was asked to start and health-check, and to stop nothing',
   outpostSaw.deploy.map(d => d.path).join(','),
@@ -1385,6 +1403,59 @@ await sleep(400)
 check('a notice can be dismissed',
   await evaluate(`document.getElementById('notice-rows')?.textContent ?? ''`),
   t => !t.includes('CPU at 95%'))
+
+// ── 11d. A release the machine refuses ────────────────────────────────
+// Caddy down on the machine, which is how FJS-1682 was reproduced. Outpost
+// refuses /deploy before it removes the old container, so the app keeps
+// serving. A /stop sent ahead of /deploy had already taken it down by then.
+// Here, after the notices, because a failed release raises one and the
+// dismiss above takes the first in the queue.
+{
+  const appId = await evaluate(`
+    (async () => {
+      const m = await import('/src/resources/Deployment.mesa')
+      return (await m.deployments.service.get(${JSON.stringify(deployPath.split('/')[2])})).appId
+    })()
+  `)
+  // A hostname is what puts Caddy in the release at all.
+  await goto(`/apps/${appId}/`)
+  await sleep(1200)
+  await evaluate(`[...document.querySelectorAll('#app-tabs button')].find(b => b.textContent.trim() === 'domains').click()`)
+  await sleep(600)
+  await click('Add hostname')
+  await sleep(800)
+  await fill({ hostname: 'refused.acme.test' })
+  await submit()
+  await waitFor(`document.getElementById('domain-list')?.textContent ?? ''`, t => t.includes('refused.acme.test'))
+
+  const caddyDownSaid = 'Caddy admin API is not answering on localhost:2019'
+  caddyDown = caddyDownSaid
+  const dockerFrom = outpostSaw.docker.length
+  const sentFrom   = outpostSaw.deploy.length
+  await evaluate(`document.getElementById('app-deploy').click()`)
+  await sleep(2500)
+  const refusedStatus = await waitFor(`document.getElementById('deploy-status')?.textContent.trim()`,
+    v => ['success', 'failed'].includes(v), 40_000)
+  caddyDown = null
+
+  check('a release whose route Caddy refuses fails', refusedStatus, 'failed')
+  // FJS-1683: run order, and the step after the refusal never ran. Listed by
+  // `startedAt`, the never-started ones sorted to the top, and marked `failed`
+  // they read as though the health check had failed.
+  check('…listing its steps in run order, the one that stopped failed and the rest skipped',
+    await evaluate(`JSON.stringify([...document.querySelectorAll('#deploy-steps li')].map(li =>
+      [li.querySelector('strong')?.textContent.trim(), li.querySelector('.pill')?.textContent.trim()]))`),
+    JSON.stringify([['Validate', 'success'], ['Pull image', 'success'],
+                    ['Start container', 'failed'], ['Health check', 'skipped']]))
+  check('…with the machine\'s reason on the step that stopped',
+    await evaluate(`document.getElementById('deploy-steps')?.textContent ?? ''`),
+    t => t.includes(caddyDownSaid))
+  check('…and the running container was never touched',
+    outpostSaw.docker.slice(dockerFrom).filter(c => c.includes(`fjs-${appId}`)).join(' | '), '')
+  check('…because nothing stopped it first',
+    outpostSaw.deploy.slice(sentFrom).map(d => d.path).join(','),
+    t => t.includes('/deploy') && !t.includes('/stop'))
+}
 
 // ── 12. Jobs ──────────────────────────────────────────────────────────
 // Seeded fleets have jobs; a fresh database does not, so one is created over

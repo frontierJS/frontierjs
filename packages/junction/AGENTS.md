@@ -113,8 +113,9 @@ A raw route gets a different context: `ctx.user` (flat, may be `null`),
 `ctx.route`, `ctx.headers`, `ctx.query` with `$` keys still present, `ctx.body`,
 `ctx.rawBody`, and `ctx.json(body, status)` to answer. It runs no hook pipeline
 and no gate, so reach for one only where there is no service shape — a vendor's
-webhook, a file stream — and call a service from it for anything touching a
-model. Verify a signature over `ctx.rawBody`, never a re-serialized `ctx.body`.
+webhook, a file download, a stream — and call a service from it for anything
+touching a model. A service answers JSON only, so a file is a raw route that
+calls the service and encodes what comes back. Verify a signature over `ctx.rawBody`, never a re-serialized `ctx.body`.
 
 ---
 

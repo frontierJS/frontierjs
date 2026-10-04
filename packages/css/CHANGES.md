@@ -1,5 +1,13 @@
 # Changes — @frontierjs/css
 
+## 2026-10-03 — `.section-header` carries no margin; Pane owns the space between its children
+
+`.section-header` lost its `margin-bottom: 0.5rem`. In a Card or Container it collapsed into the flow margin and went unseen; in a `.stack` it added to the gap, so a heading sat 24px from its own content and 16px from the section before it, on every page that used `.stack`. It now lands at `--space-2xl` from its content wherever it sits. A Section Header in a box that spaces nothing (a bare `<div>`, a component's root) now sits flush where it had 8px; the fix is `stack` on that box. `.pane` joins the flow rule in cards.css, since the Frame anatomy puts a Section Header straight into a Pane over a Card. `cards.spec.js` grades the header's gap in a Stack and in all four owners. 513 passing.
+
+## 2026-10-03 — Screen and Container own the space between their children, as Card does
+
+The Card flow rule in cards.css is now `:is(.card, .screen, .container)`: a bare sibling block in the routed page body lands at `--space-2xl` from the one before it, the gap `.stack` would give, unless the box also carries a term that arranges its children. Before this a page that left out `<div class="stack">` drew its Section Header, its Cluster of filters, its row of Tiles and its Table touching, with `.section-header`'s 0.5rem the only gap in sight. Reported on transit's Revenue page, where the page and the report component inside it both left it out. One rule, one exclusion list: `cards.spec.js` now probes all three owners, bare and with `.stack`, and puts every Layout and Region term on each. AGENTS.md says who owns sibling spacing and adds a checklist line. 512 passing.
+
 ## 2026-10-03 — a table's cells wrap inside `.table-wrap`
 
 `.table-wrap > .table { min-width: max-content }` is gone. Auto table layout already keeps a table at or above its min-content width, so the rule only stopped text wrapping: a column of prose made the table as wide as its longest sentence, and the last column, usually the row's action, sat off-screen behind a horizontal scroll. Cells now wrap at their words, and the wrapper still scrolls a table whose unbreakable content is wider than it. Reported on transit's Reports list.

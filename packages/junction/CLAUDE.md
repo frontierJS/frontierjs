@@ -31,8 +31,8 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   under `bulkMax` (`FJS-044`, `test/bulk-partial-success.test.ts`).
 - **An `Idempotency-Key` needs a principal and names ONE request** — a stranger's
   key is ignored, a changed payload is 422 (`FJS-680`, `test/idempotency.test.ts`).
-- **The METHOD decides list vs single, and a stream is refused by name**
-  (`FJS-140`, `FJS-D13`, `test/envelope.test.ts`).
+- **The METHOD decides list vs single, and a stream is refused by name**, from
+  a method or a hook (`FJS-140`, `FJS-D13`, `FJS-1693`, `test/envelope.test.ts`).
 - **What a thrown value becomes is committed and executed** — `errors.snapshot.md`
   at this root, `junction errors` (`FJS-255`, `test/errors-snapshot.test.ts`).
 - **Every socket bound is the socket's own**, since every HTTP bound stops at the

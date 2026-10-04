@@ -78,6 +78,13 @@ Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `kicker
 **Layout** — the only classes that are purely spatial
 `stack` (vertical) · `cluster` (horizontal, wraps) · `center` · `split` · `container`
 
+**The parent owns the space between its children.** `card`, `screen`,
+`container` and `pane` space bare sibling blocks at Stack's rung (`--space-2xl`), so a page
+or a card body needs no `.stack` to keep its blocks apart, and one with `.stack`
+draws the same. Any other box that holds blocks — a plain `<div>`, a component's
+root — spaces nothing; give it `stack`. A row of StatCards is `tiles`, not
+`cluster`.
+
 Where the term name and class differ: **Button** → `btn`, **Nav** → `navlist`,
 **Row** → `list-row`.
 
@@ -251,6 +258,7 @@ tracking and font family.
 5. State is an ARIA attribute, not a class.
 6. Every `<svg>` is inside an owned component or carries `icon`.
 7. Every modifier used appears in the scoping table against that Element.
+8. Sibling blocks sit in a `card`, `screen`, `container`, `pane` or `stack`, never a bare `<div>`.
 
 ---
 

@@ -81,4 +81,50 @@ describe('a release that fails mid-run', () => {
     expect(after[pull.id].output).toBe('pulled')
     expect(after[health.id].output).toBeNull()
   })
+
+  test('a step it never reached is skipped, not failed', async () => {
+    const sys = env.system as any
+    const row = await sys.deployment.create({ data: { workspaceId: ws.id, appId: target.id, toImage: `x:${uniq()}` } })
+    await sys.deployment.transition(row.id, 'build')
+    const [pull, start, health] = await Promise.all(['Pull image', 'Start container', 'Health check'].map(name =>
+      sys.deploymentStep.create({ data: { deploymentId: row.id, name } })))
+    await sys.deploymentStep.update({ where: { id: pull.id }, data: { status: 'failed' } })
+    await sys.deploymentStep.update({ where: { id: start.id }, data: { status: 'running' } })
+
+    await env.as(admin).service('deployments').call('finishRun', row.id, {
+      status: 'failed', stepId: pull.id, error: 'Pull failed: manifest unknown' })
+
+    const after = Object.fromEntries((await sys.deploymentStep.findMany({ where: { deploymentId: row.id } }))
+      .map((s: any) => [s.id, s.status]))
+    // A step left running when the release died did fail; the one after it
+    // was never asked of the machine.
+    expect(after).toEqual({ [pull.id]: 'failed', [start.id]: 'failed', [health.id]: 'skipped' })
+  })
+
+  test('the steps read back in run order, the failed one above the ones it stopped', async () => {
+    // Written last-first, so insertion order and run order disagree — and the
+    // two never-started steps carry no `startedAt`, which sorted them to the
+    // top while that was the order.
+    const sys = env.system as any
+    const row = await sys.deployment.create({ data: { workspaceId: ws.id, appId: target.id, toImage: `x:${uniq()}` } })
+    await sys.deployment.transition(row.id, 'build')
+    const names = ['Validate', 'Pull image', 'Start container', 'Health check']
+    const ids: Record<string, string> = {}
+    for (const position of [3, 2, 1, 0])
+      ids[names[position]] = (await sys.deploymentStep.create({
+        data: { deploymentId: row.id, position, name: names[position] } })).id
+    await sys.deploymentStep.update({ where: { id: ids['Validate'] },
+      data: { status: 'success', startedAt: new Date().toISOString() } })
+    await sys.deploymentStep.update({ where: { id: ids['Pull image'] },
+      data: { status: 'running', startedAt: new Date().toISOString() } })
+
+    await env.as(admin).service('deployments').call('finishRun', row.id, {
+      status: 'failed', stepId: ids['Pull image'], error: 'Pull failed: manifest unknown' })
+
+    const got: any = await env.as(admin).service('deployments').get(row.id)
+    expect(got.steps.map((s: any) => [s.name, s.status])).toEqual([
+      ['Validate', 'success'], ['Pull image', 'failed'],
+      ['Start container', 'skipped'], ['Health check', 'skipped'],
+    ])
+  })
 })

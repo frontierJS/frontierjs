@@ -615,6 +615,7 @@ table `deployment_step` · db `main` · gate `2.4.8.8`
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `name` | `String` | no | — | **required on write** |
 | `output` | `String` | yes | — | — |
+| `position` | `Int` | no | `0` | — |
 | `startedAt` | `DateTime` | yes | — | — |
 | `status` | `StepStatus` | no | `'pending'` | — |
 

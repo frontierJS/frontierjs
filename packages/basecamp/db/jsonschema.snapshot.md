@@ -925,6 +925,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `deploymentId` | `string` | yes | — | — | — |
+| `position` | `integer` = `0` | — | — | — | — |
 | `name` | `string` | yes | — | — | — |
 | `status` | `StepStatus` = `"pending"` | — | — | — | — |
 | `output` | `string`? | — | — | — | — |

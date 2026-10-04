@@ -1,0 +1,270 @@
+---
+title: "Specifications — FrontierJS"
+description: "Every framework answers the same questions about data, access and the wire. The goal is to write those answers down as specifications any framework could implement, with FrontierJS as one implementation."
+render: static
+---
+
+<!--
+  No entry here is a written spec. Each "Lives in" names an owner that exists
+  in the tree today; when the owner moves, the line moves with it. The source
+  list is IDEAS/specifications.md.
+-->
+<section id="top" class="hero">
+  <div class="container">
+    <p class="eyebrow">Specifications</p>
+    <h1>Answers any framework could adopt.</h1>
+    <p class="lede">
+      Every framework answers the same questions. Who can touch this row? What
+      does a write announce? What comes back over the wire, and what happens
+      when it fails? FrontierJS gives each answer exactly one owner, and one
+      owner is what you need to write an answer down as a specification. The
+      goal is a set any framework could implement, with FrontierJS as one
+      implementation of it.
+    </p>
+    <p class="status">
+      None of them is written yet. FrontierJS is pre-alpha, and a spec freezes
+      things. Nothing gets frozen until something other than FrontierJS passes
+      the tests.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2 class="section">What makes something a spec</h2>
+    <ol class="tests">
+      <li><strong>It holds without the stack.</strong> You can state it without mentioning SQLite, Bun, TypeScript, <code>.lite</code> or <code>.mesa</code>.</li>
+      <li><strong>It has a JSON form.</strong> A second implementation reads or writes a document: a schema, a descriptor, an envelope, a record. The prose describes the JSON, not the other way round.</li>
+      <li><strong>It ships its own tests.</strong> Input and expected output as data, runnable against anyone's implementation. Every case comes with a case that must fail.</li>
+      <li><strong>Somebody else passes them.</strong> A spec with one implementation is a README.</li>
+    </ol>
+  </div>
+</section>
+
+<section class="chapters">
+  <div class="container">
+    <h2 class="section">Ten that carry the rest</h2>
+    <p class="intro">There are about forty candidates. These ten come first because the others lean on them, and each one leans on the ones above it.</p>
+    <ol class="arc">
+      <li>
+        <span class="n">01</span>
+        <div>
+          <h3>Model description <span class="tag">blocked</span></h3>
+          <p>What's worth saying about a model: its fields and types, its identity, relations, constraints, defaults, derived values, labels, and which fields only the app itself may write. Everything else on this list derives from it.</p>
+          <p>The catch is that a spec describes JSON, not syntax, and there's no JSON form of a model separate from <code>.lite</code> yet. <code>generateJsonSchema</code> comes closest, but it's a projection of the model, not the model.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Litestone's parser</dd>
+            <dt>Closest</dt><dd>Prisma schema, ZenStack's ZModel, Ash resources, and JSON Schema's vocabularies for the shape half</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">02</span>
+        <div>
+          <h3>The gate ladder</h3>
+          <p>Access as a number. A model's gate says how high a caller has to stand to read, create, update or delete, and a session is graded onto the same scale. Rungs 0 to 7 are callers. Rung 8 is the app acting on its own behalf, and 9 means there's no code path at all, so those two are never compared with <code>&gt;=</code>.</p>
+          <p>On the client, an answer the UI doesn't know is treated as a yes, because the data layer enforces the gate either way.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd><code>@frontierjs/toolbelt/gate</code></dd>
+            <dt>Closest</dt><dd>RBAC, Zanzibar and Cedar. None of them is ordinal, and that's the new part.</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">03</span>
+        <div>
+          <h3>Row and field policy</h3>
+          <p>A gate answers who. A policy answers which rows. <code>@@allow</code> and <code>@@deny</code> are predicates over a row and its fields, and one evaluator gives two kinds of answer: yes or no when everything is known, and a leftover condition the query applies when the row hasn't been read yet.</p>
+          <p>Protected fields belong here too. <code>@encrypted</code>, <code>@guarded</code> and <code>@secret</code> each make a promise, and every one of them shows up as <code>[redacted]</code> in the audit trail.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Litestone's policy evaluator</dd>
+            <dt>Closest</dt><dd>partial evaluation in Cedar and OPA, and PostgreSQL row-level security</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">04</span>
+        <div>
+          <h3>The expression language</h3>
+          <p>Policies and flows are written in the same small language. The spec covers its grammar in two dialects: one over a single record, for policies, and one with paths, calls and lambdas, for flows. It also says what every operator does with null.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd><code>@frontierjs/toolbelt/predicate</code></dd>
+            <dt>Closest</dt><dd>Google's CEL, which gets a hard look before anyone writes a new one</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">05</span>
+        <div>
+          <h3>Write announcement</h3>
+          <p>Every write emits exactly one event: create, update, remove or transition. The audit trail, live channels and the data on the client all hang off it. The event's origin is the row, never the caller.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Litestone's <code>$tapEvents</code></dd>
+            <dt>Closest</dt><dd>CloudEvents, as an envelope this could narrow</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">06</span>
+        <div>
+          <h3>Service description</h3>
+          <p>A service is CRUD plus the methods you declare, and declaring methods narrows what's exposed. The description says who may call each method and what the call announces. Junction generates OpenAPI too, but OpenAPI has no field for either of those.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Junction's <code>svc.describe()</code></dd>
+            <dt>Closest</dt><dd>OpenAPI</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">07</span>
+        <div>
+          <h3>The result envelope</h3>
+          <p>One shape on both sides of the wire: <code>kind</code>, <code>data</code>, <code>errors</code>, <code>total</code>, <code>limit</code>, <code>offset</code>, and a cursor for the next page. <code>kind</code> is always stated and never guessed. A list keeps its envelope and a single record unwraps. The same function does both, on the server and in the client.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Junction's envelope</dd>
+            <dt>Closest</dt><dd>JSON:API, and OData's collection responses</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">08</span>
+        <div>
+          <h3>The error contract</h3>
+          <p>How a thrown error becomes an HTTP status, in a fixed order. Which errors are <code>retryable</code>, meaning re-read and try again, and which are refusals. And the shape of field errors that a form reads. Junction already commits a table of these cases, which is most of a test suite.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Junction's errors, with <code>errors.snapshot.md</code> as the table</dd>
+            <dt>Closest</dt><dd>RFC 9457, Problem Details for HTTP APIs</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">09</span>
+        <div>
+          <h3>Directives and query values</h3>
+          <p>What a list request means. There are five directives, <code>$limit</code>, <code>$offset</code>, <code>$orderBy</code>, <code>$select</code> and <code>$after</code>, and a request carrying any other <code>$</code> key is refused by name. A query-string value is a number only if it round-trips, and brackets carry structure.</p>
+          <p>Ordering and paging go here too: how ties are broken, and why a list that can't break its ties gives no next-page cursor rather than a wrong one.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd><code>@frontierjs/toolbelt/directives</code> and <code>/query</code></dd>
+            <dt>Closest</dt><dd>OData query options, PostgREST and FIQL</dd>
+          </dl>
+        </div>
+      </li>
+      <li>
+        <span class="n">10</span>
+        <div>
+          <h3>Transport binding</h3>
+          <p>One call, two transports: the HTTP mapping, the WebSocket frame, and the short list of headers a call may carry, since a socket has no headers per call. The test is simple. Make the same call both ways and get the same answer.</p>
+          <dl class="carry">
+            <dt>Lives in</dt><dd>Junction's bridge, checked by <code>verifyTransportParity</code></dd>
+            <dt>Closest</dt><dd>JSON-RPC 2.0 for the frame, RFC 9110 for HTTP</dd>
+          </dl>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2 class="section">Right behind them</h2>
+    <dl class="pairs">
+      <dt>Events and channels</dt>
+      <dd>A channel is a subscription, not a permission. Every frame is graded for the person receiving it.</dd>
+      <dt>The live node store</dt>
+      <dd>Does a record that was just pushed still belong in this list? The answer is yes, no, or ask the server. There's one node per row, and a list is a view over nodes.</dd>
+      <dt>Resource</dt>
+      <dd>How a screen binds to a service: load, save, a field's options, and a single record. The rest of the UI sits on it.</dd>
+    </dl>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2 class="section">Where the tests come from</h2>
+    <p class="body">A schema implies its own checks: the gate ladder, constraints, field protection, row policies and tenant isolation. Generate those for any app, each with a case that must fail, and you have test vectors for most of the list above. Litestone's verify checks and <code>fli test:access</code> are the start of it.</p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2 class="section">Where writing starts</h2>
+    <dl class="pairs">
+      <dt>Provider</dt>
+      <dd>The smallest one, and its tables are already closed. A send never throws, its errors come from a fixed list, and each kind says whether it's safe to retry.</dd>
+      <dt>Queue</dt>
+      <dd>The most novel one. BullMQ, Sidekiq, Oban and Temporal each answer it differently, and there's no standard to narrow.</dd>
+    </dl>
+    <p class="body">Nothing in the ten depends on either one, so both can be written first.</p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2 class="section">Already a standard</h2>
+    <p class="body">Where a standard exists, FrontierJS implements it or narrows it, and doesn't write a competitor.</p>
+    <ul class="chips">
+      <li>JSON Schema 2020-12</li>
+      <li>W3C Trace Context</li>
+      <li>Temporal and the IANA zones</li>
+      <li>RFC 9110</li>
+      <li>RFC 9457</li>
+      <li>OpenAPI</li>
+      <li>MCP</li>
+      <li>TC39 Signals</li>
+    </ul>
+  </div>
+</section>
+
+<section class="block last">
+  <div class="container">
+    <h2 class="section">What stays FrontierJS</h2>
+    <p class="body"><code>.lite</code> and <code>.mesa</code> are syntaxes, and a spec describes the JSON they compile to. SQLite, Bun, <code>fli</code>, file-tree routing, the app layout and the port formula are FrontierJS's own choices. Another implementation makes its own.</p>
+    <p class="takeaway">A spec with one implementation is a README.</p>
+    <p class="see">See: <a href="/the-story/">The story</a> · <a href="/seams/">The seams</a> · <a href="/landscape/">Landscape</a></p>
+  </div>
+</section>
+
+<style>
+  .hero { padding: 4.5rem 0 1.5rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+  .status { max-width: 60ch; margin: 1rem 0 0; padding: .6rem .9rem; border-left: 2px solid var(--color-primary); font-size: .95rem; line-height: 1.55; color: var(--ink); }
+
+  .block { padding: 1.5rem 0; }
+  .block.last { padding-bottom: 5rem; }
+  .section { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); font-weight: 600; margin: 0 0 .9rem; }
+  .intro, .body { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
+  .body + .body, .pairs + .body, .body + .takeaway, .takeaway + .see { margin-top: .6rem; }
+
+  .tests { margin: 0; padding-left: 1.2rem; max-width: 64ch; display: grid; gap: .45rem; line-height: 1.6; color: var(--ink-soft); }
+  .tests strong { color: var(--ink); }
+
+  .chapters { padding: 1.5rem 0; }
+  .intro { margin-bottom: .6rem; }
+  .arc { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  .arc li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 1rem; padding: 1.4rem 0; border-top: 1px solid var(--rule); }
+  .arc .n { font-size: .78rem; letter-spacing: .14em; color: var(--ink-mute); padding-top: .3rem; }
+  .arc h3 { font-size: 1.15rem; letter-spacing: -.01em; margin: 0 0 .4rem; }
+  .arc p { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
+  .arc p + p { margin-top: .45rem; }
+  .tag { font-size: .68rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; color: var(--ink-mute); border: 1px solid var(--rule); border-radius: 999px; padding: .1rem .5rem; margin-left: .4rem; vertical-align: middle; }
+
+  .carry { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem 1rem; max-width: 64ch; margin: .7rem 0 0; padding: .55rem .9rem; border-left: 2px solid var(--rule); font-size: .9rem; line-height: 1.5; }
+  .carry dt { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); padding-top: .15rem; }
+  .carry dd { margin: 0; color: var(--ink-soft); }
+
+  .pairs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .6rem 1.4rem; max-width: 64ch; margin: 0; line-height: 1.55; }
+  .pairs dt { font-weight: 600; color: var(--ink); }
+  .pairs dd { margin: 0; color: var(--ink-soft); }
+  @media (max-width: 560px) {
+    .pairs { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+    .pairs dd + dt { margin-top: .6rem; }
+  }
+
+  .chips { list-style: none; margin: .8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; max-width: 64ch; }
+  .chips li { font-size: .85rem; padding: .25rem .65rem; border: 1px solid var(--rule); border-radius: 999px; color: var(--ink-soft); }
+
+  .takeaway { color: var(--ink); font-weight: 600; margin: 0; }
+  .see { font-size: .82rem; color: var(--ink-mute); margin: 0; }
+</style>

@@ -3044,12 +3044,12 @@ describe('client — FTS search', () => {
   // not name the id joined nothing and the search answered [] — a query with
   // results reporting none, with nothing to say why.
   test('a select that omits the id still returns the matching rows', async () => {
-    const r = await db.message.search('sqlite', { select: { title: true } })
+    const r = await db.message.search('sqlite', { select: { title: true }, withRank: false })
     expect(r).toEqual([{ title: 'SQLite intro' }])
   })
 
   test('the id injected for that join is not returned', async () => {
-    const r = await db.message.search('sqlite', { select: { body: true } })
+    const r = await db.message.search('sqlite', { select: { body: true }, withRank: false })
     expect(Object.keys(r[0])).toEqual(['body'])
   })
 
@@ -5410,7 +5410,7 @@ describe('computed: needs', () => {
   test('search() narrows, and its own id injection survives the trim', async () => {
     const h  = needsHarness()
     const db = await needsClient(h)
-    const rows = await db.author.search('Ada', { select: { initials: true } })
+    const rows = await db.author.search('Ada', { select: { initials: true }, withRank: false })
     expect(rows).toEqual([{ initials: 'AL' }])
     expect(h.calls).toEqual({ initials: 1, summary: 0 })
     db.$close()

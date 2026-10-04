@@ -340,3 +340,76 @@ describe('a stream is not a result', () => {
     expect(wrapResult(new Set([1]), 'posts', 'get').kind).toBe('single')
   })
 })
+
+// ─── a hook's answer is refused the same way — FJS-1693 ─────────────────────
+//
+// wrapResult sees only what the METHOD returned. A hook that assigned a
+// Response to ctx.result went past it, and the bridge sent that Response as
+// itself: a non-JSON reply out of a service, past every after hook. Over the
+// socket the same value unwrapped to `{}`.
+
+describe('a hook that answers with a stream is refused', () => {
+  const { createApp, createService, channels, defaultConfig } = require('../index.ts')
+
+  const leak = () => new Response('secret', { headers: { 'content-type': 'text/plain' } })
+  const reports = createService({
+    name:    'reports',
+    methods: ['find', 'get'],
+    async find() { return [] },
+    async get()  { return { id: 1 } },
+    hooks: {
+      before: { find: [(c: any) => { c.result = leak() }] },
+      after:  { get:  [(c: any) => { c.result = leak() }] },
+    },
+  })
+
+  let app: any
+  const base = () => `http://localhost:${app.http.port}`
+
+  const start = async () => {
+    if (app) return
+    app = createApp({
+      config: {
+        port:     0,
+        database: { url: '', log: false },
+        services: { dir: '/nonexistent' },
+        http:     { ...defaultConfig.http, drainTimeout: 250 },
+      },
+    })
+    app.services.register(reports)
+    app.configure(channels())
+    await app.start()
+  }
+
+  test('a before hook short-circuiting with a Response is a 500, not the Response', async () => {
+    await start()
+    const res = await fetch(`${base()}/reports`)
+    expect(res.status).toBe(500)
+    expect(await res.text()).not.toContain('secret')
+  })
+
+  test('an after hook replacing the result with a Response is a 500', async () => {
+    const res = await fetch(`${base()}/reports/1`)
+    expect(res.status).toBe(500)
+    expect(await res.text()).not.toContain('secret')
+  })
+
+  test('an internal call is refused by name', async () => {
+    await expect(app.service('reports').find()).rejects.toThrow(/was answered by a hook with a Response/)
+  })
+
+  test('over the socket it is an error, not an empty object', async () => {
+    const ws = new WebSocket(`ws://localhost:${app.http.port}/ws`)
+    await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
+    const frame = await new Promise<any>(ok => {
+      ws.onmessage = (e: any) => {
+        const f = JSON.parse(e.data)
+        if (f.id === 'r1') ok(f)
+      }
+      ws.send(JSON.stringify({ type: 'service_call', id: 'r1', service: 'reports', method: 'find' }))
+    })
+    ws.close()
+    await app.stop()
+    expect(frame.type).toBe('service_error')
+  })
+})

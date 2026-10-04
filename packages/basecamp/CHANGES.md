@@ -1,5 +1,15 @@
 # Changes — Basecamp
 
+## 2026-10-03 — a failed release lists its steps in run order and skips what it never reached (`FJS-1683`)
+
+- **`DeploymentStep.position`** records run order. Both step lists write it, and `get` and `startRun` order by it. Ordering by `startedAt` put every never-started step (null) above the one that failed, and the runner walked them in SQLite's scan order.
+- **`finishRun` marks a still-`pending` step `skipped`.** A step left `running` when the release died is still `failed`. The seed's failed releases follow the same rule.
+- **`verify` §11d is a release the machine refuses.** The drive's fake Outpost can now have its Caddy refuse a route (`caddyDown`) and records every docker command. The release must fail with the steps in run order, the machine's reason on *Start container*, *Health check* `skipped`, no `docker rm` of the live container and no `/stop`. This is the browser half of the `FJS-1682` test gap: the drive's executor could not fail partway through a release before.
+- **The drive's release section works again** (`FJS-1602`, deploy half). Its `web` app named no image, which `create` has refused since 2026-09-29. The drive gives it `nginx:alpine` and a port first.
+- Filed `FJS-1691`: a refused release sets the App to `error` while the old container still serves.
+
+`bun run test` 563/563, with two new cases in `failure-reason.test.ts`, both failing on the old service. `verify --reset` reaches the end of the release sections: §11d 5/5, and 3 of those 5 fail with the pre-`FJS-1682` service and job put back. The drive is 216/243 overall; the 27 failures are FJS-1602's, none in a release section. Typecheck at baseline (13).
+
 ## 2026-10-03 — a refused release leaves the live app serving (`FJS-1682`)
 
 - **A container release has no `Stop previous` step.** It sent `/stop` before `/deploy`, so when Outpost refused the deploy (no port, no Caddy, a hostname it cannot route), the old container and its route were already gone. `/deploy` removes the old container itself after its checks, so the step was only ever the outage. Both container step lists in `deployments.service.ts` lose it and the runner has no stop branch. `/stop` stays an Outpost route: `apps.remove` sends it.

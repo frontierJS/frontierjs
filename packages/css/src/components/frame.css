@@ -166,7 +166,9 @@
   border-inline-end: var(--border-width) solid var(--rule);
 }
 
-/* ── Screen — the routed page body ───────────────────────────────── */
+/* ── Screen — the routed page body ───────────────────────────────────
+ * Owns the space between its children, as Card, Container and Pane do;
+ * that rule is in cards.css, one rule for the four of them. */
 .screen {
   grid-area: screen;
   padding:   var(--screen-pad);
@@ -190,7 +192,11 @@
  * `.cluster` outright: `class="pane stack"` laid out as a block, silently,
  * with the gap doing nothing. Same collision the header of layout.css
  * documents for `.bar.center`, resolved the other way — a Pane that wants
- * to own the space between its children says so with a layout class.
+ * to ARRANGE its children says so with a layout class.
+ *
+ * Spacing them is not arranging them: a bare Pane spaces its blocks at
+ * Stack's rung, by the flow rule in cards.css it shares with Card, Screen
+ * and Container. A layout class on the Pane turns that rule off.
  */
 .pane {
   margin-block-end: 2rem;

@@ -21,7 +21,7 @@ import {
 } from './hooks.ts'
 import { NotFound, BadRequest, MethodNotAllowed, toFrameworkError } from './errors.ts'
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
-import { wrapResult, isServiceResult, resultData } from './envelope.ts'
+import { wrapResult, isServiceResult, resultData, refuseStream } from './envelope.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
 // litestone imports createService (used only inside functions) and this
 // module imports createLitestoneBase (used only inside createBaseService).
@@ -694,6 +694,10 @@ async function _callService(
         ctx.result = wrapResult(raw, service.name, ctx.method)
       }
     }, t))   // gated: undefined when no telemetry subscribers → per-hook fast path
+    // Only the METHOD's answer went through wrapResult. A hook that assigned a
+    // Response would leave over HTTP as itself, past every after hook that
+    // protects a result, and over a socket as `{}`.
+    refuseStream(ctx.result, service.name, method as string, 'was answered by a hook with')
   } catch (err) {
     pipelineError = err
   } finally {

@@ -96,7 +96,7 @@ describe('FJS-828 — the select container', () => {
     const db = await open()
     expect(await refusal(() => db.note.search('alpha', { select: { nope: true } })))
       .toContain(`Unknown field 'nope'`)
-    expect(await db.note.search('alpha', { select: { id: true } })).toEqual([{ id: 1 }])
+    expect(await db.note.search('alpha', { select: { id: true }, withRank: false })).toEqual([{ id: 1 }])
     db.$close()
   })
 

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-04 — `search()` correlates its pre-LIMIT filter on the hit, so a row policy costs per match rather than per row (`FJS-1692`)
+
+The filter that keeps unreadable rows from spending `search()`'s LIMIT (`FJS-262`) was `rowid IN (SELECT rowid FROM t WHERE …)`, which SQLite plans as a LIST SUBQUERY: every readable row, each through the policy's correlated hops, re-read under the FTS scan. Rows were right; time was not — linear's comment search, a two-hop `check(issue)` → `check(team)` over 12k rows, took 300 ms for a one-row match and 810 ms for a common word. It is now `AND EXISTS (SELECT 1 FROM t WHERE t.rowid = <fts>.rowid AND (…))`, a rowid lookup per match: 0.2 ms and 1 ms on the same query. `test/search-filter-cost.test.ts` EXPLAINs the bytes the client sent beside the old shape as control, and is red on it; suite 5589 pass.
+
 ## 2026-10-03 — Studio's explore drive builds its refused-gate fixture from the model's own gate (`FJS-1203`)
 
 `preview.aRefusedPaneIsNamedRatherThan500` inserted a second `@@gate` into the first editable model, and every fixture model already declares one, so the preview came back `valid: false` with no `ddl` and the drive threw reading `ddl.after` instead of failing an assertion. Replacing the model's own gate fixed that, and exposed that `4.2.4.5` is no longer refused (create is free relative to read and update), so the fixture is now `4.4.2.5`, an update below read, which `validateGate` still refuses. `verify:studio:explore` passes 51 of 51.

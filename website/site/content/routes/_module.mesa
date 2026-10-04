@@ -61,6 +61,7 @@
           <div class="navlist-label">Unsorted</div>
           <ul class="navlist">
             <li><a class="navlink" href="/the-story/">The story</a></li>
+            <li><a class="navlink" href="/specs/">Specifications</a></li>
             <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
           </ul>
           <div class="navlist-label">Tools</div>
