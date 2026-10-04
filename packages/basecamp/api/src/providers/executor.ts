@@ -82,15 +82,33 @@ function outpostExecutor(app: BasecampApp, serverId: string, target: string): Ex
     serverId,
     target,
     async call(path, body, opts) {
-      const reply = await app.conduit!.send({
+      const sent = await app.conduit!.send({
         target,
         method: 'POST',
         path,
         body,
         ...(opts?.timeoutMs ? { timeout_ms: opts.timeoutMs } : {}),
       })
-      return reply as ExecutorReply
+      const said  = sent.error ? machineSaid(sent.error.raw) : null
+      const reply = sent as ExecutorReply
+      return said ? { ...reply, error: { message: said } } : reply
     },
+  }
+}
+
+/**
+ * The sentence an Outpost refused with. It answers a failed command with
+ * `{ error: <sentence> }`, and conduit keeps that body as `raw` behind a message
+ * naming only the status — so without this, *config.port is not set* reached
+ * the release as *Server error: 500*, with the reason left in the machine's log.
+ */
+export function machineSaid(raw: unknown): string | null {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    const body = JSON.parse(raw)
+    return typeof body?.error === 'string' && body.error ? body.error : null
+  } catch {
+    return null
   }
 }
 

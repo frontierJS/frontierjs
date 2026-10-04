@@ -17,9 +17,11 @@ import type {
   ConduitError,
   ConduitStats,
   TargetDescriptor,
+  BrokerHandler,
 } from './types.ts'
 import { ConduitStreamError } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
+import { BrokerTransport } from './transports/broker.ts'
 
 // What a policy field may say. A number here is refused at register() rather
 // than clamped, for the reason `follow_redirects` beside `hmac` is: a
@@ -66,6 +68,18 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
   assertPolicy(descriptor)
   assertPinnedCert(descriptor)
   assertRequestAddressed(descriptor)
+  assertBroker(descriptor)
+}
+
+// The wire built for a broker is the websocket one, and a broker target on any
+// other protocol would register and then never connect.
+function assertBroker(descriptor: TargetDescriptor): void {
+  if (descriptor.kind !== 'broker') return
+  const where = `Target '${descriptor.id}' (kind 'broker')`
+  if (descriptor.protocol !== 'websocket')
+    throw new TypeError(`${where}: only a 'websocket' broker is built, this one is '${descriptor.protocol}'`)
+  if (descriptor.address_from !== undefined)
+    throw new TypeError(`${where}: a subscription dials one address; address_from has no meaning here`)
 }
 
 // A target whose address comes per send reaches wherever a row says, so it
@@ -203,6 +217,11 @@ export function createConduit(
   function learn(descriptor: TargetDescriptor): void {
     resilience.setPolicy(descriptor.id, descriptor.policy)
   }
+
+  // Live broker subscriptions, by target. Read by stats() and by the health
+  // check each one registers, so a deregistered target stops being reported
+  // rather than reporting a connection nobody holds.
+  const subscriptions = new Map<string, BrokerTransport>()
 
   // Set by destroy(). The router evicts its pool, but without this flag a
   // late in-flight request simply rebuilds the transport and opens a fresh
@@ -531,6 +550,7 @@ export function createConduit(
   }
 
   async function deregister(target: string): Promise<void> {
+    subscriptions.delete(target)
     const previous = await store.get(target)
     await store.delete(target)
     if (previous) countTarget(previous, -1)
@@ -555,10 +575,31 @@ export function createConduit(
     return store.list()
   }
 
+  async function subscribe(target: string, handler: BrokerHandler): Promise<void> {
+    if (destroyed) throw new Error('[conduit] subscribe() on a destroyed conduit')
+    const transport = await router.resolve(target)
+    if (!(transport instanceof BrokerTransport))
+      throw new TypeError(`[conduit] '${target}' is not a registered broker target`)
+
+    // Registered before the dial: a broker that never answers must already be
+    // reporting down, since that is the case the reading exists for.
+    subscriptions.set(target, transport)
+    opts.registerHealth?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
+    try {
+      await transport.subscribe(handler)
+    } catch (err) {
+      subscriptions.delete(target)
+      throw err
+    }
+  }
+
   function stats(): ConduitStats {
     const { requests, latency, streams } = counters
 
     return {
+      subscriptions: Object.fromEntries(
+        [...subscriptions].map(([id, t]) => [id, t.health()])
+      ),
       targets: {
         total:      counters.targets,
         byKind:     Object.fromEntries(counters.byKind),
@@ -586,9 +627,10 @@ export function createConduit(
   // during or after app.stop().
   async function destroy(): Promise<void> {
     destroyed = true
+    subscriptions.clear()
     router.evictAll()
     resilience.clear()
   }
 
-  return { init, send, stream, register, deregister, touch, resolve, list, stats, destroy }
+  return { init, send, stream, register, deregister, touch, resolve, list, subscribe, stats, destroy }
 }

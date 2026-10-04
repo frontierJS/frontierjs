@@ -45,7 +45,7 @@ src/
   trace.ts          trace-context propagation
   types.ts          the target/message types
   testing.ts        test factory
-  transports/       http · websocket · unix · stub · not_implemented · base
+  transports/       http · websocket · unix · broker · stub · not_implemented · base
     encode.ts       json | form | binary — the ONE place a body becomes bytes
   stores/           sqlite · memory
 ```
@@ -186,6 +186,12 @@ src/
   callback beside it only stands in for the hostname check, which an IP-only machine's
   certificate cannot pass (`FJS-D557`). The control in the suite is the same server with
   no pin, refused.
+- **A `broker` target is subscribed to, and the ack follows the handler**
+  (`FJS-D235`). The handler is where the app dispatches under `message.id`
+  (caravan's `dispatch({ id })`); an ack sent before it is a lost message. Every
+  subscription registers `conduit:<target>` through `registerHealth` — *connected*,
+  not *recent message*, since a quiet broker is not an outage — and a new broker
+  path that cannot say so does not ship.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
   credential, under what policy.

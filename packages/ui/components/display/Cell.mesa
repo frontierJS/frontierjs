@@ -166,6 +166,10 @@
     {fileLabel(value)}
   {:else if column?.display === 'list'}
     {Array.isArray(value) ? value.map(enumLabel).join(', ') : String(value)}
+  {:else if column?.display === 'code'}
+    <!-- One cell, one line of a table: monospace and escaped, never highlighted
+         markup — a block editor's worth of paint does not fit in a row. -->
+    <code>{String(value)}</code>
   {:else if column?.display === 'json'}
     <Json {value} expand={0} />
   {:else if column?.display === 'relation'}

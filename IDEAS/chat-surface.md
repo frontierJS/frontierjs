@@ -169,7 +169,7 @@ something honest to be tested against.
 
 Absent: a transcript list, a message bubble, a pending indicator, autoscroll that
 does not fight a reader who scrolled up, and a renderer for a message body.
-`@markdown` exists at the data boundary and nothing renders it.
+`@syntax(md)` exists at the data boundary and nothing renders it.
 
 Constraints, both already binding: a kit component may not style a class
 `@frontierjs/css` owns, and a message is styled by tone and treatment rather than

@@ -17,7 +17,7 @@
   //     {/snippet}
   //   </Popover>
 
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, placeAgainst } from '../../utils.js'
 
   export let placement = 'bottom-start'  // 'bottom-start'|'bottom-end'|'top-start'|'top-end'
   export let offset    = 8               // gap between trigger and panel, px
@@ -64,23 +64,9 @@
 
   function position() {
     if (!triggerEl || !panelEl) return
-    const tr   = triggerEl.getBoundingClientRect()
-    const pr   = panelEl.getBoundingClientRect()
-    const winW = window.innerWidth
-    const winH = window.innerHeight
-
-    // Vertical
-    const goAbove = tr.bottom + pr.height + offset > winH
-    y = goAbove ? tr.top - pr.height - offset : tr.bottom + offset
-
-    // Horizontal — start vs end anchoring + overflow guard
-    if (placement.endsWith('end')) {
-      x = tr.right - pr.width
-      if (x < 8) x = 8
-    } else {
-      x = tr.left
-      if (x + pr.width > winW - 8) x = winW - pr.width - 8
-    }
+    const at = placeAgainst(triggerEl.getBoundingClientRect(), panelEl.getBoundingClientRect(), { placement, offset })
+    x = at.x
+    y = at.y
   }
 
   function closePopover() {

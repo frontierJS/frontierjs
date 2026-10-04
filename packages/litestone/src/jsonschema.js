@@ -143,6 +143,7 @@ const MESSAGE_KEYWORDS = {
 import { parseGateString } from './plugins/gate.js'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { unitInfo } from '@frontierjs/toolbelt/units'
+import { contentTypeFor, isTextType } from '@frontierjs/toolbelt/mime'
 import { TIME_PATTERNS, transformNames } from './core/validate.js'
 import { dependsOnClock, determinedColumns } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
@@ -1175,9 +1176,16 @@ function applyValidators(schema, attributes) {
       case 'phone':
         schema.format = 'phone'
         break
-      case 'markdown':
-        schema.contentMediaType = 'text/markdown'
+      // `x-syntax` is what a form and a cell read, and it is always there.
+      // `contentMediaType` is the standard keyword for the same fact, so a
+      // reader outside the framework gets it too — but only where the language
+      // HAS a registered type, which `sql` and `lite` do not.
+      case 'syntax': {
+        schema['x-syntax'] = attr.lang
+        const type = contentTypeFor(attr.lang, { fallback: null })
+        if (type && isTextType(type)) schema.contentMediaType = type
         break
+      }
       case 'accept':
         schema['x-litestone-accept'] = attr.types
         break

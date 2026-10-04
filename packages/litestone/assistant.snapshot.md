@@ -861,7 +861,7 @@ ssn String @encrypted
 
 tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: password, bcrypt, argon · see also: `encrypted`, `secret`
 
-One-way hashed on write. There is no read back — the comparison happens at the boundary.
+One-way hashed on write. There is no read back — the comparison happens at the boundary. Beside @secret it is the credential a server verifies: the digest replaces the @encrypted half, and the lock and the audit trail stay.
 
 ```lite
 passwordHash String @hashed
@@ -871,7 +871,7 @@ passwordHash String @hashed
 
 tier: **common** · legal in: on a model's field, on a trait's field · see also: `encrypted`, `guarded`, `log`
 
-Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both.
+Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
 
 ```lite
 apiKey String @secret
@@ -1053,14 +1053,14 @@ Must be a phone number.
 phone String @phone
 ```
 
-#### `@markdown`
+#### `@syntax` (lang)
 
-tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: rich text, wysiwyg
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: markdown, code, language, rich text
 
-Semantic annotation only — no validation. Says the text is Markdown, so a generated form can offer the right editor.
+Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.
 
 ```lite
-body String @markdown
+query String @syntax(sql)
 ```
 
 #### `@accept` ("image/*")

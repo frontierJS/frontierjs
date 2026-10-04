@@ -1,5 +1,25 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-03 — a `broker` target is built, and it reports whether it is still consuming (`FJS-1014`)
+
+`FJS-D235` was in force with nothing under it: no `broker` kind, a `nats` protocol that
+answered `not_implemented`, and no health check anywhere in the package. `TargetKind` now
+carries `broker`, registered on the `websocket` wire only (any other protocol is refused in
+`put()`, since it would register and never connect). `conduit.subscribe(target, handler)` dials
+through `transports/broker.ts`, which resolves credentials the way the websocket transport does
+and reconnects without a cap, because a consumer that gives up is the silent stop the ruling
+names. A frame `{ id, type: 'message', body }` is handed to the handler under the broker's own
+id and `{ id, type: 'ack' }` goes back only after the handler resolves; a throw leaves it
+unacknowledged. `send()` to a broker answers `invalid_request`.
+
+The obligation clause is the half that ships with it: every subscription registers
+`conduit:<target>` through the new `registerHealth` option, which the junction plugin points at
+`app.registerHealthCheck`, and `stats().subscriptions` carries `connected`, `last_received_at`
+and `received`. The check reads *connection up*, not *recent message*, so a quiet broker is not
+an outage. Proved by seven tests in `conduit.test.ts` against a real `Bun.serve` broker (the
+ack-order and throw tests go red with the ack moved ahead of the handler) and one in
+`junction-integration.test.ts` reaching the app's health map.
+
 
 ## 2026-10-03 — a connection failure no longer carries the address's password (`FJS-1678`)
 

@@ -62,7 +62,7 @@ const ORDER = {
     status:     { type: 'string',  required: false, enum: ['pending', 'paid', 'shipped'] },
     total:      { type: 'number',  required: false, minimum: 0 },
     active:     { type: 'boolean', required: false, title: 'Is live' },
-    body:       { type: 'string',  required: false, contentMediaType: 'text/markdown' },
+    body:       { type: 'string',  required: false, 'x-syntax': 'md' },
     dueOn:      { type: 'string',  required: false, format: 'date' },
     customerId: { type: 'integer', required: true, title: 'Customer',
                   references: { model: 'Customer', field: 'id', relation: 'customer' } },

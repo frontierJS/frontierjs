@@ -386,7 +386,7 @@ const WHERE_REASONS = {
                   + `It is not a column, and comparing one is comparing string constants: it matches every row when the value happens to equal '${k}', and none otherwise. `
                   + `To filter by a derived value make it @from or @generated, or store it`,
   encrypted: (k) => `'${k}' is @encrypted on %MODEL% — the column holds ciphertext under a random IV, so no plaintext can ever equal it and this filter matches nothing. `
-                  + `Use @encrypted(deterministic: true) if the value must be both looked up and read back, @hashed if it only ever needs matching, `
+                  + `Use @encrypted(deterministic: true) if the value must be both looked up and read back, @hashed if it only ever needs matching (@secret @hashed if it also wants the lock and the audit trail), `
                   + `or filter on a column that is not encrypted`,
   transient: (k) => `'${k}' is @transient on %MODEL% — it is a payload key the API accepts and nothing stores, so there is no column to filter by. `
                   + `Filter by what the service wrote instead (a @transient credential is looked up through the row it was lifted into)`,

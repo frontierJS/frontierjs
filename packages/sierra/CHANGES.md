@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-03 — `@syntax(lang)` reaches a code editor (`FJS-1657`)
+
+`buildFieldRules` carries `x-syntax` and no longer carries `contentMediaType`. `controlFor` answers `textarea` for `x-syntax: 'md'` and `{ control: 'code', task: 'text', language }` for every other language; `displayFor` answers `markdown` and `{ display: 'code', language }`, which `filterOpFor` filters with `contains`. A column holding `.lite` or a Mesa template was a one-line input that stripped its newlines.
+
 ## 2026-10-03 — a generated create form no longer asks for a column the policy determines (`FJS-1229`)
 
 A column in the model's `x-determined` is marked `determined` and no longer `required` by `buildFieldRules`, `formFieldList` leaves it out of the generated set (`only` still names it), and `_call` fills it from `session.user` on a create when the payload leaves it blank — `auth().id` is the session's `userId`, any other claim is read by name, and one the session lacks is left unset for the Data boundary to refuse. The two halves an app used to write by hand per column (`record` and `except` together) are one rule, and the scaffolded `before.create` hook it defeated is redundant. `test/determined-fields.test.js`.

@@ -1323,7 +1323,12 @@ class Parser {
       case 'email':      return { kind: 'email',      ...this.parseOptMessage() }
       case 'url':        return { kind: 'url',        ...this.parseOptMessage() }
       case 'phone':      return { kind: 'phone',      ...this.parseOptMessage() }
-      case 'markdown':   return { kind: 'markdown' }   // semantic annotation — no validation
+      // @syntax(sql) — the text is written in a syntax, named by its file
+      // extension: md, sql, js, html, css, json, lite. A statement for the
+      // reader, not a validator — a form offers the editor for it and a cell
+      // shows it highlighted. One attribute for every syntax, Markdown included,
+      // so knowing how one is declared teaches all of them.
+      case 'syntax':     return this.parseSyntax()
       case 'accept':     return { kind: 'accept', types: this.parseParenString() }   // e.g. @accept("image/*")
       case 'date':       return { kind: 'date',       ...this.parseOptMessage() }
       case 'datetime':   return { kind: 'datetime',   ...this.parseOptMessage() }
@@ -2702,6 +2707,16 @@ class Parser {
    * a case: `MB` is a megabyte and `Mb` a megabit everywhere a reader has seen
    * them, so a wrong case is a wrong unit and is refused as one.
    */
+  parseSyntax() {
+    const t = this.peek()
+    if (!this.check(TK.LPAREN))
+      throw new ParseError('@syntax names its language — @syntax(md), @syntax(sql), @syntax(js)', { line: t.line, col: t.col })
+    this.eat(TK.LPAREN)
+    const lang = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { kind: 'syntax', lang: String(lang).toLowerCase() }
+  }
+
   parseUnit() {
     const t = this.peek()
     if (!this.check(TK.LPAREN))
@@ -3535,7 +3550,7 @@ function resolveTraits(schema) {
 //     @date, @datetime, @minItems, @maxItems, @uniqueItems)
 //   - Transforms (@trim, @lower, @upper)
 //   - Computed fields (@computed)
-//   - Markdown semantic tag (@markdown)
+//   - The syntax a text is written in (@syntax)
 //
 // What CANNOT appear in a type:
 //   - Relations (@relation) — JSON can't carry FK columns
@@ -3704,7 +3719,12 @@ function expandSecretAttributes(schema) {
       // Synthesize @encrypted + @guarded unconditionally.
       // If the field already had an explicit @encrypted or @guarded, this produces
       // duplicates — validate() catches those as conflict errors.
-      field.attributes.push({ kind: 'encrypted', deterministic: !!secretAttr.deterministic })
+      //
+      // `@secret @hashed` is the credential a server VERIFIES (`FJS-D478`): the
+      // digest replaces the @encrypted half, so there is no ciphertext to
+      // synthesize, and the lock and the audit trail stay.
+      if (!field.attributes.some(a => a.kind === 'hashed'))
+        field.attributes.push({ kind: 'encrypted', deterministic: !!secretAttr.deterministic })
       field.attributes.push({ kind: 'guarded' })
 
       // Synthesize @log(<loggerDb>) — audit writes only by default.
@@ -5861,15 +5881,22 @@ function validate(schema) {
   // @hashed is not a flavor of @encrypted and does not compose with one: there is
   // no ciphertext to guard, to rotate, or to hand back under a read policy. Every
   // combination below is a schema that states two different fates for one column.
+  // @secret is the exception — see below.
   for (const model of schema.models) {
     for (const field of model.fields) {
       if (!field.attributes.some(a => a.kind === 'hashed')) continue
 
       if (field.attributes.some(a => a.kind === 'encrypted'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @encrypted — @hashed is one-way and there is no ciphertext to decrypt. Pick @encrypted(deterministic: true) if the value has to read back`)
-      if (field.attributes.some(a => a.kind === 'secret'))
-        errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @secret — @secret implies @encrypted and $rotateKey, and a digest can do neither`)
-      if (field.attributes.some(a => a.kind === 'guarded'))
+      // `@secret @hashed` composes: the digest stands in for the @encrypted half
+      // and the @guarded @secret synthesizes is the lock it was chosen for. Only
+      // the reversible option has nothing to apply to.
+      const secret = field.attributes.find(a => a.kind === 'secret')
+      if (secret?.deterministic)
+        errors.push(`Model '${model.name}', field '${field.name}': @secret(deterministic: true) conflicts with @hashed — a digest has no ciphertext whose IV could be derived`)
+      // With @secret the one @guarded is synthesized; an explicit second is
+      // already refused above.
+      if (!secret && field.attributes.some(a => a.kind === 'guarded'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @guarded — @hashed already strips the field from every read, asSystem() included`)
       if (field.attributes.some(a => a.kind === 'fieldAllow'))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed conflicts with @allow — no caller can read a digest, so a read policy over one has nothing to permit`)
@@ -7088,6 +7115,22 @@ function validate(schema) {
       // about where the point sits rather than about what is counted.
       if (field.attributes.some(a => a.kind === 'money'))
         errors.push(`${at}: @unit and @money together — a currency is already the unit, so state one`)
+    }
+  }
+
+  // ── @syntax validation ──────────────────────────────────────────────────────
+  // The language itself is not graded: glow highlights any name, so a typo
+  // costs colour and nothing else. What is refused is a declaration with no
+  // text under it — the editor and the highlighting both need one string.
+  for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.types ?? []).map(t => ['Type', t])]) {
+    const [kind, model] = owner
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'syntax')) continue
+      const at = `${kind} '${model.name}', field '${field.name}'`
+      if (field.type.name !== 'String')
+        errors.push(`${at}: @syntax requires a String field, got ${field.type.name} — a syntax is how text is written`)
+      if (field.type.array)
+        errors.push(`${at}: @syntax cannot be an array — the editor and the highlighting take one text`)
     }
   }
 

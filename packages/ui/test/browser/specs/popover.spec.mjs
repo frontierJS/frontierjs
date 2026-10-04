@@ -64,6 +64,23 @@ export async function run(t) {
   t.ok(await t.evaluate(`return document.activeElement === document.querySelector('#pop-trigger');`),
     'closing returns focus to the trigger')
 
+  // `top-start` was declared and never read — the side came from overflow
+  // alone — so it opened below. The fixture's 6rem of padding is room enough
+  // for this panel, which is the premise asserted first.
+  await t.mount('popover', { placement: 'top-start' })
+  await t.clickAt('#stage #pop-trigger')
+  await t.evaluate(`return await waitVisible('body > .popover');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  const top = await t.evaluate(`
+    const tr = document.querySelector('#pop-trigger').getBoundingClientRect();
+    const p  = document.querySelector('body > .popover').getBoundingClientRect();
+    return { roomAbove: Math.round(tr.top), height: Math.round(p.height), above: p.bottom <= tr.top + 1 };
+  `)
+  t.ok(top.roomAbove > top.height,
+    `the premise: the panel fits above (${top.roomAbove}px for ${top.height}px)`)
+  t.ok(top.above, 'placement="top-start" opens the panel above its trigger')
+  await t.press('Escape')
+
   /* ── ConfirmationPopover ─────────────────────────────────────────────── */
 
   await t.mount('confirm-popover')

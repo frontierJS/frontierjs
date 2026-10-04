@@ -346,7 +346,7 @@ model User {
 @log(dbName)                     field-level audit log to a logger database
 @keepVersions                    on File? / File[]: skip old S3 object cleanup on update
 @accept("mime/type")             on File / File[]: validate content type before upload
-@markdown                        semantic annotation — field contains Markdown (no validation)
+@syntax(sql)                     the text is in this syntax — md, sql, js, html… (picks the editor; no validation)
 @label("Customer")               human-readable name → JSON Schema `title`, and the label a
                                  generated form renders
 @hardDelete                      force hard delete even on @@softDelete models

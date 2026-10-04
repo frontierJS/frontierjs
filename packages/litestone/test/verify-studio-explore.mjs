@@ -412,12 +412,12 @@ t('insert.fieldAttributeLandsOnTheChosenField', await evaluate(`
 t('insert.newFieldGoesInsideTheModel', await evaluate(`
   await liteReload();
   const target = pickEditable()?.name;
-  exGo({ kind: 'word', word: 'markdown', level: 'field' });
-  await exApply('markdown', 'field', { model: target, where: 'newField' });
+  exGo({ kind: 'word', word: 'syntax', level: 'field' });
+  await exApply('syntax', 'field', { model: target, where: 'newField' });
 
   const ta = document.getElementById('liteEditor');
   const block = exFindBlock(ta.value, 'model', target);
-  const at = ta.value.indexOf('@markdown', block.open);
+  const at = ta.value.indexOf('@syntax(', block.open);
   return { picked: !!target, inside: at > block.open && at < block.close };
 `), { picked: true, inside: true })
 
@@ -479,8 +479,8 @@ t('insert.fixtureTemplateBracesAreFine', await evaluate(`
 t('insert.editorValidatesWhatWasInserted', await evaluate(`
   await liteReload();
   const target = pickEditable().name;
-  exGo({ kind: 'word', word: 'markdown', level: 'field' });
-  await exApply('markdown', 'field', { model: target, where: 'newField' });
+  exGo({ kind: 'word', word: 'syntax', level: 'field' });
+  await exApply('syntax', 'field', { model: target, where: 'newField' });
   const t0 = Date.now();
   while (Date.now() - t0 < 8000) {
     const text = document.getElementById('liteStatusText').textContent;
@@ -593,9 +593,18 @@ t('preview.aRequiredColumnIsAContract', await evaluate(`
 // about the other three realms.
 t('preview.aRefusedPaneIsNamedRatherThan500', await evaluate(`
   const row    = _catalog.find(r => r.word === 'fts' && r.level === 'model');
-  const target = pickEditable().name;
-  const bad    = document.getElementById('liteEditor').value
-    .replace('model ' + target + ' {', 'model ' + target + ' {\\n  @@gate("4.2.4.5")');
+  // Every fixture model already declares a gate and a second one is a parse
+  // error ("declared twice"), a different refusal from the one named here, so
+  // the model's own gate is replaced. update below read is what validateGate
+  // refuses; create is free relative to both, so lowering it proves nothing.
+  const model  = pickEditable(m => (m.attributes || []).some(a => a.kind === 'gate'));
+  const target = model.name;
+  const src    = document.getElementById('liteEditor').value;
+  const b      = exFindBlock(src, 'model', target);
+  const cur    = (model.attributes.find(a => a.kind === 'gate').value + '').trim();
+  const bad    = src.slice(0, b.open)
+    + src.slice(b.open, b.close).replace('@@gate("' + cur + '")', '@@gate("4.4.2.5")')
+    + src.slice(b.close);
 
   const res = await fetch(API + '/preview', {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },

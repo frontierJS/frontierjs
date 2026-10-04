@@ -166,6 +166,11 @@ describe('a release that fails pages the channel the flow names', () => {
     try {
       const failed = await until(() => sys.deployment.findUnique({ where: { id: deployment.id } }), (d: any) => d?.status === 'failed')
       expect(failed.status).toBe('failed')
+      // Refused before any step ran, so the reason is on the step it would
+      // have run first — the only place the release screen shows one.
+      const said = (await sys.deploymentStep.findMany({ where: { deploymentId: deployment.id } }))
+        .filter((s: any) => s.output)
+      expect(said.map((s: any) => s.output)).toEqual([expect.stringContaining('can take a release')])
       // A release that landed nowhere marks no placement — the control for
       // the `running` below, which the ingress record's addresses are read off.
       expect((await sys.appServer.findFirst({ where: { appId: app.id } })).status).toBe('unknown')

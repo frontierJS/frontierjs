@@ -603,6 +603,10 @@ minimum bar and spending everything else on `only`.**
   findings, verbatim from 2026-07-31. The argument behind `FJS-D06`, and where the
   `Slice` axis and the Hook/Guard/Observer/Delegate split are actually made. Was
   `drift-report.md` at the repo root
+- `IDEAS/review-decisions.md` — `DECISIONS.md` read as one body: the patterns
+  in what the rulings produce and in how they are made, plus four cracks worth a
+  hearing. Ranked nowhere because it proposes nothing; kept as an instrument for
+  testing a new proposal against the register's habits
 - `IDEAS/conversion-maid-tech.md` — a live seven-year-old Feathers/Prisma/Svelte
   application read for what would make it hard to bring onto FJS. Ranked nowhere
   because its finding is that nothing needs building: every blocker but one has an

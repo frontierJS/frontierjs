@@ -28,7 +28,7 @@ export async function run(t) {
   // mount in. A form is read top to bottom and the schema is the only thing
   // that knows which order the columns mean anything in.
   t.is(await t.evaluate(`return ${controlsIn('#all')};`),
-    'title,notes,status,qty,customerId,dueOn,archived,tags',
+    'title,notes,query,status,qty,customerId,dueOn,archived,tags',
     'every writable field appears, in schema order')
 
   // readOnly is the schema saying this is not the caller's to write, so the
@@ -60,10 +60,17 @@ export async function run(t) {
     return {
       title: of('title'), notes: of('notes'), status: of('status'),
       qty: of('qty'), dueOn: of('dueOn'), archived: of('archived'),
+      notesIsCode: !!document.querySelector('#all [name=notes]')?.closest('.fjs-code-input'),
+      queryIsCode: !!document.querySelector('#all [name=query]')?.closest('.fjs-code-input'),
+      queryLang:   document.querySelector('#all [name=query]')?.closest('.fjs-code-input')
+                     ?.querySelector('[language]')?.getAttribute('language') ?? null,
     };
   `)
   t.is(kinds.title, 'input:text', 'a string is a text input')
-  t.is(kinds.notes, 'textarea', 'a markdown string is a textarea')
+  t.is(kinds.notes, 'textarea', '@syntax(md) is a textarea')
+  t.is(kinds.notesIsCode, false, 'and a plain one — Markdown is prose, not a code editor')
+  t.is(kinds.queryIsCode, true, 'any other @syntax is a CodeInput')
+  t.is(kinds.queryLang, 'sql', 'highlighted in the language the column names')
   t.is(kinds.status, 'select', 'an enum is a select')
   t.is(kinds.qty, 'input:number', 'an integer is a number input')
   t.is(kinds.dueOn, 'input:date', 'a date is a date input — it has no zone to lose')

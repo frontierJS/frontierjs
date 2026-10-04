@@ -134,10 +134,11 @@
   /* Let the scroll container be a scroll target for keyboard users. */
   scrollbar-gutter:      stable;
 }
-.table-wrap > .table {
-  /* Stop the table collapsing below its natural width inside the wrapper. */
-  min-width: max-content;
-}
+/* No `min-width: max-content` on the table: auto table layout never goes
+ * below its min-content width anyway, so all that rule did was stop prose
+ * cells wrapping, and a long description pushed the last column (the Open
+ * link) out of sight. A cell wraps at its words; only a table whose
+ * unbreakable content is wider than the wrapper scrolls. */
 
 /* ── Actions column helper ────────────────────────────────────── */
 .table-actions {

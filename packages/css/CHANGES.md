@@ -1,5 +1,9 @@
 # Changes — @frontierjs/css
 
+## 2026-10-03 — a table's cells wrap inside `.table-wrap`
+
+`.table-wrap > .table { min-width: max-content }` is gone. Auto table layout already keeps a table at or above its min-content width, so the rule only stopped text wrapping: a column of prose made the table as wide as its longest sentence, and the last column, usually the row's action, sat off-screen behind a horizontal scroll. Cells now wrap at their words, and the wrapper still scrolls a table whose unbreakable content is wider than it. Reported on transit's Reports list.
+
 ## 2026-09-30 — `.glass`, a fifth treatment, legible over any ground
 
 A translucent, blurred fill for an app with a gradient `--app-bg`: on the surface lineage, `.btn`, `.topbar` and `.sidebar`. Two tokens, `--glass-alpha: 85%` and `--glass-blur: 16px`; one unscoped `.glass` rule in surface.css owns the blur and the text changes, and each tier owns only its fill. 85% is the floor at which `--ink` and `--ink-soft` clear AA composited over pure black and pure white in all 12 themes (basecamp needs 84%), so the guarantee does not depend on the blur rendering. On glass `--ink-mute` folds into `--ink-soft` (a third step needs ~95%), a tone is the edge and the text rather than the fill, and the tone window narrows by `--_tone-inset: 0.06` from both ends; `.btn.glass` reads `--tint-ink`, because the raw tone clipped out of gamut on dracula's danger at 3.55:1. `prefers-reduced-transparency` and `prefers-contrast: more` make it opaque. `glass: ink and ink-soft clear AA over any ground` grades it. The README token table, AGENTS.md, the guide's Cards page (a Glass section over a gradient) and the wizard's Button, Card, Tile, Topbar and Sidebar treatment lists name it. 511 passing.

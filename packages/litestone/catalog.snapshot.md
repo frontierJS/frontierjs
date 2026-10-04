@@ -82,7 +82,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
 | `@url` | Refuse a bad value | [(message)] |  |  |  |
 | `@phone` | Refuse a bad value | [(message)] |  |  |  |
-| `@markdown` | Refuse a bad value |  |  |  |  |
+| `@syntax` | Refuse a bad value | (lang) |  |  |  |
 | `@accept` | Refuse a bad value | ("image/*") |  |  |  |
 | `@date` | Refuse a bad value | [(message)] |  |  |  |
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |

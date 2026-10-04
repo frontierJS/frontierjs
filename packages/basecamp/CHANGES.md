@@ -1,5 +1,13 @@
 # Changes — Basecamp
 
+## 2026-10-03 — a failed release says why (`FJS-1681`)
+
+- **Outpost's sentence reaches the release.** It answers a failed command with `{ error }`, which conduit kept as `raw` behind *Server error: 500*. `machineSaid()` in `providers/executor.ts` lifts it into the reply, so a step fails with *docker pull failed … manifest unknown* or *config.port is not set* rather than a status code.
+- **The reason is written on the step the release stopped at.** `finishRun` took an `error` and wrote it nowhere; the job now passes the step it was on (`stepId`) and `finishRun` writes the reason as that step's output, which the release page already renders. A release refused before any step ran (no reachable machine) writes it on the step it would have run first.
+- Filed from the same local drive: `FJS-1682` (the Stop step runs before `/deploy` can refuse, so a refused release leaves the app down), `FJS-1683` (never-reached steps show `failed`, listed first) and `FJS-1684` (leaving `/apps/[id]/` re-reads `apps.get` with the next route's id).
+
+`api/test/failure-reason.test.ts` 3/3 and a new assertion in `automation.test.ts`, both failing with the write removed; the five deploy suites 44/44; typecheck at baseline (13). A browser drive deploying `nginx:fjs-no-such-tag` through a real Outpost showed Docker's sentence on Pull image, and `nginx:alpine` then deployed green.
+
 ## 2026-09-30 — a Domain written between releases reaches the machine's Caddy (`FJS-1610`)
 
 - **`domain:dns` pushes routes as well as the zone.** After `edge.syncStep`, `routeDomainApp` sends `/route { app_id, hosts }` to every `running` placement of the Domain's App on an `online` server, the set the ingress record names. `hosts` is `routedHosts()`, the live rows, so a deleted Domain or one turned into a redirect drops out, and an App with none left is unrouted. The `FJS-1614` dispatch re-routes a machine returning to `online`. An inline App is skipped (`FJS-1615`).

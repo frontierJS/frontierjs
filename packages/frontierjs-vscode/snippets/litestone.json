@@ -292,10 +292,10 @@
     "description": "MIME type validation for File fields"
   },
 
-  "@markdown": {
-    "prefix": "@markdown",
-    "body": ["@markdown"],
-    "description": "Annotation: field contains Markdown"
+  "@syntax": {
+    "prefix": "@syntax",
+    "body": ["@syntax(${1|md,sql,js,html,css,json,lite|})"],
+    "description": "Annotation: the syntax a String field is written in"
   },
 
   "@hardDelete": {

@@ -261,4 +261,25 @@ export async function run(t) {
     return p.bottom <= tr.top + 1;
   `), 'with no room below, the panel opens above the trigger')
   await t.press('Escape')
+
+  /* ── top-* is a preference, not a promise ─────────────────────────────── */
+
+  // `top-start` was declared and never read: the side came from overflow
+  // alone, so it opened below exactly like `bottom-start`. Here the first
+  // trigger sits under a 6rem spacer, shorter than the menu, so asking for the
+  // top has to fall back below rather than paint off the top of the viewport.
+  await t.mount('dropdown', { placement: 'top-start' })
+  await t.evaluate(`window.scrollTo(0, 0); return true;`)
+  await t.clickAt('#dd-trigger')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  await t.evaluate(`return await waitSettled('body');`)
+  const fallback = await t.evaluate(`
+    const tr = document.querySelector('#dd-trigger').getBoundingClientRect();
+    const p  = document.querySelector('.popover').getBoundingClientRect();
+    return { roomAbove: Math.round(tr.top), height: Math.round(p.height), below: p.top >= tr.bottom - 1 };
+  `)
+  t.ok(fallback.roomAbove < fallback.height,
+    `the premise: the menu does not fit above (${fallback.roomAbove}px for ${fallback.height}px)`)
+  t.ok(fallback.below, 'so top-start with no room above falls back below')
+  await t.press('Escape')
 }

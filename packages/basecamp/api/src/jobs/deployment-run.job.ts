@@ -176,10 +176,10 @@ function runner(app: BasecampApp) {
     // removed, and a machine can start draining, between the click and the job.
     const executor = await resolveExecutor(app, deploy.appId)
     if (!isExecutor(executor)) {
-      // The release stops here, with the reason on the row. Every step stays
-      // `pending` until failDeploy marks them failed — none of them is touched,
-      // which is the difference from the behavior this replaced.
-      await failDeploy(deploymentId, startedAt, executor.reason)
+      // The release stops here, with the reason on the step it would have run
+      // first. None of them ran, which is the difference from the behavior
+      // this replaced.
+      await failDeploy(deploymentId, startedAt, executor.reason, steps[0]?.id)
       log.error('deployment refused — no executor', { id: deploymentId, reason: executor.reason })
       // A release refused before it started is still a release that failed, and
       // it is the one people most need telling about: nothing happened on the
@@ -199,12 +199,17 @@ function runner(app: BasecampApp) {
       server:   executor.serverId,
     })
 
+    // The step a throw belongs to, read by the catch below. Cleared once it
+    // lands, so a failure after the last step does not rewrite one that succeeded.
+    let current: string | undefined
+
     try {
       // The digest travels down the steps: whatever /pull reported is what
       // /deploy is asked to start, and what /health-check is asked about.
       let digest: string | null = asDigest(deploy.builtImage)
 
       for (const s of steps) {
+        current = s.id
         await step(deploymentId, s.id, 'running')
 
         const result = await runStep(s, { deploy, service, config, executor, digest })
@@ -215,6 +220,7 @@ function runner(app: BasecampApp) {
         if (result.digest && result.digest !== digest) digest = result.digest
 
         await step(deploymentId, s.id, 'success', { output: result.output, digest })
+        current = undefined
       }
 
       await deployments.call('finishRun', deploymentId, {
@@ -231,7 +237,7 @@ function runner(app: BasecampApp) {
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
-      await failDeploy(deploymentId, startedAt, msg)
+      await failDeploy(deploymentId, startedAt, msg, current)
       log.error('deployment failed', { id: deploymentId, error: msg })
       await tellThem('deploy_failed', deploy, service, { reason: msg })
     }
@@ -429,9 +435,9 @@ function runner(app: BasecampApp) {
   // The release, the steps it left behind, the app's status and the event —
   // one call, because they are one fact and four writes that used to be able
   // to half-happen.
-  async function failDeploy(id: string, startedAt: number, error: string): Promise<void> {
+  async function failDeploy(id: string, startedAt: number, error: string, stepId?: string): Promise<void> {
     await deployments.call('finishRun', id, {
-      status: 'failed', error, startedAt: new Date(startedAt).toISOString(),
+      status: 'failed', error, stepId, startedAt: new Date(startedAt).toISOString(),
     })
   }
 

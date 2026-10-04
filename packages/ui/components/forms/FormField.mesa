@@ -17,6 +17,7 @@
   // the value comes back.
 
   import Checkbox      from './Checkbox.mesa'
+  import CodeInput     from './CodeInput.mesa'
   import Combobox      from './Combobox.mesa'
   import DateTimeInput from './DateTimeInput.mesa'
   import FileField     from './FileField.mesa'
@@ -116,6 +117,15 @@
       component: Textarea,
       props: ({ field: f, value: v, onvalue }) => ({
         name: f.name, value: v, oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    // `@syntax(sql)` and every other language but `md`, which is prose and
+    // stays a textarea. The language is the column's, so it rides the entry.
+    code: {
+      component: CodeInput,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, language: f.language, value: v,
+        oninput: (e) => onvalue(e.target.value),
       }),
     },
     input: {

@@ -41,14 +41,14 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const {
-  createResource, controlFor, defaultControlFor, formFieldList, labelFieldFor, buildFieldRules,
+  createResource, controlFor, displayFor, defaultControlFor, formFieldList, labelFieldFor, buildFieldRules,
   registerControl, unregisterControl, registeredControls, validateAgainstFields,
 } = await import('../src/junction/resource.js')
 const { registerSchemas, serviceNameFor } = await import('../src/junction/schema-registry.js')
 
 // What generateJsonSchema emits (create mode) for:
 //   model Order    { id Int @id  reference String @length(3,20)  status OrderStatus @default("pending")
-//                    total Float @default(0)  active Boolean  body String @markdown
+//                    total Float @default(0)  active Boolean  body String @syntax(md)
 //                    dueOn DateTime? @date  opensAt String @time  shutsAt String @time(seconds: true)
 //                    customerId Int  customer Customer @relation(...)
 //                    tags String[] }
@@ -61,7 +61,7 @@ const DEFS = {
       status:     { $ref: '#/$defs/OrderStatus', default: 'pending' },
       total:      { type: 'number', default: 0 },
       active:     { type: 'boolean', title: 'Is live' },
-      body:       { type: 'string', contentMediaType: 'text/markdown' },
+      body:       { type: 'string', 'x-syntax': 'md' },
       dueOn:      { anyOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
       opensAt:    { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', 'x-time': { seconds: false } },
       shutsAt:    { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$', 'x-time': { seconds: true } },
@@ -137,10 +137,16 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(r.externalId['x-big']).toBe(true)
   })
 
-  test('@markdown is a textarea — a declaration, not a guess about length', () => {
+  test('@syntax(md) is a textarea — a declaration, not a guess about length', () => {
     expect(controlFor(rules().body).control).toBe('textarea')
     // An ordinary unbounded string is NOT promoted. Nothing declared it long.
     expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
+  })
+
+  test('any other @syntax is the code editor, carrying its language', () => {
+    expect(controlFor({ type: 'string', 'x-syntax': 'sql' })).toEqual({ control: 'code', task: 'text', language: 'sql' })
+    expect(displayFor({ type: 'string', 'x-syntax': 'sql' })).toEqual({ display: 'code', language: 'sql' })
+    expect(displayFor(rules().body)).toEqual({ display: 'markdown' })
   })
 
   test('a date round-trips in a date input; a date-time needs a control of its own', () => {

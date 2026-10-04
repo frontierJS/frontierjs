@@ -3334,11 +3334,11 @@ function renderSchema() {
       const cls = isPk ? 'er-row-pk' : isFk ? 'er-row-fk' : ''
       const icon = isPk ? '🔑' : isFk ? '🔗' : ''
       const typeName  = field.type.name + (field.type.array ? '[]' : '') + (field.type.optional ? '?' : '')
-      const isMd      = field.attributes.some(a => a.kind === 'markdown')
-      const mdBadge   = isMd ? '<span class="badge muted">md</span>' : ''
+      const syntax    = field.attributes.find(a => a.kind === 'syntax')?.lang
+      const syntaxBadge = syntax ? `<span class="badge muted">${esc(syntax)}</span>` : ''
       html += `<div class="er-row ${cls}">
         <span class="er-row-icon">${icon}</span>
-        <span class="er-row-name">${esc(field.name)}${mdBadge}</span>
+        <span class="er-row-name">${esc(field.name)}${syntaxBadge}</span>
         <span class="er-row-type">${esc(typeName)}</span>
       </div>`
     }

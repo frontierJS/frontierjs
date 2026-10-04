@@ -117,7 +117,11 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     // Creates this app's conduit, attaches it, wires metrics, and registers
     // the management service.
     register(app: App): void {
-      const instance = createConduit({ trace: junctionTrace(), ...opts })
+      const instance = createConduit({
+        trace: junctionTrace(),
+        registerHealth: (name, check) => app.registerHealthCheck(name, check),
+        ...opts,
+      })
       instances.set(app, instance)
 
       // claim() rather than `app.conduit = instance`: a second plugin

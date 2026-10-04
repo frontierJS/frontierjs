@@ -1257,13 +1257,14 @@ class PostFactory extends Factory {
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 
-describe('@markdown', () => {
+describe('@syntax', () => {
   const MD_SCHEMA = `
     model Post {
-      id   Int @id
-      body String    @markdown
-      note String?   @markdown
-      name String
+      id    Int @id
+      body  String    @syntax(md)
+      note  String?   @syntax(md)
+      query String?   @syntax(SQL)
+      name  String
     }
   `
 
@@ -1272,33 +1273,59 @@ describe('@markdown', () => {
     expect(r.valid).toBe(true)
   })
 
-  test('@markdown stored on field AST as kind:markdown', () => {
+  test('@syntax stored on field AST with its language, lower-cased', () => {
     const { schema } = parse(MD_SCHEMA)
-    const body = schema.models[0].fields.find((f: any) => f.name === 'body')
-    expect(body.attributes.some((a: any) => a.kind === 'markdown')).toBe(true)
+    const field = (n: string) => schema.models[0].fields.find((f: any) => f.name === n)
+    expect(field('body').attributes.find((a: any) => a.kind === 'syntax')?.lang).toBe('md')
+    expect(field('query').attributes.find((a: any) => a.kind === 'syntax')?.lang).toBe('sql')
   })
 
-  test('non-markdown field has no markdown attribute', () => {
+  test('a field without it has no syntax attribute', () => {
     const { schema } = parse(MD_SCHEMA)
     const name = schema.models[0].fields.find((f: any) => f.name === 'name')
-    expect(name.attributes.some((a: any) => a.kind === 'markdown')).toBe(false)
+    expect(name.attributes.some((a: any) => a.kind === 'syntax')).toBe(false)
   })
 
-  test('JSON Schema emits contentMediaType: text/markdown', () => {
+  test('@syntax with no language is refused at parse', () => {
+    const r = parse(`model P {\n id Int @id\n body String @syntax\n}`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toMatch(/@syntax names its language/)
+  })
+
+  test('@syntax on a non-String or an array is refused by validation', () => {
+    const r = parse(`model P {\n id Int @id\n n Int @syntax(sql)\n l String[] @syntax(md)\n}`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toMatch(/@syntax requires a String field, got Int/)
+    expect(r.errors.join('\n')).toMatch(/@syntax cannot be an array/)
+  })
+
+  test('JSON Schema emits x-syntax and the registered type: md → text/markdown', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
     const posts = js['$defs']?.Post ?? js.Post
+    expect(posts.properties.body['x-syntax']).toBe('md')
     expect(posts.properties.body.contentMediaType).toBe('text/markdown')
   })
 
-  test('optional markdown field also gets contentMediaType', () => {
+  test('a language with no registered type carries x-syntax alone', () => {
     const { schema } = parse(MD_SCHEMA)
     const js = generateJsonSchema(schema, { mode: 'full' })
     const posts = js['$defs']?.Post ?? js.Post
-    // Optional field is wrapped in anyOf — contentMediaType on the string branch
+    const q = posts.properties.query
+    const branch = q?.anyOf?.[0] ?? q
+    expect(branch['x-syntax']).toBe('sql')
+    expect(branch.contentMediaType).toBeUndefined()
+  })
+
+  test('optional field carries both on the string branch', () => {
+    const { schema } = parse(MD_SCHEMA)
+    const js = generateJsonSchema(schema, { mode: 'full' })
+    const posts = js['$defs']?.Post ?? js.Post
+    // Optional field is wrapped in anyOf — the keywords sit on the string branch
     const noteSchema = posts.properties.note
     const branch = noteSchema?.anyOf?.[0] ?? noteSchema
     expect(branch?.contentMediaType).toBe('text/markdown')
+    expect(branch?.['x-syntax']).toBe('md')
   })
 
   test('plain text field has no contentMediaType', () => {
@@ -11965,48 +11992,48 @@ describe('generateTypeScript — ServiceTypes', () => {
   })
 })
 
-// ─── @markdown annotation ─────────────────────────────────────────────────────
+// ─── @syntax annotation ───────────────────────────────────────────────────────
 
-describe('@markdown — generateTypeScript', () => {
+describe('@syntax — generateTypeScript', () => {
   const MD_TS_SCHEMA = `
     model Post {
       id    Int @id
-      body  String    @markdown
-      note  String?   @markdown
+      body  String    @syntax(md)
+      note  String?   @syntax(md)
       title String
     }
   `
   const { schema } = parse(MD_TS_SCHEMA)
 
-  test('@markdown field emits string type (not special type)', () => {
+  test('@syntax field emits string type (not special type)', () => {
     const dts = generateTypeScript(schema)
-    // body is String @markdown — should still be string, not a special markdown type
+    // body is String @syntax(md) — should still be string, not a special type
     const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('body:')
     expect(postSection).toContain('string')
   })
 
-  test('@markdown optional field emits string | null', () => {
+  test('@syntax optional field emits string | null', () => {
     const dts = generateTypeScript(schema)
     const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('note?:')
     expect(postSection).toContain('string')
   })
 
-  test('@markdown field not excluded from any audience', () => {
+  test('@syntax field not excluded from any audience', () => {
     const dtsClient = generateTypeScript(schema, { audience: 'client' })
     const dtsSys    = generateTypeScript(schema, { audience: 'system' })
     expect(dtsClient).toContain('body')
     expect(dtsSys).toContain('body')
   })
 
-  test('@markdown field included in Create interface', () => {
+  test('@syntax field included in Create interface', () => {
     const dts = generateTypeScript(schema)
     const createSection = dts.slice(dts.indexOf('export interface PostCreate {'), dts.indexOf('export interface PostUpdate {'))
     expect(createSection).toContain('body')
   })
 
-  test('@markdown does not affect plain text field in same model', () => {
+  test('@syntax does not affect plain text field in same model', () => {
     const dts = generateTypeScript(schema)
     const postSection = dts.slice(dts.indexOf('export interface Post {'), dts.indexOf('export interface PostCreate {'))
     expect(postSection).toContain('title')
@@ -26467,7 +26494,6 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
   test('@hashed does not compose with anything that implies a readable value', async () => {
     const cases: [string, RegExp][] = [
       ['t String @hashed @encrypted',            /conflicts with @encrypted/],
-      ['t String @hashed @secret',               /conflicts with @secret/],
       ['t String @hashed @guarded',         /conflicts with @guarded/],
       [`t String @hashed @allow('read', true)`,  /conflicts with @allow/],
       ['t Int    @hashed',                       /requires a String field/],

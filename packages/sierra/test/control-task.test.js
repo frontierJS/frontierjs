@@ -36,7 +36,8 @@ model Customer {
 model Visit {
   id         Int      @id @default(autoincrement())
   name       String
-  body       String   @markdown
+  body       String   @syntax(md)
+  query      String   @syntax(sql)
   count      Int
   weight     Float
   serial     Int      @big
@@ -76,7 +77,7 @@ const SETS = buildFieldRules({
 // Every name the built-in table can answer. A new branch naming a new control
 // fails here until it is listed, which is where its task gets decided.
 const CONTROLS = [
-  'checkbox', 'combobox', 'datetime', 'file', 'geo', 'input',
+  'checkbox', 'code', 'combobox', 'datetime', 'file', 'geo', 'input',
   'json', 'money', 'multiselect', 'picker', 'select', 'textarea',
 ]
 

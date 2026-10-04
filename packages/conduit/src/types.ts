@@ -13,6 +13,7 @@ export type TargetKind =
   | 'provider'  // external REST API — Hetzner, GitHub, NetBird
   | 'outpost'     // remote server outpost
   | 'local'     // local unix process
+  | 'broker'    // a broker somebody else runs — subscribed to, never sent to (FJS-D235)
 
 import type { BodyEncoding } from './transports/encode.ts'
 export type { BodyEncoding }
@@ -563,6 +564,12 @@ export interface ConduitOptions {
   // See createTraceContext() for a W3C-traceparent implementation.
   trace?:       (req: ConduitRequest) => Record<string, string> | null | undefined
 
+  // Told of each broker subscription's liveness so a host can report it. The
+  // junction plugin passes `app.registerHealthCheck`; a subscription that
+  // cannot say whether it is still consuming does not ship (`FJS-D235`).
+  // `check()` is false while the connection is down.
+  registerHealth?: (name: string, check: () => boolean) => void
+
   // Expose management routes as a Junction service. Disabled by default.
   //
   // Descriptors returned by these routes carry credential *refs* only —
@@ -636,6 +643,14 @@ export interface IConduit {
    */
   touch(target: string): Promise<void>
 
+  /**
+   * Receive from a `broker` target. The handler is the handoff: hand the
+   * message to whatever does the work once, under `message.id` (caravan's
+   * `dispatch({ id })`), and the ack goes out only after it resolves. A throw
+   * leaves the message unacknowledged for the broker to redeliver.
+   */
+  subscribe(target: string, handler: BrokerHandler): Promise<void>
+
   /** Synchronous snapshot for metrics — reads maintained counters, never the store. */
   stats(): ConduitStats
 
@@ -643,7 +658,25 @@ export interface IConduit {
   destroy(): Promise<void>
 }
 
+// A message the broker delivered. `id` is the broker's own and is the id the
+// work is dispatched under, so a redelivery is the same dispatch.
+export interface BrokerMessage {
+  id:   string
+  body: unknown
+}
+
+export type BrokerHandler = (message: BrokerMessage) => void | Promise<void>
+
+export interface BrokerHealth {
+  connected:        boolean
+  last_received_at: number | null   // unix ms
+  received:         number
+}
+
 export interface ConduitStats {
+  // One entry per live broker subscription, keyed by target id.
+  subscriptions: Record<string, BrokerHealth>
+
   targets: {
     total:      number
     byKind:     Record<string, number>

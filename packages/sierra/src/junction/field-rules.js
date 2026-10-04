@@ -40,10 +40,12 @@ const _CARRIED = [
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
   'minItems', 'maxItems', 'default', 'description',
   // `readOnly` is what a computed / generated / `@from` / `@version` field
-  // carries, and `contentMediaType` is where `@markdown` arrives. Both are
-  // read by the control table below and by nothing else — a form has to know
-  // that a value is not the caller's to write, and that a string is a document.
-  'readOnly', 'contentMediaType',
+  // carries, and `x-syntax` is `@syntax(lang)`. Both are read by the control
+  // table below and by nothing else — a form has to know that a value is not
+  // the caller's to write, and that a string is written in a language.
+  // `contentMediaType` arrives beside `x-syntax` for some languages and is not
+  // carried: one key answers, and it is the one every language has.
+  'readOnly', 'x-syntax',
   // `x-litestone-file` is on the FileRef definition a `File` column $refs. It
   // is carried because it is the one thing that tells a shape which is an
   // object with eight properties apart from a shape somebody declared — and
@@ -344,15 +346,15 @@ export function buildRelations(schema, resolveName = modelNameFor) {
 // the error — is NOT repeated here; that resolution already has an owner and
 // restating it is what this whole row exists to remove.
 
-/** The one media type that says a string is a document rather than a line. */
-const _MARKDOWN = 'text/markdown'
+/** The one syntax that is prose a person writes, so it gets a text box rather than a code editor. */
+const _PROSE = 'md'
 
 // ── Registered controls ───────────────────────────────────────────────────────
 //
 // The table above is the framework's answer, and it is deliberately small: a
 // kit that ships five controls can only claim five kinds of column. Everything
 // else — a `Json` document, a `String[]`, a `Decimal` an app renders as money,
-// a rich text editor over `@markdown` — is a control somebody else owns, and
+// a rich text editor over `@syntax(md)` — is a control somebody else owns, and
 // until this registry existed there was nowhere to put it. `controlFor` was a
 // switch inside a published package, so "contribute a control" meant forking
 // Sierra.
@@ -666,7 +668,8 @@ function _builtinControl(rule) {
       return { control: 'input', task: 'quantify', step: 'any' }
 
     case 'string': {
-      if (rule.contentMediaType === _MARKDOWN) return { control: 'textarea', task: 'text' }
+      if (rule['x-syntax'] === _PROSE) return { control: 'textarea', task: 'text' }
+      if (rule['x-syntax']) return { control: 'code', task: 'text', language: rule['x-syntax'] }
       // `@big`. Asked before every other string row because it is the one whose
       // JSON type does not describe the value: the column is an integer and the
       // string is only how it travels. `inputMode` is what a phone reads for
@@ -860,7 +863,7 @@ export function registeredDisplays() {
  * How this column's value is RENDERED.
  *
  *   { display: 'text'|'number'|'money'|'time'|'date'|'boolean'|'enum'|
- *              'relation'|'file'|'geo'|'json'|'list'|'markdown'|null,
+ *              'relation'|'file'|'geo'|'json'|'list'|'markdown'|'code'|null,
  *     …whatever that renderer needs, reason? }
  *
  * `display: null` is an answer and not an omission, exactly as `controlFor`'s
@@ -956,7 +959,8 @@ function _builtinDisplay(rule) {
   // string, and which zone resolved one is not recoverable from the string.
   if (rule['x-time']) return { display: 'time', time: rule['x-time'] }
 
-  if (rule.contentMediaType === 'text/markdown') return { display: 'markdown' }
+  if (rule['x-syntax'] === _PROSE) return { display: 'markdown' }
+  if (rule['x-syntax']) return { display: 'code', language: rule['x-syntax'] }
 
   switch (rule.type) {
     case 'boolean': return { display: 'boolean' }
@@ -1059,7 +1063,8 @@ export function filterOpFor(display) {
     // looks like an answer.
     case 'json':     return { op: null, kind: null, reason: 'a Json document matches as text, punctuation included' }
     case 'file':     return { op: null, kind: null, reason: 'a file reference is a document, not a value to compare' }
-    case 'markdown': return { op: 'contains', kind: 'text' }
+    case 'markdown':
+    case 'code':     return { op: 'contains', kind: 'text' }
 
     default:         return null
   }

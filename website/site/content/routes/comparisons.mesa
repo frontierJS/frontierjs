@@ -1,0 +1,92 @@
+---
+title: "Comparisons — FrontierJS"
+description: "The projects FrontierJS learned from, what each got right, what FrontierJS adds by holding them in one design, and what it cannot claim yet."
+render: static
+---
+
+<!--
+  The dbo.io, Schema2AI and RaisinDB rows restate those projects' own pages and
+  have not been checked against the products. Verify them before this page is
+  linked from the nav.
+-->
+<section class="hero">
+  <div class="container">
+    <p class="eyebrow">Comparisons</p>
+    <h1>None of the ideas are new. <span class="quiet">Holding them in one design is.</span></h1>
+    <p class="lede">
+      Every idea FrontierJS builds on was proven somewhere else first. Here is
+      what each of those projects got right, what FrontierJS adds by combining
+      them, and what it cannot claim yet.
+    </p>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2>Standing on</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Project</th><th>What they got right</th></tr></thead>
+        <tbody>
+          <tr><td>Rails</td><td><strong>Convention can encode architecture.</strong> The relationships between model, persistence, routing and behavior don't need explaining again in every app. Rails made app structure itself readable.</td></tr>
+          <tr><td>Laravel</td><td><strong>Batteries belong in the framework.</strong> Queues, mail, notifications and auth share one vocabulary instead of five libraries glued together.</td></tr>
+          <tr><td>Elm</td><td><strong>Make the underlying model explicit, and behavior follows from it.</strong> State, messages, updates and views are one system, not unrelated layers.</td></tr>
+          <tr><td>Phoenix / LiveView</td><td><strong>The UI doesn't need its own separate world.</strong> Server state, events, validation and rendered UI can stay close together.</td></tr>
+          <tr><td>GraphQL</td><td><strong>Describe the information first.</strong> A schema defines the types, relationships and operations, and each client takes the part it needs.</td></tr>
+          <tr><td>OpenAPI</td><td><strong>One spec can produce many artifacts.</strong> Docs, clients, mocks, tests and types all come from one description.</td></tr>
+          <tr><td>JSON Schema</td><td><strong>Meaning can live in the schema</strong> instead of in separate validation code, and the same definition can drive the UI.</td></tr>
+          <tr><td>Prisma</td><td><strong>The data model is something developers read and edit.</strong> Migrations and the client API are derived from it.</td></tr>
+          <tr><td>ZenStack</td><td><strong>Access rules belong in the schema.</strong> Policies sit next to the fields they protect and are enforced by the client.</td></tr>
+          <tr><td>Supabase / PostgREST</td><td><strong>The database already knows enough to be an API.</strong> Postgres row-level security keeps access rules in the data.</td></tr>
+          <tr><td>Hasura</td><td><strong>Schema to API to permissions</strong>, with no controllers in between.</td></tr>
+          <tr><td>Directus</td><td><strong>A data model can become a whole app surface:</strong> API, permissions, admin UI and forms.</td></tr>
+          <tr><td>ServiceStack AutoQuery</td><td><strong>One declaration can produce many surfaces:</strong> a query API, CRUD, UI and typed clients.</td></tr>
+          <tr><td>Wasp</td><td><strong>One declaration file can describe a whole fullstack app.</strong></td></tr>
+          <tr><td>RedwoodJS</td><td><strong>Scaffold from the schema</strong>, across API and web, with conventions set in advance.</td></tr>
+          <tr><td>Convex</td><td><strong>The backend can be reactive by default.</strong> Queries stay live without the app wiring any of it up.</td></tr>
+          <tr><td>dbo.io</td><td><strong>"The schema is the application"</strong>: REST API, security, content rendering and messaging all from the schema.</td></tr>
+          <tr><td>Schema2AI</td><td><strong>One schema across many boundaries:</strong> server, browser UI, AI tools, docs and validation.</td></tr>
+          <tr><td>RaisinDB</td><td><strong>A schema can describe the UX, not just storage.</strong> Data structures map to interface patterns.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="container">
+    <h2>What FrontierJS adds</h2>
+    <ol class="claims">
+      <li><strong>One gate for every way in.</strong> HTTP, WebSocket, background jobs and the AI agent all go through the same access check at the data layer. There is no bypass key and no second code path.</li>
+      <li><strong>An agent's permissions are the app's permissions.</strong> The MCP endpoint runs inside the API that is already serving and uses the same gate. It is not a separate generated layer.</li>
+      <li><strong>The schema reaches your product's UI, not an admin panel.</strong> A Resource's form, field options and validation come from the model.</li>
+      <li><strong>Realtime respects each recipient's access.</strong> A broadcast is checked against every subscriber's access level, not just sent to a channel that is trusted to be right.</li>
+      <li><strong>Behavior is declared, not just shape.</strong> State transitions, encryption, guarded fields and audit redaction are written in the schema next to the types.</li>
+      <li><strong>One design, end to end.</strong> Data, API, UI compiler, jobs, third-party calls, CLI and deploy are one framework with one vocabulary, not glue between libraries.</li>
+      <li><strong>No platform.</strong> Your app is a file tree and a SQLite file you own.</li>
+      <li><strong>The doctrine is checked.</strong> The vocabulary and the invariants are enforced by tooling and CI, not just written down.</li>
+    </ol>
+  </div>
+</section>
+
+<style>
+  .hero { padding: 4.5rem 0 1rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .quiet { color: var(--ink-mute); }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  .block { padding: 2rem 0; border-top: 1px solid var(--rule); }
+  .block h2 { font-size: 1.3rem; letter-spacing: -.01em; margin: 0 0 1rem; }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th { text-align: left; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); padding: .5rem .75rem; border-bottom: 1px solid var(--rule-strong); }
+  td { padding: .7rem .75rem; border-bottom: 1px solid var(--rule); vertical-align: top; line-height: 1.55; color: var(--ink-soft); }
+  td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  td strong { color: var(--ink); }
+
+  .claims, .honest { margin: 0; padding-left: 1.25rem; display: grid; gap: .7rem; max-width: 68ch; line-height: 1.6; color: var(--ink-soft); }
+  .claims strong, .honest strong { color: var(--ink); }
+  .see { margin-top: 1.5rem; font-size: .85rem; color: var(--ink-mute); }
+</style>

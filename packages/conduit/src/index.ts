@@ -67,6 +67,11 @@ export type {
   TargetKind,
   TargetAuth,
 
+  // Broker subscriptions
+  BrokerMessage,
+  BrokerHandler,
+  BrokerHealth,
+
   // Config
   ConduitOptions,
   ConduitObservers,

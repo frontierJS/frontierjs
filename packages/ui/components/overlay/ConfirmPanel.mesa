@@ -13,7 +13,7 @@
   //
   // The parent decides WHEN it exists (`{#if open}`); this file decides where it
   // sits, what it says and which of the two answers came back.
-  import { tone as toTone, cx, uid } from '../../utils.js'
+  import { tone as toTone, cx, uid, placeAgainst } from '../../utils.js'
 
   export let anchor       = null       // the Element it points at
   export let title        = 'Are you sure?'
@@ -46,16 +46,9 @@
 
   function position() {
     if (!anchor || !panelEl) return
-    const tr   = anchor.getBoundingClientRect()
-    const pr   = panelEl.getBoundingClientRect()
-    const winW = window.innerWidth
-    const winH = window.innerHeight
-
-    // Prefer below the anchor, flip above if clipped
-    y = tr.bottom + pr.height + 8 > winH ? tr.top - pr.height - 8 : tr.bottom + 8
-
-    // Prefer left-aligned, flip if clipped
-    x = tr.left + pr.width > winW - 8 ? tr.right - pr.width : tr.left
+    const at = placeAgainst(anchor.getBoundingClientRect(), panelEl.getBoundingClientRect(), { offset: 8 })
+    x = at.x
+    y = at.y
   }
 
   function onClickAway(e) {

@@ -1,23 +1,25 @@
 ---
 title: "The story — FrontierJS"
-description: "The path through FrontierJS: one model, followed from the schema to the API to the screen to release, and the three axioms that made each step possible."
+description: "Software isn't one thing. Thirteen chapters through everything it takes to run one — information, boundaries, integrations, automation, infrastructure, monitoring, proof, release, tooling and memory — and how FrontierJS gives each one a home."
 render: static
 ---
 
 <!--
-  The outline of the story a developer is walked through. One noun — Lead —
-  is followed through every chapter, and the philosophy is named only near the
-  end, once the reader has already seen it work.
+  The outline of the story a developer is walked through. Each chapter is one
+  job a running piece of software needs done, not one package; the schema is
+  chapter 01 of thirteen. Each "In FrontierJS" line names only what exists —
+  a job with no tool yet says so in the chapter rather than being left out.
 -->
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The story</p>
-    <h1>Follow one model <span class="quiet">all the way out.</span></h1>
+    <h1>Software isn't one thing.</h1>
     <p class="lede">
-      Eleven chapters, one noun. We start with a single <code>model Lead</code>
-      and keep asking the same question as it grows into an API, a screen, an
-      agent tool and a release: <em>where did this come from?</em> The answer
-      is always the same file.
+      The app is one part of running software. The rest is access, integrations,
+      background work, config and secrets, monitoring, testing, deploys, backups,
+      the tools you build with, and the record of why things are the way they
+      are. Thirteen chapters, one for each job. You do all of them when you work
+      alone, so FrontierJS gives each one a home and the same vocabulary.
     </p>
   </div>
 </section>
@@ -28,96 +30,131 @@ render: static
       <li>
         <span class="n">00</span>
         <div>
-          <h2>Why FrontierJS exists</h2>
-          <p>Most of a web app is the same fact written again: in the ORM schema, the validator, the TypeScript type, the access middleware and the API doc. Every copy is a place for two versions to disagree, and sooner or later they do.</p>
-          <p><strong>A model a person can hold.</strong> Each copy is also a separate picture the developer has to keep in their head, while guessing which one is authoritative. FrontierJS is built for the person reading the code: three realms, three nouns, small enough to predict how a feature works before reading its docs.</p>
-          <p><strong>One source of truth.</strong> The schema is the defining spec. The database, the API, the types, the forms and the events are all generated from it, not maintained alongside it.</p>
-          <p><strong>80/20 on purpose.</strong> One supported path covers the common case with nothing to wire up, and an escape hatch covers the rest. FrontierJS doesn't try to be configurable in every direction. It commits to one way of doing things.</p>
-          <p class="takeaway">Every duplicated truth eventually becomes a duplicated mental model. Protect the truth and you protect the mind trying to hold it.</p>
+          <h2>Why this is hard</h2>
+          <p>A working product is data, rules, interfaces, access, integrations, scheduled work, infrastructure and tooling. Most stacks hand you a separate tool for each, and each one comes with its own config, its own vocabulary and its own copy of the facts.</p>
+          <p>Every seam between those tools is somewhere the truth can drift: a validator missing a field, an API doc a release behind, a cron job nobody remembers writing. On a team, someone owns each seam. When you work alone, you own all of them.</p>
+          <p class="takeaway">Every duplicated truth eventually becomes a duplicated mental model.</p>
           <p class="see">See: <a href="/before-after/">Before &amp; after</a></p>
         </div>
       </li>
       <li>
         <span class="n">01</span>
         <div>
-          <h2>One file</h2>
-          <p><code>db/schema.lite</code> declares <code>model Lead</code>, and <code>db.lead</code> already works. Model names are PascalCase singular, and three parts of the framework rely on that.</p>
-          <p class="takeaway">The schema is where every fact starts.</p>
+          <h2>Start with information</h2>
+          <p>Before a system does anything, it has to know something. Models, fields, relationships and constraints are written once, in <code>db/schema.lite</code>. Declare <code>model Lead</code> and <code>db.lead</code> already works.</p>
+          <p class="home">In FrontierJS: Litestone — the <code>.lite</code> language, a SQLite client, migrations diffed from the schema, tenants, and Studio.</p>
+          <p class="takeaway">Data is the foundation, not ORM boilerplate.</p>
         </div>
       </li>
       <li>
         <span class="n">02</span>
         <div>
-          <h2>The rules live in the data</h2>
-          <p>Add validation, <code>@@gate</code>, <code>@encrypted</code> and <code>@@transitions</code> to the same model. The audit trail logs protected fields as <code>[redacted]</code> without being asked.</p>
-          <p class="takeaway">Access is declared in the schema, not written into hooks.</p>
-          <p class="predict">Predict it: who is allowed to delete a Lead?</p>
+          <h2>Make it useful</h2>
+          <p>Information becomes behavior: queries, writes, an API, forms and screens. Junction serves <code>lead</code> from the schema alone. <code>Lead.mesa</code> takes its form from the same declaration, and its list stays live over WebSocket. Add <code>web/</code>, <code>site/</code>, <code>widgets/</code>, <code>extension/</code>, <code>desktop/</code> or <code>cli/</code>, and every one of them works with the same Lead.</p>
+          <p class="home">In FrontierJS: Junction (API) · Sierra (routing and build) · Mesa (one component language, compiled for each surface).</p>
+          <p class="takeaway">One system, seen through different surfaces.</p>
+          <p class="predict">Predict it: why is this field a select?</p>
+          <p class="see">See: <a href="/flow/">Flow</a></p>
         </div>
       </li>
       <li>
         <span class="n">03</span>
         <div>
-          <h2>Service — the API</h2>
-          <p>Junction serves <code>lead</code> with no extra code. Then: the hook pipeline, filters (<code>ctx.query</code>) vs. directives (<code>ctx.directives</code>), the one place a thrown error becomes an HTTP status, and one custom method.</p>
-          <p class="takeaway">One owner for every translation.</p>
-          <p class="predict">Predict it: what does a guest get back from <code>GET /lead</code>?</p>
-          <p class="see">See: <a href="/flow/">Flow</a> · <a href="/seams/">Seams</a></p>
+          <h2>Put boundaries around it</h2>
+          <p>Information isn't useful if everyone can do everything. Identity, ownership, validation and policy are declared on the model. <code>@@gate</code> says who may read and write, <code>@encrypted</code> and <code>@guarded</code> protect fields, and <code>@@transitions</code> says which status changes are allowed. They're enforced where the data lives, so no route, job or agent can get around them. The audit trail logs protected fields as <code>[redacted]</code> without being asked.</p>
+          <p class="home">In FrontierJS: Litestone gates and policies · <code>@frontierjs/auth</code> for sign-in, sessions and API keys.</p>
+          <p class="takeaway">Access is declared in the schema, not written into hooks.</p>
+          <p class="predict">Predict it: who is allowed to delete a Lead?</p>
         </div>
       </li>
       <li>
         <span class="n">04</span>
         <div>
-          <h2>Resource — the screen</h2>
-          <p><code>Lead.mesa</code> gets its form from the schema, and its list updates live over WebSocket. <code>x-gate</code> hides a button, and the server enforces the rule either way.</p>
-          <p class="takeaway">The UI reads the schema rather than restating it.</p>
-          <p class="predict">Predict it: why is this field a select?</p>
+          <h2>Connect it outward</h2>
+          <p>Software rarely lives alone: mail goes out, payments come in, and other systems want to hear when something changes. Every third party the app talks to is declared in one place with its own timeouts and retries, and every outbound call goes through <code>app.conduit.send()</code>. The app's own events go out as webhooks, delivered at least once and retried on failure.</p>
+          <p class="home">In FrontierJS: Conduit · Junction's mail and webhook batteries · raw routes for a callback that must sit at a fixed URL.</p>
+          <p class="takeaway">Every third party has one address in your code.</p>
+          <p class="see">See: <a href="/seams/">Seams</a></p>
         </div>
       </li>
       <li>
         <span class="n">05</span>
         <div>
-          <h2>Mesa, the language</h2>
-          <p>Now the compiler: signals, scoped styles, islands. A surface is just a compiler backend: web, email, terminal, desktop.</p>
-          <p class="takeaway">One component language for every interface.</p>
+          <h2>Make it act</h2>
+          <p>This is where software stops only responding and starts doing work on its own. A write can enqueue a job in the same transaction, so the job runs only if the write committed. Caravan runs the queue and the cron schedule on SQLite. One notification reaches three places: an in-app record, a live event and an email. MCP lets an AI agent work in the app, with exactly the permissions the gate in chapter 03 already set.</p>
+          <p class="home">In FrontierJS: Caravan · the transactional outbox · notifications · mcp. Orion, for triggers, conditions and actions, is being ported.</p>
+          <p class="takeaway">The same rules apply to work nobody clicked.</p>
         </div>
       </li>
       <li>
         <span class="n">06</span>
         <div>
-          <h2>Surfaces</h2>
-          <p>The same app grows <code>api/</code>, <code>web/</code>, <code>site/</code>, <code>widgets/</code>, <code>extension/</code>, <code>desktop/</code> and <code>cli/</code>. Lead is the same Lead in each one.</p>
-          <p class="takeaway">Growth happens outward and leads back to the schema.</p>
+          <h2>Give it a place to live</h2>
+          <p>Development becomes a running system: config for each environment, secrets kept out of the repo, a port for every service, and databases where the schema says they are. <code>$.config</code> reads the app's config and <code>app.configFor(tenant)</code> reads one tenant's. Ports follow a scheme, so dev, test and prod never collide.</p>
+          <p class="home">In FrontierJS: <code>junction.config.js</code> · <code>fli env:*</code> · the port scheme · <code>fli auth:rotate-key</code>.</p>
+          <p class="takeaway">Where it runs is part of the design.</p>
         </div>
       </li>
       <li>
         <span class="n">07</span>
         <div>
-          <h2>The batteries</h2>
-          <p>Auth, jobs (Caravan), third parties (Conduit), notifications, and MCP. With MCP, an AI agent gets exactly the permissions the gate in chapter 02 already set.</p>
-          <p class="takeaway">The same model, reaching further.</p>
+          <h2>Keep watch</h2>
+          <p>Running software needs visibility. Every request carries a trace id. Each package registers its own health checks and metrics, and the devtools panel shows calls as they happen. Outpost runs on each server, and Basecamp is the operations app that watches the fleet. Basecamp is itself a FrontierJS app.</p>
+          <p class="home">In FrontierJS: Junction telemetry, health and devtools · Outpost · Basecamp · <code>fli deploy:logs</code>.</p>
+          <p class="takeaway">Know it's broken before a customer tells you.</p>
         </div>
       </li>
       <li>
         <span class="n">08</span>
         <div>
-          <h2>Release &amp; Suite</h2>
-          <p><code>fli</code>, the port scheme, <code>createTestEnv</code>, deploy, Outpost. Shipping and testing come from the schema too.</p>
-          <p class="takeaway">Deployment and testing are realms with their own nouns.</p>
+          <h2>Know what changed</h2>
+          <p>Change should be something you can reason about, not something to fear. <code>createTestEnv</code> gives a test a real database and a real API built from the schema. Migrations come from diffing the schema, not from files written by hand. <code>fli test:access</code> writes the whole access policy out as a snapshot, so a change to who can do what shows up in review as a diff. <code>fli proves</code> reads your change and names the checks it needs, and <code>fli done</code> tells you whether it's finished.</p>
+          <p class="home">In FrontierJS: <code>createTestEnv</code> · <code>@frontierjs/testing</code> · <code>fli test:*</code> · generated snapshots.</p>
+          <p class="takeaway">Testing is a realm with its own nouns, not a folder added later.</p>
         </div>
       </li>
-      <li class="reveal">
+      <li>
         <span class="n">09</span>
         <div>
-          <h2>The reveal: three axioms</h2>
-          <p><strong>One origin. One name. One owner.</strong> Go back through chapters 00–08 and point to where each axiom was already doing the work.</p>
-          <p class="takeaway">Predictability is the product.</p>
+          <h2>Put it into the world</h2>
+          <p>Software leaves the workspace and goes out into the world. <code>fli release:mint</code> works out the Release the tree would deploy, content-addressed, without writing anything. <code>fli deploy</code> ships it, the deploy journal records every attempt, and <code>fli deploy:rollback</code> puts the previous release back. <code>fli db:backup</code> takes a hot backup of every database the schema declares, and <code>fli db:import</code> brings a production copy down to your machine.</p>
+          <p class="home">Not yet: restoring a backup into production is still a manual step.</p>
+          <p class="takeaway">Shipping is repeatable, and so is undoing it.</p>
         </div>
       </li>
       <li>
         <span class="n">10</span>
         <div>
-          <h2>Graduation</h2>
-          <p>Now the full package map, which the reader can finally place. Then Basecamp, the large real app built on all of it, and <code>DECISIONS.md</code> for why things are the way they are.</p>
+          <h2>Build the builder</h2>
+          <p>Your own environment is part of the system. <code>fli</code> runs commands written in markdown, so your project's commands live beside the framework's. The editor extension understands <code>.lite</code> and <code>.mesa</code>. <code>fli check</code> turns your project's conventions into checks that fail. And an agent working on your code reads the same map you do.</p>
+          <p class="home">In FrontierJS: <code>fli</code> · <code>create-frontier</code> · <code>fli check</code> · the VS Code extension (unpublished).</p>
+          <p class="takeaway">Your tools follow the same rules as your app.</p>
+        </div>
+      </li>
+      <li class="reveal">
+        <span class="n">11</span>
+        <div>
+          <h2>One system, many views</h2>
+          <p>Step back and follow one line, <code>@@gate</code> on <code>model Lead</code>, through the chapters you just read:</p>
+          <table class="views">
+            <tbody>
+              <tr><th>Data</th><td>the query refuses rows the caller can't see</td></tr>
+              <tr><th>API</th><td>a denied call gets its status from the one place that maps errors</td></tr>
+              <tr><th>UI</th><td><code>x-gate</code> hides the button, and the server enforces the rule either way</td></tr>
+              <tr><th>Agent</th><td>the tool isn't listed for a caller who can't use it</td></tr>
+              <tr><th>Proof</th><td><code>fli test:access</code> puts the change in the diff</td></tr>
+            </tbody>
+          </table>
+          <p><strong>One origin. One name. One owner.</strong> Go back through chapters 00–10 and find where each of these was already doing the work.</p>
+          <p class="takeaway">Predictability is the product.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">12</span>
+        <div>
+          <h2>Leave a map</h2>
+          <p>Software needs memory, not just code. The reasons things are the way they are go in <code>DECISIONS.md</code>, what's broken goes in <code>ISSUES.md</code>, and what isn't built yet goes in <code>IDEAS/</code>. <code>fli</code> reads all three as one register: <code>fli next</code> says what to work on, <code>fli decide</code> records a ruling, and <code>fli ws:atlas</code> describes the workspace as it really is. Basecamp, the largest app built on FrontierJS, is the worked example.</p>
+          <p class="takeaway">The next person to read this might be you, six months from now.</p>
           <p class="see">See: <a href="/map/">Map</a> · <a href="/landscape/">Landscape</a> · <a href="/journey/">Journey</a></p>
         </div>
       </li>
@@ -129,7 +166,6 @@ render: static
   .hero { padding: 4.5rem 0 1.5rem; }
   .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
   h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
-  .quiet { color: var(--ink-mute); }
   .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
 
   .chapters { padding: 1rem 0 5rem; }
@@ -138,9 +174,15 @@ render: static
   .arc .n { font-size: .78rem; letter-spacing: .14em; color: var(--ink-mute); padding-top: .3rem; }
   .arc h2 { font-size: 1.15rem; letter-spacing: -.01em; margin: 0 0 .4rem; }
   .arc p { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
-  .arc p + p { margin-top: .45rem; }
+  .arc p + p, .arc table + p, .arc p + table { margin-top: .45rem; }
+  .home { font-size: .88rem; color: var(--ink-mute); }
   .takeaway { color: var(--ink); font-weight: 600; }
   .predict { font-size: .88rem; color: var(--color-primary); }
   .see { font-size: .82rem; color: var(--ink-mute); }
   .reveal h2 { color: var(--color-primary); }
+
+  .views { border-collapse: collapse; max-width: 64ch; width: 100%; font-size: .92rem; }
+  .views th { text-align: left; font-weight: 600; color: var(--ink); padding: .35rem 1rem .35rem 0; white-space: nowrap; vertical-align: top; }
+  .views td { color: var(--ink-soft); padding: .35rem 0; }
+  .views tr + tr > * { border-top: 1px solid var(--rule); }
 </style>

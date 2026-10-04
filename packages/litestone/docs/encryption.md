@@ -114,8 +114,21 @@ db.asSystem().users.findUnique({ where, select: { loginToken: true } })
 
 `@hashed` is not an option on `@encrypted` because an option inherits its parent's
 promise, and `@encrypted` promises the value comes back. It does not compose with
-`@encrypted`, `@secret`, `@guarded` or `@allow` — each of those describes a readable
-value — and it requires a `String` column, since a digest is text.
+`@encrypted`, `@guarded` or `@allow` — each of those describes a readable value — and
+it requires a `String` column, since a digest is text.
+
+**`@secret @hashed` is the credential a server verifies**, a device token for one:
+
+```lite
+token String @secret @hashed
+```
+
+The digest replaces the `@encrypted` half, so the column is matchable in a `where`
+and never readable, `asSystem()` included. `@guarded` (only the system issues one)
+and the audit trail stay, and `$rotateKey` skips it unless it is orphaned by name,
+the way it skips `@secret(rotate: false)` — a digest cannot be re-keyed.
+`@secret(deterministic: true)` beside `@hashed` is refused: there is no ciphertext
+to derive an IV for.
 
 ## Which equality survives
 

@@ -558,8 +558,8 @@ const ATTR_DOCS: Record<string, string> = {
   '@accept':
     'On `File` / `File[]` fields: validates the MIME type before upload. Throws `ValidationError` if the type doesn\'t match.\n\nSupports wildcards and comma-separated lists:\n```\navatar File? @accept("image/*")\ndocs   File[] @accept("application/pdf,application/msword")\n```',
 
-  '@markdown':
-    'Semantic annotation — indicates this `String` field contains Markdown. No runtime validation; used by Studio and tooling to enable rich rendering.',
+  '@syntax':
+    'On a `String` field: the syntax the text is written in, named by its file extension. No runtime validation — a generated form offers a code editor in that language (`md` gets a plain textarea) and a cell shows it in monospace.\n\n```\nquery String @syntax(sql)\nbody  String @syntax(md)\n```',
 
   '@hardDelete':
     'On a relation field in a `@@softDelete(cascade)` model: hard-deletes those children (removes the rows) instead of stamping `deletedAt`.\n\n```\nmodel Account {\n  sessions Session[] @hardDelete  // ← rows gone permanently\n  users    User[]                  // ← soft-deleted\n  deletedAt DateTime?\n  @@softDelete(cascade)\n}\n```',

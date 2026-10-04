@@ -436,8 +436,8 @@ export function createDeploymentsService(app: BasecampApp) {
 
     async finishRun() {
       const deploy = await deployInScope(String($.id))
-      const { status, error, startedAt } = ($.data ?? {}) as {
-        status: 'success' | 'failed'; error?: string; startedAt?: string
+      const { status, error, startedAt, stepId } = ($.data ?? {}) as {
+        status: 'success' | 'failed'; error?: string; startedAt?: string; stepId?: string
       }
 
       // A release cancelled while its build was in flight stays cancelled: no
@@ -462,6 +462,14 @@ export function createDeploymentsService(app: BasecampApp) {
           durationMs: finishedAt - startedMs,
         },
       })
+
+      // The reason goes on the step the release stopped at — the release row
+      // has no column for it, and the step's output is what the screen shows.
+      if (status === 'failed' && stepId && error)
+        await sys().deploymentStep.updateMany({
+          where: { id: stepId, deploymentId: deploy.id },
+          data:  { status: 'failed', output: error, finishedAt: new Date(finishedAt).toISOString() },
+        })
 
       // Any step still pending or running died with the release.
       if (status === 'failed')

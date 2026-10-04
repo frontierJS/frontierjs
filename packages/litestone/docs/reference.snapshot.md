@@ -33,7 +33,7 @@ and shows you the diff first.
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
-- *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@markdown`](#markdown-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
+- *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
 - *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
@@ -652,7 +652,7 @@ model Example {
 
 #### `@hashed` <a id="hashed-field"></a>
 
-One-way hashed on write. There is no read back — the comparison happens at the boundary.
+One-way hashed on write. There is no read back — the comparison happens at the boundary. Beside @secret it is the credential a server verifies: the digest replaces the @encrypted half, and the lock and the audit trail stay.
 
 ```lite
 model Example {
@@ -667,7 +667,7 @@ model Example {
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
-Expands at parse into @encrypted @guarded @log(&lt;logger db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both.
+Expands at parse into @encrypted @guarded @log(&lt;logger db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
 
 ```lite
 model Example {
@@ -946,18 +946,18 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 
-#### `@markdown` <a id="markdown-field"></a>
+#### `@syntax` `(lang)` <a id="syntax-field"></a>
 
-Semantic annotation only — no validation. Says the text is Markdown, so a generated form can offer the right editor.
+Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.
 
 ```lite
 model Example {
   id Int @id
-  body String @markdown
+  query String @syntax(sql)
 }
 ```
 
-- **Also typed** — `rich text` · `wysiwyg`
+- **Also typed** — `markdown` · `code` · `language` · `rich text`
 - **Deeper** — [schema.md](schema.md)
 
 #### `@accept` `("image/*")` <a id="accept-field"></a>

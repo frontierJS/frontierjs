@@ -25,7 +25,7 @@
       <a href="/journey/">Journey</a>
       <a href="/tutor/">Tutorial</a>
       <!-- A <details>, so the menu opens and closes with no script on the page. -->
-      <details class="popover-anchor showmenu">
+      <details class="popover-anchor navmenu">
         <summary>Showroom</summary>
         <div class="popover align-end">
           <div class="navlist-label">The tour</div>
@@ -50,6 +50,22 @@
           <ul class="navlist">
             <li><a class="navlink" href="/index2/">Round one</a></li>
             <li><a class="navlink" href="/index3/">Round two</a></li>
+          </ul>
+        </div>
+      </details>
+      <!-- Pages not yet placed in a section above. A page moves out of here
+           when it finds its home. -->
+      <details class="popover-anchor navmenu">
+        <summary>More</summary>
+        <div class="popover align-end">
+          <div class="navlist-label">Unsorted</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/the-story/">The story</a></li>
+            <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
+          </ul>
+          <div class="navlist-label">Tools</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/splash-tune/">Splash tuner</a></li>
           </ul>
         </div>
       </details>
@@ -120,16 +136,27 @@
 
   /* The summary is dressed as a nav link, and the menu's own links are
      .navlink, so the .navset a rule must not reach into the popover. */
-  .showmenu summary {
+  .navmenu summary {
     padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft);
     font-size: .875rem; list-style: none; cursor: pointer;
   }
-  .showmenu summary::-webkit-details-marker { display: none; }
-  .showmenu summary::after { content: ' ▾'; font-size: .7em; }
-  .showmenu summary:hover, .showmenu[open] summary { background: var(--surface-sunken); color: var(--ink); }
-  .showmenu .popover { min-width: 13rem; padding: var(--space-sm); }
-  .showmenu .popover a { padding: .3rem .6rem; font-size: .875rem; }
-  .showmenu .navlist-label:not(:first-child) { margin-top: var(--space-sm); }
+  .navmenu summary::-webkit-details-marker { display: none; }
+  .navmenu summary::after { content: ' ▾'; font-size: .7em; }
+  .navmenu summary:hover, .navmenu[open] summary { background: var(--surface-sunken); color: var(--ink); }
+  .navmenu .popover { min-width: 13rem; padding: var(--space-sm); }
+  .navmenu .popover a { padding: .3rem .6rem; font-size: .875rem; }
+  .navmenu .navlist-label:not(:first-child) { margin-top: var(--space-sm); }
+  /* A closed <details> hides its body, so hover has to reopen the body box
+     itself; the summary click stays the way in for touch and keyboard. The
+     bridge spans the popover's offset — without it the pointer leaves
+     :hover crossing the gap and the menu shuts under it. */
+  @media (hover: hover) {
+    .navmenu:hover::details-content { display: block; content-visibility: visible; }
+    .navmenu .popover::before {
+      content: ''; position: absolute; inset-inline: 0;
+      bottom: 100%; height: calc(var(--space-2xs) + 2px);
+    }
+  }
 
   /* A page's own section nav. Five pages carry one, so the rule is here rather
      than repeated — but it is :global() because the markup is in the PAGE, and

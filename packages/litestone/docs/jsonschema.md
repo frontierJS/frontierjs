@@ -155,7 +155,8 @@ strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 | `writeOnly` | field | `@transient` — the mirror, and the reason the pair is used rather than an `x-` key |
 | `items` | field | array types (`String[]` → `{type:'string'}`, `Int[]` → integer) |
 | `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time`. **`@time` deliberately emits no format** — it carries a `pattern` instead; see below |
-| `contentMediaType` | field | `@markdown` → `text/markdown` |
+| `contentMediaType` | field | `@syntax(lang)` → the language's registered text type, from `@frontierjs/toolbelt/mime` — `md` → `text/markdown`, `html` → `text/html`. **Absent for a language with none** (`sql`, `lite`); `x-syntax` is the key that is always there |
+| `x-syntax` | field | `@syntax(lang)` → the language name as written, lower-cased. Picks the control and the display and enforces nothing |
 | `contentEncoding` | field | `Bytes` → `base64` |
 | `pattern` | field | `@regex`, `@startsWith`/`@endsWith`/`@contains` (anchored, regex-escaped), and `@time` |
 | `x-time` | field | `@time` → `{ seconds }`. Picks the control and enforces nothing — the refusal is the `pattern` |
@@ -408,7 +409,7 @@ model Article {
   title     String   @label("Headline") @length(3, 120, "A headline is 3 to 120 characters")
   slug      String   @unique
   status    Status   @default(draft)
-  body      String   @markdown
+  body      String   @syntax(md)
   score     Float    @gt(0) @lte(100)
   tags      String[] @minItems(1) @maxItems(5)
   thumbnail File?    @accept("image/png,image/jpeg")

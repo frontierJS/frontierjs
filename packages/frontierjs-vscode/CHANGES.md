@@ -1,5 +1,9 @@
 # Changes — frontierjs-vscode
 
+## 2026-10-03 — `@syntax` replaces `@markdown` in the grammar, hover and snippets
+
+Follows litestone's rename. The snippet offers the common languages as a choice.
+
 ## 2026-09-29 — a brace in a string no longer closes a model in the grammar
 
 The `model` and `function` rules in `litestone.tmLanguage.json` end at the first

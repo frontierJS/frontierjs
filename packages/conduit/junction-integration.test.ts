@@ -507,3 +507,21 @@ describe('an outbound call carries the request that caused it', () => {
     }
   })
 })
+
+// ─── Broker health ───────────────────────────────────────────
+
+describe('broker subscription health', () => {
+  it('reaches the app health check, which reads down while the broker is unreachable', async () => {
+    const app = await bootApp()
+    await conduitOf(app).register({
+      id: 'broker:orders', kind: 'broker', protocol: 'websocket',
+      address: 'ws://127.0.0.1:1/', auth: { type: 'none' },
+      registered_at: 1_000, last_seen_at: null,
+    })
+    await conduitOf(app).subscribe('broker:orders', () => {})
+
+    const check = (app as unknown as { _healthChecks: Map<string, () => boolean> })._healthChecks.get('conduit:broker:orders')
+    expect(check).toBeDefined()
+    expect(check!()).toBe(false)
+  })
+})

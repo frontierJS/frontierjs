@@ -546,7 +546,7 @@ const FIELD = [
     'field',
     'protect',
     '',
-    'One-way hashed on write. There is no read back — the comparison happens at the boundary.',
+    'One-way hashed on write. There is no read back — the comparison happens at the boundary. Beside @secret it is the credential a server verifies: the digest replaces the @encrypted half, and the lock and the audit trail stay.',
     'passwordHash String @hashed',
     { seeAlso: ['encrypted', 'secret'] }
   ),
@@ -555,7 +555,7 @@ const FIELD = [
     'field',
     'protect',
     '[(rotate: …)]',
-    'Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both.',
+    'Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.',
     'apiKey String @secret',
     { seeAlso: ['encrypted', 'guarded', 'log'] }
   ),
@@ -782,12 +782,12 @@ const FIELD = [
     'phone String @phone'
   ),
   t(
-    'markdown',
+    'syntax',
     'field',
     'validate',
-    '',
-    'Semantic annotation only — no validation. Says the text is Markdown, so a generated form can offer the right editor.',
-    'body String @markdown'
+    '(lang)',
+    'Says the text is written in a syntax, named by its file extension — md, sql, js, html, css, json, lite. No validation: a generated form offers the editor for it and a cell shows it highlighted.',
+    'query String @syntax(sql)'
   ),
   t(
     'accept',
@@ -1455,7 +1455,7 @@ export const DOCS = {
   'field:email': 'schema.md',
   'field:url': 'schema.md',
   'field:phone': 'schema.md',
-  'field:markdown': 'schema.md',
+  'field:syntax': 'schema.md',
   'field:accept': 'file-storage.md',
   'field:date': 'schema.md',
   'field:datetime': 'schema.md',
@@ -1638,7 +1638,7 @@ export const TIERS = {
     'field:upper',
     'field:slug',
     'field:phone',
-    'field:markdown',
+    'field:syntax',
     'field:accept',
     'field:startsWith',
     'field:check',
@@ -1723,7 +1723,7 @@ export const SYNONYMS = {
   'field:slug':        ['permalink', 'handle'],
   'field:values':      ['dropdown', 'options', 'picklist'],
   'field:length':      ['maxlength'],
-  'field:markdown':    ['rich text', 'wysiwyg'],
+  'field:syntax':      ['markdown', 'code', 'language', 'rich text'],
   'field:accept':      ['mime', 'file type', 'upload'],
   'field:transient':   ['input only', 'write only', 'not stored'],
   'field:system':      ['server-assigned'],

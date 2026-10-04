@@ -8,6 +8,7 @@ import { HttpTransport }           from './transports/http.ts'
 import { WebSocketTransport }      from './transports/websocket.ts'
 import { UnixTransport }           from './transports/unix.ts'
 import { NotImplementedTransport } from './transports/not_implemented.ts'
+import { BrokerTransport }         from './transports/broker.ts'
 import { BaseTransport }           from './transports/base.ts'
 import type { ConduitStore, CredentialResolver } from './types.ts'
 import { observedRequest }         from './address.ts'
@@ -64,7 +65,7 @@ export class Router {
 
   evict(targetId: string) {
     const transport = this.pool.get(targetId)
-    if (transport instanceof WebSocketTransport) transport.destroy()
+    if (transport instanceof WebSocketTransport || transport instanceof BrokerTransport) transport.destroy()
     this.pool.delete(targetId)
   }
 
@@ -101,6 +102,10 @@ export class Router {
         }
       },
     }
+
+    // A broker is a kind, not a protocol: how it is reached is still the
+    // protocol slot, and what it is — subscribed to, never sent to — is this.
+    if (descriptor.kind === 'broker') return new BrokerTransport(descriptor, this.credentials)
 
     switch (descriptor.protocol) {
       case 'http':

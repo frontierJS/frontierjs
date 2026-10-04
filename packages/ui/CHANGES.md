@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-10-03 — `top-*` placement opens above, from one positioner (`FJS-1685`)
+
+`Popover`, `DropdownMenu` and `ConfirmPanel` each carried a copy of the same
+placement math, and the two that take `placement` read only its `-start`/`-end`
+half, so `top-start` opened below. `placeAgainst` in `utils.js` is the one copy:
+the side is a preference that flips only when the panel does not fit there and
+does fit opposite, and the 8px viewport margin never pushes a panel past its own
+trigger's edge. Proved in `popover.spec` (top-start opens above when it fits)
+and `dropdown.spec` (falls back below when it does not). The DropdownMenu usage
+comment teaches `tone="danger"` rather than the `variant` alias (`FJS-1140`).
+A review against Flux UI's dropdown filed the gaps as `FJS-1686`–`FJS-1690`.
+
+## 2026-10-03 — the `code` control and cell (`FJS-1657`)
+
+`FormField` binds `code` to `CodeInput` with the column's `language`, so a generated form edits a `@syntax(sql)` column in a highlighted box. `Cell` renders `display: 'code'` as `<code>`, escaped and unhighlighted. The `form-generate` drive asserts `@syntax(md)` stays a plain textarea and `@syntax(sql)` is a CodeInput painted in `sql`.
+
 ## 2026-10-03 — `Chart`: one series over categories, as columns or a line, in pure SVG (DL V3)
 
 `display/Chart.mesa` takes `rows`, `x`, `y`, `type` (`bar` | `line`), `label`, `format`, `formatTick` and `tone`. Columns are at most 24 units wide with a 4px round on the data end and square at a zero baseline, so a negative value hangs below it. A line is 2px over a 10% wash. Ticks are clean steps on a hairline grid, and only the largest and the last value are labeled. Every row has a band-wide, focusable hit target with a `<title>`, and pointer or keyboard focus shows a readout with the value first. It draws into a fixed viewBox and measures nothing, so the same component renders on the server for a PDF or an email PNG (R5, R6). Color is the tone through `currentColor`, and text wears the ink tokens. It takes one series and one axis: a second measure is a second chart, and a breakdown by category waits for a validated categorical palette. Found wanting by the transit stressor's revenue report, its first caller. Proved by `test/render.mjs` (two server renders), `test/attributes.mjs`, and `test/browser/specs/display.spec.mjs` (bars against the zero line, the selective labels, a pointer and a Tab readout, a redraw on new rows).

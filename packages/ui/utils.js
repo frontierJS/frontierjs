@@ -234,6 +234,40 @@ export function cx(...parts) {
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Where a portaled `position: fixed` panel sits against its trigger.
+ *
+ * `placement` is `'bottom-start' | 'bottom-end' | 'top-start' | 'top-end'`:
+ * the side is a PREFERENCE that flips only when the panel does not fit there
+ * and does fit on the other side, and the end is the edge the panel lines up
+ * with, kept 8px inside the viewport. Three overlays each carried a copy
+ * that read only the end, so `top-*` opened below like `bottom-*` did.
+ *
+ *   const { x, y } = placeAgainst(triggerEl.getBoundingClientRect(),
+ *                                 panelEl.getBoundingClientRect(),
+ *                                 { placement, offset })
+ */
+export function placeAgainst(tr, pr, { placement = 'bottom-start', offset = 4 } = {}) {
+  const winW  = window.innerWidth
+  const winH  = window.innerHeight
+  const below = tr.bottom + offset
+  const above = tr.top - pr.height - offset
+  const fitsBelow = below + pr.height <= winH
+  const fitsAbove = above >= 0
+
+  const y = placement.startsWith('top')
+    ? (fitsAbove || !fitsBelow ? above : below)
+    : (fitsBelow || !fitsAbove ? below : above)
+
+  // The 8px margin never pushes the panel past its own trigger's edge: a
+  // trigger flush with the viewport keeps a panel flush with it.
+  const start = placement.endsWith('end') ? tr.right - pr.width : tr.left
+  const floor = Math.max(0, Math.min(8, tr.left))
+  const x = Math.max(floor, Math.min(start, winW - pr.width - 8))
+
+  return { x, y }
+}
+
 /*
  * ── A list that was cut ───────────────────────────────────────────────
  */

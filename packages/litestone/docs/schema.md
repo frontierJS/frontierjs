@@ -472,7 +472,7 @@ closed twice and left open sixteen times in the same codebase.
 
 ### Annotations
 ```
-@markdown                        semantic — field contains Markdown (no validation)
+@syntax(sql)                     semantic — the text is in this syntax: md, sql, js, html… (no validation)
 @hardDelete                      on relation field: hard-delete children in @@softDelete(cascade)
 @log(dbName)                     field-level audit log to a logger database
 ```

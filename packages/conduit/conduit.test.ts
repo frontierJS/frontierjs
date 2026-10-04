@@ -4798,3 +4798,150 @@ describe('a connection failure and the URL it carries', () => {
     expect(JSON.stringify(r)).toContain('admin')
   })
 })
+
+// ─── Broker target (FJS-D235) ────────────────────────────────
+
+function brokerTarget(address: string, overrides: Partial<TargetDescriptor> = {}): TargetDescriptor {
+  return {
+    id:            'broker:orders',
+    kind:          'broker',
+    protocol:      'websocket',
+    address,
+    auth:          { type: 'none' },
+    registered_at: 1_000,
+    last_seen_at:  null,
+    ...overrides,
+  }
+}
+
+// A broker that pushes the frames it is given and records what comes back.
+function fakeBroker() {
+  const acks: string[] = []
+  const sockets = new Set<{ send(s: string): void }>()
+  const server = Bun.serve({
+    port: 0,
+    fetch(req, srv) { return srv.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+    websocket: {
+      open(ws)    { sockets.add(ws) },
+      close(ws)   { sockets.delete(ws) },
+      message(_ws, raw) {
+        const f = JSON.parse(String(raw))
+        if (f.type === 'ack') acks.push(f.id)
+      },
+    },
+  })
+  return {
+    url:  `ws://localhost:${server.port}/`,
+    acks,
+    push: (id: string, body: unknown) => { for (const s of sockets) s.send(JSON.stringify({ id, type: 'message', body })) },
+    stop: () => server.stop(true),
+  }
+}
+
+const until = async (cond: () => boolean, ms = 2000) => {
+  const end = Date.now() + ms
+  while (!cond() && Date.now() < end) await new Promise(r => setTimeout(r, 10))
+  return cond()
+}
+
+describe('broker target', () => {
+  it('is registered as a kind, on the websocket wire only', async () => {
+    const c = createConduit()
+    await c.register(brokerTarget('ws://localhost:1/'))
+    expect(c.stats().targets.byKind.broker).toBe(1)
+    await expect(c.register(brokerTarget('http://localhost:1/', { protocol: 'http' }))).rejects.toThrow(/only a 'websocket' broker/)
+  })
+
+  it('is subscribed to, never sent to', async () => {
+    const c = createConduit()
+    await c.register(brokerTarget('ws://localhost:1/'))
+    const r = await c.send({ target: 'broker:orders', method: 'POST', path: '/' })
+    expect(r.error!.kind).toBe('invalid_request')
+    await c.destroy()
+  })
+
+  it('refuses to subscribe to a target that is not a broker', async () => {
+    const c = createConduit()
+    await c.register(outpostTarget({ id: 'outpost:x', protocol: 'websocket' }))
+    await expect(c.subscribe('outpost:x', () => {})).rejects.toThrow(/not a registered broker/)
+    await expect(c.subscribe('nope', () => {})).rejects.toThrow(/not a registered broker/)
+    await c.destroy()
+  })
+
+  it('hands over under the message id, and acks only after the handler resolves', async () => {
+    const broker = fakeBroker()
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    const seen: { id: string; body: unknown }[] = []
+    await c.subscribe('broker:orders', async (m) => { seen.push(m); await gate })
+
+    broker.push('m-1', { sku: 'a' })
+    expect(await until(() => seen.length === 1)).toBe(true)
+    await new Promise(r => setTimeout(r, 50))
+    expect(broker.acks).toEqual([])          // handler still running: no ack yet
+    release()
+    expect(await until(() => broker.acks.length === 1)).toBe(true)
+    expect(seen[0]).toEqual({ id: 'm-1', body: { sku: 'a' } })
+    expect(broker.acks).toEqual(['m-1'])
+
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('leaves a message unacknowledged when the handler throws', async () => {
+    const broker = fakeBroker()
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url))
+    const calls: string[] = []
+    const errors = console.error
+    console.error = () => {}
+    try {
+      await c.subscribe('broker:orders', (m) => { calls.push(m.id); if (m.id === 'bad') throw new Error('boom') })
+      broker.push('bad', 1)
+      broker.push('good', 2)
+      expect(await until(() => broker.acks.length === 1)).toBe(true)
+    } finally {
+      console.error = errors
+    }
+    expect(calls).toEqual(['bad', 'good'])
+    expect(broker.acks).toEqual(['good'])
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('reports liveness: connected, when it last received, and down once the broker is gone', async () => {
+    const broker = fakeBroker()
+    const checks = new Map<string, () => boolean>()
+    const c = createConduit({ registerHealth: (n, f) => checks.set(n, f) })
+    await c.register(brokerTarget(broker.url))
+    await c.subscribe('broker:orders', () => {})
+
+    expect(checks.get('conduit:broker:orders')!()).toBe(true)
+    expect(c.stats().subscriptions['broker:orders']).toMatchObject({ connected: true, last_received_at: null, received: 0 })
+
+    broker.push('m-1', null)
+    expect(await until(() => c.stats().subscriptions['broker:orders']!.received === 1)).toBe(true)
+    expect(c.stats().subscriptions['broker:orders']!.last_received_at).toBeGreaterThan(0)
+
+    broker.stop()
+    expect(await until(() => checks.get('conduit:broker:orders')!() === false)).toBe(true)
+    expect(c.stats().subscriptions['broker:orders']!.connected).toBe(false)
+
+    await c.deregister('broker:orders')
+    expect(c.stats().subscriptions).toEqual({})
+    expect(checks.get('conduit:broker:orders')!()).toBe(true)   // nothing owed once it is gone
+    await c.destroy()
+  })
+
+  it('reports down for a broker that never answered, rather than nothing', async () => {
+    const checks = new Map<string, () => boolean>()
+    const c = createConduit({ registerHealth: (n, f) => checks.set(n, f) })
+    await c.register(brokerTarget('ws://127.0.0.1:1/'))
+    await c.subscribe('broker:orders', () => {})
+    expect(checks.get('conduit:broker:orders')!()).toBe(false)
+    await c.destroy()
+  })
+})

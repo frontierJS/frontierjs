@@ -264,9 +264,9 @@ not "is it truthy".
 ```
 
 Each column gets the control its type implies: an enum is a select over its
-members, a boolean is a checkbox, `@markdown` is a textarea, and a foreign key
-is a **picker** whose rows come from the relation — no service name written
-anywhere. Children win: passing any control means you are writing the form, and
+members, a boolean is a checkbox, `@syntax(md)` is a textarea, any other
+`@syntax` is a `CodeInput` in that language, and a foreign key is a **picker**
+whose rows come from the relation — no service name written anywhere. Children win: passing any control means you are writing the form, and
 `auto` turns generation back on with the generated fields first.
 
 The field list is the last thing a form restates about a model, and a list typed
