@@ -20,7 +20,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import net                      from 'node:net'
-import { createSmtpMailer }     from '../src/mail/index.ts'
+import { createMessage, createResendMailer, createSmtpMailer } from '../src/mail/index.ts'
 import { SmtpError, assertHeaderName, envelopeRecipients } from '../src/mail/smtp.ts'
 
 /** A capturing SMTP server on an ephemeral port, read back so nothing collides. */
@@ -124,6 +124,75 @@ describe('attachments', () => {
     const w = await wire({ to: 'buyer@test', subject: 's', text: 't' })
     expect(w).not.toContain('multipart/mixed')
     expect(w).toContain('Content-Type: text/plain; charset=UTF-8')
+  })
+})
+
+describe('an inline image (FJS-1666)', () => {
+
+  // A report's chart reaches a mail client only as a PNG the HTML names by
+  // cid:. Sent as an attachment, as every attachment was, the cid resolved to
+  // nothing: a broken image, and a stray chart.png beside the mail.
+  const CHART = { filename: 'chart.png', content: new Uint8Array([137, 80, 78, 71]), type: 'image/png', cid: 'chart' }
+  const INLINE = { to: 'buyer@test', subject: 'Revenue', html: '<img src="cid:chart">', text: 'Revenue', attachments: [CHART] }
+
+  /** The part headers that follow a boundary line naming `cid`. */
+  const partOf = (w: string, header: string) => {
+    const lines = w.split('\n'); const at = lines.indexOf(header)
+    return at < 0 ? [] : lines.slice(Math.max(0, at - 3), at + 2)
+  }
+
+  it('is multipart/related around the body, named by Content-ID and disposed inline', async () => {
+    const w = await wire(INLINE)
+    expect(w).toMatch(/Content-Type: multipart\/related; boundary="[^"]+"; type="multipart\/alternative"/)
+    expect(w).not.toContain('multipart/mixed')
+    const part = partOf(w, 'Content-ID: <chart>')
+    expect(part).toContain('Content-Type: image/png; name="chart.png"')
+    expect(part).toContain('Content-Disposition: inline; filename="chart.png"')
+    expect(w).not.toContain('Content-Disposition: attachment')
+    // The body it belongs to is inside the related part, both alternatives.
+    expect(w).toContain('Content-Type: multipart/alternative; boundary="')
+    expect(w).toContain('cid:chart')
+  })
+
+  it('beside a file, the file is mixed and the image stays related to the body', async () => {
+    const w = await wire({ ...INLINE, attachments: [CHART, { filename: 'revenue.pdf', content: 'pdf', type: 'application/pdf' }] })
+    const mixed   = w.indexOf('Content-Type: multipart/mixed')
+    const related = w.indexOf('Content-Type: multipart/related')
+    expect(mixed).toBeGreaterThan(-1)
+    expect(related).toBeGreaterThan(mixed)
+    expect(w).toContain('Content-Disposition: attachment; filename="revenue.pdf"')
+    expect(w).toContain('Content-Disposition: inline; filename="chart.png"')
+    // The PDF is the mixed part's, after the related part closes.
+    expect(w.indexOf('Content-Disposition: attachment; filename="revenue.pdf"')).toBeGreaterThan(w.indexOf('Content-ID: <chart>'))
+  })
+
+  it('an html-only body is related to text/html', async () => {
+    const w = await wire({ to: 'buyer@test', subject: 's', html: '<img src="cid:chart">', attachments: [CHART] })
+    expect(w).toMatch(/multipart\/related; boundary="[^"]+"; type="text\/html"/)
+  })
+
+  it('is refused with no html to draw it, and with a cid that would break the header or the URL', async () => {
+    const s = await sink()
+    try {
+      await expect(mailer(s.port).send({ to: 'a@test', subject: 's', text: 't', attachments: [CHART] } as never)).rejects.toThrow(/needs an html body/)
+      for (const cid of ['a>b', 'a b', 'a\r\nX-Evil: 1', ''])
+        await expect(mailer(s.port).send({ ...INLINE, attachments: [{ ...CHART, cid }] } as never)).rejects.toThrow(/content id/)
+    } finally { s.close() }
+  })
+
+  it('the builder adds one, and refuses a bad cid where it is written', () => {
+    const msg = createMessage('s', '<img src="cid:chart">').to('a@test').inline('chart', 'chart.png', 'x', 'image/png').build()
+    expect(msg.attachments).toEqual([{ filename: 'chart.png', content: 'x', type: 'image/png', cid: 'chart' }])
+    expect(() => createMessage('s', 'h').inline('a b', 'x.png', 'x')).toThrow(/content id/)
+  })
+
+  it('reaches Resend as content_id, beside its type', async () => {
+    const real = globalThis.fetch
+    let body: any
+    globalThis.fetch = (async (_url: string, init: RequestInit) => { body = JSON.parse(String(init.body)); return Response.json({ id: 'r1' }) }) as never
+    try { await createResendMailer({ apiKey: 'k', from: 'shop@test' }).send(INLINE as never) }
+    finally { globalThis.fetch = real }
+    expect(body.attachments).toEqual([{ filename: 'chart.png', content: Buffer.from(CHART.content).toString('base64'), content_type: 'image/png', content_id: 'chart' }])
   })
 })
 

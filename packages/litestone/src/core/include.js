@@ -12,6 +12,7 @@ import { applyComputed } from './computed.js'
 import { wideDb, mappedDb, plainDb } from './databases.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { emitQuery, queryTapped } from './hooks.js'
+import { gatedFromFields } from './from-gate.js'
 
 // ─── @from on a path that builds its own SQL ─────────────────────────────────
 //
@@ -59,8 +60,17 @@ export function fromSelectExpr(fromFields, aliased = false) {
 // a cycle here is an infinite fetch rather than a wrong answer.
 export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
   if (!rows?.length || !fromFields || depth > 3) return rows
+  const hidden = gatedFromFields(fromFields, ctx)
   for (const [name, def] of Object.entries(fromFields)) {
+    if (def.aggRef && !hidden?.has(name)) recountFromAggregate(readDb, rows, name, def.aggRef, ctx)
     if (!def.rowRef) continue
+    // Below the target's read gate: no pick, no fetch. The repick below keys on
+    // the parent's correlation column, not on the id in the row, so a value
+    // already nulled by the deserializer would be fetched again here.
+    if (hidden?.has(name)) {
+      for (const r of rows) if (name in r) r[name] = null
+      continue
+    }
     const { model: target, pk, fkCols, refCols, orderField, dir, extra } = def.rowRef
     const tModel = ctx.schema?.models.find(m => m.name === target)
     const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target
@@ -69,6 +79,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       ? buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       : null
     const fromCols = tFrom ? fromSelectExpr(tFrom) : null
+    const tHidden  = gatedFromFields(tFrom, ctx)
     const T        = `"${tTable}"`
 
     // Repick under the policy, or fetch the id SQL already chose. `refCols` is
@@ -129,7 +140,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
         if (repick) delete r.__fromrn
         return deserializeFromRow(
           coerceBooleans(deserializeRow(r, ctx.jsonMap?.[target] ?? new Set()), ctx.boolMap?.[target] ?? new Set()),
-          tFrom)
+          tFrom, tHidden)
       })
     // A referenced row may reference one of its own.
     resolveFromRowRefs(readDb, got, tFrom, ctx, depth + 1)
@@ -151,13 +162,61 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
   return rows
 }
 
-function deserializeFromRow(row, fromFields) {
+// ─── @from(count/sum/max/min/exists) — under the caller's policy ─────────────
+// The same constraint as the pick above: the subquery counted every row that
+// exists, so a caller reading one of two kids read `kidCount: 2` (FJS-1647).
+// With a read policy on the target the value is recomputed here, one GROUP BY
+// over the children of the parents in hand. A row missing its correlation
+// column keeps the startup value, which is why parseSelectArg injects it.
+function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
+  if (!ctx.hasPolicies) return
+  const { model: target, fkCols, refCols, op, opValue, extra } = aggRef
+  const policy = buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+  if (!policy || !fkCols?.length) return
+  const tModel = ctx.schema?.models.find(m => m.name === target)
+  const T      = `"${tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target}"`
+
+  const keyOf   = (r, cols) => JSON.stringify(cols.map(c => r[c] ?? null))
+  const inHand  = rows.filter(r => name in r && refCols.every(c => r[c] !== undefined))
+  const refs    = [...new Map(inHand
+    .filter(r => refCols.every(c => r[c] != null))
+    .map(r => [keyOf(r, refCols), refCols.map(c => r[c])])).values()]
+  const empty   = op === 'count' || op === 'sum' ? 0 : op === 'exists' ? false : null
+  const byRef   = new Map()
+  if (refs.length) {
+    const col = `${T}."${opValue}"`
+    const agg = op === 'count' ? 'COUNT(*)'
+              : op === 'exists' ? '1'
+              : op === 'sum' ? `COALESCE(SUM(${col}), 0)`
+              : `${op.toUpperCase()}(${col})`
+    const lhs = fkCols.length === 1 ? `${T}."${fkCols[0]}"` : `(${fkCols.map(c => `${T}."${c}"`).join(', ')})`
+    const one = fkCols.length === 1 ? '?' : `(${fkCols.map(() => '?').join(', ')})`
+    const parts = [
+      `${lhs} IN (${refs.map(() => one).join(', ')})`,
+      ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
+      `(${policy.sql})`,
+    ]
+    const keys = fkCols.map((c, i) => `${T}."${c}" AS "__fk${i}"`).join(', ')
+    const sql  = `SELECT ${keys}, ${agg} AS "__agg" FROM ${T} WHERE ${parts.join(' AND ')} ` +
+                 `GROUP BY ${fkCols.map(c => `${T}."${c}"`).join(', ')}`
+    const tBig   = ctx.bigMap?.[target]
+    const fromDb = tBig ? wideDb(readDb, tBig) : plainDb(readDb)
+    for (const g of fromDb.query(sql).all(...refs.flat(), ...policy.params))
+      byRef.set(JSON.stringify(fkCols.map((_, i) => g[`__fk${i}`] ?? null)), op === 'exists' ? true : g.__agg)
+  }
+  for (const r of inHand) r[name] = byRef.has(keyOf(r, refCols)) ? byRef.get(keyOf(r, refCols)) : empty
+}
+
+// `hidden` is gatedFromFields' answer for these rows: each is read as null.
+export function deserializeFromRow(row, fromFields, hidden = null) {
   if (!row || !fromFields) return row
   let out = row
   for (const [name, f] of Object.entries(fromFields)) {
     if (!(name in row)) continue
     if (out === row) out = { ...row }
-    if (f.isObject) {
+    if (hidden?.has(name)) {
+      out[name] = null
+    } else if (f.isObject) {
       out[name] = out[name] != null
         ? (typeof out[name] === 'string' ? JSON.parse(out[name]) : out[name])
         : null
@@ -392,9 +451,10 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // different SELECTs and each used to finish its rows with its own copy of
     // this expression, so a step added to one was absent from the other two.
     const finishRelated = (rawRows, opts, requested = null) => {
+      const hidden = gatedFromFields(targetFrom, ctx)
       const staged = rawRows.map(r => deserializeFromRow(
         coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()),
-        targetFrom))
+        targetFrom, hidden))
       resolveFromRowRefs(readDb, staged, targetFrom, ctx)
       return shapeRelated(
         staged.map(r => applyComputed(r, rel.targetModel, computedFns, ctx, requested)),

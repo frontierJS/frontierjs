@@ -13,7 +13,7 @@
  */
 export const name = 'display tier'
 export const covers = [
-  'display/Sparkline', 'display/Bar', 'display/Avatar', 'display/AvatarGroup',
+  'display/Sparkline', 'display/Chart', 'display/Bar', 'display/Avatar', 'display/AvatarGroup',
   'display/CopyButton', 'display/Dot', 'display/Kbd', 'display/Mono',
   'display/Divider', 'display/Tag', 'display/Steps', 'display/AccountStatus',
   'display/Callout',
@@ -58,6 +58,48 @@ export async function run(t) {
   t.is((before.match(/[\d.]+[ ,][\d.]+/g) ?? []).length, 5, 'five values before')
   t.is((after.match(/[\d.]+[ ,][\d.]+/g)  ?? []).length, 7, 'and seven after two more arrive')
   t.ok(before !== after, 'the path actually moved')
+
+  /* ── Chart ───────────────────────────────────────────────────────────── */
+
+  // Every bar is a path computed from a value against a zero baseline, so a
+  // negative month must hang BELOW the zero line rather than rise from the
+  // floor, and a NaN anywhere draws nothing while looking like a chart.
+  const chart = await t.evaluate(`
+    const svg = document.querySelector('#probe-chart svg');
+    const bars = [...svg.querySelectorAll('.fjs-chart-bar')].map(p => p.getBBox());
+    const zero = svg.querySelector('.fjs-chart-zero').getAttribute('y1');
+    return {
+      label: svg.getAttribute('aria-label'),
+      ds: [...svg.querySelectorAll('.fjs-chart-bar')].map(p => p.getAttribute('d')),
+      bars: bars.map(b => ({ top: b.y, bottom: b.y + b.height, w: b.width })),
+      zero: Number(zero),
+      values: [...svg.querySelectorAll('.fjs-chart-value')].map(t => t.textContent),
+      hits: svg.querySelectorAll('.fjs-chart-hit[tabindex="0"]').length,
+    };
+  `)
+  t.is(chart.label, 'Net per month', 'the chart is a labeled group')
+  t.ok(chart.ds.length === 3 && chart.ds.every(d => d && !/NaN|Infinity/.test(d)), 'one bar per row, with no NaN in any path')
+  t.ok(chart.bars.every(b => b.w <= 24), 'no bar is thicker than 24 units')
+  t.ok(Math.abs(chart.bars[1].bottom - chart.zero) < 0.5 && chart.bars[1].top < chart.zero, 'a positive bar rises from the zero line')
+  t.ok(Math.abs(chart.bars[2].top - chart.zero) < 0.5 && chart.bars[2].bottom > chart.zero, 'a negative bar hangs below it')
+  t.is(JSON.stringify(chart.values), JSON.stringify(['50 u', '-10 u']), 'only the largest and the last value are labeled, through format')
+  t.is(chart.hits, 3, 'one focusable hit target per row')
+
+  // The readout: a real pointer on a band, then the keyboard onto the next.
+  const tip = () => t.evaluate(`return {
+    value: document.querySelector('#probe-chart .fjs-chart-tip-value')?.textContent ?? null,
+    at:    document.querySelector('#probe-chart .fjs-chart-tip-label')?.textContent ?? null,
+  }`)
+  await t.clickAt('#probe-chart .fjs-chart-hit[data-index="0"]')
+  const hovered = await tip()
+  t.ok(hovered.value === '30 u' && hovered.at === 'Jan', 'pointing at a band reads out its category and value')
+  await t.press('Tab')
+  const tabbed = await tip()
+  t.ok(tabbed.value === '50 u' && tabbed.at === 'Feb', 'Tab moves the readout to the next mark')
+
+  // And it redraws when the rows change.
+  await t.clickAt('#grow-chart')
+  t.is(await t.evaluate(`return document.querySelectorAll('#probe-chart .fjs-chart-bar').length`), 4, 'a fourth row draws a fourth bar')
 
   /* ── Bar ─────────────────────────────────────────────────────────────── */
 

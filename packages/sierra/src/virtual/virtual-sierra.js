@@ -375,6 +375,17 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
       `${JSON.stringify(sierraContext.schemaRead ?? null)})`
     )
     lines.push(``)
+  } else if (sierraContext?.schemaFailure) {
+    // A schema.lite was found and nothing reached the browser: forms render no
+    // inputs and canAtLevel's unknown-is-permissive rule offers every control
+    // to everyone, on a page that otherwise looks fine (`FJS-1649`).
+    const where = sierraContext.schemaPath ?? 'schema.lite'
+    lines.push(
+      `console.error(${JSON.stringify(
+        `[Sierra] ${where} was found but no client schema was generated, so every ` +
+        `generated form is empty and every can() answers yes:\n${sierraContext.schemaFailure}`
+      )})`)
+    lines.push(``)
   }
 
   // The device's own database — only when the app asked for one, because it is
@@ -447,8 +458,8 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
 }
 
 // Named export for unit testing
-export function _generateVirtualSierra(config, tableOutput) {
-  return generateVirtualSierra(config, tableOutput, '/config/sierra.config.js')
+export function _generateVirtualSierra(config, tableOutput, sierraContext) {
+  return generateVirtualSierra(config, tableOutput, '/config/sierra.config.js', sierraContext)
 }
 
 // Named export for unit testing — see test/frontier-resolution.test.js

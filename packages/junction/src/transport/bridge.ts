@@ -457,9 +457,14 @@ function refuseNegativeWindow(directives: QueryDirectives): void {
 
 // ─── Response helpers ─────────────────────────────────────────────────────
 
+/** What a JSON answer carries until the transport decides better. The
+ *  transport replaces exactly this and keeps any other a handler set
+ *  (`FJS-1662`), so it is named rather than repeated. */
+export const BAKED_CACHE_CONTROL = 'private, no-cache, no-store, max-age=0'
+
 const JSON_HEADERS = {
   'content-type':  'application/json',
-  'cache-control': 'private, no-cache, no-store, max-age=0',
+  'cache-control': BAKED_CACHE_CONTROL,
   'vary':          'Accept-Encoding'
 }
 

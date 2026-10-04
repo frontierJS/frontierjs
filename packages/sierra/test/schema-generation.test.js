@@ -16,11 +16,12 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { writeFileSync, mkdirSync, symlinkSync } from 'fs'
 
-import { resolveSchemaPath, generateSchemas } from '../src/build/schema-plugin.js'
+import { resolveSchemaPath, generateSchemas, schemaPlugin } from '../src/build/schema-plugin.js'
 import {
   registerSchemas, schemaFor, allSchemas, allDefs, hasSchemas, resolveRef,
 } from '../src/junction/schema-registry.js'
 import { buildGate, canAtLevel } from '../src/junction/field-rules.js'
+import { _generateVirtualSierra } from '../src/virtual/virtual-sierra.js'
 import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -396,5 +397,75 @@ describe('a view reaches the browser', () => {
     const { dir, path } = fixture(VIEW_SCHEMA)
     const out = await generateSchemas(path, () => {}, dir)
     expect(out.updatePatch.revenueByStatus).toBeUndefined()
+  })
+})
+
+// A litestone that is FOUND and then throws on import — the transient FJS-1646
+// shape, where ./jsonschema reached bun:sqlite and Node refused the scheme. The
+// warning used to drop the error and tell the app to add a dependency it had
+// (`FJS-1649`).
+describe('a found litestone that will not load', () => {
+
+  function brokenFixture() {
+    const dir = tmpDir('sierra-schema-broken-')
+    mkdirSync(resolve(dir, 'db'), { recursive: true })
+    const path = resolve(dir, 'db', 'schema.lite')
+    writeFileSync(path, SCHEMA)
+    const pkg = resolve(dir, 'node_modules', '@frontierjs', 'litestone')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(resolve(pkg, 'package.json'), JSON.stringify({
+      name: '@frontierjs/litestone', type: 'module',
+      exports: { '.': './index.js', './parser': './parser.js', './jsonschema': './jsonschema.js' },
+    }))
+    writeFileSync(resolve(pkg, 'index.js'), `throw new Error('root entry unloadable here')\n`)
+    writeFileSync(resolve(pkg, 'parser.js'), `export function parse() {}\nexport function parseFile() {}\n`)
+    writeFileSync(resolve(pkg, 'jsonschema.js'), `throw new Error('jsonschema reached bun:sqlite')\n`)
+    return { dir, path }
+  }
+
+  test('the warning carries the thrown error and not the devDependency cure', async () => {
+    const { dir, path } = brokenFixture()
+    const warnings = []
+    const out = await generateSchemas(path, (m) => warnings.push(m), dir)
+    expect(out).toBeNull()
+    const said = warnings.join('\n')
+    expect(said).toContain('jsonschema reached bun:sqlite')
+    expect(said).not.toContain('devDependency')
+  })
+
+  test('the plugin keeps what it said for virtual:sierra', async () => {
+    const { dir } = brokenFixture()
+    const ctx = {}
+    await schemaPlugin({}, ctx).configResolved({ root: dir })
+    expect(ctx.schemaDefs).toBeNull()
+    expect(ctx.schemaFailure).toContain('jsonschema reached bun:sqlite')
+  })
+
+  test('a schema that generated leaves no failure behind', async () => {
+    const { dir } = fixture()
+    const ctx = {}
+    await schemaPlugin({}, ctx).configResolved({ root: dir })
+    expect(ctx.schemaDefs).not.toBeNull()
+    expect(ctx.schemaFailure).toBeNull()
+  })
+
+  test('virtual:sierra says it in the page when a found schema produced none', () => {
+    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js', {
+      schemaDefs: null, schemaPath: '/app/db/schema.lite',
+      schemaFailure: 'importing it threw: jsonschema reached bun:sqlite',
+    })
+    expect(src).toContain('console.error(')
+    expect(src).toContain('jsonschema reached bun:sqlite')
+    expect(src).not.toContain('registerSchemas(')
+    // The emitted line has to parse, and has to say it when run (Invariant 15).
+    const line = src.split('\n').find(l => l.startsWith('console.error('))
+    const errors = []
+    new Function('console', line)({ error: (m) => errors.push(m) })
+    expect(errors[0]).toContain('jsonschema reached bun:sqlite')
+  })
+
+  test('virtual:sierra is quiet when there is no schema to have failed', () => {
+    const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js', { schemaDefs: null })
+    expect(src).not.toContain('client schema')
   })
 })

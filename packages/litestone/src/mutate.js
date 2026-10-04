@@ -354,12 +354,28 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
   // not a kill — and the same rule `verifyRowPolicies` keeps about rows on one
   // side of a predicate: a thing that always passes and a thing that never ran
   // are the same observation until something separates them.
+  //
+  // The checks run on it too. A verdict the original already fails comes back
+  // identically under every mutant, so `verdicts.length` is never 0 and the run
+  // reads 100% killed: measured on Transit, 109 of 109, from one false
+  // `verifyFieldProtection` verdict on a `@hashed` column (FJS-1638).
+  const INCONCLUSIVE = new Set(['error', 'skipped', 'uncheckable', 'rejected-by-another-rule'])
+  let control
   try {
-    await build(schema)
+    control = await build(schema)
   } catch (err) {
     throw new Error(
       `mutationScore: the ORIGINAL schema does not build, so nothing can be graded ` +
       `— every mutant would be reported killed by a refusal that is not about the mutation.\n${err.message}`)
+  }
+  try {
+    const before = (await runCheck(control, original)).filter(m => !INCONCLUSIVE.has(m.got))
+    if (before.length) throw new Error(
+      `mutationScore: the ORIGINAL schema already fails ${before.length} check${before.length === 1 ? '' : 's'}, so nothing can be graded ` +
+      `— every mutant would be reported killed by a mismatch that is not about the mutation.\n` +
+      before.map(m => `  ${m.message ?? JSON.stringify(m)}`).join('\n'))
+  } finally {
+    try { control.close?.() } catch { /* nothing to close */ }
   }
 
   const mutants  = schemaMutants(schema, { kinds })
@@ -405,7 +421,6 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
       // rows had. No schema in this repo has one of these AND a mutant that
       // would otherwise survive, so this is the argument rather than a measured
       // regression; the argument is the same one already written above it.
-      const INCONCLUSIVE = new Set(['error', 'skipped', 'uncheckable', 'rejected-by-another-rule'])
       const verdicts = mismatches.filter(m => !INCONCLUSIVE.has(m.got))
       outcome = verdicts.length ? 'killed' : 'survived'
       if (outcome === 'killed') killed++

@@ -278,7 +278,7 @@ export function parseQuery(
 // appear to. Both stay available to app code, where a developer writing SQL is
 // not a caller.
 const AGGREGATE_KEYS = new Set([
-  'by', 'where', 'having', 'orderBy', 'limit', 'offset', 'interval', 'fillGaps',
+  'by', 'where', 'having', 'orderBy', 'limit', 'offset', 'interval', 'fillGaps', 'timeZone',
   '_count', '_sum', '_avg', '_min', '_max',
 ])
 
@@ -331,7 +331,7 @@ export function parseAggregate(
   )
 
   const args: Record<string, unknown> = { where, limit, offset }
-  for (const key of ['by', 'having', 'orderBy', 'interval', 'fillGaps',
+  for (const key of ['by', 'having', 'orderBy', 'interval', 'fillGaps', 'timeZone',
                      '_count', '_sum', '_avg', '_min', '_max'])
     if (key in spec) args[key] = spec[key]
 
@@ -1087,6 +1087,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       delete args.orderBy
       delete args.interval
       delete args.fillGaps
+      delete args.timeZone
       return await table.aggregate(args)
     },
 

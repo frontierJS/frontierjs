@@ -73,6 +73,7 @@ async function loadLitestone(root, warn, schemaPath) {
   // problem: the package resolved fine and then threw on `bun:`.
   const SUBPATHS = { parse: './parser', json: './jsonschema', device: './device-schema' }
   const tried = []
+  let found = null
 
   // Walk up from the app root looking for the package.
   let dir = resolve(root)
@@ -128,8 +129,12 @@ async function loadLitestone(root, warn, schemaPath) {
           const abs = resolve(pkgDir, entry)
           if (existsSync(abs)) return await import(pathToFileURL(abs).href)
         }
-      } catch {
-        // fall through to the next candidate
+      } catch (err) {
+        // Kept, because a package that was FOUND and then threw is not missing:
+        // the ERR_UNSUPPORTED_ESM_URL_SCHEME of a subpath that reached
+        // bun:sqlite was dropped here and the warning named a devDependency
+        // the app already had (`FJS-1649`).
+        found ??= { pkgDir, err }
       }
     }
 
@@ -142,6 +147,14 @@ async function loadLitestone(root, warn, schemaPath) {
   try {
     return await import('@frontierjs/litestone')
   } catch {
+    if (found) {
+      warn?.(
+        `found ${schemaPath} and @frontierjs/litestone at ${found.pkgDir}, but ` +
+        `importing it threw: ${found.err?.message ?? found.err} — client schemas ` +
+        `will not be generated.`
+      )
+      return null
+    }
     warn?.(
       `found ${schemaPath} but @frontierjs/litestone could not be loaded from ` +
       `${root} — client schemas will not be generated. Add it as a devDependency ` +
@@ -367,7 +380,26 @@ export function schemaPlugin(config, sierraContext) {
   let root = process.cwd()
   let schemaPath = null
 
-  const warn = (msg) => console.warn(`[Sierra] schema: ${msg}`)
+  let said = []
+  const warn = (msg) => { said.push(msg); console.warn(`[Sierra] schema: ${msg}`) }
+
+  // A found schema.lite that produced no client schema leaves every generated
+  // form empty and every can() answering yes from no declaration, on an app
+  // that boots and renders. The dev server's log is not where anyone looks, so
+  // what was said there is kept for virtual:sierra to say in the page too
+  // (`FJS-1649`).
+  async function generate() {
+    said = []
+    const generated = await generateSchemas(schemaPath, warn, root)
+    sierraContext.schemaDefs    = generated?.defs   ?? null
+    sierraContext.schemaModels  = generated?.models ?? null
+    sierraContext.schemaUpdate  = generated?.updatePatch ?? null
+    sierraContext.schemaRead    = generated?.readPatch ?? null
+    sierraContext.deviceSchema  = generated?.device?.parsed ?? null
+    sierraContext.deviceModels  = generated?.device?.models ?? null
+    sierraContext.schemaFailure = generated ? null : (said.join('\n') || 'no client schema was generated')
+    return generated
+  }
 
   return {
     name: 'sierra:schema',
@@ -382,14 +414,8 @@ export function schemaPlugin(config, sierraContext) {
         return
       }
 
-      const generated = await generateSchemas(schemaPath, warn, root)
-      sierraContext.schemaDefs   = generated?.defs   ?? null
-      sierraContext.schemaModels = generated?.models ?? null
-      sierraContext.schemaUpdate = generated?.updatePatch ?? null
-      sierraContext.schemaRead   = generated?.readPatch ?? null
-      sierraContext.deviceSchema = generated?.device?.parsed ?? null
-      sierraContext.deviceModels = generated?.device?.models ?? null
-      sierraContext.schemaPath   = schemaPath
+      sierraContext.schemaPath = schemaPath
+      const generated = await generate()
 
       if (generated) {
         // The SIZE, beside the model count. What crosses here is the largest
@@ -413,13 +439,7 @@ export function schemaPlugin(config, sierraContext) {
       server.watcher.on('change', async (file) => {
         if (resolve(file) !== resolve(schemaPath)) return
 
-        const generated = await generateSchemas(schemaPath, warn, root)
-        sierraContext.schemaDefs   = generated?.defs   ?? null
-        sierraContext.schemaModels = generated?.models ?? null
-        sierraContext.schemaUpdate = generated?.updatePatch ?? null
-        sierraContext.schemaRead   = generated?.readPatch ?? null
-        sierraContext.deviceSchema = generated?.device?.parsed ?? null
-        sierraContext.deviceModels = generated?.device?.models ?? null
+        await generate()
 
         // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a

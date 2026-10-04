@@ -2102,6 +2102,41 @@ export class JunctionClient extends EventEmitter {
     }
   }
 
+  /**
+   * A raw route, with this client's credentials: the `Response` as it came.
+   *
+   * A raw route is how a server hands over a file — a PDF, a CSV, an `@@export`
+   * stream — and a link cannot carry a bearer token. Every call here sends one;
+   * this is the one way for a page to reach a raw route with the same identity,
+   * workspace and call headers, rather than reading `client.token` into a
+   * hand-built `fetch` that the next change to how a call is authenticated
+   * leaves behind.
+   *
+   * `path` is the route as the server registered it, so the api prefix is
+   * added here: `client.fetch('/exports/orders')` for `app.get('/exports/…')`.
+   * A failure throws what a call throws — the server's message, `code` the
+   * status — so a caller reads a body only from a response that is a file.
+   */
+  async fetch(path: string, init: RequestInit = {}): Promise<Response> {
+    const headers = new Headers(init.headers)
+    if (this.token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${this.token}`)
+    for (const [k, v] of Object.entries(this.callHeaders())) if (!headers.has(k)) headers.set(k, v)
+
+    const res = await fetch(this._url + this._apiPrefix + path, { ...init, headers })
+    this._noteServerBuild(res.headers.get(BUILD_HEADER))
+    if (res.ok) return res
+
+    const text = await res.text()
+    let data: unknown
+    try { data = text ? JSON.parse(text) : null } catch { data = text }
+    if (res.status === 401) this.emit('unauthorized')
+    const msg =
+      (data as Record<string, unknown>)?.message ??
+      (data as Record<string, unknown>)?.error ??
+      `HTTP ${res.status}`
+    throw Object.assign(new Error(String(msg)), { code: res.status, data })
+  }
+
   // ── WebSocket ────────────────────────────────────────────────────────
 
   connect(): void {

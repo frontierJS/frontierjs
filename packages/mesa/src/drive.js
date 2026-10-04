@@ -125,18 +125,29 @@ function sweepLaunched() {
   launched.clear()
 }
 
+// The exits below are the process's only when nobody else listens. A drive is
+// a script and owns its process; a SERVER that prints through this (a render
+// worker) has its own SIGTERM handler, a graceful shutdown that drains
+// requests and closes stores. Exiting here as well cut that shutdown off at
+// its first await, so a deploy's SIGTERM lost whatever the server was still
+// finishing (`FJS-1658`). When another listener owns the event, it decides
+// whether and when the process ends, and the 'exit' sweep still takes the
+// browsers with it.
+const hostOwns = (event) => process.listenerCount(event) > 1
+
 function installSweep() {
   if (sweepInstalled) return
   sweepInstalled = true
   process.on('exit', sweepLaunched)
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-    process.on(sig, () => { sweepLaunched(); process.exit(sig === 'SIGINT' ? 130 : 143) })
+    process.on(sig, () => { if (hostOwns(sig)) return; sweepLaunched(); process.exit(sig === 'SIGINT' ? 130 : 143) })
   }
   // Without this an unhandled rejection prints and leaves Chrome up: the
   // default handler exits without running an ordinary exit path on every
-  // runtime here.
-  process.on('uncaughtException',  (e) => { sweepLaunched(); console.error(e); process.exit(1) })
-  process.on('unhandledRejection', (e) => { sweepLaunched(); console.error(e); process.exit(1) })
+  // runtime here. A host that listens for these has chosen to survive them,
+  // which adding a listener at all already overrode.
+  process.on('uncaughtException',  (e) => { if (hostOwns('uncaughtException')) return; sweepLaunched(); console.error(e); process.exit(1) })
+  process.on('unhandledRejection', (e) => { if (hostOwns('unhandledRejection')) return; sweepLaunched(); console.error(e); process.exit(1) })
 }
 
 function reapStaleProfiles() {

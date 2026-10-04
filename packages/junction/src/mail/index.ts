@@ -33,6 +33,13 @@ export interface MailAttachment {
   filename:  string
   content:   ArrayBuffer | Uint8Array | string    // base64 string or buffer
   type?:     string                               // MIME type
+  /**
+   * Inline rather than attached: the HTML draws it as `<img src="cid:chart">`
+   * for `cid: 'chart'`, and the reader is offered no file. An email client
+   * draws no SVG and Gmail and Outlook refuse a `data:` image, so a chart in a
+   * mail is a PNG sent this way or not at all (`FJS-1666`). Needs `html`.
+   */
+  cid?:      string
 }
 
 export interface SendResult {
@@ -48,13 +55,13 @@ export interface IMail {
 // ─── Mail builder ─────────────────────────────────────────────────────────
 // Fluent API — same feel as Total.js mail builder.
 
-import { assertMessageAddresses, assertHeaderValue, assertHeaderName } from './smtp.ts'
+import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './smtp.ts'
 
 // Re-exported because a test double implementing `IMail` has to accept exactly
 // what the real mailer accepts. A double that took a message SMTP would refuse
 // is worse than no double: the test passes and the send fails in production
 // (`FJS-904`). One owner for the rule, in `smtp.ts`; this is the door to it.
-export { assertMessageAddresses, assertHeaderValue, assertHeaderName } from './smtp.ts'
+export { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './smtp.ts'
 
 export function createMessage(subject: string, html?: string): MailBuilder {
   return new MailBuilder(subject, html)
@@ -106,6 +113,13 @@ export class MailBuilder {
   attach(filename: string, content: ArrayBuffer | Uint8Array | string, type?: string): this {
     if (!this._msg.attachments) this._msg.attachments = []
     this._msg.attachments.push({ filename, content, type })
+    return this
+  }
+
+  /** An image the HTML draws as `<img src="cid:${cid}">`, sent inline. */
+  inline(cid: string, filename: string, content: ArrayBuffer | Uint8Array | string, type?: string): this {
+    if (!this._msg.attachments) this._msg.attachments = []
+    this._msg.attachments.push({ filename, content, type, cid: assertContentId(cid) })
     return this
   }
 
@@ -192,6 +206,10 @@ export function createResendMailer(opts: ResendOptions): IMail {
       payload.attachments = msg.attachments.map(a => ({
         filename: a.filename,
         content:  toBase64(a.content),
+        // Resend's own name for it. Without it the image arrived as a file
+        // and the HTML's cid: drew nothing (`FJS-1666`).
+        ...(a.type !== undefined ? { content_type: a.type } : {}),
+        ...(a.cid  !== undefined ? { content_id: assertContentId(a.cid) } : {}),
       }))
     }
 
@@ -258,6 +276,7 @@ function assertMessageHeaders(msg: MailMessage): void {
   for (const a of msg.attachments ?? []) {
     assertHeaderValue(a.filename, 'attachment.filename')
     if (a.type !== undefined) assertHeaderValue(a.type, 'attachment.type')
+    if (a.cid  !== undefined) assertContentId(a.cid)
   }
 }
 

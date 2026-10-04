@@ -328,6 +328,12 @@ direct read or an `include` of that row would be. The subquery resolves the row'
 one batched query fetches the rows — so a `findMany` of a hundred parents costs one extra
 query, not a hundred.
 
+The target's **read gate applies** to every `@from` kind. A caller whose level does not
+clear it reads the field as `null` — a `last:` row, a `count:` and an `exists:` alike — and a
+`where` or `orderBy` naming the field is refused with the target's own *requires level*
+error, as an `include` of the relation is (`FJS-1646`). A row policy reaches `first:`/`last:`
+only, below; an aggregate still counts rows the policy hides (`FJS-1647`).
+
 Two consequences worth knowing. The target's **row policy applies**, the same way it does
 to an `include`, so a `@@allow` on the target can make the field `null`. And because the
 pick happens in SQL before the policy is known, a row the caller may not read makes the

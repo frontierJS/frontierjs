@@ -96,6 +96,7 @@ const kB = (n) => Math.ceil(n / 1024)
 
 /** What a shell is made of. A route chunk is one of these; a photograph is not. */
 import { WASM_DIR } from '../build/local-db-plugin.js'
+import { refusal } from '../build/refusal.js'
 
 const SHELL_EXT = new Set(['.js', '.css', '.woff', '.woff2', '.svg', '.webmanifest', '.json'])
 
@@ -241,12 +242,13 @@ async function gradeBudget(over, cfg, root) {
   if (process.env.FJS_OFFLINE_BASELINE === 'update') { await write(); return ' · baseline written' }
   if (baseline == null) { await write(); return ` · baseline adopted at ${over} kB` }
   if (over > baseline) {
-    throw new Error(
-      `[Sierra] the offline shell is ${over} kB over the wire and the baseline is ${baseline} kB.\n` +
+    throw refusal(
+      `[Sierra] the offline shell is ${over} kB over the wire and the baseline is ${baseline} kB.\n\n` +
       `  A shell that grows is a first visit that got slower for everybody who installs it, and the\n` +
       `  budget ratchets down only (FJS-D302). Take the weight back out, or record the decision to\n` +
-      `  pay for it: FJS_OFFLINE_BASELINE=update bun run build\n` +
-      `  The baseline lives in ${file}`,
+      `  pay for it:\n\n` +
+      `    FJS_OFFLINE_BASELINE=update bun run build\n\n` +
+      `  The baseline lives in ${relative(process.cwd(), file) || file}`,
     )
   }
   return over < baseline ? ` · ${baseline - over} kB under the baseline` : ' · at the baseline'

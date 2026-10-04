@@ -53,7 +53,7 @@ export function exportableDatasets(schema) {
   }
   for (const view of schema.views ?? []) {
     const ex = (view.attributes ?? []).find(a => a.kind === 'export')
-    if (ex) out.push({ name: view.name, accessor: view.name, kind: 'view', decl: view, export: ex })
+    if (ex) out.push({ name: view.name, accessor: modelToAccessor(view.name), kind: 'view', decl: view, export: ex })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }

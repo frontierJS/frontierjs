@@ -60,6 +60,8 @@ export interface RelativeOptions {
 }
 
 export function partsIn(instant: InstantInput, timeZone: string): WallParts
+/** Where `timeZone`'s UTC offset is constant across `[from, to]`: each span's offset (ms east of UTC) holds from its `from` (epoch ms) until the next span's. */
+export function offsetSpans(from: InstantInput, to: InstantInput, timeZone: string): { from: number; offset: number }[]
 export function resolveWall(fields: WallFields, timeZone: string): number[]
 export function fromWall(fields: WallFields, timeZone: string, options?: { disambiguation?: Disambiguation }): number
 export function format(instant: InstantInput, pattern: string, options: FormatOptions): string

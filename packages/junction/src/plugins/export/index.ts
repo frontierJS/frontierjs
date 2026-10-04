@@ -112,11 +112,11 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
             if (ex) out.push({ name: decl.name, accessor: accessorOf(decl), kind, export: { format: ex.format, since: ex.since ?? null } })
           }
         }
-        // The accessor rule is Invariant 2's and litestone owns it; a view is
-        // addressed by its own name.
+        // The accessor rule is Invariant 2's and litestone owns it, for a view
+        // as for a model (`FJS-1631`).
         const toAccessor = (d: any) => d.name.charAt(0).toLowerCase() + d.name.slice(1)
         scan(schema?.models, 'model', toAccessor)
-        scan(schema?.views,  'view',  (d) => d.name)
+        scan(schema?.views,  'view',  toAccessor)
         return out.sort((a, b) => a.name.localeCompare(b.name))
       }
 

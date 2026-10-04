@@ -56,9 +56,9 @@ import {
 } from './errors.js'
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy } from './commitment.js'
-import { dueAt } from '@frontierjs/toolbelt/datetime'
+import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
 import {
-  buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildSelfRelationMap,
+  buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
   buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
@@ -84,6 +84,8 @@ import { loadComputedFields, normalizeComputed, applyComputed } from './computed
 import { makeTxManager, makeReadRouter } from './transaction.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { fromSelectExpr, resolveFromRowRefs, coerceEdgeValue, resolveIncludes } from './include.js'
+import { gatedFromFields } from './from-gate.js'
+import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter,
 } from './hooks.js'
@@ -1940,11 +1942,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // ── @from deserialization ─────────────────────────────────────────────────
   // last/first return JSON strings from json_object() → parse to object
   // exists returns 0/1 integer → coerce to boolean
-  function deserializeFromFields(row) {
+  // `hidden` is gatedFromFields' answer for this read: each is read as null.
+  function deserializeFromFields(row, hidden = null) {
     const out = { ...row }
     for (const [name] of _fromEntries) {
       if (!(name in out)) continue
-      if (_fromObjectFields.has(name)) {
+      if (hidden?.has(name)) {
+        out[name] = null
+      } else if (_fromObjectFields.has(name)) {
         out[name] = out[name] != null
           ? (typeof out[name] === 'string' ? JSON.parse(out[name]) : out[name])
           : null
@@ -2028,7 +2033,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       r = out
     }
     if (_hasFrom) {
-      r = deserializeFromFields(r)
+      r = deserializeFromFields(r, gatedFromFields(_tableFrom, ctx))
       if (_hasRowRef) resolveFromRowRefs(readDb, [r], _tableFrom, ctx)
     }
     if (_hasComputed) r = applyComputed(r, modelName, computedFns, ctx, computedWanted(opts))
@@ -2039,11 +2044,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Fast path — no transforms needed, return rows as-is
     if (!_hasJson && !_hasBool && !_hasComputed && !hasFieldPolicy && !_hasFrom) return _extMirror ? rows.map(_dropMirror) : rows
     const wanted = computedWanted(opts)
+    const hidden = _hasFrom ? gatedFromFields(_tableFrom, ctx) : null
     // Two passes when a row reference is in play: every row's id is resolved in
     // one query, then the per-row transforms run. One pass would be a query per
     // row, and applyComputed would run before the row it reads exists.
     if (_hasRowRef) {
-      const staged = rows.map(r => deserializeFromFields(shapeScalars(r)))
+      const staged = rows.map(r => deserializeFromFields(shapeScalars(r), hidden))
       resolveFromRowRefs(readDb, staged, _tableFrom, ctx)
       return staged.map(r => {
         let out = _hasComputed ? applyComputed(r, modelName, computedFns, ctx, wanted) : r
@@ -2070,7 +2076,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
         r = out
       }
-      if (_hasFrom)      r = deserializeFromFields(r)
+      if (_hasFrom)      r = deserializeFromFields(r, hidden)
       if (_hasComputed)  r = applyComputed(r, modelName, computedFns, ctx, wanted)
       if (hasFieldPolicy) r = applyFieldPolicy(r, opts)
       return _dropMirror(r)
@@ -3556,7 +3562,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _fromEntries  = Object.entries(fromFields)   // [fieldName, { subquerySql, isObject }]
   const _hasFrom      = _fromEntries.length > 0
   const _tableFrom    = fromFields
-  const _hasRowRef    = _fromEntries.some(([, d]) => d.rowRef)
+  // A @from answered again after the read, under the caller's row policy.
+  const _hasRowRef    = _fromEntries.some(([, d]) => d.rowRef || d.aggRef)
   // Pre-build fromExprMap for buildWhere — substitutes @from field keys with their subquery SQL.
   // Two maps: a relation orderBy aliases the outer table to `t`, and the
   // correlation inside each subquery has to name whichever one this query used.
@@ -4904,6 +4911,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_count && typeof _count === 'object' && _count.distinct)
         refuseAggregateKeys('aggregate', [_count.distinct], false)
       const params = []
+      // A SELECT-list value (a _stringAgg separator, a named aggregate's
+      // filter) is bound before the WHERE's, because it comes first in the
+      // statement. Pushed onto one array they bound in the wrong order: a
+      // separator compared against the where's column and the where's value
+      // joined the strings, so _stringAgg beside any where answered [].
+      const selectParams = []
 
       // Build WHERE (reuses count() pattern)
       const rawFilter    = resolveGlobalFilter()
@@ -4951,7 +4964,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // causes the separator to be ignored and the default "," is used.
         const orderClause = saOrderBy ? ` ORDER BY ${_aggCol(saOrderBy)}` : ''
         selects.push(`GROUP_CONCAT(${_aggCol(field)}, ?${orderClause}) AS "__stringAgg__${field}"`)
-        params.push(separator)
+        selectParams.push(separator)
       }
 
       // Named aggregates: any _-prefixed key with { count/sum/avg/min/max, filter? }
@@ -4959,7 +4972,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         !['_count','_sum','_avg','_min','_max','_stringAgg'].includes(k)
       )
       for (const [key, spec] of namedAggs) {
-        selects.push(buildNamedAggExpr(key, spec, params))
+        selects.push(buildNamedAggExpr(key, spec, selectParams))
       }
 
       if (!selects.length) throw new Error('aggregate() requires at least one aggregation (_count, _sum, _avg, _min, _max, _stringAgg, or a named aggregate)')
@@ -4972,6 +4985,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
+      params.unshift(...selectParams)
       const raw = readDb.query(sql).get(...params) ?? {}
       fireQuery({ operation: 'aggregate', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: 1 })
 
@@ -5004,8 +5018,18 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     async groupBy(args = {}) {
       refuseRecursive('groupBy', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
-      const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps } = args
+      const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps, timeZone } = args
       const interval = args.interval   // { fieldName: 'unit' }
+      // S3: an interval is cut on the wall clock of `timeZone` (IANA), not UTC's.
+      // Refused without an interval, where it would mean nothing and quietly
+      // be ignored — the shape of every silent wrong answer a report can give.
+      if (timeZone != null) {
+        if (!interval)
+          throw new ValidationError([{ path: ['timeZone'], message: `groupBy() timeZone cuts an interval — pass interval: { <DateTime field>: 'month' } beside it` }])
+        try { offsetSpans(0, 0, timeZone) }
+        catch { throw new ValidationError([{ path: ['timeZone'], message: `groupBy() timeZone '${timeZone}' is not an IANA time zone (e.g. 'Asia/Tokyo')` }]) }
+      }
+      let zoneShift = null   // set below, once the WHERE is built
       if (!by?.length) throw new Error('groupBy() requires a "by" array of field names')
       // `by` is the naming tier — a GROUP BY over stored text is at least
       // self-consistent, so an opaque column passes here and not below. It
@@ -5106,10 +5130,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         refuseAggregateKeys('orderBy', names)
       }
 
-      // Build STRFTIME expression for a given field + unit
+      // Build STRFTIME expression for a given field + unit. With a time zone the
+      // instant is first moved onto that zone's wall clock (`zoneShift`).
       function strftimeExpr(field, unit) {
         // `expr` and not `col`, which is this table's field → column resolver.
-        const expr = `"${tableName}"."${col(field)}"`
+        const raw  = `"${tableName}"."${col(field)}"`
+        const expr = zoneShift ? `DATETIME(${raw}, ${zoneShift})` : raw
         switch (unit) {
           case 'year':    return `STRFTIME('%Y', ${expr})`
           case 'quarter': return `STRFTIME('%Y', ${expr}) || '-Q' || (((CAST(STRFTIME('%m', ${expr}) AS INTEGER) - 1) / 3) + 1)`
@@ -5145,6 +5171,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       }
 
       const params = []
+      // A SELECT-list value (a _stringAgg separator, a named aggregate's
+      // filter) is bound before the WHERE's, because it comes first in the
+      // statement. Pushed onto one array they bound in the wrong order: a
+      // separator compared against the where's column and the where's value
+      // joined the strings, so _stringAgg beside any where answered [].
+      const selectParams = []
 
       // WHERE clause
       const rawFilter    = resolveGlobalFilter()
@@ -5158,6 +5190,31 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const exclWhere = applyEffFilter(applyHtFilter(sdWhereR, htMode(args)), args)
       const whereSql = buildWhereWithEncryption(exclWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
+
+      // ── The zone, as SQL ─────────────────────────────────────────────────
+      // SQLite has no zone database and bun:sqlite can register no function,
+      // so the zone is stated as the fixed offsets it keeps over the rows this
+      // call reads (toolbelt's offsetSpans) and a CASE picks each row's:
+      // DATETIME(t, '+32400 seconds') is Tokyo's wall clock for t. Everything
+      // inlined is a number this code computed; nothing the caller sent.
+      // One extra MIN/MAX over the same WHERE bounds the spans: a summer-time
+      // zone is two per year read, one per year of rows rather than a century.
+      if (timeZone != null) {
+        const rawCol = `"${tableName}"."${col(intervalField)}"`
+        const parts = [whereSql, policyResult?.sql].filter(Boolean)
+        const range = readDb.query(
+          `SELECT MIN(julianday(${rawCol})) AS lo, MAX(julianday(${rawCol})) AS hi FROM "${tableName}"` +
+          (parts.length ? ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}` : ''),
+        ).get(...params, ...(policyResult?.params ?? []))
+        const msOf = jd => Math.round((jd - 2440587.5) * 86400000)
+        const spans = range?.lo != null ? offsetSpans(msOf(range.lo), msOf(range.hi), timeZone) : [{ offset: 0 }]
+        const mod = offset => `'${offset >= 0 ? '+' : ''}${offset / 1000} seconds'`
+        zoneShift = spans.length === 1
+          ? mod(spans[0].offset)
+          : `CASE ${spans.slice(1).map((sp, i) =>
+              `WHEN julianday(${rawCol}) < ${sp.from / 86400000 + 2440587.5} THEN ${mod(spans[i].offset)}`).join(' ')} ` +
+            `ELSE ${mod(spans[spans.length - 1].offset)} END`
+      }
 
       // ── SELECT columns ───────────────────────────────────────────────────
       const groupByCols = []   // SQL expressions for GROUP BY
@@ -5201,7 +5258,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // SQLite: separator must come before ORDER BY in GROUP_CONCAT.
         const orderClause = saOrderBy ? ` ORDER BY ${_aggCol(saOrderBy)}` : ''
         selectCols.push(`GROUP_CONCAT(${_aggCol(field)}, ?${orderClause}) AS "__stringAgg__${field}"`)
-        params.push(separator)
+        selectParams.push(separator)
       }
 
       // Named aggregates
@@ -5209,7 +5266,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         !['_count','_sum','_avg','_min','_max','_stringAgg'].includes(k)
       )
       for (const [key, spec] of namedAggs) {
-        selectCols.push(buildNamedAggExpr(key, spec, params))
+        selectCols.push(buildNamedAggExpr(key, spec, selectParams))
       }
 
       // ── Gap filling — infer range from where clause if fillGaps: true ───
@@ -5238,6 +5295,39 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           }
         }
       }
+      // Each bound becomes a calendar date — the zone's, when there is one —
+      // and is BOUND, never written into the statement. It was interpolated as
+      // date('${gapStart}'), and since it arrives from fillGaps or the where
+      // over the aggregate verb, a caller could close the quote and read any
+      // table one bit per call (FJS-1650). A value that is not a date is
+      // refused by name rather than coerced.
+      const gapDate = (v, which) => {
+        const ms = v instanceof Date ? v.getTime()
+          : typeof v === 'number' ? v
+          : typeof v === 'string' ? Date.parse(v)
+          : NaN
+        if (!Number.isFinite(ms))
+          throw new ValidationError([{ path: ['fillGaps', which], message: `groupBy() gap fill ${which} ${JSON.stringify(v)} is not a date or an instant` }])
+        // An hour bucket walks a wall clock to the hour, everything else a date.
+        if (intervalUnit === 'hour') {
+          if (!timeZone) return new Date(ms).toISOString().slice(0, 13).replace('T', ' ') + ':00:00'
+          const p = partsIn(ms, timeZone)
+          const two = n => String(n).padStart(2, '0')
+          return `${String(p.year).padStart(4, '0')}-${two(p.month)}-${two(p.day)} ${two(p.hour)}:00:00`
+        }
+        return timeZone ? plainDateIn(ms, timeZone) : new Date(ms).toISOString().slice(0, 10)
+      }
+      if (gapStart && gapEnd) {
+        gapStart = gapDate(gapStart, 'start')
+        gapEnd   = gapDate(gapEnd, 'end')
+        // A recursive CTE makes one row per interval, and both bounds are the
+        // caller's: a century of hours is 876,000 rows built per request.
+        const MAX_GAP_INTERVALS = 10_000
+        const UNIT_MS = { year: 365 * 864e5, quarter: 90 * 864e5, month: 28 * 864e5, week: 7 * 864e5, day: 864e5, hour: 36e5 }
+        const span = Date.parse(gapEnd.replace(' ', 'T') + (gapEnd.length > 10 ? 'Z' : 'T00:00:00Z')) - Date.parse(gapStart.replace(' ', 'T') + (gapStart.length > 10 ? 'Z' : 'T00:00:00Z'))
+        if (span / UNIT_MS[intervalUnit] > MAX_GAP_INTERVALS)
+          throw new ValidationError([{ path: ['fillGaps'], message: `groupBy() gap fill from ${gapStart} to ${gapEnd} is more than ${MAX_GAP_INTERVALS} ${intervalUnit}s — narrow the range or pass fillGaps: false` }])
+      }
 
       // ── Build SQL ────────────────────────────────────────────────────────
       let sql
@@ -5246,6 +5336,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // Gap-fill path: recursive CTE generates all intervals, LEFT JOIN data
         const step   = cteStep(intervalUnit)
         const fmt    = cteDateFormat(intervalUnit)
+        // date() drops the time, so date(d, '+1 hour') is d again and the CTE
+        // never ended: one request with interval hour and a gap fill held a
+        // core for good. An hour walks datetime().
+        const at     = intervalUnit === 'hour' ? 'datetime' : 'date'
 
         // CTE generates one row per interval between gapStart and gapEnd
         // For quarter, we generate dates and format them the same way as STRFTIME expr
@@ -5287,20 +5381,25 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         const whereOnlyParams = params.slice()  // snapshot of params so far (already has whereSql values)
         params.length = 0  // reset — we'll re-push in the right order
 
-        // Order: existsSubquery params first, then UNION ALL params
+        // Order: the CTE's two bounds, then existsSubquery, then UNION ALL
+        params.push(gapStart, gapEnd)     // intervals CTE
         params.push(...whereOnlyParams)  // existsSubquery
         if (policyResult) params.push(...policyResult.params)  // existsSubquery policy
+        params.push(...selectParams)     // UNION ALL's SELECT list
         params.push(...whereOnlyParams)  // UNION ALL
         if (policyResult) params.push(...policyResult.params)  // UNION ALL policy
 
-        // The data subquery for the NOT IN check
-        const existsSubquery = `SELECT "${intervalField}" FROM "${tableName}"${dataWhere} GROUP BY ${groupByCols.join(', ')}`
+        // The data subquery for the NOT IN check: the bucket LABEL of every
+        // interval that has rows. It selected the raw column, which never
+        // equals a label, so every interval with data came back twice — once
+        // as a 0 gap row and once with its counts.
+        const existsSubquery = `SELECT ${strftimeExpr(intervalField, intervalUnit)} FROM "${tableName}"${dataWhere} GROUP BY ${groupByCols.join(', ')}`
 
         sql = `
 WITH RECURSIVE intervals(d) AS (
-  SELECT date('${gapStart}')
+  SELECT ${at}(?)
   UNION ALL
-  SELECT date(d, '${step}') FROM intervals WHERE date(d, '${step}') <= date('${gapEnd}')
+  SELECT ${at}(d, '${step}') FROM intervals WHERE ${at}(d, '${step}') <= ${at}(?)
 )
 SELECT ${gapCols.join(', ')}
 FROM intervals
@@ -5319,6 +5418,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       } else {
         // No gap fill — standard groupBy
+        params.unshift(...selectParams)
         let baseSql = `SELECT ${selectCols.join(', ')} FROM "${tableName}"`
         if (whereSql && policyResult) baseSql += ` WHERE (${whereSql}) AND (${policyResult.sql})`
         else if (whereSql)            baseSql += ` WHERE ${whereSql}`
@@ -7844,7 +7944,7 @@ const CLIENT_OPTIONS = [
   'path', 'schema', 'parsed', 'resolveFrom', 'db', 'computed', 'encryptionKey',
   'hooks', 'onEvent', 'announce', 'filters', 'plugins', 'databases', 'access',
   'readOnly', 'busyTimeout', 'pluralize', 'onLog', 'onQuery', 'policyDebug',
-  'now', 'scopes', 'allowChildFkOverride', 'logContext', 'claims',
+  'now', 'scopes', 'allowChildFkOverride', 'logContext', 'claims', 'untrusted',
   'previousEncryptionKeys',
 ]
 
@@ -7938,10 +8038,20 @@ export async function createClient({
   scopes:     scopeRegistry = {},   // { ModelName: { scopeName: scopeDef, ... } }
   allowChildFkOverride = false,     // false (default) → parent's co-FK silently overwrites child's value
                                     // true → explicit child value wins; missing values still auto-filled
+  untrusted = false,     // true — `schema` is text the app did not write (a row, a tenant's
+                         // model): parsed as text only, held to the one `db` given, and any
+                         // database / import / @@auth / @@db … refused by name (FJS-1633)
   ...unknownOptions
 } = {}) {
 
   assertClientOptions(unknownOptions)
+
+  if (untrusted) {
+    if (typeof schemaInline !== 'string' || schemaFilePath || schemaPreParsed)
+      throw new Error('createClient({ untrusted: true }) takes the schema as text in `schema` — not a path, and not a parse')
+    if (dbPath == null || dbOverrides)
+      throw new Error('createClient({ untrusted: true }) needs `db` — the one database file the schema is held to — and takes no `databases` overrides')
+  }
 
   // ── Parse schema ───────────────────────────────────────────────────────────
   // Resolution order: parsed > schema (inline string) > path (file)
@@ -7962,6 +8072,9 @@ export async function createClient({
 
   const parseResult = (() => {
     if (schemaPreParsed) return schemaPreParsed
+    // Text, always: a one-line string ending in .lite is otherwise READ FROM
+    // DISK below, which untrusted text must never get to choose.
+    if (untrusted) return parse(schemaInline)
     if (schemaInline) {
       if (!(schemaInline.includes('\n') || !schemaInline.endsWith('.lite')))
         return parseFile(resolve(schemaInline))
@@ -7995,6 +8108,7 @@ export async function createClient({
 
   if (!parseResult.valid)
     throw new Error(`schema.lite has errors:\n${parseResult.errors.join('\n')}`)
+  if (untrusted) refuseUntrustedSchema(parseResult.schema)
 
   // ── Build working schema ──────────────────────────────────────────────────
   // Start from the parsed schema, then augment with:
@@ -8345,6 +8459,22 @@ function makeLockPrimitive(rawWriteDb) {
     }
   }
 
+  // ── Every view compiles, now (FJS-1632) ────────────────────────────────
+  // CREATE VIEW resolves no names, so a view whose @@sql names a column that
+  // is not there built fine and failed at the first read, with SQLite's
+  // 'no such column' and no view named. Preparing a SELECT over each view
+  // resolves them. Only a view the file already holds: one a pending
+  // migration has yet to create is the migration's to report.
+  for (const view of schema.views ?? []) {
+    if (view.materialized) continue
+    const conn = dbRegistry[view.db ?? 'main']
+    if (conn?.driver !== 'sqlite' || !conn.rawWriteDb) continue
+    const exists = conn.rawWriteDb.query(`SELECT 1 FROM sqlite_master WHERE type = 'view' AND name = ?`).get(view.name)
+    if (!exists) continue
+    try { conn.rawWriteDb.query(`SELECT * FROM "${view.name}" LIMIT 0`).all() }
+    catch (err) { throw new Error(`view ${view.name}: its @@sql does not compile against this database — ${err.message}`) }
+  }
+
   const computedFns   = normalizeComputed(await loadComputedFields(computedInput), schema)
 
   // ── Lock primitive — auto-creates _locks in main db on first use ──────────
@@ -8465,6 +8595,7 @@ function makeLockPrimitive(rawWriteDb) {
   const stampClock = () => _madeAt.fn?.() ?? (typeof now === 'function' ? now() : new Date())
   const generatedDefaultMap = buildGeneratedDefaultMap(schema, stampClock)
   const authDefaultMap     = buildAuthDefaultMap(schema)
+  const literalDefaultMap  = buildLiteralDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
   const updatedByMap       = buildUpdatedByMap(schema)
   const createdByMap       = buildCreatedByMap(schema)
@@ -8912,7 +9043,7 @@ function makeLockPrimitive(rawWriteDb) {
     now,
     stampClock, _madeAt,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, effectiveMap, commitmentMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, effectiveMap, commitmentMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, literalDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // model → its field → column, for the resolvers that answer for a model
     // that is not the one they were built for: an include, a relation filter
@@ -9263,7 +9394,11 @@ function makeLockPrimitive(rawWriteDb) {
   // Built once — schema is immutable after createClient.
   const _tableBuilders = new Map()
   for (const model of schema.models) _tableBuilders.set(modelToAccessor(model.name), (ctx) => buildTableForModel(model, ctx))
-  for (const view of (schema.views ?? [])) _tableBuilders.set(view.name, (ctx) => buildTableForView(view, ctx))
+  // A view's stub is in `schema.models`, so the loop above registered a TABLE
+  // over the snake-case name at this same accessor — the view must land on
+  // that key to replace it, or a PascalCase view reads a table that does not
+  // exist (`FJS-1631`).
+  for (const view of (schema.views ?? [])) _tableBuilders.set(modelToAccessor(view.name), (ctx) => buildTableForView(view, ctx))
   const _tableAccessorNames = [..._tableBuilders.keys()]
 
   // Lazily-constructed tables object for auth-scoped clients. $setAuth used to
@@ -11262,7 +11397,7 @@ function makeLockPrimitive(rawWriteDb) {
       throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(scopedTables).join(', ')}`)
     },
     ownKeys(target) {
-      const viewNames = (schema.views ?? []).map(v => v.name)
+      const viewNames = (schema.views ?? []).map(v => modelToAccessor(v.name))
       return dedupeKeys(
         Reflect.ownKeys(target),
         Object.keys(scopedTables),

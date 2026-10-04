@@ -12,6 +12,10 @@
       "types": "./src/bearer/bearer.d.ts",
       "default": "./src/bearer/bearer.js"
     },
+    "./cells": {
+      "types": "./src/cells/cells.d.ts",
+      "default": "./src/cells/cells.js"
+    },
     "./cron": {
       "types": "./src/cron/cron.d.ts",
       "default": "./src/cron/cron.js"

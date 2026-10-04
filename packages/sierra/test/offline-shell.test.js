@@ -16,6 +16,7 @@
 import { describe, test, expect, beforeEach, afterAll } from 'vitest'
 import { mkdir, writeFile, readFile, rm } from 'fs/promises'
 import { join } from 'path'
+import { inspect } from 'node:util'
 
 import { tmpDir } from './tmp.js'
 import { writeOfflineShell } from '../src/postbuild/offline-shell.js'
@@ -188,6 +189,16 @@ describe('the byte budget', () => {
     await writeFile(join(dir, 'offline-baseline.json'), JSON.stringify({ shellKB: 0 }), 'utf8')
     await expect(writeOfflineShell(true, dir, dir))
       .rejects.toThrow(/offline shell is \d+ kB over the wire and the baseline is 0 kB/)
+  })
+
+  test('the refusal prints as its message, without a stack', async () => {
+    // Vite prints a failed build with util.inspect, and a stack of rolldown
+    // frames buried the command that fixes it.
+    const dir = await build({ 'index.html': PAGE, 'assets/app.js': 'export {}' })
+    await writeFile(join(dir, 'offline-baseline.json'), JSON.stringify({ shellKB: 0 }), 'utf8')
+    const err = await writeOfflineShell(true, dir, dir).catch(e => e)
+    expect(inspect(err)).toBe(err.message)
+    expect(err.message).toMatch(/\n {4}FJS_OFFLINE_BASELINE=update bun run build\n/)
   })
 
   test('a build that shrinks passes and does NOT rewrite the file on its own', async () => {

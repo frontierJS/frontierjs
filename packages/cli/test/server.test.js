@@ -889,3 +889,41 @@ describe('GET /api/ci · POST /api/ci/run · POST /api/ci/stop', () => {
   })
 
 })
+
+describe('POST /api/ask-claude · POST /api/ask-claude/stop', () => {
+
+  test('GET is the defaults the page offers to edit, read from the module that runs them', async () => {
+    const { ASK_DEFAULT_QUESTION, ASK_RULES } = await import('../core/ask-claude.js')
+    const r = await fetch(`${base}/api/ask-claude`)
+    expect(r.status).toBe(200)
+    const d = await r.json()
+    expect(d.question).toBe(ASK_DEFAULT_QUESTION)
+    expect(d.rules).toBe(ASK_RULES)
+    expect(d.tools).toEqual(['Read', 'Grep', 'Glob'])
+    expect(d.bash).toContain('git status')
+  })
+
+  test('Claude is not asked from another origin — it starts an agent in this tree', async () => {
+    const r = await fetch(`${base}/api/ask-claude`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://elsewhere.example' },
+      body: JSON.stringify({ session: 'not-a-session' }),
+    })
+    expect(r.status).toBe(403)
+    // The pair: from no origin the same request reaches the session check,
+    // which refuses before anything is spawned.
+    const same = await fetch(`${base}/api/ask-claude`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session: 'not-a-session' }),
+    })
+    expect(same.status).toBe(400)
+    expect((await same.json()).error).toContain('not a session id')
+  })
+
+  test('nor stopped from one, and a stop with nothing asking says so', async () => {
+    const foreign = await fetch(`${base}/api/ask-claude/stop`, { method: 'POST', headers: { Origin: 'https://elsewhere.example' } })
+    expect(foreign.status).toBe(403)
+    const idle = await fetch(`${base}/api/ask-claude/stop`, { method: 'POST' })
+    expect(idle.status).toBe(409)
+  })
+
+})

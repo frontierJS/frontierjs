@@ -6,6 +6,7 @@
   // dot's corner. A render test asserts the class; only a browser can say
   // whether the geometry the component computed is on screen.
   import Sparkline     from '../../../components/display/Sparkline.mesa'
+  import Chart         from '../../../components/display/Chart.mesa'
   import Bar           from '../../../components/display/Bar.mesa'
   import Avatar        from '../../../components/display/Avatar.mesa'
   import AvatarGroup   from '../../../components/display/AvatarGroup.mesa'
@@ -42,11 +43,14 @@
   // chart that agrees with itself is the one thing a chart always looks like it
   // is doing correctly.
   let live = [1, 4, 2, 8, 5]
+  let months = [{ m: 'Jan', v: 30 }, { m: 'Feb', v: 50 }, { m: 'Mar', v: -10 }]
 </script>
 
 <div id="probe-sparkline"><Sparkline data={[1, 4, 2, 8, 5]} tone="success" label="Signups, last five days" /></div>
 <div id="probe-sparkline-live"><Sparkline data={live} label="Live" /></div>
 <button id="grow-sparkline" onclick={() => live = [...live, 12, 3]}>grow</button>
+<div id="probe-chart"><Chart rows={months} x="m" y="v" label="Net per month" format={v => `${v} u`} /></div>
+<button id="grow-chart" onclick={() => months = [...months, { m: 'Apr', v: 20 }]}>grow chart</button>
 <div id="probe-bar"><Bar value={74} max={100} label="Disk" unit="%" /></div>
 <div id="probe-avatar"><Avatar name="Ada Lovelace" status="online" /></div>
 <div id="probe-avatars"><AvatarGroup users={USERS} max={4} /></div>

@@ -344,6 +344,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `./bearer (types)` | `src/bearer/bearer.d.ts` | yes |
 | exports | `./bearer (default)` | `src/bearer/bearer.js` | yes |
+| exports | `./cells (types)` | `src/cells/cells.d.ts` | yes |
+| exports | `./cells (default)` | `src/cells/cells.js` | yes |
 | exports | `./cron (types)` | `src/cron/cron.d.ts` | yes |
 | exports | `./cron (default)` | `src/cron/cron.js` | yes |
 | exports | `./datetime (types)` | `src/datetime/datetime.d.ts` | yes |

@@ -1,0 +1,216 @@
+<script>
+  // Chart.mesa
+  // One series over a category axis, as columns or a line, in pure SVG.
+  //
+  // Pure SVG and no measuring, on purpose: the same component renders on
+  // screen, on the server for a PDF, and through a headless screenshot for an
+  // email's PNG (DL V3, R5, R6), so nothing here reads the DOM to lay itself
+  // out. It draws into a fixed viewBox and scales with its container, text
+  // included.
+  //
+  // One series: a second measure is a second chart, never a second axis, and
+  // a breakdown by category wants a legend and a validated categorical
+  // palette this does not have yet. The title beside it names the series, so
+  // it draws no legend.
+  //
+  // Usage:
+  //   <Chart rows={months} x="month" y="revenue" label="Paid revenue by month" format={money} />
+  //   <Chart rows={days} x="day" y="signups" type="line" tone="success" label="Signups per day" />
+  //
+  // Color is the tone, through currentColor, as in Sparkline: a themed subtree
+  // recolors it. Text wears the ink tokens, never the series color. Hovering
+  // or focusing a mark shows its category and value; every value is also in
+  // the mark's <title> and should be in a table beside the chart, because a
+  // tooltip may enhance and never gate.
+
+  import { tone as toTone, cx } from '../../utils.js'
+
+  export let rows    = []       // object[] — one per category, in axis order
+  export let x       = 'x'      // the field naming each category
+  export let y       = 'y'      // the numeric field drawn
+  export let type    = 'bar'    // 'bar' (columns) | 'line'
+  export let label   = ''       // what is plotted, for assistive tech; required in practice
+  export let format  = (v) => Number(v).toLocaleString('en-US')   // a y value → text
+  export let formatX = (v) => String(v)                            // a category → text
+  export let formatTick = null  // a y tick → text; defaults to `format`. Pass a compact one for long values
+  export let tone    = ''       // one of the 7 css tones; '' is primary
+  export let height  = 280      // viewBox height
+  export let width   = 960      // viewBox width; the drawing scales to its container, text with it
+
+  const W = width
+  const M = { top: 28, right: 16, bottom: 28, left: 64 }
+
+  const t = toTone(tone)
+
+  const values = rows.map(r => Number(r?.[y]) || 0)
+  const innerW = W - M.left - M.right
+  const innerH = height - M.top - M.bottom
+
+  // Clean ticks over a domain that always holds zero, so a column grows from a
+  // real baseline and a line's height is never a truncated axis's.
+  const scale = (() => {
+    const lo = Math.min(0, ...values)
+    const hi = Math.max(0, ...values)
+    const span = hi - lo || 1
+    const raw = span / 4
+    const mag = 10 ** Math.floor(Math.log10(raw))
+    const step = [1, 2, 2.5, 5, 10].map(f => f * mag).find(s => s >= raw)
+    const min = Math.floor(lo / step) * step
+    const max = Math.ceil(hi / step) * step || step
+    const ticks = []
+    for (let v = min; v <= max + step / 2; v += step) ticks.push(Math.round(v / step) * step)
+    return { min, max, ticks }
+  })()
+  const yAt = (v) => M.top + (1 - (v - scale.min) / (scale.max - scale.min)) * innerH
+  const zero = yAt(0)
+
+  const band = rows.length ? innerW / rows.length : innerW
+  const xAt  = (i) => M.left + band * (i + 0.5)
+  const barW = Math.max(2, Math.min(24, band * 0.6))
+
+  // A column: square at the baseline, a 4px round on its data end.
+  function columnPath(i) {
+    const v = values[i]
+    const x0 = xAt(i) - barW / 2, x1 = x0 + barW
+    const yv = yAt(v)
+    const h = Math.abs(zero - yv)
+    if (h < 0.5) return ''
+    const r = Math.min(4, barW / 2, h)
+    if (v >= 0)
+      return `M${x0},${zero} V${yv + r} Q${x0},${yv} ${x0 + r},${yv} H${x1 - r} Q${x1},${yv} ${x1},${yv + r} V${zero} Z`
+    return `M${x0},${zero} V${yv - r} Q${x0},${yv} ${x0 + r},${yv} H${x1 - r} Q${x1},${yv} ${x1},${yv - r} V${zero} Z`
+  }
+
+  const linePath = values.map((v, i) => `${i ? 'L' : 'M'}${xAt(i)},${yAt(v)}`).join(' ')
+  const areaPath = values.length
+    ? `${linePath} L${xAt(values.length - 1)},${zero} L${xAt(0)},${zero} Z`
+    : ''
+
+  const tickText = (v) => (formatTick ?? format)(v)
+  // A value label at either end anchors inward, so it never hangs off the plot.
+  const anchorAt = (i) => xAt(i) > W - M.right - 40 ? 'end' : xAt(i) < M.left + 40 ? 'start' : 'middle'
+  const labelX   = (i) => anchorAt(i) === 'end' ? xAt(i) + barW / 2 : anchorAt(i) === 'start' ? xAt(i) - barW / 2 : xAt(i)
+
+  // Label selectively: the largest value and the last, never every mark.
+  const labelled = (() => {
+    if (!values.length) return new Set()
+    let top = 0
+    values.forEach((v, i) => { if (v > values[top]) top = i })
+    return new Set([top, values.length - 1])
+  })()
+
+  // As many category labels as fit at ~48 units each, evenly skipped.
+  const every = Math.max(1, Math.ceil(rows.length / Math.floor(innerW / 48)))
+
+  // The mark under the pointer or the keyboard, and its tooltip's box. The
+  // width is estimated from the text, since nothing here measures.
+  let active = null
+  const tip = (() => {
+    if (active == null || !rows[active]) return null
+    const value = format(values[active])
+    const cat   = formatX(rows[active][x])
+    const w = Math.max(value.length * 8, cat.length * 6.5) + 20
+    const cx_ = Math.min(Math.max(xAt(active), M.left + w / 2), W - M.right - w / 2)
+    const top = Math.max(2, Math.min(yAt(values[active]), zero) - 52)
+    return { value, cat, w, x: cx_ - w / 2, y: top }
+  })()
+</script>
+
+<svg
+  viewBox="0 0 {W} {height}"
+  xmlns="http://www.w3.org/2000/svg"
+  class={cx('fjs-chart', t)}
+  role="group"
+  aria-label={label || null}
+  {class}
+  {...$attributes}
+>
+  {#if !rows.length}
+    <text class="fjs-chart-empty" x={W / 2} y={height / 2} text-anchor="middle">Nothing to plot</text>
+  {:else}
+    <!-- Recessive grid and ticks: hairline, solid, behind the data. -->
+    {#each scale.ticks as v (v)}
+      <line class="fjs-chart-grid" class:fjs-chart-zero={v === 0} x1={M.left} x2={W - M.right} y1={yAt(v)} y2={yAt(v)} />
+      <text class="fjs-chart-tick" x={M.left - 8} y={yAt(v)} text-anchor="end" dominant-baseline="middle">{tickText(v)}</text>
+    {/each}
+
+    {#each rows as r, i}
+      {#if i % every === 0}
+        <text class="fjs-chart-tick" x={xAt(i)} y={height - M.bottom + 18} text-anchor="middle">{formatX(r[x])}</text>
+      {/if}
+    {/each}
+
+    {#if type === 'line'}
+      <path class="fjs-chart-area" d={areaPath} />
+      <path class="fjs-chart-line" d={linePath} />
+      {#each values as v, i}
+        {#if labelled.has(i) || active === i}
+          <circle class="fjs-chart-dot" cx={xAt(i)} cy={yAt(v)} r="4" />
+        {/if}
+      {/each}
+    {:else}
+      {#each values as v, i}
+        <path class="fjs-chart-bar" class:fjs-chart-active={active === i} d={columnPath(i)} />
+      {/each}
+    {/if}
+
+    {#each values as v, i}
+      {#if labelled.has(i) && active !== i}
+        <text class="fjs-chart-value" x={labelX(i)} y={v >= 0 ? yAt(v) - 8 : yAt(v) + 16} text-anchor={anchorAt(i)}>{format(v)}</text>
+      {/if}
+    {/each}
+
+    <!-- The hit targets: a whole band each, bigger than any mark, focusable,
+         and each carrying its own category and value for a reader that never
+         hovers. -->
+    {#each rows as r, i}
+      <rect
+        class="fjs-chart-hit"
+        x={M.left + band * i} y={M.top} width={band} height={innerH}
+        tabindex="0"
+        aria-label={`${formatX(r[x])}: ${format(values[i])}`}
+        data-index={i}
+        on:pointerenter={() => { active = i }}
+        on:pointerleave={() => { if (active === i) active = null }}
+        on:focus={() => { active = i }}
+        on:blur={() => { if (active === i) active = null }}
+      ><title>{formatX(r[x])}: {format(values[i])}</title></rect>
+    {/each}
+
+    {#if tip}
+      <g class="fjs-chart-tip" pointer-events="none">
+        <rect x={tip.x} y={tip.y} width={tip.w} height="42" rx="6" />
+        <text class="fjs-chart-tip-value" x={tip.x + 10} y={tip.y + 18}>{tip.value}</text>
+        <text class="fjs-chart-tip-label" x={tip.x + 10} y={tip.y + 34}>{tip.cat}</text>
+      </g>
+    {/if}
+  {/if}
+</svg>
+
+<style>
+  /* The tone class sets --bg-mix and every mark reads currentColor, as in
+     Sparkline. Text is ink, never the series color. */
+  .fjs-chart {
+    color:   var(--bg-mix, var(--color-primary));
+    display: block;
+    width:   100%;
+    height:  auto;
+    font-variant-numeric: tabular-nums;
+  }
+  .fjs-chart-grid  { stroke: var(--rule); stroke-width: 1; }
+  .fjs-chart-zero  { stroke: var(--rule-strong); }
+  .fjs-chart-tick  { fill: var(--ink-mute); font-size: var(--text-2xs); }
+  .fjs-chart-value { fill: var(--ink-soft); font-size: var(--text-2xs); font-weight: 600; }
+  .fjs-chart-empty { fill: var(--ink-mute); font-size: var(--text-sm); }
+  .fjs-chart-bar   { fill: currentColor; }
+  .fjs-chart-active { opacity: 0.75; }
+  .fjs-chart-line  { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .fjs-chart-area  { fill: currentColor; opacity: 0.1; }
+  /* The ring in the surface color keeps a dot legible where it crosses the line. */
+  .fjs-chart-dot   { fill: currentColor; stroke: var(--surface); stroke-width: 2; }
+  .fjs-chart-hit   { fill: transparent; outline: none; }
+  .fjs-chart-hit:focus-visible { stroke: var(--ink-mute); stroke-width: 1; }
+  .fjs-chart-tip rect   { fill: var(--surface-raised); stroke: var(--rule); }
+  .fjs-chart-tip-value  { fill: var(--ink); font-size: var(--text-xs); font-weight: 600; }
+  .fjs-chart-tip-label  { fill: var(--ink-mute); font-size: var(--text-2xs); }
+</style>

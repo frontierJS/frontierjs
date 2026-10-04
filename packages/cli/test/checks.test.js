@@ -3337,6 +3337,21 @@ describe('schema-in-memory', () => {
     expect(findings[0].message).toContain('parseFile')
   })
 
+  test('a schema held as data, built with untrusted: true, is not the app\'s schema and passes (FJS-1644)', () => {
+    const root = tree('sim-untrusted', {
+      ...CLEAN,
+      'api/src/landing.ts': [
+        "import { createClient } from '@frontierjs/litestone'",
+        "export const open = (row) => createClient({ schema: row.schemaText, db: row.file, untrusted: true })",
+        "export const loose = (row) => createClient({ schema: row.schemaText, db: row.file, untrusted: false })",
+      ].join('\n'),
+    })
+    // The second is the same call without the guard, and still a finding.
+    const { findings } = only(root, 'schema-in-memory')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+  })
+
   test('createTenantRegistry is the same call and is named as itself', () => {
     const root = tree('sim-registry', {
       ...CLEAN,

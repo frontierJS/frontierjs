@@ -1,5 +1,13 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-03 — `offsetSpans`: a zone as the fixed offsets it keeps across a range
+
+`offsetSpans(from, to, timeZone)` answers `[{ from, offset }]`, the stretches of the range over which the zone keeps one UTC offset, each change found to the millisecond. It is for a reader that cannot run zone rules per row: litestone's zoned `groupBy` states a zone to SQLite as one `CASE` arm per span (DL S3, the transit stressor). Graded against the Temporal oracle the rest of `datetime.spec.js` uses, with a one-offset negative control that must miss.
+
+## 2026-10-03 — `cells`: one cell of text, read as a column's type or a reason it cannot be
+
+`parseCell(text, kind, { scale, values })` answers `{ value }` or `{ reason }` for `string`, `int`, `float`, `scaled`, `boolean`, `datetime`, `enum` and `json`. It never guesses. A thousands separator is a reason, because `1.234` is one thousand in `de-DE`. A `datetime` must be ISO 8601 with a zone and on the calendar. An enum member must match exactly, case included. `scaled` reads a decimal by its digits into minor units and refuses places beyond the scale rather than rounding. A reason never quotes the cell. Litestone's `loadRows` is the first caller. sierra's `coerceToSchema` is the lenient second reader of the same text, and folding it in is open. Proved by `test/specs/cells.spec.js`, where each refusal sits beside an acceptance one character away.
+
 ## 2026-10-02 — `match`: `leavesAt`'s first parameter is `span`, not `window`
 
 The substrate purity rule reads `window.<name>` as a browser global, so a parameter called `window` failed CI on `window.to`. Renamed; behavior and callers are unchanged.

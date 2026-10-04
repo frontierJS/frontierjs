@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-03 — the offline-shell budget refusal prints as its message
+
+Vite 8 prints a failed build with `util.inspect(err)`, so the over-budget refusal arrived as its message, then a dozen rolldown frames, then `{ code, plugin, hook }`, and the fix command was lost in the middle. `src/build/refusal.js` gives an error a custom inspect that returns its message alone. It is only for a verdict about the app: an error meaning Sierra itself broke keeps its stack. The message now puts the update command on its own line and names the baseline file relative to the cwd. Proof: `test/offline-shell.test.js` › *the refusal prints as its message*, and a forced over-budget `example` build printing the message and nothing else.
+
+## 2026-10-03 — a found schema.lite that produced no client schema says why, in the dev log and in the page (`FJS-1649`)
+
+`loadLitestone` caught the error a found litestone subpath threw and dropped it, then warned *Add it as a devDependency* — the wrong cure for a package that was there (Transit hit it as an `ERR_UNSUPPORTED_ESM_URL_SCHEME` when `./jsonschema` briefly reached `bun:sqlite`). The first error from a found package is now kept and named in the warning, and the devDependency advice is given only when nothing was found. The plugin keeps what it warned on `sierraContext.schemaFailure` whenever a schema path resolved and generation returned nothing, and `virtual:sierra` emits it as a `console.error` at boot: the app still runs, as `generateSchemas` intends, but an empty form and a `can()` answering yes from no declaration now come with a line in the browser console naming the cause. `test/schema-generation.test.js` § *a found litestone that will not load* drives a fake package whose `./jsonschema` throws, through `generateSchemas`, the plugin's own `configResolved`, and the emitted line run.
+
 ## 2026-10-03 — two suite fixes
 
 `test/resource-schema-modes.test.js` § *a column is marked only where something declared it* compared basecamp against a hardcoded `['Flow.ownerId']`, which went stale when basecamp froze ten columns with `@immutable`. It now asserts every marked column is one the schema declares `@immutable`, for both apps. `test/fs-allow-plugin.test.js` imported `bun:test` in a vitest package and collected zero tests; it imports `vitest`.

@@ -47,6 +47,9 @@ export interface SmtpAttachment {
    *  own type rather than a narrower one, which is the whole point here. */
   content:  ArrayBuffer | Uint8Array | string
   type?:    string
+  /** Inline: the HTML part draws it as `<img src="cid:…">`, and it is no
+   *  attachment the reader saves. See `MailAttachment.cid`. */
+  cid?:     string
 }
 
 // ─── Address and header safety ───────────────────────────────
@@ -522,6 +525,21 @@ export function assertHeaderName(name: string): string {
   return name
 }
 
+/**
+ * A Content-ID, as the HTML names it after `cid:`.
+ *
+ * It reaches a header inside angle brackets and a URL in the HTML, so it is
+ * held to the characters both read the same way: letters, digits and
+ * `.-_@`. A `>` would close the id early and a space would end the URL.
+ */
+export function assertContentId(cid: string): string {
+  if (!/^[A-Za-z0-9._@-]{1,100}$/.test(cid))
+    throw new SmtpError(
+      `Mail: "${cid}" is not a content id — an inline attachment's cid is ` +
+      `1 to 100 letters, digits and . - _ @, as the HTML writes it after cid:`)
+  return cid
+}
+
 /** Base64, in the 76-column lines a MIME body part is folded to. */
 function base64Lines(content: ArrayBuffer | Uint8Array | string): string {
   const b64 = typeof content === 'string'
@@ -561,34 +579,48 @@ function buildMimeMessage(msg: SmtpMessage): string {
   // Attachments: the whole message becomes multipart/mixed, with everything
   // above as the first part. Built by wrapping rather than by a fourth branch,
   // so the alternative/html/text shapes below stay the only place body
-  // structure is decided.
-  if (msg.attachments?.length) {
-    const mixed = `----=_Mixed_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
-    const inner = buildMimeMessage({ ...msg, attachments: undefined, headers: undefined })
+  // structure is decided. An inline image is wrapped one level further in:
+  // multipart/related around the body, so `cid:` in the HTML resolves to a
+  // part beside it (`FJS-1666`). In mixed, as it used to go, it is a stray file
+  // and a broken image.
+  const files  = msg.attachments?.filter(a => a.cid === undefined) ?? []
+  const inline = msg.attachments?.filter(a => a.cid !== undefined) ?? []
+  if (inline.length && !msg.html)
+    throw new SmtpError('Mail: an inline attachment (cid) needs an html body to draw it — a plain-text body has nowhere to put an image')
+  if (files.length || inline.length) {
+    const outer = files.length ? 'mixed' : 'related'
+    const part  = `----=_${outer}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
+    const inner = buildMimeMessage({ ...msg, attachments: files.length ? inline : undefined, headers: undefined })
     const blank = inner.indexOf('\r\n\r\n')
     const innerHeaders = inner.slice(0, blank).split('\r\n')
       .filter(h => /^(Content-Type|Content-Transfer-Encoding):/i.test(h))
     const innerBody = inner.slice(blank + 4)
+    const parts = files.length ? files : inline
 
     return [
       ...baseHeaders,
-      `Content-Type: multipart/mixed; boundary="${mixed}"`,
+      // `type` names the part the related parts belong to (RFC 2387).
+      `Content-Type: multipart/${outer}; boundary="${part}"` +
+        (outer === 'related' ? `; type="${msg.text ? 'multipart/alternative' : 'text/html'}"` : ''),
       '',
-      `--${mixed}`,
+      `--${part}`,
       ...innerHeaders,
       '',
       innerBody,
-      ...msg.attachments.flatMap(a => [
-        `--${mixed}`,
+      ...parts.flatMap(a => [
+        `--${part}`,
         // The filename reaches a header, so it is graded like one.
         `Content-Type: ${assertHeaderValue(a.type ?? 'application/octet-stream', 'attachment.type')}; ` +
           `name="${assertHeaderValue(a.filename, 'attachment.filename')}"`,
         'Content-Transfer-Encoding: base64',
-        `Content-Disposition: attachment; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`,
+        ...(a.cid === undefined
+          ? [`Content-Disposition: attachment; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`]
+          : [`Content-ID: <${assertContentId(a.cid)}>`,
+             `Content-Disposition: inline; filename="${assertHeaderValue(a.filename, 'attachment.filename')}"`]),
         '',
         base64Lines(a.content),
       ]),
-      `--${mixed}--`,
+      `--${part}--`,
     ].join('\r\n')
   }
 

@@ -91,6 +91,33 @@ export function buildGeneratedDefaultMap(schema, now) {
   return map
 }
 
+// ─── Literal default map ─────────────────────────────────────────────────────
+// { modelName: [{ field, value }] }
+// For fields with @default(<literal>) — a string, number, boolean or enum value.
+// SQLite writes these from the DDL's DEFAULT, so the engine never puts them in
+// the payload; this map exists for the one reader that runs BEFORE the INSERT
+// and must see the row as it will land: a create policy. Graded on the bare
+// payload, `channel Channel @default(email)` under
+// `@@allow('create', channel == 'email')` refuses every create that leaves the
+// column at its default, which is every create a form makes without showing it.
+// Json is left out: its default is text the column parses, and a policy over a
+// Json value is not one this can answer by substitution.
+
+export function buildLiteralDefaultMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (field.type?.name === 'Json') continue
+      const def = field.attributes.find(a => a.kind === 'default')
+      const kind = def?.value?.kind
+      if (kind !== 'string' && kind !== 'number' && kind !== 'boolean' && kind !== 'enum') continue
+      if (!map[model.name]) map[model.name] = []
+      map[model.name].push({ field: field.name, value: def.value.value })
+    }
+  }
+  return map
+}
+
 // ─── Auth default map ────────────────────────────────────────────────────────
 // { modelName: [{ field, authField }] }
 // For fields with @default(auth().someField) — value stamped from ctx.auth at create time.
@@ -516,7 +543,16 @@ export function buildFromMap(schema, pluralize = false) {
       if (where) whereParts.push(`(${expandNowTokens(where)})`)
       const whereClause = whereParts.join(' AND ')
 
-      let subquerySql, isObject = false, rowRef = null
+      let subquerySql, isObject = false, rowRef = null, aggRef = null
+      // The parts every re-run under the caller's row policy shares — see
+      // resolveFromRowRefs. `%T%` rather than the `_from` alias, because a
+      // policy compiles `check(parent)` against the table's own name and an
+      // alias puts it out of scope.
+      const extra = [
+        ...(targetSoftDelete && !withDeleted ? [`%T%."deletedAt" IS NULL`] : []),
+        ...(targetHtField    && !withTemplates ? [`%T%."${targetHtField}" = 0`] : []),
+        ...(where ? [`(${expandNowTokens(where)})`] : []),
+      ]
 
       switch (op) {
         case 'last':
@@ -538,19 +574,8 @@ export function buildFromMap(schema, pluralize = false) {
           const dir = op === 'last' ? 'DESC' : 'ASC'
           subquerySql = `(SELECT _from."${targetPk}" FROM "${targetTable}" AS _from WHERE ${whereClause} ORDER BY _from."${orderField}" ${dir} LIMIT 1)`
           // Everything the pick needs, so it can be REDONE under the caller's
-          // row policy — see resolveFromRowRefs. The parts carry `%T%` rather
-          // than the `_from` alias above, because the repick cannot alias the
-          // table: a policy compiles `check(parent)` against the table's own
-          // name and an alias puts it out of scope.
-          rowRef = {
-            model: targetModel.name, pk: targetPk,
-            fkCols, refCols, orderField, dir,
-            extra: [
-              ...(targetSoftDelete && !withDeleted ? [`%T%."deletedAt" IS NULL`] : []),
-              ...(targetHtField    && !withTemplates ? [`%T%."${targetHtField}" = 0`] : []),
-              ...(where ? [`(${where})`] : []),
-            ],
-          }
+          // row policy — see resolveFromRowRefs.
+          rowRef = { model: targetModel.name, pk: targetPk, fkCols, refCols, orderField, dir, extra }
           break
         }
         case 'count':
@@ -569,13 +594,24 @@ export function buildFromMap(schema, pluralize = false) {
           subquerySql = `(SELECT EXISTS(SELECT 1 FROM "${targetTable}" AS _from WHERE ${whereClause}))`
           break
       }
+      // An aggregate counts every row that EXISTS, since a policy binds auth per
+      // request and this string is built once. So it is recomputed under the
+      // caller's policy after the read (resolveFromRowRefs), and naming it in a
+      // `where` or an `orderBy` — which run this string — is refused while the
+      // target has a policy for the caller (guardArgs).
+      if (op !== 'first' && op !== 'last')
+        aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra }
 
       map[model.name][field.name] = {
+        // The model whose rows the value is read off. Its read gate is the one
+        // a caller must clear to see the value at all (gatedFromFields).
+        target:             targetModel.name,
         subquerySql:        subquerySql.replaceAll('%SELF%', `"${selfTable}"`),
         subquerySqlAliased: subquerySql.replaceAll('%SELF%', 't'),
         isObject,
         isBool: op === 'exists',
         rowRef,
+        aggRef,
       }
     }
   }

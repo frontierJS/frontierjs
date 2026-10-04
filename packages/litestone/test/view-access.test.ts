@@ -241,7 +241,7 @@ describe('a view offers every read a model does, and no write', () => {
     }
   `
   const seeded = async () => {
-    const db = await createClient({ databases: ':memory:', schema: SCHEMA }) as any
+    const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
     for (const [kind, amount] of [['a', 10], ['a', 5], ['b', 7]])
       await db.asSystem().sale.create({ data: { kind, amount } })
     return db
@@ -520,5 +520,35 @@ view revenue {
     const out = generateTypeScript(parse('model Order { id Int @id  total Int }').schema)
     expect(out).not.toContain('ViewClient')
     expect(out).not.toContain('ViewRefusedVerb')
+  })
+})
+
+// ─── a PascalCase view reads under its accessor ──────────────────────────────
+
+describe('a view named in PascalCase', () => {
+  // `FJS-1631`. The view registered its accessor under `view.name` verbatim
+  // while its model stub registered `modelToAccessor(view.name)` over the
+  // snake-case table, so `db.orderByCustomer` queried `order_by_customer` and
+  // said no such table. A camelCase view hid it: both keys were one key.
+  const SCHEMA = `
+    model Order { id Int @id  customer String }
+    view OrderByCustomer {
+      customer String
+      n Int
+      @@sql("SELECT customer, COUNT(*) AS n FROM \\"order\\" GROUP BY customer")
+    }
+  `
+
+  test('reads through the camelCase accessor typegen names', async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
+    await db.order.create({ data: { customer: 'a' } })
+    expect(await db.orderByCustomer.findMany()).toEqual([{ customer: 'a', n: 1 }])
+    expect(generateTypeScript(parse(SCHEMA).schema)).toContain('readonly orderByCustomer: ViewClient<')
+  })
+
+  test('is one accessor, and a view rather than a table', async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA }) as any
+    expect(Object.keys(db).filter(k => /^orderbycustomer$/i.test(k))).toEqual(['orderByCustomer'])
+    expect(() => db.orderByCustomer.create({ data: { customer: 'b', n: 2 } })).toThrow(/is a view/)
   })
 })

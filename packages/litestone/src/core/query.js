@@ -1610,7 +1610,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
   }
 
   // A @from(first/last) field is resolved by REPICKING the row under the
-  // caller's row policy, and the repick correlates on the column the target
+  // caller's row policy, an aggregate by recounting under it, and each correlates on the column the target
   // points back at (resolveFromRowRefs). Injected the same way an FK is — into
   // the SQL, out of the answer — because without it the resolver has nothing to
   // correlate on and falls back to the id the startup subquery chose, which is
@@ -1619,7 +1619,8 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
     for (const name of requestedFrom) {
       // Every column of the correlation — a composite key is only a correlation
       // when all of it is in the row.
-      for (const refCol of tableFrom.get?.(name)?.rowRef?.refCols ?? []) {
+      const def = tableFrom.get?.(name)
+      for (const refCol of (def?.rowRef ?? def?.aggRef)?.refCols ?? []) {
         if (dbFields[refCol]) continue
         dbFields[refCol] = true
         if (!requestedFields.has(refCol)) injectedFKs.add(refCol)

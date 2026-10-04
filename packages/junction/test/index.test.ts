@@ -4553,6 +4553,21 @@ describe('Cache-Control headers', () => {
     expect(res.status).toBe(200)
     expect(res.headers['cache-control']).toBe('no-store')
   })
+
+  // A raw route answering a file graded to one caller says no-store, and the
+  // decoration used to replace it with `private, no-cache` (FJS-1662).
+  it("keeps a raw route's own Cache-Control, and still varies on the token", async () => {
+    const app = await createTestApp({
+      auth: createStubAuth({ users: [{ id: 'u1', role: 'user' }] }),
+    })
+    app.get('/report.pdf', () => new Response('%PDF-', {
+      headers: { 'content-type': 'application/pdf', 'cache-control': 'private, no-store' },
+    }))
+    const res = await request(app).get('/report.pdf').set('authorization', 'Bearer test-token-u1')
+    expect(res.status).toBe(200)
+    expect(res.headers['cache-control']).toBe('private, no-store')
+    expect(res.headers['vary']).toContain('Authorization')
+  })
 })
 
 // ─── authenticate hook — call site correctness ────────────────────────────

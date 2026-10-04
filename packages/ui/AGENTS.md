@@ -86,6 +86,7 @@ the package has no root entry.
 | a count, or a badge floated over an icon · a status or plan label · a removable token · a status dot | `@frontierjs/ui/components/display/Badge.mesa` · `@frontierjs/ui/components/display/Pill.mesa` · `@frontierjs/ui/components/display/Tag.mesa` · `@frontierjs/ui/components/display/Dot.mesa` |
 | a figure · a figure as a tile or link | `@frontierjs/ui/components/display/Stat.mesa` · `@frontierjs/ui/components/display/StatCard.mesa` |
 | a meter · a trend line | `@frontierjs/ui/components/display/Bar.mesa` · `@frontierjs/ui/components/display/Sparkline.mesa` |
+| one series over categories, as columns or a line, with axes and a hover readout | `@frontierjs/ui/components/display/Chart.mesa` — `rows`, `x`, `y`, `type`, `label`, `format`, `formatTick`. Pure SVG that renders on the server too, so it prints. One series and one axis: a second measure is a second chart. Put the same values in a table beside it, since a tooltip may never be the only way to read one |
 | nothing to show yet | `@frontierjs/ui/components/display/EmptyState.mesa` |
 | a page or section heading with a trailing action | `@frontierjs/ui/components/display/SectionHeader.mesa` |
 | guidance that sits on the page and is not announced | `@frontierjs/ui/components/display/Callout.mesa` |

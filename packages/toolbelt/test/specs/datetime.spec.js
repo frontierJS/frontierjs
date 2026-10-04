@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt } from '../../src/datetime/datetime.js'
+import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
 const ORACLE = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-oracle.json'), 'utf8'))
@@ -36,6 +36,38 @@ const wallFields = (s) => {
 const JULY_4 = Date.UTC(2026, 6, 4, 16, 5, 3)   // a Saturday; 10:05:03 in Denver
 
 /* ── The oracle ─────────────────────────────────────────────────────── */
+
+test('datetime: offsetSpans puts every oracle instant in the span holding its own offset', function () {
+  // Per zone, the spans over the instants the oracle names around its
+  // transitions, then each instant's span offset against Temporal's offset for
+  // it (via partsIn, itself graded against the oracle above). Negative control:
+  // one fixed offset per zone — the first span alone — must be wrong for some.
+  const byZone = new Map()
+  for (const [zone, , , , , reject] of ORACLE.resolve)
+    if (reject !== null) (byZone.get(zone) ?? byZone.set(zone, []).get(zone)).push(reject)
+  const wrong = []
+  let controlWrong = 0
+  for (const [zone, instants] of byZone) {
+    const spans = offsetSpans(Math.min(...instants), Math.max(...instants), zone)
+    for (const at of instants) {
+      const span = spans.findLast(sp => sp.from <= at)
+      const want = partsIn(at, zone).offset * 60000
+      if (span.offset !== want) wrong.push(`${zone} ${new Date(at).toISOString()}: span ${span.offset}, Temporal ${want}`)
+      if (spans[0].offset !== want) controlWrong++
+    }
+  }
+  assert.equal(wrong.length, 0, wrong.slice(0, 5).join('\n      '))
+  assert.ok(controlWrong > 0, 'one offset per zone must be wrong somewhere, or the fixture samples no transition')
+})
+
+test('datetime: offsetSpans is one span where the zone keeps one offset, and refuses a backwards range', function () {
+  assert.deepEqual(offsetSpans('2024-01-01T00:00:00Z', '2025-01-01T00:00:00Z', 'Asia/Tokyo'), [{ from: Date.UTC(2024, 0, 1), offset: 9 * 3600000 }])
+  const ny = offsetSpans('2024-01-01T00:00:00Z', '2025-01-01T00:00:00Z', 'America/New_York')
+  assert.deepEqual(ny.map(s => [new Date(s.from).toISOString(), s.offset / 60000]),
+    [['2024-01-01T00:00:00.000Z', -300], ['2024-03-10T07:00:00.000Z', -240], ['2024-11-03T06:00:00.000Z', -300]])
+  assert.throws(() => offsetSpans('2025-01-01T00:00:00Z', '2024-01-01T00:00:00Z', 'UTC'), /from <= to/)
+})
+
 
 test('datetime: fromWall agrees with Temporal in all four disambiguation modes', function () {
   const wrong = []

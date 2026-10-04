@@ -1027,13 +1027,27 @@ export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
 
 // Throws AccessDeniedError if the create policy denies the operation.
 // Evaluates purely in JS against the data being created (no SQL — INSERT has no WHERE).
+//
+// Graded on the row as it will LAND: an omitted column with a literal @default
+// is read at that default, because SQLite writes it there. Only an absent key
+// is filled, so what the caller sent is graded as sent, and the payload itself
+// is untouched, so the @guarded/@system refusals still see the caller's keys
+// alone. The auth stamps are already applied by every caller (FJS-1402).
 export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
-  const v = policyVerdict(modelName, data, ctx, policyMap, relationMap, 'create')
+  const v = policyVerdict(modelName, withLiteralDefaults(data, ctx.literalDefaultMap?.[modelName]), ctx, policyMap, relationMap, 'create')
   if (v.ok) return
   plog(ctx, 'create', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'})`)
   throw new AccessDeniedError(
     v.message ?? `Create denied by @@${v.rule} policy on "${modelName}"`,
     { model: modelName, operation: 'create' })
+}
+
+function withLiteralDefaults(data, list) {
+  if (!list?.length) return data
+  let out = data
+  for (const { field, value } of list)
+    if (out?.[field] === undefined) out = { ...(out ?? {}), [field]: value }
+  return out
 }
 
 // Evaluates a post-update policy against a row object in JS.

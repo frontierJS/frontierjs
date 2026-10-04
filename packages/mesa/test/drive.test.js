@@ -17,6 +17,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { createServer } from 'node:http'
+import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -230,4 +231,54 @@ test('openChrome throws, rather than exiting, when $FJS_CHROME names nothing', a
 test('openChrome refuses the flags it owns, before launching anything', async () => {
   await expect(openChrome({ args: ['--remote-debugging-port=9222'] })).rejects.toThrow(/--remote-debugging-port is the driver's own flag/)
   await expect(openChrome({ args: ['--user-data-dir=/tmp/x'] })).rejects.toThrow(/--user-data-dir is the driver's own flag/)
+})
+
+// A child process, because the subject is what a signal does to a PROCESS.
+// It reports the profile its launch made, so the parent can see the browser
+// was still swept on the way out.
+function launchChild(withHost) {
+  const drive = new URL('../src/drive.js', import.meta.url).href
+  const script = `
+    import { readdirSync } from 'node:fs'
+    import { tmpdir } from 'node:os'
+    import { openChrome } from '${drive}'
+    ${withHost ? `process.on('SIGTERM', async () => {
+      await new Promise((r) => setTimeout(r, 200))
+      console.log('host shutdown finished')
+      process.exit(0)
+    })` : ''}
+    const before = new Set(readdirSync(tmpdir()))
+    await openChrome()
+    const profile = readdirSync(tmpdir()).find((n) => n.startsWith('fjs-drive-') && !before.has(n))
+    console.log('up ' + profile)
+    setInterval(() => {}, 1000)
+  `
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'pipe'] })
+  let out = ''
+  child.stdout.on('data', (d) => { out += d })
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('child never came up: ' + out)) }, 20000)
+    child.stdout.on('data', () => {
+      const m = out.match(/up (\S+)/)
+      if (!m) return
+      clearTimeout(t)
+      child.kill('SIGTERM')
+      child.on('exit', (code) => resolve({ code, out, profile: join(tmpdir(), m[1]) }))
+    })
+  })
+}
+
+describe.skipIf(!CHROME)('a signal (FJS-1658)', () => {
+  test('in a process with no other handler, the drive sweeps and exits 143', async () => {
+    const { code, profile } = await launchChild(false)
+    expect(code).toBe(143)
+    expect(existsSync(profile)).toBe(false)
+  }, 30000)
+
+  test('in a host with its own handler, the host finishes its shutdown, and the browser still goes', async () => {
+    const { code, out, profile } = await launchChild(true)
+    expect(out).toContain('host shutdown finished')
+    expect(code).toBe(0)
+    expect(existsSync(profile)).toBe(false)
+  }, 30000)
 })

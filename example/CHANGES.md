@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-03 — the offline-shell budget is raised 930 → 938 kB (`FJS-D302`)
+
+The web build refused at 938 kB, and the size is paid for rather than cut. Per-file brotli sizes were compared across three builds: `f8a6876b`, the commit that wrote 930, at 933; HEAD `0d9fd302` at 935; and the working tree at 938. Most of the growth is `local-db-worker.js`, Litestone running in the browser: +1.1 kB from commits and +2.5 kB from the uncommitted Litestone `client.js`/`include.js`/`schema-maps.js` work. The rest is `search.js` +0.6 kB, `junction.js` +0.4 kB and `style.css` +0.2 kB. No one change accounts for it, and `loadRows` does not reach the worker. `f8a6876b` itself already measures 933 when built today, so 930 was not reproducible from its own commit.
+
 ## 2026-09-30 — `User` polices `email` and `accountId` (`FJS-1591`)
 
 The pasted `User` moved with `@frontierjs/auth`'s fragment. Before, a shopper's `PATCH /users/<own id>` could change their own address, which password reset mails to, while `emailVerified` stayed true. Now `email` and `accountId` are admin-written like `role`, and a shopper's write drops them. `verify:users` passed every boundary check over HTTP, 67 in all. Its screen section stopped twice with *Inspected target navigated or closed* inside `packages/mesa/src/drive.js`, which another session has uncommitted edits in, so the screen half was not proved. It ran on 7115/7015 with its own mail and psp sinks on 7116/7117, because another session's API held 8110 through 8112.

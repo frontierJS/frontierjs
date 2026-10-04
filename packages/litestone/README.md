@@ -2023,14 +2023,46 @@ beforeEach(() => restore(db, clean))
 Raw rows through the write connection: `@encrypted` keeps its exact ciphertext, no
 gate/hook/audit fires, FTS shadow tables are skipped. Not a transaction.
 
+### Loading rows from outside — `loadRows`
+
+Data somebody else wrote, read against the schema row by row. Every text cell is
+parsed as its column's type (`@frontierjs/toolbelt/cells`): an enum member exactly,
+a `DateTime` as ISO 8601 with a zone, `@money` and `@scale` by their digits at the
+column's scale, and a quoted or unquoted `0123` in a `String` column as `'0123'`.
+A cell that is not its type is a **reject** and the load goes on.
+
+```js
+import { loadRows } from '@frontierjs/litestone'
+
+const { loaded, rejects } = await loadRows(db.asSystem(), 'Order', csvText, {
+  key:   'id',                                  // a repeat in the file is a reject
+  mode:  'replace',                             // or 'insert' (default), 'upsert'
+  stamp: { _loadId: run.id, _syncedAt: now },   // what every row carries
+})
+// rejects: [{ row: 49, line: 51, key: 'o002189', field: 'items', reason: 'not a whole number' }]
+```
+
+- `loaded + rejects.length` is always the number of input rows.
+- **A reason never quotes the cell**: the text may be what the column encrypts.
+- A header naming no column, or a required column with no default that the file
+  lacks, **throws** before any row: every row would be rejected for it.
+- A non-string value (a record from an API) goes to the ORM as it is.
+- `dryRun: true` runs the whole load and rolls it back.
+- `1,234.50` is a reject, not a number: in `de-DE` that text is 1.2345.
+- `overflow: '_extra'` names an optional `Json?` column that keeps, per row,
+  every header or key naming no column, as it arrived. Without it the schema is
+  frozen and such a name throws before any row.
+
 ### Fixtures — authored reference data
 
 ```js
 import { loadFixture } from '@frontierjs/litestone'
 
 await loadFixture(db, 'Country', './db/fixtures/countries.json')
-await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { upsert: 'code' })
+await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { mode: 'upsert', key: 'code' })
 ```
+
+`loadRows` with one difference: a fixture is authored, so any reject throws, naming the rows.
 
 ### Seeder ordering
 

@@ -110,6 +110,28 @@ Four things can decide it, most specific first:
 reach for in a test. Use `databases: ':memory:'` when the schema declares more
 than one database and the test should touch no file at all.
 
+### A schema that is data
+
+Schema text the app did not write — a row holding a landing schema, a model a
+tenant defined — is built with `untrusted: true`:
+
+```js
+const landing = await createClient({ schema: row.schemaText, db: `./landing/${row.id}.db`, untrusted: true })
+```
+
+The text is parsed as text (a one-line string ending in `.lite` is never read
+from disk) and held to the one `db` given: a `database` block, an `import`,
+`tenancy`, a `function`, an `extend`, a claim read off a model, and a model's
+`@@auth`, `@@external`, `@@db`, `@@log` or `@@tenant` are refused by name, all
+in one error. Built as an ordinary client, such text could name any file and
+write it (`FJS-1633`). Models, views, enums, types, traits, value sets, scopes
+and bare `claim`s are what it may hold; it grades with the gates and policies it
+declares, under the plugins the app passes.
+
+Every client also prepares each of its views when it is built, so a view whose
+`@@sql` names a column or table that is not there fails `createClient` naming
+the view, rather than the first read (`FJS-1632`).
+
 ## Auth scoping
 
 Every request should use a scoped client so policies and field rules see the current user:

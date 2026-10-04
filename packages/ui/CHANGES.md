@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-10-03 — `Chart`: one series over categories, as columns or a line, in pure SVG (DL V3)
+
+`display/Chart.mesa` takes `rows`, `x`, `y`, `type` (`bar` | `line`), `label`, `format`, `formatTick` and `tone`. Columns are at most 24 units wide with a 4px round on the data end and square at a zero baseline, so a negative value hangs below it. A line is 2px over a 10% wash. Ticks are clean steps on a hairline grid, and only the largest and the last value are labeled. Every row has a band-wide, focusable hit target with a `<title>`, and pointer or keyboard focus shows a readout with the value first. It draws into a fixed viewBox and measures nothing, so the same component renders on the server for a PDF or an email PNG (R5, R6). Color is the tone through `currentColor`, and text wears the ink tokens. It takes one series and one axis: a second measure is a second chart, and a breakdown by category waits for a validated categorical palette. Found wanting by the transit stressor's revenue report, its first caller. Proved by `test/render.mjs` (two server renders), `test/attributes.mjs`, and `test/browser/specs/display.spec.mjs` (bars against the zero line, the selective labels, a pointer and a Tab readout, a redraw on new rows).
+
 ## 2026-10-02 — `JsonInput` shows a document set from outside (`FJS-1620`)
 
 The text was seeded from `value` once, so a `Form.reset()`, a record that

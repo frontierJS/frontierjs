@@ -1,0 +1,146 @@
+---
+title: "The story — FrontierJS"
+description: "The path through FrontierJS: one model, followed from the schema to the API to the screen to release, and the three axioms that made each step possible."
+render: static
+---
+
+<!--
+  The outline of the story a developer is walked through. One noun — Lead —
+  is followed through every chapter, and the philosophy is named only near the
+  end, once the reader has already seen it work.
+-->
+<section id="top" class="hero">
+  <div class="container">
+    <p class="eyebrow">The story</p>
+    <h1>Follow one model <span class="quiet">all the way out.</span></h1>
+    <p class="lede">
+      Eleven chapters, one noun. We start with a single <code>model Lead</code>
+      and keep asking the same question as it grows into an API, a screen, an
+      agent tool and a release: <em>where did this come from?</em> The answer
+      is always the same file.
+    </p>
+  </div>
+</section>
+
+<section class="chapters">
+  <div class="container">
+    <ol class="arc">
+      <li>
+        <span class="n">00</span>
+        <div>
+          <h2>Why FrontierJS exists</h2>
+          <p>Most of a web app is the same fact written again: in the ORM schema, the validator, the TypeScript type, the access middleware and the API doc. Every copy is a place for two versions to disagree, and sooner or later they do.</p>
+          <p><strong>A model a person can hold.</strong> Each copy is also a separate picture the developer has to keep in their head, while guessing which one is authoritative. FrontierJS is built for the person reading the code: three realms, three nouns, small enough to predict how a feature works before reading its docs.</p>
+          <p><strong>One source of truth.</strong> The schema is the defining spec. The database, the API, the types, the forms and the events are all generated from it, not maintained alongside it.</p>
+          <p><strong>80/20 on purpose.</strong> One supported path covers the common case with nothing to wire up, and an escape hatch covers the rest. FrontierJS doesn't try to be configurable in every direction. It commits to one way of doing things.</p>
+          <p class="takeaway">Every duplicated truth eventually becomes a duplicated mental model. Protect the truth and you protect the mind trying to hold it.</p>
+          <p class="see">See: <a href="/before-after/">Before &amp; after</a></p>
+        </div>
+      </li>
+      <li>
+        <span class="n">01</span>
+        <div>
+          <h2>One file</h2>
+          <p><code>db/schema.lite</code> declares <code>model Lead</code>, and <code>db.lead</code> already works. Model names are PascalCase singular, and three parts of the framework rely on that.</p>
+          <p class="takeaway">The schema is where every fact starts.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">02</span>
+        <div>
+          <h2>The rules live in the data</h2>
+          <p>Add validation, <code>@@gate</code>, <code>@encrypted</code> and <code>@@transitions</code> to the same model. The audit trail logs protected fields as <code>[redacted]</code> without being asked.</p>
+          <p class="takeaway">Access is declared in the schema, not written into hooks.</p>
+          <p class="predict">Predict it: who is allowed to delete a Lead?</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">03</span>
+        <div>
+          <h2>Service — the API</h2>
+          <p>Junction serves <code>lead</code> with no extra code. Then: the hook pipeline, filters (<code>ctx.query</code>) vs. directives (<code>ctx.directives</code>), the one place a thrown error becomes an HTTP status, and one custom method.</p>
+          <p class="takeaway">One owner for every translation.</p>
+          <p class="predict">Predict it: what does a guest get back from <code>GET /lead</code>?</p>
+          <p class="see">See: <a href="/flow/">Flow</a> · <a href="/seams/">Seams</a></p>
+        </div>
+      </li>
+      <li>
+        <span class="n">04</span>
+        <div>
+          <h2>Resource — the screen</h2>
+          <p><code>Lead.mesa</code> gets its form from the schema, and its list updates live over WebSocket. <code>x-gate</code> hides a button, and the server enforces the rule either way.</p>
+          <p class="takeaway">The UI reads the schema rather than restating it.</p>
+          <p class="predict">Predict it: why is this field a select?</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">05</span>
+        <div>
+          <h2>Mesa, the language</h2>
+          <p>Now the compiler: signals, scoped styles, islands. A surface is just a compiler backend: web, email, terminal, desktop.</p>
+          <p class="takeaway">One component language for every interface.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">06</span>
+        <div>
+          <h2>Surfaces</h2>
+          <p>The same app grows <code>api/</code>, <code>web/</code>, <code>site/</code>, <code>widgets/</code>, <code>extension/</code>, <code>desktop/</code> and <code>cli/</code>. Lead is the same Lead in each one.</p>
+          <p class="takeaway">Growth happens outward and leads back to the schema.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">07</span>
+        <div>
+          <h2>The batteries</h2>
+          <p>Auth, jobs (Caravan), third parties (Conduit), notifications, and MCP. With MCP, an AI agent gets exactly the permissions the gate in chapter 02 already set.</p>
+          <p class="takeaway">The same model, reaching further.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">08</span>
+        <div>
+          <h2>Release &amp; Suite</h2>
+          <p><code>fli</code>, the port scheme, <code>createTestEnv</code>, deploy, Outpost. Shipping and testing come from the schema too.</p>
+          <p class="takeaway">Deployment and testing are realms with their own nouns.</p>
+        </div>
+      </li>
+      <li class="reveal">
+        <span class="n">09</span>
+        <div>
+          <h2>The reveal: three axioms</h2>
+          <p><strong>One origin. One name. One owner.</strong> Go back through chapters 00–08 and point to where each axiom was already doing the work.</p>
+          <p class="takeaway">Predictability is the product.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n">10</span>
+        <div>
+          <h2>Graduation</h2>
+          <p>Now the full package map, which the reader can finally place. Then Basecamp, the large real app built on all of it, and <code>DECISIONS.md</code> for why things are the way they are.</p>
+          <p class="see">See: <a href="/map/">Map</a> · <a href="/landscape/">Landscape</a> · <a href="/journey/">Journey</a></p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<style>
+  .hero { padding: 4.5rem 0 1.5rem; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .quiet { color: var(--ink-mute); }
+  .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  .chapters { padding: 1rem 0 5rem; }
+  .arc { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+  .arc li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 1rem; padding: 1.6rem 0; border-top: 1px solid var(--rule); }
+  .arc .n { font-size: .78rem; letter-spacing: .14em; color: var(--ink-mute); padding-top: .3rem; }
+  .arc h2 { font-size: 1.15rem; letter-spacing: -.01em; margin: 0 0 .4rem; }
+  .arc p { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
+  .arc p + p { margin-top: .45rem; }
+  .takeaway { color: var(--ink); font-weight: 600; }
+  .predict { font-size: .88rem; color: var(--color-primary); }
+  .see { font-size: .82rem; color: var(--ink-mute); }
+  .reveal h2 { color: var(--color-primary); }
+</style>

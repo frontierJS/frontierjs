@@ -43,6 +43,13 @@ const CASES = [
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
   ['components/display/Table.mesa',     { columns: [{ name: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
+  // Chart renders on the SERVER, which is the point of it: the same SVG prints
+  // to PDF and screenshots to PNG for an email (DL V3, R5, R6). One mark per
+  // row and a focusable hit target per row are the assertions.
+  ['components/display/Chart.mesa',     { rows: [{ m: 'Jan', v: 3 }, { m: 'Feb', v: 5 }], x: 'm', y: 'v', label: 'Per month' },
+                                                                 ['fjs-chart', 'fjs-chart-bar', 'fjs-chart-hit', 'fjs-chart-grid']],
+  ['components/display/Chart.mesa',     { rows: [{ m: 'Jan', v: 3 }, { m: 'Feb', v: 5 }], x: 'm', y: 'v', type: 'line', tone: 'success' },
+                                                                 ['fjs-chart', 'success', 'fjs-chart-line', 'fjs-chart-area', 'fjs-chart-dot']],
   // The heading TAG is the assertion: it comes from <mesa:element this={'h'+level}>,
   // and a level that stopped reaching the DOM would render something that looks
   // identical and carries a different document outline.

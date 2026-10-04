@@ -54,6 +54,7 @@
  */
 
 import path          from 'path'
+import { createHash } from 'crypto'
 import { readFile, writeFile, unlink, mkdir } from 'fs/promises'
 import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
 import { fileURLToPath, pathToFileURL } from 'url'
@@ -394,6 +395,9 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     } catch (err) {
       throw new Error(`[Mesa renderComponent] Cannot read file: ${canonical}\n${err.message}`)
     }
+    // What the tree was built from, as read: the render cache checks each
+    // file again before it reuses the tree (see `_treeCache`).
+    opts.deps?.push([canonical, digest(source)])
     // A meta-framework's bundler prepares every file before Mesa sees it —
     // Sierra injects its auto-imports there. This path reads the same files
     // from disk, so without the same preparation a page that renders in dev
@@ -487,9 +491,13 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
 
   // Find + rewrite .mesa/.md imports
   const rewrites = []
-  let m
-  IMPORT_RE.lastIndex = 0
-  while ((m = IMPORT_RE.exec(js)) !== null) {
+  // Every match collected BEFORE the loop awaits. Walking with IMPORT_RE.exec
+  // kept the position in the shared regex's `lastIndex` across the await on
+  // each child, so a second render compiling at the same time moved it, and
+  // each skipped imports the other had passed — an unrewritten `.mesa` import
+  // that the runtime then loaded as a path string (`FJS-1661`). `matchAll`
+  // walks a clone.
+  for (const m of [...js.matchAll(IMPORT_RE)]) {
     // An aliased specifier becomes an absolute path BEFORE anything else looks
     // at it, so both branches below — a Mesa dependency and a plain sibling
     // module — see a path rather than a bare name they would resolve as a
@@ -597,12 +605,59 @@ function attributeToSource(err, sources) {
   return err
 }
 
+// ── The compiled-tree cache ───────────────────────────────────────────────────
+// Every render used to compile the tree to temp modules under fresh names and
+// import them. A runtime keeps every module it has imported, so each call left
+// its whole tree in memory for the life of the process: measured on a report
+// of eleven components, 1.25 MB per render, 154 → 658 MB RSS over 400 renders,
+// at ~75 ms each (`FJS-1659`). A server that renders per recipient or per email
+// (email-kit renders through here) grows by that on every send.
+//
+// So the tree is compiled once per entry and options, and its root module is
+// kept. Before reuse each file the tree read is read again and compared by
+// hash, so an edited component is compiled afresh — the tree it replaces stays
+// in the module registry, which is the price of an edit, not of a render.
+//
+// A reused tree shares its `<script module>` state across renders, as every
+// instance on one page shares it in a browser. A template that keeps per-render
+// data at module scope carries it into the next render; data belongs in props.
+const _treeCache = new Map()
+const _fnIds = new WeakMap()
+let _nextFnId = 1
+
+function digest(text) {
+  return createHash('sha256').update(text).digest('hex')
+}
+
+/** A function cannot be serialized into a key; its identity can. */
+function fnId(fn) {
+  if (typeof fn !== 'function') return null
+  if (!_fnIds.has(fn)) _fnIds.set(fn, _nextFnId++)
+  return _fnIds.get(fn)
+}
+
+// A null source is the entry read from disk, which compileTree records in the
+// tree's deps like any other file, so the check before reuse covers it.
+function treeKey(rootPath, source, { compileOptions, tmpDir, descope, alias, transformSource }) {
+  const src = typeof source === 'string' ? digest(source) : null
+  return digest(JSON.stringify([rootPath, src, compileOptions, tmpDir, descope, alias, fnId(transformSource)]))
+}
+
+/** Is every file the tree was compiled from still what it was? */
+async function treeIsCurrent(entry) {
+  for (const [file, hash] of entry.deps) {
+    let text
+    try { text = await readFile(file, 'utf8') } catch { return false }
+    if (digest(text) !== hash) return false
+  }
+  return true
+}
+
 /**
  * Execute a compiled component in the Mesa runtime and return its HTML.
  * Also extracts named module exports (e.g. `export const subject`).
  */
-async function executeComponent(tmpPath, props, { label, sources } = {}) {
-  const mod = await import(tmpPath)
+async function executeComponent(mod, props, { label, sources } = {}) {
   const fn  = mod.default
 
   if (typeof fn !== 'function') {
@@ -980,21 +1035,40 @@ export async function renderComponent(source, options = {}) {
   let html, namedExports, css, unocss_css, preWrapHTML, treeIslands, treeStyles
 
   try {
-    // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk
-    const visited = new Map()
-    const tree = await compileTree(rootPath, visited, tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource, problems }, source)
-    refuseCompileErrors(problems)
+    // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk.
+    //    Or reuse the tree an earlier call compiled, when no file in it has changed.
+    const treeOpts = { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, transformSource }
+    const key = treeKey(rootPath, source, treeOpts)
+    // The cache holds the BUILD, not its result, so renders that arrive while
+    // a tree compiles wait for that one compile rather than each starting
+    // their own — a send to fifty recipients compiles once, not fifty times.
+    // A build that failed is dropped, and the next caller compiles and gets
+    // the error itself.
+    let entry = await _treeCache.get(key)?.catch(() => null)
+    if (!entry || !(await treeIsCurrent(entry))) {
+      const build = (async () => {
+        const visited = new Map()
+        const deps    = []
+        const tree = await compileTree(rootPath, visited, tempFiles, { ...treeOpts, problems, deps }, source)
+        refuseCompileErrors(problems)
 
-    // Temp path back to the file it was compiled from, so a stack can name a
-    // component rather than a scratch file.
-    const sources = new Map()
-    for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
-    css = tree.css.trim()
-    treeIslands = tree.islands
-    treeStyles  = tree.styles
+        // Temp path back to the file it was compiled from, so a stack can name a
+        // component rather than a scratch file.
+        const sources = new Map()
+        for (const [canonical, { tmpPath }] of visited) sources.set(tmpPath, canonical)
+        const mod = await import(tree.tmpPath)
+        return { mod, sources, deps, css: tree.css.trim(), islands: tree.islands, styles: tree.styles }
+      })()
+      _treeCache.set(key, build)
+      build.catch(() => { if (_treeCache.get(key) === build) _treeCache.delete(key) })
+      entry = await build
+    }
+    css = entry.css
+    treeIslands = [...(entry.islands ?? [])]
+    treeStyles  = [...(entry.styles ?? [])]
 
     // 2. Execute the component
-    const rendered = await executeComponent(tree.tmpPath, data, { label: path.basename(rootPath), sources })
+    const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources })
     html         = rendered.html
     preWrapHTML  = rendered.html   // saved for plain-text generation after try block
     namedExports = rendered.namedExports

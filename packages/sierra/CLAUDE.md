@@ -90,6 +90,8 @@ src/
     prune-unreachable.js what a static build may publish: the emitted pages walked
     widget-build.js      one self-contained IIFE per widget in src/Embeds/
     static-safety.js     proves a prerendered page is publishable
+    refusal.js           an error that prints as its message alone — for a
+                         build verdict about the APP, where a stack is noise
     warnings.js, dev-overlay.js, devtools-plugin.js
 
   junction/              — the API seam

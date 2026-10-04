@@ -1,6 +1,10 @@
 // src/seeder.js — Factory + Seeder system for Litestone
 
 import { modelToAccessor } from './core/ddl.js'
+import { ValidationError } from './core/validate.js'
+import { UniqueConflictError, ForeignKeyError } from './core/errors.js'
+import { parseCell } from '@frontierjs/toolbelt/cells'
+import { minorUnits } from '@frontierjs/toolbelt/units'
 
 // ─── SeededRng — deterministic PRNG (mulberry32) ──────────────────────────────
 
@@ -614,73 +618,332 @@ export class Seeder {
   }
 }
 
+// ─── Loading rows from outside ────────────────────────────────────────────────
+//
+// Data somebody else wrote — a CSV dropped by another system, a page of an
+// API's records — read against the schema, row by row:
+//
+//   const { loaded, rejects } = await loadRows(db.asSystem(), 'Order', csvText, { key: 'id' })
+//
+// A cell that is not its column's type is a REJECT, with the row's position,
+// the column and a reason, and the load goes on: one bad row in 5,000 must not
+// cost the other 4,999. Every input row is either loaded or rejected, and a
+// reason never quotes the cell — the text may be what the column encrypts, and
+// a reject is stored and shown where that protection does not reach.
+//
+// What is NOT a reject is a mapping mistake — a header naming no column, a
+// required column the file does not carry. Every row would be rejected for the
+// same reason, so it throws before any row is read.
+//
+// Rows go through the ORM in batches, so defaults, validators, `@encrypted`
+// and plugins all apply; a batch the database refuses is retried a row at a
+// time, each under its own savepoint, so the refusal lands on its row.
+//
+//   mode 'insert'   the default; a key repeated in the source is a reject
+//   mode 'upsert'   on `key`, which is required; a repeat updates the row
+//   mode 'replace'  every stored row deleted and the source inserted, in one
+//                   transaction, so a reader sees the old rows or the new
+//   dryRun          the whole load, rolled back: what WOULD land, exactly
+//   stamp           columns every loaded row carries — which load wrote it,
+//                   and when — that the source has no column for; a source
+//                   that names one is a mapping mistake, not a value to keep
+
+const LOAD_MODES = ['insert', 'upsert', 'replace']
+// Not a column a source can fill: the engine or the schema computes it.
+const DERIVED = new Set(['computed', 'from', 'generated', 'derived', 'sequence', 'updatedAt'])
+const DRY_RUN = Symbol('loadRows.dryRun')
+
+export async function loadRows(db, modelName, source, opts = {}) {
+  const { key = null, mode = 'insert', dryRun = false, stamp = {}, batch = 1000, overflow = null } = opts
+  if (!LOAD_MODES.includes(mode))
+    throw new Error(`loadRows(${modelName}): mode is one of ${LOAD_MODES.join(', ')}, got '${mode}'`)
+  if (mode === 'upsert' && !key)
+    throw new Error(`loadRows(${modelName}): mode 'upsert' needs a key to upsert on`)
+
+  const schema = db.$schema
+  const model  = schema?.models?.find(m => m.name === modelName)
+  if (!model) throw new Error(`loadRows: '${modelName}' is not a model in this schema`)
+  if (key && !model.fields.some(f => f.name === key))
+    throw new Error(`loadRows(${modelName}): key '${key}' is not a column of ${modelName}`)
+
+  const fromText = typeof source === 'string'
+  const { header, records, lines } = fromText ? readCsv(source) : { header: null, records: source, lines: null }
+  if (!Array.isArray(records))
+    throw new Error(`loadRows(${modelName}): expected CSV text or an array of records, got ${typeof source}`)
+
+  const columns = columnReader(model, schema, modelName, overflow)
+  for (const name of Object.keys(stamp)) columns.of(name)
+  if (overflow && overflow in stamp)
+    throw new Error(`loadRows(${modelName}): '${overflow}' is the overflow column, so this load cannot also stamp it`)
+  if (header) {
+    for (const h of header) {
+      if (h === overflow) throw new Error(`loadRows(${modelName}): the file has a column '${h}', which this load fills with what no column takes`)
+      if (columns.overflows(h)) continue
+      columns.of(h)
+      if (h in stamp) throw new Error(`loadRows(${modelName}): the file has a column '${h}', which this load stamps`)
+    }
+    const missing = model.fields.filter(f => columns.required(f) && !header.includes(f.name) && !(f.name in stamp)).map(f => f.name)
+    if (missing.length)
+      throw new Error(`loadRows(${modelName}): the file has no column for ${missing.join(', ')}, which ${missing.length > 1 ? 'are' : 'is'} required and ${missing.length > 1 ? 'have' : 'has'} no default`)
+  }
+
+  const rejects = []
+  const where   = (i) => (lines ? { row: i, line: lines[i] } : { row: i })
+  const reject  = (i, field, reason, keyValue) =>
+    rejects.push({ ...where(i), key: keyValue == null ? null : String(keyValue), field, reason })
+
+  // Read every row before writing any, so a repeated key is decided by
+  // position in the source and not by which batch a row happened to fall in.
+  const ready = []
+  const firstAt = new Map()
+  for (let i = 0; i < records.length; i++) {
+    const named = Object.keys(stamp).find(k => records[i] && k in records[i])
+    if (named) throw new Error(`loadRows(${modelName}): row ${i} names '${named}', which this load stamps`)
+    if (overflow && !header && records[i] && overflow in records[i])
+      throw new Error(`loadRows(${modelName}): row ${i} names '${overflow}', which this load fills with what no column takes`)
+    const out = columns.read(records[i], stamp)
+    const keyValue = key ? (out.data?.[key] ?? records[i]?.[key]) : null
+    if (out.reason) { reject(i, out.field, out.reason, keyValue); continue }
+    if (key) {
+      if (out.data[key] == null) { reject(i, key, 'required: it is the key', null); continue }
+      const k = String(out.data[key])
+      if (mode !== 'upsert' && firstAt.has(k)) {
+        const first = firstAt.get(k)
+        reject(i, key, `repeats the key of ${lines ? `line ${lines[first]}` : `row ${first}`}`, k)
+        continue
+      }
+      if (!firstAt.has(k)) firstAt.set(k, i)
+    }
+    ready.push({ i, data: out.data, keyValue })
+  }
+
+  const accessor = modelToAccessor(modelName)
+  let loaded = 0
+  const write = async (tx, rows) => {
+    const data = rows.map(r => r.data)
+    if (mode === 'upsert') await tx[accessor].upsertMany({ data, conflictTarget: [key] })
+    else                   await tx[accessor].createMany({ data })
+  }
+
+  const run = async (tx) => {
+    if (mode === 'replace') await tx[accessor].deleteMany({ where: {} })
+    for (const group of batches(ready, batch, mode === 'upsert' ? key : null)) {
+      try {
+        await tx.$transaction(t => write(t, group))
+        loaded += group.length
+      } catch (e) {
+        if (!refusesARow(e)) throw e
+        for (const r of group) {
+          try { await tx.$transaction(t => write(t, [r])); loaded++ }
+          catch (err) {
+            if (!refusesARow(err)) throw err
+            const why = reasonFor(err)
+            reject(r.i, why.field, why.reason, r.keyValue)
+          }
+        }
+      }
+    }
+    if (dryRun) throw DRY_RUN
+  }
+
+  try { await db.$transaction(run) }
+  catch (e) { if (e !== DRY_RUN) throw e }
+
+  rejects.sort((a, b) => a.row - b.row)
+  return { loaded, rejects }
+}
+
+// Consecutive slices of `size`; under upsert a slice also closes before a key
+// it already holds, because one statement may not touch a row twice.
+function* batches(rows, size, key) {
+  let group = [], keys = new Set()
+  for (const r of rows) {
+    const k = key ? String(r.data[key]) : null
+    if (group.length >= size || (k !== null && keys.has(k))) { yield group; group = []; keys = new Set() }
+    group.push(r)
+    if (k !== null) keys.add(k)
+  }
+  if (group.length) yield group
+}
+
+// The refusals that are about one row's values. Anything else — a gate, a
+// closed client, a disk — is about the load, and is thrown.
+function refusesARow(e) {
+  return e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
+    || /constraint failed/i.test(e?.message ?? '')
+}
+
+// In the reject's own words, because the errors' words quote the value: a
+// conflict names what is taken, a foreign key the id it could not find.
+function reasonFor(e) {
+  if (e instanceof UniqueConflictError)
+    return { field: e.fields?.join(' + ') || null, reason: 'already taken by a stored row' }
+  if (e instanceof ForeignKeyError)
+    return { field: Array.isArray(e.field) ? e.field.join(' + ') : e.field ?? null, reason: `names no ${e.target ?? 'row'}` }
+  if (e instanceof ValidationError) {
+    const first = e.errors?.[0]
+    return { field: first?.path?.at(-1) ?? null, reason: e.errors.map(x => x.message).join('; ') }
+  }
+  const check = /CHECK constraint failed: (.*)$/i.exec(e?.message ?? '')
+  return { field: null, reason: check ? `breaks the check ${check[1]}` : 'refused by the database' }
+}
+
+// What each column is, read once per column name, and how to read a row by it.
+function columnReader(model, schema, modelName, overflow) {
+  const byName = new Map(model.fields.map(f => [f.name, f]))
+  const cache  = new Map()
+
+  // L2: the schema is frozen, and a name it does not have is either a mapping
+  // mistake (no overflow: thrown, as before) or kept, whole, in one Json column.
+  if (overflow) {
+    const f = byName.get(overflow)
+    if (!f) throw new Error(`loadRows(${modelName}): overflow '${overflow}' is not a column of ${modelName}`)
+    if (f.type.name !== 'Json' || f.type.array || !f.type.optional)
+      throw new Error(`loadRows(${modelName}): overflow '${overflow}' must be an optional Json column (Json?), since a row with nothing extra leaves it empty`)
+  }
+  const overflows = (name) => !!overflow && !byName.has(name)
+
+  function of(name) {
+    if (cache.has(name)) return cache.get(name)
+    const f = byName.get(name)
+    if (!f)
+      throw new Error(`loadRows(${modelName}): '${name}' is not a column of ${modelName}`)
+    if (f.type.kind === 'relation' || f.attributes.some(a => DERIVED.has(a.kind)))
+      throw new Error(`loadRows(${modelName}): '${name}' is not a column a source fills — it is computed or a relation`)
+    const t = f.type.name
+    if (t === 'Bytes' || t === 'File')
+      throw new Error(`loadRows(${modelName}): '${name}' is ${t}, which a row of text cannot carry`)
+    const money = f.attributes.find(a => a.kind === 'money')
+    const scale = f.attributes.find(a => a.kind === 'scale')
+    let col
+    if (f.type.array)                    col = { kind: 'json' }
+    else if (f.type.kind === 'enum')     col = { kind: 'enum', values: schema.enums.find(e => e.name === t).values.map(v => v.name) }
+    else if (money?.field)               col = { kind: 'scaled', currencyField: money.field }
+    else if (money)                      col = { kind: 'scaled', scale: minorUnits(money.currency) }
+    else if (scale)                      col = { kind: 'scaled', scale: scale.places }
+    else col = { kind: { String: 'string', Int: 'int', Float: 'float', Boolean: 'boolean', DateTime: 'datetime', Json: 'json' }[t] }
+    col = { ...col, name, optional: f.type.optional, defaulted: f.attributes.some(a => a.kind === 'default' || a.kind === 'id') }
+    cache.set(name, col)
+    return col
+  }
+
+  function required(f) {
+    if (f.type.optional || f.type.kind === 'relation') return false
+    if (f.attributes.some(a => DERIVED.has(a.kind) || a.kind === 'default')) return false
+    // An Int @id with no default is the rowid, which SQLite assigns.
+    if (f.attributes.some(a => a.kind === 'id') && f.type.name === 'Int') return false
+    return true
+  }
+
+  function read(record, stamp) {
+    if (!record || typeof record !== 'object') return { field: null, reason: 'not a record' }
+    const data = { ...stamp }
+    const later = []
+    let extra = null
+    for (const [name, raw] of Object.entries(record)) {
+      // Kept as it arrived: text from a file stays text, a value from an API
+      // stays its JSON type. Nothing reads it against a column it has not got.
+      if (overflows(name)) { if (raw !== undefined) (extra ??= {})[name] = raw; continue }
+      const col = of(name)
+      if (col.currencyField) { later.push([col, raw]); continue }
+      const out = cell(col, raw, col.scale)
+      if (out.reason) return { field: name, reason: out.reason }
+      if (out.value !== undefined) data[name] = out.value
+    }
+    for (const [col, raw] of later) {
+      let scale
+      try { scale = minorUnits(data[col.currencyField]) }
+      catch { return { field: col.currencyField, reason: 'not an ISO 4217 currency' } }
+      const out = cell(col, raw, scale)
+      if (out.reason) return { field: col.name, reason: out.reason }
+      if (out.value !== undefined) data[col.name] = out.value
+    }
+    if (extra) { of(overflow); data[overflow] = extra }
+    for (const [name, value] of Object.entries(data)) {
+      const col = cache.get(name)
+      if (value === null && !col.optional) {
+        // A blank in a defaulted column means "take the default", which only
+        // leaving the key out says.
+        if (col.defaulted) { delete data[name]; continue }
+        return { field: name, reason: 'required, and empty' }
+      }
+    }
+    return { data }
+  }
+
+  return { of, required, read, overflows }
+}
+
+// A string is text from a file and is read against the column; anything else
+// arrived typed — a JSON number from an API — and goes to the ORM as it is,
+// which refuses it by name if it is not the column's type.
+function cell(col, raw, scale) {
+  if (raw === undefined) return { value: undefined }
+  if (raw === null) return { value: null }
+  if (typeof raw !== 'string') return { value: raw }
+  return parseCell(raw, col.kind, { scale, values: col.values })
+}
+
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 //
 // Reference data — countries, plans, currencies — is authored, not generated. It
 // belongs in a file next to the schema, not in a factory.
 //
 //   await loadFixture(db, 'Country', './db/fixtures/countries.json')
-//   await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { upsert: 'code' })
+//   await loadFixture(db, 'Plan',    './db/fixtures/plans.csv', { mode: 'upsert', key: 'code' })
 //   await loadFixture(db, 'Plan',    [{ code: 'pro', price: 20 }])
 //
-// Rows go through the ORM, so defaults, validators, `@encrypted` and hooks all
-// apply — a fixture is an ordinary write, unlike restore().
+// The same path as loadRows, with one difference: a fixture is AUTHORED, so a
+// row in it that does not load is the developer's bug, and it throws naming
+// every one rather than handing back a list of rejects to act on.
 
 export async function loadFixture(db, modelName, source, opts = {}) {
-  const { upsert = null, asSystem = false } = opts
-  const rows   = typeof source === 'string' ? await _readFixture(source) : source
-  if (!Array.isArray(rows)) throw new Error(`loadFixture(${modelName}): expected an array of rows, got ${typeof rows}`)
-  if (!rows.length) return []
-
-  const client   = asSystem ? db.asSystem() : db
-  const accessor = modelToAccessor(modelName)
-  // An unknown accessor throws from the client proxy itself, and its message
-  // already lists the tables that do exist — no guard needed here.
-  const table    = client[accessor]
-
-  const out = []
-  for (const row of rows) {
-    if (upsert) {
-      if (!(upsert in row)) throw new Error(`loadFixture(${modelName}): upsert key "${upsert}" missing from a row`)
-      out.push(await table.upsert({ where: { [upsert]: row[upsert] }, create: row, update: row }))
-    } else {
-      out.push(await table.create({ data: row }))
-    }
-  }
+  const { asSystem = false, ...load } = opts
+  const rows = typeof source === 'string' && /\.(json|csv)$/.test(source) ? await _readFixture(source)
+    : typeof source === 'string' ? (() => { throw new Error(`loadFixture: unsupported fixture "${source}" — use .json or .csv`) })()
+    : source
+  const out = await loadRows(asSystem ? db.asSystem() : db, modelName, rows, load)
+  if (out.rejects.length)
+    throw new Error(`loadFixture(${modelName}): ${out.rejects.length} row${out.rejects.length > 1 ? 's' : ''} did not load — ` +
+      out.rejects.slice(0, 5).map(r => `${r.line ? `line ${r.line}` : `row ${r.row}`}${r.field ? ` ${r.field}` : ''}: ${r.reason}`).join('; '))
   return out
 }
 
 async function _readFixture(path) {
-  // Extension first — otherwise an unsupported one surfaces as ENOENT from the
-  // read, which points at the wrong problem.
-  if (!path.endsWith('.json') && !path.endsWith('.csv'))
-    throw new Error(`loadFixture: unsupported fixture "${path}" — use .json or .csv`)
-
   const { readFile } = await import('fs/promises')
   const text = await readFile(path, 'utf8')
-  if (path.endsWith('.json')) {
-    const parsed = JSON.parse(text)
-    // A top-level object keyed by model is a common shape; take the array either way.
-    return Array.isArray(parsed) ? parsed : Object.values(parsed).find(Array.isArray) ?? []
-  }
-  return parseCsv(text)
+  if (path.endsWith('.csv')) return text
+  const parsed = JSON.parse(text)
+  // A top-level object keyed by model is a common shape; take the array either way.
+  return Array.isArray(parsed) ? parsed : Object.values(parsed).find(Array.isArray) ?? []
 }
 
 /**
- * Minimal RFC-4180 CSV: quoted fields, embedded commas/newlines, "" escapes.
- * Unquoted `true`/`false`/numbers/empty are coerced; quoted values stay strings,
- * which is how a fixture says "this really is the text 0123".
+ * RFC-4180 CSV: quoted fields, embedded commas/newlines, "" escapes.
+ * Every cell is TEXT, or `null` for an empty unquoted one: what a cell means is
+ * its column's to say, and a reader that coerced without the schema turned an
+ * unquoted postcode 0123 into the number 123 (FJS-1634).
  */
 export function parseCsv(text) {
-  const rows    = []
+  return readCsv(text).records
+}
+
+// The records, plus the 1-based line each starts on — header included, so a
+// reject names the line an editor shows. Not the record's index: a quoted cell
+// may hold a newline, and from then on the two disagree.
+function readCsv(text) {
+  const rows  = []
+  const lines = []
   let row       = []
   let field     = ''
   let quoted    = false
   let wasQuoted = false
+  let line      = 1
+  let rowLine   = 1
   let i         = 0
 
-  const endField = () => { row.push(wasQuoted ? field : _coerceCsv(field)); field = ''; wasQuoted = false }
-  const endRow   = () => { endField(); rows.push(row); row = [] }
+  const endField = () => { row.push(wasQuoted || field !== '' ? field : null); field = ''; wasQuoted = false }
+  const endRow   = () => { endField(); rows.push(row); lines.push(rowLine); row = []; rowLine = line }
 
   const src = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   while (i < src.length) {
@@ -688,28 +951,24 @@ export function parseCsv(text) {
     if (quoted) {
       if (c === '"' && src[i + 1] === '"') { field += '"'; i += 2; continue }
       if (c === '"') { quoted = false; i++; continue }
+      if (c === '\n') line++
       field += c; i++; continue
     }
     if (c === '"' && field === '') { quoted = true; wasQuoted = true; i++; continue }
     if (c === ',')  { endField(); i++; continue }
-    if (c === '\n') { endRow();   i++; continue }
+    if (c === '\n') { line++; endRow(); i++; continue }
     field += c; i++
   }
-  if (field !== '' || row.length) endRow()
+  if (field !== '' || wasQuoted || row.length) endRow()
 
-  const [header, ...body] = rows.filter(r => r.length && !(r.length === 1 && r[0] === ''))
-  if (!header) return []
-  return body.map(cells =>
-    Object.fromEntries(header.map((h, idx) => [String(h), cells[idx] ?? null])))
-}
-
-function _coerceCsv(v) {
-  if (v === '')      return null
-  if (v === 'true')  return true
-  if (v === 'false') return false
-  if (v === 'null')  return null
-  if (v !== '' && !Number.isNaN(Number(v))) return Number(v)
-  return v
+  const keep = rows.map((r, n) => [r, lines[n]]).filter(([r]) => r.length && !(r.length === 1 && r[0] === null))
+  if (!keep.length) return { header: [], records: [], lines: [] }
+  const [[header], ...body] = keep
+  return {
+    header:  header.map(h => String(h ?? '')),
+    records: body.map(([cells]) => Object.fromEntries(header.map((h, idx) => [String(h), cells[idx] ?? null]))),
+    lines:   body.map(([, l]) => l),
+  }
 }
 
 export async function runSeeder(db, SeederClass) {

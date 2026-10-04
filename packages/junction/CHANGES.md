@@ -1,5 +1,25 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-03 — a mail can carry an inline image (`FJS-1666`)
+
+`MailAttachment.cid` sends an attachment inline, for the HTML to draw as `<img src="cid:chart">`; `createMessage(…).inline(cid, filename, content, type)` adds one. Over SMTP the body and its inline parts are `multipart/related`, inside `multipart/mixed` when there are files as well, and each inline part carries `Content-ID` and `Content-Disposition: inline`. Resend receives `content_id`, and now `content_type`. Before this, every attachment was a file: a report's chart, which no mail client draws as SVG, arrived as a broken image and a stray `chart.png`. A cid is held to letters, digits and `.-_@`, and an inline attachment with no `html` body is refused by name.
+
+## 2026-10-03 — `client.fetch` reaches a raw route with the client's credentials (`FJS-1663`)
+
+A raw route is how a server hands over a file: a PDF, a CSV, an `@@export` stream. An app that signs in with a bearer token (`cookieAuth: false`) could not link to one, because a link carries no token. Every public client method goes through `_request`, which adds the token and the call headers and parses JSON. So the only way to reach a raw route was to read `client.token` into a hand-built `fetch`, which missed the workspace and idempotency headers and the `unauthorized` event. Transit's report downloads hit this. `client.fetch(path, init)` adds the api prefix, the bearer token and `callHeaders()`, without overriding headers the caller set. It answers the `Response` when it is ok. Otherwise it throws what a call throws: the server's message, with the status as `code`, and a 401 emits `unauthorized`. `test/client-transport.test.ts` adds three tests: the URL and headers, a 403's message and code, and a 401's event.
+
+## 2026-10-03 — A raw route's own `Cache-Control` is kept (`FJS-1662`)
+
+The transport's decoration said it never overrode a `Cache-Control` the handler had set, and then it re-set the header on every 2xx response. Transit answers a report PDF graded to one caller with `private, no-store`, and it arrived as `private, no-cache`, which lets a browser keep the file on disk. The default that `ctx.json()` and `jsonResponse` bake in is now the exported `BAKED_CACHE_CONTROL`. The transport replaces that value, or no header at all, and keeps anything else. An authenticated read still gets `Vary: Authorization`. `test/index.test.ts` adds a raw route answering `private, no-store`: it is kept, and the response varies on the token. The test fails before the fix. 2,552 pass.
+
+## 2026-10-03 — the export plugin addresses a view by its camelCase accessor (`FJS-1631`)
+
+`datasets()` read a view as `client[view.name]`, which for a PascalCase view was the verbatim key litestone no longer registers. A view's accessor is a model's now, so the export plugin derives both with one rule.
+
+## 2026-10-03 — the aggregate verb carries `timeZone`
+
+`timeZone` joins `FJS-D226`'s allow-list, so a client can ask for months cut in a zone (litestone's zoned `groupBy`, DL S3), and it is dropped with the rest of the grouping keys when no `by` makes it a `groupBy`. litestone refuses it without an `interval`.
+
 ## 2026-10-02 — the dropped-audit-write test breaks the trail with a directory
 
 `audit-provenance.test.ts` forced a dropped write with `chmod 0400`, which stopped working once the jsonl appender held its fd open. It now parks the trail file and puts a directory at its path. Test only; no source moved.

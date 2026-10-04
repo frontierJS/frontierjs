@@ -128,6 +128,29 @@ await db.order.groupBy({
 ```
 
 Gap fill uses a recursive CTE to generate the full sequence of intervals — no calendar table needed.
+Each bound must be a date or an instant (a string `Date.parse` reads, epoch milliseconds or a
+`Date`); anything else is a `ValidationError`, and the bound is passed to SQLite as a parameter,
+never written into the statement (`FJS-1650`).
+
+### In a time zone
+
+A month is a place's month: an order at 23:30 UTC on 31 January is February's in Tokyo.
+`timeZone` (IANA) cuts the interval on that zone's wall clock:
+
+```js
+await db.order.groupBy({
+  by:       ['placedAt'],
+  interval: { placedAt: 'month' },
+  timeZone: 'Asia/Tokyo',
+  _sum:     { amount: true },
+})
+```
+
+SQLite has no zone database, so the zone reaches it as the fixed offsets it keeps across the
+rows the call reads — toolbelt's `offsetSpans`, one `CASE` arm per summer-time change, found by
+one extra `MIN`/`MAX` over the same `where`. A gap fill's bounds become that zone's calendar
+dates. An `hour` bucket on the night the clock goes back holds both 01:00 hours. `timeZone`
+without `interval` is refused.
 
 ## HAVING
 

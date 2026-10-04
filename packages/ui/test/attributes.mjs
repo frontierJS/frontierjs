@@ -37,6 +37,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const PROPS = {
   'display/AvatarGroup': { users: [{ name: 'Ada' }, { name: 'Bob' }] },
   'display/Bar':         { value: 40 },
+  'display/Chart':       { rows: [{ m: 'Jan', v: 3 }], x: 'm', y: 'v' },
   'display/Breadcrumbs': { items: [{ label: 'Home', href: '/' }, { label: 'Orders' }] },
   'display/Kbd':         { keys: ['⌘', 'K'] },
   'display/Pagination':  { total: 100, page: 2, perPage: 10 },

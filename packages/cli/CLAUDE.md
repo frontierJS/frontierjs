@@ -86,6 +86,19 @@ core/
                 the release IN ORDER — `RELEASE_STEPS`, the allow-list the
                 Release screen runs from, each step `fli <argv>` in the root or
                 one app, looked up by key and never composed from a request
+  bench.js      what a BUILT app costs — brotli bytes per surface, the first load
+                `index.html` names, disk, and the RSS of a booted process tree —
+                behind `test:bench`. Bytes are gated by a ratchet-down-only
+                `bench.baseline.json`; boot figures are reported and never fail,
+                because a timing is one machine on one afternoon. Reads `dist/`
+                and never builds one
+  ask-claude.js the console's output handed to `claude -p` and the reply read
+                back, for `fli gui`'s `ask claude`. Read-only by construction
+                (`--tools` plus a Bash allow-list; a print session denies the
+                rest rather than prompting) and hooks OFF — this repo's Stop hook
+                would keep a one-question session chasing `fli done`, and it
+                records items as shown for the person's own session too. Not
+                `ask.js`, which resolves a question against the registers
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
                 siblings are, then test-files-run, register:check and the

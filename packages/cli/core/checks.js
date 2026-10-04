@@ -2832,6 +2832,12 @@ const CHECKS = {
       for (const m of text.matchAll(/\b(createClient|createTenantRegistry)\s*\(/g)) {
         const body = spanFrom(text, m.index + m[0].length - 1)
         if (!/(^|[\s{,])schema\s*:/.test(body)) continue
+        // A schema that is DATA — a Source row's landing schema, a tenant's
+        // model — is not the app's schema assembled in memory. litestone's
+        // `untrusted: true` holds it to the one file it is handed and refuses
+        // any database, import or extend that could reach the app's, so no
+        // committed artefact was ever meant to describe it (FJS-1644).
+        if (/(^|[\s{,])untrusted\s*:\s*true\b/.test(body)) continue
 
         findings.push({
           file,

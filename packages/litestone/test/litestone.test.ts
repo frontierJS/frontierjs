@@ -13035,19 +13035,19 @@ describe('loadFixture / parseCsv', () => {
 
   test('loads an inline array through the ORM', async () => {
     const { db } = await makeTestClient(PLAN)
-    const rows = await loadFixture(db, 'Plan', [
+    const out = await loadFixture(db, 'Plan', [
       { code: 'free', price: 0, active: true },
       { code: 'pro',  price: 20, active: true },
     ])
-    expect(rows.length).toBe(2)
+    expect(out.loaded).toBe(2)
     expect(await db.plan.count()).toBe(2)
     db.$close()
   })
 
   test('upsert key makes a fixture re-runnable', async () => {
     const { db } = await makeTestClient(PLAN)
-    await loadFixture(db, 'Plan', [{ code: 'free', price: 0, active: true }], { upsert: 'code' })
-    await loadFixture(db, 'Plan', [{ code: 'free', price: 9, active: true }], { upsert: 'code' })
+    await loadFixture(db, 'Plan', [{ code: 'free', price: 0, active: true }], { mode: 'upsert', key: 'code' })
+    await loadFixture(db, 'Plan', [{ code: 'free', price: 9, active: true }], { mode: 'upsert', key: 'code' })
     expect(await db.plan.count()).toBe(1)
     expect((await db.plan.findFirst({ where: { code: 'free' } })).price).toBe(9)
     db.$close()
@@ -13070,26 +13070,27 @@ describe('loadFixture / parseCsv', () => {
 
   test('unknown model / unsupported extension say what is wrong', async () => {
     const { db } = await makeTestClient(PLAN)
-    // The client proxy already names the tables that exist — let its message through
-    await expect(loadFixture(db, 'Nope', [{ a: 1 }])).rejects.toThrow('not a table in this schema')
+    await expect(loadFixture(db, 'Nope', [{ a: 1 }])).rejects.toThrow("'Nope' is not a model")
     // Checked before the read, so it is not reported as ENOENT
     await expect(loadFixture(db, 'Plan', './does-not-exist.yaml')).rejects.toThrow('use .json or .csv')
-    await expect(loadFixture(db, 'Plan', [{ price: 1 }], { upsert: 'code' }))
-      .rejects.toThrow('upsert key "code" missing')
+    await expect(loadFixture(db, 'Plan', [{ price: 1, active: true }], { mode: 'upsert', key: 'code' }))
+      .rejects.toThrow('row 0 code: required: it is the key')
     db.$close()
   })
 
   test('parseCsv handles quotes, embedded commas and "" escapes', () => {
     const rows = parseCsv('code,note,n\npro,"a, b",2\n"q""x""",plain,3\n')
     expect(rows).toEqual([
-      { code: 'pro',    note: 'a, b',  n: 2 },
-      { code: 'q"x"',   note: 'plain', n: 3 },
+      { code: 'pro',    note: 'a, b',  n: '2' },
+      { code: 'q"x"',   note: 'plain', n: '3' },
     ])
   })
 
-  test('parseCsv coerces unquoted scalars but keeps quoted text', () => {
+  // What a cell means is its column's: loadRows reads it against the schema
+  // (test/load-rows.test.ts), and a reader that guessed made 0123 a number.
+  test('parseCsv answers text, and null for an empty unquoted cell (FJS-1634)', () => {
     const rows = parseCsv('a,b,c,d\n1,true,,"0123"\n')
-    expect(rows[0]).toEqual({ a: 1, b: true, c: null, d: '0123' })
+    expect(rows[0]).toEqual({ a: '1', b: 'true', c: null, d: '0123' })
   })
 })
 
@@ -24719,7 +24720,7 @@ describe('client enumeration', () => {
       model User { id Int @id  name String }
       view ActiveUser { @@sql("SELECT * FROM user") }
     `, 'ownkeys-views')
-    expect(Object.getOwnPropertyNames(db)).toContain('ActiveUser')
+    expect(Object.getOwnPropertyNames(db)).toContain('activeUser')
     db.$close()
   })
 })
@@ -25501,6 +25502,37 @@ model Site { id Int @id  url String @default("http://x.test") @length(1, 200) }
     expect(threw).toContain('ORIGINAL')
     // The reason has to travel — "it refused" is what the run already looked like.
     expect(threw).toContain('no encryption key')
+  })
+
+  // The same failure one layer up (FJS-1638). Measured on Transit: the original
+  // already failed `verifyFieldProtection` once, the same mismatch came back
+  // under every mutant, and the run read 109/109 killed having graded nothing.
+  test('mutationScore refuses when the ORIGINAL already fails a check', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    let threw: string | null = null
+    try {
+      await mutationScore({
+        schema: S,
+        kinds:  ['guarded-drop'],
+        build:  () => ({ close() {} }) as any,
+        check:  async () => [{ got: 'unreadable', want: 'protected', message: 'Person.token is unreadable, not protected' }],
+      })
+    } catch (e: any) { threw = e.message }
+
+    expect(threw).toBeTruthy()
+    expect(threw).toContain('ORIGINAL')
+    expect(threw).toContain('Person.token is unreadable')
+  })
+
+  test('an inconclusive row on the ORIGINAL is not a refusal', async () => {
+    const { mutationScore } = await import('../src/mutate.js')
+    const res = await mutationScore({
+      schema: S,
+      kinds:  ['guarded-drop'],
+      build:  () => ({ close() {} }) as any,
+      check:  async () => [{ got: 'uncheckable', message: 'one-sided predicate' }],
+    })
+    expect(res.survived.length).toBeGreaterThan(0)
   })
 
   test('a build that refuses only the MUTANT still counts as a kill', async () => {

@@ -10,7 +10,7 @@ import {
 } from './query.js'
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
-import { compileFieldPredicate } from './policy.js'
+import { compileFieldPredicate, buildPolicyFilter } from './policy.js'
 
 // Suggest the closest match for an unknown key from a set of valid keys.
 // Used in write-data validation to give users actionable typo hints —
@@ -314,6 +314,41 @@ function guardedArgsError(found, accessorName, method) {
     `one comparison at a time, and ordering by it leaks the ordering of every row at once. ` +
     (onOther ? `Reached through a relation from ${accessorName}.${method}. ` : '') +
     `Read it through asSystem(), or narrow by a column that is not guarded.`,
+    { model: first.model, operation: 'read' },
+  )
+}
+
+// ─── a @from aggregate over a policied target ────────────────────────────────
+//
+// The aggregate in the SELECT is recomputed under the caller's row policy, but
+// a `where` or an `orderBy` naming it runs the startup subquery, which counts
+// every row that exists: `where: { kidCount: { gt: 1 } }` answered for a
+// parent whose second kid the caller cannot read (FJS-1647). So naming one is
+// refused while the target's read policy applies to this caller, as a gated
+// target's is (FJS-1646). In the walkers' `{ own, relationMap }` shape, so a
+// relation hop and an include are walked the same way a guarded column is.
+const policiedAggCache = new WeakMap()
+function policiedAggregates(ctx) {
+  const key = ctx.fromMap
+  if (!key) return null
+  if (policiedAggCache.has(key)) return policiedAggCache.get(key)
+  const own = {}
+  for (const [model, fields] of Object.entries(key))
+    for (const [name, f] of Object.entries(fields ?? {}))
+      if (f?.aggRef && ctx.policyMap?.[f.aggRef.model]?.read) (own[model] ??= new Set()).add(name)
+  const out = Object.keys(own).length ? { own, relationMap: ctx.relationMap } : null
+  policiedAggCache.set(key, out)
+  return out
+}
+
+function policiedAggregateError(found, accessorName, method, ctx) {
+  const first  = found[0]
+  const target = ctx.fromMap[first.model][first.key].aggRef.model
+  return new AccessDeniedError(
+    `${first.model}: "${first.key}" is a @from aggregate over ${target}, and ${target}'s read policy ` +
+    `decides which of its rows this caller counts. A where or an orderBy runs the aggregate over ` +
+    `every row of ${target}, so ${accessorName}.${method} cannot name it. Read the field and ` +
+    `filter the answer, or read it through asSystem().`,
     { model: first.model, operation: 'read' },
   )
 }
@@ -756,7 +791,7 @@ const ARG_NAMES = {
   exists:            new Set(['where', ...VIEW_FLAGS]),
   findManyAndCount:  new Set([...PAGE_ARGS, 'window']),
   aggregate:         new Set(AGG_ARGS),
-  groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval']),
+  groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval', 'timeZone']),
   findManyCursor:    new Set(['cursor', 'limit', 'where', 'select', 'include', 'orderBy', 'withDeleted', 'onlyDeleted']),
   search:            new Set(['limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
   create:            new Set(['data', 'include', 'select', 'scopedBy', 'system']),
@@ -1047,6 +1082,16 @@ export function withArgValidation(table, model, ctx) {
     if (checkGuarded()) {
       const found = collectGuardedArgs(args, modelName, guardedMap)
       if (found.length) throw guardedArgsError(found, modelName, method)
+    }
+    const aggs = policiedAggregates(ctx)
+    if (aggs && args && typeof args === 'object') {
+      const found = []
+      walkGuardedWhere(args.where, modelName, aggs, found)
+      walkGuardedOrderBy(args.orderBy, modelName, aggs, found)
+      walkGuardedInclude(args.include, modelName, aggs, found)
+      const live = found.filter(f => buildPolicyFilter(
+        ctx.fromMap[f.model][f.key].aggRef.model, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap))
+      if (live.length) throw policiedAggregateError(live, modelName, method, ctx)
     }
     checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
     checkOrderBy(args, method)

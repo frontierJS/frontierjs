@@ -16,7 +16,7 @@ import { REFUSE, type CredentialVerifier } from '../auth/credentials.ts'
 // --experimental-strip-types fails with "does not provide an export named
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
-import { bridge, jsonResponse, errorResponse } from './bridge.ts'
+import { BAKED_CACHE_CONTROL, bridge, jsonResponse, errorResponse } from './bridge.ts'
 import { toFrameworkError }               from '../core/errors.ts'
 import { createStats }                    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
@@ -906,12 +906,23 @@ export class HttpTransport {
     // ── Cache-Control ───────────────────────────────────────────────────────
     // Replace the blunt NOCACHE constant that was hardcoded in ctx.json() /
     // ctx.paginate() with context-aware directives. Only on 2xx; never
-    // override a Cache-Control the handler already set explicitly.
+    // override a Cache-Control the handler already set explicitly. This used
+    // to re-set it unconditionally, so a raw route answering a graded file
+    // with `no-store` went out as `private, no-cache`, which a browser may
+    // keep on disk (`FJS-1662`).
     if (canDecorate && response.status >= 200 && response.status < 300) {
       const isRead = ctx.method === 'GET' || ctx.method === 'HEAD'
+      const own = response.headers.get('cache-control')
+      const handlerSet = own !== null && own !== BAKED_CACHE_CONTROL
 
-      // Re-set unconditionally — replaces the blunt NOCACHE baked into ctx.json()
-      if (!isRead) {
+      if (handlerSet) {
+        // The handler's word stands. An authenticated read still varies on
+        // the token, whatever it allowed, so no shared cache serves it across.
+        if (isRead && ctx.user?.userId != null) {
+          const existing = headers.get('vary')
+          headers.set('vary', existing ? `${existing}, Authorization` : 'Authorization')
+        }
+      } else if (!isRead) {
         // Writes must never be cached anywhere
         headers.set('cache-control', 'no-store')
       } else if (ctx.user?.userId != null) {

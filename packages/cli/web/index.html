@@ -215,6 +215,15 @@ button[data-health] {
 .gui-line:hover { background: var(--surface); }
 .gui-line.done::before { content: '─ '; }
 
+/* Claude's reply is prose, set apart from the output it answers. */
+.gui-line.claude {
+  font-family:          var(--font-primary);
+  border-inline-start:  2px solid var(--color-primary);
+  padding-inline-start: var(--space-xs);
+}
+.gui-ask-q { flex: 1; inline-size: auto; }
+.gui-ask-rules { inline-size: 100%; resize: vertical; font-family: var(--font-primary); }
+
 /* ─── the sidebar ────────────────────────────────────────────────────────── */
 
 /*
@@ -560,10 +569,27 @@ button[data-health] {
       <div class="bar bordered dense">
         <span class="text-xs text-muted">output</span>
         <div class="cluster gap-3xs">
+          <button class="btn ghost text-xs" id="ask-btn" onclick="toggleAsk()" title="Hand this output to Claude Code, read-only">ask claude</button>
           <button class="btn ghost text-xs" id="copy-btn" onclick="copyOutput()" title="Copy all output">copy</button>
           <button class="btn ghost text-xs" onclick="clearOutput()">clear</button>
         </div>
       </div>
+      <form class="bar bordered dense stack gap-3xs" id="ask-form" hidden onsubmit="askClaude(event)">
+        <div class="cluster gap-3xs">
+          <input class="field text-xs gui-ask-q" id="ask-q" type="text" autocomplete="off">
+          <button class="btn text-xs" id="ask-send" type="submit">ask</button>
+          <button class="btn ghost text-xs" id="ask-new" type="button" onclick="newAsk()" hidden title="Forget this conversation; the next ask starts fresh">new</button>
+        </div>
+        <p class="text-xs text-muted" id="ask-help"></p>
+        <details class="disclosure">
+          <summary class="text-xs">instructions <span class="text-muted" id="ask-rules-state">· default</span></summary>
+          <textarea class="field text-xs gui-ask-rules" id="ask-rules" rows="6" spellcheck="false" oninput="saveAskRules()"></textarea>
+          <div class="cluster gap-3xs">
+            <span class="text-xs text-muted">Sent when a conversation starts; press new to use an edit mid-conversation.</span>
+            <button class="btn ghost text-xs" type="button" onclick="resetAskRules()">reset</button>
+          </div>
+        </details>
+      </form>
       <div class="gui-console-lines" id="output-lines"></div>
     </aside>
   </main>
@@ -1572,6 +1598,7 @@ const LEVEL_TONE = {
   dry:     'text-primary',
   detail:  'text-muted',
   done:    'text-muted',
+  claude:  '',
 }
 
 function appendOutput(text, type = 'output') {
@@ -1585,10 +1612,178 @@ function appendOutput(text, type = 'output') {
   const lines = document.getElementById('output-lines')
   lines.appendChild(el)
   lines.scrollTop = lines.scrollHeight
+  return el
 }
 
 function clearOutput() {
   document.getElementById('output-lines').innerHTML = ''
+}
+
+// ─── Ask Claude ───────────────────────────────────────────────────────────────
+//
+// The panel handed to `claude -p` in the project root, read-only, and the reply
+// streamed into the same panel. A follow-up resumes the session, so it sends
+// only lines that arrived since the last ask and none Claude wrote — a reply
+// fed back as output is the session reading its own answer as evidence.
+
+let askSession  = null
+let askRunning  = false
+let askDefaults = null
+
+const ASK_RULES_KEY = 'fli-ask-rules'
+
+// The defaults are the server's, so the help line and the instructions box
+// say what the argv actually allows rather than a copy that drifts from it.
+async function loadAskDefaults() {
+  if (askDefaults) return askDefaults
+  try { askDefaults = await fetch(`${API}/api/ask-claude`).then(r => r.json()) } catch { return null }
+  const d = askDefaults
+  document.getElementById('ask-help').textContent =
+    `Sends the output below (only new lines on a follow-up), where you are, the open command's .md and git status. ` +
+    `Read-only whatever the instructions say: ${d.tools.join(', ')}, and ${d.bash.join(', ')}. Up to $${d.budget} per ask.`
+  document.getElementById('ask-q').placeholder = d.question
+  let saved = null
+  try { saved = localStorage.getItem(ASK_RULES_KEY) } catch {}
+  document.getElementById('ask-rules').value = saved || d.rules
+  showAskRulesState()
+  return d
+}
+
+function askRulesEdited() {
+  const text = document.getElementById('ask-rules').value.trim()
+  return askDefaults && text !== askDefaults.rules.trim() ? text : null
+}
+
+function showAskRulesState() {
+  document.getElementById('ask-rules-state').textContent = askRulesEdited() == null ? '· default' : '· edited'
+}
+
+function saveAskRules() {
+  const edited = askRulesEdited()
+  try { edited == null ? localStorage.removeItem(ASK_RULES_KEY) : localStorage.setItem(ASK_RULES_KEY, edited) } catch {}
+  showAskRulesState()
+}
+
+function resetAskRules() {
+  if (askDefaults) document.getElementById('ask-rules').value = askDefaults.rules
+  saveAskRules()
+}
+
+async function toggleAsk() {
+  const form = document.getElementById('ask-form')
+  if (!form.hidden) { form.hidden = true; return }
+  await openAsk()
+}
+
+// The question is in the field, selected: typing replaces it, an arrow key
+// keeps it to revise. With none given, the field keeps what was typed, or
+// takes the default.
+async function openAsk(question = null) {
+  document.getElementById('ask-form').hidden = false
+  const d = await loadAskDefaults()
+  const input = document.getElementById('ask-q')
+  if (question) input.value = question
+  else if (d && !input.value) input.value = d.question
+  input.focus()
+  input.select()
+}
+
+// A row from another panel put into the output, with a question about it
+// waiting in the field. Nothing is sent until ask is pressed.
+async function askAbout(lines, question) {
+  appendOutput(lines.join('\n'), 'info')
+  await openAsk(question)
+}
+
+function newAsk() {
+  askSession = null
+  document.getElementById('ask-new').hidden = true
+  for (const el of document.querySelectorAll('#output-lines .gui-line[data-asked]')) delete el.dataset.asked
+}
+
+function askContext() {
+  const ctx = { panel: location.hash.slice(1) || 'home' }
+  if (activeCommand && !document.getElementById('cmd-form').hidden) ctx.command = activeCommand.title
+  for (const sel of document.querySelectorAll('[data-panel]:not([hidden]) select')) {
+    if (sel.id && sel.value && sel.offsetParent) ctx[sel.id] = sel.value
+  }
+  return ctx
+}
+
+function askOutput() {
+  const sent = []
+  for (const el of document.querySelectorAll('#output-lines .gui-line')) {
+    if (el.dataset.from === 'claude' || el.dataset.asked) continue
+    el.dataset.asked = '1'
+    sent.push(el.textContent.trimEnd())
+  }
+  return sent.join('\n')
+}
+
+function claudeLine(text, type) {
+  const el = appendOutput(text, type)
+  if (el) el.dataset.from = 'claude'
+  return el
+}
+
+async function askClaude(event) {
+  event?.preventDefault()
+  if (askRunning) {
+    await fetch(`${API}/api/ask-claude/stop`, { method: 'POST' }).catch(() => {})
+    return
+  }
+  await loadAskDefaults()
+  const input    = document.getElementById('ask-q')
+  const send     = document.getElementById('ask-send')
+  const question = input.value.trim()
+  const body     = { question, output: askOutput(), context: askContext(), rules: askSession ? null : askRulesEdited(), session: askSession }
+
+  askRunning = true
+  send.textContent = 'stop'
+  input.value = ''
+  claudeLine(`claude ← ${question || input.placeholder}`, 'info')
+  try {
+    const res = await fetch(`${API}/api/ask-claude`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      claudeLine(`claude: ${err.error || res.statusText}`, 'error')
+      return
+    }
+    let answered = false
+    await readEvents(res, (e) => {
+      switch (e.type) {
+        case 'session':
+          if (!askSession) claudeLine(`continue in a terminal, from the project root: claude --resume ${e.id}`, 'detail')
+          askSession = e.id
+          document.getElementById('ask-new').hidden = false
+          break
+        case 'text':   claudeLine(e.text.trimEnd(), 'claude'); break
+        case 'tool':   claudeLine(`› ${e.text}`, 'detail'); break
+        case 'error':  claudeLine(`claude: ${e.text}`, 'error'); break
+        case 'result': {
+          answered = true
+          const bits = [e.ok ? 'answered' : (e.stop || 'failed')]
+          if (e.turns != null) bits.push(`${e.turns} turn(s)`)
+          if (e.cost  != null) bits.push(`$${e.cost.toFixed(2)}`)
+          if (e.denied)        bits.push(`${e.denied} call(s) refused — read-only`)
+          claudeLine(`claude · ${bits.join(' · ')}`, e.ok ? 'done' : 'warn')
+          break
+        }
+        case 'done':
+          if (!answered) claudeLine(`claude stopped${e.code != null ? ` (exit ${e.code})` : ''} before answering`, 'warn')
+          break
+      }
+    })
+  } catch (err) {
+    claudeLine(`claude: connection error: ${err.message}`, 'error')
+  } finally {
+    askRunning = false
+    send.textContent = 'ask'
+  }
 }
 
 function copyOutput() {
@@ -2097,7 +2292,7 @@ async function loadNext() {
 
     panel.hidden = body.readyCount === 0 && body.blocked.length === 0
     note.textContent = `${body.readyCount} ready · ${body.blocked.length} blocked · fli next for the rest`
-    document.getElementById('next-rows').innerHTML = body.ready.map(r => `
+    document.getElementById('next-rows').innerHTML = body.ready.map((r, i) => `
       <li class="list-row" data-next="${esc(r.id)}">
         <div class="stack gap-3xs">
           <span class="text-sm"><code>${esc(r.id)}</code> ${esc(r.title)}</span>
@@ -2105,6 +2300,7 @@ async function loadNext() {
         </div>
         <div class="row-actions cluster gap-2xs">
           ${r.probeFirst ? '<span class="badge warning text-xs">probe first</span>' : ''}
+          <button class="btn ghost text-xs" data-ask onclick="askAboutNext(${i})" title="Put this issue in the output with a question for Claude">ask claude</button>
           <span class="badge muted text-xs" data-score>${r.score}</span>
         </div>
       </li>`).join('')
@@ -2112,6 +2308,17 @@ async function loadNext() {
     panel.hidden = false
     note.textContent = `could not rank the register: ${err.message}`
   }
+}
+
+function askAboutNext(i) {
+  const r = nextBody?.ready[i]
+  if (!r) return
+  const where = r.file ? `${r.file}${r.line ? `:${r.line}` : ''}` : null
+  askAbout([
+    [r.id, r.severity, r.pkg.join(', '), where].filter(Boolean).join(' · '),
+    r.title,
+    ...(r.probeFirst ? ['status stale?: the register is not sure it still holds'] : []),
+  ], `Is ${r.id}${where ? ` (${where})` : ''} still real? Where is the cause, and what would the fix be?`)
 }
 
 // ─── waiting on you ───────────────────────────────────────────────────────────

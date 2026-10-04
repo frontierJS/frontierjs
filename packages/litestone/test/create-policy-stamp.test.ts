@@ -26,3 +26,33 @@ describe('create policy sees the auth-default stamp (FJS-1402)', () => {
     db.$close()
   })
 })
+
+// FJS-1641: a literal @default is written by the DDL, never by the engine, so
+// it is not in the payload either. The policy grades the row as it will land.
+const literal = `
+enum Channel { email slack }
+model Sub {
+  id       Int     @id
+  ownerId  String  @default(auth().id)
+  channel  Channel @default(email)
+  public   Boolean @default(false)
+  @@allow('create', ownerId == auth().id && channel == 'email' && public == false)
+  @@allow('read', true)
+}
+`
+
+describe('create policy sees a literal default (FJS-1641)', () => {
+  it('create, createMany and upsertMany pass on the default; a value the caller sends is graded as sent', async () => {
+    const db: any = await createClient({ schema: literal, db: ':memory:' })
+    const me = db.$setAuth({ id: 'u1' })
+    const row = await me.sub.create({ data: {} })
+    expect(row.channel).toBe('email')
+    expect(row.public).toBe(false)
+    await me.sub.createMany({ data: [{}, {}] })
+    await me.sub.upsertMany({ data: [{ id: 99 }] })
+    expect(await db.asSystem().sub.count()).toBe(4)
+    await expect(me.sub.create({ data: { channel: 'slack' } })).rejects.toThrow(/denied/)
+    await expect(me.sub.create({ data: { public: true } })).rejects.toThrow(/denied/)
+    db.$close()
+  })
+})

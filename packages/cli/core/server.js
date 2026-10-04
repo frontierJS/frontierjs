@@ -38,7 +38,7 @@ import { createServer }  from 'http'
 import { execFileSync }  from 'child_process'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, relative } from 'path'
 import { fileURLToPath } from 'url'
 import { homedir } from 'os'
 
@@ -226,6 +226,19 @@ function route(req, res) {
   }
   if (req.method === 'POST' && path === '/api/ci/stop') {
     return handleCiStop(req, res)
+  }
+
+  // GET /api/ask-claude — the defaults the page shows and lets be edited
+  // POST /api/ask-claude · POST /api/ask-claude/stop — the output panel handed
+  // to Claude Code, the reply streamed back; or stop the one asking
+  if (req.method === 'GET' && path === '/api/ask-claude') {
+    return handleAskClaudeDefaults(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/ask-claude') {
+    return handleAskClaude(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/ask-claude/stop') {
+    return handleAskClaudeStop(req, res)
   }
 
   // GET /api/ports — current session status
@@ -1038,6 +1051,77 @@ function handleReleaseStepStop(req, res) {
   // deploy's ssh outlives a signal to the wrapper alone.
   try { process.kill(-releaseStep.child.pid, 'SIGTERM') } catch {}
   json(res, 200, { ok: true, step: releaseStep.id })
+}
+
+// ─── POST /api/ask-claude ────────────────────────────────────────────────────
+//
+// Body: { question, output, context: {label: value}, rules, session }. One at a time:
+// a second press while one answers would be two agents reading one tree on one
+// account with nothing on the page saying which reply is which.
+
+let asking = null
+
+async function handleAskClaudeDefaults(req, res) {
+  const { ASK_BASH, ASK_BUDGET_USD, ASK_DEFAULT_QUESTION, ASK_RULES, ASK_TOOLS } = await import('./ask-claude.js')
+  json(res, 200, {
+    question: ASK_DEFAULT_QUESTION,
+    rules:    ASK_RULES,
+    tools:    ASK_TOOLS.filter(t => t !== 'Bash'),
+    bash:     ASK_BASH.map(p => p.replace(/:\*$/, '')),
+    budget:   ASK_BUDGET_USD,
+  })
+}
+
+// A command is a markdown file, so its own prose is the help that goes with
+// it. The path is looked up here from the title rather than taken from the
+// page, so a request cannot point Claude at a file of its choosing.
+function commandSource(title) {
+  try {
+    const entry = getRegistry().get(String(title))
+    if (!entry?.filePath) return null
+    const rel = relative(global.projectRoot, entry.filePath)
+    return rel.startsWith('..') ? entry.filePath : rel
+  } catch { return null }
+}
+
+async function handleAskClaude(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `Claude is not asked from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  if (asking) return json(res, 409, { error: 'Claude is still answering' })
+
+  const { askPrompt, gitContext, runAsk } = await import('./ask-claude.js')
+  const session = body?.session ? String(body.session) : null
+  const context = body?.context && typeof body.context === 'object' ? { ...body.context } : {}
+  if (context.command) context['command source'] = commandSource(context.command)
+  const prompt  = askPrompt({
+    question: body?.question,
+    output:   typeof body?.output === 'string' ? body.output : '',
+    context,
+    git:      session ? null : gitContext(global.projectRoot),
+    rules:    typeof body?.rules === 'string' ? body.rules : null,
+    followUp: !!session,
+  })
+
+  const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
+  const out  = runAsk({ root: global.projectRoot, prompt, session, onEvent: emit })
+  if (out.error) return json(res, 400, { error: out.error })
+
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  asking = out.child
+  const code = await out.done
+  asking = null
+  emit({ type: 'done', code })
+  res.end()
+}
+
+function handleAskClaudeStop(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `Claude is not stopped from ${foreign}` })
+  if (!asking) return json(res, 409, { error: 'Claude is not answering' })
+  try { process.kill(-asking.pid, 'SIGTERM') } catch {}
+  json(res, 200, { ok: true })
 }
 
 // ─── POST /api/run/:name ──────────────────────────────────────────────────────

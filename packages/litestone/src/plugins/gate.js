@@ -60,6 +60,7 @@
 
 import { Plugin, AccessDeniedError } from '../core/plugin.js'
 import { collectNestedOps, collectIncludedModels } from './reach.js'
+import { gatedFromFields } from '../core/from-gate.js'
 
 // ─── Level constants ──────────────────────────────────────────────────────────
 
@@ -172,6 +173,26 @@ function makeLevelCache(getLevel, auth) {
   }
 }
 
+// The names in `among` that a read's `where` (through AND / OR / NOT) or
+// `orderBy` mentions at the model's own level.
+function namedIn(args, among) {
+  const out = new Set()
+  const walkWhere = (w) => {
+    if (Array.isArray(w)) return w.forEach(walkWhere)
+    if (!w || typeof w !== 'object') return
+    for (const [k, v] of Object.entries(w)) {
+      if (k === 'AND' || k === 'OR' || k === 'NOT') walkWhere(v)
+      else if (among.has(k)) out.add(k)
+    }
+  }
+  walkWhere(args?.where)
+  for (const o of [args?.orderBy].flat()) {
+    if (typeof o === 'string') { const k = o.replace(/^-/, ''); if (among.has(k)) out.add(k) }
+    else if (o && typeof o === 'object') for (const k of Object.keys(o)) if (among.has(k)) out.add(k)
+  }
+  return out
+}
+
 // ─── Access check ─────────────────────────────────────────────────────────────
 
 function checkLevel(required, userLevel, model, operation) {
@@ -281,6 +302,13 @@ export class GatePlugin extends Plugin {
     await this._check(model, 'read', ctx)
     for (const target of collectIncludedModels(args, model, ctx.relationMap))
       await this._check(target, 'read', ctx)
+    // A @from field below its target's gate reads as null (gatedFromFields);
+    // filtering or sorting on one would still answer for the rows behind it,
+    // so naming one there is refused as the include would be.
+    const fromFields = ctx.fromMap?.[model]
+    const hidden = gatedFromFields(fromFields, ctx)
+    if (hidden) for (const name of namedIn(args, hidden))
+      await this._check(fromFields[name].target, 'read', ctx)
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────

@@ -209,3 +209,45 @@ describe('the workspace survives the switch to WebSocket', () => {
     expect((sent[0].meta as Record<string, unknown>)?.headers).toBeUndefined()
   })
 })
+
+// A raw route — a PDF, a CSV, an @@export stream — is fetched with the same
+// credentials a call carries. A link cannot carry a bearer token, so without
+// this a page had to read client.token into a fetch of its own.
+describe('client.fetch, a raw route with this client\'s credentials', () => {
+  function answer(status: number, body: string, type = 'application/pdf') {
+    const seen: Array<{ url: string; headers: Headers }> = []
+    globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+      seen.push({ url: String(url), headers: new Headers(init.headers) })
+      return new Response(body, { status, headers: { 'content-type': type } })
+    }) as never
+    return seen
+  }
+
+  it('sends the token and the call headers under the api prefix, and answers the Response', async () => {
+    const seen = answer(200, '%PDF-1.7')
+    const c = createJunctionClient({ url: 'http://localhost:3000', apiPrefix: '/api', token: 'tok' })
+    c.setWorkspace('ws_1')
+    const res = await c.fetch('/reports/Revenue/pdf?currency=USD')
+    expect(seen[0].url).toBe('http://localhost:3000/api/reports/Revenue/pdf?currency=USD')
+    expect(seen[0].headers.get('authorization')).toBe('Bearer tok')
+    expect(Object.keys(c.callHeaders()).length).toBeGreaterThan(0)
+    for (const [k, v] of Object.entries(c.callHeaders())) expect(seen[0].headers.get(k)).toBe(v)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+    expect(await res.text()).toBe('%PDF-1.7')
+  })
+
+  it('throws what a call throws: the server\'s message, with the status as code', async () => {
+    answer(403, '{"message":"Customers cannot export this report"}', 'application/json')
+    const c = createJunctionClient({ url: 'http://localhost:3000', token: 'tok' })
+    await expect(c.fetch('/reports/Revenue/csv')).rejects.toMatchObject({ code: 403, message: 'Customers cannot export this report' })
+  })
+
+  it('tells the app a 401 is a session gone, as a call does', async () => {
+    answer(401, '{"message":"Session expired"}', 'application/json')
+    const c = createJunctionClient({ url: 'http://localhost:3000', token: 'tok' })
+    let heard = 0
+    c.on('unauthorized', () => { heard++ })
+    await expect(c.fetch('/reports/Revenue/pdf')).rejects.toMatchObject({ code: 401 })
+    expect(heard).toBe(1)
+  })
+})

@@ -170,6 +170,47 @@ export function partsIn(instant, timeZone) {
   }
 }
 
+/**
+ * The stretches of `[from, to]` over which `timeZone` keeps one UTC offset,
+ * earliest first: `[{ from, offset }]`, `from` in epoch milliseconds and
+ * `offset` in milliseconds east of UTC, each in force until the next one's
+ * `from`. The first starts at `from` itself.
+ *
+ * For a reader that cannot run this module per row — SQLite in a `GROUP BY`,
+ * which has no zone database and to which bun:sqlite can add no function — and
+ * so states the zone as a handful of fixed offsets with the instants they
+ * change at. One span almost always; two a year in a zone with summer time.
+ *
+ * The zone is read every twelve hours and each change is found to the
+ * millisecond by halving. A zone that changed twice inside twelve hours would
+ * be missed; none has.
+ */
+export function offsetSpans(from, to, timeZone) {
+  let lo = toEpoch(from, 'from')
+  const end = toEpoch(to, 'to')
+  requireZone(timeZone)
+  if (end < lo) throw new RangeError('datetime: offsetSpans wants from <= to')
+  const STEP = 12 * HOUR
+  const spans = [{ from: lo, offset: offsetMsAt(lo, timeZone) }]
+  for (let t = lo; t < end; ) {
+    const next = Math.min(t + STEP, end)
+    const was = spans[spans.length - 1].offset
+    if (offsetMsAt(next, timeZone) !== was) {
+      let a = t, b = next          // offset(a) === was, offset(b) !== was
+      while (b - a > 1) {
+        const mid = Math.floor((a + b) / 2)
+        if (offsetMsAt(mid, timeZone) === was) a = mid
+        else b = mid
+      }
+      spans.push({ from: b, offset: offsetMsAt(b, timeZone) })
+      t = b
+    } else {
+      t = next
+    }
+  }
+  return spans
+}
+
 // ─── writing a wall clock ─────────────────────────────────────────────────
 
 const FIELD_RANGES = [['hour', 0, 23], ['minute', 0, 59], ['second', 0, 59], ['millisecond', 0, 999]]

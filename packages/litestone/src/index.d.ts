@@ -284,6 +284,14 @@ export interface CreateClientOptions {
    */
   allowChildFkOverride?: boolean
   /**
+   * `schema` is text the app did not write — a row, a tenant's model. It is
+   * parsed as text only (never read from disk), held to the one `db` given,
+   * and a `database`, `import`, `tenancy`, `function`, `extend`, a claim read
+   * off a model, or a model's `@@auth`, `@@external`, `@@db`, `@@log` or
+   * `@@tenant` is refused by name, every one in one error (`FJS-1633`).
+   */
+  untrusted?: boolean
+  /**
    * The claim names this app's principal carries beyond the `@@auth` model's
    * own columns — a value resolved PER REQUEST, on no row and in no schema
    * (a cart token, an impersonation). Declaring it is what lets `auth().x` be
@@ -524,7 +532,7 @@ export interface TableClient<
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
-  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string; end: string }; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
+  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown>; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>
 }
 
@@ -1353,26 +1361,73 @@ export declare class Seeder {
 
 export declare function runSeeder(db: AnyLitestoneClient, SeederClass: new () => Seeder): Promise<void>
 
-export interface LoadFixtureOptions {
-  /** Column to match on — makes the fixture re-runnable (upsert instead of create). */
-  upsert?:   string
+export interface LoadRowsOptions {
+  /** A column whose value names a row: a repeat in the source is a reject, or the row to upsert. */
+  key?:    string
+  /** `insert` (default), `upsert` on `key`, or `replace` every stored row in one transaction. */
+  mode?:   'insert' | 'upsert' | 'replace'
+  /** Run the whole load and roll it back: what WOULD land, exactly. */
+  dryRun?: boolean
+  /** Values every loaded row carries — which load wrote it, and when. A source naming one is refused. */
+  stamp?:  Record<string, unknown>
+  /** Rows per write; a refused batch is retried a row at a time. Default 1000. */
+  batch?:  number
+  /**
+   * An optional Json column (`Json?`) that keeps, per row, every header or key
+   * naming no column, as it arrived. Without it the schema is frozen and such a
+   * name throws before any row (DL L2).
+   */
+  overflow?: string
+}
+
+/** A row set aside, with where it was and why. `reason` never quotes the cell. */
+export interface LoadReject {
+  /** 0-based position in the source's records. */
+  row:    number
+  /** 1-based line the record starts on, header included — CSV text only. */
+  line?:  number
+  key:    string | null
+  field:  string | null
+  reason: string
+}
+
+export interface LoadResult {
+  loaded:  number
+  rejects: LoadReject[]
+}
+
+/**
+ * Data somebody else wrote — CSV text or an array of records — read against the
+ * schema row by row. A text cell is parsed as its column's type; a bad one is a
+ * reject and the load goes on. A header naming no column, or a required column
+ * the file lacks, throws before any row is read.
+ */
+export declare function loadRows(
+  db:        LitestoneClient,
+  modelName: string,
+  source:    string | Record<string, unknown>[],
+  opts?:     LoadRowsOptions,
+): Promise<LoadResult>
+
+export interface LoadFixtureOptions extends LoadRowsOptions {
   /** Write past gates and policies. */
   asSystem?: boolean
 }
 
 /**
- * Load authored reference data — a `.json` path, a `.csv` path, or an inline array.
- * Rows go through the ORM, so defaults, validators and hooks all apply.
+ * Load authored reference data — a `.json` path, a `.csv` path, or an inline
+ * array — through loadRows, throwing on any reject: a fixture is authored, so a
+ * row that does not load is a bug.
  */
 export declare function loadFixture(
   db:        LitestoneClient,
   modelName: string,
   source:    string | FactoryRow[],
   opts?:     LoadFixtureOptions,
-): Promise<FactoryRow[]>
+): Promise<LoadResult>
 
-/** RFC-4180 CSV → rows. Unquoted scalars are coerced; quoted values stay strings. */
-export declare function parseCsv(text: string): Record<string, unknown>[]
+/** RFC-4180 CSV → records of TEXT, `null` for an empty unquoted cell. What a cell means is its column's. */
+export declare function parseCsv(text: string): Record<string, string | null>[]
 
 // ─── JSON Schema ──────────────────────────────────────────────────────────────
 

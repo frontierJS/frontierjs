@@ -32,7 +32,7 @@ export { resolveTenancy, tenantFrom }            from './core/tenancy.js'
 export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './tools/retention.js'
 export { Factory, defineFactory, Seeder, runSeeder,
-         loadFixture, parseCsv }                from './seeder.js'
+         loadRows, loadFixture, parseCsv }      from './seeder.js'
 export { ValueSetExtendError }                   from './core/valuesets.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
 export { findPrincipal, authModelOf }            from './tools/principal.js'
