@@ -212,8 +212,8 @@ export async function previewInvitation(token) {
 export async function acceptInvitation({ token, name, password }) {
   const result = await getClient().service('invitations').invoke('accept', null, { token, name, password })
 
-  if (result?.token) {
-    getClient().setToken(result.token)
+  if (result?.sessionToken) {
+    getClient().setToken(result.sessionToken)
     await refresh()
   }
 

@@ -51,10 +51,10 @@ title: Hub flags
     try {
       await hub.service.invoke('setFlag', null, { flagId: flag.id, isEnabled: next })
       const kill = flag.key.startsWith('killswitch.')
+      const what = kill ? (next ? 'Killswitch activated' : 'Killswitch deactivated')
+                        : (next ? 'Flag enabled' : 'Flag disabled')
       toasts[kill && next ? 'warning' : next ? 'success' : 'info'](
-        kill ? (next ? 'Killswitch activated' : 'Killswitch deactivated')
-             : (next ? 'Flag enabled' : 'Flag disabled'),
-        `${flag.key} in ${flag.workspace ?? 'an unnamed workspace'}`,
+        `${what}: ${flag.key} in ${flag.workspace ?? 'an unnamed workspace'}`,
       )
       await load()
     } catch (e) {

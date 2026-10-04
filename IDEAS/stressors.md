@@ -181,6 +181,9 @@ It also forces 4.20's unresolved ruling, because a comment thread and a cursor a
 channel payloads that are not records, and a rendered or free-form payload cannot
 be filtered per subscriber the way a row can.
 
+A page shared across workspaces is a channel two tenants share (Slack Connect's
+shape): one row owned by both, which a single `tenancy { column }` cannot state.
+
 ### 5. Help desk — the direct sequel to the chatbot
 
 Conduit sends and `packages/conduit/CLAUDE.md` states plainly that receiving is

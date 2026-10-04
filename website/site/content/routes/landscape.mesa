@@ -1,13 +1,13 @@
 ---
 title: "FrontierJS — the landscape"
-description: "The register of what FrontierJS came from: twenty-one projects, what was taken from each, and where each one stops."
+description: "The register of what FrontierJS came from: twenty-seven projects, what was taken from each, and where each one stops."
 render: static
 ---
 <!--
-  The landscape. Twenty-one projects, what was taken from each, and where each
+  The landscape. Twenty-seven projects, what was taken from each, and where each
   one stops.
 
-  The register and all twenty-one detail cards are prerendered, which the
+  The register and all twenty-seven detail cards are prerendered, which the
   hand-written page could not be: it fetched `projects.json` on load, so a
   crawler saw *Loading…* and opening the file from disk showed an error about
   `file://`. The data is checked into the repo beside this route, so it is read
@@ -157,7 +157,7 @@ render: static
 </section>
 
 <div class="container pagenote">
-  <span>Twenty-one projects, self-assessed — the reasoning is in the last two columns.</span>
+  <span>Twenty-seven projects, self-assessed — the reasoning is in the last two columns.</span>
   <span><a class="link" href="/">&larr; Back to the overview</a></span>
 </div>
 

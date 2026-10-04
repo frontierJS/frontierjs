@@ -1,5 +1,13 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-04 — `@@exclude(…, where: <expr>)` says which rows hold their range, so a cancelled shift frees its hours (`FJS-1569`)
+
+`@@exclude` had no predicate, so every row in a scope counted: a cancelled shift or a refused leave request went on excluding, and a cancellation refused the next write under that person. `where:` is parsed beside `range:`, validated by the walk partial `@@unique` uses (`predicateNames` now also returns the fields it names, rather than a second walker), and compiled with its literals inlined into the member's grade filters next to the soft-delete and template clauses. Its fields join the key and the range ends as what makes an update noteworthy, so `status: 'cancelled' → 'published'` into an overlap is graded and refused. `test/exclude-scope.test.ts` § where: — 4 cases; dropping the filter turns 3 red and dropping the noted fields turns 2 red. Litestone suite 5595 pass. Driven by moving connectteam's `conflicts.ts` and calendly's `book.ts` onto `FJS-D474` (`FJS-1529`).
+
+## 2026-10-04 — `$readGrading` sees a read policy, so a policy-only model is graded on a broadcast (`FJS-1698`)
+
+`$readGrading` read `policyMap[m].read.allow`/`.deny`, but the map holds `allows`/`denies`, so a model whose only read rule was `@@allow`/`@@deny` (no `@@gate`, no field rule) answered `open`. Junction skips `$readAs` for an `open` model, so every row of it went to every subscriber. It reads the right keys now. The existing *a policy makes it graded* test used `Order`, which also declares `@@gate`, so it passed on the gate; `test/read-as.test.ts` adds a policy-only `Note` (allow) and `Draft` (deny), both red on the old key. Suite 5591 pass.
+
 ## 2026-10-04 — `search(q, { select })` keeps `_rank`, `_highlight` and `_snippet` (`FJS-1694`)
 
 The extras were attached before the trim to the `select`, which keeps only named columns, so a search that named its columns came back unranked with no error — linear's ⌘K, moved onto `search()`, ranked nothing. They now go on after the trim; `withRank: false` still leaves rank off. `test/search-order.test.ts` asserts all four keys under a select in both walks; five tests that asserted exact keys to pin the injected-id trim pass `withRank: false`. `docs/full-text-search.md` now states `_rank`, the rowid rejoin, and what the pre-LIMIT filter costs.

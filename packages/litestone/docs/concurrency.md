@@ -278,9 +278,12 @@ field). A delete is never graded.
   every other: leave with `fromDate: '2026-10-01', toDate: '2026-10-03'` covers
   the 1st and the 2nd, and a shift on the 3rd is allowed. Whose midnight it is
   has no spelling yet (`FJS-D351`).
-- **Soft-deleted and template rows occupy nothing.** Every row in the scope
-  counts otherwise — a cancelled shift or a declined leave request still
-  excludes, because `@@exclude` has no `where:`.
+- **A row outside `where:` occupies nothing**, and neither does a soft-deleted
+  or template row. `@@exclude(person, range: [startsAt, endsAt], where: status
+  != "cancelled")` frees a cancelled shift's hours; a write naming a field of
+  the predicate is graded, so un-cancelling into an overlap is refused. The
+  predicate is read off the row alone — `auth()`, `now()` and another model are
+  refused at parse, as for a partial `@@unique` (`FJS-1569`).
 - **A key is graded whole** once a write touches it, so a key that already holds
   an overlap refuses the next write under it until the overlap is removed. A
   raw `asSystem().sql` write goes around the rule, as it goes around a CHECK

@@ -398,7 +398,7 @@ t('demos.prerendered', {
   showroom4:  countIn('showroom4', /phasepanel/g),           // six phases
   showroom5:  countIn('showroom5', /role="tab"/g),           // every feature row
   seams:      countIn('seams',     /class="ex[ "]/g),        // seventeen explanations
-  landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-one projects
+  landscape:  countIn('landscape', /class="entry[ "]/g),     // twenty-seven projects
   tutor:      countIn('tutor',     /class="card lesson[ "]/g), // the four lessons
 }, counted)
 

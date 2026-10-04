@@ -277,6 +277,7 @@ my-app/
       app.ts
       core/                  ← env, db client, auth, hooks
       services/              ← *.service.ts, autoloaded at boot
+      domain/                ← logic spanning models; a service calls it with the caller's db
     test/
 
   web/                       ← UI realm — Sierra + Mesa (the Vite root)

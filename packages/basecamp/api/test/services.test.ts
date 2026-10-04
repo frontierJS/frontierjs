@@ -2092,9 +2092,25 @@ describe('accepting an invitation puts somebody in the workspace', () => {
     expect(res.workspace_id).toBe(ws.id)
     // The session is the half that makes this branch worth a row: a person who
     // has no password memory must land inside the app rather than at a form.
-    expect(res.token).toBeTruthy()
+    expect(res.sessionToken).toBeTruthy()
     const made = await env.system.user.findFirst({ where: { email } })
     expect(made.displayName).toBe('Fresh Person')
+  })
+
+  // Over the wire, which an in-process call is not: the transport drops every
+  // key named for a protected column of the call's model, and `token` is
+  // Invitation's. Answered under that name, the session never reached the
+  // browser and the new account landed on the invite page signed out.
+  test('the session survives the wire', async () => {
+    const email = `wire-${Math.random().toString(36).slice(2, 8)}@x.co`
+    const inv   = await env.as(owner).service('invitations')
+      .create({ email, role: 'viewer' }) as any
+    const res = await env.http.post('/invitations').set('x-service-method', 'accept')
+      .send({ token: inv.token, name: 'Wire Person', password: 'correct-horse' })
+    expect(res.status).toBe(200)
+    expect(typeof res.body.sessionToken).toBe('string')
+    const me = await env.http.get('/account/me').set('authorization', `Bearer ${res.body.sessionToken}`)
+    expect(me.body.email).toBe(email)
   })
 })
 

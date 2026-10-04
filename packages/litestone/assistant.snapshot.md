@@ -1343,11 +1343,11 @@ A composite unique constraint. Parses to `uniqueIndex`, which is why the written
 @@unique([accountId, number])
 ```
 
-#### `@@exclude` (<scope>, range: [<start>, <end>])
+#### `@@exclude` (<scope>, range: [<start>, <end>][, where: <expr>])
 
 tier: **situational** · legal in: in a model, in a trait · also called: no overlap, exclusion constraint, double booking · see also: `scope`, `unique`
 
-No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing.
+No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's field must be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date or @datetime. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing. `where:` says which of this model's rows hold their range at all — `where: status != "cancelled"` — and refuses what a partial `@@unique` refuses: `auth()`, `now()`, another model, a quoted string. A write naming one of its fields is graded, so a row moved back into it is checked.
 
 ```lite
 @@exclude(person, range: [startsAt, endsAt])

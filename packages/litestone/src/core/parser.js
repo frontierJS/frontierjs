@@ -2558,27 +2558,31 @@ class Parser {
       // a row is usually on a DIFFERENT model: a logged write in the same
       // transaction, whose trail clock lines up with this table's rowid order.
       case 'anonymous': return { kind: 'anonymous' }
-      // @@exclude(<scope>, range: [start, end]) — no two rows sharing the
-      // scope's key may overlap on the range, across every model citing the
-      // same scope (`FJS-D474`). The scope is a NAME declared at schema level,
-      // resolved in validate() so an import may carry it.
+      // @@exclude(<scope>, range: [start, end], where: <predicate>?) — no two
+      // rows sharing the scope's key may overlap on the range, across every
+      // model citing the same scope (`FJS-D474`). The scope is a NAME declared
+      // at schema level, resolved in validate() so an import may carry it.
+      // `where:` says which of this model's rows occupy their range at all —
+      // a cancelled shift holds no time (`FJS-1569`).
       case 'exclude': {
         this.eat(TK.LPAREN)
         const scope = this.eat(TK.IDENT).value
         let range = null
+        let where = null
         while (this.maybeEat(TK.COMMA)) {
           const arg = this.eat(TK.IDENT)
-          if (arg.value !== 'range')
-            throw new ParseError(`@@exclude: unknown argument '${arg.value}' — expected 'range'`, arg)
+          if (arg.value !== 'range' && arg.value !== 'where')
+            throw new ParseError(`@@exclude: unknown argument '${arg.value}' — expected 'range' or 'where'`, arg)
           this.eat(TK.COLON)
-          range = this.parseFieldList()
+          if (arg.value === 'where') where = this.parsePolicyExpr()
+          else range = this.parseFieldList()
         }
         const close = this.eat(TK.RPAREN)
         if (!range)
           throw new ParseError(`@@exclude(${scope}): expected range: [start, end] — the pair of fields two rows may not overlap on`, close)
         if (range.length !== 2)
           throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
-        return { kind: 'exclude', scope, range }
+        return where ? { kind: 'exclude', scope, range, where } : { kind: 'exclude', scope, range }
       }
       default:
         throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
@@ -5390,6 +5394,7 @@ function validate(schema) {
         else if (unstored(key))
           errors.push(`${at} — scope '${scope.name}' serializes on '${scope.field}', which is @${unstored(key)}, so there is no plain column to match the other members' rows on`)
       }
+      if (attr.where) excludePredicate(model, attr, at)
       if (attr.range[0] === attr.range[1]) {
         errors.push(`${at} — a range is two different fields, a start and an end`)
         continue
@@ -5407,6 +5412,36 @@ function validate(schema) {
           .push({ model: model.name, number: rangeKind(ends[0]) === 'Int' || rangeKind(ends[0]) === 'Float' })
     }
   }
+  // `where:` is read where an index predicate is: against one row, on the raw
+  // connection, with no caller in scope — so it refuses what a partial
+  // @@unique refuses, and for the same reasons. Inlined because the grade's
+  // statement binds only the key, and these are the schema's own literals.
+  function excludePredicate(model, attr, at) {
+    const label = `${at.replace(/\)$/, '')}, where: …)`
+    const names = predicateNames(attr.where, model)
+    if (names.constant) return errors.push(constantPredicate(label, names.constant))
+    if (names.auth)
+      return errors.push(`${label} names auth(), which is a different answer for every caller — whether a row ` +
+        `holds its range cannot depend on who is writing the OTHER row`)
+    if (names.now)
+      return errors.push(`${label} names now(), so a row that never moved would start or stop holding its range ` +
+        `on its own, and the overlap it hides would surface on some unrelated later write. Compare a stored column`)
+    if (names.crossesModel)
+      return errors.push(`${label} reads another model. Whether a row holds its range is read off that row alone`)
+    if (names.unknown.length)
+      return errors.push(`${label} names ${names.unknown.map(u => `'${u}'`).join(', ')}, which ` +
+        `${names.unknown.length > 1 ? 'are not fields' : 'is not a field'} of ${model.name}`)
+    let compiled
+    try { compiled = compileStatic(attr.where, model.name, schema) }
+    catch (e) { return errors.push(`${label} could not be compiled — ${e.message}`) }
+    const bad = compiled.params.find(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))
+    if (bad !== undefined || /\bSELECT\b/i.test(compiled.sql))
+      return errors.push(`${label} compiles to something the grade cannot read off one row ` +
+        `(${bad !== undefined ? JSON.stringify(bad) : 'a subquery'}) — compare columns against literals`)
+    attr.whereSql = inlineParams(compiled.sql, compiled.params)
+    attr.whereFields = names.fields
+  }
+
   // A day and an instant compare — a day starts at its midnight — but a number
   // and a time share no point to compare at, so the write would grade nothing.
   for (const [name, kinds] of memberKinds) {
@@ -6459,7 +6494,7 @@ function validate(schema) {
   // touched it — and a refusal that cannot say what this declaration did wrong
   // is the shape `FJS-351` is about.
   //
-  // Returns `{ auth, now, crossesModel, unknown, constant }`. `crossesModel` is
+  // Returns `{ auth, now, crossesModel, unknown, fields, constant }`. `crossesModel` is
   // `check()` and a relation path together: both read another model, and both
   // arrive at the compiler as a subquery.
   //
@@ -6495,6 +6530,7 @@ function validate(schema) {
       now:          named.includes('\0now'),
       crossesModel: named.includes('\0cross'),
       unknown:      named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n)),
+      fields:       [...new Set(named.filter(n => n[0] !== '\0'))],
       constant,
     }
   }

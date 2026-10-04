@@ -460,15 +460,30 @@ const path     = () => evaluate('location.pathname')
 const heading  = () => evaluate(`document.querySelector('h1')?.textContent ?? null`)
 const badges   = () => evaluate(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`)
 const hasToken = () => evaluate(`!!localStorage.getItem('basecamp_token')`)
+// Who is signed in is the Account menu's label, and the menu is `{#if open}`,
+// so the page's text carries no email until it is pressed. Pressed again to
+// close it: the sign-out step opens the same menu and a second press would shut it.
+async function accountMenuText() {
+  await evaluate(`document.getElementById('account-menu')?.click()`)
+  const text = await waitFor(`document.querySelector('[role="menu"]')?.textContent ?? ''`, t => t.includes('@'), 3_000)
+  await evaluate(`document.getElementById('account-menu')?.click()`)
+  await waitFor(`!document.querySelector('[role="menu"]')`, Boolean, 3_000)
+  return text
+}
 
 await evaluate(`window.__errs = []; addEventListener('error', e => __errs.push(String(e.message)))`)
 
 console.log('\nBasecamp — auth flow\n')
 
 // 1. With no account, the wizard owns the app — including on a direct load.
+// Polled: this is the first load on a Vite that just started, and its dep
+// optimization can outlast goto's fixed wait — the two checks then failed in
+// some runs and not others.
 await goto('/')
-check('empty database sends / to the wizard', await path(), '/setup/')
-check('the wizard renders', await heading(), 'Set up Basecamp')
+check('empty database sends / to the wizard',
+  await waitFor(`location.pathname`, p => p === '/setup/'), '/setup/')
+check('the wizard renders',
+  await waitFor(`document.querySelector('h1')?.textContent ?? null`, h => h === 'Set up Basecamp'), 'Set up Basecamp')
 await goto('/login/')
 check('and /login/ too — there is nobody to log in as', await path(), '/setup/')
 
@@ -487,14 +502,14 @@ await submit()
 // mount for the notice bar, so the redirect lands later than it used to.
 check('setup lands on home',
   await waitFor(`location.pathname`, p => p === '/'), '/')
-check('signed in as the new user', await evaluate('document.body.textContent'), t => t.includes(ACCOUNT.email))
-// The workspace tile names the workspace the page is scoped to. Empty or
-// 'none' means /auth/workspace answered nothing and every scoped request from
-// here would 400.
+check('signed in as the new user', await accountMenuText(), t => t.includes(ACCOUNT.email))
+// The header's switcher names the workspace the page is scoped to. Empty
+// means /auth/workspace answered nothing and every scoped request from here
+// would 400.
+const switcherText = `(() => { const s = document.getElementById('workspace-switch'); return s?.selectedOptions?.[0]?.textContent.trim() ?? '' })()`
 check('workspace resolved',
-  await waitFor(`[...document.querySelectorAll('.badge')].map(e => e.textContent.trim()).join('|')`,
-    t => t.includes('acme')),
-  t => t.includes('acme'))
+  await waitFor(switcherText, t => t === ACCOUNT.workspace),
+  ACCOUNT.workspace)
 check('token persisted', await hasToken(), true)
 // The socket opens only once a token is stored, so this is also the proof that
 // storing it and handing it to the client happen together.
@@ -538,7 +553,7 @@ check('token stored again', await hasToken(), true)
 //    nothing in memory, only what localStorage kept.
 await goto('/')
 check('reload keeps the session', await path(), '/')
-check('reload keeps the user', await evaluate('document.body.textContent'), t => t.includes(ACCOUNT.email))
+check('reload keeps the user', await accountMenuText(), t => t.includes(ACCOUNT.email))
 
 // ── 8. Workspace scoping ──────────────────────────────────────────────
 // Seeded over HTTP rather than through the UI: creating projects is Phase 3,
@@ -628,14 +643,37 @@ check('the chosen workspace survives a reload',
 // Everything below is done the way a person does it: navigate, fill, click.
 // Nothing here calls the API directly — the point is that the screens work,
 // not that the service does.
-const click = text => evaluate(`
-  (() => {
-    const el = [...document.querySelectorAll('button, a')]
-      .find(e => e.textContent.trim() === ${JSON.stringify(text)})
-    if (!el) throw new Error('no control labeled ' + ${JSON.stringify(text)} + ' on ' + location.pathname)
-    el.click()
-  })()
-`)
+//
+// A control marked `data-confirm` asks before it acts (ConfirmProvider), and a
+// click the drive never confirmed did nothing at all: every refusal check read
+// "" and every delete left its row, 27 failures from one cause (FJS-1602). So
+// click() answers the panel the way a person would, and a confirm the control
+// promised that never opens is a throw rather than a silent no-op.
+//
+// A control named only by its aria-label (one Delete per row) is found by it.
+// `row` narrows it to the control in the table row naming that text: a table
+// of Remove buttons otherwise answers the first, whichever row sorts first.
+const CONFIRM_PANEL = `[role="dialog"][aria-modal="false"]`
+async function click(text, { row } = {}) {
+  const confirmLabel = await evaluate(`
+    (() => {
+      const row = ${JSON.stringify(row ?? null)}
+      const el = [...document.querySelectorAll('button, a')]
+        .find(e => (e.textContent.trim() === ${JSON.stringify(text)} || e.getAttribute('aria-label') === ${JSON.stringify(text)})
+          && (row === null || e.closest('tr')?.textContent.includes(row)))
+      if (!el) throw new Error('no control labeled ' + ${JSON.stringify(text)} + (row ? ' in the row naming ' + row : '') + ' on ' + location.pathname)
+      el.click()
+      return el.hasAttribute('data-confirm') ? (el.getAttribute('data-confirm-label') || 'Confirm') : null
+    })()
+  `)
+  if (confirmLabel === null) return
+  const opened = await waitFor(`!!document.querySelector(${JSON.stringify(CONFIRM_PANEL)})`, Boolean, 5_000)
+  if (!opened) throw new Error(`'${text}' is marked data-confirm and no confirmation opened`)
+  await evaluate(`
+    [...document.querySelectorAll(${JSON.stringify(CONFIRM_PANEL + ' button')})]
+      .find(b => b.textContent.trim() === ${JSON.stringify(confirmLabel)}).click()
+  `)
+}
 
 await goto('/projects/')
 check('the projects list renders', await heading(), 'Projects')
@@ -727,7 +765,7 @@ check('a secret variable says it is set and carries no value',
   await evaluate(`document.body.innerHTML`),
   t => t.includes('secret · set') && !t.includes('tok_live_123'))
 
-await click('Remove')
+await click('Remove', { row: 'DATABASE_URL' })
 await sleep(2000)
 check('removing a variable leaves the other',
   await evaluate(`[...document.querySelectorAll('#var-rows td')].map(t => t.textContent.trim()).join('|')`),
@@ -772,7 +810,7 @@ const appDetailPath = await path()
 check('an app has its own screen', await heading(), 'web')
 check('…opening in one request, with placement, releases and jobs',
   await evaluate(`document.getElementById('app-overview')?.textContent ?? ''`),
-  t => t.includes('Placement') && t.includes('Serving'))
+  t => t.includes('Placement') && t.includes('Details'))
 
 // Domains & SSL — the tab the mock has and the schema could not describe until
 // `Domain` replaced `App.domain`, one nullable string.
@@ -2044,8 +2082,7 @@ check('…and a size reads in the unit that suits it, from bytes',
 
 // The refusal that stops somebody deleting a database. Named containers, not a
 // count — "stop the container first" is only actionable if it says which.
-await evaluate(`[...document.querySelectorAll('#volume-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Delete pg-data').click()`)
+await click('Delete pg-data')
 check('a mounted volume refuses to be deleted, naming what holds it',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('mounted by')),
   t => t.includes('pg-data-svc') && t.includes('stop the container first'))
@@ -2053,8 +2090,7 @@ check('a mounted volume refuses to be deleted, naming what holds it',
 // No outpost has registered yet: gateway-01's heartbeats have carried no URL. The
 // row must SURVIVE, because forgetting it would leave the disk full and the
 // fleet's picture wrong in the one direction nothing can detect.
-await evaluate(`[...document.querySelectorAll('#volume-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
+await click('Delete build-cache')
 check('with no outpost to ask, the record is left alone and it says so',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('outpost')),
   t => t.includes('No outpost is registered'))
@@ -2073,8 +2109,7 @@ await apiCall(`/servers/${serverId}`, {
 })
 
 await goto('/volumes/')
-await evaluate(`[...document.querySelectorAll('#volume-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Delete build-cache').click()`)
+await click('Delete build-cache')
 check('with an outpost, the row goes',
   await waitFor(`document.getElementById('volume-list')?.textContent ?? ''`, t => !t.includes('build-cache')),
   t => !t.includes('build-cache'))
@@ -2119,8 +2154,10 @@ await REPORT([{ name: 'pg-data', size_bytes: 6 * 1024 ** 3, in_use: true, contai
 // Read the whole page, not `#volume-list`: an empty list renders an EmptyState
 // and no list at all, so scoping the read to the list cannot tell "the row went"
 // from "everything went".
+// The poll waits for the whole claim: `pg-data` is on the page before the
+// push lands, so waiting for it alone read the page before the reload.
 check('…and one the machine no longer has is forgotten',
-  await waitFor(`document.body.textContent`, t => t.includes('pg-data')),
+  await waitFor(`document.body.textContent`, t => !t.includes('metrics') && t.includes('pg-data')),
   t => !t.includes('metrics') && t.includes('pg-data'))
 
 // Only pg-data is left and it is mounted, so filtering to unused must empty the
@@ -2436,8 +2473,7 @@ await evaluate(`(() => {
   sel.dispatchEvent(new Event('input',  { bubbles: true }))
   sel.dispatchEvent(new Event('change', { bubbles: true }))
 })()`)
-await evaluate(`[...document.querySelectorAll('#recipe-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Run Nameless').click()`)
+await click('Run Nameless')
 check('running on a machine with no outpost is refused, naming it',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('outpost')),
   t => t.includes('no-outpost-01') && t.includes('No outpost is registered'))
@@ -2451,8 +2487,7 @@ await evaluate(`(() => {
   sel.dispatchEvent(new Event('input',  { bubbles: true }))
   sel.dispatchEvent(new Event('change', { bubbles: true }))
 })()`)
-await evaluate(`[...document.querySelectorAll('#recipe-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Run Nameless').click()`)
+await click('Run Nameless')
 check('a run finishes and the exit code is on screen',
   await waitFor(`document.getElementById('recipe-runs')?.textContent ?? ''`, t => t.includes('success')),
   t => t.includes('success') && t.includes('gateway-01'))
@@ -2542,8 +2577,7 @@ check('two image targets do not add up to twice the images',
   await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`),
   t => t.match(/(\d+\.\d) GB by these targets/)?.[1] === estimateBefore.match(/(\d+\.\d) GB by these targets/)?.[1])
 
-await evaluate(`[...document.querySelectorAll('#cleanup-list button')]
-  .find(b => b.getAttribute('aria-label') === 'Clean gateway-01').click()`)
+await click('Clean gateway-01')
 check('a sweep records what the machine says it freed',
   await waitFor(`document.getElementById('cleanup-history')?.textContent ?? ''`, t => t.includes('3.0 GB')),
   t => t.includes('3.0 GB') && t.includes('success'))
@@ -2628,8 +2662,7 @@ check('…with the counts nothing else joins up',
 // Suspension is the action worth proving, and proving it means proving it bites
 // somewhere else: a status column nothing reads is a button that reports
 // success and revokes nothing.
-await evaluate(`[...document.querySelectorAll('#hub-workspace-rows button')]
-  .find(b => b.getAttribute('aria-label') === 'Suspend Skunkworks').click()`)
+await click('Suspend Skunkworks')
 check('suspending a workspace is visible where it was done',
   await waitFor(`document.getElementById('hub-ws-stats')?.textContent ?? ''`, t => t.includes('1 suspended')),
   t => t.includes('1 suspended'))
@@ -2645,8 +2678,7 @@ check('…while the hub itself stays reachable',
   (await apiCall('/hub', { method: 'POST', header: { 'x-service-method': 'overview' } })).runtime.pid,
   n => Number.isInteger(n))
 
-await evaluate(`[...document.querySelectorAll('#hub-workspace-rows button')]
-  .find(b => b.getAttribute('aria-label') === 'Reinstate Skunkworks').click()`)
+await click('Reinstate Skunkworks')
 check('reinstating gives it back',
   await waitFor(`(async () => {
     const r = await fetch('/projects', { headers: { accept: 'application/json',
@@ -2971,7 +3003,7 @@ await fill({ 'invite-name': 'Grace', 'invite-password': 'hopperhopper' })
 await evaluate(`document.getElementById('invite-accept').click()`)
 
 check('accepting lands them inside the app', await waitFor(`location.pathname`, p => p === '/'), '/')
-check('…signed in as themselves', await evaluate(`document.body.textContent`), t => t.includes('grace@example.test'))
+check('…signed in as themselves', await accountMenuText(), t => t.includes('grace@example.test'))
 check('…scoped to the workspace they were invited to',
   await evaluate(`localStorage.getItem('basecamp_workspace')`), wsBefore)
 

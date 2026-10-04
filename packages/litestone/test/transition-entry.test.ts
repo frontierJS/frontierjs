@@ -77,16 +77,18 @@ describe('a create names no state but the entry', () => {
     expect(await sys.leaveRequest.count()).toBe(2)
   })
 
+  // `update: []` keeps upsertMany insert-only: its conflict half is graded as an
+  // update (`FJS-1700`), and this USER(4) is below the model's update gate.
   test("upsert's create half and upsertMany's insert are creates", async () => {
     const { user, sys } = await env()
     await expect(user.leaveRequest.upsert({
       where: { reason: 'a' }, create: { reason: 'a', status: 'approved' }, update: {},
     })).rejects.toBeInstanceOf(TransitionViolationError)
-    await expect(user.leaveRequest.upsertMany({ data: [{ reason: 'b', status: 'approved' }], conflictTarget: ['reason'] }))
+    await expect(user.leaveRequest.upsertMany({ data: [{ reason: 'b', status: 'approved' }], conflictTarget: ['reason'], update: [] }))
       .rejects.toBeInstanceOf(TransitionViolationError)
     expect(await sys.leaveRequest.count()).toBe(0)
     await user.leaveRequest.upsert({ where: { reason: 'a' }, create: { reason: 'a' }, update: {} })
-    await user.leaveRequest.upsertMany({ data: [{ reason: 'b', status: 'requested' }], conflictTarget: ['reason'] })
+    await user.leaveRequest.upsertMany({ data: [{ reason: 'b', status: 'requested' }], conflictTarget: ['reason'], update: [] })
     expect(await sys.leaveRequest.count()).toBe(2)
   })
 

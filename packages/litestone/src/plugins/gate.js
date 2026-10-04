@@ -155,6 +155,17 @@ function buildAccessMap(schema) {
 
 const SYSTEM_RESOLVER = () => 8
 
+// The one entry a write's `system: [...]` may name beside a column: that call,
+// on that model, is graded SYSTEM(8) against its own @@gate and nothing else
+// moves (`FJS-D575`). Read per call and never cached — the resolver cache is
+// keyed on the flavor, so a lift reaching it would grade every later call on
+// the session at 8.
+export const GATE_LIFT = '@@gate'
+
+export function liftsGate(system) {
+  return Array.isArray(system) ? system.includes(GATE_LIFT) : system === GATE_LIFT
+}
+
 function makeLevelCache(getLevel, auth) {
   const cache = new Map()
   return (model) => {
@@ -205,7 +216,11 @@ function checkLevel(required, userLevel, model, operation) {
     )
   if (required === 8)
     throw new AccessDeniedError(
-      `"${model}.${operation}" requires SYSTEM access (use asSystem())`,
+      operation === 'create' || operation === 'update'
+        ? `"${model}.${operation}" requires SYSTEM access. Where the application makes this ${operation} on a ` +
+          `caller's behalf, name the gate on the call — system: ['${GATE_LIFT}'] — and the row policies and the ` +
+          `audit actor stay; asSystem() drops them too`
+        : `"${model}.${operation}" requires SYSTEM access (use asSystem())`,
       { model, operation, required, got: userLevel }
     )
   throw new AccessDeniedError(
@@ -289,10 +304,12 @@ export class GatePlugin extends Plugin {
 
   // ── Gate check helper ───────────────────────────────────────────────────────
 
-  async _check(model, op, ctx) {
+  // `lifted` grades this one check at SYSTEM. A 9 still refuses, and a nested
+  // write in the same payload is graded at the caller's own level below.
+  async _check(model, op, ctx, lifted = false) {
     const required  = ctx.gateFor(model, op)
     if (required == null) return
-    const userLevel = this._resolver(ctx)(model)
+    const userLevel = lifted ? SYSTEM_RESOLVER() : this._resolver(ctx)(model)
     checkLevel(required, userLevel, model, op)
   }
 
@@ -314,7 +331,7 @@ export class GatePlugin extends Plugin {
   // ── Create ──────────────────────────────────────────────────────────────────
 
   async onBeforeCreate(model, args, ctx) {
-    await this._check(model, 'create', ctx)
+    await this._check(model, 'create', ctx, liftsGate(args?.system))
     const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {
@@ -327,7 +344,7 @@ export class GatePlugin extends Plugin {
   // ── Update ──────────────────────────────────────────────────────────────────
 
   async onBeforeUpdate(model, args, ctx) {
-    await this._check(model, 'update', ctx)
+    await this._check(model, 'update', ctx, liftsGate(args?.system))
     const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {

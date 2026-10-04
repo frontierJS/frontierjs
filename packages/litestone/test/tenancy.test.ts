@@ -464,11 +464,13 @@ describe('a row cannot be moved out of its tenant', () => {
     expect((await sys.doc.findUnique({ where: { id: 1 } })).workspaceId).toBe(1)
   })
 
-  it('refuses re-pointing a delegated child at another tenant\'s parent', async () => {
+  // Another tenant's parent is a parent the caller cannot read, so it answers
+  // as missing. `Outside your workspaceId` here would say the id exists.
+  it('refuses re-pointing a delegated child at another tenant\'s parent, as a missing one', async () => {
     const { sys, caller } = await seeded()
 
     await expect(caller.note.update({ where: { id: 1 }, data: { docId: 2 } }))
-      .rejects.toThrow(/Outside your workspaceId/)
+      .rejects.toThrow('docId 2 names no Doc')
     expect((await sys.note.findUnique({ where: { id: 1 } })).docId).toBe(1)
   })
 

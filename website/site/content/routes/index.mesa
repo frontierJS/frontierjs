@@ -104,7 +104,7 @@ render: static
 
   .map {
     position: absolute; inset: 0;
-    background: url('/fjs-map-2.png') 70% 40% / cover no-repeat;
+    background: url('/map/territory.webp') 70% 40% / cover no-repeat;
     filter: saturate(.9);
   }
 

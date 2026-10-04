@@ -134,7 +134,7 @@ function actorTypeOf(ctx) {
 // Build the log entry object from the standard fields + onLog.
 // ctx is the request context (has ctx.auth).
 // onLog is the user-supplied function from createClient options.
-export function buildLogEntry({ operation, model, field, transition, records, before, after }, ctx, onLog) {
+export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted }, ctx, onLog) {
   // WHERE the write came from. Supplied by whoever owns the request — junction
   // installs a closure over its own request store — because this package sits
   // BELOW the one that has a request (Invariant 1) and must not learn about it.
@@ -182,7 +182,10 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     ip:            from?.ip            ?? null,
     userAgent:     from?.userAgent     ?? null,
     tenant:        from?.tenant        ?? null,
-    meta:      null,
+    // A write that named `system: ['@@gate']` is filed under the person who
+    // caused it, at a level they do not hold — without the mark the row reads
+    // as a gate the trail watched fail (`FJS-D575`).
+    meta:      lifted?.length ? JSON.stringify({ lifted }) : null,
     createdAt: new Date().toISOString(),
   }
 
@@ -205,7 +208,9 @@ export function buildLogEntry({ operation, model, field, transition, records, be
       const extra = onLog(entry, seen) ?? {}
       if ('actorId'   in extra && extra.actorId   != null) entry.actorId   = extra.actorId
       if ('actorType' in extra && extra.actorType != null) entry.actorType = extra.actorType
-      if ('meta'      in extra && extra.meta      != null) entry.meta      = JSON.stringify(extra.meta)
+      if ('meta'      in extra && extra.meta      != null) entry.meta      = JSON.stringify(
+        lifted?.length && typeof extra.meta === 'object' && !Array.isArray(extra.meta) ? { ...extra.meta, lifted } : extra.meta
+      )
     } catch {}
   }
 

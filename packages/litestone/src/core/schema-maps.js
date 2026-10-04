@@ -14,7 +14,7 @@
 // something was inserted between them — so each is reunited with its own pass.
 
 import { inferFromFk }                                             from './parser.js'
-import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor } from './ddl.js'
+import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor, mapExprCols } from './ddl.js'
 import { assertNoBareClock, expandNowTokens }                      from './query.js'
 import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
@@ -718,7 +718,7 @@ export function buildCardinalityMap(schema, pluralize = false) {
 //
 // The rows a member contributes are the ones a read would answer, for the
 // reason the cardinality map gives: a soft-deleted shift is not a shift, and a
-// template is not one either.
+// template is not one either. Its own `where:` narrows them further.
 export function buildExclusionMap(schema, pluralize = false) {
   const byModel = {}           // member model -> [scope name], writes that dirty a key
   const scopes  = {}           // scope name   -> { name, field, members: [member] }
@@ -738,6 +738,8 @@ export function buildExclusionMap(schema, pluralize = false) {
       const filters = []
       if (isSoftDelete(model)) filters.push(`"${col('deletedAt')}" IS NULL`)
       if (htField)             filters.push(`"${col(htField)}" = 0`)
+      // `where:` — a row outside it holds no time (`FJS-1569`).
+      if (attr.whereSql)       filters.push(`(${mapExprCols(attr.whereSql, cols)})`)
 
       const s = (scopes[scope.name] ??= { name: scope.name, field: scope.field, members: [] })
       s.members.push({
@@ -749,6 +751,9 @@ export function buildExclusionMap(schema, pluralize = false) {
         range:     attr.range,
         columns:   attr.range.map(col),
         kinds:     attr.range.map(n => rangePointKind(field(n))),
+        // A write naming one of these can move a row INTO the predicate — a
+        // cancelled shift restored — so it notes the key like a range end does.
+        whereFields: attr.whereFields ?? [],
         filters,
       })
       ;(byModel[model.name] ??= []).push(scope.name)

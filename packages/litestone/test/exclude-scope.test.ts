@@ -352,3 +352,93 @@ describe('@@exclude on the write path — FJS-1528', () => {
     db.$close()
   })
 })
+
+// ─── where: — FJS-1569 ────────────────────────────────────────────────────────
+//
+// A cancelled shift or a refused leave request holds no time. Without `where:`
+// every row in the scope counted, so the one cancellation a rota exists to
+// absorb refused the next write under that person for good.
+
+const WHERE_SCHEMA = `
+  scope person(employeeId)
+
+  enum ShiftStatus { draft published cancelled }
+  enum LeaveStatus { requested approved refused }
+
+  model Shift {
+    id         Int         @id @default(autoincrement())
+    employeeId Int
+    startsAt   DateTime
+    endsAt     DateTime
+    status     ShiftStatus @default(draft) @map("shift_status")
+    @@exclude(person, range: [startsAt, endsAt], where: status != "cancelled")
+    @@allow('all', true)
+  }
+
+  model LeaveRequest {
+    id         Int         @id @default(autoincrement())
+    employeeId Int
+    startsAt   DateTime
+    endsAt     DateTime
+    status     LeaveStatus @default(requested)
+    @@exclude(person, range: [startsAt, endsAt], where: status == "approved")
+    @@allow('all', true)
+  }
+`
+
+async function openWhere() {
+  const { createClient } = await import('../src/index.js')
+  return (await createClient({ db: ':memory:', schema: WHERE_SCHEMA })) as any
+}
+
+describe('@@exclude(…, where:) — FJS-1569', () => {
+  test('parses, and refuses what a partial @@unique refuses', () => {
+    expect(parse(WHERE_SCHEMA).errors).toEqual([])
+    const bad = (where: string) => errorsOf(`scope person(employeeId)
+      model Shift {
+        id Int @id
+        employeeId Int
+        startsAt DateTime
+        endsAt DateTime
+        status String
+        @@exclude(person, range: [startsAt, endsAt], where: ${where})
+      }`).join('\n')
+    expect(bad('nope == "x"')).toContain(`'nope'`)
+    expect(bad('status == auth().id')).toContain('auth()')
+    expect(bad('"status != cancelled"')).toContain('not SQL')
+  })
+
+  test('a row outside the predicate holds no time — a cancelled shift frees its hours', async () => {
+    const db = await openWhere()
+    const sys = db.asSystem()
+    const a = await sys.shift.create({ data: { employeeId: 1, startsAt: at(9), endsAt: at(17) } })
+    expect((await refusal(sys.shift.create({ data: { employeeId: 1, startsAt: at(10), endsAt: at(12) } })))?.name)
+      .toBe('OverlapConflictError')
+    await sys.shift.update({ where: { id: a.id }, data: { status: 'cancelled' } })
+    await sys.shift.create({ data: { employeeId: 1, startsAt: at(10), endsAt: at(12) } })
+    expect(await sys.shift.count()).toBe(2)
+    db.$close()
+  })
+
+  test('an update moving a row INTO the predicate is graded — un-cancelling into an overlap is refused', async () => {
+    const db = await openWhere()
+    const sys = db.asSystem()
+    const a = await sys.shift.create({ data: { employeeId: 1, startsAt: at(9), endsAt: at(17), status: 'cancelled' } })
+    await sys.shift.create({ data: { employeeId: 1, startsAt: at(10), endsAt: at(12) } })
+    const e = await refusal(sys.shift.update({ where: { id: a.id }, data: { status: 'published' } }))
+    expect(e?.name).toBe('OverlapConflictError')
+    expect((await sys.shift.findUnique({ where: { id: a.id } })).status).toBe('cancelled')
+    db.$close()
+  })
+
+  test('across models — requested leave holds nothing, approving it over a shift is refused', async () => {
+    const db = await openWhere()
+    const sys = db.asSystem()
+    const leave = await sys.leaveRequest.create({ data: { employeeId: 1, startsAt: at(0), endsAt: at(0, 3) } })
+    await sys.shift.create({ data: { employeeId: 1, startsAt: at(9), endsAt: at(17) } })
+    const e = await refusal(sys.leaveRequest.update({ where: { id: leave.id }, data: { status: 'approved' } }))
+    expect(e?.name).toBe('OverlapConflictError')
+    expect(e.with.model).toBe('Shift')
+    db.$close()
+  })
+})

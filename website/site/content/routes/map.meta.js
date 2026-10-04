@@ -7,38 +7,38 @@
 // map's hotspots link into that list, and the island moves the same entry into
 // a panel over the map. The picture adds nothing a reader cannot get without it.
 //
-// Coordinates are in the IMAGE's pixels (1499 × 976), which is the SVG's own
+// Coordinates are in the IMAGE's pixels (2560 × 1707), which is the SVG's own
 // viewBox, so they hold at every zoom. A sharper image at the same aspect ratio
 // drops in with no change here; a re-drawn one needs every ellipse re-traced.
 
 import { loadFJS, HELD_BACK } from '../data/packages.js'
 
-const IMAGE = { src: '/map/territory.webp', width: 1499, height: 976 }
+const IMAGE = { src: '/map/territory.webp', width: 2560, height: 1707 }
 
 // `status` is for a territory with no package page, and is required there —
 // without it the entry would show a name and nothing else.
 const TERRITORIES = [
-  { id: 'litestone',     cx: 393,  cy: 398, rx: 162, ry: 97 },
-  { id: 'junction',      cx: 745,  cy: 408, rx: 135, ry: 88 },
-  { id: 'sierra',        cx: 1095, cy: 408, rx: 145, ry: 92 },
-  { id: 'mesa',          cx: 1092, cy: 685, rx: 128, ry: 57 },
-  { id: 'css',           cx: 912,  cy: 560, rx: 117, ry: 47 },
-  { id: 'ui',            cx: 1132, cy: 558, rx: 102, ry: 48 },
-  { id: 'email-kit',     cx: 1342, cy: 560, rx: 97,  ry: 50 },
-  { id: 'auth',          cx: 577,  cy: 200, rx: 80,  ry: 62 },
-  { id: 'caravan',       cx: 757,  cy: 208, rx: 92,  ry: 66 },
-  { id: 'conduit',       cx: 125,  cy: 197, rx: 118, ry: 66 },
-  { id: 'notifications', cx: 372,  cy: 200, rx: 116, ry: 62 },
-  { id: 'mcp',           cx: 937,  cy: 208, rx: 82,  ry: 66 },
-  { id: 'orion',         cx: 1097, cy: 205, rx: 76,  ry: 64,
+  { id: 'litestone',      cx: 699,  cy: 666,  rx: 251, ry: 169 },
+  { id: 'junction',       cx: 1272, cy: 671,  rx: 225, ry: 159 },
+  { id: 'sierra',         cx: 1823, cy: 691,  rx: 225, ry: 143 },
+  { id: 'mesa',           cx: 1874, cy: 1165, rx: 197, ry: 115 },
+  { id: 'css',            cx: 1562, cy: 952,  rx: 195, ry: 102 },
+  { id: 'ui',             cx: 1920, cy: 947,  rx: 154, ry: 92 },
+  { id: 'email-kit',      cx: 2278, cy: 947,  rx: 179, ry: 102 },
+  { id: 'auth',           cx: 996,  cy: 358,  rx: 131, ry: 115 },
+  { id: 'caravan',        cx: 1295, cy: 374,  rx: 148, ry: 105 },
+  { id: 'conduit',        cx: 251,  cy: 346,  rx: 205, ry: 110 },
+  { id: 'notifications',  cx: 655,  cy: 356,  rx: 197, ry: 113 },
+  { id: 'mcp',            cx: 1597, cy: 387,  rx: 143, ry: 113 },
+  { id: 'orion',          cx: 1874, cy: 374,  rx: 133, ry: 108,
     name: 'Orion', realm: 'Automations',
     pitch: 'Flows of triggers, conditions and actions, run by an engine installed into the app.',
     status: HELD_BACK['@frontierjs/orion'] },
-  { id: 'cli',           cx: 550,  cy: 602, rx: 145, ry: 78 },
-  { id: 'toolbelt',      cx: 870,  cy: 842, rx: 175, ry: 40 },
-  { id: 'basecamp',      cx: 1258, cy: 245, rx: 93,  ry: 88 },
-  { id: 'outpost',       cx: 1425, cy: 268, rx: 66,  ry: 72 },
-  { id: 'oracle',        cx: 157,  cy: 525, rx: 107, ry: 75,
+  { id: 'cli',            cx: 986,  cy: 978,  rx: 230, ry: 133 },
+  { id: 'toolbelt',       cx: 1324, cy: 1439, rx: 486, ry: 90 },
+  { id: 'basecamp',       cx: 2138, cy: 430,  rx: 154, ry: 146 },
+  { id: 'outpost',        cx: 2412, cy: 466,  rx: 120, ry: 123 },
+  { id: 'oracle',         cx: 300,  cy: 896,  rx: 210, ry: 128,
     name: 'Oracle', realm: 'Substrate',
     pitch: 'Entity and pattern recognition.',
     status: 'Claimed, not built — version two, owed nothing until the core leaves alpha.' },

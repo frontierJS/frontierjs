@@ -396,8 +396,10 @@ export class UniqueConflictError extends Error {
 // alone still separates this from a datatype or a unique refusal.
 export class ForeignKeyError extends Error {
   constructor(model, { relation, field, value, target, child } = {}) {
+    // A child the caller cannot read is named by its model alone.
+    const childName = child && ('id' in child ? `${child.model} ${JSON.stringify(child.id)}` : `a ${child.model}`)
     const msg = child
-      ? `${model}: cannot delete — ${child.model} ${JSON.stringify(child.id)} still refers to it.`
+      ? `${model}: cannot delete — ${childName} still refers to it.`
       : relation
         ? `${model}: ${field} ${JSON.stringify(value)} names no ${target} (relation \`${relation}\`).`
         : `${model}: a foreign key names a row that does not exist, or a row that still refers to it blocks the delete.`
@@ -415,7 +417,7 @@ export class ForeignKeyError extends Error {
       ? field.map(f => ({ path: [f], message: `this combination names no ${target} (${field.join(' + ')})` }))
       : field
       ? [{ path: [field], message: `${JSON.stringify(value)} does not exist` }]
-      :[{ path: [], message: child ? `${child.model} ${JSON.stringify(child.id)} still refers to this record` : 'a related record does not exist' }]
+      :[{ path: [], message: child ? `${childName} still refers to this record` : 'a related record does not exist' }]
     // The identical request fails identically until the caller changes it.
     this.status    = 422
     this.retryable = false

@@ -108,7 +108,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@index` | Shape the table | ([field [(sort: Asc \| Desc)], …][, where: <expr>]) |  |  |  |
 | `@@id` | Identify a row | ([field, …]) | in a model |  |  |
 | `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
-| `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>]) |  |  |  |
+| `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>][, where: <expr>]) |  |  |  |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@relator` | Shape the table | ([field, …], once \| many \| many: <column>) |  |  |  |

@@ -5,7 +5,7 @@
 // path, and — because a `file://` fetch is blocked — a whole branch explaining
 // that the page could not be opened from disk. None of that survives here.
 //
-// The register and the twenty-one detail cards are prerendered; only the word
+// The register and the twenty-seven detail cards are prerendered; only the word
 // cloud is built at runtime, because it is packed by measurement.
 
 import data from '../../../projects.json' with { type: 'json' }

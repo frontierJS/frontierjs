@@ -116,8 +116,8 @@ title: Volumes
     try {
       const res = await volumes.service.invoke('prune', null, server ? { serverId: server } : {})
       toasts.success(
-        `Pruned ${res.forgotten.length} volume(s)`,
-        `Freed ${size(res.freedBytes)}` + (res.unreachable.length ? ` · no outpost on ${res.unreachable.join(', ')}` : ''),
+        `Pruned ${res.forgotten.length} volume(s), freeing ${size(res.freedBytes)}`
+          + (res.unreachable.length ? ` · no outpost on ${res.unreachable.join(', ')}` : ''),
       )
       await load()
     } catch (e) {

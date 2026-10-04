@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-04 — a private channel's broadcast, over a real socket, end to end (`FJS-1698`)
+
+`test/membership-revocation.test.ts` joins the two halves that were only pinned apart: per-frame grading (`FJS-1316`, against a stubbed boundary) and litestone's `members.some(…)` policy (no socket). The shape is a chat room: `Message` reads through `check(room)`, `Room` through `members.some(userId == auth().id)`, with no claims resolver. It found the leak fixed in litestone as `FJS-1698`: a policy-only model graded `open`, so a non-member received every message. Four cases: the stranger is refused, a removed member stops receiving new messages and edits while HTTP answers 404, and someone added mid-session starts receiving. All four were red before the fix. Suite 2580 pass.
+
 ## 2026-10-03 — a hook cannot answer a call with a stream either (`FJS-1693`, `FJS-D573`)
 
 `wrapResult` refused a `Response`, a `ReadableStream` or an async iterable only when the method returned it. A before hook short-circuiting with a `Response`, or an after hook replacing the result with one, reached `bridge.toResponse`, which sent it as the reply: a non-JSON answer out of a service, past every after hook that protects a result. Over the socket the same value unwrapped to `{}`. The refusal is now `refuseStream()` in `envelope.ts`, called by `wrapResult` and again by `callService` once the pipeline has ended, so both paths throw `ResultShapeError` by name. The bridge no longer passes a `Response` through. The refusal also points a file download at a raw route that calls the service as the requester (`FJS-D573`). Proved by four cases in `test/envelope.test.ts` (before and after hooks over HTTP, an internal call, a socket call), all four failing with the old code. A case in `test/request-scope.test.ts` pins that a service called from a raw route runs as the requester.

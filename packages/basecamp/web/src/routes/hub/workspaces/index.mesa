@@ -52,12 +52,8 @@ title: Hub workspaces
     error = null; busy = ws.id
     try {
       await hub.service.invoke('setWorkspaceStatus', null, { workspaceId: ws.id, status })
-      toasts[status === 'suspended' ? 'warning' : 'success'](
-        status === 'suspended' ? `${ws.name} suspended` : `${ws.name} reinstated`,
-        status === 'suspended'
-          ? 'Its members are refused by every scoped service until it is restored.'
-          : 'Its members can reach the API again.',
-      )
+      if (status === 'suspended') toasts.warning(`${ws.name} suspended. Its members are refused by every scoped service until it is reinstated.`)
+      else toasts.success(`${ws.name} reinstated. Its members can reach the API again.`)
       await load()
     } catch (e) {
       error = e.message

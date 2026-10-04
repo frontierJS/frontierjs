@@ -74,7 +74,7 @@
     },
     {
       "rank": 5,
-      "name": "RedwoodJS / CedarJS",
+      "name": "RedwoodJS",
       "url": "https://cedarjs.com",
       "tier": 1,
       "closeness": 40,
@@ -100,7 +100,7 @@
     },
     {
       "rank": 7,
-      "name": "Phoenix / Ecto / Channels",
+      "name": "Phoenix",
       "url": "https://phoenixframework.org",
       "tier": 1,
       "closeness": 20,
@@ -217,6 +217,71 @@
     },
     {
       "rank": 16,
+      "name": "Hasura",
+      "url": "https://hasura.io",
+      "tier": 2,
+      "closeness": 25,
+      "inspiration": 10,
+      "realm": "Data + API",
+      "relation": "Database to GraphQL API to role permissions, with no controllers in between. Row filters keyed on session variables are a gate by another name.",
+      "gap": "Permissions live in metadata beside the schema, not in it. A separate engine in front of the database; no application realm of its own.",
+      "stance": "declined",
+      "fjsWay": "Little was taken from it — it is here as corroboration, not as a source. The shape it proves is the one ZenStack and Supabase already taught: schema to API to permissions with nothing hand-written in between. Where FJS parts company is where the rules live: Hasura keeps them in a metadata layer you edit through a console, while `@@gate` and `@@allow` sit in the `.lite` file next to the fields they protect, and the API is your own process rather than an engine in front of it."
+    },
+    {
+      "rank": 17,
+      "name": "Directus",
+      "url": "https://directus.io",
+      "tier": 2,
+      "closeness": 15,
+      "inspiration": 5,
+      "realm": "Data + UI",
+      "relation": "A data model becomes a whole app surface: REST/GraphQL API, role permissions, an admin studio and forms.",
+      "gap": "The surface it reaches is an admin panel, and the model is configured through the studio and stored in the database rather than written in a file.",
+      "stance": "declined",
+      "fjsWay": "Barely an influence. It proves a data model can carry permissions, an API and forms at once, but the UI it reaches is the back office. FJS points the same derivation at the product: a Resource takes its form, field options and validation from the model, inside the app your users see. And the model is a checked-in `.lite` file you diff and review, not rows in a system table a studio wrote. Litestone Studio exists, but as a developer tool, not as the product."
+    },
+    {
+      "rank": 18,
+      "name": "ServiceStack AutoQuery",
+      "url": "https://docs.servicestack.net/autoquery/",
+      "tier": 2,
+      "closeness": 20,
+      "inspiration": 5,
+      "realm": "API + UI",
+      "relation": "One request DTO yields a query API, CRUD, an auto UI (Locode) and typed clients in a dozen languages.",
+      "gap": ".NET, and query operators are inferred from property-name suffixes (`AgeOlderThan`, `NameStartsWith`), so the vocabulary is spelled into every field name.",
+      "stance": "declined",
+      "fjsWay": "A parallel arrival rather than a source: the one-declaration-many-surfaces idea came here by way of Feathers and Prisma, not .NET. The concrete difference is the query grammar. AutoQuery reads the operator out of the property name; FJS keeps the field name a field name and puts the operator in the query, `{ age: { gt: 30 } }`, one vocabulary every transport shares. Typed clients are the part it does better today — `ServiceTypes` covers TypeScript only."
+    },
+    {
+      "rank": 19,
+      "name": "dbo.io",
+      "url": "https://dbo.io",
+      "tier": 2,
+      "closeness": 25,
+      "inspiration": 5,
+      "realm": "All",
+      "relation": "\"The schema is the application\": REST API, cell-level security, content rendering, messaging, audit trail with rollback and a scheduler, all from the schema.",
+      "gap": "Hosted, invite-only and closed. Security is records you configure rather than declarations you read, over MySQL or SQL Server.",
+      "stance": "declined",
+      "fjsWay": "Little was taken from it; it is listed because the thesis matches almost word for word, and the batteries line up too — audit trail, mail, jobs. The split is ownership. dbo.io is a platform you build inside; FJS is a file tree and a SQLite file you own, with the access rules in a schema you can read in a diff rather than in security records behind a login. Assessed from its own marketing page, not from using it."
+    },
+    {
+      "rank": 20,
+      "name": "Schema2AI",
+      "url": "https://schema2ai.com",
+      "tier": 2,
+      "closeness": 45,
+      "inspiration": 5,
+      "realm": "All",
+      "relation": "One schema file with `@primary`, `@unique`, `@refs()`, `@default()` attributes generates a server, REST API, browser UI, MCP tools and OpenAPI docs.",
+      "gap": "A generator over many databases at once; the AI tools are a generated layer, and access rules are not visible in the schema it shows.",
+      "stance": "declined",
+      "fjsWay": "Not a source — found alongside rather than before — but the nearest in surface: the attribute syntax could almost be pasted into a `.lite` file. The difference is the agent. Schema2AI generates AI tools from the schema; FJS mounts the MCP endpoint inside the API that is already serving, so an agent goes through the same gate as a browser and there is no second path to keep in step. Assessed from its own page, not from running it."
+    },
+    {
+      "rank": 21,
       "name": "Ruby on Rails",
       "url": "https://rubyonrails.org",
       "tier": 3,
@@ -229,7 +294,7 @@
       "fjsWay": "The disposition is inherited almost entirely: conventions over configuration, one blessed layout, a framework with opinions and a CLI that acts on them. Kamal is the deploy model more or less as-is. The one place FJS turns the other way is the important one — in Rails the schema is the output of the migrations, here the migration is the output of the schema. Everything else on this page follows from that inversion."
     },
     {
-      "rank": 17,
+      "rank": 22,
       "name": "Laravel",
       "url": "https://laravel.com",
       "tier": 3,
@@ -242,7 +307,7 @@
       "fjsWay": "The standard for what 'complete' means: a queue, a scheduler, mail, notifications, policies and a CLI that all know about each other. app.notify is Laravel's notification design nearly unchanged, and the tooling story around Basecamp is Forge's precedent. What is taken further is reach — those batteries stop at the response here they keep going, so the browser gets the field rules and the gate rather than a client SDK and a fresh start."
     },
     {
-      "rank": 18,
+      "rank": 23,
       "name": "Prisma + tRPC",
       "url": "https://prisma.io",
       "tier": 3,
@@ -255,7 +320,7 @@
       "fjsWay": ".lite deliberately wears Prisma's syntax — `model`, scalar then attributes — so nobody has to learn a new shape to read it, and that debt should be stated more often than it is. What is refused is stopping at compile time. Types vanish at runtime: they cannot filter a query by owner, reject a 60-character title, or tell a button it is not allowed. The schema here is read while the program runs, which is the whole argument."
     },
     {
-      "rank": 19,
+      "rank": 24,
       "name": "AWS Amplify Gen 2",
       "url": "https://docs.amplify.aws",
       "tier": 3,
@@ -268,7 +333,7 @@
       "fjsWay": "Proof that the radiation is not the hard part. One declaration producing data, auth and an API is achievable and has been achieved — and it still is not pleasant to use, because the pieces it produces do not share a vocabulary or a place to stand. Coherence is the product. It is also the argument for staying self-hostable: the same derivation with a vendor underneath it is a different deal entirely."
     },
     {
-      "rank": 20,
+      "rank": 25,
       "name": "SvelteKit",
       "url": "https://svelte.dev/docs/kit",
       "tier": 3,
@@ -281,7 +346,7 @@
       "fjsWay": "Taken about as directly as anything here: file-tree routing, layout chains, load-then-render, the single-file component with a module block. Someone who knows SvelteKit can read Sierra without being taught it, and that is the intent rather than an accident. The one thing added is what the route binds to — a Resource that already carries the schema's field rules and its gate, instead of a fetch you write."
     },
     {
-      "rank": 21,
+      "rank": 26,
       "name": "SolidJS",
       "url": "https://solidjs.com",
       "tier": 3,
@@ -292,6 +357,19 @@
       "gap": "Library, not framework. Mesa takes the runtime, Sierra supplies everything above it.",
       "stance": "adopted",
       "fjsWay": "The reactivity model is taken wholesale — fine-grained signals, components that run once, no virtual DOM, ownership scopes for anything with a lifetime. Mesa's runtime primitives are recognizably the same primitives. What sits on top is a compiler that owns the template, which is what lets one component render to a live DOM, to static HTML with islands, or to table-based markup for an email."
+    },
+    {
+      "rank": 27,
+      "name": "RaisinDB",
+      "url": "https://github.com/maravilla-labs/raisindb",
+      "tier": 3,
+      "closeness": 15,
+      "inspiration": 0,
+      "realm": "Data",
+      "relation": "Rust multi-model content database: YAML NodeTypes at hierarchical paths, graph edges, vector and full-text search, realtime subscriptions, git-like branches of schema and content.",
+      "gap": "A database, not an application framework — the frontend maps nodes to components on its own. BSL-licensed.",
+      "stance": "declined",
+      "fjsWay": "No influence. It shares one instinct — a schema can say how content should be presented, not only how it is stored — and it is multi-tenant and realtime by design. FJS reaches that through relational models in a `.lite` file and Resources in the UI realm, over plain SQLite, rather than typed nodes in a document-graph store. Its branch-and-merge of schema with content has no FJS counterpart."
     }
   ]
 }

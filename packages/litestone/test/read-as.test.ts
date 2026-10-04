@@ -41,6 +41,20 @@ model Ledger {
   memo String
   @@gate("5.8.9.9")
 }
+
+// A policy and nothing else. Order carries a gate AND a policy, so a check that
+// never read the policy still graded it — this is the model that tells them apart.
+model Note {
+  id     Int     @id @default(autoincrement())
+  userId String?
+  @@allow('read', userId == auth().id)
+}
+
+model Draft {
+  id     Int     @id @default(autoincrement())
+  hidden Boolean @default(false)
+  @@deny('read', hidden == true)
+}
 `
 
 const client = () => createClient({ schema: SCHEMA, resolveFrom: import.meta.dir })
@@ -116,6 +130,14 @@ describe('$readGrading — when the whole pass can be skipped', () => {
   test('a policy makes it graded', async () => {
     const db = await client()
     expect(db.$readGrading('order')).toBe('graded')
+  })
+
+  test('a policy ALONE makes it graded — an allow, and a deny', async () => {
+    // `open` here is an ungraded broadcast: junction skips `$readAs` and sends
+    // every row to every subscriber.
+    const db = await client()
+    expect(db.$readGrading('note')).toBe('graded')
+    expect(db.$readGrading('draft')).toBe('graded')
   })
 
   test('an unknown accessor is graded — the fail-closed direction', async () => {

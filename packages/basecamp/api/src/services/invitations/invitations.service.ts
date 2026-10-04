@@ -420,8 +420,11 @@ export function createInvitationsService(app: BasecampApp) {
         workspace_id: workspace.id,
         workspace:    { id: workspace.id, name: workspace.name, slug: workspace.slug },
         // Present only on the branch that created the account. A caller who was
-        // already signed in keeps the session they already had.
-        ...(session ? { token: session.token, user: session.user } : {}),
+        // already signed in keeps the session they already had. Not `token`:
+        // that is Invitation's `@guarded` column, and the wire drops a key named
+        // for a protected column of the call's model (`FJS-D473`), so the new
+        // account landed signed out.
+        ...(session ? { sessionToken: session.token, user: session.user } : {}),
       }
     },
 

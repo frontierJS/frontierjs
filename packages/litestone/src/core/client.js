@@ -27,7 +27,7 @@ import { validate, applyTransforms, hasTransforms, transformValue, buildValidati
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { createExclusionLedger } from './exclusion.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
-import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
+import { GatePlugin, FrontierGateGetLevel, levelPasses, GATE_LIFT, liftsGate } from '../plugins/gate.js'
 import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
 import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import {
@@ -569,16 +569,75 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (hit) continue
         const [relation, rel] = Object.entries(ctx.relationMap?.[modelName] ?? {})
           .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
-        const one = fields.length === 1
-        return new ForeignKeyError(modelName, {
-          relation,
-          field:  one ? fields[0] : fields,
-          value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
-          target: rel?.targetModel ?? cols[0].table,
-        })
+        return parentRefusal(relation, fields, values, rel?.targetModel ?? cols[0].table)
       }
     } catch { return err }
     return new ForeignKeyError(modelName)
+  }
+
+  // The one spelling of *that parent is not there*, for a missing parent and a
+  // hidden one alike: a difference between the two answers is the oracle.
+  function parentRefusal(relation, fields, values, target) {
+    const one = fields.length === 1
+    return new ForeignKeyError(modelName, {
+      relation,
+      field:  one ? fields[0] : fields,
+      value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
+      target,
+    })
+  }
+
+  // ── a foreign key naming a parent the caller cannot read ───────────────────
+  //
+  // A row the caller cannot read answers as missing, and naming it as a parent
+  // is a read. SQLite admits the key because the row exists, so Alice could
+  // file a Task under Bob's Project — one `findUnique` told her is not there —
+  // and the difference between that success and Project 999's refusal told her
+  // which ids are real. Asked of the parent table's own `exists()` under the
+  // caller, so the gate, the read filters, soft delete and the read policy are
+  // the definition every read already uses. asSystem() is the blind reference,
+  // and a key the engine stamped is its statement rather than the caller's.
+  const _parentKeys = (ctx.models[modelName]?.fields ?? []).flatMap(f => {
+    if (f.type?.kind !== 'relation') return []
+    const a = f.attributes.find(x => x.kind === 'relation' && x.fields)
+    return a ? [{ relation: f.name, target: f.type.name, fields: [a.fields].flat(), references: [a.references].flat() }] : []
+  })
+
+  async function canRead(tbl, where) {
+    try { return await tbl.exists({ where }) }
+    catch (e) { if (e instanceof AccessDeniedError) return false; throw e }
+  }
+
+  // Graded before the write and THROWN where SQLite's own refusal of a missing
+  // parent would land — after validation, at the row's place in a batch — so
+  // the two answers differ in nothing, order included. Only a parent that
+  // EXISTS and is hidden is refused here: a missing one is SQLite's to refuse,
+  // and it may be a row this same call is writing — an earlier row of the
+  // batch, or the row itself.
+  //
+  // `stamped` is per row, as writeData's is: one row's stamp must not excuse
+  // another row's caller-named key.
+  async function hiddenParents(rows, stamped = []) {
+    const out = []
+    if (ctx.isSystem || !_parentKeys.length) return out
+    for (const p of _parentKeys) {
+      const tbl  = ctx.tables?.[modelToAccessor(p.target)]
+      const sink = ctx.cascadeSinkFor?.(p.target)
+      if (!tbl || !sink) continue
+      const verdict = new Map()
+      for (const [i, row] of rows.entries()) {
+        if (out[i] || !row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
+        if (p.fields.every(f => stamped[i]?.has(f))) continue
+        const values = p.fields.map(f => row[f])
+        if (values.some(v => v == null || typeof v === 'object')) continue
+        const key = JSON.stringify(values)
+        if (!verdict.has(key)) verdict.set(key,
+          await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]]))) ||
+          !sink.rowsWhere(p.references[0], [values[0]]).some(r => p.references.every((f, j) => r[f] == values[j])))
+        if (!verdict.get(key)) out[i] = parentRefusal(p.relation, p.fields, values, p.target)
+      }
+    }
+    return out
   }
 
   // ── a delete a child still refers to (FJS-1454) ────────────────────────────
@@ -586,11 +645,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // The refusing child may sit under a cascade, so the walk follows every
   // Cascade relation from `rows` and stops at the first child whose relation
   // does not let go of its parent. Run after the refused DELETE rolled back.
+  //
+  // The walk is a system lookup, so every blocker is kept and
+  // `nameBlockerForCaller` picks the one this caller may be told about.
   function asRestrictedDelete(err, rows) {
     if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
     try {
       let frontier = [[modelName, rows]]
       const seen = new Set()
+      const blockers = []
       while (frontier.length) {
         const next = []
         for (const [parent, parentRows] of frontier) {
@@ -604,7 +667,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
               .filter(r => !seen.has(`${rel.targetModel}\0${r[sink.idField]}`))
             if (!found.length) continue
             if (rel.onDelete !== 'Cascade') {
-              return new ForeignKeyError(modelName, { child: { model: rel.targetModel, id: found[0][sink.idField] } })
+              blockers.push({ model: rel.targetModel, idField: sink.idField, ids: found.map(r => r[sink.idField]) })
+              continue
             }
             for (const r of found) seen.add(`${rel.targetModel}\0${r[sink.idField]}`)
             next.push([rel.targetModel, found])
@@ -612,8 +676,32 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
         frontier = next
       }
+      if (blockers.length) {
+        const out = new ForeignKeyError(modelName, { child: { model: blockers[0].model, id: blockers[0].ids[0] } })
+        Object.defineProperty(out, 'blockers', { value: blockers, enumerable: false })
+        return out
+      }
     } catch { return err }
     return new ForeignKeyError(modelName)
+  }
+
+  // The first blocking child the caller can read is named by id; when every
+  // one is hidden, only its model is — a model is schema, an id is data. That
+  // the delete is refused at all cannot be hidden under Restrict.
+  async function nameBlockerForCaller(err) {
+    const blockers = err?.blockers
+    if (!blockers || ctx.isSystem) return err
+    for (const { model, idField, ids } of blockers) {
+      const tbl = ctx.tables?.[modelToAccessor(model)]
+      if (!tbl) continue
+      for (let i = 0; i < ids.length; i += 500) {
+        let hit = null
+        try { hit = await tbl.findFirst({ where: { [idField]: { in: ids.slice(i, i + 500) } }, select: { [idField]: true } }) }
+        catch (e) { if (!(e instanceof AccessDeniedError)) throw e }
+        if (hit) return new ForeignKeyError(modelName, { child: { model, id: hit[idField] } })
+      }
+    }
+    return new ForeignKeyError(modelName, { child: { model: blockers[0].model } })
   }
 
   // ── which row of a batch ────────────────────────────────────────────────────
@@ -1551,9 +1639,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _exclNotes  = _exclScopes.length > 0
   const _exclFields = new Set(_exclScopes.flatMap(name =>
     ctx.exclusionMap.scopes[name].members.filter(m => m.model === modelName)
-      .flatMap(m => [m.keyField, ...m.range])))
-  // Only a write naming the key or an end of the range can move a row into
-  // another's range; every other update keeps its fast path.
+      .flatMap(m => [m.keyField, ...m.range, ...m.whereFields])))
+  // Only a write naming the key, an end of the range or a field of `where:`
+  // can move a row into another's range; every other update keeps its fast path.
   const exclTouched = (data) => _exclNotes && data != null && Object.keys(data).some(k => _exclFields.has(k))
   function noteExclusion(row) {
     if (_exclNotes && row) tx.exclusions.note(modelName, row)
@@ -1773,7 +1861,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
-  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null } = {}) {
+  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null, system = null } = {}) {
+    const lifted = liftsGate(system) ? [GATE_LIFT] : null
     if (!tableHasLogWork) return          // ← fast exit for unlogged tables
     if (operation !== 'read' && (tableAnonymous || tableLogsWrites) && tx.owns()) {
       const other = tx.noteWrite(modelName, tableAnonymous)
@@ -1805,6 +1894,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
             records: ids,
             before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
             after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
+            lifted,
           })
         }
       }
@@ -1825,6 +1915,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           records: ids,
           before:  beforeMap ? redactSnapshot(beforeMap) : null,
           after:   afterMap  ? redactSnapshot(afterMap)  : null,
+          lifted,
         })
       }
     }
@@ -2552,6 +2643,35 @@ function makeTable(readDb, writeDb, shape, ctx) {
       `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`,
       { model: modelName, operation: 'write' }
     )
+  }
+
+  // ── system: [...], what a call may name ─────────────────────────────────
+  // A @system column, a field whose moves are declared, or the gate
+  // (`FJS-D575`). An entry naming nothing a call lifts is refused rather than
+  // ignored: a misspelled or renamed column then reads as permission in review
+  // and grants none, and `system: true` — transition()'s spelling, which knows
+  // its own column — was accepted on a write and allowed nothing.
+  function refuseSystemEntries(system, ops) {
+    if (system == null) return
+    const lower = modelName.charAt(0).toLowerCase() + modelName.slice(1)
+    for (const e of Array.isArray(system) ? system : [system]) {
+      if (typeof e !== 'string') throw new Error(
+        `${modelName}: system names what the call writes as the application, as a list — got ${JSON.stringify(e)}. ` +
+        `A @system column by name, or '${GATE_LIFT}' to grade the call SYSTEM against the model's own gate:\n\n` +
+        `    db.${lower}.${ops[0]}({ data, system: ['${GATE_LIFT}'] })\n\n` +
+        `transition() takes system: true because the move already names its column.`)
+      if (e === GATE_LIFT) {
+        if (ctx.gateFor?.(modelName, ops[0]) == null) throw new Error(
+          `${modelName}: system: ['${GATE_LIFT}'] — the model declares no @@gate, so there is nothing to lift.`)
+        continue
+      }
+      if (e.startsWith('@')) throw new Error(
+        `${modelName}: system: ['${e}'] — '${GATE_LIFT}' is the one guarantee a call may lift by name. ` +
+        `asSystem() lifts the rest, and lifts them together.`)
+      if (!_systemWriteKeys.has(e) && !_tableTransitions?.[e]) throw new Error(
+        `${modelName}: system: ['${e}'] — "${e}" is not a @system column` +
+        `${_tableTransitions ? ' or a field with declared moves' : ''}, so naming it lifts nothing.`)
+    }
   }
 
   function refuseImmutableWrite(data, stamped) {
@@ -4186,7 +4306,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
       if (ops.connect) {
         const target = await tbl.findFirst({ where: ops.connect })
-        if (!target) throw new Error(`Nested connect on "${fieldName}": no "${rel.targetModel}" record found`)
+        // The same answer the foreign key itself gets, hidden or missing.
+        if (!target) {
+          const byKey = Object.keys(ops.connect).length === 1 && rel.referencedKey in ops.connect
+          throw parentRefusal(fieldName, [rel.foreignKey], [byKey ? ops.connect[rel.referencedKey] : ops.connect], rel.targetModel)
+        }
         extra[rel.foreignKey] = target[rel.referencedKey]
       } else if (ops.create) {
         const target = await tbl.create({ data: ops.create })
@@ -5518,10 +5642,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // (`FJS-1106`) for a row that is refused either way.
       const _cardRequires = ctx.cardinalityMap?.requiresChildren?.[modelName]
       if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
+      refuseSystemEntries(system, ['create'])
       await enforceValueSets(modelName, [data], ctx)
       // The plugins first: a value one writes into the payload is a value the
       // row lands with, and grading before it would pass it ungraded (FJS-1307).
-      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
+      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select, system }, ctx)
       refuseOffEntry([data])
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
       // What the ENGINE puts in this payload, so the @guarded/@system refusals
@@ -5558,6 +5683,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
       }
       extractWriteOps(data, { where: 'create' })
+      const [_crHidden] = await hiddenParents([data], [stamped])
 
       // ── Everything that touches the database, as one unit ────────────────
       //
@@ -5579,6 +5705,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (ctx.selfRelationMap?.[modelName])
           assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
         const row   = writeData(data, { requireAll: true, system, stamped, creating: true })
+        if (_crHidden) throw _crHidden
         const cols  = Object.keys(row)
         // cols can be empty when all fields are optional and none were supplied,
         // or when all fields were stripped by @allow write policies.
@@ -5697,7 +5824,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fireRowEvent('create', 'create', created)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', created, ctx)
       // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasLogWork && created) emitLogs('create', [created], { after: created })
+      if (tableHasLogWork && created) emitLogs('create', [created], { after: created, system })
       // `select: false` still means *do not hand me the row*. A nested write
       // needs the parent's id, so RETURNING could not be skipped — but that is
       // this method's need and it does not change what the caller asked for.
@@ -5720,10 +5847,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // `$merge`: a Json column legitimately takes an object, so the operator
       // was stored as the document — `{"$merge":{"a":1}}`.
       for (const row of data) extractWriteOps(row, { where: 'createMany' })
+      refuseSystemEntries(system, ['create'])
       await enforceValueSets(modelName, data, ctx)
-      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
+      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       refuseOffEntry(data)
       if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, authStamped(row, modelName, ctx), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      // The rows as the caller wrote them: every stamp lands later, inside the unit.
+      const _cmHidden = await hiddenParents(data)
 
       // Auto-generate @id and run writeData (transforms + validation) on every row
       // before touching the DB — so @email, @lower, @trim, @encrypted, enum checks
@@ -5794,7 +5924,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // RETURNING on a logged model: an @id @default(autoincrement()) row has no
         // id until SQLite assigns one, and a log entry naming no rows is not a trail.
         if (_cmNeedRows) _cmInserted = []
-        for (const row of rows) {
+        for (const [_i, row] of rows.entries()) {
+          if (_cmHidden[_i]) throw asBatchRowError(_cmHidden[_i], count, rows.length, row)
           const { cols, stmt } = stmtFor(Object.keys(row))
           const _cmSeal = sealInsertGuard(row)
           const args = [...cols.map(c => row[c] ?? null), ...(_cmSeal?.params ?? [])]
@@ -5821,7 +5952,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _cmSql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
-      if (tableHasLogWork && _cmInserted?.length) emitLogs('create', _cmInserted)
+      if (tableHasLogWork && _cmInserted?.length) emitLogs('create', _cmInserted, { system })
       // No `where` on the collection form — a batch names its rows by supplying
       // them, and their ids exist only after SQLite assigns them.
       announceBulk({ mode: _cmMode, event: 'create', operation: 'createMany', count, rows: _cmInserted })
@@ -5837,10 +5968,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // or enable policyDebug to see which policy blocked.
     async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
                    withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+      refuseSystemEntries(system, ['update'])
       await enforceValueSets(modelName, [data], ctx, { where })
-      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
+      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
       const stamped = new Set()
       data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
+      const [_upHidden] = await hiddenParents([data], [stamped])
 
       // ── @version — take the caller's expected version off the payload ───────
       // It is a precondition, not a value to write: the column is bumped by SQL
@@ -5914,7 +6047,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // transaction could open in that gap). On this path the body reaches its
       // statement without yielding — `_upJoined` below is what says so if an
       // edit ever adds an await ahead of it (`FJS-1107`).
-      const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy
+      // A hidden parent is thrown only once the UPDATE has reached a row, as
+      // SQLite's own refusal is — so it needs a rollback to throw into.
+      const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
         && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
       const _upBody = async () => {
         const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
@@ -6145,6 +6280,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           noteCardinalityBySql(_vWhereSql, _vWhereParams)
           try { updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true }) }
           catch (e) { throw asConstraintError(e, row) }
+          if (updated && _upHidden) throw _upHidden
           noteCardinality(updated)
           fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
           if (!updated) {
@@ -6212,7 +6348,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // cancel write the same before and after, so a SYSTEM-scoped move that
         // is not announced is exactly the one the trail must still tell apart.
         if (tableHasLogWork && updated) emitLogs('update', [updated], {
-          before: beforeRow, after: updated, transition: _transResult?.transitionName ?? null,
+          before: beforeRow, after: updated, transition: _transResult?.transitionName ?? null, system,
         })
       }
       return finalRow
@@ -6223,14 +6359,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _umMove = _bulkTransitionField(data, 'updateMany')
       if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
       const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
+      refuseSystemEntries(system, ['update'])
       await enforceValueSets(modelName, [data], ctx, { where })
-      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data }, ctx)
+      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, system }, ctx)
       // Same stamp update() runs. Missing it here was worse than missing it
       // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
       // the identity beside it stayed at whoever wrote last through update() —
       // a row reading "just edited by Bob" when Ann edited it.
       const stamped = new Set()
       data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
+      const [_umHidden] = await hiddenParents([data], [stamped])
       // @version bumps here but is never required: a where clause matching many
       // rows matches many versions, so there is no single value to compare
       // against. Bumping is the part that matters — without it a bulk write
@@ -6302,11 +6440,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (!_umRows) writeDb.run(_umSql, ...params)
         } catch (e) { throw asConstraintError(e, row) }
         count = _umRows ? _umRows.length : rowsChanged(writeDb)
+        // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
+        if (count && _umHidden) throw _umHidden
         if (_umRows) for (const r of _umRows) noteCardinality(read(r))
         else noteCardinalityBySql(finalWhere, _umWhereP)
       })
       fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
-      if (tableHasLogWork && _umRows?.length) emitLogs('update', _umRows)
+      if (tableHasLogWork && _umRows?.length) emitLogs('update', _umRows, { system })
       announceBulk({ mode: _umMode, event: 'update', operation: 'updateMany', where, count, rows: _umRows })
       return { count }
     },
@@ -6321,6 +6461,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // to prevent.
       extractWriteOps(createData, { where: 'upsert' })
       extractWriteOps(updateData, { where: 'upsert' })
+      refuseSystemEntries(system, ['create', 'update'])
+      // The fast path's two halves; the slow path is create() and update(),
+      // which grade their own.
+      const _upsHidden = await hiddenParents([createData, updateData])
       // ── an upsert addressed by a relator's relata ──────────────────────
       //
       // Refused rather than answered, because the answer would be a wrong one
@@ -6435,6 +6579,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // writeData runs transforms + validation on both branches' data
         const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
         const updRow = writeData(updateData, { system })
+        if (_upsHidden[0] ?? _upsHidden[1]) throw _upsHidden[0] ?? _upsHidden[1]
         const insCols = Object.keys(insRow)
         const updCols = Object.keys(updRow).filter(c => c !== wKey)
         if (!insCols.length || !updCols.length) break fastPath
@@ -6477,9 +6622,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the row exists, so it cannot have read a version to assert. It still
       // BUMPS — an editor holding version 3 must lose to an upsert that landed
       // after them. Concurrent editing is what update() is for.
+      // `system` reaches both halves: dropped here, a column the call named was
+      // refused on this path and written on the fast one.
       const existing = await this.findFirst({ where, ..._upFlags })
       if (existing) {
-        return this.update({ where, data: updateData, include, select, _bypassVersion: true, ..._upFlags })
+        return this.update({ where, data: updateData, include, select, system, _bypassVersion: true, ..._upFlags })
       }
       // Attempt create; if unique constraint fires (race), fall back to update.
       //
@@ -6490,11 +6637,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // (FJS-276). `create` names that case now, and it must not be swallowed
       // here — an upsert cannot resurrect a row the caller did not ask it to.
       try {
-        return await this.create({ data: createData, include, select })
+        return await this.create({ data: createData, include, select, system })
       } catch (e) {
         if (e instanceof SoftDeletedUniqueError) throw e
         if (isUniqueConflict(e)) {
-          return this.update({ where, data: updateData, include, select, _bypassVersion: true, ..._upFlags })
+          return this.update({ where, data: updateData, include, select, system, _bypassVersion: true, ..._upFlags })
         }
         throw e
       }
@@ -6529,6 +6676,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
       if (!data?.length) return { count: 0 }
       for (const row of data) extractWriteOps(row, { where: 'upsertMany' })
+      refuseSystemEntries(system, ['create', 'update'])
       await enforceValueSets(modelName, data, ctx)
       const { mode: _usMode, wantRows: _usWantRows } = announceFor(announce)
       // The create/update split costs one SELECT per row and is what a logged
@@ -6537,8 +6685,22 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // in is the difference between announcing `create` and announcing `update`
       // — the compromise the collection form has to make and this one does not.
       const _usNeedRows = tableHasLogWork || _usWantRows
-      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
+      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
+      // The conflict half is an update and is graded as one — without this a
+      // caller below the update gate overwrote any row by naming its key
+      // (`FJS-1700`). Graded whether or not a row conflicts, as updateMany is
+      // for a where that matches nothing: the standing is the call's, not the
+      // row's. Only an explicit `update: []` is insert-only. The shape carries
+      // the KEYS the conflict would set, which is what a capability grades.
+      if (plugins?.hasPlugins && !(Array.isArray(updateFields) && !updateFields.length)) {
+        const _usKeys = updateFields
+          ? [updateFields].flat()
+          : [...new Set(data.flatMap(d => Object.keys(d)))]
+              .filter(k => !(conflictTarget ? [conflictTarget].flat() : [idField]).includes(k))
+        await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map(k => [k, undefined])), system }, ctx)
+      }
       refuseOffEntry(data)
+      const _usHidden = await hiddenParents(data)
 
       const autoId       = ctx.autoIdMap?.[modelName]
       const genDefaults  = ctx.generatedDefaultMap?.[modelName]
@@ -6711,7 +6873,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           return entry
         }
 
-        for (const row of rows) {
+        for (const [_i, row] of rows.entries()) {
+          if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], count, rows.length, row)
           const { cols, stmt } = stmtFor(Object.keys(row))
           const _usSeal = sealInsertGuard(row)
           // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
@@ -6749,8 +6912,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
       if (tableHasLogWork) {
-        if (_usCreated?.length) emitLogs('create', _usCreated)
-        if (_usUpdated?.length) emitLogs('update', _usUpdated)
+        if (_usCreated?.length) emitLogs('create', _usCreated, { system })
+        if (_usUpdated?.length) emitLogs('update', _usUpdated, { system })
       }
       // At the `rows` tier the split is known, so each half announces truthfully.
       // The COLLECTION form has to pick one for the whole batch and picks
@@ -7623,7 +7786,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         try { writeDb.run(_delSql, ...delFinalParams) }
         catch (e) { throw asRestrictedDelete(e, [r]) }
         return r
-      })
+      }).catch(async e => { throw await nameBlockerForCaller(e) })
       if (!row) throwIfSealed(delFinalSql0, delFinalParams0, 'delete')
       fireQuery({ operation: 'delete', args: { where }, sql: _delSql, params: delFinalParams, duration: _nt ? performance.now() - _delT0 : 0, rowCount: 1 })
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
@@ -10156,7 +10319,7 @@ function makeLockPrimitive(rawWriteDb) {
     const gate = ctx.gateFor?.(modelName, 'read')
     if (gate != null && gate > 0) return 'graded'
     const rules = policyMap?.[modelName]
-    if (rules?.read?.allow?.length || rules?.read?.deny?.length) return 'graded'
+    if (rules?.read?.allows?.length || rules?.read?.denies?.length) return 'graded'
     const fp = fieldPolicyMap?.[modelName]
     if (fp && Object.keys(fp).length) return 'graded'
     return 'open'

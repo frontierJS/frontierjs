@@ -64,6 +64,43 @@ does not author a competitor. § *Already a standard* lists those.
 
 ---
 
+## The spine
+
+**Ten entries carry the rest, in dependency order: each one leans on the ones
+above it.** The owner ranked them on 2026-10-04. § *The list* below keeps its
+realm grouping and numbering; this is the order to write them in.
+
+1. **Model description** (1). The root everything derives from, and the most
+   blocked: no JSON IR separate from `.lite` exists (§ *Tensions to carry*).
+2. **Gate ladder** (2). The API, the UI, broadcasts and the agent surface all
+   read it. It is the new idea, since RBAC, Zanzibar and Cedar are not ordinal.
+3. **Row and field policy** (3, with field protection (5) folded in).
+4. **Expression language** (4). Policies and flows are both written in it;
+   check CEL before authoring one.
+5. **Write announcement** (8). Audit, channels and live data hang off it.
+6. **Service description** (11). CRUD plus declared methods and who may call,
+   the part OpenAPI has no field for.
+7. **Result envelope** (12). One shape on both sides of the wire.
+8. **Error contract** (13). `errors.snapshot.md` is already its vector table.
+9. **Directives and query values** (14, with ordering and paging (15) folded
+   in). Together they are what a list request means.
+10. **Transport binding** (16). HTTP/WebSocket parity is the conformance test.
+
+**Next in line:** events and channels (23) and the live node store (24), the
+API → UI half of live data, then Resource (34), which the rest of the UI realm
+sits on. **Conformance from the seed (39) is the meta-entry rather than a
+rung**: it is how every rung gets its vectors.
+
+**The first write-ups come from off the spine.** Provider (25) is the smallest
+entry, with its tables already closed, and Queue (28) is the most novel, with no
+standard to profile. Nothing on the spine depends on either, so either can be
+written while the Model entries wait for the kernel.
+
+`website/site/content/routes/specs.mesa` states this order publicly; a change
+to the ranking moves the page with it.
+
+---
+
 ## The list
 
 Grouped by realm. Each entry says what the spec would state, where FrontierJS
@@ -507,9 +544,6 @@ rulings, which a spec would *propose* rather than impose.
 
 ## Questions for when FrontierJS settles
 
-- Which entry goes first? Provider (25) is the smallest and its tables are
-  already closed. Queue (28) is the most novel. Model (1–10) is the most
-  valuable and the most blocked.
 - Where do vector files live: beside the owning package, or in one neutral
   directory a second implementation can clone alone?
 - Is entry 1's JSON form a JSON Schema vocabulary, or its own document that
