@@ -321,6 +321,8 @@ function makeGitignore() {
     // committing it commits a version of the framework nobody can read off a
     // spec.
     'deploy/generated/',
+    // Sierra's build-time route table — derived, rewritten by every build.
+    'routes.build.js',
     '',
   ].join('\n')
 }

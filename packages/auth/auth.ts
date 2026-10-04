@@ -588,7 +588,10 @@ export function createLitestoneAuth(
       // @guarded so it is redacted there. This says the same thing in the
       // vocabulary a person reads the trail with, and is what a start that was
       // REFUSED would need if refusals are ever recorded.
-      await audit('support.started', {
+      //
+      // Through the helper so the SUBJECT is told: somebody else acting in
+      // their account is the change they could learn of no other way.
+      await credentialChanged('support.started', String(subjectId), {
         model:   'Session',
         records: [String(session.id)],
         actorId: String(session.userId),

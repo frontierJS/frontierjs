@@ -64,6 +64,7 @@ export async function run(t) {
       queryIsCode: !!document.querySelector('#all [name=query]')?.closest('.fjs-code-input'),
       queryLang:   document.querySelector('#all [name=query]')?.closest('.fjs-code-input')
                      ?.querySelector('[language]')?.getAttribute('language') ?? null,
+      queryLines:  !!document.querySelector('#all [name=query]')?.closest('.fjs-code-input.numbered'),
     };
   `)
   t.is(kinds.title, 'input:text', 'a string is a text input')
@@ -71,6 +72,7 @@ export async function run(t) {
   t.is(kinds.notesIsCode, false, 'and a plain one — Markdown is prose, not a code editor')
   t.is(kinds.queryIsCode, true, 'any other @syntax is a CodeInput')
   t.is(kinds.queryLang, 'sql', 'highlighted in the language the column names')
+  t.is(kinds.queryLines, true, 'with line numbers, which a refusal of the column cites')
   t.is(kinds.status, 'select', 'an enum is a select')
   t.is(kinds.qty, 'input:number', 'an integer is a number input')
   t.is(kinds.dueOn, 'input:date', 'a date is a date input — it has no zone to lose')

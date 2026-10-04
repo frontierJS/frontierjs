@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-10-04 — the generated `code` control is numbered (`FJS-1657`)
+
+`FormField` hands `CodeInput` `numbered: true`, because a server refusing a column of code names a line, and a box with no gutter leaves the author counting. Both hand-written editors Transit replaced with the generated form had it. `form-generate.spec` asserts the `.numbered` class on the generated `query` box.
+
 ## 2026-10-03 — `top-*` placement opens above, from one positioner (`FJS-1685`)
 
 `Popover`, `DropdownMenu` and `ConfirmPanel` each carried a copy of the same

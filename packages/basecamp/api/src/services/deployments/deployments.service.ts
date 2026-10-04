@@ -60,6 +60,15 @@ function buildInitialSteps(target: { type: string; source?: unknown }): string[]
   return ['Validate', 'Pull image', 'Start container', 'Health check']
 }
 
+/**
+ * The step that replaces what is serving. A release that stopped at or before
+ * it left the previous one answering, so the App's status stays what it was; a
+ * release that fails after it has broken what is live (`FJS-1691`). A list
+ * without one — a database release — has no such moment, and any failure is
+ * the App's.
+ */
+const SWAP_STEPS = new Set(['Start container', 'Activate'])
+
 export function createDeploymentsService(app: BasecampApp) {
 
   function steps(deploymentId: string) {
@@ -490,7 +499,15 @@ export function createDeploymentsService(app: BasecampApp) {
         })
       }
 
-      if (deploy.appId)
+      // Read after the step writes above, so a swap step the release died on
+      // reads `failed` rather than `running`.
+      const swap = status === 'failed'
+        ? (await sys().deploymentStep.findMany({ where: { deploymentId: deploy.id } }))
+            .find((s: { name: string }) => SWAP_STEPS.has(s.name))
+        : undefined
+      const replaced = !swap || swap.status === 'success'
+
+      if (deploy.appId && replaced)
         await sys().app.update({
           where: { id: deploy.appId },
           data:  { status: status === 'success' ? 'running' : 'error' },

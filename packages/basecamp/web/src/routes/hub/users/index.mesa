@@ -153,7 +153,7 @@ title: Hub users
   }
 
   // auth's `account-recovery`, not the hub service: auth owns the rule that the
-  // person must stand below the operator, graded here by `recoveryLevel`
+  // person must stand below the operator, graded here by `standingLevel`
   // (app.ts). The list does not know who has a second factor, so the button is
   // on every human who is not an administrator and the service answers the
   // rest in its own words.

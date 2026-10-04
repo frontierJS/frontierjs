@@ -17,6 +17,7 @@ import { generateOverlayScript } from '../build/dev-overlay.js'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { existsSync, readFileSync } from 'fs'
+import { routeTablePath } from '../scanner/generate-route-table.js'
 
 // Absolute path to this sierra package's root — used to resolve sierra/* imports
 // from the virtual:sierra module (which has no file path context for Node resolution).
@@ -197,16 +198,17 @@ export function resolveSierraConfigPath({ explicit, configFile, root }) {
  * @returns {import('vite').Plugin}
  */
 export function virtualSierraPlugin(config, sierraContext) {
-  const tableOutput = config.routeTable?.output ?? 'config/routes.js'
   // Path to the sierra config file — resolved at configResolved time
   let sierraConfigPath = 'config/sierra.config.js'
   let root = process.cwd()
+  let command = 'serve'
 
   return {
     name: 'sierra:virtual',
 
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
+      command = viteConfig.command ?? 'serve'
       sierraConfigPath = resolveSierraConfigPath({
         explicit:   config._configPath,
         configFile: viteConfig.configFile,
@@ -281,7 +283,7 @@ export function virtualSierraPlugin(config, sierraContext) {
     },
 
     load(id) {
-      if (id === RESOLVED_ID) return generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraContext)
+      if (id === RESOLVED_ID) return generateVirtualSierra(config, routeTablePath(config, command), sierraConfigPath, sierraContext)
       if (id === RESOLVED_CONFIG_ID) {
         // Re-export the real sierra.config.js — resolved at build time
         return `export { default } from '${sierraConfigPath}'`

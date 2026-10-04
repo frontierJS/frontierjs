@@ -368,14 +368,13 @@ all of the risk.
 
 ## Open questions
 
-- **An operator who impersonates an administrator inherits administrator.** The ceiling is
-  the subject's by design, and that is correct — but it is also the one shape where the
-  feature is indistinguishable from god mode. Options: refuse an episode against a subject
-  standing above the operator, or allow it and let the trail carry it. The first is one
-  comparison and probably right.
-- **Does the subject get told?** The record supports it and nothing sends it. A
-  notification (`SupportSessionStarted`) is one file and is the difference between an
-  audited feature and a defensible one.
+- ~~**An operator who impersonates an administrator inherits administrator.**~~
+  **Answered 2026-10-04 by [`FJS-D574`](../DECISIONS.md#fjs-d574):** a subject above the
+  operator is refused at `/auth/support/start`, graded by `services.standingLevel`; a peer
+  is allowed.
+- ~~**Does the subject get told?**~~ **Answered 2026-10-04 by `FJS-D574`:** `support.started`
+  reaches `onCredentialChanged` for the subject, through the helper that writes the trail
+  entry — not a new notification file, since auth cannot import notifications.
 - **Reads.** `@@log(audit, reads: true)` is opt-in and high volume; *who looked at my
   record* is the DSAR question and it is a READ. Probably: reads are logged for the
   duration of an episode regardless of the model's setting, which is a rule with no home

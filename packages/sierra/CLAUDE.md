@@ -22,7 +22,7 @@ src/
     classify.js          what each file is (page, layout, error, …)
     parse-frontmatter.js YAML frontmatter
     build-tree.js        the node tree
-    generate-route-table.js  writes config/routes.js
+    generate-route-table.js  writes config/routes.js (a build: routes.build.js); routeTablePath() owns the path
 
   tools/                 — the `sierra` bin, never imported by app code
     cli.js               `sierra routes` / `sierra widgets` / `sierra site` —

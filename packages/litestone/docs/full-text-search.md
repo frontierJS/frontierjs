@@ -45,12 +45,19 @@ const snippets = await db.message.search('hello', {
 })
 ```
 
-Results are ordered by FTS5 rank (relevance) by default.
+Results are ordered by FTS5 rank (relevance) by default, and each row carries
+its BM25 score as `_rank` — lower is better, and comparable only within one
+model's index. `withRank: false` leaves it off. `_rank`, `_highlight` and
+`_snippet` are not columns, so a `select` keeps them.
 
 `search()` runs two queries — the FTS5 table for the matching rowids, then the
-base table for the rows — and rejoins them by id to restore rank order. A
-`select` need not name the id: it is fetched for that join and trimmed from the
-result like any other injected column.
+base table for the rows — and rejoins them on the row's `rowid`, so a String id
+is fine. A `select` need not name the id: it is fetched for that join and
+trimmed from the result like any other injected column.
+
+The filter it applies before its LIMIT — soft-delete, the caller's `where`, the
+row policy — runs once per match, so a policy several hops deep costs what the
+matches cost, not what the table holds.
 
 ## With @@softDelete
 

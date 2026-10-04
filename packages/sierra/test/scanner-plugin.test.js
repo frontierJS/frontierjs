@@ -159,7 +159,7 @@ describe('the dev watcher', () => {
 // browser fetches JSON. The property that must not move is the one below: the
 // browser still never imports the companion, in dev or in a build.
 describe('static routes in dev', () => {
-  const table = () => readFile(resolve(TMP, 'config/routes.js'), 'utf8')
+  const table = (file = 'config/routes.js') => readFile(resolve(TMP, file), 'utf8')
 
   test('dev emits a fetch shim for a render:static route', async () => {
     await runBuildStart(TMP, 'serve')
@@ -178,9 +178,18 @@ describe('static routes in dev', () => {
 
   test('a build emits neither', async () => {
     await runBuildStart(TMP, 'build')
-    const code = await table()
+    const code = await table('config/routes.build.js')
     expect(code).not.toContain('__sierraDevStatic')
     expect(code).not.toMatch(/import\(['"][^'"]*\.meta\.js['"]\)/)
+  })
+
+  // A build run beside a running dev server overwrote the table that server
+  // was serving, so every prerendered page in dev went blank until a restart
+  // (`FJS-1695`).
+  test("a build leaves dev's table alone", async () => {
+    await runBuildStart(TMP, 'serve')
+    await runBuildStart(TMP, 'build')
+    expect(await table()).toContain('__sierraDevStatic')
   })
 
   test('dev: { staticData: false } opts out', async () => {

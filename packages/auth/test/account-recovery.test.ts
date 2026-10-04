@@ -147,10 +147,10 @@ describe('the floor needs the app\'s own grading', () => {
   })
 })
 
-describe('`recoveryLevel` — a grader for acting on somebody else', () => {
+describe('`standingLevel` — a grader for acting on somebody else', () => {
 
   // `level` here answers 4 for everybody, the way an app whose level is per
-  // tenant would answer `account.me` for a bare session. Only `recoveryLevel`
+  // tenant would answer `account.me` for a bare session. Only `standingLevel`
   // knows the operator is a sysadmin, so a pass proves it is the one read.
   function appWith(services: Record<string, unknown>) {
     return createTestApp({ auth: h.auth as any }).then(a => {
@@ -161,7 +161,7 @@ describe('`recoveryLevel` — a grader for acting on somebody else', () => {
   }
 
   test('is read in place of `level`, and `account.me` still answers `level`', async () => {
-    const on = await appWith({ level: () => 4, recoveryLevel: levelOf })
+    const on = await appWith({ level: () => 4, standingLevel: levelOf })
     const op = await person('sysadmin', false)
     const u  = await person('user')
 
@@ -171,7 +171,7 @@ describe('`recoveryLevel` — a grader for acting on somebody else', () => {
   })
 
   test('and the peer rule is its too — a sysadmin still cannot reset a sysadmin', async () => {
-    const on   = await appWith({ level: () => 4, recoveryLevel: levelOf })
+    const on   = await appWith({ level: () => 4, standingLevel: levelOf })
     const op   = await person('sysadmin', false)
     const peer = await person('sysadmin')
     expect((await reset(op.token, peer.userId, on)).status).toBe(403)
@@ -182,7 +182,7 @@ describe('`recoveryLevel` — a grader for acting on somebody else', () => {
   // resolver with no number for somebody through, and the peer test beside it
   // (`undefined >= undefined`) failed open the same way.
   test('a resolver that answers no number refuses — it does not fail open', async () => {
-    const on = await appWith({ recoveryLevel: () => undefined as unknown as number })
+    const on = await appWith({ standingLevel: () => undefined as unknown as number })
     const op = await person('sysadmin', false)
     const u  = await person('user')
     expect((await reset(op.token, u.userId, on)).status).toBe(403)
@@ -190,7 +190,7 @@ describe('`recoveryLevel` — a grader for acting on somebody else', () => {
   })
 
   test('a person graded as no number is refused, with the operator at SYSADMIN', async () => {
-    const on = await appWith({ recoveryLevel: (s: { role?: string }) =>
+    const on = await appWith({ standingLevel: (s: { role?: string }) =>
       (s.role === 'sysadmin' ? 7 : Number.NaN) })
     const op = await person('sysadmin', false)
     const u  = await person('user')

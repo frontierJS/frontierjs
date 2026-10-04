@@ -12,7 +12,7 @@
 // auth error raised from a SERVICE surfacing as a 500.
 
 import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
-import { parseTtl, Unauthorized, BadRequest, Forbidden, rateLimitHook } from '@frontierjs/junction'
+import { parseTtl, Unauthorized, BadRequest, Forbidden, NotFound, rateLimitHook } from '@frontierjs/junction'
 import type { AuthPluginOptions }                                   from './types.ts'
 import { createAuthServices }                                       from './services.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
@@ -347,6 +347,20 @@ export function createAuthPlugin(
           throw new Forbidden('Support sessions are not enabled — the app must supply canStartSupport')
         if (!(await canStartSupport(operator, subjectId)))
           throw new Forbidden('Not permitted to start a support session for this user')
+
+        // The ceiling is the subject's, so a subject above the operator makes
+        // the episode a way UP — the one shape where support mode is god mode
+        // with a reason attached. The guard answers who may; this is auth's
+        // floor under it, the way `account-recovery` states SYSADMIN, and like
+        // it the numbers are the app's and a non-number refuses (`FJS-1559`).
+        const standingLevel = services === false ? undefined : (services.standingLevel ?? services.level)
+        if (!standingLevel || !auth.sessionFor)
+          throw new Forbidden('Support sessions need the app\'s level resolver — pass services: { standingLevel } or services: { level } to createAuthPlugin')
+        const subject = await auth.sessionFor(subjectId)
+        if (!subject) throw new NotFound(`No user '${subjectId}'`)
+        const mine = standingLevel(operator), theirs = standingLevel(subject)
+        if (!Number.isFinite(mine) || !Number.isFinite(theirs) || !(theirs <= mine))
+          throw new Forbidden('That account stands above yours — acting as it would raise your standing')
 
         const token = extractToken(ctx)
         if (!token) throw new Unauthorized('Authentication required')

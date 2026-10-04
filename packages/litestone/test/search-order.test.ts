@@ -153,7 +153,7 @@ describe('search() honors a caller order', () => {
     db.$close()
   })
 
-  it('keeps _rank, _highlight and _snippet under a select, in both walks (FJS-1693)', async () => {
+  it('keeps _rank, _highlight and _snippet under a select, in both walks (FJS-1694)', async () => {
     // The extras are not columns, and the trim to a `select` dropped them —
     // linear's ⌘K asked for three columns and ranked nothing, with no error.
     const db = await open()

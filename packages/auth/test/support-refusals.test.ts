@@ -22,6 +22,7 @@ import { makeAuth, type Harness, TEST_KEY } from './harness.ts'
 let h: Harness
 let app: any
 let bare: any          // the same app with NO canStartSupport — the default
+let ungraded: any      // a guard that says yes, and no level resolver
 let opToken = '', subToken = '', subjectId = ''
 
 const OP  = 'operator@example.com'
@@ -32,6 +33,11 @@ const PW  = 'pw-1'
 // this subject*, and nothing in the package decides it.
 let allow = true
 
+// The app's standing for each person, by address. Equal by default: a peer is
+// within the ceiling, so every test below that is not about it starts cleanly.
+let standing: Record<string, number> = {}
+const standingLevel = (s: { email?: string }) => standing[s.email ?? ''] ?? 3
+
 beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY })
 
@@ -41,6 +47,15 @@ beforeAll(async () => {
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
     canStartSupport:   () => allow,
+    services:          { standingLevel },
+  }))
+
+  ungraded = await createTestApp({ auth: h.auth as any })
+  ungraded.setAuth(h.auth as any)
+  ungraded.configure(createAuthPlugin(h.auth, {
+    loginRateLimit:    { max: 10_000, window: '15 minutes' },
+    registerRateLimit: { max: 10_000, window: '15 minutes' },
+    canStartSupport:   () => true,
   }))
 
   bare = await createTestApp({ auth: h.auth as any })
@@ -84,6 +99,44 @@ describe('who may start one is the app\'s answer, and absent means no', () => {
 
   test('a reason is required by the route', async () => {
     expect((await request(app).post('/auth/support/start').auth(opToken).send({ subjectId })).status).toBe(400)
+  })
+})
+
+describe('the guard says who may; the ceiling says not upward', () => {
+
+  test('a subject above the operator is refused even when the guard says yes', async () => {
+    standing = { [OP]: 5, [SUB]: 6 }
+    const res = await start('ticket-up')
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(res.body)).toContain('stands above yours')
+    // Nothing was written: the operator still resolves as themselves.
+    expect(((await request(app).get('/account/me').auth(opToken)).body as any).email).toBe(OP)
+
+    // PAIRED: the same two people, the subject one rung lower, and a peer.
+    standing = { [OP]: 5, [SUB]: 4 }
+    expect((await start('ticket-down')).status).toBe(200)
+    await end()
+    standing = { [OP]: 5, [SUB]: 5 }
+    expect((await start('ticket-peer')).status).toBe(200)
+    await end()
+    standing = {}
+  })
+
+  test('a grader that answers no number refuses, rather than comparing undefined', async () => {
+    // `undefined > 5` and `undefined <= 5` are both false, so a test written in
+    // either direction fails open for one of them.
+    standing = { [OP]: 5, [SUB]: NaN }
+    expect((await start('ticket-nan')).status).toBe(403)
+    standing = { [OP]: NaN, [SUB]: 1 }
+    expect((await start('ticket-nan')).status).toBe(403)
+    standing = {}
+  })
+
+  test('an app with a guard and no level resolver refuses, naming the option', async () => {
+    const res = await request(ungraded).post('/auth/support/start').auth(opToken)
+      .send({ subjectId, reason: 'ticket-ungraded' })
+    expect(res.status).toBe(403)
+    expect(JSON.stringify(res.body)).toContain('standingLevel')
   })
 })
 

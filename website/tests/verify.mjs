@@ -745,11 +745,24 @@ try {
     const words = document.querySelectorAll('[data-cloud] a').length;
     const sizes = [...document.querySelectorAll('[data-cloud] a')]
       .map(a => parseFloat(a.style.fontSize));
+    // The words are made by the island and carry no scope id, so a scoped
+    // .cloud a rule leaves them in inline flow: a paragraph, not a cloud.
+    const boxes = [...document.querySelectorAll('[data-cloud] a')].map(a => a.getBoundingClientRect());
+    const packed = [...document.querySelectorAll('[data-cloud] a')]
+      .every(a => getComputedStyle(a).position === 'absolute');
+    const apart = boxes.every((a, i) => boxes.every((b, j) => i === j ||
+      a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top));
+    // The theme class sits on <html>, outside any scope: a scoped .theme-dark
+    // rule never matches and the dark page keeps the light ramp.
+    const html = document.documentElement, before = html.className;
+    html.className = 'theme-dark';
+    const darkRamp = getComputedStyle(html).getPropertyValue('--tier-1').trim() === '#b7d3f6';
+    html.className = before;
     // Filtering hides register entries rather than rebuilding them.
     const chip = document.querySelector('[data-filters] .chip[data-key="adopted"]');
     chip.click(); await sleep(250);
     const visible = [...document.querySelectorAll('.entry')].filter(e => !e.hidden).length;
-    return { words, biggest: Math.max(...sizes) > Math.min(...sizes),
+    return { words, biggest: Math.max(...sizes) > Math.min(...sizes), packed, apart, darkRamp,
              filtered: visible, cloudAfter: document.querySelectorAll('[data-cloud] a').length };
   `))
 

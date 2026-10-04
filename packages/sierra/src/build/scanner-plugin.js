@@ -2,7 +2,7 @@
  * scanner-plugin.js — Vite plugin that runs the route scanner
  *
  * Responsibilities:
- * - Runs scan() at build start and writes config/routes.js
+ * - Runs scan() at build start and writes the route table (routeTablePath)
  * - Watches src/routes/ for new/deleted files during dev
  * - Re-runs scanner and invalidates virtual:sierra on route changes
  * - Emits build warnings for Sierra-specific issues
@@ -10,7 +10,7 @@
 
 import { resolve, relative, basename } from 'path'
 import { scan } from '../scanner/index.js'
-import { generateRouteTable } from '../scanner/generate-route-table.js'
+import { generateRouteTable, routeTablePath } from '../scanner/generate-route-table.js'
 import { classify } from '../scanner/classify.js'
 import { warnDuplicateSnippets, warnReservedFrontmatter } from './warnings.js'
 // From page-fields.js, not router/index.js: this runs in Node during the
@@ -24,7 +24,6 @@ import { PAGE_RESERVED } from '../router/page-fields.js'
  */
 export function scannerPlugin(config, sierraContext) {
   const routesDir = config.routesDir ?? 'src/routes'
-  const tableOutput = config.routeTable?.output ?? 'config/routes.js'
   const trailingSlash = config.trailingSlash ?? 'always'
 
   let root = process.cwd()
@@ -66,7 +65,7 @@ export function scannerPlugin(config, sierraContext) {
     // and one that shows an empty page correctly. Off with
     // `dev: { staticData: false }`; never in a build, where the data is baked.
     const devStaticData = command === 'serve' && (config.dev?.staticData ?? true)
-    const code = await generateRouteTable(tree, resolve(root, tableOutput), root, {
+    const code = await generateRouteTable(tree, resolve(root, routeTablePath(config, command)), root, {
       omitLoaders, devStaticData,
     })
     const tableChanged = _lastTable !== null && _lastTable !== code

@@ -1,5 +1,15 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-04 — support mode refuses a subject above the operator, and tells the subject (`FJS-D574`)
+
+`/auth/support/start` grades the operator and the subject with the app's resolver after `canStartSupport` answers, and refuses a subject who stands above the operator: the ceiling is the subject's, so standing in for somebody higher was a way up. A peer is allowed. A non-number refuses (`FJS-1559`'s shape), and an app with a guard and no resolver gets a 403 naming the option — `example` and basecamp both already passed one. Closes `FJS-1696`.
+
+**`services.recoveryLevel` is now `services.standingLevel`**, because it is asked by both acts and answers *where does this person stand with no tenant in play*. basecamp moved with it. No alias.
+
+`startSupport` writes through `credentialChanged()`, so `support.started` is a `CREDENTIAL_EVENTS` entry and reaches `onCredentialChanged` for the SUBJECT, with the operator as `actorId` and `reason` and `endsAt` in `meta`. Ending tells nobody. Closes `FJS-1697`. `example` mails it under its own subject line and `verify:support` reads it out of the outbox.
+
+`test/support-refusals.test.ts` +3 (above refused / lower and peer allowed, a non-number refused, no resolver refused); 2 fail with the comparison stubbed. `test/credential-events.test.ts` +1, and the closed-vocabulary test makes the new event's emission compulsory.
+
 ## 2026-09-30 — a person cannot rewrite their own address (`FJS-1591`)
 
 `db/user.lite` policed `emailVerified` and `role` and left `email` and `accountId` writable by the row's owner. The gate lets a signed-in caller update their own row, so an app's first self-edit of `User` would let a session holder move the account to an address nobody verified. That address is where a password reset goes, and `emailVerified` stayed true. Both columns now carry `@allow('write', auth().isAdmin)`, so a non-admin's write drops them and lands the rest. Nothing in this package writes the row as a caller, so nothing here had exercised it.

@@ -154,8 +154,13 @@ out the same: three calls in one service, with `db.query` refusing a `search`
 key by name (FJS-1310's fix, measured). Verses are listed in book order and
 lemmas as their own group, 1–8 ms median over HTTP. What the second caller adds
 is the easy case linear lacked: the corpus has no row policies, so `search()`
-through `$.db` is the whole of it, with no `$raw` + bm25 two-step. **The
-spanning verb is still not owed.** What remnant did need that linear did not was
+through `$.db` is the whole of it. **The spanning verb is still not owed.**
+
+**linear is on `@@fts` too (2026-10-04).** Its `$raw` + bm25 two-step was
+the FJS-1289 workaround and outlived the fix; ⌘K is now three graded
+`search()` calls and `$search` answers over the wire. Its row policies, which
+remnant lacked, exposed [`FJS-1692`](../ISSUES.md#fjs-1692) and
+[`FJS-1694`](../ISSUES.md#fjs-1694). What remnant did need that linear did not was
 a fold on both sides of the index, [`FJS-1466`](../ISSUES.md#fjs-1466), and
 adding `@@fts` to a table that already held rows broke every write to it,
 [`FJS-1463`](../ISSUES_ARCHIVE.md#fjs-1463).

@@ -1071,6 +1071,50 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d574"></a>2026-10-04 · `FJS-D574` — a support episode may not stand in for somebody ABOVE the operator, graded by `services.standingLevel` (renamed from `recoveryLevel`) and refused without one; and the subject is told, as `support.started` through `onCredentialChanged`.
+
+**The ceiling.** Support mode bounds an operator at the SUBJECT's standing, so a
+subject above the operator turns the episode into a way up — the one shape where
+it is god mode with a reason attached. `canStartSupport` stays the app's guard for
+*who may*; under it `/auth/support/start` now refuses a subject the app's own
+resolver grades above the operator, whatever the guard answered. A peer is
+allowed: equal standing raises nothing. That is the difference from `FJS-D264`'s
+strict *below* — a reset strips a protection off somebody, an episode only lends
+their ceiling. Both numbers must be finite (`FJS-1559`), and an app with a guard
+and no resolver is refused, naming the option, because the alternative is auth
+guessing a standing on the path where being wrong is escalation (§ IV
+*ergonomics vs. strictness*).
+
+**One grader, renamed.** `FJS-D550`'s `recoveryLevel` already answered *where
+does this person stand with no tenant in play*, which is exactly the question
+here. A second option asking it would be a second origin; keeping the name would
+have the support path read an option called *recovery*. Pre-alpha, a rename is a
+rename (§ IV *preservation vs. evolution*): `services.standingLevel`, else
+`services.level`, for both acts. `FJS-D550`'s floor, peer rule and fallback are
+unchanged.
+
+**The subject is told.** A start is written through `credentialChanged()`, the
+one helper that records a way-in change and tells the account's owner, so
+`support.started` joins `CREDENTIAL_EVENTS` and reaches `onCredentialChanged`
+with `actorId` the operator and `meta` carrying the reason and `endsAt`. No new
+observer: somebody else acting in the account is a way in, it is the change the
+owner could learn of no other way, and a second callback would be a second place
+the trail and the notification could disagree. The end is the trail's alone —
+getting out is not a way in.
+
+**Not taken.** A `supportLevel` option (a third grader for one question). Strict
+*below* (refuses a peer, which raises nothing). An `onSupportStarted` observer
+(a second helper beside the one `credential-events.test.ts` closes in both
+directions). Telling the subject through `@frontierjs/notifications`, which auth
+cannot import, and which an app reaches from its `onCredentialChanged` anyway.
+
+*Lives in:* [plugin.ts `/support/start`](packages/auth/plugin.ts) ·
+[auth.ts `startSupport`](packages/auth/auth.ts) · [types.ts](packages/auth/types.ts) ·
+[test/support-refusals.test.ts](packages/auth/test/support-refusals.test.ts) ·
+[test/credential-events.test.ts](packages/auth/test/credential-events.test.ts) ·
+`example`: `verify:support` · closes [`FJS-1696`](ISSUES.md#fjs-1696), [`FJS-1697`](ISSUES.md#fjs-1697) ·
+*amends* [`FJS-D550`](#fjs-d550) (the name)
+
 ### <a id="fjs-d570"></a>2026-10-03 · `FJS-D570` — What does an emailed copy carry to an address with no user row, and who must agree to it — B, and the address confirms once, by a link, before its first send. An unconfirmed address is skipped and logged in the delivery log (X11), never mailed.
 
 Asked in [`IDEAS/data-layer-v1.md`](IDEAS/data-layer-v1.md) § Open questions. **C** was picked over **A** (the subscriber's full standing and nothing more: *could have forwarded it anyway*. `@encrypted`, `@guarded` and `@secret` fields are mailed in plain text, and anyone who may subscribe can point the app's sender at any address on a cron), **B** (A minus `$protectedFields`: `FJS-D193`'s floor for a webhook URL, applied to an address, because an address is not a principal either), **D** (no outside recipients in V1: every recipient is a user, invited, graded at a standing of their own).

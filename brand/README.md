@@ -43,8 +43,19 @@ who wants one mental model instead of five tools glued together.
 **Positioning.** Schema-seeded and fullstack. One seed file grows the Data,
 API and UI realms, and every part traces back to it.
 
-**Don'ts.** No cowboy hats, revolvers, saloon type or wanted posters. No
-gradients passed off as landscapes. No neon or "hacker" green.
+**The hat is a field hat.** A figure wears a dark brown fur-felt or wool-felt
+safari/outback fedora: a pinched or teardrop crown and a flat working brim. A
+cowboy hat is the costume this brand refuses. A tall cattleman crease or a brim
+curled up at the sides turns a surveyor into a gunslinger.
+
+**Painted landscapes are illustration, and they are allowed.** Each realm has
+its own terrain: desert strata for Litestone, a river confluence for Junction,
+a forest ridge for Sierra. The current paintings are first drafts that will be
+refined. Their palette and composition are not settled yet.
+
+**Don'ts.** No cowboy hats, revolvers, saloon type or wanted posters. No CSS
+gradient passed off as a landscape: a landscape is painted or it is absent. No
+neon or "hacker" green.
 
 ## 2 · Logo
 

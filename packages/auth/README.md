@@ -127,7 +127,7 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/password-reset/confirm` | Confirm reset with token. On an account with no credential — one an operator created — this sets the first password, which is what makes an invitation a reset link. An account whose only way in is an OAuth provider is refused (409) |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
 | `GET`  | `/auth/email/verify?token=` | Verify email with token |
-| `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, and recorded under the operator |
+| `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, refused for one standing above yours, and recorded under the operator. Needs `canStartSupport` and a level resolver (`services: { standingLevel }` or `{ level }`); the account is told through `onCredentialChanged` |
 | `GET`  | `/auth/oauth` | Which OAuth providers this app offers |
 | `GET`  | `/auth/oauth/{provider}` · `/auth/oauth/{provider}/callback` | The redirect flow — browser navigations, not `fetch` calls |
 | `GET`  | `/auth/oauth/link/confirm?token=` | Attach a provider to an existing account from the emailed link |
@@ -274,12 +274,12 @@ person signs in with their password and enrolls again.
 
 The floor is not configurable (`FJS-D264`): removing a factor is the one thing
 between a stolen password and the account, and a help desk is how the thief gets
-past it. Both people are graded by YOUR resolver — `services: { recoveryLevel }`,
+past it. Both people are graded by YOUR resolver — `services: { standingLevel }`,
 else `services: { level }` — so one must be passed; without it every call is a
 403 naming both, and an answer that is not a finite number refuses too. Pass
-`recoveryLevel` when your `level` is per tenant: `level` is also what
-`account.me` publishes, while recovery needs only the standing that travels with
-the user. Either way it must not let a column somebody below 7 can write reach 7. The person must grade below the
+`standingLevel` when your `level` is per tenant: `level` is also what
+`account.me` publishes, while recovery and support mode need only the standing
+that travels with the user. Either way it must not let a column somebody below 7 can write reach 7. The person must grade below the
 operator, so a sysadmin cannot reset a peer, and nobody resets their own
 (`disableTotp` does that, with the password). Refused inside a support episode.
 
@@ -300,8 +300,10 @@ createLitestoneAuth(db, {
 `event` is one of `CREDENTIAL_EVENTS` — `password.changed`, `password.reset`,
 `totp.enabled`, `totp.disabled`, `totp.reset`, `recoveryCodes.regenerated`,
 `recovery.used`, `apikey.created`, `apikey.revoked`, `oauth.linked`,
-`oauth.unlinked` — and is the audit trail's own name for the same change.
-`actorId` differs from `userId` only for `totp.reset`, where it is the operator.
+`oauth.unlinked`, `support.started` — and is the audit trail's own name for the
+same change. `actorId` differs from `userId` only for `totp.reset` and
+`support.started`, where it is the operator; the second carries the episode's
+`reason` and `endsAt` in `meta`.
 Nothing secret is in it.
 
 It is an **observer**, unlike `onLogin` and the other three: a throw is logged

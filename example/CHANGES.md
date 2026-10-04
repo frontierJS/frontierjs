@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-04 — the shopper is told when support acts as them (`FJS-1697`)
+
+`onCredentialChanged` has a line for `support.started` and sends it under its own subject, *Support is acting in your account*, since the shared *Your sign-in settings changed* would misname it. `verify:support` clears the outbox and asserts the shopper got exactly one mail, for the one start that happened, after three refused ones. 25 checks.
+
 ## 2026-10-03 — `bun run bench`
 
 Boots the API on 8110, times three GET paths at a constant rate and prints the byte, memory and latency report for the built `web/` and `site/`. Reads only, so the databases are not written. Build both surfaces first, and stop `bun run api`: a port that already answers is refused. No `bench.baseline.json` is committed; `fli test:bench --update` after a clean build records one.

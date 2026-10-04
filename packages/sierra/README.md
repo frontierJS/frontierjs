@@ -943,7 +943,7 @@ Everything in `sierra.config.js`:
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
 | `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, lang }`. The build's own CSS assets are linked automatically |
-| `routeTable.output` | `'config/routes.js'` | where the generated route table is written |
+| `routeTable.output` | `'config/routes.js'` | where the generated route table is written. A build writes `routes.build.js` beside it, so it never overwrites the table a running dev server serves |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
 | `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |

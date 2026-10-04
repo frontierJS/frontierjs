@@ -7570,7 +7570,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ── Step 4: resolve includes + trim select, then the extras ───────────
       // The extras are not columns, so the trim to a `select` dropped them:
       // `search(q, { select })` answered without `_rank` and said nothing
-      // (FJS-1693).
+      // (FJS-1694).
       withIncludes(result, ps, include)
       return finalize(result, ps).map((row, i) => {
         const rid = rids[i]

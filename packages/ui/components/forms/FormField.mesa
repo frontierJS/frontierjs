@@ -121,10 +121,11 @@
     },
     // `@syntax(sql)` and every other language but `md`, which is prose and
     // stays a textarea. The language is the column's, so it rides the entry.
+    // Numbered, because a server refusing a column of code names its line.
     code: {
       component: CodeInput,
       props: ({ field: f, value: v, onvalue }) => ({
-        name: f.name, language: f.language, value: v,
+        name: f.name, language: f.language, numbered: true, value: v,
         oninput: (e) => onvalue(e.target.value),
       }),
     },

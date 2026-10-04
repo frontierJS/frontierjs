@@ -1,5 +1,12 @@
 # Changes — Basecamp
 
+## 2026-10-04 — a refused release leaves the App's status alone (`FJS-1691`)
+
+- **`finishRun` writes `error` only when the release got past its swap step.** The swap step is the one that replaces what is serving: *Start container*, or *Activate* for an inline app (`SWAP_STEPS`, beside `buildInitialSteps`). A release that failed at or before that step leaves `App.status` as it was, because Outpost refuses `/deploy` before it removes the old container (`FJS-1682`). One that failed after it, at the health check, sets `error`. A database release has no swap step, so any failure still sets `error`.
+- **`verify` §11d asserts that the App still reads `running`** after the release the machine refuses.
+
+`failure-reason.test.ts` 8/8: three new cases, and the two refusal cases fail with the fix switched off. `bun run test` 564/566; the two failures are in `edge.test.ts`, which passes on its own (49/49, twice), so they come from running the whole suite together and not from this change. `verify --reset` 215/244 with the new check passing. With the fix switched off it fails reading `error`, and every other failure stays the same, apart from two wizard checks that failed in only one of the two runs.
+
 ## 2026-10-03 — a failed release lists its steps in run order and skips what it never reached (`FJS-1683`)
 
 - **`DeploymentStep.position`** records run order. Both step lists write it, and `get` and `startRun` order by it. Ordering by `startedAt` put every never-started step (null) above the one that failed, and the runner walked them in SQLite's scan order.

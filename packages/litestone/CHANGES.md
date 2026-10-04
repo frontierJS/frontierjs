@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-04 — `search(q, { select })` keeps `_rank`, `_highlight` and `_snippet` (`FJS-1694`)
+
+The extras were attached before the trim to the `select`, which keeps only named columns, so a search that named its columns came back unranked with no error — linear's ⌘K, moved onto `search()`, ranked nothing. They now go on after the trim; `withRank: false` still leaves rank off. `test/search-order.test.ts` asserts all four keys under a select in both walks; five tests that asserted exact keys to pin the injected-id trim pass `withRank: false`. `docs/full-text-search.md` now states `_rank`, the rowid rejoin, and what the pre-LIMIT filter costs.
+
 ## 2026-10-04 — `search()` correlates its pre-LIMIT filter on the hit, so a row policy costs per match rather than per row (`FJS-1692`)
 
 The filter that keeps unreadable rows from spending `search()`'s LIMIT (`FJS-262`) was `rowid IN (SELECT rowid FROM t WHERE …)`, which SQLite plans as a LIST SUBQUERY: every readable row, each through the policy's correlated hops, re-read under the FTS scan. Rows were right; time was not — linear's comment search, a two-hop `check(issue)` → `check(team)` over 12k rows, took 300 ms for a one-row match and 810 ms for a common word. It is now `AND EXISTS (SELECT 1 FROM t WHERE t.rowid = <fts>.rowid AND (…))`, a rowid lookup per match: 0.2 ms and 1 ms on the same query. `test/search-filter-cost.test.ts` EXPLAINs the bytes the client sent beside the old shape as control, and is red on it; suite 5589 pass.

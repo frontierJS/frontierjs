@@ -1455,6 +1455,14 @@ check('a notice can be dismissed',
   check('…because nothing stopped it first',
     outpostSaw.deploy.slice(sentFrom).map(d => d.path).join(','),
     t => t.includes('/deploy') && !t.includes('/stop'))
+  // FJS-1691: the old container is answering, so the App is not in error.
+  check('…so the App still reads running',
+    await evaluate(`
+      (async () => {
+        const m = await import('/src/resources/App.mesa')
+        return (await m.apps.service.get(${JSON.stringify(appId)})).status
+      })()
+    `), 'running')
 }
 
 // ── 12. Jobs ──────────────────────────────────────────────────────────

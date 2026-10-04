@@ -153,10 +153,11 @@ const authOptions = {
       'apikey.revoked':            'An API key was revoked.',
       'oauth.linked':              'A sign-in provider was connected.',
       'oauth.unlinked':            'A sign-in provider was disconnected.',
+      'support.started':           'A member of the shop\'s support team is acting in your account to help with a request. It ends on its own within the hour.',
     }
     await app.mail.send({
       to:      email,
-      subject: 'Your sign-in settings changed',
+      subject: event === 'support.started' ? 'Support is acting in your account' : 'Your sign-in settings changed',
       text:    `${what[event]}\n\n`
              + (actorId !== userId ? '' : 'If this was you, there is nothing to do. ')
              + `If it was not, sign in and change your password, or contact the shop.\n`,

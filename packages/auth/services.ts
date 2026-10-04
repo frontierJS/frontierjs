@@ -55,7 +55,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   // Recovery grades the operator AND the person, which `account.me`'s level
   // need not answer — an app whose level is per tenant has none for a bare
   // session, and `account.me` is what a browser gates its buttons on.
-  const recoveryLevel = opts.recoveryLevel ?? opts.level
+  const standingLevel = opts.standingLevel ?? opts.level
 
   // ─── The password, asked again ─────────────────────────────────────────
   //
@@ -410,7 +410,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   // because who may act AS somebody varies by app; who may strip a protection
   // off somebody does not.
   //
-  // Both people are graded by the app's own resolver — `recoveryLevel`, else
+  // Both people are graded by the app's own resolver — `standingLevel`, else
   // `level` — so this states a floor and never a second role→level mapping.
   // The person must grade BELOW the operator: a sysadmin cannot reset a peer,
   // which is also what keeps the reset from being the way one sysadmin's
@@ -426,9 +426,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // somebody else — and a reset outlives the episode that made it.
       refuseInSupport(operator, "reset somebody's second factor")
 
-      if (!recoveryLevel) {
+      if (!standingLevel) {
         throw new Forbidden(
-          'Account recovery needs the app\'s level resolver — pass services: { recoveryLevel } ' +
+          'Account recovery needs the app\'s level resolver — pass services: { standingLevel } ' +
           'or services: { level } to createAuthPlugin'
         )
       }
@@ -436,7 +436,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // floor written as `level < SYSADMIN` let a resolver that answered no
       // number through, and the peer test beside it failed open the same way
       // (`FJS-1559`).
-      const mine = recoveryLevel(operator)
+      const mine = standingLevel(operator)
       if (!Number.isFinite(mine) || !(mine >= LEVELS.SYSADMIN)) {
         throw new Forbidden('Resetting a second factor requires SYSADMIN (7)')
       }
@@ -448,7 +448,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
       const person = await need('sessionFor')(userId)
       if (!person) throw new NotFound(`No user '${userId}'`)
-      const theirs = recoveryLevel(person)
+      const theirs = standingLevel(person)
       if (!Number.isFinite(theirs) || !(theirs < mine)) {
         throw new Forbidden('That account stands at or above yours — it cannot be reset from here')
       }

@@ -18,6 +18,9 @@ out/
 !packages/*/src/build/**
 *.js.map
 *.d.ts.map
+# Sierra's build-time route table, written beside dev's routes.js so a build
+# cannot overwrite the table a running dev server serves (FJS-1695).
+routes.build.js
 
 # TypeScript
 *.tsbuildinfo

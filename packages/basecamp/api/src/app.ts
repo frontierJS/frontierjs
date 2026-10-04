@@ -618,11 +618,12 @@ export async function buildBasecampApp(
   // single number `account.me` could answer with. `applyStanding` resolves it
   // per request instead.
   //
-  // `recoveryLevel` is a different question — who may reset SOMEBODY ELSE's
-  // second factor — and `basecampGateLevel` answers it right on a bare
+  // `standingLevel` is a different question — where somebody stands when one
+  // person acts on another: resetting their second factor, or acting as them
+  // in support mode — and `basecampGateLevel` answers it right on a bare
   // session: SYSADMIN for the hub tier, VISITOR for everybody else, STRANGER
-  // for a suspended account. So a peer administrator is refused and nobody
-  // below the hub reaches it (`FJS-D550`).
+  // for a suspended account. So a peer administrator's factor is refused and
+  // nobody below the hub reaches it (`FJS-D550`).
   // ── Support mode ──────────────────────────────────────────────────────
   //
   // Who may act as somebody else. Absent, the routes refuse — so this line is
@@ -644,7 +645,7 @@ export async function buildBasecampApp(
 
   app.configure(createAuthPlugin(auth, {
     prefix:   '/auth',
-    services: { apiKeys: false, recoveryLevel: basecampGateLevel },
+    services: { apiKeys: false, standingLevel: basecampGateLevel },
     canStartSupport: supportGuard,
   }))
 

@@ -18,6 +18,7 @@ export const CREDENTIAL_EVENTS = [
   'recoveryCodes.regenerated', 'recovery.used',
   'apikey.created', 'apikey.revoked',
   'oauth.linked', 'oauth.unlinked',
+  'support.started',
 ] as const
 
 export type CredentialEvent = typeof CREDENTIAL_EVENTS[number]
@@ -28,7 +29,7 @@ export interface CredentialChange {
   userId:  string
   /** Where to tell them — read from the row when the change happens. */
   email:   string
-  /** Who made the change: the account itself, or the operator for `totp.reset`. */
+  /** Who made the change: the account itself, or the operator for `totp.reset` and `support.started`. */
   actorId: string
   at:      string
   meta:    Record<string, unknown>
@@ -209,8 +210,14 @@ export interface LitestoneAuthOptions {
    *
    * `event` is the audit trail's own `operation` for the same change, so the
    * record and the notification cannot name two different things. `actorId` is
-   * the account itself except for `totp.reset`, where it is the operator. `meta`
-   * carries counts and provider names and never a secret, a code or a key.
+   * the account itself except for `totp.reset` and `support.started`, where it is
+   * the operator. `meta` carries counts and provider names and never a secret, a
+   * code or a key.
+   *
+   * **`support.started` is a way in too**: an operator's token now resolves as
+   * this person until `meta.endsAt`, for `meta.reason`. Somebody else acting in
+   * the account is the change its owner is least able to find out about any
+   * other way, which is the same reason the factor changes are here.
    *
    *   onCredentialChanged: async ({ event, email }) => {
    *     await mailer.send({ to: email, subject: 'Your sign-in settings changed', text: … })
@@ -303,7 +310,7 @@ export interface AuthServicesOptions {
   connections?: string | false
   /**
    * An operator acting on SOMEBODY ELSE's credentials — today, resetting a lost
-   * second factor. Refused below SYSADMIN(7), graded by `recoveryLevel` (else
+   * second factor. Refused below SYSADMIN(7), graded by `standingLevel` (else
    * `level`), which it cannot work without: absent, every call is a 403 naming
    * both options (`FJS-D264`).
    */
@@ -322,26 +329,27 @@ export interface AuthServicesOptions {
    *   level: shopGateLevel
    *
    * On `account.me` a UI reads the answer to decide what to offer, and there it
-   * is never a boundary. On `accountRecovery` it IS the boundary — the operator
-   * and the person are both graded by it — so a resolver that lets a column
-   * somebody below SYSADMIN can write reach 7 hands out the reset with it.
+   * is never a boundary. Where `standingLevel` is absent it IS one — recovery and
+   * support grade the operator and the person by it — so a resolver that lets a
+   * column somebody below SYSADMIN can write reach 7 hands out the reset with it.
    */
   level?: (session: SessionContext) => number
 
   /**
-   * Grade the operator and the person for `accountRecovery`, when that is not
-   * the question `level` answers. Falls back to `level`.
+   * Where a person stands with no tenant in play — the standing that travels
+   * with the user. Falls back to `level`.
    *
-   * Separate because `level` is also what `account.me` publishes and a browser
-   * gates its buttons on. An app whose level is per tenant has no honest single
-   * answer there, while recovery needs only the standing that travels with the
-   * user — an operator at SYSADMIN, a person below them:
+   * Asked of BOTH people wherever one acts on another: `accountRecovery` (the
+   * operator at SYSADMIN, the person below them) and `/auth/support/start` (the
+   * subject at or below the operator). Separate from `level` because that is
+   * also what `account.me` publishes and a browser gates its buttons on, and an
+   * app whose level is per tenant has no honest single answer there:
    *
-   *   recoveryLevel: basecampGateLevel
+   *   standingLevel: basecampGateLevel
    *
-   * A resolver that answers anything but a finite number refuses the reset.
+   * A resolver that answers anything but a finite number refuses the act.
    */
-  recoveryLevel?: (session: SessionContext) => number
+  standingLevel?: (session: SessionContext) => number
 
   /**
    * How many times one account may offer its CURRENT password — to
@@ -377,6 +385,12 @@ export interface AuthPluginOptions {
    * shape: every write to `Session` goes through `asSystem()`, which drops the
    * grid along with every other rule, so a capability declared there would be
    * enforced by nothing. The grant is asked for here, where there is a caller.
+   *
+   * **It decides who may, never how high.** A subject who stands ABOVE the
+   * operator is refused whatever this answers, graded by `services.standingLevel`
+   * (else `services.level`) and refused without one — standing in for somebody
+   * above you is escalation with a reason attached, and the trail naming you
+   * does not take the rung back.
    */
   canStartSupport?: (operator: SessionContext, subjectId: string) => boolean | Promise<boolean>
 

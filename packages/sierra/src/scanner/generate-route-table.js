@@ -16,6 +16,24 @@ import { writeFile, readFile, mkdir } from 'fs/promises'
 import { dirname, relative, resolve } from 'path'
 
 /**
+ * Where the route table lives, per Vite command — the writer and the importer
+ * both ask here, so the two cannot disagree.
+ *
+ * A build writes its own file beside dev's. The two tables differ (a static
+ * build omits every loader, dev carries the static-data fetch shims), and while
+ * they shared one path a build run beside a running dev server overwrote the
+ * table that server was serving: every prerendered page in dev rendered with
+ * `data: null` until a restart, with nothing said (`FJS-1695`).
+ *
+ * @param {{ routeTable?: { output?: string } }} config
+ * @param {'serve' | 'build'} command
+ */
+export function routeTablePath(config, command) {
+  const out = config.routeTable?.output ?? 'config/routes.js'
+  return command === 'build' ? out.replace(/(\.[cm]?js)?$/, '.build$1') : out
+}
+
+/**
  * Generate and write the route table.
  *
  * @param {import('./build-tree.js').RouteNode} tree — root node from buildTree()

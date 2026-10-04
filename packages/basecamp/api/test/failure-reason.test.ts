@@ -128,3 +128,39 @@ describe('a release that fails mid-run', () => {
     ])
   })
 })
+
+describe("the App's status after a failed release", () => {
+  // Whether the machine replaced what was serving is the step the release
+  // stopped at: Outpost refuses /deploy before it removes the old container
+  // (`FJS-1682`), so only a failure after the swap leaves the App broken.
+  async function releaseStoppingAt(stop: 'Pull image' | 'Start container' | 'Health check' | null) {
+    const sys = env.system as any
+    await sys.app.update({ where: { id: target.id }, data: { status: 'running' } })
+    const row = await sys.deployment.create({ data: { workspaceId: ws.id, appId: target.id, toImage: `x:${uniq()}` } })
+    await sys.deployment.transition(row.id, 'build')
+    const names = ['Pull image', 'Start container', 'Health check']
+    const steps = await Promise.all(names.map((name, position) =>
+      sys.deploymentStep.create({ data: { deploymentId: row.id, position, name } })))
+    const at = stop ? names.indexOf(stop) : -1
+    for (const [i, s] of steps.entries())
+      if (i < at) await sys.deploymentStep.update({ where: { id: s.id }, data: { status: 'success' } })
+    if (at >= 0) await sys.deploymentStep.update({ where: { id: steps[at].id }, data: { status: 'running' } })
+
+    await env.as(admin).service('deployments').call('finishRun', row.id, {
+      status: 'failed', stepId: steps[Math.max(at, 0)].id, error: 'refused' })
+    return (await sys.app.findUnique({ where: { id: target.id } })).status
+  }
+
+  test('a release refused at the swap leaves the App running', async () => {
+    expect(await releaseStoppingAt('Start container')).toBe('running')
+  })
+
+  test('so does one stopped before it, or refused before any step ran', async () => {
+    expect(await releaseStoppingAt('Pull image')).toBe('running')
+    expect(await releaseStoppingAt(null)).toBe('running')
+  })
+
+  test('a release that fails after the swap is the App in error', async () => {
+    expect(await releaseStoppingAt('Health check')).toBe('error')
+  })
+})

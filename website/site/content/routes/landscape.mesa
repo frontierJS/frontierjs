@@ -180,7 +180,7 @@ h3 { font-size: .95rem; margin: 0 0 .4rem; }
   --tier-3: #5598e7;
   --cloud-hover: color-mix(in srgb, var(--tier-1) 12%, transparent);
 }
-.theme-dark {
+:global(.theme-dark) {
   --tier-1: #b7d3f6;
   --tier-2: #6da7ec;
   --tier-3: #3987e5;
@@ -210,14 +210,15 @@ h3 { font-size: .95rem; margin: 0 0 .4rem; }
   background: var(--surface-raised);
   overflow: hidden;
 }
-.cloud a {
+/* The words are made by the island, so they carry no scope id. */
+.cloud :global(a) {
   position: absolute; white-space: nowrap; text-decoration: none;
   font-weight: 700; letter-spacing: -.02em; line-height: 1;
   padding: .12em .2em; border-radius: 6px;
   transition: background-color .12s ease, transform .12s ease;
 }
-.cloud a:hover, .cloud a:focus-visible { background: var(--cloud-hover); transform: scale(1.04); }
-.cloud a:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.cloud :global(a:hover), .cloud :global(a:focus-visible) { background: var(--cloud-hover); transform: scale(1.04); }
+.cloud :global(a:focus-visible) { outline: 2px solid var(--ink); outline-offset: 1px; }
 .cloud[data-state="loading"]::after,
 .cloud[data-state="error"]::after {
   content: attr(data-message);

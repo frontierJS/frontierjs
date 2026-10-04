@@ -163,6 +163,24 @@ describe('each change to how an account signs in tells the person', () => {
     const sole = await h.sys.credential.create({ data: { userId: only.id, type: 'oauth:google', value: `s-${seq++}` } })
     expect(await tell(() => h.auth.removeConnection!(only.id, sole.id).catch(() => {}))).toEqual([])
   })
+
+  test('support.started tells the SUBJECT, names the operator, and a refused start tells nobody', async () => {
+    const op = await makeUser(), subject = await makeUser()
+    const { token } = await h.auth.login(op.email, PASSWORD) as { token: string }
+
+    expect(await tell(() => h.auth.startSupport!(token, subject.userId, '  ').catch(() => {}))).toEqual([])
+
+    const [change, ...rest] = await tell(() => h.auth.startSupport!(token, subject.userId, 'ticket-77'))
+    expect(rest).toEqual([])
+    expect(change).toMatchObject({
+      event: 'support.started', userId: subject.userId, email: subject.email, actorId: op.userId,
+      meta:  { subjectId: subject.userId, reason: 'ticket-77' },
+    })
+    expect(Number.isNaN(Date.parse(String(change!.meta.endsAt)))).toBe(false)
+
+    // Getting out is not a way in, so it is the trail's alone.
+    expect(await tell(() => h.auth.endSupport!(token))).toEqual([])
+  })
 })
 
 // ─── An observer, not a hook ──────────────────────────────────────────────

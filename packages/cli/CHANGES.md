@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-03 — `fli new` ignores Sierra's build route table (`FJS-1695`)
+
+The scaffolded `.gitignore` lists `routes.build.js`, the table a Sierra build now writes beside `config/routes.js` so it cannot overwrite the one a running dev server serves.
+
 ## 2026-10-03 — publishing the packages, walked in `fli gui`
 
 **A `publish packages` screen walks `ws:pub`** in five stages — *get ready* (everything committed, a full CI run, `test:snapshots` with its `fix`, `npm whoami`), *choose what goes out* (`ws:changed`, the registry read, `ws:pub --dry`), *publish* (`ws:pub`), *check it landed* (the registry read again, and `git push origin HEAD --tags` for a run that held the push back), and *if it stops partway*, which runs nothing: re-running `ws:pub` after a partial publish bumps again and skips a version, so the step says what to do instead. Above the steps are the options `ws:pub` takes — bump, dist-tag, a 2FA code, push when done, include unchanged (`--all`), finish a partial run (`--tolerate-republish`) — and every member with its version, the version it moves to, its commits since its tag, and what npm holds once read. **An untouched selection sends no `--filter`**, and neither does one ticked back to what `ws:pub` would pick, so drawing a list never narrows a release. Changing an option clears the dry run, because a plan answered the options it ran with. Its home tile counts what is going out.

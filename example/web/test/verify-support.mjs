@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
 const API  = process.env.API_URL ?? 'http://localhost:8110'
+const MAIL = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const BASE = `${API}/api`
 const TRAIL = join(ROOT, 'db/audit/auditLogs.jsonl')
 
@@ -146,6 +147,20 @@ const shopper = await me(shopperToken)
 
 console.log('\nsupport mode\n')
 
+await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
+/** The mail sent to one address — polled, since auth tells the person after the write. */
+async function mailTo(email, until = n => n > 0, ms = 4000) {
+  const deadline = Date.now() + ms
+  let got = []
+  while (Date.now() < deadline) {
+    got = ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])
+      .filter(m => JSON.stringify(m).includes(email))
+    if (until(got.length)) return got
+    await new Promise(r => setTimeout(r, 100))
+  }
+  return got
+}
+
 // ─── Who may start one ─────────────────────────────────────────────────────
 //
 // The app's answer and not the framework's: `canStartSupport` in
@@ -187,6 +202,12 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
   check('the same token answers as the SUBJECT', now.email, SHOPPER)
   check('and the operator is still on the principal', now.support?.operatorId, admin.userId)
   check('with the reason it was started for', now.support?.reason, 'cannot reproduce the basket bug')
+
+  // The subject is the one person who could not otherwise find out. Once, and
+  // only for the start that happened: the three refused above sent nothing.
+  const told = await mailTo(SHOPPER)
+  check('the SUBJECT is told somebody is acting in their account — once, for the one start that happened',
+        [told.length, told.some(m => JSON.stringify(m).includes('Support is acting'))], [1, true])
 
   // The pair: the same account, the same token, one column apart.
   check('acting as a shopper, the operator reads ONE row where they read many',

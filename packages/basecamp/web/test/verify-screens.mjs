@@ -1344,7 +1344,7 @@ try {
   // ─── A lost second factor, reset from the hub ──────────────────────────
   // Another person enrols over HTTP — the drive stands in for them — and the
   // seeded owner, a sysadmin, resets it from /hub/users/. auth's
-  // account-recovery grades both by basecamp's `recoveryLevel`.
+  // account-recovery grades both by basecamp's `standingLevel`.
   console.log('\n  /hub/users/ — resetting somebody else\'s second factor')
   const API = `http://localhost:${API_PORT}`
   const eventually = async (read, pred) => {
