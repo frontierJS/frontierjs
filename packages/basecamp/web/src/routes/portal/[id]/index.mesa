@@ -21,10 +21,14 @@ title: Appliance
   let loading = true
   let busy    = false
 
+  // Leaving this route by its link changes `page.params` while this page is
+  // still mounted, so the watcher below runs once with no id.
   async function load() {
+    const id = page.params.id
+    if (!id) return
     error = null
     try {
-      entry = await portal.service.get(page.params.id)
+      entry = await portal.service.get(id)
     } catch (e) {
       error = e.message
     } finally {

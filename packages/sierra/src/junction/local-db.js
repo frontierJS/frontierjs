@@ -171,7 +171,17 @@ export async function writeRows(model, rows) {
   const accessor = accessorFor(db, model)
   if (!accessor) return false
 
-  await db.asSystem()[accessor].upsertMany({ data: rows })
+  const table = db.asSystem()[accessor]
+  try {
+    await table.upsertMany({ data: rows })
+  } catch (err) {
+    // An update gate of 9 refuses the system client too, and upsertMany grades
+    // its conflict half as an update (`FJS-1700`). Such a row never changes on
+    // the server, so replaying it insert-only loses nothing — and without this
+    // an append-only ledger like `@@gate("5.5.9.9")` kept nothing on the device.
+    if (!(err?.code === 'ACCESS_DENIED' && err.operation === 'update' && err.required === 9)) throw err
+    await table.upsertMany({ data: rows, update: [] })
+  }
   return true
 }
 

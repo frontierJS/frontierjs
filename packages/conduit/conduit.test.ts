@@ -233,6 +233,30 @@ describe('credential resolvers', () => {
     expect(calls).toBe(1)
   })
 
+  it('withCache collapses concurrent misses on one ref into one inner call', async () => {
+    let calls = 0
+    const inner: CredentialResolver = {
+      async get(ref) { calls++; await Bun.sleep(10); return `value-${ref}` }
+    }
+    const cached = withCache(inner)
+
+    const got = await Promise.all(Array.from({ length: 100 }, () => cached.get('A')))
+    expect(got.every(v => v === 'value-A')).toBe(true)
+    expect(calls).toBe(1)
+  })
+
+  it('withCache lets a failed lookup be retried rather than sharing the rejection', async () => {
+    let calls = 0
+    const inner: CredentialResolver = {
+      async get() { calls++; await Bun.sleep(5); if (calls === 1) throw new Error('vault down'); return 'ok' }
+    }
+    const cached = withCache(inner)
+
+    await expect(cached.get('A')).rejects.toThrow('vault down')
+    expect(await cached.get('A')).toBe('ok')
+    expect(calls).toBe(2)
+  })
+
   it('withCache does not cache misses', async () => {
     let calls = 0
     const inner: CredentialResolver = {

@@ -1047,15 +1047,26 @@ export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
   const { allows, denies } = rules
 
   // Deny first — an explicit deny wins over every allow beside it.
-  for (const { expr, message } of denies) {
-    if (denyFires(evalJs(expr, ctx, row, modelName, policyMap, relationMap, op)))
-      return { ok: false, message, rule: 'deny' }
+  //
+  // A generated tenancy delegation that fires names a parent outside the
+  // caller's tenant, missing or another tenant's, and is answered last, as a
+  // missing parent: a hidden parent inside the tenant does not fire it, so
+  // every other rule is still asked, or the next refusal tells the two apart.
+  let parent
+  for (const { expr, message, claim } of denies) {
+    if (denyFires(evalJs(expr, ctx, row, modelName, policyMap, relationMap, op))) {
+      // A caller carrying no tenant is refused as that, whatever parent it names.
+      if (!(expr.type === 'not' && expr.expr.tenancy && ctx.auth?.[claim] != null))
+        return { ok: false, message, rule: 'deny' }
+      parent ??= { ok: false, message, rule: 'deny', parent: expr.expr.field }
+    }
   }
 
   // An allow list is a whitelist ONLY once it is non-empty. A model with denies
   // and no allows admits everything the denies did not name.
   if (allows.length && !allows.some(({ expr }) => allowHolds(evalJs(expr, ctx, row, modelName, policyMap, relationMap, op))))
     return { ok: false, message: allows.find(({ message }) => message)?.message, rule: 'allow' }
+  if (parent) return parent
 
   if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[32mallowed[0m')
   return { ok: true }
@@ -1069,10 +1080,16 @@ export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
 // is filled, so what the caller sent is graded as sent, and the payload itself
 // is untouched, so the @guarded/@system refusals still see the caller's keys
 // alone. The auth stamps are already applied by every caller (FJS-1402).
+//
+// Returns, rather than throws, a verdict whose only refusal is a generated
+// tenancy delegation (`parent` names the relation): the caller answers it as a
+// missing parent, where SQLite would refuse one, or the place it is thrown
+// tells it from a hidden one (FJS-1704).
 export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
   const v = policyVerdict(modelName, withLiteralDefaults(data, ctx.literalDefaultMap?.[modelName]), ctx, policyMap, relationMap, 'create')
   if (v.ok) return
   plog(ctx, 'create', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'})`)
+  if (v.parent) return v
   throw new AccessDeniedError(
     v.message ?? `Create denied by @@${v.rule} policy on "${modelName}"`,
     { model: modelName, operation: 'create' })

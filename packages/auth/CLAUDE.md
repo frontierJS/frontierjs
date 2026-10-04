@@ -182,6 +182,13 @@ index.ts     public API
   OBSERVE belongs on Junction's `app.events`, which is a separate question and
   is not answered here. The cost is stated rather than hidden: an app handler is
   now a failure mode on the login path, and a slow one slows every sign-in.
+- **`onRegistered({ user, db })` is the fifth and the one that runs INSIDE the
+  registration** (`FJS-D520`, `FJS-1458`): after the row and its credential,
+  before the commit, for a password and an identity provider alike, through
+  `registerUser()`. It is where a row-tenanted app creates the Account and
+  writes the tenant column; `createUser` passes no column but `email`, `name`
+  and `role`. `db` is the transaction's client — an app write through its own
+  client falls outside it and survives a rollback.
 - **One ordering rule: a hook runs BEFORE the thing it can refuse.** So none is
   handed what its refusal would have prevented — `onLogin` has no session id,
   `onRegister` has no user row — because a hook that both refuses a thing and

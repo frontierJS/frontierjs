@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-04 — `ctx.system.add('@@gate')` lifts the model's gate for one call (`FJS-D575`)
+
+No code moved: the bridge already handed `ctx.system` to litestone as `system: [...]`, and litestone now reads `'@@gate'` there. `test/system-fields.test.ts` pins it with a paired service. The one whose hook names the gate creates on a `@@gate("0.8.8.9")` model, and the identical one without the hook takes 403. The `ctx.system` doc comment names the entry.
+
 ## 2026-10-04 — a private channel's broadcast, over a real socket, end to end (`FJS-1698`)
 
 `test/membership-revocation.test.ts` joins the two halves that were only pinned apart: per-frame grading (`FJS-1316`, against a stubbed boundary) and litestone's `members.some(…)` policy (no socket). The shape is a chat room: `Message` reads through `check(room)`, `Room` through `members.some(userId == auth().id)`, with no claims resolver. It found the leak fixed in litestone as `FJS-1698`: a policy-only model graded `open`, so a non-member received every message. Four cases: the stranger is refused, a removed member stops receiving new messages and edits while HTTP answers 404, and someone added mid-session starts receiving. All four were red before the fix. Suite 2580 pass.

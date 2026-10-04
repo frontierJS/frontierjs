@@ -84,14 +84,14 @@ describe('a model scoped through its parent (FJS-282)', () => {
   // The half that was permitted in silence.
   test('a create into someone ELSE\'s parent is refused', async () => {
     const err = await thrown(mine.deploy.create({ data: { id: 4, appId: 2, sha: 'ddd' } }))
-    expect(err.name).toBe('AccessDeniedError')
-    expect(err.message).toContain('Outside your workspaceId')
+    expect(err.name).toBe('ForeignKeyError')
+    expect(err.message).not.toContain('Outside your workspaceId')
     expect(await db.asSystem().deploy.count({ where: { id: 4 } })).toBe(0)
   })
 
   test('and so is one two hops away', async () => {
     const err = await thrown(mine.logLine.create({ data: { id: 5, deployId: 2, text: 'x' } }))
-    expect(err.name).toBe('AccessDeniedError')
+    expect(err.name).toBe('ForeignKeyError')
   })
 
   test('an anonymous caller creates nothing', async () => {
@@ -166,8 +166,8 @@ describe('two scoped parents mean both, and via narrows to one', () => {
 
     await me.kid.create({ data: { id: 1, leftId: 1, rightId: 1 } })
     // One foot in each tenant is refused, whichever foot it is.
-    expect((await thrown(me.kid.create({ data: { id: 2, leftId: 1, rightId: 2 } }))).name).toBe('AccessDeniedError')
-    expect((await thrown(me.kid.create({ data: { id: 3, leftId: 2, rightId: 1 } }))).name).toBe('AccessDeniedError')
+    expect((await thrown(me.kid.create({ data: { id: 2, leftId: 1, rightId: 2 } }))).name).toBe('ForeignKeyError')
+    expect((await thrown(me.kid.create({ data: { id: 3, leftId: 2, rightId: 1 } }))).name).toBe('ForeignKeyError')
     d.$close()
   })
 
@@ -402,8 +402,14 @@ describe('a parent the caller may not read is still in their tenant (FJS-1319)',
     admin = pdb.$setAuth({ id: 1, workspaceId: 10, teamIds: [] })
   })
 
-  test('a create naming a private team in your workspace is not refused as tenancy', async () => {
-    await admin.teamMember.create({ data: { id: 2, teamId: 1, userId: 1 } })
+  // Not as tenancy — and not admitted either: a team the caller cannot read is
+  // a team that is not there, so the first member of a private team is added
+  // by a caller who can read it, or by asSystem().
+  test('a create naming a private team in your workspace is refused as a missing parent, not as tenancy', async () => {
+    const err = await thrown(admin.teamMember.create({ data: { id: 2, teamId: 1, userId: 1 } }))
+    expect(err.name).toBe('ForeignKeyError')
+    expect(err.message).not.toContain('Outside your workspaceId')
+    await pdb.asSystem().teamMember.create({ data: { id: 2, teamId: 1, userId: 1 } })
     expect(await pdb.asSystem().teamMember.count({ where: { teamId: 1 } })).toBe(2)
   })
 
@@ -417,10 +423,67 @@ describe('a parent the caller may not read is still in their tenant (FJS-1319)',
     expect((await admin.note.findMany()).map((n: any) => n.text)).toEqual(['n1'])
   })
 
-  test('a team in ANOTHER workspace is still refused as tenancy, public or not', async () => {
-    const err = await thrown(admin.teamMember.create({ data: { id: 3, teamId: 2, userId: 1 } }))
-    expect(err.name).toBe('AccessDeniedError')
-    expect(err.message).toContain('Outside your workspaceId')
+  // One answer for the three, or the difference is the oracle: a team that is
+  // hidden from you, one in another workspace and one that does not exist are
+  // all a team you cannot read, and a create naming any of them is refused
+  // as a missing parent (FJS-1704).
+  test('a private team, another workspace\'s team and a missing one are one answer', async () => {
+    const answers: any[] = []
+    for (const teamId of [1, 2, 999]) {
+      const err = await thrown(admin.teamMember.create({ data: { id: 3, teamId, userId: 1 } }))
+      expect(err.name).toBe('ForeignKeyError')
+      expect(err.message).not.toContain('Outside your workspaceId')
+      expect(err.relation).toBe('team')
+      answers.push(err.message.replaceAll(String(teamId), '#'))
+    }
+    expect(new Set(answers).size).toBe(1)
+    expect(await pdb.asSystem().teamMember.count({ where: { id: 3 } })).toBe(0)
+  })
+
+  test('createMany and upsertMany answer the same, at the row\'s place', async () => {
+    const many = await thrown(admin.teamMember.createMany({ data: [{ id: 3, teamId: 999, userId: 1 }] }))
+    expect(many.name).toBe('ForeignKeyError')
+    const ups = await thrown(admin.teamMember.upsertMany({ data: [{ id: 3, teamId: 2, userId: 1 }] }))
+    expect(ups.cause?.name ?? ups.name).toBe('ForeignKeyError')
+  })
+
+  // The tenancy deny is graded with the policy, before validation, and a
+  // hidden parent is refused after it: thrown where it was found, a payload
+  // that also fails validation answered ValidationError for the hidden team
+  // alone (FJS-1704).
+  test('a payload that fails validation answers the same for all three', async () => {
+    for (const teamId of [1, 2, 999]) {
+      const err = await thrown(admin.teamMember.create({ data: { id: 3, teamId } }))
+      expect(err.name).toBe('ValidationError')
+    }
+  })
+
+  test('a batch names the first refused row, whichever kind each is', async () => {
+    const answers = new Set<string>()
+    for (const [a, b] of [[1, 999], [999, 1], [1, 1], [999, 999], [2, 1]]) {
+      for (const verb of ['createMany', 'upsertMany'] as const) {
+        const err = await thrown(admin.teamMember[verb]({ data: [{ id: 3, teamId: a, userId: 1 }, { id: 4, teamId: b, userId: 1 }] }))
+        expect(err.cause?.name ?? err.name).toBe('ForeignKeyError')
+        answers.add(`${verb} ${err.message.replace(/teamId \d+/, 'teamId #')}`)
+      }
+    }
+    expect(answers.size).toBe(2)
+    expect([...answers].every(m => m.includes('data[0] of 2'))).toBe(true)
+  })
+
+  test('a create the child\'s own @@allow refuses is refused as that, whatever team it names', async () => {
+    const adb: any = await createClient({ db: ':memory:', schema: PRIVATE.replace(
+      'notes  Note[]', 'notes  Note[]\n      @@allow(\'all\', userId == auth().id)') })
+    await adb.asSystem().team.createMany({ data: [{ id: 1, workspaceId: 10, private: true }, { id: 2, workspaceId: 20 }] })
+    const a = adb.$setAuth({ id: 1, workspaceId: 10, teamIds: [] })
+    for (const teamId of [1, 2, 999]) {
+      const err = await thrown(a.teamMember.create({ data: { id: 3, teamId, userId: 5 } }))
+      expect(err.name).toBe('AccessDeniedError')
+    }
+    adb.$close()
+  })
+
+  test('a team in ANOTHER workspace reads as nothing, public or not', async () => {
     const other = pdb.$setAuth({ id: 2, workspaceId: 20, teamIds: [] })
     expect(await other.teamMember.findMany()).toEqual([])
     expect(await other.note.findMany()).toEqual([])
@@ -441,7 +504,7 @@ describe('a system client with a tenant in scope is scoped one hop away too (FJS
 
   test('a create into another tenant\'s parent is refused', async () => {
     const err = await thrown(scopedSys().deploy.create({ data: { id: 4, appId: 2, sha: 'ddd' } }))
-    expect(err?.name).toBe('AccessDeniedError')
+    expect(err?.name).toBe('ForeignKeyError')
     expect(await db.asSystem().deploy.count({ where: { id: 4 } })).toBe(0)
   })
 

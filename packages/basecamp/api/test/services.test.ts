@@ -3122,3 +3122,22 @@ describe('a list honors every filter it admits', () => {
     await expect(env.as(owner).service('apps').find({ service_id: placed.id })).rejects.toThrow(/service_id/)
   })
 })
+
+// `FJS-1706`: the drive removes a server that is not online and a widget on a
+// dashboard points at it. The removal answered 422 where the drive expects a
+// soft delete.
+describe('removing a server that is not online', () => {
+  for (const status of ['pending', 'draining', 'stopped'] as const) {
+    test(`a ${status} server is removed, widget and all`, async () => {
+      const sys = env.system as any
+      const server = await serverAt(status,
+        { workspaceId: ws.id, name: `rm-${status}`, slug: `rm-${status}-${Math.random().toString(36).slice(2, 8)}` })
+      const board = await sys.dashboard.create({ data: { workspaceId: ws.id, name: `board-${status}`, slug: `board-${status}` } })
+      await sys.dashboardWidget.create({ data: { dashboardId: board.id, kind: 'server_health', serverId: server.id, cols: 1 } })
+
+      await env.as(owner).service('servers').remove(server.id)
+
+      expect(await sys.server.findFirst({ where: { id: server.id } })).toBeNull()
+    })
+  }
+})

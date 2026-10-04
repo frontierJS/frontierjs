@@ -1,5 +1,16 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-04 — the route table leaves node_modules
+
+The generated route table is now `<site>/.sierra/routes.js`, gitignored, and
+no longer under `node_modules/.sierra/`. Vite treats a file under `node_modules`
+as a dependency: it does not watch it, and it serves it as `?v=<hash>` with
+`Cache-Control: immutable`. So when a route was added while the dev server ran,
+the table on disk had it but the browser kept the old one, even across reloads.
+The URL fell through to `[pkg]`, and saving the new file updated nothing. This
+was found with a browser drive. A route added mid-session now renders, and an
+edit to it swaps in place.
+
 ## 2026-10-01 — a site's own stylesheet
 
 `content/settings/site.css` is loaded after `@frontierjs/css` when it exists:

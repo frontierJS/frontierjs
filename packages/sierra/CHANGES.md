@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-04 — the device keeps an append-only model insert-only rather than nothing (`FJS-1700`)
+
+`writeRows` mirrors server rows with `asSystem().upsertMany`, and litestone now grades that call's conflict half as an update. Example's `InventoryMovement` is `@@gate("5.5.9.9")`, and a 9 refuses the system client too, so the offline warm kept nothing of `inventory` and `example verify` failed on the console warning. A refusal naming `update` at 9 is retried with `update: []`. Such a row never changes on the server, so insert-only replay loses nothing. Any other refusal is still reported. `test/local-db.test.js` has both halves.
+
 ## 2026-10-03 — a build no longer empties the dev server's route table (`FJS-1695`)
 
 A build writes its route table to `routes.build.js` beside `routes.js`, where it used to overwrite the file a running dev server imports. That replaced dev's `/__sierra/static-data` shims with the static build's empty `loaders`, and every `render: static` page rendered with `data: null` until the dev server restarted. `routeTablePath(config, command)` in `src/scanner/generate-route-table.js` is the one place both the scanner plugin and `virtual:sierra` read the path from; it was spelled twice. `routes.build.js` is gitignored repo-wide and in the `fli new` scaffold.

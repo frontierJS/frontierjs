@@ -56,6 +56,9 @@ describe('verifyTenantIsolation', () => {
     // The vacuity guard is the half that matters: a run where nobody can reach
     // anything would also report no leaks.
     expect(rows.filter(r => r.got === 'unreachable')).toEqual([])
+    // Widget's create into tenant A's board answers as a missing parent
+    // (FJS-D576), and that is the boundary refusing, not a create left ungraded.
+    expect(rows.filter(r => r.got === 'error')).toEqual([])
     expect(of(rows, 'Workspace').map(r => r.got)).toEqual(['exempt'])
 
     // Coverage is the result. A model that isolates correctly is silent, so

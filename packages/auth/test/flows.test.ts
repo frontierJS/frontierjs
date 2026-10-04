@@ -1053,3 +1053,34 @@ describe('the auth hooks', () => {
     h.cleanup()
   })
 })
+
+describe('onRegistered', () => {
+  test('runs inside the registration with the new row, and what it writes is on the account and the session', async () => {
+    let seen: any
+    const h = await makeAuth({
+      onRegistered: async ({ user, db }) => {
+        seen = { id: user.id, inTx: db.$inTransaction }
+        await db.user.update({ where: { id: user.id }, data: { name: 'Owner of Acme' } })
+      },
+    })
+
+    const made = await h.auth.createUser({ email: 'first@acme.co', password: 'correct-horse-1' })
+    expect(seen.id).toBe(made.userId)
+    expect(seen.inTx).toBe(true)
+    expect(made.name).toBe('Owner of Acme')
+
+    const { user } = signedIn(await h.auth.login('first@acme.co', 'correct-horse-1'))
+    expect(user.name).toBe('Owner of Acme')
+    h.cleanup()
+  })
+
+  test('a throw rolls back the user and the credential, so no half-made account is left', async () => {
+    const h = await makeAuth({ onRegistered: () => { throw new Error('no tenant for you') } })
+
+    await expect(h.auth.createUser({ email: 'x@acme.co', password: 'correct-horse-1' }))
+      .rejects.toThrow('no tenant for you')
+    expect(await h.sys.user.count()).toBe(0)
+    expect(await h.sys.credential.count()).toBe(0)
+    h.cleanup()
+  })
+})

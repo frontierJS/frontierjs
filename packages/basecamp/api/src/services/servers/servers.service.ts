@@ -266,8 +266,17 @@ export function createServersService(app: BasecampApp) {
 
       // remove() is the soft delete (schema has @@softDelete); delete() would
       // be the hard one. The row stays, stamped, and drops out of every read.
-      const removed = await db().server.remove({ where: { id } })
-      await recordEvent(id, 'removed', 'Server removed', { removed_by: actor() })
+      //
+      // The event is written FIRST, in the same transaction: a foreign key is a
+      // read (`FJS-D576`), so once the server is stamped removed an event naming
+      // it is refused as a parent the caller cannot see, and the removal answers
+      // 422 after it has already happened.
+      const removed = await db().$transaction(async (tx: any) => {
+        await tx.serverEvent.create({
+          data: { serverId: id, kind: 'removed', message: 'Server removed', metadata: { removed_by: actor() } },
+        })
+        return tx.server.remove({ where: { id } })
+      })
       return Array.isArray(removed) ? removed[0] : removed
     },
 

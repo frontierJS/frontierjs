@@ -579,12 +579,26 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // hidden one alike: a difference between the two answers is the oracle.
   function parentRefusal(relation, fields, values, target) {
     const one = fields.length === 1
-    return new ForeignKeyError(modelName, {
+    const out = new ForeignKeyError(modelName, {
       relation,
       field:  one ? fields[0] : fields,
       value:  one ? redactValue(fields[0], values[0]) : fields.map((f, i) => redactValue(f, values[i])),
       target,
     })
+    Object.defineProperty(out, 'key', { value: { fields, values }, enumerable: false })
+    return out
+  }
+
+  // An update naming the parent a row already has moves nothing: a form posts
+  // the whole row back, and a row that may be edited under a parent its editor
+  // cannot read must stay editable. Only a matched row the write would MOVE
+  // makes the hidden parent the caller's choice. Inside the write's unit.
+  function movesOnto(refusal, whereSql, whereParams) {
+    const { fields, values } = refusal.key
+    return !!writeDb.query(
+      `SELECT 1 FROM "${tableName}" WHERE ${whereSql ? `(${whereSql}) AND ` : ''}` +
+      `NOT (${fields.map(f => `"${col(f)}" IS ?`).join(' AND ')}) LIMIT 1`
+    ).get(...whereParams, ...values.map(_ecp))
   }
 
   // ── a foreign key naming a parent the caller cannot read ───────────────────
@@ -638,6 +652,29 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
     return out
+  }
+
+  // checkCreatePolicy, with one answer for a parent the create names. Under row
+  // tenancy a child scoped through its parent is denied when that parent is not
+  // in the caller's tenant, which a missing row and another tenant's both are,
+  // and a private one in the caller's own tenant is not. RETURNS that refusal,
+  // for the caller to throw where hiddenParents' lands: thrown here, before
+  // validation and ahead of earlier rows of a batch, a payload that also fails
+  // validation told a missing parent from a hidden one (FJS-1704).
+  function checkCreate(row) {
+    const v = checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+    if (!v) return
+    const p = _parentKeys.find(k => k.relation === v.parent)
+    if (!p) throw new AccessDeniedError(v.message, { model: modelName, operation: 'create' })
+    return parentRefusal(p.relation, p.fields, p.fields.map(f => row?.[f]), p.target)
+  }
+
+  // Two parent refusals for one row answer as the relation hiddenParents would
+  // have met first, whichever of the two found it.
+  function firstRefusal(a, b) {
+    if (!a || !b) return a ?? b
+    const at = r => _parentKeys.findIndex(k => k.relation === r.relation)
+    return at(b) < at(a) ? b : a
   }
 
   // ── a delete a child still refers to (FJS-1454) ────────────────────────────
@@ -5661,7 +5698,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth, stamped)
       data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth, stamped)
       // After the auth stamps, never before — see authStamped (FJS-1402).
-      if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      const _crParent = ctx.hasPolicies ? checkCreate(data) : undefined
       // A new row is version 1, whatever the payload says. Honouring a supplied
       // version would let a client start a row at 500 and make the first real
       // editor's read look stale.
@@ -5683,7 +5720,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
       }
       extractWriteOps(data, { where: 'create' })
-      const [_crHidden] = await hiddenParents([data], [stamped])
+      const _crHidden = firstRefusal(_crParent, (await hiddenParents([data], [stamped]))[0])
 
       // ── Everything that touches the database, as one unit ────────────────
       //
@@ -5851,9 +5888,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       await enforceValueSets(modelName, data, ctx)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       refuseOffEntry(data)
-      if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, authStamped(row, modelName, ctx), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      const _cmParent = ctx.hasPolicies ? data.map(row => checkCreate(authStamped(row, modelName, ctx))) : []
       // The rows as the caller wrote them: every stamp lands later, inside the unit.
       const _cmHidden = await hiddenParents(data)
+      for (const [i, r] of _cmParent.entries()) _cmHidden[i] = firstRefusal(r, _cmHidden[i])
 
       // Auto-generate @id and run writeData (transforms + validation) on every row
       // before touching the DB — so @email, @lower, @trim, @encrypted, enum checks
@@ -6278,9 +6316,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // a foreign key leaves one parent as surely as it joins another, and
           // afterwards no row points at the old one.
           noteCardinalityBySql(_vWhereSql, _vWhereParams)
+          const _upMoves = _upHidden && movesOnto(_upHidden, _vWhereSql, _vWhereParams)
           try { updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true }) }
           catch (e) { throw asConstraintError(e, row) }
-          if (updated && _upHidden) throw _upHidden
+          if (updated && _upMoves) throw _upHidden
           noteCardinality(updated)
           fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
           if (!updated) {
@@ -6435,13 +6474,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // statement the old one is unreachable from any row.
         noteCardinalityBySql(finalWhere, _umWhereP)
         if (exclTouched(data)) { noteExclusionBySql(finalWhere, _umWhereP); noteExclusion(data) }
+        const _umMoves = _umHidden && movesOnto(_umHidden, finalWhere, _umWhereP)
         try {
           _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
           if (!_umRows) writeDb.run(_umSql, ...params)
         } catch (e) { throw asConstraintError(e, row) }
         count = _umRows ? _umRows.length : rowsChanged(writeDb)
         // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
-        if (count && _umHidden) throw _umHidden
+        if (count && _umMoves) throw _umHidden
         if (_umRows) for (const r of _umRows) noteCardinality(read(r))
         else noteCardinalityBySql(finalWhere, _umWhereP)
       })
@@ -6579,7 +6619,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // writeData runs transforms + validation on both branches' data
         const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
         const updRow = writeData(updateData, { system })
-        if (_upsHidden[0] ?? _upsHidden[1]) throw _upsHidden[0] ?? _upsHidden[1]
+        if (_upsHidden[0]) throw _upsHidden[0]
+        // update() asks whether the key MOVES, which one statement cannot.
+        if (_upsHidden[1]) break fastPath
         const insCols = Object.keys(insRow)
         const updCols = Object.keys(updRow).filter(c => c !== wKey)
         if (!insCols.length || !updCols.length) break fastPath
@@ -6802,7 +6844,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (ctx.hasPolicies) {
           for (const [i, row] of rows.entries()) {
             if (present.has(keyOf(row))) continue
-            try { checkCreatePolicy(modelName, authStamped(data[i], modelName, ctx), ctx, ctx.policyMap, ctx.schema, ctx.relationMap) }
+            try { _usHidden[i] = firstRefusal(checkCreate(authStamped(data[i], modelName, ctx)), _usHidden[i]) }
             catch (e) { throw asBatchRowError(e, i, rows.length, data[i]) }
           }
         }

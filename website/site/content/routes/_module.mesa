@@ -22,47 +22,52 @@
   <div class="container topbar-inner">
     <a class="brand" href="/">Frontier<span>JS</span></a>
     <nav class="navset" aria-label="Site">
+      <a href="/start/">Start</a>
+      <a href="/docs/">Docs</a>
+      <a href="/packages/">Packages</a>
+      <a href="/why/">Why</a>
       <a href="/journey/">Journey</a>
-      <a href="/tutor/">Tutorial</a>
-      <!-- A <details>, so the menu opens and closes with no script on the page. -->
+      <!-- A <details>, so the menu opens and closes with no script on the page.
+           Linked from the launch pages, kept out of the top row. -->
       <details class="popover-anchor navmenu">
-        <summary>Showroom</summary>
+        <summary>Explore</summary>
         <div class="popover align-end">
-          <div class="navlist-label">The tour</div>
           <ul class="navlist">
             <li><a class="navlink" href="/pitch/">The pitch</a></li>
+            <li><a class="navlink" href="/tutor/">Tutorial</a></li>
+            <li><a class="navlink" href="/seams/">The seams</a></li>
             <li><a class="navlink" href="/showroom/">Showroom</a></li>
+            <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
+            <li><a class="navlink" href="/the-story/">The story</a></li>
+            <li><a class="navlink" href="/specs/">Specifications</a></li>
+          </ul>
+        </div>
+      </details>
+      <!-- Pages to fold into a launch page or cut before launch. A page leaves
+           this menu when it is merged or deleted. -->
+      <details class="popover-anchor navmenu">
+        <summary>Drafts</summary>
+        <div class="popover align-end">
+          <div class="navlist-label">Folding into Why</div>
+          <ul class="navlist">
+            <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
+            <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
+            <li><a class="navlink" href="/landscape/">Landscape</a></li>
+          </ul>
+          <div class="navlist-label">Design rounds</div>
+          <ul class="navlist">
             <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
             <li><a class="navlink" href="/showroom3/">The ripple</a></li>
             <li><a class="navlink" href="/showroom4/">The loop</a></li>
             <li><a class="navlink" href="/showroom5/">The stack</a></li>
-            <li><a class="navlink" href="/seams/">The seams</a></li>
             <li><a class="navlink" href="/flow/">The flow</a></li>
             <li><a class="navlink" href="/map/">The map</a></li>
-          </ul>
-          <div class="navlist-label">Compared</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
-            <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
-            <li><a class="navlink" href="/landscape/">Landscape</a></li>
+            <li><a class="navlink" href="/allegory/">The allegory</a></li>
           </ul>
           <div class="navlist-label">Hero drafts</div>
           <ul class="navlist">
             <li><a class="navlink" href="/index2/">Round one</a></li>
             <li><a class="navlink" href="/index3/">Round two</a></li>
-          </ul>
-        </div>
-      </details>
-      <!-- Pages not yet placed in a section above. A page moves out of here
-           when it finds its home. -->
-      <details class="popover-anchor navmenu">
-        <summary>More</summary>
-        <div class="popover align-end">
-          <div class="navlist-label">Unsorted</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/the-story/">The story</a></li>
-            <li><a class="navlink" href="/specs/">Specifications</a></li>
-            <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
           </ul>
           <div class="navlist-label">Tools</div>
           <ul class="navlist">
@@ -70,7 +75,7 @@
           </ul>
         </div>
       </details>
-      <a href="/pitch/#start">Start</a>
+      <a href="https://github.com/frontierjs/frontierjs">GitHub</a>
     </nav>
     <ThemeSwitch client:load />
   </div>

@@ -173,6 +173,8 @@ export interface ServiceContext {
    * The derived `create`/`update`/`patch` pass the set to litestone as
    * `system: [...]`, which keeps the gate, the row policies, soft-delete and the
    * audit actor — where `asSystem()` would drop all four to write one column.
+   * `ctx.system.add('@@gate')` lifts the model's own gate for this call alone
+   * (`FJS-D575`); an entry litestone does not recognize is refused there by name.
    *
    * **A Set that hooks ADD to, never a list one hook assigns**: `before.all` and
    * `validated.create` each legitimately derive their own column, and an

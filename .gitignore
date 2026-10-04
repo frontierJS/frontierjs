@@ -21,6 +21,8 @@ out/
 # Sierra's build-time route table, written beside dev's routes.js so a build
 # cannot overwrite the table a running dev server serves (FJS-1695).
 routes.build.js
+# site-kit's route table, generated into the site directory.
+.sierra/
 
 # TypeScript
 *.tsbuildinfo

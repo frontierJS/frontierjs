@@ -93,11 +93,16 @@ The line runs between *authority* (who may) and *integrity* (what must be true).
 | a move's `@gate(n)` and `@system` | the `@@transitions` graph, its compare-and-swap, a create at `@default` (`FJS-D470`) |
 | `@version`: a system write that read nothing has no stale view | `@hashed`: nobody reads it back |
 
-**Three narrower hatches keep the Warden on.** Choose the narrowest one that does the
+**Narrower hatches keep the Warden on.** Choose the narrowest one that does the
 job:
 
 - `update({ …, system: ['col'] })` writes one `@system` column. It keeps the gate, the
   policies, soft-delete and the audit actor (`FJS-D22`).
+- `create({ …, system: ['@@gate'] })` grades that one call SYSTEM against the model's own
+  `@@gate`, for a row the application makes on a caller's behalf. It keeps the policies,
+  redaction and the audit actor, and the trail entry carries `meta.lifted`. Nested
+  writes, the returned row and the next call stay at the caller's level, and a 9 still
+  refuses (`FJS-D575`). Any `system` entry outside these two kinds is refused by name.
 - ``where: { $raw: sql`…` }`` puts raw SQL inside a `where`, and every policy is still
   ANDed around it.
 - `db.asSystem()` turns the Warden off for one whole call.

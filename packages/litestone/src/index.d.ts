@@ -148,6 +148,15 @@ export interface QueryEvent {
  */
 export type AnnounceMode = 'collection' | 'rows' | 'none'
 
+/**
+ * What a write does as the application, named on the call (`FJS-D575`): a
+ * `@system` column it supplies, a field whose `@system` move it makes, or
+ * `'@@gate'` — graded SYSTEM against the model's own gate for this call alone,
+ * with the row policies, redaction and audit actor kept. An entry that lifts
+ * nothing is refused by name.
+ */
+export type SystemNames<TRow> = Array<Extract<keyof TRow, string> | '@@gate'>
+
 // What `onEvent` listeners receive, plus the `event` name — which a $tapEvents
 // subscriber needs because a 'transition' carries no `operation`.
 export interface WriteEvent {
@@ -505,12 +514,12 @@ export interface TableClient<
   exists(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<boolean>
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>
   search(query: string, args?: { where?: TWhere; limit?: number; offset?: number; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow[]>
-  create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  createMany(args: { data: TCreate[]; announce?: AnnounceMode }): Promise<{ count: number }>
-  update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  updateMany(args: { where: TWhere; data: TUpdate; announce?: AnnounceMode }): Promise<{ count: number }>
-  upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[]; announce?: AnnounceMode }): Promise<{ count: number }>
+  create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  createMany(args: { data: TCreate[]; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
+  update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  updateMany(args: { where: TWhere; data: TUpdate; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
+  upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[]; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args: { where: TWhere; announce?: AnnounceMode }): Promise<{ count: number }>
   /** The restored rows, shaped like any other read. `where` can match many. */

@@ -24,6 +24,7 @@ import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 import { createClient }  from '../../litestone/src/index.js'
+import { createStubAuth } from '../index.ts'
 
 const SCHEMA = `
   model Doc {
@@ -241,5 +242,50 @@ describe('the set itself', () => {
     // which is the whole guarantee: an empty set must not read as "all".
     const res = await request(app).post('/plain').send({ title: 'five', slug: 'x' })
     expect(res.status).toBe(403)
+  })
+})
+
+// `ctx.system.add('@@gate')` — a hook lifting the model's own gate for one call
+// (`FJS-D575`). The bridge passes the set through untouched, so this pins that a
+// hook's entry reaches the boundary at all, paired with the identical service
+// that does not name it.
+describe("ctx.system — a hook naming '@@gate'", () => {
+  const GATED = `
+    model Receipt {
+      id     Int    @id
+      amount Int
+      @@gate("0.8.8.9")
+    }
+  `
+
+  async function gatedApp() {
+    const db  = await createClient({ db: ':memory:', schema: GATED })
+    const app = createApp({
+      db: db as never,
+      auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }] }),
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    } as never)
+    app.services.register(createService({
+      name: 'issued', model: 'Receipt',
+      hooks: { validated: { create: [(ctx: ServiceContext) => { ctx.system.add('@@gate') }] } },
+    } as never))
+    app.services.register(createService({ name: 'receipts', model: 'Receipt' } as never))
+    return { app, db }
+  }
+
+  test('the lifted create lands', async () => {
+    const { app, db } = await gatedApp()
+    const res = await request(app).post('/issued').auth('test-token-u1').send({ amount: 5 })
+
+    expect(res.status).toBe(201)
+    expect(await (db as any).asSystem().receipt.count()).toBe(1)
+  })
+
+  test('the same create without it is refused at the gate', async () => {
+    const { app, db } = await gatedApp()
+    const res = await request(app).post('/receipts').auth('test-token-u1').send({ amount: 5 })
+
+    expect(res.status).toBe(403)
+    expect(await (db as any).asSystem().receipt.count()).toBe(0)
   })
 })

@@ -1,0 +1,26 @@
+---
+title: Launch — The journey
+description: FrontierJS is out. What it is, what works today, and what does not yet.
+robots: noindex
+render: static
+---
+<!--
+  A draft: no `date`, so the journey index leaves it out, and `noindex` keeps
+  it out of the sitemap. Publishing is adding the date and dropping noindex.
+-->
+<script>
+  import JourneyPost from '../../components/JourneyPost.mesa'
+</script>
+
+<JourneyPost>
+  <h1>Launch</h1>
+  <p><span class="badge warning">Draft</span></p>
+  <h2>What it is</h2>
+  <p>One paragraph. Link to the pitch, not a restatement of it.</p>
+  <h2>What works today</h2>
+  <p>The packages that ship, stated as they are on the packages page.</p>
+  <h2>What does not yet</h2>
+  <p>The honest list.</p>
+  <h2>How to start</h2>
+  <p>One link to Start.</p>
+</JourneyPost>

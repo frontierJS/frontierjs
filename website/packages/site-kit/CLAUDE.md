@@ -25,7 +25,8 @@ what they mean in any app.
   route's companion under the running runtime.
 - `config/vite.js` — `siteKit({ root, port })`, the whole Vite + Sierra config.
   Owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
-  the route table's home under `node_modules/.sierra/`; the site's
+  the route table's home in `<site>/.sierra/` (never `node_modules/`, which
+  the browser caches `immutable`); the site's
   `content/settings/site.js` default export is spread over it, and is also
   `_configPath`, the file the browser imports whole (FJS-1544) — so it stays
   plain data.

@@ -1,0 +1,42 @@
+---
+title: "Packages — FrontierJS"
+description: "Every FrontierJS package, what realm it belongs to, and how far along it is."
+render: static
+---
+<script>
+  import StubPage from '../components/StubPage.mesa'
+
+  export let data = null
+
+  const pkgs = data?.pkgs ?? []
+</script>
+
+<StubPage eyebrow="Packages" title="The whole stack, honestly." lede="Every package, the realm it lives in, and how far along it is. A framework that overstates readiness burns the trust it needs most.">
+  <section>
+    <h2>Status</h2>
+    <p>One line on where FrontierJS stands: pre-alpha, what is solid, what may still move. Then a maturity badge per package below, read from data rather than written here.</p>
+  </section>
+  <section>
+    <h2>Every package</h2>
+    <ul class="pkg-list">
+      {#each pkgs as p}
+        <li>
+          <a href={`/${p.slug}/`}><strong>{p.name}</strong></a>
+          <span class="badge {p.tone}">{p.realm}</span>
+          <p>{p.pitch}</p>
+        </li>
+      {/each}
+    </ul>
+  </section>
+  <section>
+    <h2>How they fit</h2>
+    <p>The dependency direction, Litestone to Junction to Sierra, drawn once.</p>
+    <p class="from">From: <a href="/map/">The map</a> · <a href="/showroom5/">The stack</a></p>
+  </section>
+</StubPage>
+
+<style>
+  .pkg-list { list-style: none; padding: 0; display: grid; gap: 1rem; }
+  .pkg-list li { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: baseline; }
+  .pkg-list p { flex-basis: 100%; margin: 0; }
+</style>

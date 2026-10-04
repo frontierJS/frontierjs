@@ -1,0 +1,35 @@
+---
+title: "Docs — FrontierJS"
+description: "The FrontierJS documentation: concepts, guides and a reference for every package."
+render: static
+---
+<!--
+  Docs live on this site until they outgrow it. Each section is a page under
+  routes/docs/ once written.
+-->
+<script>
+  import StubPage from '../../components/StubPage.mesa'
+</script>
+
+<StubPage eyebrow="Docs" title="The documentation." lede="Concepts first, then guides for each job, then the reference for each package.">
+  <section>
+    <h2>Concepts</h2>
+    <p>One seed and three realms. Model, Service, Resource. Read this before anything else.</p>
+    <p class="from">Page: <a href="/docs/concepts/">Concepts</a></p>
+  </section>
+  <section>
+    <h2>Guides</h2>
+    <p>One page per job: a schema, access rules, a service, a resource and its form, live updates, jobs, auth, deploy, testing. Each one ends in code that runs.</p>
+    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a> and the package READMEs</p>
+  </section>
+  <section>
+    <h2>Reference</h2>
+    <p>Every package, every feature. The package pages cover it today; API detail links out to each README until it moves here.</p>
+    <p class="from">From: <a href="/packages/">Packages</a></p>
+  </section>
+  <section>
+    <h2>Vocabulary</h2>
+    <p>The defined words in one list, so a term used in a guide always means one thing.</p>
+    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/VOCABULARY.md">VOCABULARY.md</a></p>
+  </section>
+</StubPage>

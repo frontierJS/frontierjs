@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-10-04 — a dropdown row can hold a choice (`FJS-1687`)
+
+`DropdownItem` had one role, `menuitem`, so a view toggle or a sort order was an action that drew its own tick and announced nothing. A row that states `checked` is now a `menuitemcheckbox`, and with `radio` a `menuitemradio`; it carries `aria-checked` and `data-checked`, and draws an `aria-hidden` tick so the caller does not. The caller owns the state, and `keepOpen` (`FJS-1686`) is how a choice row leaves the menu open. `DropdownMenu`'s arrow walk queried `[role="menuitem"]` alone, so it stepped over every choice row; it now takes all three. An `href` row stays a link. `dropdown.spec` drives a checkbox, a radio pair and the walk over them.
+
+## 2026-10-04 — a dropdown row can leave its menu open (`FJS-1686`)
+
+`DropdownItem.handleClick` called `$context.close()` unconditionally, so a menu with a toggle in it shut on each click. `keepOpen` is now a prop on both: the row's own wins when it is stated, and the menu's is the default for a row that says nothing, so `<DropdownMenu keepOpen>` with one `keepOpen={false}` row is the way to write "stay open, except Done". `dropdown.spec` drives a menu-level and a row-level case against the fixture's two new menus.
+
 ## 2026-10-04 — the generated `code` control is numbered (`FJS-1657`)
 
 `FormField` hands `CodeInput` `numbered: true`, because a server refusing a column of code names a line, and a box with no gutter leaves the author counting. Both hand-written editors Transit replaced with the generated form had it. `form-generate.spec` asserts the `.numbered` class on the generated `query` box.

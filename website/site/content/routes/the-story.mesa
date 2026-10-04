@@ -11,7 +11,7 @@ render: static
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The story</p>
-    <h1>A system you can hold in your head.</h1>
+    <h1>A you can hold in your head.</h1>
     <p class="lede">
       Data, screens, access, email, background jobs, servers, monitoring, tests,
       deploys, backups. Each one usually brings its own tool, its own config file

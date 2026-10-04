@@ -1,0 +1,34 @@
+---
+title: "Why FrontierJS"
+description: "What FrontierJS does that other frameworks do not, what it learned from each of them, and where something else is the better choice today."
+render: static
+---
+<!--
+  The one comparison page at launch. Comparisons, vs Laravel and Landscape fold
+  into it, and each source page goes when its section here is written.
+-->
+<script>
+  import StubPage from '../components/StubPage.mesa'
+</script>
+
+<StubPage eyebrow="Why" title="Glue you never write." lede="Other frameworks help you write the glue between the database, the API and the UI. FrontierJS derives it from the schema, and access rules travel with the data.">
+  <section>
+    <h2>The difference, in one sample</h2>
+    <p>The same feature built the usual way and built here, side by side. One sample, not twelve.</p>
+    <p class="from">From: <a href="/before-after/">Before &amp; after</a></p>
+  </section>
+  <section>
+    <h2>What it learned, and from whom</h2>
+    <p>Feathers, Wasp, Convex, ZenStack and the rest: what each got right and what FrontierJS did with it.</p>
+    <p class="from">From: <a href="/comparisons/">Comparisons</a> · <a href="/landscape/">Landscape</a></p>
+  </section>
+  <section>
+    <h2>Against the one it most resembles</h2>
+    <p>Laravel: what maps one to one, what is different, and where Laravel wins.</p>
+    <p class="from">From: <a href="/vs-laravel/">vs Laravel</a></p>
+  </section>
+  <section>
+    <h2>When not to use it</h2>
+    <p>Pre-alpha, Bun only, SQLite only. The cases where another framework is the right call today, stated plainly.</p>
+  </section>
+</StubPage>

@@ -1,0 +1,33 @@
+---
+title: "Concepts — FrontierJS docs"
+description: "The FrontierJS mental model: one schema seeds three realms, Data, API and UI, and everything traces back to it."
+render: static
+---
+<script>
+  import StubPage from '../../components/StubPage.mesa'
+</script>
+
+<StubPage eyebrow="Docs · Concepts" title="One seed, three realms." lede="Everything in a FrontierJS app derives from db/schema.lite. The rest grows outward from it and can be traced back.">
+  <section>
+    <h2>The seed</h2>
+    <p>What the schema states, and what is derived from it: tables, types, migrations, validation, access, forms.</p>
+  </section>
+  <section>
+    <h2>Three nouns</h2>
+    <p>Model, Service and Resource: what the app knows, how it is reached, how it is shown. Then Release and Suite, the two that sit beside them.</p>
+    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">ARCHITECT.md</a> · <a href="/the-story/">The story</a></p>
+  </section>
+  <section>
+    <h2>Access lives on the model</h2>
+    <p>Gates, protected fields and transitions are enforced at the data, so no route, job or agent can get around them.</p>
+  </section>
+  <section>
+    <h2>Surfaces</h2>
+    <p>api, web, site, widgets, extension, desktop, cli: each one a folder beside db/.</p>
+  </section>
+  <section>
+    <h2>Extending it</h2>
+    <p>Declaration, Hook, Plugin, Provider. Which one to reach for, and why in that order.</p>
+    <p class="from">From: <a href="/pitch/#extend">The pitch, Extend</a></p>
+  </section>
+</StubPage>

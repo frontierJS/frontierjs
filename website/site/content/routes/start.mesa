@@ -1,0 +1,37 @@
+---
+title: "Start — FrontierJS"
+description: "From an empty directory to a running FrontierJS app: install, run, add a model, then take the tutorial."
+render: static
+---
+<script>
+  import StubPage from '../components/StubPage.mesa'
+</script>
+
+<StubPage eyebrow="Start" title="An empty directory to a running app." lede="Install, run, add a model of your own, and see the API and the form arrive without writing them.">
+  <section>
+    <h2>What you need</h2>
+    <p>Bun and its minimum version. Chrome for the UI lessons, Docker for the deploy lesson. Nothing else.</p>
+  </section>
+  <section>
+    <h2>Create an app</h2>
+    <p>The front door command, run verbatim, and the tree it writes: <code>db/</code>, <code>api/</code>, <code>web/</code>. Every command here is a transcript of a real run, the rule the tutorial page already keeps.</p>
+    <p class="from">From: <a href="/create-frontier/">create-frontier</a></p>
+  </section>
+  <section>
+    <h2>Run it</h2>
+    <p>The dev command, the ports it answers on, and what to open first.</p>
+  </section>
+  <section>
+    <h2>Your first model</h2>
+    <p>Add a model to <code>db/schema.lite</code>, migrate, and read a row back over HTTP. Then the form that nobody wrote.</p>
+  </section>
+  <section>
+    <h2>Take the tutorial</h2>
+    <p>Thirteen lessons that run the real commands and check that they worked.</p>
+    <p class="from">From: <a href="/tutor/">The tutorial</a> · <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a></p>
+  </section>
+  <section>
+    <h2>Where next</h2>
+    <p>Doors out to <a href="/docs/">Docs</a>, <a href="/packages/">Packages</a> and <a href="/why/">Why</a>.</p>
+  </section>
+</StubPage>

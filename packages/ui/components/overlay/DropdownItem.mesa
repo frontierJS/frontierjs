@@ -19,6 +19,14 @@
   //
   //   <DropdownItem href="/settings">Settings</DropdownItem>
   //   <DropdownItem disabled>Coming soon</DropdownItem>
+  //
+  //   <!-- A toggle: runs, and the menu stays open -->
+  //   <DropdownItem keepOpen onclick={toggleGrid}>Grid view</DropdownItem>
+  //
+  //   <!-- A choice: `checked` makes it a menuitemcheckbox, and `radio` a
+  //        menuitemradio. The caller owns the state; the row announces it. -->
+  //   <DropdownItem checked={grid} onclick={toggleGrid}>Grid view</DropdownItem>
+  //   <DropdownItem radio checked={sort === 'name'} onclick={() => sort = 'name'}>By name</DropdownItem>
 
   import { tone as toTone, cx } from '../../utils.js'
 
@@ -29,16 +37,22 @@
   export let href     = undefined    // renders as <a> when set
   export let icon     = null         // snippet — leading icon
   export let onclick  = undefined
+  export let keepOpen = undefined    // stated: this row's say; unstated: the menu's
+  export let checked  = undefined    // stated (true or false): a checkbox row, or a radio row with `radio`
+  export let radio    = false        // with `checked`: menuitemradio rather than menuitemcheckbox
 
-  // Consume close() from nearest DropdownMenu ancestor.
-  // const — always tracks provider (Rule 25a). A no-op outside a DropdownMenu.
-  const close = $context.close
+  // Consume close() and the menu's keepOpen default from nearest DropdownMenu
+  // ancestor. const — always tracks provider (Rule 25a). Both read undefined
+  // outside a DropdownMenu.
+  const close         = $context.close
+  const menuKeepsOpen = $context.keepOpen
 
   const t = toTone(variant === 'destructive' ? 'danger' : (variant || tone))
 
   function handleClick(e) {
     if (disabled) return
     onclick?.(e)
+    if (keepOpen ?? menuKeepsOpen) return
     close?.()
   }
 </script>
@@ -66,7 +80,9 @@
 {:else}
   <button
     type="button"
-    role="menuitem"
+    role={checked === undefined ? 'menuitem' : (radio ? 'menuitemradio' : 'menuitemcheckbox')}
+    aria-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
+    data-checked={checked === undefined ? null : (checked ? 'true' : 'false')}
     tabindex="-1"
     disabled={disabled}
     class={cx('item', t)}
@@ -74,6 +90,9 @@
     {...$attributes}
     on:click={handleClick}
   >
+    {#if checked !== undefined}
+      <span aria-hidden="true" style:inline-size="1em" style:text-align="center">{checked ? (radio ? '•' : '✓') : ''}</span>
+    {/if}
     {#if icon}
       {@render icon?.()}
     {/if}

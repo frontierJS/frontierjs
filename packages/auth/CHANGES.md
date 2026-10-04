@@ -1,5 +1,13 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-04 — a registration has a step at which the app gives the person their tenant (`FJS-1458`)
+
+`onRegistered({ user, db })` (`FJS-D520`) runs inside the registration, after the user row and its credential and before the commit. A row-tenanted app creates the Account and the membership there and writes the tenant column; a throw rolls the whole registration back, so a retry meets no `EmailTakenError` from a half-made account. The session that follows is built from the row as the hook left it, so `accountId` reaches it through the existing `toContext`. Before, `POST /auth/register` made a user with `accountId NULL` and every read answered 403.
+
+One helper, `registerUser()`, owns the person coming into being for `createUser` and the OAuth create branch, which therefore also commit the row and its credential together. `onRegister` stays the gate that runs before anything is written.
+
+`test/flows.test.ts` +2 (the hook sees the row in a transaction and what it writes reaches the session; a throw leaves no user or credential) and `test/oauth-resolve.test.ts` +1; the first two fail with the option ignored.
+
 ## 2026-10-04 — support mode refuses a subject above the operator, and tells the subject (`FJS-D574`)
 
 `/auth/support/start` grades the operator and the subject with the app's resolver after `canStartSupport` answers, and refuses a subject who stands above the operator: the ceiling is the subject's, so standing in for somebody higher was a way up. A peer is allowed. A non-number refuses (`FJS-1559`'s shape), and an app with a guard and no resolver gets a 403 naming the option — `example` and basecamp both already passed one. Closes `FJS-1696`.

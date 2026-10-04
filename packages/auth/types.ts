@@ -194,6 +194,25 @@ export interface LitestoneAuthOptions {
     name:  string | null
   }) => Promise<void> | void
 
+  /**
+   * **Hook tier** (`FJS-D06`): it may write and it may halt. Inside the
+   * registration, AFTER the user row and its credential exist and
+   * BEFORE the transaction commits, so a throw rolls back the whole of it
+   * (`FJS-D520`). This is the step at which a row-tenanted app gives the person
+   * their tenant: create the Account and the membership and write the tenant
+   * column, in the same write as the user. `db` is the registration's own
+   * system client — use it, not the app's, or the writes fall outside the
+   * transaction and a throw leaves them behind.
+   *
+   * It is the one hook here that receives the row, because it does not refuse
+   * the registration so much as finish it (`onRegister` is the gate). The
+   * session that follows is built from the row as this hook left it.
+   */
+  onRegistered?: (event: {
+    user: Record<string, any>
+    db:   any
+  }) => Promise<void> | void
+
   // ─── Telling the person ─────────────────────────────────────────────────
 
   /**

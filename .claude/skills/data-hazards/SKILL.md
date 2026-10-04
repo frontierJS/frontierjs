@@ -46,6 +46,7 @@ Detail: `references/gates-policies-and-claims.md`
 - **A field `@allow` is a PREDICATE and it is compiled into SQL, both ways** (`FJS-D129`)
 - **`@guarded` is not a level**
 - **A column your `getLevel` reads must not be writable by the caller being graded.**
+- **A foreign key is a read: a parent the caller cannot read answers as missing** (`FJS-D576`)
 - **A `9`-gated table cannot be tidied up, by anything**
 
 ## `@@transitions`

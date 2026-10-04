@@ -79,6 +79,7 @@ export function createLitestoneAuth(
     onLoginFailed,
     onLogout,
     onRegister,
+    onRegistered,
     onCredentialChanged,
     oauthProviders       = {},
     oauthFlowTtl         = '10 minutes',
@@ -263,6 +264,20 @@ export function createLitestoneAuth(
     })
 
     return { token, user: { ...toContext(user, authMethod), sessionId: String(session.id) } }
+  }
+
+  // The one place a person comes into being, for a password and for an
+  // identity provider alike. The row, its credential and `onRegistered` commit
+  // together, so a throw from the app's step leaves no user behind to hit
+  // EmailTakenError on the retry. The row is re-read after the hook because the
+  // session is built from it and the hook may have written the tenant column.
+  async function registerUser(make: (tx: any) => Promise<any>): Promise<any> {
+    return sys.$transaction(async (tx: any) => {
+      const row = await make(tx)
+      if (!onRegistered) return row
+      await onRegistered({ user: row, db: tx })
+      return (await tx.user.findFirst({ where: { id: row.id } })) ?? row
+    })
   }
 
   // ─── The second factor ────────────────────────────────────────────────────
@@ -1143,10 +1158,13 @@ export function createLitestoneAuth(
         if (onRegister) await onRegister({ email, name: identity.name })
 
         const proven = provider.trustEmail && identity.emailVerified
-        const made   = await sys.user.create({
-          data: { email, name: identity.name ?? null, emailVerified: proven },
+        const made   = await registerUser(async tx => {
+          const row = await tx.user.create({
+            data: { email, name: identity.name ?? null, emailVerified: proven },
+          })
+          await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
+          return row
         })
-        await sys.credential.create({ data: { userId: made.id, type, value: identity.providerId } })
         await audit('oauth.registered', {
           model: 'User', records: [made.id], actorId: made.id,
           meta:  { provider: providerName, emailVerified: proven },
@@ -1368,23 +1386,19 @@ export function createLitestoneAuth(
       // given for the same reason.
       if (onRegister) await onRegister({ email: data.email, name: data.name ?? null })
 
-      const user = await sys.user.create({
-        data: {
-          email: data.email,
-          name:  data.name  ?? null,
-          role:  data.role  ?? 'user',
-        }
-      })
+      const hashed = data.password ? await hashPassword(data.password) : null
 
-      if (data.password) {
-        await sys.credential.create({
+      const user = await registerUser(async tx => {
+        const row = await tx.user.create({
           data: {
-            userId: user.id,
-            type:   'password',
-            value:  await hashPassword(data.password),
+            email: data.email,
+            name:  data.name  ?? null,
+            role:  data.role  ?? 'user',
           }
         })
-      }
+        if (hashed) await tx.credential.create({ data: { userId: row.id, type: 'password', value: hashed } })
+        return row
+      })
 
       return toContext(user, 'created')
     },

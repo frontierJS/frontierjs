@@ -133,6 +133,30 @@ describe('an address nobody holds', () => {
     } finally { closed.cleanup() }
   })
 
+  test('onRegistered runs in the same transaction, and a throw leaves no user or credential', async () => {
+    const seen: string[] = []
+    const made = await makeAuth({
+      oauthProviders: { google: trusted },
+      onRegistered: async ({ user, db }) => {
+        seen.push(user.email)
+        if (user.email.startsWith('boom')) throw new Error('no tenant')
+        await db.user.update({ where: { id: user.id }, data: { name: 'Tenant owner' } })
+      },
+    })
+    try {
+      const out = await made.auth.oauthResolve('google', id({ providerId: 'r-1', email: 'ok@shop.test' }))
+      expect(out.outcome).toBe('signed-in')
+      expect((await made.sys.user.findFirst({ where: { email: 'ok@shop.test' } })).name).toBe('Tenant owner')
+
+      const credentials = await made.sys.credential.count()
+      await expect(made.auth.oauthResolve('google', id({ providerId: 'r-2', email: 'boom@shop.test' })))
+        .rejects.toThrow('no tenant')
+      expect(await made.sys.user.findFirst({ where: { email: 'boom@shop.test' } })).toBeNull()
+      expect(await made.sys.credential.count()).toBe(credentials)
+      expect(seen).toEqual(['ok@shop.test', 'boom@shop.test'])
+    } finally { made.cleanup() }
+  })
+
   test('the address is lowercased before it is matched or stored', async () => {
     // `@lower` is a WRITE transform, so a where-clause carrying the provider's
     // casing matches nothing — which reads as "nobody holds this" and makes a

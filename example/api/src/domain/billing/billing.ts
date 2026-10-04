@@ -202,11 +202,14 @@ export function prorate(args: {
  * (`FJS-D162` leaves what would spell it open), so this is where it lives and
  * this is the only writer, which is what makes that acceptable.
  *
- * `system:` is not enough here and `asSystem()` is what the caller must hand
- * in: `Invoice` creates at 8, so the write is a system context by
- * declaration. What `asSystem()` does NOT drop is `@immutable` — which is the
- * whole point of the tier it sits in, and is why this function can be the only
- * one that ever writes these numbers.
+ * `client` is whoever CAUSED the invoice — staff changing a plan, or the
+ * shop's own principal closing a period — and every write names what it lifts:
+ * `Invoice` and `InvoiceLine` create at 8, so `'@@gate'`, plus the `@system`
+ * columns the document stamps (`FJS-D575`). `asSystem()` would clear the same
+ * gate and take the row policies and the audit actor with it, so the trail of
+ * every invoice said nobody issued it (`FJS-1699`). Neither drops
+ * `@immutable`, which is why this function can be the only one that ever
+ * writes these numbers.
  *
  * **Three steps now, not two** (`FJS-D167`). The header is written as a `draft`,
  * the lines are added to it, and `issue` is what makes it a document. The order
@@ -221,7 +224,7 @@ export function prorate(args: {
  * document or take one away.
  */
 export async function issueInvoice(
-  sys: Client,
+  client: Client,
   args: {
     number:         string
     customerId:     number
@@ -247,7 +250,7 @@ export async function issueInvoice(
   if (!Number.isInteger(subtotal))
     throw new Error(`issueInvoice(${args.number}): lines must be whole minor units, got ${subtotal}`)
 
-  const rate = await sys.taxRate.findFirst({ where: { isDefault: true, active: true } })
+  const rate = await client.taxRate.findFirst({ where: { isDefault: true, active: true } })
   const tax  = roundMinor(Math.max(0, subtotal) * (rate?.rate ?? 0))
 
   const issuedAt = args.issuedAt ?? new Date().toISOString()
@@ -256,8 +259,8 @@ export async function issueInvoice(
   // One transaction. A header without its lines is an invoice that says it
   // charged for nothing, and a frozen subtotal means it can never be corrected —
   // so the pair commits together or neither does.
-  return await sys.$transaction(async (tx: Client) => {
-    const invoice = await tx.invoice.create({ data: {
+  return await client.$transaction(async (tx: Client) => {
+    const invoice = await tx.invoice.create({ system: ['@@gate', 'subtotal', 'tax', 'total', 'userId'], data: {
       number:         args.number,
       customerId:     args.customerId,
       subscriptionId: args.subscriptionId ?? null,
@@ -270,7 +273,7 @@ export async function issueInvoice(
       dunningDays:    DUNNING_DAYS,
     } })
 
-    await tx.invoiceLine.createMany({ data: args.lines.map(l => ({
+    await tx.invoiceLine.createMany({ system: ['@@gate', 'userId'], data: args.lines.map(l => ({
       invoiceId:   invoice.id,
       description: l.description,
       quantity:    l.quantity,
@@ -283,7 +286,7 @@ export async function issueInvoice(
 
     // The seal. Everything above this line was a draft the caller could still
     // change; nothing below it can be changed by anybody.
-    return await tx.invoice.transition(invoice.id, 'issue')
+    return await tx.invoice.transition(invoice.id, 'issue', { system: true })
   })
 }
 
@@ -351,27 +354,34 @@ export async function voidInvoice(client: Client, id: number): Promise<unknown> 
  * whole year at `at`. Yearly → monthly is refused until renewal: the credit is
  * most of a year, and whether one credit note may carry that against the last
  * invoice is a rule nobody has made.
+ *
+ * `client` is the caller's, so the document says who changed the plan (see
+ * `issueInvoice`). Two things go through its `asSystem()`: the document
+ * NUMBERS, which are a sequence over the whole table where the caller's read
+ * sees only the rows its policy admits; and the period, for `reanchorPeriod`'s
+ * reason.
  */
 export async function changePlan(
-  sys: Client,
+  client: Client,
   subscriptionId: number,
   change: { planVersionId?: number | null, quantity?: number | null, at?: string },
   timeZone: string,
 ): Promise<{ kind: 'invoice' | 'credit-note' | 'none', number?: string, net: number }> {
-  const sub = await sys.subscription.findFirst({ where: { id: subscriptionId } })
+  const sys = client.asSystem()
+  const sub = await client.subscription.findFirst({ where: { id: subscriptionId } })
   if (!sub) throw new Error(`changePlan: no subscription ${subscriptionId}`)
   if (sub.status === 'cancelled')
     throw new Error(`changePlan: ${sub.reference} is cancelled — there is no period left to prorate`)
 
   const at   = change.at ?? new Date().toISOString()
-  const from = await sys.planVersion.findFirst({ where: { id: sub.planVersionId } })
+  const from = await client.planVersion.findFirst({ where: { id: sub.planVersionId } })
   const to   = change.planVersionId && change.planVersionId !== sub.planVersionId
-    ? await sys.planVersion.findFirst({ where: { id: change.planVersionId } })
+    ? await client.planVersion.findFirst({ where: { id: change.planVersionId } })
     : from
   if (!from || !to) throw new Error(`changePlan: no such plan version`)
 
-  const plan     = await sys.plan.findFirst({ where: { id: to.planId } })
-  const fromPlan = from.planId === to.planId ? plan : await sys.plan.findFirst({ where: { id: from.planId } })
+  const plan     = await client.plan.findFirst({ where: { id: to.planId } })
+  const fromPlan = from.planId === to.planId ? plan : await client.plan.findFirst({ where: { id: from.planId } })
   if (!plan || !fromPlan) throw new Error(`changePlan: no plan for version ${plan ? from.id : to.id}`)
   const quantity = change.quantity ?? sub.quantity
 
@@ -413,7 +423,7 @@ export async function changePlan(
 
   if (p.net === 0) result = { kind: 'none', net: 0 }
   else if (p.net > 0) {
-    const invoice = await issueInvoice(sys, {
+    const invoice = await issueInvoice(client, {
       number:         await nextInvoiceNumber(sys),
       customerId:     sub.customerId,
       subscriptionId: sub.id,
@@ -430,10 +440,10 @@ export async function changePlan(
     // credit note is a correction OF a document and has to name one — and if
     // there is none, there is nothing to correct and the change is simply
     // cheaper from here on.
-    const last = await sys.invoice.findFirst({
+    const last = await client.invoice.findFirst({
       where: { subscriptionId: sub.id }, orderBy: { id: 'desc' },
     })
-    const note = last && await sys.creditNote.create({ data: {
+    const note = last && await client.creditNote.create({ system: ['@@gate', 'userId'], data: {
       number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
       invoiceId: last.id,
       amount:    -p.net,
@@ -447,7 +457,7 @@ export async function changePlan(
   // The arrangement moves whatever the money does, and after the document
   // rather than before it, since a crash between a moved window and its
   // invoice reads as billed and is not.
-  await sys.subscription.update({ where: { id: sub.id }, data: { planVersionId: to.id, quantity } })
+  await client.subscription.update({ where: { id: sub.id }, data: { planVersionId: to.id, quantity } })
   if (reanchor) await reanchorPeriod(sys, sub.id, periodStart, periodEnd)
   return result
 }
@@ -510,10 +520,11 @@ export async function startSubscription(
  * issue — a subscription already cancelled by dunning, or one asked to stop at
  * this boundary, which is where that asking lands.
  *
- * `client` is the fire's, inside the transaction that closed `period`: the
- * subscription's moves go through it with `{ system: true }` so the
- * transitions graph still grades them, and the documents through its
- * `asSystem()`, since an invoice and a period are created at 8.
+ * `client` is the fire's, inside the transaction that closed `period`, and
+ * everything goes through it: the subscription's moves with `{ system: true }`
+ * so the transitions graph still grades them, and the invoice and the period
+ * with `'@@gate'` named, since both are created at 8 (`FJS-D575`). Only the
+ * invoice number is read through its `asSystem()`, for `changePlan`'s reason.
  *
  * `at` is the instant to bill at and `timeZone` the shop's calendar the terms
  * are counted in — both the fire's, passed rather than read, so a drive with
@@ -524,8 +535,7 @@ export async function renewPeriod(
   period: { subscriptionId: number, endsOn: string },
   opts: { timeZone: string, at: string },
 ): Promise<{ id: number, number: string, total: number } | null> {
-  const sys = client.asSystem()
-  const sub = await sys.subscription.findFirst({ where: { id: period.subscriptionId } })
+  const sub = await client.subscription.findFirst({ where: { id: period.subscriptionId } })
   if (!sub || sub.status === 'cancelled') return null
 
   // Asked to stop. `subscriptions.cancel` sets a flag rather than moving the
@@ -537,15 +547,15 @@ export async function renewPeriod(
     return null
   }
 
-  const version = await sys.planVersion.findFirst({ where: { id: sub.planVersionId } })
-  const plan    = version && await sys.plan.findFirst({ where: { id: version.planId } })
+  const version = await client.planVersion.findFirst({ where: { id: sub.planVersionId } })
+  const plan    = version && await client.plan.findFirst({ where: { id: version.planId } })
   if (!version || !plan) throw new Error(`renewPeriod: ${sub.reference} names no plan version`)
 
   const startsOn = period.endsOn
   const endsOn   = advancePeriod(startsOn, plan.interval)
 
-  const invoice = await issueInvoice(sys, {
-    number:         await nextInvoiceNumber(sys),
+  const invoice = await issueInvoice(client, {
+    number:         await nextInvoiceNumber(client.asSystem()),
     customerId:     sub.customerId,
     subscriptionId: sub.id,
     userId:         sub.userId,
@@ -555,7 +565,7 @@ export async function renewPeriod(
     timeZone:       opts.timeZone,
     lines: periodLines({ name: plan.name, quantity: sub.quantity, unitAmount: version.price, periodStart: startsOn, periodEnd: endsOn }),
   })
-  await sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
+  await client.subscriptionPeriod.create({ system: ['@@gate', 'endsOn', 'userId'], data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
 
   // A trial that ran out has converted, and *converted* is a declared move —
   // `@@transitions` refuses it from anywhere but `trialing`.

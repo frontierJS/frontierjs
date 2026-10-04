@@ -110,16 +110,14 @@ export function createSubscriptionsService() {
      * the Data boundary refuses a negative document. `api/src/domain/billing` is
      * the one owner of the arithmetic and this only names the call.
      *
-     * `asSystem()` because issuing is a system context by declaration —
-     * `Invoice` creates at 8 — and what that does NOT drop is `@immutable`,
-     * which is why the numbers it writes can never be restated.
+     * The CALLER's client, and the document names the gate it lifts —
+     * `Invoice` creates at 8 — so the invoice's trail says who changed the
+     * plan, and the row policies still grade them (`FJS-D575`).
      *
-     * So the caller's right to THIS subscription is read first, through their
-     * own client: a custom method's gate floor is a presence check and no row
-     * policy runs before the body, so without the read any signed-in shopper
-     * could reprice somebody else's arrangement and issue them the invoice
-     * (`FJS-1087`). The read policy and the update policy name the same two
-     * callers — staff, and the subscription's owner.
+     * The caller's right to THIS subscription is still read first, so a
+     * subscription they may not see is a 404 before anything is priced
+     * (`FJS-1087`): a custom method's gate floor is a presence check and no
+     * row policy runs before the body.
      */
     changePlan: async () => {
       const body = ($.data ?? {}) as { planVersionId?: number, quantity?: number }
@@ -133,7 +131,7 @@ export function createSubscriptionsService() {
       const row = await db.subscription.findFirst({ where: { id: Number($.id) } })
       if (!row) throw Object.assign(new Error('No such subscription'), { status: 404 })
 
-      return await changePlan(db.asSystem(), row.id, body, $.config.timeZone)
+      return await changePlan(db, row.id, body, $.config.timeZone)
     },
 
     // Stated whole, because declaring one method declares the list — a service

@@ -1,0 +1,35 @@
+<!--
+  The frame a launch page renders in while it is owed. Each section in the slot
+  is a `<section>` naming what the page must hold and where the material is
+  today, so filling one in is replacing the section, not finding the brief.
+
+  The section rules are :global() under .stub-page for the reason JourneyPost
+  gives: slot content compiles in the page's scope, not this one.
+-->
+<script>
+  export let eyebrow = ''
+  export let title = ''
+  export let lede = ''
+</script>
+
+<article id="top" class="container stub-page">
+  <p class="eyebrow">{eyebrow}</p>
+  <h1>{title}</h1>
+  <p class="lede">{lede}</p>
+  <p class="owed"><span class="badge warning">Stub</span> Not written yet. Each section below says what it must hold.</p>
+  <slot />
+</article>
+
+<style>
+  .stub-page { max-width: 48rem; padding: 4rem 1.25rem 5rem; font-family: var(--font-primary); }
+  .eyebrow { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .3em 0 .5em; }
+  .lede { font-size: 1.15rem; line-height: 1.6; color: var(--ink-soft); }
+  .owed { display: flex; gap: .6rem; align-items: center; font-size: .875rem; color: var(--ink-mute); margin: 1.5rem 0 2.5rem; }
+
+  :global(.stub-page section) { border-top: 1px solid var(--rule); padding: 1.5rem 0; }
+  :global(.stub-page h2) { font-size: 1.25rem; letter-spacing: -.01em; margin: 0 0 .5rem; }
+  :global(.stub-page section p),
+  :global(.stub-page section li) { line-height: 1.65; color: var(--ink-soft); }
+  :global(.stub-page .from) { font-size: .875rem; color: var(--ink-mute); }
+</style>

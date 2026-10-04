@@ -42,9 +42,12 @@ export async function siteKit({ root, port }) {
     // A directory per route, so `/showroom/` is a folder holding index.html and
     // a relative link resolves from where its author meant it to.
     trailingSlash: 'always',
-    // Generated, and not content: under node_modules so the site directory
-    // holds only what its author wrote. Sierra imports it root-relative.
-    routeTable: { output: 'node_modules/.sierra/routes.js' },
+    // Generated, and not content, so it is gitignored. NOT under node_modules:
+    // Vite neither watches a file there nor lets the browser revalidate it —
+    // it is served `?v=<hash>` and `immutable` — so a route added while the dev
+    // server ran stayed missing, even across reloads, until the cache was
+    // cleared, and editing it updated nothing.
+    routeTable: { output: '.sierra/routes.js' },
     // The browser's half of the config is the site's settings file, and only
     // when there is one; `virtual:sierra` imports it whole (FJS-1544).
     ...(existsSync(settingsPath) ? { _configPath: settingsPath } : {}),

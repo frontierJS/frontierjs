@@ -31,6 +31,7 @@ const SCHEMA = `
   model Task {
     id        Int      @id @default(autoincrement())
     ownerId   String
+    title     String?
     projectId Int?
     project   Project? @relation(fields: [projectId], references: [id], onDelete: Restrict)
     authorId  String?  @default(auth().id)
@@ -82,6 +83,21 @@ describe('a foreign key naming a parent the caller cannot read', () => {
     expect(hidden.field).toBe('projectId')
     expect((await db.asSystem().task.findUnique({ where: { id: t.id } })).projectId).toBe(2)
     expect((await alice.task.update({ where: { id: t.id }, data: { projectId: null } })).projectId).toBe(null)
+    db.$close()
+  })
+
+  test('an update naming the parent the row already has moves nothing, and is not refused', async () => {
+    const { db, sys, alice } = await seeded()
+    // Hers, filed under Bob's project by somebody who could.
+    const t = await sys.task.create({ data: { ownerId: 'alice', projectId: 1 } })
+    // A form posts the whole row back, the hidden key included.
+    expect((await alice.task.update({ where: { id: t.id }, data: { title: 'x', projectId: 1 } })).title).toBe('x')
+    expect((await alice.task.updateMany({ where: { ownerId: 'alice' }, data: { title: 'y', projectId: 1 } })).count).toBe(1)
+    // Paired: a second row of hers that would MOVE makes the bulk write a move.
+    await alice.task.create({ data: { ownerId: 'alice', projectId: 2 } })
+    expect(await refusal(alice.task.updateMany({ where: { ownerId: 'alice' }, data: { projectId: 1 } })))
+      .toBeInstanceOf(ForeignKeyError)
+    expect((await sys.task.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.projectId)).toEqual([1, 2])
     db.$close()
   })
 
@@ -187,5 +203,26 @@ describe('a delete refused by a child the caller cannot read', () => {
     const e = await refusal(sys.project.delete({ where: { id: 2 } }))
     expect(e.child).toEqual({ model: 'Task', id: 1 })
     db.$close()
+  })
+})
+
+describe('the gate ladder over a parent its levels cannot read', () => {
+  // basecamp's shape: a Workspace any USER may create, under an Account only
+  // its owner reads. The gate is asked before the parent is, so a create
+  // refused as a missing parent is a create the gate admitted.
+  test('a ForeignKeyError after the gate is the gate admitting, not a harness error', async () => {
+    const { createTestEnv } = await import('../src/testing.js')
+    const env = await createTestEnv({ schema: `
+      model Account { id Int @id @default(autoincrement())
+        workspaces Workspace[]
+        @@gate("6.8") }
+      model Workspace { id Int @id @default(autoincrement())
+        name String
+        accountId Int
+        account Account @relation(fields: [accountId], references: [id])
+        @@gate("1.1.5.5") }
+    ` })
+    expect((await env.verifyGateLadder()).filter((m: any) => m.model === 'Workspace')).toEqual([])
+    env.close()
   })
 })

@@ -603,8 +603,12 @@ export async function createTestEnv(opts = {}) {
             // not exist would then PASS at every level the gate refuses, which is
             // most of them.
             const refused = err instanceof AccessDeniedError || err?.name === 'AccessDeniedError'
-            got    = refused ? 'deny' : 'error'
-            thrown = refused ? null   : (err?.message ?? String(err))
+            // The gate is asked before any parent is, and a parent this level
+            // cannot read answers as missing (FJS-D576) — so a ForeignKeyError
+            // here is a call the gate admitted.
+            const admitted = err?.name === 'ForeignKeyError'
+            got    = refused ? 'deny' : admitted ? 'allow' : 'error'
+            thrown = refused || admitted ? null : (err?.message ?? String(err))
           }
 
           if (got === 'error') mismatches.push({
@@ -1110,7 +1114,10 @@ export async function createTestEnv(opts = {}) {
               // constraint — each is a create that did not happen for a reason
               // that has nothing to say about tenancy, and counting one as
               // isolation is the shape this whole check exists to refuse.
-              else if (threw && !(threw instanceof AccessDeniedError || threw?.name === 'AccessDeniedError'))
+              // A parent B cannot read answers as missing (FJS-D576), so a
+              // ForeignKeyError is the boundary only when that parent EXISTS.
+              else if (threw && !(threw instanceof AccessDeniedError || threw?.name === 'AccessDeniedError') &&
+                       !(await _refusedParentExists(sys, model, threw)))
                 out.push({ model: model.name, op: 'create', actor: 'B', got: 'error',
                   message: `${model.name}.create — not graded: the write was refused by something other than access, so whether tenancy would have refused it is unknown: ${threw.message}` })
 
@@ -3253,6 +3260,17 @@ function _idWhere(schema, modelName, row) {
   const where = {}
   for (const col of _keyFields(schema, modelName)) where[col] = row?.[col]
   return where
+}
+
+// Whether the parent a ForeignKeyError names is a row the system can read: a
+// refusal of one that exists is visibility, of one that does not is a create
+// that never reached the question.
+async function _refusedParentExists(sys, model, err) {
+  if (err?.name !== 'ForeignKeyError' || !err.key) return false
+  const rel = model.fields.find(f => f.name === err.relation)?.attributes.find(a => a.kind === 'relation' && a.fields)
+  if (!rel || !err.target) return false
+  const where = Object.fromEntries([rel.references].flat().map((r, i) => [r, err.key.values[i]]))
+  return sys[modelToAccessor(err.target)].exists({ where })
 }
 
 // The same row as something a Set can hold and a message can print. A

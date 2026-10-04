@@ -1,5 +1,34 @@
 # Changes — Basecamp
 
+## 2026-10-04 — removing a server records its event first, so the removal no longer answers 422 (`FJS-1706`)
+
+`servers.remove` soft-deleted the row and then wrote the `removed` event naming it. Since a foreign key became a read (`FJS-D576`), that event was refused as a parent the caller cannot see, so a removal that had already happened answered 422. The event and the removal are now one transaction, event first. `api/test/services.test.ts` § *removing a server that is not online* (red on the old order for a pending, draining and stopped server, each with a widget pointing at it); `verify:screens` is back to 234/234.
+
+## 2026-10-04 — the caller behind `Portal service 'null'` is found: the appliance page, on the way out (`FJS-1018`)
+
+Leaving `/portal/:id/` by its own back link re-runs the page's `$: page.params.id`
+watch while the page is still mounted, and by then the id is gone — so `load()` asked
+the portal for `undefined`. The API's 400 from the earlier change named it exactly
+(`portal.get needs an appliance id and was given null`), which is what made the
+caller findable: the row's router hypothesis, confirmed from the log rather than
+from sierra's harness, whose probe had a dead instrument. `load()` now returns
+early when the route has no id.
+
+`verify-screens.mjs` gains the drive that found it: enter `/portal/edge/`, leave by
+the link (a client-side navigation — `goto` reloads and never reaches it), and read
+the API's own log for an id-less `portal.get`. Red before the guard, green after.
+The same watch is on seven more `[id]` screens and the general fault is
+`FJS-1684`, which is amended and stays open.
+
+## 2026-10-04 — `verify` is green: 349/349 (`FJS-1602`)
+
+- **The drive answers a confirmation.** A `data-confirm` control asks before it acts, and the drive's `click()` never answered, so every refusal check read "" and every delete left its row. `click()` now presses the panel's confirm button, and throws if a control marked `data-confirm` opens no panel. It also finds a control by `aria-label`, and `{ row }` narrows it to one table row. The volume, recipe, cleanup and hub-workspace clicks now go through it.
+- **Prune, workspace suspend/reinstate and flag toggle no longer throw after the write.** Each passed a detail line as the toast's second argument, which is its duration, and the store refuses that. The server action landed, then the screen skipped its reload and showed the old state under the store's error. Each is one message now.
+- **An invited person lands signed in.** `invitations.accept` answers the new session as `sessionToken`. As `token`, the name of Invitation's `@guarded` column, the wire dropped it (`FJS-D473`). The browser got no token, `refresh()` cleared the session, and the page showed *Authentication required*.
+- **Drive drift.** The email is read from the Account menu, the workspace from the switcher, and the app overview's *Serving* card is now *Details*. The first load on a cold Vite and the volume push-reload are polled rather than read once.
+
+`verify --reset` 349/349, twice in a row. `services.test.ts` gains *the session survives the wire*, which fails with the old key. `bun run test` 564/567. The 3 failures are in `db/test/schema.test.ts`, `ForeignKeyError`s from litestone edits in the working tree that are not part of this change.
+
 ## 2026-10-04 — a refused release leaves the App's status alone (`FJS-1691`)
 
 - **`finishRun` writes `error` only when the release got past its swap step.** The swap step is the one that replaces what is serving: *Start container*, or *Activate* for an inline app (`SWAP_STEPS`, beside `buildInitialSteps`). A release that failed at or before that step leaves `App.status` as it was, because Outpost refuses `/deploy` before it removes the old container (`FJS-1682`). One that failed after it, at the health check, sets `error`. A database release has no swap step, so any failure still sets `error`.

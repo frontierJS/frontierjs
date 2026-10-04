@@ -19,6 +19,8 @@
 
   let chose = ''
   let runs  = 0
+  let grid  = false
+  let sort  = 'name'
 
   function pick(what) {
     return () => { chose = what; runs++ }
@@ -64,7 +66,44 @@
   <DropdownItem onclick={pick('low-c')}>Three</DropdownItem>
 </DropdownMenu>
 
+<!--
+  `keep-open` states whether choosing a row shuts the menu: on the menu it is
+  the default for every row, on a row it is that row's own say. The first menu
+  holds two rows against the menu's default; the second holds one row against
+  a menu that closes.
+-->
+<DropdownMenu keepOpen>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-keep">Keep</button>
+  {/snippet}
+  <DropdownItem onclick={pick('toggle')}>Toggle</DropdownItem>
+  <DropdownItem keepOpen={false} onclick={pick('done')}>Done</DropdownItem>
+</DropdownMenu>
+
+<DropdownMenu>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-row">Row</button>
+  {/snippet}
+  <DropdownItem keepOpen onclick={pick('tick')}>Tick</DropdownItem>
+  <DropdownItem onclick={pick('close')}>Close</DropdownItem>
+</DropdownMenu>
+
 <div style="height: 1rem"></div>
 
 <output id="chose">{chose}</output>
 <output id="runs">{runs}</output>
+
+<!--
+  A menu that holds choices: a checkbox row (a view toggle) and two radio rows
+  (a sort order). The rows keep the menu open, so the spec can read the state
+  each press leaves behind.
+-->
+<DropdownMenu keepOpen>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-choice">Choices</button>
+  {/snippet}
+  <DropdownItem>Plain</DropdownItem>
+  <DropdownItem checked={grid} onclick={() => grid = !grid}>Grid view</DropdownItem>
+  <DropdownItem radio checked={sort === 'name'} onclick={() => sort = 'name'}>By name</DropdownItem>
+  <DropdownItem radio checked={sort === 'date'} onclick={() => sort = 'date'}>By date</DropdownItem>
+</DropdownMenu>

@@ -65,13 +65,18 @@ let device
  * regardless cannot tell a hydrated device from an empty one — which is the
  * exact confusion the feature is about. So the fake keeps what it is given.
  */
-function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false } = {}) {
+function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false, lockedUpdate = false } = {}) {
   const calls = []
   const held = new Map(rows.map(r => [r.id, r]))
   const table = {
     upsertMany: (args) => {
       calls.push(['upsertMany', args])
       if (fail) return Promise.reject(fail)
+      // Litestone's refusal for an update gate of 9, which the system client
+      // takes too: upsertMany grades its conflict half unless `update: []`.
+      if (lockedUpdate && !(Array.isArray(args.update) && !args.update.length))
+        return Promise.reject(Object.assign(new Error('"Sheet.update" is LOCKED'),
+          { code: 'ACCESS_DENIED', operation: 'update', required: 9 }))
       for (const row of args.data) held.set(row.id, row)
       return Promise.resolve({ count: args.data.length })
     },
@@ -209,6 +214,22 @@ describe('keeping what the server answered', () => {
   test('a device that refuses the write is reported, not thrown', async () => {
     useDevice(makeDevice({ fail: new Error('quota') }))
     expect(await writeThrough('Sheet', [{ id: 'A' }])).toBe(false)
+  })
+
+  // An append-only ledger, `@@gate("5.5.9.9")`: no row of it ever changes on
+  // the server, so replaying insert-only loses nothing (`FJS-1700`).
+  test('a model whose update gate is LOCKED is kept insert-only, not dropped', async () => {
+    const d = makeDevice({ lockedUpdate: true })
+    useDevice(d)
+    expect(await writeThrough('Sheet', [{ id: 'A' }])).toBe(true)
+    expect(d.calls.map(c => c[1].update)).toEqual([undefined, []])
+  })
+
+  test('and any other refusal is still reported, never retried', async () => {
+    const d = makeDevice({ fail: Object.assign(new Error('denied'), { code: 'ACCESS_DENIED', operation: 'update', required: 8 }) })
+    useDevice(d)
+    expect(await writeThrough('Sheet', [{ id: 'A' }])).toBe(false)
+    expect(d.calls.length).toBe(1)
   })
 })
 

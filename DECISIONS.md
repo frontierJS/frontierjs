@@ -1071,6 +1071,113 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d576"></a>2026-10-04 · `FJS-D576` — a foreign key is a read: a parent the caller cannot read answers as missing, and a refused delete names only a child the caller can read
+
+**The write half.** A non-system write naming a parent the caller cannot read
+(gate, read filters, soft delete, read policy) is refused with the same
+`ForeignKeyError` a missing parent gets — same fields, same message, same place
+in the order: after validation, at the row's index in a batch, and on an update
+only once the statement reached a row. Every FK-setting write: `create`,
+`createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, a nested `connect`.
+A key the engine stamped (`@default(auth().id)`, `@createdBy`) is not graded, and
+an update grades only a key that MOVES: a form posting a row back with its
+unchanged hidden parent names nothing new, and a row editable under a parent its
+editor cannot read stays editable.
+**`asSystem()` is the blind reference**, and no schema word was added for one: a
+flow that names a parent its caller cannot see (the first member of a private
+team, a report on a hidden row) runs that write as system, or the parent's read
+rule admits the caller. **Overturns** `FJS-1319`'s *read visibility is the
+child's own `@@allow`*; its message fix stands — such a create is never
+`Outside your workspaceId`.
+
+**The delete half.** A delete refused by a `Restrict` child names the first
+blocking child the caller can read, by id; when every one is hidden it names the
+model alone (`a Task still refers to it`). The model is schema and the id is
+data. That the delete is refused at all cannot be hidden under `Restrict`.
+
+Picked by the owner in session over **a per-relation opt-out** (a new word,
+reconsidered if the same `asSystem()` blind reference recurs across apps — § IV
+*paved road vs. the workaround*) and **`advise` only** (the oracle stays).
+
+The nine, answered after the build and named as late:
+1. **Origin** — none new. Visibility is the parent table's own `exists()` under
+   the caller; the refusal is `parentRefusal`, the builder `asMissingParent` uses.
+2. **Concept** — no noun, no option.
+3. **Complexity** — the problem's: an existence oracle, the gap row-level
+   security has over foreign key checks.
+4. **Predictability** — up: a read and a foreign key now agree on what exists.
+5. **Derived** — the verdict is derived from the read rule, never restated.
+6. **Owner** — `exists()` for visibility, `ForeignKeyError` (`FJS-D521`) for the answer.
+7. **Boundary** — `ForeignKeyError`, 422, `errors` channel; junction unchanged.
+8. **Failure** — a refusal: a row filed under somebody else's container crosses
+   an access boundary (§ IV *ergonomics vs. strictness*).
+9. **Silence** — what stays true: hidden and missing are one answer, and no
+   refusal names a hidden id. What fails: `packages/litestone/test/hidden-parent.test.ts`.
+   A create under a generated tenancy deny answers a missing, hidden or
+   another tenant's parent as the same `ForeignKeyError` (`FJS-1704`).
+
+Tier: Register. ([`FJS-1702`](ISSUES.md#fjs-1702), [`FJS-1703`](ISSUES.md#fjs-1703))
+
+### <a id="fjs-d575"></a>2026-10-04 · `FJS-D575` — a write names the gate it lifts: `system: ['@@gate']` grades that one call SYSTEM against the model's own `@@gate` and keeps the row policies, the redaction and the audit actor. The list is closed — a `@system` column, a field with declared moves, or `'@@gate'` — and anything else is refused by name.
+
+**The gap.** A model only the system may create — `@@gate("1.8.8.9")`, as with
+example's `Invoice`, connectteam's `SurveyEligibility` and portal's `Page` — had
+two exits. `system: ['col']` lifts one column and leaves the gate. `asSystem()`
+lifts the gate and the rest of the Warden with it: row policies, `@guarded`
+redaction and the audit actor. So the person who caused an invoice vanished from
+its trail (`FJS-1699`).
+
+**The spelling.** The entry names what it lifts, which is the column hatch's own
+rule — *naming the field IS the statement* — spelled the way `.lite` declares it.
+One key keeps one meaning, *what this call does as the application*, and it
+crosses junction's `ctx.system` bridge unchanged. `system: true` was rejected.
+That boolean already means *the move's column* on `transition()` and *the whole
+of `asSystem()`* on `runExport`, and a third meaning would make the word
+unpredictable.
+
+**What it does not move.** The lift is a per-call argument the gate plugin
+reads, never `ctx.isSystem`, which drives the row policies, redaction, the audit
+actor and the `@version` bypass. The level cache keyed on the flavor (`FJS-722`)
+is never touched. Five things stay at the caller's level:
+
+- a nested write in the same payload
+- the returned row, which is shaped by the caller's own read
+- the model's read gate on a later call
+- a `9`, which still refuses
+- the next call on the same client
+
+**The trail.** The actor stays the person, and the entry carries
+`meta: {"lifted":["@@gate"]}`, merged into an `onLog` meta object. A trail
+column was rejected because every app declares its own log model.
+
+**Settled with it.**
+
+- **A hook may lift.** `ctx.system.add('@@gate')` is server code, the same
+  standing as naming a column there.
+- **`'@@gate'` lifts `@@gate` and not a move's `@gate(n)`.** `transition({ system: true })`
+  stays the column hatch. A move gate the application must pass is a separate
+  request that nobody has made yet.
+- **`runExport`'s `system: true` keeps its spelling.** It is a function choosing a
+  standing, not a write's list.
+- **`delete` and `remove` take no `system`.** A system-only removal stays `asSystem()`.
+
+**Refused by name**, each of which had passed silently:
+
+- a non-string — `system: true` on a write was accepted and allowed nothing
+- another `@`-guarantee
+- a column that is not `@system` — a misspelled or renamed one read as permission in review
+- `'@@gate'` on a model with no gate
+
+**The nine** passed on five conditions, all built: the closed set; a per-call
+argument only the gate reads; `system` typed on every write (`SystemNames<TRow>`);
+unknown entries refused; and tests for the cache, nested writes, the returned row
+and the audit mark. The adjudication is *paved road vs. the workaround*: three
+`asSystem()` workarounds in the same place measured the road.
+
+Lives in `packages/litestone/src/plugins/gate.js` (`GATE_LIFT`, `liftsGate`,
+`_check`), `client.js` `refuseSystemEntries`, and `audit-log.js`
+`buildLogEntry`. Pinned by `test/gate-lift.test.ts`.
+
 ### <a id="fjs-d574"></a>2026-10-04 · `FJS-D574` — a support episode may not stand in for somebody ABOVE the operator, graded by `services.standingLevel` (renamed from `recoveryLevel`) and refused without one; and the subject is told, as `support.started` through `onCredentialChanged`.
 
 **The ceiling.** Support mode bounds an operator at the SUBJECT's standing, so a

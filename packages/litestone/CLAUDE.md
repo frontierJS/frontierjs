@@ -91,7 +91,9 @@ Then, because every other package sits on this one: `example` and `basecamp`
   `@@allow`/`@@deny`, `@guarded` and a move's `@gate`/`@system`, and does not lift
   the soft-delete or template filters, a `@check`/`@@check`/`@@arc`, `@immutable`,
   or the `@@transitions` machine — its moves, its compare-and-swap, and a create
-  starting at the `@default` (`FJS-D502`, `FJS-D470`).
+  starting at the `@default` (`FJS-D502`, `FJS-D470`). A write that needs the gate
+  alone lifted names it: `system: ['@@gate']`, graded per call and never through
+  `ctx.isSystem` (`FJS-D575`).
 - **Raw SQL keeps the policies only inside a where** —
   ``where: { $raw: sql`price > ${min}` }``. `db.sql` throws once a schema declares
   access rules; `db.asSystem().sql` is the deliberate bypass.

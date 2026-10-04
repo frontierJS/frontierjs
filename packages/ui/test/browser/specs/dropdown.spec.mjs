@@ -282,4 +282,71 @@ export async function run(t) {
     `the premise: the menu does not fit above (${fallback.roomAbove}px for ${fallback.height}px)`)
   t.ok(fallback.below, 'so top-start with no room above falls back below')
   await t.press('Escape')
+
+  /* ── keep-open: a row that toggles must not shut the menu ─────────────── */
+
+  // Every row closed its menu unconditionally, so a menu with a toggle in it
+  // shut on each click. The row's own `keepOpen` wins; the menu's is the
+  // default for rows that say nothing.
+  const menuCount = `document.querySelectorAll('[role=menu]').length`
+  const pressRow  = (text) => t.evaluate(`byText('[role=menu] [role=menuitem]', '${text}').click(); return true;`)
+  const openMenu  = async (id) => {
+    await t.evaluate(`document.querySelector('#${id}').scrollIntoView({ block: 'center' }); return true;`)
+    await t.clickAt(`#${id}`)
+    await t.evaluate(`return await waitVisible('[role=menu]');`)
+  }
+
+  await t.mount('dropdown')
+  await openMenu('dd-keep')
+  await pressRow('Toggle')
+  await t.eventually(`document.querySelector('#chose').textContent`, 'toggle', 'a row in a keep-open menu runs')
+  await new Promise((r) => setTimeout(r, 200))
+  t.is(await t.evaluate(`return ${menuCount};`), 1, 'and leaves the menu open')
+  await pressRow('Done')
+  await t.eventually(`document.querySelector('#chose').textContent`, 'done', 'a row can still be chosen')
+  await t.eventually(menuCount, 0, 'and its own keepOpen={false} closes a menu that stays open')
+
+  await openMenu('dd-row')
+  await pressRow('Tick')
+  await t.eventually(`document.querySelector('#chose').textContent`, 'tick', 'a keep-open row runs')
+  await new Promise((r) => setTimeout(r, 200))
+  t.is(await t.evaluate(`return ${menuCount};`), 1, 'and leaves a menu that closes by default open')
+  await pressRow('Close')
+  await t.eventually(menuCount, 0, 'while its sibling still closes the menu')
+
+  /* ── a menu that holds a choice ───────────────────────────────────────── */
+
+  // A view toggle or a sort order was a plain `menuitem` drawing its own tick:
+  // a screen reader heard an action where the state was. The roles are
+  // menuitemcheckbox and menuitemradio, and the arrow walk has to take all three.
+  const row  = (text) => `byText('[role=menu] [role^=menuitem]', '${text}')`
+  const attr = (text, a) => t.evaluate(`return ${row(text)}.getAttribute('${a}');`)
+  await t.mount('dropdown')
+  await openMenu('dd-choice')
+
+  t.is(await attr('Plain', 'role'), 'menuitem', 'a row with no checked is still an action')
+  t.is(await attr('Plain', 'aria-checked'), null, 'and states no checked')
+  t.is(await attr('Grid view', 'role'), 'menuitemcheckbox', 'a row with checked is a checkbox row')
+  t.is(await attr('Grid view', 'aria-checked'), 'false', 'and announces it unchecked')
+  t.is(await attr('By name', 'role'), 'menuitemradio', 'a radio row is a menuitemradio')
+  t.is(await attr('By name', 'aria-checked'), 'true', 'checked when its value is the group\'s')
+  t.is(await attr('By date', 'aria-checked'), 'false', 'and its sibling is not')
+
+  await t.evaluate(`${row('Grid view')}.click(); return true;`)
+  await t.eventually(`${row('Grid view')}.getAttribute('aria-checked')`, 'true', 'choosing a checkbox row checks it')
+  t.is(await attr('Grid view', 'data-checked'), 'true', 'and sets the data-checked hook')
+  t.is(await t.evaluate(`return ${menuCount};`), 1, 'and the menu stays open')
+  await t.evaluate(`${row('By date')}.click(); return true;`)
+  await t.eventually(`${row('By date')}.getAttribute('aria-checked')`, 'true', 'choosing a radio row checks it')
+  await t.eventually(`${row('By name')}.getAttribute('aria-checked')`, 'false', 'and unchecks the one it replaced')
+
+  // The walk: panel focused, so the first ArrowDown is the first item, and the
+  // checkbox and radio rows are stops like any other.
+  await t.evaluate(`document.querySelector('[role=menu]').focus(); return true;`)
+  // The tick is aria-hidden text in the row, so a checked row reads with it.
+  for (const stop of ['Plain', '✓ Grid view', 'By name', '• By date', 'Plain']) {
+    await t.press('ArrowDown')
+    await t.eventually(focused, stop, `ArrowDown reaches ${stop}`)
+  }
+  await t.press('Escape')
 }

@@ -695,6 +695,26 @@ try {
   ok('a zone the vendor refused shows the vendor\'s reason')
   check('and the hostnames above it still render', (await text('#dns-rows')).includes('drive.example.test'))
 
+  // ── /portal/:id/ → /portal/ ────────────────────────────────────────────
+  // `Portal service 'null' not found` had no screen behind it (`FJS-1018`). The
+  // detail page re-reads on `page.params.id`, and a client-side navigation
+  // OUT of it is the one move that changes that value while the page is still
+  // on screen, so the move is made the way a person makes it: the link, not
+  // `goto`, which reloads and so never reaches it. The API's own log is the
+  // witness — a 400 for an id-less call or a 404 for the string 'null'.
+  console.log('\n  /portal/edge/ — leaving a detail page by its link')
+  await goto('/portal/edge/')
+  await until(`document.querySelector('h1')?.textContent.trim()`, v => !!v && v !== 'Checking…',
+    'the appliance detail never rendered')
+  const logMark = apiLog.length
+  await evaluate(`document.querySelector('a.navlink[href="/portal/"]').click()`)
+  await until(`location.pathname`, p => p === '/portal/', 'the back link never left the detail page')
+  await sleep(1500)
+  const afterLeaving = apiLog.slice(logMark)
+  check('leaving the detail page asks the portal for no id-less appliance',
+    !/portal\.get needs an appliance id|Portal service '(null|undefined)'/.test(afterLeaving),
+    afterLeaving.split('\n').filter(l => /portal/i.test(l)).slice(0, 3).join(' | '))
+
   // ── /cloud-spend/ ──────────────────────────────────────────────────────
   console.log('\n  /cloud-spend/ — the inventory a bill would cover')
   await goto('/cloud-spend/')

@@ -1,5 +1,15 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-04 — `withCache` collapses concurrent misses into one inner call (`FJS-1707`)
+
+`withCache` stored a value only after `inner.get` resolved and kept nothing while it was
+pending, so a burst against a cold cache called the resolver once per `send()` — 100 concurrent
+gets on one ref measured 100 inner calls, which against a vault is a rate limit away from every
+send failing. It now holds an in-flight promise per ref and drops it when the call settles, so a
+rejection is shared by the callers waiting on it and not by the next one. Two tests in
+`conduit.test.ts`: the burst (red at 100 before the change) and a failed lookup retried on the
+next get.
+
 ## 2026-10-03 — a `broker` target is built, and it reports whether it is still consuming (`FJS-1014`)
 
 `FJS-D235` was in force with nothing under it: no `broker` kind, a `nats` protocol that

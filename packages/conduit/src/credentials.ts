@@ -63,23 +63,39 @@ export function createNullResolver(): CredentialResolver {
 //
 // Only successful lookups are cached; a null keeps failing through
 // so a newly-provisioned secret is picked up without a restart.
+//
+// Concurrent misses on one ref share one inner call: a burst against a
+// cold cache otherwise sends one vault request per send(). The in-flight
+// entry clears when the call settles, so a rejection is not remembered.
 export function withCache(
   inner: CredentialResolver,
   opts: { ttl_ms?: number } = {}
 ): CredentialResolver {
-  const ttl   = opts.ttl_ms ?? 60_000
-  const cache = new Map<string, { value: string; expires_at: number }>()
+  const ttl      = opts.ttl_ms ?? 60_000
+  const cache    = new Map<string, { value: string; expires_at: number }>()
+  const inflight = new Map<string, Promise<string | null>>()
+
+  async function fetchOnce(ref: string): Promise<string | null> {
+    const value = await inner.get(ref)
+    if (value !== null && value !== '') {
+      cache.set(ref, { value, expires_at: Date.now() + ttl })
+    }
+    return value
+  }
 
   return {
-    async get(ref) {
+    get(ref) {
       const hit = cache.get(ref)
-      if (hit && hit.expires_at > Date.now()) return hit.value
+      if (hit && hit.expires_at > Date.now()) return Promise.resolve(hit.value)
 
-      const value = await inner.get(ref)
-      if (value !== null && value !== '') {
-        cache.set(ref, { value, expires_at: Date.now() + ttl })
+      let pending = inflight.get(ref)
+      if (!pending) {
+        // Cleared after the set: a resolver that throws synchronously would
+        // otherwise settle before the entry exists and leave it behind.
+        pending = fetchOnce(ref).finally(() => inflight.delete(ref))
+        inflight.set(ref, pending)
       }
-      return value
+      return pending
     }
   }
 }
