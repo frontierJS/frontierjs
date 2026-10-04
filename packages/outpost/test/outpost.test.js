@@ -404,6 +404,20 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect(routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7301')
   })
 
+  test('a redeploy refused for its config leaves the live route dialing the live port', async () => {
+    // Refused after the route moved, the old container keeps running on 7300
+    // behind a route that dials 7301, where nothing listens (FJS-1682).
+    const caddy = fakeCaddy()
+    const { server, fake } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+    fake.calls.length = 0
+    const res = await deploy(server, { hosts: ['shop.example.com'], config: { port: 7301, containerPort: 80, cpuLimit: '500m' } })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('cpuLimit')
+    expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7300')
+    expect(fake.calls).toEqual([])
+  })
+
   test('the ingress listens where the machine set https_port, not where outpost guesses', async () => {
     const caddy = fakeCaddy({ apps: { http: { https_port: 7185 } } })
     await deploy(serverWith(caddy).server, { hosts: ['shop.example.com'] })

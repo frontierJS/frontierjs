@@ -1,5 +1,12 @@
 # Changes — Basecamp
 
+## 2026-10-03 — a refused release leaves the live app serving (`FJS-1682`)
+
+- **A container release has no `Stop previous` step.** It sent `/stop` before `/deploy`, so when Outpost refused the deploy (no port, no Caddy, a hostname it cannot route), the old container and its route were already gone. `/deploy` removes the old container itself after its checks, so the step was only ever the outage. Both container step lists in `deployments.service.ts` lose it and the runner has no stop branch. `/stop` stays an Outpost route: `apps.remove` sends it.
+- **`verify:outpost` drives the refusal.** With the container app live behind a hostname, it stops the Caddy stand-in and makes a release. The release must fail naming Caddy, and the same container id must still be running and answering. Before the fix all three were red. `verify` grades that a container release sends no `/stop`.
+
+`bun run test` 561/561. `verify:outpost` 32/33, the one failure `FJS-1606`.
+
 ## 2026-10-03 — a failed release says why (`FJS-1681`)
 
 - **Outpost's sentence reaches the release.** It answers a failed command with `{ error }`, which conduit kept as `raw` behind *Server error: 500*. `machineSaid()` in `providers/executor.ts` lifts it into the reply, so a step fails with *docker pull failed … manifest unknown* or *config.port is not set* rather than a status code.

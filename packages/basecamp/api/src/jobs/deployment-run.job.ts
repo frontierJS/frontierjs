@@ -12,7 +12,7 @@ import { $ } from '@frontierjs/junction'
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
 //   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }
-//   POST /stop         { app_id }                          → stop old container, drop its route
+//   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts }                   → Caddy re-routed, no restart (sent by domain:dns)
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
@@ -280,10 +280,6 @@ function runner(app: BasecampApp) {
       if (reply.error) throw new Error(`Pull failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
-    } else if (name.includes('stop')) {
-      const reply = await executor.call('/stop', { app_id: deploy.appId })
-      // Non-fatal — a previous container may not exist on a first deploy.
-      return { output: note(reply), digest }
 
     } else if (name.includes('start') || name.includes('deploy')) {
       const reply = await executor.call('/deploy', {

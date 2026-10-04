@@ -333,6 +333,22 @@ try {
     sh('docker', 'inspect', '--format', '{{.Id}}', container).stdout.trim() === runningId
       && (await call(`/deployments?appId=${box.id}`, auth))?.data?.length === releases)
 
+  // ── A release the machine refuses leaves the live one serving ──
+  // With Caddy gone, /deploy refuses an app that has a hostname. A release
+  // that stopped the old container first and only then asked /deploy took
+  // the app down for a release that never started (`FJS-1682`).
+  caddy.stop(true)
+  const refused = await released(box.id, auth)
+  const said    = (refused?.steps ?? []).find(s => s.status === 'failed' && /caddy/i.test(s.output ?? ''))
+  if (refused?.status !== 'failed' || !said)
+    console.log(`\n${refused?.status}\n${(refused?.steps ?? []).map(s => `    ${s.status.padEnd(8)} ${s.name}  ${s.output ?? ''}`).join('\n')}\n`)
+  check('a release the machine refuses fails, naming why', refused?.status === 'failed' && !!said)
+  check('…and the container it would have replaced is still the one running',
+    sh('docker', 'inspect', '--format', '{{.Id}} {{.State.Running}}', container).stdout.trim() === `${runningId} true`)
+  check('…still answering',
+    (await fetch(`http://localhost:${APP_PORT}/`).then(r => r.text(), () => '')).includes(`Name: ${name}`))
+  caddy = startCaddy()
+
   await call(`/domains/${domain?.id}`, { ...auth, method: 'DELETE' })
   // Gone only counts after it was there.
   check('…and deleted, its route goes with it', routed && await until(() => !routeOf(), 30_000))

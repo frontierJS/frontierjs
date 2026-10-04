@@ -16,7 +16,7 @@
  */
 
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
-import { createDocker, createInspector } from './docker.js'
+import { createDocker, createInspector, checkRunConfig } from './docker.js'
 import { createStatic } from './static.js'
 import { createIngress, hostsOf } from './ingress.js'
 
@@ -74,11 +74,16 @@ export function createOutpostServer(config, {
     // before the container starts: a hostname another app holds, or a Caddy
     // that is down, then fails the release rather than leaving a container on
     // loopback that nothing can reach.
+    //
+    // Every refusal comes before the old container goes, and Basecamp sends no
+    // `/stop` ahead of this for that reason (`FJS-1682`): a release refused here
+    // leaves the live app serving.
     'POST /deploy': async (body) => {
       const appId = body.app_id ?? body.deployment_id
       const hosts = hostsOf(body.hosts)
       const port  = body.config?.port
       if (hosts.length && !port) throw new Error('hosts need a published port to route to — config.port is not set')
+      checkRunConfig(body.config)
 
       const image = body.image ?? `fjs-${body.deployment_id}`
       let built   = { digest: body.digest ?? null }

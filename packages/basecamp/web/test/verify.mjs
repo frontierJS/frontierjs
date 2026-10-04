@@ -1312,12 +1312,14 @@ check('…and the release is still exactly where it was',
 // What the machine was actually asked to do. A release that reports six green
 // steps having sent nothing is the exact failure this section exists for, and
 // the deployment row cannot see the difference — only the sink can.
-// A container app's steps are Validate · Build · Push · Stop · Start · Health,
-// so what leaves the process is /exec three times, then /stop, /deploy and
+// A container app's steps are Validate · Build · Push · Start · Health, so
+// what leaves the process is /exec three times, then /deploy and
 // /health-check. There is no /pull: nothing here pulls an image it just built.
-check('the outpost was asked to stop, start and health-check',
+// No /stop either: /deploy replaces the container after its own checks, and a
+// stop sent first takes the app down for a release it then refuses (FJS-1682).
+check('the outpost was asked to start and health-check, and to stop nothing',
   outpostSaw.deploy.map(d => d.path).join(','),
-  t => t.includes('/stop') && t.includes('/deploy') && t.includes('/health-check'))
+  t => !t.includes('/stop') && t.includes('/deploy') && t.includes('/health-check'))
 check('…and the release records the digest the MACHINE reported, not the tag it asked for',
   await evaluate(`document.getElementById('deploy-digest')?.textContent.trim() ?? ''`),
   SINK_DIGEST)

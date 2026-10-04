@@ -50,6 +50,21 @@ export async function spawnRun(argv, { timeoutMs = 600_000, cwd } = {}) {
 // ─── logArgs ─────────────────────────────────────────────────────────────────
 // The `--log-*` flags for a started container. Mirrors the CLI's
 // `core/docker-logging.js`; see the note at its call site for why it is a copy.
+/**
+ * The run config `deploy` would refuse, refused without touching the machine.
+ * `/deploy` asks this before it re-points Caddy: a refusal after the route has
+ * moved to the new port leaves the old container running behind a route that
+ * dials nothing.
+ */
+export function checkRunConfig(config = {}) {
+  if (config.volumePath != null && !/^\/[^:,]*$/.test(String(config.volumePath)))
+    throw new Error(`volumePath must be an absolute path with no ':' or ',' — got '${config.volumePath}'`)
+  if (config.cpuLimit != null && !(Number(config.cpuLimit) > 0))
+    throw new Error(`cpuLimit must be a number of CPUs above 0 — got '${config.cpuLimit}'`)
+  if (config.memLimitMb != null && !(Number.isInteger(Number(config.memLimitMb)) && Number(config.memLimitMb) >= 6))
+    throw new Error(`memLimitMb must be a whole number of MiB, at least 6 — got '${config.memLimitMb}'`)
+}
+
 function logArgs(logs) {
   if (logs === false) return []
   if (logs?.driver) {
@@ -149,12 +164,7 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
      */
     async deploy({ appId, image, digest, config = {}, port, loopback = false }) {
       const name = `fjs-${appId}`
-      if (config.volumePath != null && !/^\/[^:,]*$/.test(String(config.volumePath)))
-        throw new Error(`volumePath must be an absolute path with no ':' or ',' — got '${config.volumePath}'`)
-      if (config.cpuLimit != null && !(Number(config.cpuLimit) > 0))
-        throw new Error(`cpuLimit must be a number of CPUs above 0 — got '${config.cpuLimit}'`)
-      if (config.memLimitMb != null && !(Number.isInteger(Number(config.memLimitMb)) && Number(config.memLimitMb) >= 6))
-        throw new Error(`memLimitMb must be a whole number of MiB, at least 6 — got '${config.memLimitMb}'`)
+      checkRunConfig(config)
       // Best-effort: a first deploy has nothing to remove, and `docker rm` on a
       // name that does not exist is an error rather than a no-op.
       await run(['docker', 'rm', '-f', name]).catch(() => {})

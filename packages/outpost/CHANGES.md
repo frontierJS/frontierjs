@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-03 — `/deploy` checks its run config before it moves the route (`FJS-1682`)
+
+`checkRunConfig` (volume path, CPU, memory) is exported from `docker.js` and `/deploy` calls it before re-pointing Caddy. Refused after the route moved, a redeploy that changed its port left the old container running behind a route dialing the new one. Basecamp no longer sends `/stop` ahead of `/deploy`, so every refusal here now leaves the live app serving. `test/outpost.test.js` § *a redeploy refused for its config…* fails with the call removed.
+
 ## 2026-10-03 — a static prune keeps `keep` releases when their mtimes tie
 
 Releases published within one millisecond tie on directory mtime, and the sort could put the new release or the live one past the `keep` cut, where both are spared — so one extra survived (`test/static.test.js` § *old releases are pruned*, red about one run in three). The release just written now ranks first, and the live one wins a tie.

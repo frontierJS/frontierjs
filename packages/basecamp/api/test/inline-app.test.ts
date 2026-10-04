@@ -216,7 +216,7 @@ describe('the release pipeline an inline app runs', () => {
     const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
 
     expect(await stepNames(release.id)).toEqual(
-      ['Validate', 'Pull image', 'Stop previous', 'Start container', 'Health check'])
+      ['Validate', 'Pull image', 'Start container', 'Health check'])
     // Released the way the app screen releases one, `{ appId }` alone — the
     // runner asks the machine for `toImage`, and the app's name otherwise.
     expect(release.toImage).toBe('nginx:alpine')

@@ -33,14 +33,19 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  *
  * Read off the SOURCE first and the type second, because what a release has to
  * do is decided by where its bytes come from: an inline app is files behind a
- * web server, and every container word — build, push, start, stop — describes
- * work that does not exist for it.
+ * web server, and every container word — build, push, start — describes work
+ * that does not exist for it.
  *
  * The four inline steps are each one call to the machine, which is what makes
  * the list worth having: a step that stalls names what stalled. Upload and
  * activate are apart because writing the bytes and making them the live ones
  * are separate on the machine too — a release that failed to upload is never
  * the one being served.
+ *
+ * A container release has no stop step. Outpost's `/deploy` removes the old
+ * container itself, after every check it can refuse on, so a refused release
+ * leaves the live one serving; a stop sent first had already taken it down by
+ * the time the refusal arrived (`FJS-1682`).
  */
 function buildInitialSteps(target: { type: string; source?: unknown }): string[] {
   if (isInline(target.source))
@@ -49,10 +54,10 @@ function buildInitialSteps(target: { type: string; source?: unknown }): string[]
   // container word but those two still applies: a build list here sends no
   // /pull at all and reports the build as done.
   if ((target.type === 'container' || target.type === 'function') && !imageOf(target.source))
-    return ['Validate', 'Build image', 'Push image', 'Stop previous', 'Start container', 'Health check']
+    return ['Validate', 'Build image', 'Push image', 'Start container', 'Health check']
   if (target.type === 'database')
     return ['Validate', 'Run migrations', 'Verify connectivity']
-  return ['Validate', 'Pull image', 'Stop previous', 'Start container', 'Health check']
+  return ['Validate', 'Pull image', 'Start container', 'Health check']
 }
 
 export function createDeploymentsService(app: BasecampApp) {
