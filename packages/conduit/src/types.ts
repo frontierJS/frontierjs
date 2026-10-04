@@ -130,6 +130,27 @@ export interface TargetDescriptor {
   // descriptor never named.
   follow_redirects?: FollowRedirects
 
+  // The address comes with each send, as `ConduitRequest.address`, and
+  // `address` here is ''. For a destination an app holds in a row and conduit
+  // must never keep: a Slack or webhook URL somebody pasted, which is its own
+  // credential (`FJS-1667`). Registering one target per row put the URL in
+  // the registry in plaintext and in every observer's hands.
+  //
+  // A URL somebody else chose is graded by junction's `assertPublicUrl` before
+  // EVERY attempt, a retry included, since what a name resolves to is not
+  // fixed: no private or loopback address and no http unless `destinations`
+  // says so. Refused at register() with `bearer` or `api_key` auth (a stored
+  // credential would go wherever the row says), with a followed redirect, a
+  // pinned certificate or `trace`. `hmac` is allowed: it signs the body, as a
+  // webhook delivery does, and names nothing secret. The breaker and the
+  // concurrency cap are kept per origin, so one dead subscriber URL does not
+  // close the target for the rest, and observers see the origin only.
+  address_from?:   'request'
+
+  // What a request-addressed target may reach beyond public https. A test or
+  // a dev receiver on localhost turns both on and says so.
+  destinations?:   { allowHttp?: boolean; allowPrivate?: boolean }
+
   // How this target collapses a duplicate request, if it does.
   //
   // `header` is the name the key travels under. `Idempotency-Key` is the
@@ -218,6 +239,11 @@ export type QueryValue = string | number | boolean
 
 export interface ConduitRequest {
   target:      string
+
+  // The URL this one request goes to, for a target declared
+  // `address_from: 'request'`, and refused for any other. `path` and `query`
+  // are applied to it as to a registered address.
+  address?:    string
   method:      string
   path?:       string
 

@@ -12,7 +12,9 @@ export interface SessionContext {
   workspaceId?: string
   role?:        string
   scopes?:      string[]
-  authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified'
+  // `(string & {})` keeps the literals completing: an attester names its own
+  // method (`pin`) through `app.runAs(id, { attestedBy })`.
+  authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified' | (string & {})
 
   /**
    * Which session row this token is — set on the `session` path.

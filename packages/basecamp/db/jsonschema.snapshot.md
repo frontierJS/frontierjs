@@ -262,11 +262,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `labelsKey` | `string` | yes | — | — | — |
+| `labelsKey` | `string` | yes | — | `x-transforms` | — |
 | `type` | `MetricType` = `"gauge"` | — | — | — | — |
-| `unit` | `string`? | — | — | — | — |
+| `unit` | `string`? | — | — | `x-transforms` | — |
 | `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `name`, `labelsKey` · not accepted — `id`
@@ -311,7 +311,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `FlowStatus` = `"draft"` | — | — | — | — |
 | `currentVersion` | `integer`? | — | — | `x-litestone-write-policy` | — |
@@ -418,9 +418,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `provider` | `string` | yes | — | — | — |
-| `address` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `provider` | `string` | yes | — | `x-transforms` | — |
+| `address` | `string` | yes | — | `x-transforms` | — |
 | `auth` | `FlowCredentialAuth` = `"none"` | — | — | — | — |
 | `header` | `string`? | — | — | — | — |
 | `encoding` | `string`? = `"json"` | — | — | — | — |
@@ -455,15 +455,15 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` | — |
-| `name` | `string`? | — | — | — | — |
+| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` `x-transforms` | — |
+| `name` | `string`? | — | — | `x-transforms` | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | `x-litestone-write-policy` | — |
 | `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-policy` | — |
 | `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-policy` | — |
-| `username` | `string`? | — | — | — | — |
-| `displayName` | `string`? | — | — | — | — |
+| `username` | `string`? | — | — | `x-transforms` | — |
+| `displayName` | `string`? | — | — | `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
 | `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-write-policy` | — |
 | `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
@@ -481,8 +481,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `type` | `AccountType` = `"organization"` | — | — | — | — |
 | `status` | `string` = `"pending_verification"` | — | — | — | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
-| `displayName` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `displayName` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `avatarUrl` | `string`? | — | — | — | — |
 
 **On create**: required — `slug`, `displayName` · not accepted — `id`
@@ -507,8 +507,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `accountId` | `string` | yes | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `type` | `WorkspaceType` = `"team"` | — | — | — | — |
 | `ownerId` | `string` | yes | — | — | — |
 | `settings` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -547,7 +547,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `email` | `string` | yes | — | `format: "email"` `minLength: 6` `maxLength: 200` | — |
+| `email` | `string` | yes | — | `format: "email"` `minLength: 6` `maxLength: 200` `x-transforms` | — |
 | `role` | `WorkspaceRole` = `"developer"` | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `invitedBy` | `string`? | — | — | — | — |
@@ -563,7 +563,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
 | `data` | `string` = `"{}"` | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `isVerified` | `boolean` = `false` | — | — | — | — |
@@ -585,7 +585,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `userId` | `string` | yes | — | — | — |
 | `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
 | `scopes` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -613,8 +613,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `slug` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `slug` | `string` | yes | — | `x-transforms` | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
 | `role` | `ServerRole` = `"general"` | — | — | — | — |
 | `providerKind` | `ProviderKind` = `"custom"` | — | — | — | — |
@@ -675,7 +675,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `serverId` | `string` | yes | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 255` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 255` `x-transforms` | — |
 | `driver` | `string` = `"local"` | — | — | — | — |
 | `mountPoint` | `string`? | — | — | — | — |
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
@@ -697,8 +697,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | — | — |
-| `slug` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `x-transforms` | — |
+| `slug` | `string` | yes | — | `x-transforms` | — |
 | `type` | `string` = `"mesh"` | — | — | — | — |
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
 | `provider` | `string` = `"netbird"` | — | — | — | — |
@@ -733,8 +733,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `string` = `"active"` | — | — | — | — |
 | `tags` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -759,8 +759,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `projectId` | `string` | yes | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
 | `isProtected` | `boolean` = `false` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
@@ -784,16 +784,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `environmentId` | `string` | yes | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `type` | `AppType` = `"container"` | — | — | — | — |
 | `status` | `AppStatus` = `"unknown"` | — | — | `x-litestone-kind` | — |
 | `source` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
 | `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
 | `containerPort` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
-| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` | `pattern` `regex` |
-| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` | `pattern` `regex` |
+| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` `x-transforms` | `pattern` `regex` |
+| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `blueprintId` | `string`? | — | — | `x-litestone-kind` | — |
@@ -813,7 +813,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `environmentId` | `string` | yes | — | — | — |
 | `appId` | `string`? | — | — | — | — |
-| `key` | `string` | yes | — | `pattern: "^[A-Za-z_][A-Za-z0-9_]{0,99}$"` | `pattern` `regex` |
+| `key` | `string` | yes | — | `pattern: "^[A-Za-z_][A-Za-z0-9_]{0,99}$"` `x-transforms` | `pattern` `regex` |
 | `secret` | `boolean` = `false` | — | — | — | — |
 | `value` | `string`? | — | — | `minLength: 0` `maxLength: 10000` | — |
 | `secretValue` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
@@ -831,7 +831,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string` | yes | — | — | — |
-| `hostname` | `string` | yes | — | `minLength: 1` `maxLength: 253` | — |
+| `hostname` | `string` | yes | — | `minLength: 1` `maxLength: 253` `x-transforms` | — |
 | `isPrimary` | `boolean` = `false` | — | — | — | — |
 | `redirectTo` | `string`? | — | — | — | — |
 | `port` | `integer` = `443` | — | — | — | — |
@@ -949,7 +949,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string`? | — | — | — | — |
 | `environmentId` | `string`? | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `JobKind` = `"one_shot"` | — | — | — | — |
 | `status` | `JobStatus` = `"pending"` | — | — | — | — |
 | `command` | `string`? | — | — | — | — |
@@ -994,8 +994,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
-| `slug` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` `x-transforms` | — |
+| `slug` | `string` | yes | — | `x-transforms` | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
 | `script` | `string` | yes | — | `minLength: 1` `maxLength: 20000` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | `minimum: 5` `maximum: 3600` | — |
@@ -1084,7 +1084,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
+| `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `type` | `FlagType` = `"boolean"` | — | — | — | — |
 | `tags` | `string[]` = `[]` | — | — | `x-sortable: "array"` `x-aggregatable` | — |
@@ -1123,7 +1123,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
 | `config` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `secretId` | `string`? | — | — | — | — |
@@ -1146,10 +1146,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `severity` | `AlertSeverity` = `"warning"` | — | — | — | — |
-| `metricName` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `metricName` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `operator` | `ComparisonOp` = `"gt"` | — | — | — | — |
 | `threshold` | `number` | yes | — | — | — |
 | `forMinutes` | `integer` = `0` | — | — | `minimum: 0` `maximum: 1440` | — |
@@ -1205,8 +1205,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
-| `slug` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` `x-transforms` | — |
+| `slug` | `string` | yes | — | `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `icon` | `string`? | — | — | `minLength: 0` `maxLength: 8` | — |
 | `isPinned` | `boolean` = `false` | — | — | — | — |
@@ -1263,18 +1263,18 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `category` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
-| `description` | `string` | yes | — | `minLength: 1` `maxLength: 300` | — |
-| `version` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
-| `image` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `icon` | `string`? | — | — | `minLength: 1` `maxLength: 8` | — |
-| `brandColor` | `string`? | — | — | `minLength: 4` `maxLength: 9` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `category` | `string` | yes | — | `minLength: 1` `maxLength: 40` `x-transforms` | — |
+| `description` | `string` | yes | — | `minLength: 1` `maxLength: 300` `x-transforms` | — |
+| `version` | `string` | yes | — | `minLength: 1` `maxLength: 40` `x-transforms` | — |
+| `image` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `icon` | `string`? | — | — | `minLength: 1` `maxLength: 8` `x-transforms` | — |
+| `brandColor` | `string`? | — | — | `minLength: 4` `maxLength: 9` `x-transforms` | — |
 | `appType` | `AppType` = `"container"` | — | — | — | — |
 | `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
-| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` | `pattern` `regex` |
-| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` | `pattern` `regex` |
+| `volumePath` | `string`? | — | — | `pattern: "^/[^:,]*$"` `x-transforms` | `pattern` `regex` |
+| `healthCheck` | `string`? | — | — | `pattern: "^/[^ ]*$"` `x-transforms` | `pattern` `regex` |
 | `cpuLimit` | `number`? | — | — | `maximum: 256` `exclusiveMinimum: 0` | — |
 | `memLimitMb` | `integer`? | — | — | `minimum: 6` | — |
 | `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
@@ -1293,9 +1293,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `blueprintId` | `string` | yes | — | — | — |
-| `key` | `string` | yes | — | `minLength: 1` `maxLength: 100` | — |
-| `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `hint` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `key` | `string` | yes | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
+| `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `hint` | `string`? | — | — | `minLength: 0` `maxLength: 200` `x-transforms` | — |
 | `defaultValue` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
 | `required` | `boolean` = `false` | — | — | — | — |
 | `secret` | `boolean` = `false` | — | — | — | — |
@@ -1313,13 +1313,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
-| `repository` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `tag` | `string` | yes | — | `minLength: 1` `maxLength: 128` | — |
-| `digest` | `string` | yes | — | `minLength: 1` `maxLength: 100` | — |
+| `repository` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `tag` | `string` | yes | — | `minLength: 1` `maxLength: 128` `x-transforms` | — |
+| `digest` | `string` | yes | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `sizeBytes` | `integer` = `0` | — | — | — | — |
 | `inUse` | `boolean` = `false` | — | — | — | — |
 | `pushedAt` | `string`? | — | — | `format: "date-time"` | — |
-| `pushedBy` | `string`? | — | — | `minLength: 0` `maxLength: 120` | — |
+| `pushedBy` | `string`? | — | — | `minLength: 0` `maxLength: 120` `x-transforms` | — |
 | `observedAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `repository`, `tag`, `digest` · not accepted — `id`
@@ -1335,7 +1335,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `RunStatus` = `"pending"` | — | — | — | — |
 | `destination` | `BackupDestination` = `"local"` | — | — | — | — |
 | `sizeBytes` | `integer`? | — | — | — | — |
-| `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
+| `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` `x-transforms` | — |
 | `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
 | `requestedBy` | `string`? | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -1351,19 +1351,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` = `"hub"` | — | — | — | — |
-| `name` | `string` = `"Basecamp"` | — | — | `minLength: 1` `maxLength: 80` | — |
-| `baseUrl` | `string` | yes | — | `format: "uri"` | — |
-| `adminEmail` | `string` | yes | — | `format: "email"` | — |
+| `name` | `string` = `"Basecamp"` | — | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
+| `baseUrl` | `string` | yes | — | `format: "uri"` `x-transforms` | — |
+| `adminEmail` | `string` | yes | — | `format: "email"` `x-transforms` | — |
 | `heartbeatTimeoutSeconds` | `integer` = `120` | — | — | `minimum: 30` `maximum: 3600` | — |
 | `sessionTtlHours` | `integer` = `168` | — | — | `minimum: 1` `maximum: 8760` | — |
 | `requireTwoFactorForOwners` | `boolean` = `false` | — | — | — | — |
 | `allowApiKeyAuth` | `boolean` = `true` | — | — | — | — |
 | `allowBotUsers` | `boolean` = `true` | — | — | — | — |
 | `backupEnabled` | `boolean` = `false` | — | — | — | — |
-| `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` | — |
+| `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` `x-transforms` | — |
 | `backupDestination` | `BackupDestination` = `"local"` | — | — | — | — |
-| `mailFromAddress` | `string`? | — | — | `format: "email"` | — |
-| `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` | — |
+| `mailFromAddress` | `string`? | — | — | `format: "email"` `x-transforms` | — |
+| `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` `x-transforms` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `baseUrl`, `adminEmail` · not accepted — `id`, `version`

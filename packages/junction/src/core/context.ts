@@ -394,6 +394,17 @@ export { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 // not any single call. They ride an ALS store the bridge wraps the
 // pipeline run in. Read anywhere, any depth, via requestMeta().
 
+/**
+ * A non-User that proved a person — `id` is the actor the audit trail files,
+ * `type` its `actorType` (`device`), `method` how it proved them (`pin`) and
+ * becomes the principal's `authMethod`.
+ */
+export interface Attester {
+  id:      string
+  type:    string
+  method?: string
+}
+
 export interface RequestMeta {
   correlationId:   string
   idempotencyKey?: string
@@ -437,6 +448,18 @@ export interface RequestMeta {
    * anonymous caller would.
    */
   user?:           import('../auth/types.ts').SessionContext | null
+
+  /**
+   * WHO vouched for `user`, where that is not a person with a session — a
+   * kiosk tablet that checked a PIN. Set by `app.runAs(id, { attestedBy })`
+   * and nothing else.
+   *
+   * It belongs to ONE principal: `reenterAs` drops it, because a device that
+   * vouched for alice did not vouch for the bob a service then calls as.
+   * The audit trail reads it through `installLogContext` as the actor, with
+   * `user` as the subject.
+   */
+  attestedBy?:     Attester
 
   /**
    * WHERE the request came from — `ip`, `userAgent`, `headers`.
@@ -521,6 +544,9 @@ export interface RequestSource {
   user?:   RequestMeta['user']
   caller?: RequestMeta['caller']
 
+  /** WHO vouched for `user`. Dropped by `reenterAs`. */
+  attestedBy?: RequestMeta['attestedBy']
+
   /** WHICH TENANT, for work that has no request to resolve one from. */
   tenant?: RequestMeta['tenant']
 
@@ -573,6 +599,7 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     origin:         src.origin,
     user:           src.user,
     caller:         src.caller,
+    attestedBy:     src.attestedBy,
     tenant:         src.tenant,
     ...(madeAt ? { madeAt } : {}),
   }, fn)
@@ -599,7 +626,7 @@ export function reenterAs<T>(user: RequestMeta['user'], fn: () => T): T {
   const scoped = _requestStore.getStore()
   if (!scoped) return enterRequest({ origin: 'internal', user }, fn)
   if (scoped.user === user) return fn()
-  return open({ ...scoped, user }, fn)
+  return open({ ...scoped, user, attestedBy: undefined }, fn)
 }
 
 // The accessor authors use. Returns undefined outside a request

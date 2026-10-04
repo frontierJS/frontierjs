@@ -88,11 +88,11 @@ export async function run(t) {
     const ids = [...document.querySelectorAll('#release-steps [data-step]')].map(li => li.dataset.step);
     return {
       ids,
-      table:    releaseSteps.map(s => s.id),
+      table:    FLOWS.deploy.steps.map(s => s.id),
       verdictIn: document.getElementById('release-verdict').closest('[data-step]')?.dataset.step ?? null,
       servingIn: document.getElementById('release-serving').closest('[data-step]')?.dataset.step ?? null,
       deploy:   document.querySelector('[data-step="deploy"] [data-step-badge]').textContent,
-      next:     [...document.querySelectorAll('[data-step-next]')].filter(b => !b.hidden).length,
+      next:     [...document.querySelectorAll('#release-steps [data-step-next]')].filter(b => !b.hidden).length,
       progress: document.getElementById('release-progress').textContent,
     };
   `)

@@ -121,3 +121,24 @@ describe('the generated sentence, when nothing is authored', () => {
     expect(errs.find(e => e.field === 'customerId')).toBeTruthy()   // not 'Customer'
   })
 })
+
+describe('x-transforms run before the checks (FJS-401)', () => {
+  const BANG = {
+    type: 'object',
+    properties: {
+      trigger: { type: 'string', pattern: '^[a-z0-9]{1,12}$', 'x-transforms': ['lower'] },
+      code:    { type: 'string', minLength: 3, maxLength: 12, 'x-transforms': ['trim'] },
+    },
+    required: ['trigger'],
+  }
+  const errorsFor = (data) => validateAgainstFields(buildFieldRules(BANG, () => null), data, 'create')
+
+  test('a lowercase pattern admits what @lower will store', () => {
+    expect(errorsFor({ trigger: 'UP1' })).toEqual([])
+  })
+
+  test('the length that is graded is the trimmed one', () => {
+    expect(errorsFor({ trigger: 'a', code: '  ab  ' }).map(e => e.field)).toEqual(['code'])
+    expect(errorsFor({ trigger: 'a', code: '  abc  ' })).toEqual([])
+  })
+})

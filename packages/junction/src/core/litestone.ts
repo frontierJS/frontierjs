@@ -3875,8 +3875,10 @@ export function installLogContext(db: unknown): (() => void) | null {
       // this line knows an operator exists — the trail would file every
       // impersonated write under the person it was done to, which is the
       // failure the feature exists to prevent.
-      operatorId:    meta?.user?.support?.operatorId ?? null,
+      operatorId:    meta?.user?.support?.operatorId ?? meta?.attestedBy?.id ?? null,
       episodeId:     meta?.user?.support?.episodeId  ?? null,
+      // Only an attester names its kind; an operator is `support` to litestone.
+      operatorType:  meta?.user?.support ? null : (meta?.attestedBy?.type ?? null),
       // A bearer. `ctx.auth.user` is null for one — that is what keeps the gate
       // at STRANGER(0) — so the principal carries no id and the trail would
       // record the write as a caller with no name. The GRANT is the actor
@@ -4575,6 +4577,7 @@ interface LiJsonProp {
   pattern?:          string
   default?:          unknown
   readOnly?:         boolean
+  'x-transforms'?:   string[]
 }
 
 /**
@@ -4744,6 +4747,7 @@ function _mapProp(
   if (inner.type === 'integer') def.integer = true
   if (inner.enum)               def.enum    = inner.enum
   if (inner.pattern !== undefined) def.pattern = inner.pattern
+  if (inner['x-transforms']?.length) def.transforms = inner['x-transforms']
 
   if (def.type === 'array' && inner.items) {
     def.items = mapProp(inner.items, `${field}[]`, [], defs)

@@ -13,8 +13,11 @@
 
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { brotliCompressSync, constants as zc } from 'node:zlib'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, extname, resolve } from 'node:path'
+import { chalk } from './color.js'
 
 export const BASELINE_FILE = 'bench.baseline.json'
 
@@ -165,7 +168,7 @@ export function treeRss(pid) {
  *  kill it. Refuses a url that already answers: a port that responds is not
  *  evidence the right process holds it (FJS-740), and the figure would belong to
  *  whatever else is serving. */
-export async function measureBoot({ cmd, cwd, url, settleMs = 3000, timeoutMs = 60_000, env = {} }) {
+export async function measureBoot({ cmd, cwd, url, settleMs = 3000, timeoutMs = 60_000, env = {}, whileUp = null }) {
   if (await answers(url)) throw new Error(`${url} already answers — stop what holds it, a bench of someone else's process measures nothing`)
   const started = performance.now()
   const child = spawn(cmd, { cwd, shell: true, detached: true, stdio: 'ignore', env: { ...process.env, ...env } })
@@ -181,9 +184,59 @@ export async function measureBoot({ cmd, cwd, url, settleMs = 3000, timeoutMs = 
     const coldStartMs = Math.round(performance.now() - started)
     const rssAtReady = treeRss(child.pid)
     await sleep(settleMs)
-    return { coldStartMs, rssAtReady, rssIdle: treeRss(child.pid), settleMs }
+    const rssIdle = treeRss(child.pid)
+    // Load runs against THIS process, after the idle read so the idle figure is
+    // not the load's, and RSS is read again after it: memory that only grows
+    // under traffic is the earliest sign of a leak.
+    const during = whileUp ? await whileUp(url) : null
+    return { coldStartMs, rssAtReady, rssIdle, rssAfterLoad: whileUp ? treeRss(child.pid) : null, settleMs, during }
   } finally {
     stop()
+  }
+}
+
+// ─── database growth ─────────────────────────────────────────────────────────
+
+/** Bytes of a fresh database holding `counts[i]` rows of one model, written
+ *  through the app's own Litestone client so indexes and column defaults are the
+ *  ones the schema declares. Runs a child in `appRoot` against a throwaway file
+ *  (DATABASE_URL), never the app's real db/. `row(i)` must be deterministic --
+ *  a random value moves b-tree splits, and a gated number that moves between
+ *  runs is a number nobody trusts. The WAL is checkpointed into the file before
+ *  each read: counting the file alone understates, and counting file plus WAL
+ *  measures however many frames had not yet been folded back.
+ *  Returns { [count]: bytes }. */
+export function measureDbGrowth({ appRoot, accessor, counts, row, timeoutMs = 300_000 }) {
+  const dir  = mkdtempSync(join(tmpdir(), 'fjs-bench-db-'))
+  const file = join(dir, 'bench.db')
+  const script = `
+    const { db } = await import(${JSON.stringify(join(appRoot, 'api/src/core/db.ts'))})
+    const sys = db.asSystem()
+    const row = ${row.toString()}
+    const counts = ${JSON.stringify([...counts].sort((a, b) => a - b))}
+    const sizes = {}
+    let n = 0
+    const { statSync } = await import('node:fs')
+    const bytes = async () => {
+      await sys.sql\`PRAGMA wal_checkpoint(TRUNCATE)\`
+      return statSync(${JSON.stringify(file)}).size
+    }
+    for (const c of counts) {
+      while (n < c) { n++; await sys.${accessor}.create({ data: row(n) }) }
+      sizes[c] = await bytes()
+    }
+    console.log('BENCH_DB ' + JSON.stringify(sizes))
+  `
+  try {
+    const r = spawnSync('bun', ['-e', script], {
+      cwd: appRoot, encoding: 'utf8', timeout: timeoutMs,
+      env: { ...process.env, DATABASE_URL: file },
+    })
+    const line = (r.stdout ?? '').split('\n').find(l => l.startsWith('BENCH_DB '))
+    if (!line) throw new Error(`db growth measured nothing (exit ${r.status}): ${(r.stderr || r.stdout || '').slice(-600)}`)
+    return JSON.parse(line.slice('BENCH_DB '.length))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -243,27 +296,73 @@ export function ratchet(current, baseline) {
 
 export const kb = (n) => n == null ? 'n/a' : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${(n / 1024).toFixed(1)} kB`
 
-export function formatBench({ surfaces, disk, boot, verdict }) {
-  const rows = []
+/** Sections, each a small aligned table, color only on a terminal (color.js
+ *  honors NO_COLOR and pipes). `db` is { [rows]: bytes } from measureDbGrowth;
+ *  `bootError` is a failed boot's reason, shown rather than read as n/a. */
+export function formatBench({ surfaces, disk, boot, verdict, db = null, bootError = null }) {
+  const ms = (n) => n == null ? 'n/a' : `${n.toFixed(1)} ms`
+  const head = (title, note = '') => `\n${chalk.bold(title)}${note ? '  ' + chalk.dim(note) : ''}`
+  const table = (rows) => {
+    const widths = rows[0].map((_, c) => Math.max(...rows.map(r => String(r[c]).length)))
+    return rows.map(r => '  ' + r.map((cell, c) => c === 0 ? String(cell).padEnd(widths[c]) : String(cell).padStart(widths[c])).join('   ')).join('\n')
+  }
+  const out = []
+
+  out.push(head('Download', 'brotli, gated — a rise fails'))
+  const built = Object.entries(surfaces).filter(([, s]) => s)
   for (const [name, s] of Object.entries(surfaces)) {
-    if (!s) { rows.push(`${name}/   not built — no dist/ (build it, then re-run)`); continue }
-    rows.push(`${name}/   ${s.files} files · ${kb(s.rawBytes)} raw · ${kb(s.brotliBytes)} brotli`)
-    rows.push(`       js ${kb(s.js.brotli)} · css ${kb(s.css.brotli)} · html ${kb(s.html.brotli)} · largest js ${kb(s.largestJs.brotli)} (${s.largestJs.file ?? 'none'})`)
-    if (s.firstLoad) {
-      const f = s.firstLoad
-      rows.push(`       first load: ${f.requests} requests · js ${kb(f.jsBrotli)} · css ${kb(f.cssBrotli)} brotli`)
-      if (f.missing.length) rows.push(`       MISSING from dist: ${f.missing.join(', ')}`)
-    } else rows.push('       first load: no index.html')
+    if (!s) out.push(`  ${name}/  ${chalk.yellow('not built')} — no dist/ (build it, then re-run)`)
   }
-  rows.push(`disk  node_modules ${kb(disk.nodeModules)} · databases ${kb(disk.databaseBytes)} (${disk.databases.length})`)
+  if (built.length) {
+    out.push(table([
+      ['', 'files', 'raw', 'brotli', 'js', 'css', 'largest js'],
+      ...built.map(([name, s]) => [`${name}/`, s.files, kb(s.rawBytes), kb(s.brotliBytes), kb(s.js.brotli), kb(s.css.brotli), kb(s.largestJs.brotli)]),
+    ]))
+    out.push(head('First load', 'what index.html makes a visitor fetch'))
+    out.push(table([
+      ['', 'requests', 'js', 'css'],
+      ...built.map(([name, s]) => s.firstLoad
+        ? [`${name}/`, s.firstLoad.requests, kb(s.firstLoad.jsBrotli), kb(s.firstLoad.cssBrotli)]
+        : [`${name}/`, 'no index.html', '', '']),
+    ]))
+    for (const [name, s] of built) if (s.firstLoad?.missing.length) out.push(`  ${chalk.red('MISSING from dist')} (${name}): ${s.firstLoad.missing.join(', ')}`)
+  }
+
+  out.push(head('Disk', 'printed, not gated'))
+  out.push(table([['node_modules', kb(disk.nodeModules)], ['databases', `${kb(disk.databaseBytes)} (${disk.databases.length})`]]))
+  if (db) {
+    out.push(head('Database size', 'bytes after a WAL checkpoint, gated'))
+    out.push(table([['rows', ...Object.keys(db)], ['size', ...Object.values(db).map(kb)]]))
+  }
+
+  out.push(head('Memory and boot', 'reported, never gated'))
   if (boot) {
-    rows.push(`boot  cold start ${boot.coldStartMs} ms · RSS at ready ${kb(boot.rssAtReady)} · idle after ${boot.settleMs} ms ${kb(boot.rssIdle)}  (reported, never gated)`)
-  } else rows.push('boot  not measured — pass --boot "<command>" --url <health url>')
+    out.push(table([
+      ['cold start', `${boot.coldStartMs} ms`],
+      ['RSS at ready', kb(boot.rssAtReady)],
+      [`RSS idle (${boot.settleMs} ms)`, kb(boot.rssIdle)],
+      ...(boot.rssAfterLoad != null ? [['RSS after load', kb(boot.rssAfterLoad)]] : []),
+    ]))
+    if (boot.during?.length) {
+      out.push(head('Latency', 'p50 / p95 / p99 / max, constant arrival rate, reported'))
+      const ok = boot.during.filter(c => !c.error)
+      if (ok.length) out.push(table([
+        ['case', 'p50', 'p95', 'p99', 'max', 'samples'],
+        ...ok.map(c => [c.name, ms(c.p50), ms(c.p95), ms(c.p99), ms(c.max), `${c.n} @ ${c.rate}/s`]),
+      ]))
+      for (const c of boot.during.filter(c => c.error)) out.push(`  ${chalk.red('FAILED')} ${c.name} — ${c.error}`)
+    }
+  } else if (bootError) out.push(`  ${chalk.red('boot FAILED')} — ${bootError}`)
+  else out.push(chalk.dim('  not measured — pass --boot "<command>" --url <health url>'))
+
   if (verdict) {
-    for (const r of verdict.regressions) rows.push(`REGRESSION  ${r.key}  ${r.was} → ${r.now}`)
-    for (const r of verdict.improvements) rows.push(`improved    ${r.key}  ${r.was} → ${r.now}`)
-    if (verdict.unbaselined.length) rows.push(`unbaselined ${verdict.unbaselined.length} metric(s) — \`fli test:bench --update\` records them`)
-    if (verdict.unmeasured.length) rows.push(`unmeasured  ${verdict.unmeasured.join(', ')} (baselined, not built this run)`)
+    out.push(head('Verdict'))
+    const lines = []
+    for (const r of verdict.regressions) lines.push(`  ${chalk.red('REGRESSION')}  ${r.key}  ${r.was} → ${r.now}  (+${r.now - r.was})`)
+    for (const r of verdict.improvements) lines.push(`  ${chalk.green('improved')}    ${r.key}  ${r.was} → ${r.now}`)
+    if (verdict.unbaselined.length) lines.push(`  ${chalk.yellow('unbaselined')} ${verdict.unbaselined.length} metric(s) — --update records them`)
+    if (verdict.unmeasured.length) lines.push(`  ${chalk.dim('unmeasured')}  ${verdict.unmeasured.join(', ')} (baselined, not built this run)`)
+    out.push(lines.length ? lines.join('\n') : `  ${chalk.green('within baseline')}`)
   }
-  return rows.join('\n')
+  return out.join('\n').replace(/^\n/, '')
 }

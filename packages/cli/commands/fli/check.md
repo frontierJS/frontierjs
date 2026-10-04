@@ -69,7 +69,11 @@ if (flag.list) {
 const root = context.paths.root
 const only = flag.only ? flag.only.split(',').map(s => s.trim()).filter(Boolean) : null
 
-let { findings, ran, skipped } = runChecks({ root, only })
+// The baseline file is read first because it also carries the app's named
+// exceptions (`allow`, `FJS-D508`), which the run itself needs.
+let baseline = readBaseline(root)
+
+let { findings, allowed, stale, ran, skipped } = runChecks({ root, only, allow: baseline.allow })
 
 // `fli check` with no flags is the plan and `--fix` applies it, which is the
 // order Terraform got right: nothing is written by the command a person runs to
@@ -81,7 +85,7 @@ if (flag.fix) {
   const result = applyFixes(findings)
   fixed = result.fixed
 
-  if (fixed.length) ({ findings, ran, skipped } = runChecks({ root, only }))
+  if (fixed.length) ({ findings, allowed, stale, ran, skipped } = runChecks({ root, only, allow: baseline.allow }))
 
   for (const f of result.failed) {
     log.warn(`could not fix ${f.rule} at ${f.file}: ${f.why}`)
@@ -92,8 +96,7 @@ if (flag.fix) {
 // an app's own `bun run check` gets it — and what it changes is the exit code
 // and nothing else: the findings still print. Debt you cannot see is debt
 // nobody pays.
-let baseline = readBaseline(root)
-let grade    = baseline.present || flag.adopt
+let grade = baseline.present || flag.adopt
   ? gradeBaseline({ findings, ran, skipped }, baseline)
   : null
 
@@ -113,7 +116,7 @@ if (grade && (flag.adopt || (flag.update && grade.improvements.length))) {
 
 if (flag.json) {
   echo(JSON.stringify({
-    root, ran, skipped, findings,
+    root, ran, skipped, findings, allowed, stale,
     ...(flag.fix ? { fixed } : {}),
     ...(grade ? { baseline: { file: BASELINE_FILE, ...grade } } : {}),
   }, null, 2))
@@ -139,6 +142,18 @@ if (findings.length) {
   for (const line of formatFindings(findings, root)) echo(line)
   echo('')
 }
+
+// An excused finding is said out loud with its reason, and an excuse that no
+// longer excuses anything is named so it can be deleted.
+if (allowed.length) {
+  echo(`  ${allowed.length} finding(s) allowed by ${BASELINE_FILE}:`)
+  for (const a of allowed) {
+    const where = a.file.startsWith(root) ? a.file.slice(root.length + 1) : a.file
+    echo(`     ${a.rule}  ${where} — ${a.why}`)
+  }
+  echo('')
+}
+for (const key of stale) log.warn(`${BASELINE_FILE} allows ${key}, which no longer finds anything — remove the entry`)
 
 // A rule that found nothing because it found nothing to LOOK at is not a rule
 // that passed. Reporting the two as one number is how a check quietly stops
@@ -328,6 +343,18 @@ allowance is.
 
 ## An exception is a named entry with a reason
 
-There is no ignore comment. `runChecks({ allow })` takes `'<rule>:<path>'` keyed
-to why, and **a stale allowance is reported** — an exception that outlives the
-thing it excused is an unenforced rule nobody knows is unenforced.
+There is no ignore comment. An app states an exception in an `allow` object in
+`check-baseline.json`, beside the counts (`FJS-D508`), and `fli check` hands it to
+`runChecks({ allow })`:
+
+```json
+{ "allow": { "resource-file-name:web/src/resources/Lens.mesa": "the model is Lens, not Len" } }
+```
+
+The key is `'<rule>:<path>'`, the path relative to the app root, and the value is
+why — an entry with no reason is not read. The excused finding prints under its
+reason and leaves the count, so it never raises the ceiling and never excuses the
+next finding of that rule. **A stale allowance is reported** — an exception that
+outlives the thing it excused is an unenforced rule nobody knows is unenforced —
+but only for a rule that ran, so `--only` does not call a live entry stale.
+`--adopt` and `--update` rewrite the counts and carry `allow` through untouched.

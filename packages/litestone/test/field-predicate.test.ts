@@ -74,9 +74,12 @@ describe("@allow('read', …) on a field — the value is not recoverable by fil
       .toHaveLength(0)
   })
 
-  it('refuses to let an orderBy leak the ordering of every row at once', async () => {
-    const { ada } = await people()
-    expect(await ada.person.findMany({ orderBy: { salary: 'desc' } })).toHaveLength(0)
+  it('refuses an orderBy on a column the caller can read on no row, by name', async () => {
+    const { ada, admin } = await people()
+    // Every cell would sort as NULL, so the order asked for would silently be none.
+    await expect(ada.person.findMany({ orderBy: { salary: 'desc' } })).rejects.toThrow(/"salary"/)
+    expect((await admin.person.findMany({ orderBy: { salary: 'desc' } })).map((r: any) => r.name))
+      .toEqual(['ada', 'bob'])
   })
 
   it('a ROW-dependent predicate narrows to the rows the caller may read it on', async () => {
@@ -97,6 +100,70 @@ describe("@allow('read', …) on a field — the value is not recoverable by fil
     const { sys, ada } = await people()
     expect(await sys.person.findMany({ where: { salary: { gt: 50_000 } } })).toHaveLength(1)
     expect(await ada.person.findMany({ where: { name: 'bob' } })).toHaveLength(1)
+  })
+})
+
+// A sort is not a filter (`FJS-1664`). Conjoining the predicate made orderBy
+// drop every row whose cell the caller could not read, so count() and the
+// sorted page disagreed. A hidden cell now sorts as NULL and its row stays.
+const SORT_SCHEMA = `
+model Doc {
+  id      Int     @id
+  ownerId Int
+  rank    Int?    @allow('read', ownerId == auth().id) @map("rank_col")
+  secret  String? @allow('read', ownerId == auth().id)
+}
+`
+
+describe('an orderBy on a row-dependent field predicate sorts the hidden cells as NULL', () => {
+
+  async function docs() {
+    const db: any = await createClient({ db: ':memory:', schema: SORT_SCHEMA })
+    const sys = db.asSystem()
+    await sys.doc.create({ data: { id: 1, ownerId: 7, secret: 'b', rank: 2 } })
+    await sys.doc.create({ data: { id: 2, ownerId: 8, secret: 'a', rank: 1 } })
+    await sys.doc.create({ data: { id: 3, ownerId: 7, secret: 'a', rank: 1 } })
+    return { sys, me: db.$setAuth({ id: 7 }) }
+  }
+  const ids = (rows: any[]) => rows.map(r => r.id)
+
+  it('keeps every row, as count() does', async () => {
+    const { me } = await docs()
+    expect(await me.doc.count()).toBe(3)
+    expect(ids(await me.doc.findMany({ orderBy: { secret: 'asc' } }))).toEqual([2, 3, 1])
+    expect(ids(await me.doc.findMany({ orderBy: { secret: 'desc' } }))).toEqual([1, 3, 2])
+  })
+
+  it('places the hidden cell where a NULL goes, nulls: included', async () => {
+    const { me } = await docs()
+    // Row 2's real secret is 'a', which would sort beside row 3 — it sorts as nothing.
+    expect(ids(await me.doc.findMany({ orderBy: { secret: { dir: 'asc', nulls: 'last' } } }))).toEqual([3, 1, 2])
+  })
+
+  it('sorts a @map column by its stored name', async () => {
+    const { me } = await docs()
+    expect(ids(await me.doc.findMany({ orderBy: { rank: 'asc' } }))).toEqual([2, 3, 1])
+  })
+
+  it('keeps the caller\'s key order around the masked key', async () => {
+    const { me } = await docs()
+    expect(ids(await me.doc.findMany({ orderBy: { ownerId: 'asc', secret: 'desc' } }))).toEqual([1, 3, 2])
+    expect(ids(await me.doc.findMany({ orderBy: [{ ownerId: 'desc' }, { secret: 'asc' }] }))).toEqual([2, 3, 1])
+  })
+
+  it('a where on the same field still narrows', async () => {
+    const { me } = await docs()
+    expect(ids(await me.doc.findMany({ where: { secret: 'a' }, orderBy: { secret: 'asc' } }))).toEqual([3])
+  })
+
+  it('asSystem() sorts by the real values', async () => {
+    const { sys } = await docs()
+    expect(ids(await sys.doc.findMany({ orderBy: [{ secret: 'asc' }, { id: 'asc' }] }))).toEqual([2, 3, 1])
+  })
+
+  it('a keyset cursor is refused by name — a hidden cell has no value to resume from', async () => {
+    const { me } = await docs()
+    await expect(me.doc.findManyCursor({ orderBy: { secret: 'asc' }, limit: 2 })).rejects.toThrow(/limit\/offset/)
   })
 })
 

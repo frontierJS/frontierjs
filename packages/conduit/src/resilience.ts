@@ -138,6 +138,15 @@ export class Resilience {
     return { ok: true }
   }
 
+  /**
+   * A per-origin key of a request-addressed target is graded by that target's
+   * policy, learned under its id. Copied on every send, so a re-registered
+   * policy reaches origins already seen.
+   */
+  inherit(key: string, target: string): void {
+    this.state(key).policy = this.states.get(target)?.policy
+  }
+
   /** Report the outcome of an admitted request and free its slot. */
   release(target: string, outcome: 'success' | 'target_fault' | 'other'): void {
     const s = this.state(target)
@@ -177,6 +186,8 @@ export class Resilience {
   /** Drop a target's state — on deregister, so a re-registered target starts clean. */
   forget(target: string): void {
     this.states.delete(target)
+    // And every origin a request-addressed target kept a breaker for.
+    for (const key of this.states.keys()) if (key.startsWith(`${target} `)) this.states.delete(key)
   }
 
   clear(): void {

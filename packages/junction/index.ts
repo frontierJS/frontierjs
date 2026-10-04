@@ -109,8 +109,9 @@ export { createThread, createPool, workerHandler, workerData }    from './src/wo
 export type { WorkerHandle, WorkerPoolHandle, PoolStats }         from './src/workers/index.ts'
 
 // ─── Mail ─────────────────────────────────────────────────────────────────
-export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, MailBuilder } from './src/mail/index.ts'
-export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions } from './src/mail/index.ts'
+export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, MailBuilder,
+         assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './src/mail/index.ts'
+export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions, CredentialSource } from './src/mail/index.ts'
 
 // ─── AI ───────────────────────────────────────────────────────────────────
 export { AIRegistry, AIBuilder }                                   from './src/ai/index.ts'

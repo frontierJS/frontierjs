@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-03 — `transforms`: what `@trim`, `@lower`, `@upper` and `@slug` do to a value (`FJS-401`)
+
+`transform(names, value)` runs an ordered list of transform names over a value, and `TRANSFORM_NAMES` / `isTransform` say which names exist. Litestone applied these at the Data boundary and nobody else could, so a service payload and a generated form graded a value the Data boundary would have changed first. Litestone, Junction and Sierra now read this one table. An unknown name is skipped, so a newer schema read by an older reader does not throw. `test/specs/transforms.spec.js`.
+
 ## 2026-10-03 — `offsetSpans`: a zone as the fixed offsets it keeps across a range
 
 `offsetSpans(from, to, timeZone)` answers `[{ from, offset }]`, the stretches of the range over which the zone keeps one UTC offset, each change found to the millisecond. It is for a reader that cannot run zone rules per row: litestone's zoned `groupBy` states a zone to SQLite as one `CASE` arm per span (DL S3, the transit stressor). Graded against the Temporal oracle the rest of `datetime.spec.js` uses, with a one-offset negative control that must miss.

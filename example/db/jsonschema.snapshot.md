@@ -258,11 +258,11 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `labels` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `labelsKey` | `string` | yes | — | — | — |
+| `labelsKey` | `string` | yes | — | `x-transforms` | — |
 | `type` | `MetricType` = `"gauge"` | — | — | — | — |
-| `unit` | `string`? | — | — | — | — |
+| `unit` | `string`? | — | — | `x-transforms` | — |
 | `lastSeenAt` | `string` | — | — | `format: "date-time"` | — |
 
 **On create**: required — `name`, `labelsKey` · not accepted — `id`
@@ -307,7 +307,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
 | `description` | `string`? | — | — | — | — |
 | `status` | `FlowStatus` = `"draft"` | — | — | — | — |
 | `currentVersion` | `integer`? | — | — | `x-litestone-write-policy` | — |
@@ -413,9 +413,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `provider` | `string` | yes | — | — | — |
-| `address` | `string` | yes | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` `x-transforms` | — |
+| `provider` | `string` | yes | — | `x-transforms` | — |
+| `address` | `string` | yes | — | `x-transforms` | — |
 | `auth` | `FlowCredentialAuth` = `"none"` | — | — | — | — |
 | `header` | `string`? | — | — | — | — |
 | `encoding` | `string`? = `"json"` | — | — | — | — |
@@ -447,7 +447,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-required-where` | `required` |
 | `brand` | `Brand` | yes | — | — | — |
 | `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
@@ -486,7 +486,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `productId` | `integer` | yes | Product | — | `required` |
-| `sku` | `string` | yes | — | `minLength: 3` `maxLength: 20` | — |
+| `sku` | `string` | yes | — | `minLength: 3` `maxLength: 20` `x-transforms` | — |
 | `color` | `string` = `"Default"` | — | — | `minLength: 1` `maxLength: 30` `x-values` | — |
 | `size` | `Size` = `"one"` | — | — | — | — |
 | `price` | `integer` | yes | — | `minimum: 0` `x-money` | — |
@@ -529,7 +529,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `firstName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `lastName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `fullName` | `string`? | — | — | `x-litestone-kind` | — |
-| `email` | `string` | yes | — | `format: "email"` | — |
+| `email` | `string` | yes | — | `format: "email"` `x-transforms` | — |
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `orderCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
@@ -546,7 +546,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `model` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
-| `key` | `string` | yes | — | `pattern: "^[a-z][a-z0-9_]*$"` `minLength: 1` `maxLength: 40` | — |
+| `key` | `string` | yes | — | `pattern: "^[a-z][a-z0-9_]*$"` `minLength: 1` `maxLength: 40` `x-transforms` | — |
 | `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `type` | `CustomFieldType` | yes | — | — | — |
 | `defaultValue` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
@@ -563,7 +563,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `code` | `string` | yes | Code | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
+| `code` | `string` | yes | Code | `minLength: 3` `maxLength: 20` `x-transforms` | `length` `maxLength` `minLength` |
 | `label` | `string` | yes | Description | `minLength: 1` `maxLength: 60` | — |
 | `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
 | `value` | `integer` | yes | Value | `minimum: 0` `x-scale` | — |
@@ -638,7 +638,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | — | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
+| `reference` | `string` | yes | — | `minLength: 3` `maxLength: 20` `x-transforms` | `length` `maxLength` `minLength` |
 | `status` | `OrderStatus` = `"pending"` | — | — | — | — |
 | `subtotal` | `integer` = `0` | — | Subtotal | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `discountCode` | `string`? | — | Code | `x-litestone-kind` | — |
@@ -708,7 +708,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `providerRef` | `string` | yes | Provider reference | `minLength: 3` `maxLength: 64` | — |
 | `status` | `PaymentStatus` = `"pending"` | — | — | — | — |
 | `amount` | `integer` | yes | — | `minimum: 0` `x-money` | — |
-| `currency` | `string` = `"USD"` | — | — | `minLength: 3` `maxLength: 3` | — |
+| `currency` | `string` = `"USD"` | — | — | `minLength: 3` `maxLength: 3` `x-transforms` | — |
 | `orderId` | `integer`? | — | Order | — | — |
 | `invoiceId` | `integer`? | — | Invoice | — | — |
 | `paymentMethodId` | `integer`? | — | Instrument | — | — |
@@ -742,7 +742,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `code` | `string` | yes | Code | `minLength: 2` `maxLength: 40` | — |
+| `code` | `string` | yes | Code | `minLength: 2` `maxLength: 40` `x-transforms` | — |
 | `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 400` | — |
 | `interval` | `PlanInterval` = `"monthly"` | — | — | — | — |
@@ -779,7 +779,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` `x-transforms` | — |
 | `customerId` | `integer` | yes | — | — | — |
 | `planVersionId` | `integer` | yes | — | — | — |
 | `status` | `SubscriptionStatus` = `"trialing"` | — | — | — | — |
@@ -828,7 +828,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` | — |
+| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` `x-transforms` | — |
 | `status` | `InvoiceStatus` = `"draft"` | — | — | — | — |
 | `customerId` | `integer` | yes | — | — | — |
 | `subscriptionId` | `integer`? | — | — | — | — |
@@ -874,7 +874,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` | — |
+| `number` | `string` | yes | Number | `minLength: 3` `maxLength: 30` `x-transforms` | — |
 | `invoiceId` | `integer` | yes | — | — | — |
 | `amount` | `integer` | yes | Amount | `exclusiveMinimum: 0` `x-money` | — |
 | `reason` | `string` | yes | Reason | `minLength: 3` `maxLength: 200` | — |
@@ -1006,7 +1006,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` `x-transforms` | — |
 | `narrative` | `string` | yes | Narrative | `minLength: 3` `maxLength: 200` | — |
 | `postedAt` | `string` | — | Posted | `format: "date-time"` `x-litestone-kind` | — |
 | `source` | `JournalSource` | yes | Source | — | — |
@@ -1037,9 +1037,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` `x-transforms` | — |
 | `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
-| `email` | `string` | yes | Email | — | — |
+| `email` | `string` | yes | Email | `x-transforms` | — |
 | `startedOn` | `string` | yes | Started | `format: "date"` | — |
 | `endedOn` | `string`? | — | Left | `format: "date"` | — |
 
@@ -1088,7 +1088,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 30` | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 30` `x-transforms` | — |
 | `periodStart` | `string` | yes | From | `format: "date"` | — |
 | `periodEnd` | `string` | yes | To | `format: "date"` | — |
 | `payDate` | `string` | yes | Pay date | `format: "date"` | — |
@@ -1113,7 +1113,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
-| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` | — |
+| `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 40` `x-transforms` | — |
 | `payRunId` | `integer` | yes | Pay run | — | — |
 | `employeeId` | `integer` | yes | Employee | — | — |
 | `payWindowId` | `integer` | yes | Pay window | — | — |
@@ -1170,8 +1170,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` | — |
-| `name` | `string`? | — | — | — | — |
+| `email` | `string` | yes | — | `format: "email"` `x-litestone-write-policy` `x-transforms` | — |
+| `name` | `string`? | — | — | `x-transforms` | — |
 | `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | `x-litestone-write-policy` | — |
@@ -1243,7 +1243,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `code` | `string` | yes | Discount code | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` `required` |
+| `code` | `string` | yes | Discount code | `minLength: 3` `maxLength: 20` `x-transforms` | `length` `maxLength` `minLength` `required` |
 
 **On create**: required — `code`
 
@@ -1263,7 +1263,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `email` | `string` | yes | Email | `format: "email"` | `required` |
+| `email` | `string` | yes | Email | `format: "email"` `x-transforms` | `required` |
 | `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | `required` |
 | `note` | `string`? | — | Order note | `minLength: 0` `maxLength: 500` | — |
 

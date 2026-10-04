@@ -32,7 +32,7 @@ import { decryptField } from './encryption.js'
 // them would make a schema-level truth expire with a principal.
 const ROW_FREE_EXPRS = new WeakMap()
 
-function hoistedFieldRead(ctx, exprs) {
+export function hoistedFieldRead(ctx, exprs) {
   let free = ROW_FREE_EXPRS.get(exprs)
   if (free === undefined) ROW_FREE_EXPRS.set(exprs, free = !exprs.some(referencesRow))
   if (!free) return null

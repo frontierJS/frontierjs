@@ -1,5 +1,9 @@
 # Changes — @frontierjs/notifications
 
+## 2026-10-03 — the mailer wiring teaches the key by reference
+
+[`FJS-659`](../../ISSUES_ARCHIVE.md#fjs-659). The README and `examples/wiring.ts` passed `createResendMailer` a literal `apiKey`. They now pass `{ credentials, apiKeyRef }`, the form junction's mailer resolves at send time. No code in this package changed.
+
 ## 2026-09-29 — a new notification reaches the bell
 
 [`FJS-1573`](../../ISSUES.md#fjs-1573). The inApp driver pushed `notification:created`, and the

@@ -143,8 +143,8 @@ const MESSAGE_KEYWORDS = {
 import { parseGateString } from './plugins/gate.js'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { unitInfo } from '@frontierjs/toolbelt/units'
-import { TIME_PATTERNS } from './core/validate.js'
-import { dependsOnClock } from './core/policy.js'
+import { TIME_PATTERNS, transformNames } from './core/validate.js'
+import { dependsOnClock, determinedColumns } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
 
@@ -780,6 +780,13 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // Annotate models with row-level policies so Junction knows to enforce them
   if (hasPolicies) result['x-litestone-policies'] = true
 
+  // ── x-determined ───────────────────────────────────────────────────────────
+  // `{ hostId: 'auth().id' }` — a column a create policy pins to the caller, so
+  // a form offers no choice for it and the client supplies it (`FJS-D492`). An
+  // affordance like `x-gate`: the policy enforces it regardless (Invariant 6).
+  const determined = determinedColumns(model)
+  if (Object.keys(determined).length) result['x-determined'] = determined
+
   // ── x-version ──────────────────────────────────────────────────────────────
   // Names the column an update must carry back. One string, so a client knows
   // which field to round-trip without scanning properties for a readOnly Int.
@@ -1151,6 +1158,12 @@ function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
 // ─── Validator → JSON Schema keyword mappings ─────────────────────────────────
 
 function applyValidators(schema, attributes) {
+  // Not a validator: the value a validator below is asked about. A realm that
+  // grades before the Data boundary runs these first, in this order, or it
+  // refuses what this boundary would have stored (`FJS-401`).
+  const transforms = transformNames(attributes)
+  if (transforms.length) schema['x-transforms'] = transforms
+
   for (const attr of attributes) {
     switch (attr.kind) {
       case 'email':

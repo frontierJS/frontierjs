@@ -143,8 +143,9 @@ import {
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, leavesAt, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
-  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
+  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS, seedDetermined,
 } from './field-rules.js'
+import { session } from './session.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
 import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@frontierjs/toolbelt/hooks'
@@ -1124,6 +1125,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (method === 'create' || method === 'patch') {
         ctx.data = stripReadOnly(rules, ctx.data, { keep: versionOf ? [versionOf] : [] })
       }
+
+      // A column the create policy pins to the caller is filled here, before the
+      // checks below see the payload: the form drew no control for it, and a
+      // hand-written save never named it (`FJS-1229`).
+      if (method === 'create') ctx.data = seedDetermined(rules, ctx.data, session.user)
 
       // Coercion first: '' must still look blank to normalize() below, and
       // Number('') is 0 — so this deliberately leaves empty strings alone.

@@ -1,5 +1,25 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-03 — the package root exports the mail asserters a test double needs (`FJS-1224`)
+
+`assertMessageAddresses`, `assertHeaderValue`, `assertHeaderName` and `assertContentId` were re-exported from the mail module for `IMail` test doubles, and the root did not carry them, with no subpath to reach around by. A double had to restate the address rule by hand, which made two owners of it. They are on the root beside `createSmtpMailer` now, so a double refuses what the real mailer refuses. Proved by `test/mail-test-double-door.test.ts`, which imports them from `index.ts` and calls each on a CRLF-injected value.
+
+## 2026-10-03 — one start per app is the contract, and the refusal says so (`FJS-949`)
+
+A stopped app is not restartable: `start()` after `stop()` refuses by name and points at `createApp()`, which is how an embedder holding an app across a config reload gets a fresh one (`FJS-D479`). Rebuilding the router per start would have put a re-entrance duty on every plugin that registers routes at `boot()`. The refusal and its stopped-app test already existed; the comments that called restart pending now cite the ruling.
+
+## 2026-10-03 — `app.runAs` can say a device vouched for the person (`FJS-1248`, `FJS-D490`)
+
+`app.runAs(userId, { attestedBy: { id, type, method } }, fn)` is the route to the audit trail's `actorId`/`subjectId` pair for an attester that is not a User holding a Session — a wall tablet that checked a PIN. The attester rides `RequestMeta.attestedBy`, `installLogContext` reads it into `operatorId` and the new `operatorType`, and litestone's support branch files the device as the actor and the person as the subject, so *what did this tablet attest, across every model* is one indexed query. `method` becomes the principal's `authMethod` (`auth().authMethod` in a policy), and the standing is still re-resolved through `sessionFor`, so a user disabled this morning does not clock in. It is per-call-scope, which is what a process-wide `$logContext` could not be, and `reenterAs` drops it because a device that vouched for one person did not vouch for the next. `runAs(null, { attestedBy })` and a blank `id` or `type` are refused by name. `SessionContext.authMethod` accepts a string beyond the five it listed. Proved by `test/attested-by.test.ts`, including two concurrent scopes that do not bleed.
+
+## 2026-10-03 — a service payload is transformed before it is validated (`FJS-401`)
+
+A declared custom-method `input` and an ordinary model write both read `x-transforms` into `FieldDef.transforms` and run it ahead of `minLength`, `pattern` and the rest, the order the Data boundary uses. `' ABC123 '` reaches a `@trim` method as `'ABC123'`, `'  ab  '` against `@trim @length(3, 12)` is refused as it is at the Data boundary, and `POST /api/bangs { trigger: 'UP1' }` against `@lower @regex("^[a-z0-9]{1,12}$")` is accepted and stored `up1` where it answered 400 *format is invalid*. `FieldDef.transform` is unchanged and still runs after validation. `test/method-input.test.ts`.
+
+## 2026-10-03 — the Resend mailer takes its key by reference (`FJS-659`)
+
+`createResendMailer` took the secret as a constructor argument, the one habit Conduit's credential convention exists to avoid. It now also accepts `{ credentials, apiKeyRef }`: a `{ get(ref) }` source and the name of the key, resolved on every send, so the secret is held by no closure and a rotated key is picked up without a restart. The shape is structural (`CredentialSource`, exported), so a Conduit `CredentialResolver` passes straight in and `{ get: ref => process.env[ref] }` needs no Conduit at all (`FJS-D219`). A ref that does not resolve throws naming the ref and never reaches the network. The literal `apiKey` option stays. The two are a union, so passing both is a type error. `test/resend-credentials.test.ts`.
+
 ## 2026-10-03 — a mail can carry an inline image (`FJS-1666`)
 
 `MailAttachment.cid` sends an attachment inline, for the HTML to draw as `<img src="cid:chart">`; `createMessage(…).inline(cid, filename, content, type)` adds one. Over SMTP the body and its inline parts are `multipart/related`, inside `multipart/mixed` when there are files as well, and each inline part carries `Content-ID` and `Content-Disposition: inline`. Resend receives `content_id`, and now `content_type`. Before this, every attachment was a file: a report's chart, which no mail client draws as SVG, arrived as a broken image and a stray `chart.png`. A cid is held to letters, digits and `.-_@`, and an inline attachment with no `html` body is refused by name.

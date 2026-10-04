@@ -370,6 +370,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./predicate` | `src/predicate/predicate.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
+| exports | `./transforms` | `src/transforms/transforms.js` | yes |
 | exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |
 | exports | `./redact (default)` | `src/redact/redact.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
@@ -392,8 +393,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 77 files |
-| exports | `./components/*` | `components/*.mesa` | 77 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 78 files |
+| exports | `./components/*` | `components/*.mesa` | 78 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

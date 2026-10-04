@@ -96,6 +96,27 @@ interface TargetDescriptor {
 
 Targets can be registered statically at startup (see `opts.targets`) or dynamically at runtime (see `register()`).
 
+### A destination held in a row
+
+Some destinations are not the app's to declare: a Slack or webhook URL a user
+pasted, one per row, which is its own credential. Registering one target per
+row would put each URL in the registry and in every observer. Declare one
+target with `address_from: 'request'` and name the URL on each send:
+
+```ts
+{ id: 'hook:slack', kind: 'provider', protocol: 'http', address: '',
+  address_from: 'request', auth: { type: 'none' }, registered_at: 0, last_seen_at: null }
+
+await app.conduit.send({ target: 'hook:slack', address: row.url, method: 'POST', body: { text } })
+```
+
+Each attempt checks the URL as one a stranger chose (junction's
+`assertPublicUrl`): public https only, unless `destinations: { allowHttp,
+allowPrivate }` says otherwise for a local receiver. The breaker is kept per
+origin, and observers see the origin, never the path. Such a target takes
+`none` or `hmac` auth and follows no redirect. A stored key would go
+wherever the row says.
+
 ### Policy
 
 One conduit carries a card processor, a mail sink and a health probe, and 10s

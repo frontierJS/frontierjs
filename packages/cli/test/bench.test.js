@@ -10,7 +10,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { firstLoadRefs, gatedMetrics, measureBoot, measureSurface, ratchet, treeRss } from '../core/bench.js'
+import { percentiles, runCase, runCases } from '../core/latency.js'
+import { firstLoadRefs, gatedMetrics, measureBoot, measureDbGrowth, measureSurface, ratchet, treeRss } from '../core/bench.js'
 
 const dir = mkdtempSync(join(tmpdir(), 'fli-bench-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -99,5 +100,37 @@ describe('measureBoot', () => {
   test('a command that exits before ready is an error naming the command', async () => {
     const port = 19000 + Math.floor(Math.random() * 1000)
     await expect(measureBoot({ cmd: 'exit 3', cwd: dir, url: `http://localhost:${port}/`, timeoutMs: 5000 })).rejects.toThrow(/exited 3/)
+  })
+})
+
+describe('measureDbGrowth', () => {
+  test('an app it cannot open is an error, not an empty answer', () => {
+    expect(() => measureDbGrowth({ appRoot: dir, accessor: 'note', counts: [0, 2], row: i => ({ id: i }) }))
+      .toThrow(/db growth measured nothing/)
+  })
+})
+
+describe('latency', () => {
+  test('percentiles are observed values, nearest-rank', () => {
+    const p = percentiles(Array.from({ length: 100 }, (_, i) => i + 1))
+    expect([p.p50, p.p95, p.p99, p.max, p.n]).toEqual([50, 95, 99, 100, 100])
+    expect(percentiles([]).p99).toBeNull()
+  })
+
+  test('latency counts from the scheduled instant, so a stall shows in the tail', async () => {
+    // Request 0 blocks the whole generator-visible server for 300 ms. A closed
+    // loop would record one slow sample; at a constant rate the queued ones are
+    // late too.
+    let first = true
+    const r = await runCase({
+      name: 'stall', rate: 100, durationMs: 500, warmupMs: 0,
+      fire: async () => { if (first) { first = false; await new Promise(res => setTimeout(res, 300)) } },
+    })
+    expect(r.max).toBeGreaterThan(250)
+  })
+
+  test('a failing request makes the case an error, not a fast one', async () => {
+    const out = await runCases([{ name: 'bad', rate: 50, durationMs: 100, warmupMs: 0, fire: async () => { throw new Error('answered 401') } }])
+    expect(out[0].error).toMatch(/failed, first: answered 401/)
   })
 })

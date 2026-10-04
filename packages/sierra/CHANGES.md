@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-03 — a generated create form no longer asks for a column the policy determines (`FJS-1229`)
+
+A column in the model's `x-determined` is marked `determined` and no longer `required` by `buildFieldRules`, `formFieldList` leaves it out of the generated set (`only` still names it), and `_call` fills it from `session.user` on a create when the payload leaves it blank — `auth().id` is the session's `userId`, any other claim is read by name, and one the session lacks is left unset for the Data boundary to refuse. The two halves an app used to write by hand per column (`record` and `except` together) are one rule, and the scaffolded `before.create` hook it defeated is redundant. `test/determined-fields.test.js`.
+
+## 2026-10-03 — a generated form grades the value the Data boundary will store (`FJS-401`)
+
+`buildFieldRules` carries `x-transforms` and `validateAgainstFields` runs it before the enum, length, pattern and format checks. A person typing `W` into a `@lower` field with a lowercase `@regex` could not save it and was told the format was wrong, with no request sent; `@trim @length` on `' ab '` is the same case. `test/field-messages.test.js`.
+
 ## 2026-10-03 — the offline-shell budget refusal prints as its message
 
 Vite 8 prints a failed build with `util.inspect(err)`, so the over-budget refusal arrived as its message, then a dozen rolldown frames, then `{ code, plugin, hook }`, and the fix command was lost in the middle. `src/build/refusal.js` gives an error a custom inspect that returns its message alone. It is only for a verdict about the app: an error meaning Sierra itself broke keeps its stack. The message now puts the update command on its own line and names the baseline file relative to the cwd. Proof: `test/offline-shell.test.js` › *the refusal prints as its message*, and a forced over-budget `example` build printing the message and nothing else.

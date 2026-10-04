@@ -5,7 +5,7 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge, errorResponse } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { declaredCallHeaders, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
@@ -200,6 +200,20 @@ export interface RunAsOptions {
    * rule `auth` follows one field over.
    */
   tenant?: string | null
+
+  /**
+   * WHO vouched for this person, where the voucher is not a User with a
+   * session — a kiosk tablet that checked a PIN.
+   *
+   * The audit trail files the attester as `actorId` and the person as
+   * `subjectId`, the pair support mode uses, so *what did this tablet attest,
+   * across every model* is one indexed query. `method` becomes the principal's
+   * `authMethod`, readable as `auth().authMethod` in a policy. The standing is
+   * still re-resolved through `sessionFor`, so someone disabled this morning
+   * does not clock in. Needs a userId: the app's own principal has nobody to
+   * be vouched for.
+   */
+  attestedBy?: Attester
 }
 
 /**
@@ -1327,6 +1341,18 @@ export function createApp(opts: AppOptions = {}): App {
       const fn      = typeof optsOrFn === 'function' ? optsOrFn : maybeFn
       if (!fn) throw new Error('[Junction] app.runAs — no function to run')
 
+      const attester = runOpts.attestedBy
+      if (attester) {
+        if (userId === null) throw new Error(
+          '[Junction] app.runAs(null, { attestedBy }) — the app\'s own principal has nobody to be vouched for. ' +
+          'Name the person the attester proved.'
+        )
+        if (!attester.id || !attester.type) throw new Error(
+          '[Junction] app.runAs — attestedBy needs an `id` and a `type`: the trail files the id as the actor ' +
+          'and the type as its kind, and a blank of either is a row nobody can read.'
+        )
+      }
+
       let user: import('../auth/types.ts').SessionContext | null = null
 
       if (userId !== null) {
@@ -1374,6 +1400,10 @@ export function createApp(opts: AppOptions = {}): App {
         user = opts.system ?? null
       }
 
+      // A copy: `sessionFor` may hand back a shared object, and how THIS call
+      // proved the person is not a fact about the person.
+      if (attester?.method && user) user = { ...user, authMethod: attester.method }
+
       const frozen = user ? freezeUser(user) : null
       const tenant = 'tenant' in runOpts ? runOpts.tenant : requestMeta()?.tenant
 
@@ -1388,7 +1418,7 @@ export function createApp(opts: AppOptions = {}): App {
         // An absent tenant INHERITS the one in scope, on the same rule `auth`
         // follows: saying nothing means say nothing, and `{ tenant: null }`
         // means this work belongs to no tenant deliberately.
-        { origin: 'internal', user: frozen, tenant },
+        { origin: 'internal', user: frozen, tenant, attestedBy: attester },
         () => Promise.resolve(fn(frozen)),
       )
     },
@@ -1771,8 +1801,8 @@ export function createApp(opts: AppOptions = {}): App {
     // A second start() used to reach `security-headers` and die on `Cannot add
     // middleware after the router is built` — an internal sentence about a
     // router, for a caller whose actual mistake was calling this twice. Refused
-    // by name instead: an app is started once, and the way to start it again is
-    // to stop it first.
+    // by name instead: an app is started once (FJS-D479), stopped or not, and a
+    // config reload builds a new one.
     if (_everStarted) {
       throw new Error(
         `[Junction] this app has already been started` +
@@ -1780,7 +1810,7 @@ export function createApp(opts: AppOptions = {}): App {
         `. start() runs the whole phase list — middleware is applied, plugins ` +
         `boot, routes are registered — and none of it is repeatable: the router ` +
         `is built once and refuses middleware afterwards. A STOPPED app cannot ` +
-        `be restarted either (\`FJS-949\`); build a new one with createApp().`
+        `be restarted either (\`FJS-D479\`); build a new one with createApp().`
       )
     }
     _everStarted = true

@@ -40,8 +40,9 @@ import { mailerPlugin, createResendMailer } from '@frontierjs/junction'
 
 // mailerPlugin must be configured before notificationsPlugin
 app.configure(mailerPlugin(createResendMailer({
-  apiKey: process.env.RESEND_API_KEY!,
-  from:   'noreply@example.com',
+  credentials: { get: ref => process.env[ref] },
+  apiKeyRef:   'RESEND_API_KEY',
+  from:        'noreply@example.com',
 })))
 
 app.configure(notificationsPlugin({

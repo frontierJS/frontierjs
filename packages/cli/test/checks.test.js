@@ -1193,6 +1193,48 @@ describe('what the runner reports about itself', () => {
   })
 })
 
+// A web-only app is a whole project (`app-layout`'s own comment says so), and
+// a root with no db/ is where `mesa-compiles` passed a .mesa that does not
+// parse as "✓ 0 rule(s) checked" (`FJS-1617`).
+describe('an app root with no schema (FJS-1617)', () => {
+  const WEB_ONLY = {
+    'package.json':                 '{ "name": "web-only" }\n',
+    'web/config/sierra.config.js':  'export default {}\n',
+    'web/src/routes/index.mesa':    '<h1>hi</h1>\n',
+    'web/src/Broken.mesa':          '<script>\nconst a = (\n</script>\n\n<p>x</p>\n',
+  }
+  const installSierra = root => {
+    mkdirSync(join(root, 'web', 'node_modules', '@frontierjs'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'web', 'node_modules', '@frontierjs', 'sierra'))
+  }
+
+  test('mesa-compiles runs, and finds the .mesa that does not parse', () => {
+    const root = tree('web-only', WEB_ONLY)
+    installSierra(root)
+    const r = only(root, 'mesa-compiles')
+    expect(r.skipped).toEqual([])
+    expect(r.findings).toHaveLength(1)
+    expect(r.findings[0].file).toMatch(/Broken\.mesa$/)
+  })
+
+  test('the surface rules run over it rather than skipping as not an app root', () => {
+    const root = tree('web-only-rules', WEB_ONLY)
+    for (const id of ['app-layout', 'surface-config', 'surface-src'])
+      expect(only(root, id).skipped).toEqual([])
+  })
+
+  test('a bare package.json with no surface beside it is still not an app root', () => {
+    const root = tree('pkg-only', { 'package.json': '{ "name": "lib" }\n', 'src/index.js': '\n' })
+    expect(only(root, 'mesa-compiles').skipped[0]?.why).toMatch(/not an app root/)
+  })
+
+  test('the rules about the schema skip, and say it is the schema that is missing', () => {
+    const root = tree('web-only-db', WEB_ONLY)
+    for (const id of ['migration-history', 'log-db-unbound'])
+      expect(only(root, id).skipped[0]?.why).toMatch(/no db\/schema\.lite/)
+  })
+})
+
 describe('the desktop surface (FJS-D263)', () => {
   test('a desktop-only project is an app, not a fixture', () => {
     const root = tree('d-only', {
@@ -2974,6 +3016,68 @@ describe('the baseline', () => {
     expect(keys[0]).toBe('//')
     expect(file(root)['//']).toMatch(/may never rise/)
     expect(keys.slice(1)).toEqual([...keys.slice(1)].sort())
+  })
+
+  // An `allow` object sits beside the counts (`FJS-D508`): `'<rule>:<path>'` to
+  // why. `fli check` passed `runChecks` none, so the only exception an app could
+  // state was a count, which also excused the next real finding (`FJS-1428`).
+  describe('the allowances beside the counts (FJS-1428)', () => {
+    const KEY  = 'resource-file-name:web/src/resources/Prospect.mesa'
+    const LENS = { ...CLEAN, 'web/src/resources/Prospect.mesa': resource('pipeline') }
+
+    test('readBaseline reads `allow` and keeps it out of the counts', () => {
+      const root = tree('bl-allow-read', { ...CLEAN, [BASELINE_FILE]:
+        JSON.stringify({ 'ctx-params': 1, allow: { [KEY]: 'a legacy name' } }) })
+      const baseline = readBaseline(root)
+      expect(baseline.allow).toEqual({ [KEY]: 'a legacy name' })
+      expect(baseline.counts).toEqual({ 'ctx-params': 1 })
+    })
+
+    test('an allowance with no reason is not read as one', () => {
+      const root = tree('bl-allow-bare', { ...CLEAN, [BASELINE_FILE]:
+        JSON.stringify({ allow: { [KEY]: '', 'x:y': 3 } }) })
+      expect(readBaseline(root).allow).toEqual({})
+    })
+
+    test('an absent file has no allowances', () => {
+      expect(readBaseline(tree('bl-allow-none', CLEAN)).allow).toEqual({})
+    })
+
+    test('writing the counts back keeps the allowances', () => {
+      const root = tree('bl-allow-write', { ...dirty(), [BASELINE_FILE]:
+        JSON.stringify({ allow: { [KEY]: 'a legacy name' } }) })
+      const result = run(root, ['ctx-params', 'raw-route-param', 'set-auth-discarded'])
+      const grade  = gradeBaseline(result, readBaseline(root))
+      writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root), mode: 'adopt' })
+      expect(file(root).allow).toEqual({ [KEY]: 'a legacy name' })
+      expect(file(root)['ctx-params']).toBeGreaterThan(0)
+    })
+
+    test('a named allowance excuses that finding and no other', () => {
+      const root = tree('bl-allow-run', LENS)
+      expect(only(root, 'resource-file-name').findings).toHaveLength(1)
+      const { findings, allowed } = only(root, 'resource-file-name', { allow: { [KEY]: 'why' } })
+      expect(findings).toEqual([])
+      expect(allowed).toHaveLength(1)
+    })
+
+    test('a stale allowance is judged only for a rule that ran', () => {
+      const root = tree('bl-allow-stale', LENS)
+      const allow = { [KEY]: 'why', 'ctx-params:api/gone.ts': 'old' }
+      expect(only(root, 'resource-file-name', { allow }).stale).toEqual([])
+      expect(only(root, 'ctx-params', { allow }).stale).toEqual(['ctx-params:api/gone.ts'])
+    })
+
+    test('`fli check` honors the allowance in the file, and says why', () => {
+      const root = tree('bl-allow-cmd', { ...LENS, 'package.json': '{ "name": "x" }\n',
+        [BASELINE_FILE]: JSON.stringify({ allow: { [KEY]: 'a legacy name' } }) })
+      const run = () => JSON.parse(spawnSync(process.execPath,
+        [join(import.meta.dir, '..', 'bin', 'fli.js'), 'check', '--only', 'resource-file-name', '--json'],
+        { cwd: root, encoding: 'utf8' }).stdout)
+      const out = run()
+      expect(out.findings).toEqual([])
+      expect(out.allowed.map(a => a.why)).toEqual(['a legacy name'])
+    })
   })
 })
 

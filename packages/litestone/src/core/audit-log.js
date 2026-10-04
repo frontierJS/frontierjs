@@ -171,7 +171,7 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     // on the principal — one is deliberately hidden from it, the other is a
     // row this package never read.
     actorId:   from?.operatorId ?? from?.bearerId ?? ctx.auth?.id ?? null,
-    actorType: from?.operatorId ? 'support' : actorTypeOf(ctx),
+    actorType: from?.operatorId ? (from.operatorType ?? 'support') : actorTypeOf(ctx),
     subjectId: from?.operatorId ? (ctx.auth?.id ?? null)
              : from?.bearerId  ? (from?.bearerSubject ?? null)
              : null,

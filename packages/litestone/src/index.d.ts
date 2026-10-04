@@ -223,6 +223,9 @@ export interface LogRequestContext {
   /** Support mode: who is standing behind the principal. With one, `actorId` is
    *  the operator and the principal becomes `subjectId`. */
   operatorId?:    unknown
+  /** What kind of actor `operatorId` is, where it is not an operator in
+   *  support mode — a device that attested the principal. Absent files `support`. */
+  operatorType?:  string | null
   episodeId?:     string | null
   /** A bearer: the GRANT row that admitted this caller, and what it was for.
    *  A bearer principal carries no id, so without these the trail files the

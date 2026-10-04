@@ -5,6 +5,8 @@
 //   node scripts/scaffold-build.mjs            # full-stack + auth
 //   node scripts/scaffold-build.mjs --keep     # leave the app on disk to poke at
 //   node scripts/scaffold-build.mjs --verbose  # stream every command
+//   node scripts/scaffold-build.mjs --build --floor [--update|--adopt]
+//                                              # weigh the vanilla app, ratcheted
 //
 // Run by `scripts/ci.mjs` as the `scaffold` phase, and standalone by a person.
 //
@@ -63,8 +65,38 @@ import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine, jo
 import { edgeVhost } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 import { fenceThisProcess }                            from '../packages/cli/core/bun-fence.js'
+import { measureSurface, measureDisk, measureDbGrowth, gatedMetrics, readBaseline, writeBaseline, ratchet, formatBench } from '../packages/cli/core/bench.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+
+// ─── the vanilla floor ───────────────────────────────────────
+
+// A row with a fixed-size body and no randomness: the file size is a function of
+// the count alone.
+const DB_ROW_COUNTS = [0, 1000, 10000]
+const NOTE_ROW      = i => ({ id: i, title: `note ${i}`, body: 'x'.repeat(200) })
+
+// Sync like the rest of this file, and measureBoot is async -- so the measuring
+// runs in a child and prints one JSON line. The port is asked of the OS, which
+// is what keeps the already-answering refusal from ever having to fire here.
+// A boot that fails comes back as { error } and reads as n/a: RSS is reported,
+// and a floor with no boot figure must say so instead of printing zeros.
+function bootFloor(app) {
+  const script = `
+    import { measureBoot } from ${JSON.stringify(join(ROOT, 'packages/cli/core/bench.js'))}
+    import { runCases, scaffoldCases } from ${JSON.stringify(join(ROOT, 'packages/cli/core/latency.js'))}
+    import { createServer } from 'node:net'
+    const port = await new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)) }) })
+    try {
+      const b = await measureBoot({ cmd: 'bun run api/index.ts', cwd: ${JSON.stringify(app)}, url: 'http://127.0.0.1:' + port + '/api/health', env: { PORT: String(port) },
+        whileUp: async (url) => runCases(await scaffoldCases({ base: url.replace(/\\/health$/, '') })) })
+      console.log('BENCH_BOOT ' + JSON.stringify(b))
+    } catch (err) { console.log('BENCH_BOOT ' + JSON.stringify({ error: err.message })) }
+  `
+  const r = spawnSync('bun', ['-e', script], { encoding: 'utf8', timeout: 120_000 })
+  const line = (r.stdout ?? '').split('\n').find(l => l.startsWith('BENCH_BOOT '))
+  return line ? JSON.parse(line.slice('BENCH_BOOT '.length)) : { error: `boot measured nothing (exit ${r.status}): ${(r.stderr || '').slice(-300)}` }
+}
 
 // ─── the work directory, on the paths a `finally` does not cover ──────
 //
@@ -195,7 +227,10 @@ const SCAFFOLD_ARGS = ['new', 'demo', '--yes', '--auth', '--source', 'npm', '--n
 
 // Synchronous throughout — spawnSync and the sync fs calls — so ci.mjs can run
 // it as an ordinary phase without becoming async.
-export function scaffoldAndBuild({ keep = false, verbose = false, log = console.log } = {}) {
+// `floor`, when passed, is filled with what the app weighs right after its first
+// build -- before `fli scaffold Note` grows it -- so the number is the vanilla
+// one and not a vanilla one plus whatever a later step added.
+export function scaffoldAndBuild({ keep = false, verbose = false, log = console.log, floor = null } = {}) {
   const findings = []
   const fail     = (message, output) => { findings.push({ message, output }); return findings }
 
@@ -300,6 +335,11 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
 
     log('  ✓ built, and the page loads its script')
 
+    if (floor) {
+      floor.surfaces = { web: measureSurface(join(app, 'web', 'dist')) }
+      floor.disk     = measureDisk(app)
+    }
+
     // The scaffold gives web/ a manifest, and the build's grade is a warning
     // rather than a failure, so a template change that stops a browser offering
     // to install the app exits 0. The line is the assertion.
@@ -369,6 +409,8 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     if (b2.status !== 0) return fail('bun run build failed after `fli scaffold Note`', b2.output)
     log('  ✓ a model scaffolded into it, and it still builds')
 
+    if (floor) floor.db = measureDbGrowth({ appRoot: app, accessor: 'note', counts: DB_ROW_COUNTS, row: NOTE_ROW })
+
     // ── 6b · the app names every framework package it imports ────
     //
     // A green build here is NOT that claim, and the difference is why this step
@@ -435,6 +477,14 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     const siteIndex = join(app, 'site', 'dist', 'index.html')
     if (!existsSync(siteIndex)) return fail(`fli site:build exited 0 and wrote no ${siteIndex}`, sb.output)
     log('  ✓ the site surface builds, and wrote a page')
+
+    // Last, on a fresh database: the first boot of a scaffold writes db/app.db from
+    // the schema it has, and one written before `fli scaffold Note` has no note
+    // table -- every write then 500s and the latency below would time the errors.
+    if (floor) {
+      for (const f of ['app.db', 'app.db-shm', 'app.db-wal']) rmSync(join(app, 'db', f), { force: true })
+      floor.boot = bootFloor(app)
+    }
 
     return findings
 
@@ -1250,14 +1300,17 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const onlyBuild  = process.argv.includes('--build')
   const onlyDeploy = process.argv.includes('--deploy')
   const both     = !onlyBuild && !onlyDeploy
+  const wantFloor = process.argv.includes('--floor')
+  const floor     = wantFloor ? {} : null
 
   const problems = []
 
   if (both || onlyBuild) {
     console.log('\n─── scaffold + build ───────────────────────────────')
-    const findings = scaffoldAndBuild({ keep, verbose })
+    const findings = scaffoldAndBuild({ keep, verbose, floor })
     if (!findings.length) console.log('  ✓ installs from the working tree and builds')
     problems.push(...findings)
+    if (floor && !findings.length) problems.push(...reportFloor(floor))
   }
 
   if (both || onlyDeploy) {
@@ -1281,6 +1334,28 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   }
   console.log()
   process.exit(1)
+}
+
+// The vanilla floor, ratcheted down only in scripts/bench.baseline.json. A floor
+// that measured nothing is a finding: a missing dist reads as a clean run.
+function reportFloor(floor) {
+  if (!floor.surfaces?.web) return [{ message: '--floor measured no web/dist in the scaffolded app', output: '' }]
+  const dir      = join(ROOT, 'scripts')
+  if (!floor.db) return [{ message: '--floor measured no database growth', output: '' }]
+  const dbBytes  = Object.fromEntries(Object.entries(floor.db).map(([n, b]) => [`db.note${n}Rows`, b]))
+  const current  = { ...gatedMetrics(floor.surfaces), ...dbBytes }
+  const verdict  = ratchet(current, readBaseline(dir))
+  console.log('\n─── vanilla floor ──────────────────────────────────')
+  console.log(formatBench({
+    surfaces: floor.surfaces, disk: floor.disk, db: floor.db, verdict,
+    boot: floor.boot?.error ? null : floor.boot, bootError: floor.boot?.error ?? null,
+  }))
+  const adopt = process.argv.includes('--adopt')
+  if (adopt) writeBaseline(dir, verdict.adopted)
+  else if (process.argv.includes('--update')) writeBaseline(dir, verdict.next)
+  if (verdict.regressions.length && !adopt)
+    return [{ message: `${verdict.regressions.length} vanilla-floor metric(s) above scripts/bench.baseline.json`, output: '' }]
+  return []
 }
 
 function indent(text) {

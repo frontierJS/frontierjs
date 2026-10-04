@@ -87,7 +87,11 @@ which is why the check asks.
 import { notificationsPlugin } from '@frontierjs/notifications'
 
 // mailerPlugin must be configured before notificationsPlugin if the email transport is used
-app.configure(mailerPlugin(createResendMailer({ apiKey, from })))
+app.configure(mailerPlugin(createResendMailer({
+  credentials: { get: ref => process.env[ref] },   // or a Conduit resolver
+  apiKeyRef:   'RESEND_API_KEY',
+  from,
+})))
 
 app.configure(notificationsPlugin({
   db,

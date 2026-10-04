@@ -4670,3 +4670,131 @@ describe('pinned_cert (FJS-1603)', () => {
     expect((await s.get('outpost:srv-test'))!.pinned_cert).toBe(mine.cert)
   })
 })
+
+// ─── A destination held in a row (FJS-1667) ─────────────────
+
+describe('a target whose address comes per send (FJS-1667)', () => {
+  // A Slack or webhook URL an app holds encrypted on a row: never registered,
+  // never in the store, graded as a URL a stranger chose before every attempt.
+  function hookTarget(overrides: Partial<TargetDescriptor> = {}): TargetDescriptor {
+    return {
+      id: 'hook:slack', kind: 'provider', protocol: 'http', address: '',
+      auth: { type: 'none' }, address_from: 'request',
+      policy: { retry_limit: 0, failure_threshold: 2 },
+      registered_at: 0, last_seen_at: null,
+      ...overrides,
+    }
+  }
+  const local = { destinations: { allowHttp: true, allowPrivate: true } }
+
+  function receiver(status = 200) {
+    const seen: Array<{ path: string; body: string }> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        seen.push({ path: new URL(req.url).pathname, body: await req.text() })
+        return Response.json({ ok: status < 300 }, { status })
+      },
+    })
+    return { seen, url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+  }
+
+  async function conduitWith(target: TargetDescriptor, extra: Parameters<typeof createConduit>[0] = {}) {
+    const c = createConduit({ targets: [target], ...extra })
+    await c.init()
+    return c
+  }
+
+  it('is refused at register with anything that would go to the row\'s address with it', async () => {
+    const c = createConduit()
+    await c.init()
+    for (const [bad, why] of [
+      [{ auth: { type: 'bearer', ref: 'K' } }, /stored credential/],
+      [{ auth: { type: 'api_key', ref: 'K', header: 'X-Key' } }, /stored credential/],
+      [{ follow_redirects: 'same-origin' }, /redirect/],
+      [{ address: 'https://hooks.slack.com/services/x' }, /address must be ''/],
+      [{ trace: true }, /correlation id/],
+      [{ protocol: 'websocket' }, /only an 'http' target/],
+    ] as const) await expect(c.register(hookTarget(bad as Partial<TargetDescriptor>))).rejects.toThrow(why)
+    await expect(c.register(providerTarget({ destinations: { allowHttp: true } }))).rejects.toThrow(/only applies/)
+    await c.register(hookTarget({ auth: { type: 'hmac', ref: 'HOOK_SECRET' } }))
+  })
+
+  it('sends to the address it is handed, with the path applied, and the store never holds it', async () => {
+    const r = receiver()
+    try {
+      const c = await conduitWith(hookTarget(local))
+      const result = await c.send({ target: 'hook:slack', address: `${r.url}/services/T0/B0/secret`, method: 'POST', body: { text: 'hi' } })
+      expect(result.error).toBeNull()
+      expect(r.seen).toEqual([{ path: '/services/T0/B0/secret', body: '{"text":"hi"}' }])
+      expect(JSON.stringify(await c.list())).not.toContain('secret')
+    } finally { r.stop() }
+  })
+
+  it('refuses a send with no address, and an address for a registered target', async () => {
+    const c = await conduitWith(hookTarget(local))
+    await c.register(providerTarget())
+    expect((await c.send({ target: 'hook:slack', method: 'POST' })).error?.kind).toBe('invalid_request')
+    const redirected = await c.send({ target: 'provider:hetzner', address: 'https://evil.example', method: 'GET' })
+    expect(redirected.error?.kind).toBe('invalid_request')
+    expect(redirected.error?.message).toMatch(/registered address/)
+  })
+
+  it('refuses a private or plaintext address unless the target says so, and sends nothing', async () => {
+    const r = receiver()
+    try {
+      const strict = await conduitWith(hookTarget())
+      for (const address of [`${r.url}/x`, 'http://169.254.169.254/latest/meta-data/', 'https://127.0.0.1/x', 'https://localhost:8503/api/jobs/1/retry']) {
+        const result = await strict.send({ target: 'hook:slack', address, method: 'POST', body: {} })
+        expect(result.error?.kind).toBe('invalid_request')
+        expect(result.error?.retryable).toBe(false)
+      }
+      expect(r.seen).toHaveLength(0)
+    } finally { r.stop() }
+  })
+
+  it('keeps its breaker per origin: one dead URL does not close the target for the others', async () => {
+    const dead = receiver(500)
+    const live = receiver(200)
+    try {
+      const c = await conduitWith(hookTarget(local))
+      for (let i = 0; i < 3; i++) await c.send({ target: 'hook:slack', address: `${dead.url}/a`, method: 'POST', body: {} })
+      expect((await c.send({ target: 'hook:slack', address: `${dead.url}/a`, method: 'POST', body: {} })).error?.kind).toBe('circuit_open')
+      expect((await c.send({ target: 'hook:slack', address: `${live.url}/b`, method: 'POST', body: {} })).error).toBeNull()
+      // The breaker is named by origin, never by the path that is the secret.
+      expect(Object.keys(c.stats().breakers ?? {}).join()).not.toContain('/a')
+    } finally { dead.stop(); live.stop() }
+  })
+
+  it('shows observers the origin only', async () => {
+    const r = receiver(500)
+    try {
+      const seen: unknown[] = []
+      const c = await conduitWith(hookTarget(local), {
+        observers: { onRequest: (q) => seen.push(q.address), onError: (q) => seen.push(q.address), onResponse: (q) => seen.push(q.address) },
+      })
+      await c.send({ target: 'hook:slack', address: `${r.url}/services/T0/B0/secret`, method: 'POST', body: {} })
+      expect(seen).toEqual([r.url, r.url])
+    } finally { r.stop() }
+  })
+})
+
+// ─── conduit-11 · a connection failure carries the URL, userinfo and all ─────
+//
+// `raw: err` on `connection_failed` is Bun's own error, whose `path` is the full
+// request URL. A target registered as `https://user:pass@host` put its password
+// into `JSON.stringify(result)` — a log line, a job's stored result, a response.
+
+describe('a connection failure and the URL it carries', () => {
+  it('does not carry a password from the address into the result', async () => {
+    const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    const port = probe.port
+    probe.stop(true)
+    const target = providerTarget({ address: `http://admin:hunter2@127.0.0.1:${port}`, auth: { type: 'none' } })
+    const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+    const r = await t.send({ target: target.id, method: 'GET', path: '/a' })
+    expect(r.error!.kind).toBe('connection_failed')
+    expect(JSON.stringify(r)).not.toContain('hunter2')
+    expect(JSON.stringify(r)).toContain('admin')
+  })
+})

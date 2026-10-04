@@ -284,8 +284,10 @@ export function runChecks({ root, only = null, scope = 'app', allow = {} } = {})
 
   // A stale allowance is reported, not ignored — an exception that outlives the
   // thing it excused is an unenforced rule nobody knows is unenforced.
+  // Only for a rule that RAN: under `--only` an allowance for another rule has
+  // nothing to hit, and calling it stale would tell a person to delete a live one.
   const hit   = new Set(allowed.map(a => `${a.rule}:${relative(root, a.file) || '.'}`))
-  const stale = Object.keys(allow).filter(k => !hit.has(k))
+  const stale = Object.keys(allow).filter(k => !hit.has(k) && ran.includes(k.slice(0, k.indexOf(':'))))
 
   return { findings, allowed, stale, ran, skipped }
 }
@@ -322,14 +324,22 @@ export const BASELINE_FILE = 'check-baseline.json'
 export function readBaseline(root, { read = readFileSync } = {}) {
   const path = join(root, BASELINE_FILE)
   let raw
-  try { raw = JSON.parse(read(path, 'utf8')) } catch { return { path, present: false, counts: {} } }
+  try { raw = JSON.parse(read(path, 'utf8')) } catch { return { path, present: false, counts: {}, allow: {} } }
 
   const counts = {}
   for (const [key, value] of Object.entries(raw)) {
     if (key.startsWith('//')) continue                 // a comment, the way JSON allows one
     if (Number.isFinite(value)) counts[key] = value
   }
-  return { path, present: true, counts }
+
+  // `allow` rides beside the counts (`FJS-D508`): `'<rule>:<path>'` to why. An
+  // entry with no reason is not an exception, so it is not read as one.
+  const allow = {}
+  if (raw.allow && typeof raw.allow === 'object' && !Array.isArray(raw.allow))
+    for (const [key, why] of Object.entries(raw.allow))
+      if (typeof why === 'string' && why.trim()) allow[key] = why
+
+  return { path, present: true, counts, allow }
 }
 
 /**
@@ -401,7 +411,10 @@ export function writeBaseline(root, { counts, ran, baseline, mode = 'lower', wri
           'what is there, which is the verb for taking debt on. The findings still print either way.',
   }
   const body = Object.fromEntries(Object.entries(next).sort(([a], [b]) => a.localeCompare(b)))
-  write(join(root, BASELINE_FILE), `${JSON.stringify({ ...header, ...body }, null, 2)}\n`)
+  // The ratchet rewrites this file, so what it does not own is carried through:
+  // an `--adopt` that dropped the allowances would turn each back into a finding.
+  const allow = baseline.allow && Object.keys(baseline.allow).length ? { allow: baseline.allow } : {}
+  write(join(root, BASELINE_FILE), `${JSON.stringify({ ...header, ...body, ...allow }, null, 2)}\n`)
   return body
 }
 
@@ -905,7 +918,7 @@ const CHECKS = {
   // release, and the first thing anyone notices is a widget shipping when the
   // SPA does.
   'app-layout': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
 
     const has = (...p) => existsSync(join(root, ...p))
     const surfaces = SURFACES.filter(d => has(d))
@@ -1029,7 +1042,7 @@ const CHECKS = {
   // app.ts and has no `db:migrate` script, on purpose (`FJS-417`), and an app
   // with no Dockerfile is not deploying this way at all.
   'migration-history': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'no db/schema.lite' }
 
     const dockerfile = ['Dockerfile', join('deploy', 'Dockerfile')]
       .map(p => join(root, p)).find(p => existsSync(p))
@@ -1049,7 +1062,7 @@ const CHECKS = {
   },
 
   'surface-config': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
 
     const CONFIGS = {
       api:       ['junction.config.js', 'junction.config.ts'],
@@ -1114,7 +1127,7 @@ const CHECKS = {
   // not, hence the child process. A surface that cannot resolve sierra is
   // skipped rather than failed: it is not a Sierra surface, or not installed.
   'mesa-compiles': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
     const findings = []
     let looked = 0
     for (const surface of safeRead(root)) {
@@ -1171,7 +1184,7 @@ const CHECKS = {
   // excluded because that rule already owns them, and two rules pointing at one
   // file teaches the reader to skip both.
   'surface-src': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!isAppRoot(root)) return { skipped: 'not an app root' }
 
     const SCRIPT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
     // `index`, whatever the extension. Named rather than derived from a
@@ -2223,7 +2236,7 @@ const CHECKS = {
   // declares is a variable the deploy's own env check will not require, which is
   // strong evidence and not proof — the server may bind it anyway.
   'log-db-unbound': ({ root }) => {
-    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'no db/schema.lite' }
 
     const logDbs = declaredLogDatabases(join(root, 'db'))
     if (!logDbs.length) return { skipped: 'no jsonl or logger database declared' }
@@ -3232,6 +3245,20 @@ const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
 // that rule never reads, and nothing says so.
 const CLIENT_SURFACES = ['web', 'widgets', 'site', 'extension', 'desktop']
 const SURFACES        = ['api', ...CLIENT_SURFACES]
+
+/**
+ * Whether `root` is an app, for the rules that read SURFACES. A schema is one
+ * sign, and a web-only, widgets-only or site-only project has none — a manifest
+ * (`package.json` or `.fli.json`) with a surface beside it is the other. The
+ * manifest alone is not enough: any package has one, and a rule that scolds
+ * every library is a rule people turn off. The rules that read the schema keep
+ * their own `db/schema.lite` gate.
+ */
+function isAppRoot(root) {
+  if (existsSync(join(root, 'db', 'schema.lite'))) return true
+  const manifest = ['package.json', '.fli.json'].some(f => existsSync(join(root, f)))
+  return manifest && SURFACES.some(d => existsSync(join(root, d)))
+}
 
 /** Every file of the given extensions under the named directories, in tree order. */
 function sources(root, exts, ...dirs) {

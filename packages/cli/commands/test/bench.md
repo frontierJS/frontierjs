@@ -4,7 +4,7 @@ description: What a built app costs — bytes on the wire, bytes on disk, memory
 examples:
   - fli test:bench
   - fli test:bench --update
-  - fli test:bench --boot "bun run api" --url http://localhost:8110/health
+  - fli test:bench --boot "bun run api" --url http://localhost:8110/health --get /api/products
 flags:
   update:
     type: boolean
@@ -26,6 +26,14 @@ flags:
     type: string
     description: Milliseconds to let the booted process idle before reading RSS
     defaultValue: '3000'
+  get:
+    type: string
+    description: Comma-separated GET paths to time while the booted API is up, e.g. /api/products,/api/health. Reads only, so the app's real databases are not written
+    defaultValue: ''
+  rate:
+    type: string
+    description: Requests per second for each --get path
+    defaultValue: '50'
   json:
     type: boolean
     description: Answer a machine
@@ -46,6 +54,11 @@ Two kinds of number, never mixed:
   `--boot` and `--url` to start the API, wait for it to answer, let it idle, read the
   RSS of the whole process tree and kill it. A URL that already answers is refused.
 
+- **Latency is reported.** `--get /api/products,/api/health` times each path at a constant
+  arrival rate while the booted API is up (p50/p95/p99/max, counted from the scheduled
+  instant so a stall shows in the tail). GET only: a write needs credentials and would
+  land in the app's real database. A path that does not answer 200 is shown as FAILED.
+
 Disk (`node_modules`, `db/*.db`) is printed and not gated — an install differs by
 machine and a database by what was seeded.
 
@@ -54,6 +67,8 @@ const { resolve } = await import('node:path')
 const bench = await import(resolve(global.fliRoot, 'core/bench.js'))
 
 const root = context.paths.root
+
+const { getCases, runCases } = await import(resolve(global.fliRoot, 'core/latency.js'))
 
 const surfaces = Object.fromEntries(
   bench.BUILT_SURFACES.map(name => [name, bench.measureSurface(resolve(root, name, 'dist'))]),
@@ -64,7 +79,11 @@ let boot = null
 if (flag.boot) {
   if (!flag.url) { log.error('--boot needs --url, the address that answers once the app is up'); process.exitCode = 2; return }
   try {
-    boot = await bench.measureBoot({ cmd: flag.boot, cwd: root, url: flag.url, settleMs: Number(flag.settle) })
+    const paths = flag.get.split(',').map(p => p.trim()).filter(Boolean)
+    boot = await bench.measureBoot({
+      cmd: flag.boot, cwd: root, url: flag.url, settleMs: Number(flag.settle),
+      whileUp: paths.length ? (url) => runCases(getCases({ origin: new URL(url).origin, paths, rate: Number(flag.rate) })) : null,
+    })
   } catch (err) {
     log.error(err.message)
     process.exitCode = 2

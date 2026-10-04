@@ -1,12 +1,44 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-03 — publishing the packages, walked in `fli gui`
+
+**A `publish packages` screen walks `ws:pub`** in five stages — *get ready* (everything committed, a full CI run, `test:snapshots` with its `fix`, `npm whoami`), *choose what goes out* (`ws:changed`, the registry read, `ws:pub --dry`), *publish* (`ws:pub`), *check it landed* (the registry read again, and `git push origin HEAD --tags` for a run that held the push back), and *if it stops partway*, which runs nothing: re-running `ws:pub` after a partial publish bumps again and skips a version, so the step says what to do instead. Above the steps are the options `ws:pub` takes — bump, dist-tag, a 2FA code, push when done, include unchanged (`--all`), finish a partial run (`--tolerate-republish`) — and every member with its version, the version it moves to, its commits since its tag, and what npm holds once read. **An untouched selection sends no `--filter`**, and neither does one ticked back to what `ws:pub` would pick, so drawing a list never narrows a release. Changing an option clears the dry run, because a plan answered the options it ran with. Its home tile counts what is going out.
+
+**`core/publish-view.js` owns the table and the options gate.** `ws:pub` pastes `--tag` and `--otp` into one `execSync` string, so a tag that is not `^[a-z][a-z0-9-]{0,30}$`, a bump outside the four, or an OTP that is not 6–8 digits is refused rather than escaped. A package is named only by a member's exact name, and one whose `--filter` would also select a second member (substring matching) is refused, or ticking one box would publish two. The console echoes the command with the OTP masked (`displayArgv`). `GET /api/publish` is the members and `ws:changed --json`, which loads with the page; `POST /api/publish/registry` is `ws:npm --json` and waits for a press, because it asks npm. Steps run through `/api/release/step` with `flow: 'publish'`, so a deploy and a publish share one slot. `spawnStep` is the runner both flows use, moved out of `runReleaseStep`.
+
+**The page's step list is one `FLOWS` table**, deploy and publish, with every lookup scoped to the flow's own list — the two share the ids `commit`, `ci` and `snapshots`. Results are kept per flow.
+
+**Not proved: a real publish from the screen.** `bun publish`'s default 2FA is a browser link, and whether it prints that link and waits with no terminal attached was not exercised. A run that only prints a code prompt is answered by the 2FA field.
+
+Proved by `test/publish-view.test.js` (new, in the `test` list: the order, every refusal, the substring overlap, a real `ws:pub --dry` over a git fixture that leaves the tree clean, the masked display), `test/browser/specs/publish.spec.mjs` (19 assertions, including a dry run through the page and server refusals of an unapproved publish and push), the cli suite (2855 pass) and a screenshot. Whichever browser spec runs first still absorbs the `/api/check` stall (`FJS-1630`); this spec waits for it.
+
+## 2026-10-03 — an app can name an exception to `fli check` (`FJS-1428`)
+
+`fli check` called `runChecks({ root, only })`, so the `allow` the command's own page documents was unreachable and an app's only excuse was `--adopt`'s per-rule count, which also excused the next real finding. It now reads an `allow` object from `check-baseline.json` (`FJS-D508`) — `'<rule>:<path>'` to why, an entry with no reason ignored — and passes it to both `runChecks` calls. An excused finding prints under its reason and leaves the count; a stale entry is warned and also in `--json` (`allowed`, `stale`). `writeBaseline` carries `allow` through `--adopt` and `--update`, which would otherwise have erased it. A stale entry is judged only for a rule that ran, so `--only` does not call a live one stale. Proved in `test/checks.test.js` ("the allowances beside the counts").
+
+## 2026-10-03 — a web-only app is an app root to `fli check` (`FJS-1617`)
+
+`app-layout`, `surface-config`, `surface-src` and `mesa-compiles` decide *is this an app root* with `isAppRoot`: a `db/schema.lite`, or a `package.json` / `.fli.json` with at least one surface directory beside it. They used to ask for the schema alone, so a web-only, widgets-only or site-only project skipped them as *not an app root* and a `.mesa` that did not compile passed as `✓ 0 rule(s) checked`. A bare manifest with no surface is still not an app root, because every library has one. `migration-history` and `log-db-unbound` read the schema and keep that gate, now saying `no db/schema.lite` rather than *not an app root*. Proved in `test/checks.test.js` ("an app root with no schema").
+
+## 2026-10-03 — the vanilla floor, recorded
+
+**The vanilla floor is a recorded number.** `node scripts/scaffold-build.mjs --build --floor` weighs the scaffolded app's `web/dist` right after its first build, before `fli scaffold Note` grows it, and ratchets it against `scripts/bench.baseline.json` (`--update` / `--adopt` as above). Not in `bun run ci`: a bundler move would redden CI for a number nobody chose. First recorded: 3 requests, 55.6 kB js and 10.5 kB css first load, 128 kB brotli total.
+
+**The floor also boots the app and sizes its database.** The vanilla API is started on an OS-assigned port and its cold start and RSS are printed (212 ms, 68 MB on the recording machine; reported, never gated). `measureDbGrowth` writes N rows of one model through the app's own Litestone client into a throwaway file and reads the size after a WAL checkpoint, because file-plus-WAL measures how many frames had not been folded back. Gated, as `db.note<N>Rows`: 0 rows 120 kB, 1,000 rows 388 kB, 10,000 rows 2.7 MB.
+
+**Request latency, at a constant rate.** `core/latency.js` fires each case at a fixed arrival rate (50/s, 5 s after a 1 s warm-up) and counts a request from its SCHEDULED instant, so a server stall lengthens the tail instead of being skipped the way a closed loop skips it. The floor runs four cases against the booted scaffold through its own routes: a read, a 50-row list, a gated create, and a gated PATCH of the signed-in user, which `@@log(audit)` writes to the audit trail. p50/p95/p99/max are printed with RSS after load; none is gated. A case with any failed request, or no samples, is recorded as an error and printed as FAILED -- a run of 401s would otherwise print a fast p99. The boot now runs last, on a fresh database: one written before `fli scaffold Note` has no note table. The scaffold has no model with a relation, so list-with-include is not measured yet.
+
+**The report reads as sections.** `formatBench` prints Download, First load, Disk, Database size, Memory and boot, Latency and Verdict as small aligned tables, with the regression delta in bytes, and color on a terminal only (`NO_COLOR` and pipes stay plain). A failed boot or case is a red line naming why. `fli test:bench --json` is unchanged for a machine.
+
+**`test:bench --get <paths>` times reads while the API is up.** Comma-separated GET paths, `--rate` per second each, shown in the same Latency table. GET only: a write needs credentials and would land in the app's real database. `example/` has `bun run bench` with the boot command and url filled in.
+
+Still not built: browser-side memory and web vitals, and latency against `example/`.
+
 ## 2026-10-03 — `test:bench` — what a built app costs
 
 **`fli test:bench` measures a built app and gates the bytes.** Per built surface (`web/`, `site/`): file count, raw and brotli totals, js/css/html split, the largest chunk, and the first load — the local scripts, stylesheets and modulepreloads `index.html` names, with the request count. A ref the build names and the disk lacks is reported, not skipped. Disk (`node_modules`, `db/*.db`) is printed and not gated. `--boot "<cmd>" --url <u>` starts the API, waits for the url, lets it idle and reads RSS over the whole process tree (`/proc`, so Linux only; elsewhere it prints `n/a`, never 0). A url that already answers is refused.
 
 **Bytes ratchet down only, boot is reported.** `bench.baseline.json` at the app root holds one number per `surface.metric`; `--update` writes an improvement or a newly measured key and cannot raise, `--adopt` can. A baselined metric the run did not measure is `unmeasured` and keeps its number. Cold start and RSS never fail anything — they are one machine on one afternoon (`IDEAS/performance-regression-watch.md` § What a performance claim is). It never builds.
-
-Phase 2, not built: request latency through the gate, hook and audit pipeline, DB size per row count, browser-side memory and web vitals, and a scaffold run so the vanilla floor is a recorded number.
 
 Proved by `test/bench.test.js` (first-load parsing, an SPA's `dist/client`, the ratchet's three directions, boot against a throwaway Bun server including the already-answering and exits-early refusals).
 

@@ -281,3 +281,23 @@ describe('a type declares presentation too', () => {
     expect(carrier['x-messages']).toBeUndefined()
   })
 })
+
+// ─── x-transforms ─────────────────────────────────────────────────────────────
+// The other half of what a field says: what happens to the value before the
+// validators above grade it. Emitted so a realm that grades earlier than the
+// Data boundary can run the same steps in the same order (FJS-401).
+
+describe('x-transforms', () => {
+  const T = `
+    type Pay { reference String @trim @length(3, 12) }
+    model Bang { id Int @id  trigger String @upper @trim  note String }
+  `
+
+  test('declaration order, on a column and inside a type', async () => {
+    const db = await createClient({ db: ':memory:', schema: T })
+    const js = generateJsonSchema(db.$schema) as any
+    expect(js.$defs.Bang.properties.trigger['x-transforms']).toEqual(['upper', 'trim'])
+    expect(js.$defs.Pay.properties.reference['x-transforms']).toEqual(['trim'])
+    expect(js.$defs.Bang.properties.note['x-transforms']).toBeUndefined()
+  })
+})

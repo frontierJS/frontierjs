@@ -20,6 +20,7 @@ import type { ServiceContext } from './context.ts'
 import { partitionBulk }       from './envelope.ts'
 import { BadRequest }          from './errors.ts'
 import { fieldError }          from './field-errors.ts'
+import { transform }           from '@frontierjs/toolbelt/transforms'
 
 // ─── Field definition ─────────────────────────────────────────────────────
 
@@ -39,6 +40,13 @@ export interface FieldDef {
   trim?:       boolean         // string: trim whitespace
   lowercase?:  boolean         // string: to lower
   uppercase?:  boolean         // string: to upper
+  /**
+   * Litestone's `@trim`/`@lower`/`@upper`/`@slug` in declaration order, from
+   * `x-transforms`. They run BEFORE the checks below, the order the Data
+   * boundary uses, so `@trim @length(3, 12)` on `'  ab  '` is refused here as
+   * it is there. Not `transform`, which runs after validation.
+   */
+  transforms?: string[]
   minLength?:  number          // string
   maxLength?:  number          // string
   pattern?:    RegExp | string // string regex
@@ -371,6 +379,7 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
         errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a string`) })
         break
       }
+      if (def.transforms) v = transform(def.transforms, v) as string
       if (def.trim)      v = (v as string).trim()
       if (def.lowercase) v = (v as string).toLowerCase()
       if (def.uppercase) v = (v as string).toUpperCase()

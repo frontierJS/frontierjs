@@ -12,6 +12,7 @@
     "verify:tenants": "bun web/test/verify-tenants.mjs",
     "web": "vite -c web/config/vite.config.js",
     "build": "vite build -c web/config/vite.config.js",
+  "bench": "fli test:bench --boot \"bun run api/index.ts\" --url http://localhost:8110/api/health --get /api/health,/api/products,/api/shipping-methods",
     "verify": "node web/test/verify.mjs",
     "preview": "node web/test/preview.mjs",
     "verify:build": "vite build -c web/config/vite.config.js && node web/test/verify-build.mjs",

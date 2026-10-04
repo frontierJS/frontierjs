@@ -7,6 +7,7 @@ import { createMemoryStore }  from './stores/memory.ts'
 import { createEnvResolver }  from './credentials.ts'
 import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
+import { observedRequest, originOf } from './address.ts'
 import type {
   IConduit,
   ConduitOptions,
@@ -64,6 +65,32 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
   assertIdempotency(descriptor)
   assertPolicy(descriptor)
   assertPinnedCert(descriptor)
+  assertRequestAddressed(descriptor)
+}
+
+// A target whose address comes per send reaches wherever a row says, so it
+// may carry nothing that would go there with it (`FJS-1667`).
+function assertRequestAddressed(descriptor: TargetDescriptor): void {
+  if (descriptor.address_from === undefined) {
+    if (descriptor.destinations !== undefined)
+      throw new TypeError(`Target '${descriptor.id}': destinations only applies to a target with address_from 'request'`)
+    return
+  }
+  const where = `Target '${descriptor.id}' (address_from 'request')`
+  if (descriptor.address_from !== 'request')
+    throw new TypeError(`Target '${descriptor.id}': address_from must be 'request', got '${String(descriptor.address_from)}'`)
+  if (descriptor.protocol !== 'http')
+    throw new TypeError(`${where}: only an 'http' target can take its address per send`)
+  if (descriptor.address !== '')
+    throw new TypeError(`${where}: address must be '' — each send names its own`)
+  if (descriptor.auth.type !== 'none' && descriptor.auth.type !== 'hmac')
+    throw new TypeError(`${where}: auth '${descriptor.auth.type}' would send a stored credential to whatever address a send names; use 'none', or 'hmac' to sign the body`)
+  if ((descriptor.follow_redirects ?? 'never') !== 'never')
+    throw new TypeError(`${where}: a followed redirect is a second address nobody graded`)
+  if (descriptor.pinned_cert !== undefined)
+    throw new TypeError(`${where}: a pinned certificate names one counterparty, and this target has many`)
+  if (descriptor.trace)
+    throw new TypeError(`${where}: trace hands our correlation id to a counterparty a row chose`)
 }
 
 // A pin the transport would not apply is worse than none: the descriptor reads
@@ -303,12 +330,13 @@ export function createConduit(
       meta:  { protocol: null, target: req.target, duration_ms: 0 }
     }
     recordResult(result, 0)
-    safe('onError', () => observers.onError?.(req, err))
+    safe('onError', () => observers.onError?.(observedRequest(req), err))
     return result
   }
 
   async function send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
-    safe('onRequest', () => observers.onRequest?.(req))
+    const seen = observedRequest(req)
+    safe('onRequest', () => observers.onRequest?.(seen))
 
     if (destroyed) {
       return reject<T>(req, {
@@ -341,7 +369,12 @@ export function createConduit(
     // their own: `circuit_open` names the seconds in its own message,
     // `overloaded` wants a free slot. Shed as permanent, a caravan job threw
     // away work that a wait of one reset window would have completed.
-    const admission = resilience.admit(req.target)
+    // A request-addressed target serves many counterparties, one per row, so
+    // its breaker is per origin: one dead subscriber URL closes itself and
+    // not the target. Graded by the target's own policy either way.
+    const key = req.address === undefined ? req.target : `${req.target} ${originOf(req.address)}`
+    if (key !== req.target) resilience.inherit(key, req.target)
+    const admission = resilience.admit(key)
     if (!admission.ok) {
       return reject<T>(req, {
         kind:      admission.kind,
@@ -387,16 +420,16 @@ export function createConduit(
         : 'success'
 
       if (validated.error) {
-        safe('onError', () => observers.onError?.(req, validated.error!))
+        safe('onError', () => observers.onError?.(seen, validated.error!))
       } else {
-        safe('onResponse', () => observers.onResponse?.(req, validated))
+        safe('onResponse', () => observers.onResponse?.(seen, validated))
       }
 
       return validated
 
     } finally {
       counters.requests.in_flight--
-      resilience.release(req.target, outcome)
+      resilience.release(key, outcome)
     }
   }
 

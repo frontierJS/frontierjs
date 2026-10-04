@@ -536,8 +536,8 @@ describe('start() twice is refused by name', () => {
   it('a STOPPED app is refused too, and says so rather than dying on the router', async () => {
     // This is the truth rather than the shape that was assumed: `stop()` clears
     // `started` but the router stays built, so start-stop-start died on `Cannot
-    // add middleware after the router is built`. Restart is FJS-947; until it
-    // works, the refusal is what says so.
+    // add middleware after the router is built`. One start per app is the
+    // contract (FJS-D479); the refusal is what says so.
     const a = createApp({
       logLevel: 'silent',
       config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },

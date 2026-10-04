@@ -867,6 +867,42 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
   return map
 }
 
+// ─── Columns a create policy DETERMINES ───────────────────────────────────────
+//
+// `@@allow('create', hostId == auth().id)` has exactly one legal value for
+// `hostId` and the caller is it. A form that offers a choice there offers a
+// refusal for every other row, so the fact is carried to the client as
+// `x-determined`.
+//
+// Determined means EVERY create `@@allow` pins the column to the same claim,
+// as a top-level `&&` conjunct: allows are OR'd, so one that leaves the column
+// free reopens the choice, and a pin under `||` or `!` is not a pin. A
+// `@@deny` only narrows further and never changes the answer.
+//
+// `{ hostId: 'auth().id' }`. Bare `auth()` is the id and is spelled so.
+export function determinedColumns(model) {
+  const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && a.operations?.includes('create'))
+  if (!allows.length) return {}
+
+  const scalars = new Set((model.fields ?? [])
+    .filter(f => f.type?.kind !== 'relation' && f.type?.kind !== 'implicitM2M').map(f => f.name))
+
+  const pins = (expr, out = {}) => {
+    if (expr?.type === 'and') { pins(expr.left, out); pins(expr.right, out); return out }
+    if (expr?.type !== 'compare' || expr.op !== '==') return out
+    const [col, who] = expr.left?.type === 'field' ? [expr.left, expr.right] : [expr.right, expr.left]
+    if (col?.type === 'field' && who?.type === 'auth' && scalars.has(col.name))
+      out[col.name] = `auth().${who.field ?? 'id'}`
+    return out
+  }
+
+  const [first, ...rest] = allows.map(a => pins(a.expr))
+  const out = {}
+  for (const [col, claim] of Object.entries(first))
+    if (rest.every(p => p[col] === claim)) out[col] = claim
+  return out
+}
+
 // ─── Public entry points ──────────────────────────────────────────────────────
 
 // ─── Which rules apply to this caller ────────────────────────────────────────

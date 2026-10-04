@@ -519,9 +519,9 @@ button[data-health] {
                steps run against. The gates above them are the workspace's. -->
           <div class="bar dense">
             <label class="text-xs text-muted" for="release-app">app</label>
-            <select class="field text-xs gui-pick" id="release-app" onchange="updateReleaseSteps()"></select>
+            <select class="field text-xs gui-pick" id="release-app" onchange="updateFlows()"></select>
             <label class="text-xs text-muted" for="release-target">target</label>
-            <select class="field text-xs gui-pick" id="release-target" onchange="updateReleaseSteps()">
+            <select class="field text-xs gui-pick" id="release-target" onchange="updateFlows()">
               <option value="default">default (branch)</option>
               <option value="production">production</option>
               <option value="stage">stage</option>
@@ -550,6 +550,40 @@ button[data-health] {
             </div>
             <div id="target-out" hidden></div>
           </div>
+        </section>
+
+        <!-- Publishing the workspace's packages, walked. Hidden where there is
+             no packages/ member to publish. -->
+        <section class="surface" id="publish" data-panel="publish" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">publish packages</strong>
+            <span class="text-xs text-muted" id="publish-note" role="status">reading…</span>
+            <button class="btn ghost text-xs" onclick="loadPublish()">recheck</button>
+          </div>
+
+          <!-- The options ws:pub runs with. A plan answers the options it ran
+               with, so changing one clears it. -->
+          <div class="bar dense">
+            <label class="text-xs text-muted" for="publish-bump">bump</label>
+            <select class="field text-xs gui-pick" id="publish-bump" onchange="onPublishOptions()">
+              <option>patch</option><option>minor</option><option>major</option><option>prerelease</option>
+            </select>
+            <label class="text-xs text-muted" for="publish-tag">dist-tag</label>
+            <input class="field text-xs gui-pick" id="publish-tag" value="latest" size="8" spellcheck="false" onchange="onPublishOptions()">
+            <label class="text-xs text-muted" for="publish-otp">2FA code</label>
+            <input class="field text-xs gui-pick" id="publish-otp" size="8" inputmode="numeric" autocomplete="one-time-code" placeholder="optional"
+                   title="a code from your authenticator — without one, each package's 2FA link prints in the console">
+            <label class="field-check text-xs"><input type="checkbox" id="publish-push" checked onchange="onPublishOptions()"> push when done</label>
+            <label class="field-check text-xs" title="--all: publish packages with no commits since their tag"><input type="checkbox" id="publish-all" onchange="onPublishOptions()"> include unchanged</label>
+            <label class="field-check text-xs" title="--tolerate-republish: a version npm already holds is not a failure"><input type="checkbox" id="publish-tolerate" onchange="onPublishOptions()"> finish a partial run</label>
+          </div>
+
+          <details class="disclosure">
+            <summary class="text-xs" id="publish-summary">packages</summary>
+            <ul class="rows divided" id="publish-packages"></ul>
+          </details>
+          <div class="bar dense"><span class="text-xs text-muted" id="publish-progress" role="status"></span></div>
+          <div id="publish-steps"><p class="text-xs text-muted">reading the steps…</p></div>
         </section>
 
         <div class="stack gap-lg" id="dash-groups" data-panel="run"></div>
@@ -1953,6 +1987,15 @@ const TILES = [
       sub: `${word[releaseWorst]} · ${Object.entries(byVerdict).map(([v, n]) => `${plural(n, 'app')} ${v}`).join(' · ')}`,
     }
   } },
+  { key: 'publish', label: 'publish packages', optional: true, read() {
+    if (!publishBody) return null
+    const n = goingOut().length
+    return {
+      value: n, word: document.getElementById('publish-progress').textContent || 'ready to plan',
+      tone: n ? 'info' : 'muted',
+      sub: n ? `${publishSummary()} — ${goingOut().slice(0, 4).map(p => p.name.replace(/^@[^/]+\//, '')).join(', ')}${n > 4 ? '…' : ''}` : 'nothing has commits since its release tag',
+    }
+  } },
   { key: 'decisions', label: 'waiting on you', optional: true, read() {
     if (!decisionsBody.sections.length && !decisionsBody.decidable.length) return null
     const n = decisionsBody.decidable.length
@@ -2034,8 +2077,8 @@ function goHome() {
 // A step's status reads the same panels the tiles do, so it is refreshed here
 // too — except from inside the steps, whose own writes would come back round.
 const tileObserver = new MutationObserver(records => {
-  const fromSteps = records.every(r => (r.target.nodeType === 1 ? r.target : r.target.parentElement)?.closest('#release-steps'))
-  if (!fromSteps) updateReleaseSteps()
+  const fromSteps = records.every(r => (r.target.nodeType === 1 ? r.target : r.target.parentElement)?.closest('#release-steps, #publish-steps'))
+  if (!fromSteps) updateFlows()
   renderTiles()
 })
 for (const p of document.querySelectorAll('[data-panel]'))
@@ -2057,6 +2100,7 @@ async function loadDashboard() {
   loadChecks()
   loadRelease()
   loadReleaseSteps()
+  loadPublish()
   loadCi()
 }
 
@@ -2928,13 +2972,13 @@ async function readTarget() {
       // The command's own sentence, not a rewrite of it. A refusal that reaches
       // nobody is not a refusal (`FJS-D158`), and this is the same lesson.
       note.textContent = 'the target could not be read'
-      recordStep('serving', 1)
+      recordStep('deploy', 'serving', 1)
       out.innerHTML = `<div class="bar dense"><span class="text-xs" data-finding="error">${esc(body.error ?? 'no reason given')}</span></div>`
       return
     }
 
     note.textContent = `${esc(body.app)} · ${esc(body.target)}`
-    recordStep('serving', 0)
+    recordStep('deploy', 'serving', 0)
     out.innerHTML = `
       <ul class="rows divided">
         ${body.transitions.map(t => `
@@ -2957,62 +3001,91 @@ async function readTarget() {
   }
 }
 
-// ─── the release, in order ───────────────────────────────────────────────────
+// ─── walked flows — the release, and publishing the packages ─────────────────
 //
-// `/api/release/steps` is the table and its order; this draws it once and then
-// only updates each step's status in place, because two blocks of the panel
-// above — the verdict and the target reading — are MOVED into their steps and
-// a redraw would take them with it.
+// A flow is a table of stages and steps from the server, drawn once and then
+// only updated in place: blocks of a panel are MOVED into the steps that answer
+// them, and a redraw would take them with it. Two flows share one step id
+// space (`commit`, `ci`, `snapshots`), so every lookup goes through the flow's
+// own list.
 //
-// A step's status is one of three kinds of answer. A gate reads a panel the
-// page already loaded (the tree, CI, what is serving). A step this page ran
-// remembers how that run went, per app and target, in this browser only. And
-// a step nothing has answered says `not run` — never a guessed pass.
+// A step's status is one of three kinds of answer. A gate reads something the
+// page already holds (the tree, CI, the target, the registry). A step this
+// page ran remembers how that run went, in this browser only. And a step
+// nothing has answered says `not run` — never a guessed pass.
 
-const STEP_RESULTS_KEY = 'fli-release-steps'
-let releaseStages  = []
-let releaseSteps   = []
-let stepRunning    = null
-let stepResults    = {}
+const STEP_RESULTS_KEY = 'fli-flow-steps'
+let stepRunning = null      // `${flow}:${id}` — one at a time, across flows, as the server holds it
+let stepResults = {}
 try { stepResults = JSON.parse(localStorage.getItem(STEP_RESULTS_KEY) ?? '{}') } catch {}
 
 const releaseApp    = () => document.getElementById('release-app').value || null
 const releaseTarget = () => document.getElementById('release-target').value
-const stepKey = (step) => step.scope === 'app'
-  ? `${step.id}|${releaseApp() ?? '.'}|${step.targetless ? '' : releaseTarget()}`
-  : step.id
 
-function recordStep(id, code) {
-  const step = releaseSteps.find(s => s.id === id)
+const FLOWS = {
+  deploy: {
+    list: 'release-steps', progress: 'release-progress', done: 'ship it',
+    slots:  { classify: 'release-verdict', serving: 'release-serving' },
+    before: ['finish', 'green', 'know'],
+    stages: [], steps: [],
+    key:   s => s.scope === 'app' ? `${s.id}|${releaseApp() ?? '.'}|${s.targetless ? '' : releaseTarget()}` : s.id,
+    body:  () => ({ app: releaseApp(), target: releaseTarget() }),
+    where: s => s.scope === 'app' ? ` — ${releaseApp() ?? 'the app'} · ${releaseTarget()}` : '',
+    after: id => {
+      if (['done', 'snapshots', 'classify'].includes(id)) loadTree()
+      if (id === 'classify') loadRelease()
+      if (id === 'check') loadChecks()
+    },
+  },
+  publish: {
+    list: 'publish-steps', progress: 'publish-progress', done: 'publish it',
+    slots:  {},
+    before: ['ready', 'choose'],
+    stages: [], steps: [],
+    key:   s => s.id,
+    body:  () => ({ flow: 'publish', opts: publishOpts() }),
+    where: s => s.run === 'pub' ? ` — ${publishSummary()}` : '',
+    after: id => {
+      if (['snapshots', 'publish', 'push'].includes(id)) loadTree()
+      if (id === 'publish') { loadPublish(); readRegistry() }
+    },
+  },
+}
+
+const flowLi = (name, id) => document.getElementById(FLOWS[name].list)?.querySelector(`[data-step="${id}"]`)
+
+function recordStep(name, id, code) {
+  const flow = FLOWS[name]
+  const step = flow.steps.find(s => s.id === id)
   if (!step) return
-  stepResults[stepKey(step)] = { code, at: Date.now() }
+  stepResults[`${name}:${flow.key(step)}`] = { code, at: Date.now() }
   try { localStorage.setItem(STEP_RESULTS_KEY, JSON.stringify(stepResults)) } catch {}
-  updateReleaseSteps()
+  updateFlows()
 }
 
 async function loadReleaseSteps() {
   try {
     const body = await fetch(`${API}/api/release/steps`).then(r => r.json())
-    releaseStages = body.stages
-    releaseSteps  = body.steps
-    renderReleaseSteps()
+    FLOWS.deploy.stages = body.stages
+    FLOWS.deploy.steps  = body.steps
+    renderFlow('deploy')
   } catch (err) {
     document.getElementById('release-steps').innerHTML =
       `<p class="text-xs text-danger">could not read the release steps: ${esc(err.message)}</p>`
   }
 }
 
-function renderReleaseSteps() {
+function renderFlow(name) {
+  const flow = FLOWS[name]
   let n = 0
-  const list    = document.getElementById('release-steps')
-  const verdict = document.getElementById('release-verdict')
-  const serving = document.getElementById('release-serving')
+  const list   = document.getElementById(flow.list)
+  const parked = Object.values(flow.slots).map(id => document.getElementById(id))
   // Out of the list before it is redrawn, or the redraw deletes them.
-  list.after(verdict, serving)
-  list.innerHTML = releaseStages.map(stage => `
+  if (parked.length) list.after(...parked)
+  list.innerHTML = flow.stages.map(stage => `
     <div class="bar dense"><strong class="text-xs text-muted">${esc(stage.title)}</strong></div>
     <ol class="rows divided">
-      ${releaseSteps.filter(s => s.stage === stage.id).map(s => `
+      ${flow.steps.filter(s => s.stage === stage.id).map(s => `
         <li class="list-row" data-step="${esc(s.id)}">
           <div class="stack gap-3xs">
             <div class="cluster gap-sm">
@@ -3028,32 +3101,33 @@ function renderReleaseSteps() {
           </div>
           <div class="row-actions cluster gap-2xs">
             ${s.command ? `<code class="gui-cmd" title="${esc(s.command)}">${esc(s.command)}</code>` : ''}
-            ${stepActions(s)}
+            ${stepActions(name, s)}
           </div>
         </li>`).join('')}
     </ol>`).join('')
 
-  // The two blocks that already answer a step go INTO that step.
-  list.querySelector('[data-step="classify"] [data-step-slot]')?.append(verdict)
-  list.querySelector('[data-step="serving"] [data-step-slot]')?.append(serving)
-  updateReleaseSteps()
+  // A block that already answers a step goes INTO that step.
+  for (const [id, el] of Object.entries(flow.slots))
+    list.querySelector(`[data-step="${id}"] [data-step-slot]`)?.append(document.getElementById(el))
+  updateFlows()
 }
 
-function stepActions(s) {
-  const id = esc(JSON.stringify(s.id))
-  if (s.gate === 'tree')   return `<button class="btn ghost text-xs" onclick="openPanel('tree')">see changes</button>`
-  if (s.gate === 'ci')     return `<button class="btn ghost text-xs" data-step-run onclick="startCi({})">run full</button>
-                                   <button class="btn ghost text-xs" onclick="openPanel('ci')">see ci</button>`
-  if (s.gate === 'target') return ''
+function stepActions(name, s) {
+  const args = `${esc(JSON.stringify(name))}, ${esc(JSON.stringify(s.id))}`
+  if (s.gate === 'tree')     return `<button class="btn ghost text-xs" onclick="openPanel('tree')">see changes</button>`
+  if (s.gate === 'ci')       return `<button class="btn ghost text-xs" data-step-run onclick="startCi({})">run full</button>
+                                     <button class="btn ghost text-xs" onclick="openPanel('ci')">see ci</button>`
+  if (s.gate === 'registry') return `<button class="btn ghost text-xs" data-step-run onclick="readRegistry()">read the registry</button>`
+  if (s.gate === 'target' || s.gate === 'note') return ''
   return `
-    <button class="btn ${s.confirm ? 'outlined' : 'ghost'} text-xs" data-step-run onclick="runStep(${id})">${s.confirm ? s.title : 'run'}</button>
-    ${s.fixCommand ? `<button class="btn ghost text-xs" data-step-run title="${esc(s.fixCommand)}" onclick="runStep(${id}, { fix: true })">fix</button>` : ''}
+    <button class="btn ${s.confirm ? 'outlined' : 'ghost'} text-xs" data-step-run onclick="runStep(${args})">${s.confirm ? esc(s.button ?? s.title) : 'run'}</button>
+    ${s.fixCommand ? `<button class="btn ghost text-xs" data-step-run title="${esc(s.fixCommand)}" onclick="runStep(${args}, { fix: true })">fix</button>` : ''}
     <button class="btn ghost text-xs" data-step-stop hidden onclick="stopStep()">stop</button>`
 }
 
 // [tone, word, note] for one step — from its gate, else from the last run here.
-function stepStatus(s) {
-  if (stepRunning === s.id) return ['info', 'running', 'output is in the console']
+function stepStatus(name, s) {
+  if (stepRunning === `${name}:${s.id}`) return ['info', 'running', 'output is in the console']
 
   if (s.gate === 'tree') {
     if (!treeBody) return ['muted', '…', '']
@@ -3069,16 +3143,21 @@ function stepStatus(s) {
     if (!f) return ['warning', 'never', 'no full run is logged — a narrowed or fast run does not count']
     return [CI_TONE[f.status] ?? 'muted', f.status, `${ago(f.at)} on ${f.commit ?? '?'}${f.dirty ? ' with uncommitted changes' : ''}`]
   }
+  if (s.gate === 'note') return ['muted', 'if needed', '']
+  if (s.gate === 'registry') return registryStatus(s)
 
-  const last = stepResults[stepKey(s)]
+  const last = stepResults[`${name}:${FLOWS[name].key(s)}`]
   let note = ''
-  if (s.id === 'prove' && provesFiles != null) note = provesRows.length ? `${plural(provesRows.length, 'proof')} named for this change` : 'nothing named for this change'
-  if (s.id === 'check' && checksBody) note = `the checks panel reads ${plural(checksBody.errors, 'error')} · ${plural(checksBody.warns, 'warning')}`
-  if (s.id === 'classify' && releaseWorst) note = document.getElementById('release-note').textContent
+  if (name === 'deploy') {
+    if (s.id === 'prove' && provesFiles != null) note = provesRows.length ? `${plural(provesRows.length, 'proof')} named for this change` : 'nothing named for this change'
+    if (s.id === 'check' && checksBody) note = `the checks panel reads ${plural(checksBody.errors, 'error')} · ${plural(checksBody.warns, 'warning')}`
+    if (s.id === 'classify' && releaseWorst) note = document.getElementById('release-note').textContent
+  }
+  if (name === 'publish' && s.id === 'plan' && !last) note = 'changing an option above clears this — the plan is for the options it ran with'
   if (!last) {
     // What the page already read stands in until somebody runs the step.
-    if (s.id === 'check' && checksBody) return checksBody.errors ? ['danger', 'failing', note] : ['success', 'passing', note]
-    if (s.id === 'classify' && releaseWorst) return [releaseWorst === 'contract' ? 'danger' : releaseWorst === 'unknown' ? 'warning' : 'success', releaseWorst === 'expand' ? 'reversible' : releaseWorst, note]
+    if (name === 'deploy' && s.id === 'check' && checksBody) return checksBody.errors ? ['danger', 'failing', note] : ['success', 'passing', note]
+    if (name === 'deploy' && s.id === 'classify' && releaseWorst) return [releaseWorst === 'contract' ? 'danger' : releaseWorst === 'unknown' ? 'warning' : 'success', releaseWorst === 'expand' ? 'reversible' : releaseWorst, note]
     return ['muted', 'not run', note]
   }
   const when = ago(last.at)
@@ -3087,62 +3166,68 @@ function stepStatus(s) {
   return ['danger', 'failed', [`exit ${last.code} ${when} — the console has why`, note].filter(Boolean).join(' · ')]
 }
 
-function updateReleaseSteps() {
-  if (!releaseSteps.length) return
+function updateFlows() {
+  for (const name of Object.keys(FLOWS)) updateFlow(name)
+}
+
+function updateFlow(name) {
+  const flow = FLOWS[name]
+  if (!flow.steps.length) return
   let next = null, ok = 0, counted = 0
-  for (const s of releaseSteps) {
-    const li = document.querySelector(`[data-step="${s.id}"]`)
+  for (const s of flow.steps) {
+    const li = flowLi(name, s.id)
     if (!li) continue
     // No ci script, no ci step: a gate nobody can pass is not a step.
     if (s.gate === 'ci') li.hidden = !ciBody
     if (li.hidden) continue
-    const [tone, word, note] = stepStatus(s)
+    const [tone, word, note] = stepStatus(name, s)
     const badge = li.querySelector('[data-step-badge]')
     badge.className = `badge ${tone} text-xs`
     badge.textContent = word
     li.querySelector('[data-step-note]').textContent = note
     for (const b of li.querySelectorAll('[data-step-run]')) b.disabled = Boolean(stepRunning) || Boolean(ciBody?.active && s.gate === 'ci')
     const stop = li.querySelector('[data-step-stop]')
-    if (stop) stop.hidden = stepRunning !== s.id
+    if (stop) stop.hidden = stepRunning !== `${name}:${s.id}`
 
-    // Next is the first step before the deploy that is not green. After the
-    // deploy the steps are things to read, not a sequence to finish.
-    const before = ['finish', 'green', 'know'].includes(s.stage)
+    // Next is the first step before the irreversible one that is not green.
+    // After it the steps are things to read, not a sequence to finish.
+    const before = flow.before.includes(s.stage)
     if (before) { counted++; if (tone === 'success') ok++ }
     if (before && !next && tone !== 'success') next = s.id
   }
-  for (const li of document.querySelectorAll('[data-step-next]'))
-    li.hidden = li.closest('[data-step]').dataset.step !== next
+  for (const b of document.getElementById(flow.list).querySelectorAll('[data-step-next]'))
+    b.hidden = b.closest('[data-step]').dataset.step !== next
   // Outside the steps, so the observer sees this write: rewriting the same text
   // is still a mutation, and an unconditional one loops forever.
-  const progress = document.getElementById('release-progress')
-  const text = `${ok} of ${counted} ready${next ? ` · next: ${releaseSteps.find(s => s.id === next).title}` : ' — ship it'}`
+  const progress = document.getElementById(flow.progress)
+  const text = `${ok} of ${counted} ready${next ? ` · next: ${flow.steps.find(s => s.id === next).title}` : ` — ${flow.done}`}`
   if (progress.textContent !== text) progress.textContent = text
 }
 
-async function runStep(id, { fix = false } = {}) {
-  const step = releaseSteps.find(s => s.id === id)
+async function runStep(name, id, { fix = false } = {}) {
+  const flow = FLOWS[name]
+  const step = flow.steps.find(s => s.id === id)
   if (!step || stepRunning) return
-  const where = step.scope === 'app' ? ` — ${releaseApp() ?? 'the app'} · ${releaseTarget()}` : ''
+  const where = flow.where(step)
   let approved = false
   if (step.confirm) {
     if (!window.confirm(`${step.title}${where}\n\nThis ${step.confirm}. Run it?`)) return
     approved = true
   }
 
-  stepRunning = id
-  updateReleaseSteps()
-  appendOutput(`release · ${step.title}${fix ? ' (fix)' : ''}${where}`, 'info')
+  stepRunning = `${name}:${id}`
+  updateFlows()
+  appendOutput(`${name} · ${step.title}${fix ? ' (fix)' : ''}${where}`, 'info')
   let code = null
   try {
     const res = await fetch(`${API}/api/release/step`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step: id, app: releaseApp(), target: releaseTarget(), fix, approved }),
+      body: JSON.stringify({ step: id, fix, approved, ...flow.body() }),
     })
     if (!res.ok) {
       appendOutput((await res.json()).error, 'error')
       stepRunning = null
-      updateReleaseSteps()
+      updateFlows()
       return
     }
     await readEvents(res, e => {
@@ -3155,16 +3240,167 @@ async function runStep(id, { fix = false } = {}) {
     appendOutput(`connection error: ${err.message}`, 'error')
   }
   stepRunning = null
-  recordStep(id, code)
-
-  // What a step writes, the panels it feeds read again.
-  if (['done', 'snapshots', 'classify'].includes(id)) loadTree()
-  if (id === 'classify') loadRelease()
-  if (id === 'check') loadChecks()
+  recordStep(name, id, code)
+  flow.after(id)
 }
 
 async function stopStep() {
   await fetch(`${API}/api/release/step/stop`, { method: 'POST' }).catch(() => {})
+}
+
+// ─── publishing the packages ─────────────────────────────────────────────────
+//
+// `/api/publish` is the members and `ws:changed` — local, so it loads with the
+// page. The registry is npm's answer and waits for a press. Which packages go
+// out is `ws:pub`'s own choice until somebody unticks one: an untouched
+// selection sends no `--filter`, so the page never narrows a release by
+// accident of having drawn a list.
+
+let publishBody     = null
+let registryBody    = null
+let publishPicked   = new Set()
+let publishTouched  = false
+
+async function loadPublish() {
+  const panel = document.getElementById('publish')
+  const note  = document.getElementById('publish-note')
+  try {
+    const body = await fetch(`${API}/api/publish`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+    if (!body.available) { panel.hidden = true; return }
+    publishBody = body
+    if (!publishTouched) publishPicked = new Set(defaultPicks())
+    FLOWS.publish.stages = body.stages
+    FLOWS.publish.steps  = body.steps
+    renderPublishPackages()
+    renderFlow('publish')
+    panel.hidden = false
+    note.textContent = `${plural(body.packages.filter(p => !p.private).length, 'package')} · ${body.packages.filter(p => p.affected && !p.private).length} with commits since their tag`
+  } catch (err) {
+    panel.hidden = false
+    note.textContent = `could not read the workspace: ${err.message}`
+  }
+}
+
+const publishable = () => (publishBody?.packages ?? []).filter(p => !p.private)
+const defaultPicks = () => publishable().filter(p => p.affected || document.getElementById('publish-all').checked).map(p => p.name)
+
+function publishOpts() {
+  return {
+    bump:     document.getElementById('publish-bump').value,
+    tag:      document.getElementById('publish-tag').value.trim() || 'latest',
+    otp:      document.getElementById('publish-otp').value.trim(),
+    push:     document.getElementById('publish-push').checked,
+    all:      document.getElementById('publish-all').checked,
+    tolerate: document.getElementById('publish-tolerate').checked,
+    packages: narrowedByHand() ? [...publishPicked] : [],
+  }
+}
+
+// Ticked back to what ws:pub would pick anyway is no narrowing: sending the
+// same set as filters says the same thing and reads as if somebody chose it.
+function narrowedByHand() {
+  if (!publishTouched) return false
+  const d = defaultPicks()
+  return d.length !== publishPicked.size || d.some(n => !publishPicked.has(n))
+}
+
+// What ws:pub will be asked to publish, as the page understands it — the dry
+// run is the authority, and this is only the sentence above it.
+function goingOut() {
+  const all = document.getElementById('publish-all').checked
+  return publishable().filter(p => publishPicked.has(p.name) && (all || p.affected))
+}
+
+function publishSummary() {
+  const o = publishOpts()
+  return `${plural(goingOut().length, 'package')} · ${o.bump} · ${o.tag}${o.push ? '' : ' · not pushed'}`
+}
+
+function onPublishOptions() {
+  if (!publishTouched) publishPicked = new Set(defaultPicks())
+  // A plan answered the options it ran with.
+  delete stepResults['publish:plan']
+  try { localStorage.setItem(STEP_RESULTS_KEY, JSON.stringify(stepResults)) } catch {}
+  renderPublishPackages()
+  updateFlows()
+}
+
+function togglePublishPackage(name, on) {
+  publishTouched = true
+  if (on) publishPicked.add(name); else publishPicked.delete(name)
+  onPublishOptions()
+}
+
+function nextVersion(v, bump) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v ?? '')
+  if (!m || bump === 'prerelease') return null
+  const [maj, min, pat] = m.slice(1).map(Number)
+  return bump === 'major' ? `${maj + 1}.0.0` : bump === 'minor' ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`
+}
+
+function renderPublishPackages() {
+  const all  = document.getElementById('publish-all').checked
+  const bump = document.getElementById('publish-bump').value
+  const reg  = new Map((registryBody?.packages ?? []).map(p => [p.name, p]))
+  document.getElementById('publish-summary').textContent = `${publishSummary()}${narrowedByHand() ? ' · narrowed by hand' : ''}`
+  document.getElementById('publish-packages').innerHTML = (publishBody?.packages ?? []).map(p => {
+    const out  = !p.private && publishPicked.has(p.name) && (all || p.affected)
+    const next = out ? nextVersion(p.version, bump) : null
+    const r    = reg.get(p.name)
+    return `
+      <li class="list-row" data-pkg="${esc(p.name)}">
+        <div class="cluster gap-sm">
+          <label class="field-check text-sm">
+            <input type="checkbox" ${publishPicked.has(p.name) ? 'checked' : ''} ${p.private || (!p.affected && !all) ? 'disabled' : ''}
+                   onchange="togglePublishPackage(${esc(JSON.stringify(p.name))}, this.checked)">
+            ${esc(p.name)}
+          </label>
+          <code class="text-xs">${esc(p.version ?? '?')}${next ? ` → ${esc(next)}` : out && bump === 'prerelease' ? ' → prerelease' : ''}</code>
+          ${p.private ? '<span class="badge muted text-xs">private</span>'
+            : p.affected ? `<span class="badge info text-xs">${plural(p.commits ?? 0, 'commit')} since ${esc(p.lastTag || 'never released')}</span>`
+            : '<span class="badge muted text-xs" title="no commits since its tag — include unchanged to publish it">unchanged</span>'}
+          ${p.dirty ? '<span class="badge danger text-xs" title="ws:pub refuses a package with uncommitted files">uncommitted</span>' : ''}
+          ${r ? `<span class="text-xs text-muted" data-registry>npm ${esc(r.remote ?? '—')} · ${esc(r.status)}</span>` : ''}
+        </div>
+      </li>`
+  }).join('')
+}
+
+async function readRegistry() {
+  const note = document.getElementById('publish-note')
+  const was  = note.textContent
+  note.textContent = 'asking npm…'
+  try {
+    const r = await fetch(`${API}/api/publish/registry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag: publishOpts().tag }),
+    }).then(x => x.json())
+    if (!r.ok) throw new Error(r.error)
+    registryBody = r
+    note.textContent = was
+  } catch (err) {
+    note.textContent = `could not read the registry: ${err.message}`
+  }
+  renderPublishPackages()
+  updateFlows()
+}
+
+function registryStatus(s) {
+  if (!registryBody) return ['muted', 'not read', 'reads npm when you press it']
+  const rows  = registryBody.packages.filter(p => publishable().some(m => m.name === p.name))
+  const count = st => rows.filter(p => p.status === st).length
+  const read  = `read ${ago(registryBody.at)}`
+  if (s.id === 'verify') {
+    const pub = stepResults['publish:publish']
+    if (!pub || pub.code !== 0) return ['muted', 'after publishing', '']
+    if (registryBody.at < pub.at) return ['warning', 'read again', 'the reading is from before the publish']
+    const behind = rows.filter(p => p.status !== 'level')
+    return behind.length
+      ? ['warning', `${behind.length} not level`, `${behind.map(p => `${p.name} ${p.status}`).join(' · ')} · ${read}`]
+      : ['success', 'level', `every package matches npm · ${read}`]
+  }
+  return ['success', 'read', `${count('level')} level · ${count('ahead')} unreleased · ${count('behind')} behind · ${count('unpublished')} never published · ${read}`]
 }
 
 async function loadChecks() {

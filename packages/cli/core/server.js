@@ -25,6 +25,8 @@
 //   GET  /api/release/steps   → the release in order — `core/release-view.js`
 //   POST /api/release/step    → SSE stream, one step as `fli` in its directory
 //   POST /api/release/step/stop
+//   GET  /api/publish         → the workspace's packages and the publish steps — `core/publish-view.js`
+//   POST /api/publish/registry → what npm holds, `ws:npm --json` — a press, it asks the registry
 //   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
 //
 // SSE event shapes sent to client:
@@ -189,6 +191,12 @@ function route(req, res) {
   }
   if (req.method === 'POST' && path === '/api/release/step/stop') {
     return handleReleaseStepStop(req, res)
+  }
+  if (req.method === 'GET' && path === '/api/publish') {
+    return handlePublish(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/publish/registry') {
+    return handlePublishRegistry(req, res)
   }
 
   // GET /api/health/:id — what the thing on that port says about itself
@@ -1020,27 +1028,61 @@ async function handleReleaseStep(req, res) {
   try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
   if (releaseStep) return json(res, 409, { error: `${releaseStep.id} is still running` })
 
-  const { runReleaseStep } = await import('./release-view.js')
   const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
-  const out = runReleaseStep({
+  const common = {
     root:     global.projectRoot,
     fliRoot:  global.fliRoot,
     id:       String(body?.step ?? ''),
-    app:      body?.app ? String(body.app) : null,
-    target:   String(body?.target ?? 'default'),
     fix:      body?.fix === true,
     approved: body?.approved === true,
     onLine:   (text) => emit({ type: 'output', text }),
-  })
+  }
+  // Two flows, one slot: a deploy and a publish both end in a push, and one
+  // at a time is what keeps two of them from racing for the same commit.
+  let out
+  if (body?.flow === 'publish') {
+    const { runPublishStep } = await import('./publish-view.js')
+    out = runPublishStep({ ...common, opts: body?.opts ?? {} })
+  } else {
+    const { runReleaseStep } = await import('./release-view.js')
+    out = runReleaseStep({ ...common, app: body?.app ? String(body.app) : null, target: String(body?.target ?? 'default') })
+  }
   if (out.error) return json(res, 400, { error: out.error })
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
   releaseStep = { id: String(body.step), child: out.child }
-  emit({ type: 'log', level: 'info', text: `$ cd ${out.cwd} && fli ${out.argv.join(' ')}` })
+  emit({ type: 'log', level: 'info', text: `$ cd ${out.cwd} && ${out.display ?? `fli ${out.argv.join(' ')}`}` })
   const code = await out.done
   releaseStep = null
   emit({ type: 'done', code })
   res.end()
+}
+
+// ─── GET /api/publish · POST /api/publish/registry ───────────────────────────
+//
+// The local half loads with the page — the members and `ws:changed`, which is
+// git. What npm holds is a request to somebody else's server and waits for a
+// press, the same split as the release target.
+
+async function handlePublish(req, res) {
+  try {
+    const { publishLocal, describePublish } = await import('./publish-view.js')
+    json(res, 200, { ...publishLocal({ root: global.projectRoot, fliRoot: global.fliRoot }), ...describePublish() })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handlePublishRegistry(req, res) {
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  try {
+    const { publishRegistry } = await import('./publish-view.js')
+    const out = publishRegistry({ root: global.projectRoot, fliRoot: global.fliRoot, tag: String(body?.tag ?? 'latest') })
+    json(res, out.ok ? 200 : 400, out)
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
 }
 
 function handleReleaseStepStop(req, res) {

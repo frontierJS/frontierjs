@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
 `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
-`/query`, `/redact`, `/search`, `/signature`, `/sse` and `/units` today; a caller
+`/query`, `/redact`, `/search`, `/signature`, `/sse`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -172,6 +172,11 @@ src/json/            reading, editing and COMPARING a JSON document nothing
                      describes — classify, the immutable writes, the flattened
                      tree, and diffDocs. Two callers, both in @frontierjs/ui:
                      the Json viewer and the JsonInput control
+src/transforms/      what `@trim`/`@lower`/`@upper`/`@slug` do to a value, in
+                     declaration order and BEFORE any check. Litestone applies
+                     them at the Data boundary, junction before it grades a
+                     payload, sierra before it grades a form field; two tables
+                     would disagree about what is valid (`FJS-401`)
 src/jsonschema/      the CONSUMER half of what litestone emits — follow a
                      `$ref`, and what a blank record of this model looks like.
                      Same two callers

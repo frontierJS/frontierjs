@@ -85,7 +85,18 @@ core/
                 terminal about whether a deploy can be undone. It also owns
                 the release IN ORDER — `RELEASE_STEPS`, the allow-list the
                 Release screen runs from, each step `fli <argv>` in the root or
-                one app, looked up by key and never composed from a request
+                one app, looked up by key and never composed from a request.
+                `spawnStep` is the one runner behind every walked flow
+  publish-view.js `ws:pub` walked — `PUBLISH_STEPS`, and the gate every
+                page option passes before argv: `ws:pub` pastes `--tag` and
+                `--otp` into a shell string, so a value is refused, never
+                escaped, and `--filter` matches by SUBSTRING, so a package
+                whose name would select a second one is refused too
+  latency.js    request latency as a tail at a constant arrival rate, counted from the
+                scheduled instant so a stall lengthens it. A case with a failed request
+                or no samples is an error, never a fast p99. Reported, never gated;
+                `scaffoldCases` is the `fli new` app's four (read, list, gated write,
+                gated + audited write), run by `scripts/scaffold-build.mjs --floor`
   bench.js      what a BUILT app costs — brotli bytes per surface, the first load
                 `index.html` names, disk, and the RSS of a booted process tree —
                 behind `test:bench`. Bytes are gated by a ratchet-down-only

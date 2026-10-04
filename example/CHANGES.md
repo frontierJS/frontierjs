@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-03 — `bun run bench`
+
+Boots the API on 8110, times three GET paths at a constant rate and prints the byte, memory and latency report for the built `web/` and `site/`. Reads only, so the databases are not written. Build both surfaces first, and stop `bun run api`: a port that already answers is refused. No `bench.baseline.json` is committed; `fli test:bench --update` after a clean build records one.
+
 ## 2026-10-03 — the offline-shell budget is raised 930 → 938 kB (`FJS-D302`)
 
 The web build refused at 938 kB, and the size is paid for rather than cut. Per-file brotli sizes were compared across three builds: `f8a6876b`, the commit that wrote 930, at 933; HEAD `0d9fd302` at 935; and the working tree at 938. Most of the growth is `local-db-worker.js`, Litestone running in the browser: +1.1 kB from commits and +2.5 kB from the uncommitted Litestone `client.js`/`include.js`/`schema-maps.js` work. The rest is `search.js` +0.6 kB, `junction.js` +0.4 kB and `style.css` +0.2 kB. No one change accounts for it, and `loadRows` does not reach the worker. `f8a6876b` itself already measures 933 when built today, so 930 was not reproducible from its own commit.

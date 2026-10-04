@@ -135,14 +135,22 @@ describe('a declared input is enforced', () => {
     expect(seen[0]).toMatchObject({ reference: 'ABC123', amount: 5 })
   })
 
-  test('a transform does NOT run — @trim is a Data-boundary rule (FJS-401)', async () => {
+  test('a transform runs before the checks — @trim reaches the method (FJS-401)', async () => {
     const { app, seen } = await mkApp([{ method: 'pay', input: 'PayOrder' }])
     await call(app, 'pay', { reference: ' ABC123 ', amount: 1 })
-    // The value is 8 characters and @length(3,12) passed it. Were @trim
-    // emitted, `' ABC12345678 '` would trim to 12 and pass where it fails now —
-    // the two boundaries do not merely differ in output, they disagree about
-    // what is valid, which is why wiring it needs the order settled first.
-    expect((seen[0] as Record<string, unknown>).reference).toBe(' ABC123 ')
+    expect((seen[0] as Record<string, unknown>).reference).toBe('ABC123')
+  })
+
+  test('the order matches the Data boundary — a transform decides what is valid (FJS-401)', async () => {
+    const { app, seen } = await mkApp([{ method: 'pay', input: 'PayOrder' }])
+    // 14 characters raw, 12 trimmed: @length(3,12) is asked of the trimmed value.
+    await call(app, 'pay', { reference: '  ABC12345678 ', amount: 1 })
+    expect((seen[0] as Record<string, unknown>).reference).toBe('ABC12345678')
+    // 2 trimmed, 6 raw: the length that fails is the stored one.
+    let err: any
+    try { await call(app, 'pay', { reference: '  ab  ', amount: 1 }) } catch (e) { err = e }
+    expect(err).toBeDefined()
+    expect(JSON.stringify(err.data ?? err.errors ?? err.message)).toMatch(/reference/)
   })
 
   test('a payload that violates the type is a 400 naming the field', async () => {

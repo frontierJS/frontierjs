@@ -13,7 +13,7 @@
 //
 // All validators skip null/undefined values — use NOT NULL in schema for required fields.
 
-import { slug } from '@frontierjs/toolbelt/inflect'
+import { transform, isTransform } from '@frontierjs/toolbelt/transforms'
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 
@@ -274,26 +274,22 @@ export function applyTransforms(data, model) {
   return out
 }
 
-const TRANSFORMS = new Set(['trim', 'lower', 'upper', 'slug'])
+/** The transforms an attribute list declares, in declaration order — the
+ *  `x-transforms` JSON Schema carries to the realms that grade a value before
+ *  it reaches this boundary. */
+export function transformNames(attributes) {
+  return attributes.filter(a => isTransform(a.kind)).map(a => a.kind)
+}
 
 /** Whether a field declares a transform — `transformValue` changes its value. */
 export function hasTransforms(field) {
-  return field.attributes.some(a => TRANSFORMS.has(a.kind))
+  return field.attributes.some(a => isTransform(a.kind))
 }
 
 /** One value through a field's transforms, in declaration order. A write and
  *  an equality `where` both run it, so the two agree on what can be stored. */
 export function transformValue(field, value) {
-  let v = value
-  for (const attr of field.attributes) {
-    switch (attr.kind) {
-      case 'trim':  v = String(v).trim();          break
-      case 'lower': v = String(v).toLowerCase();   break
-      case 'upper': v = String(v).toUpperCase();   break
-      case 'slug':  v = slug(v);                   break
-    }
-  }
-  return v
+  return transform(transformNames(field.attributes), value)
 }
 
 // ─── Typed JSON validation ───────────────────────────────────────────────────

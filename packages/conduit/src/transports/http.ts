@@ -5,6 +5,7 @@
 // ============================================================
 
 import { X509Certificate } from 'node:crypto'
+import { redactUrl } from '@frontierjs/toolbelt/redact'
 import { BaseTransport } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
@@ -87,6 +88,14 @@ const NEVER_DISPATCHED = new Set([
   'ConnectionRefused', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'DNSException',
 ])
 
+// A thrown error's own fields, each string with its URL userinfo removed. Spread
+// rather than the error itself: that is what `JSON.stringify` printed already,
+// and `declineReplay` reads `.code` from it.
+function redactedRaw(err: unknown): unknown {
+  if (typeof err !== 'object' || err === null) return redactUrl(err)
+  return Object.fromEntries(Object.entries(err).map(([k, v]) => [k, redactUrl(v)]))
+}
+
 function neverDispatched(code: string | undefined): boolean {
   if (!code) return false
   return NEVER_DISPATCHED.has(code) || code.startsWith('CERT_')
@@ -148,6 +157,16 @@ export class HttpTransport extends BaseTransport {
       return this.fail('invalid_request', `'${req.method}' is not a valid HTTP method`, {
         retryable: false,
       })
+    }
+
+    // A request-addressed target has no address without one, and any other
+    // target's address is the registered one: a caller cannot redirect it.
+    const addressed = this.descriptor.address_from === 'request'
+    if (addressed && !req.address) {
+      return this.fail('invalid_request', `Target '${this.descriptor.id}' takes its address per send, and none was named`, { retryable: false })
+    }
+    if (!addressed && req.address !== undefined) {
+      return this.fail('invalid_request', `Target '${this.descriptor.id}' has a registered address; a send names one only for a target declared address_from 'request'`, { retryable: false })
     }
 
     // A non-idempotent method is retried only when there is an idempotency key
@@ -292,6 +311,17 @@ export class HttpTransport extends BaseTransport {
 
     try {
       const url = this.buildUrl(req)
+      // A URL somebody else chose, graded before every attempt: a name that
+      // resolved to a public address at the first can resolve to a private
+      // one by the second (`FJS-1667`). Loaded only by a target that needs it,
+      // so a conduit with none never imports junction.
+      if (this.descriptor.address_from === 'request') {
+        const { assertPublicUrl } = await import('@frontierjs/junction/public-url')
+        try { await assertPublicUrl(url, this.descriptor.destinations ?? {}) }
+        catch (err) {
+          return this.fail('invalid_request', `Refused to send: ${(err as Error).message}`, { retryable: false })
+        }
+      }
       // send() rejects an unknown verb before reaching here.
       const method = this.resolveMethod(req.method)!
 
@@ -484,9 +514,13 @@ export class HttpTransport extends BaseTransport {
       // an operator cannot tell a wrong hostname from a certificate (`FJS-710`,
       // `conduit-12`).
       const code = (err as { code?: string }).code
-      return this.fail('connection_failed', code ? `${(err as Error).message} (${code})` : (err as Error).message, {
+      // Bun's error carries the request URL as `path`, userinfo included, and
+      // `raw` reaches logs, stored job results and responses. The host stays:
+      // which target refused is the content of the message (`FJS-710`, `conduit-11`).
+      const message = redactUrl((err as Error).message)
+      return this.fail('connection_failed', code ? `${message} (${code})` : message, {
         retryable: true,
-        raw: err
+        raw: redactedRaw(err)
       })
 
     } finally {
@@ -557,8 +591,8 @@ export class HttpTransport extends BaseTransport {
   // things per protocol (§3.1).
 
   /** Base URL requests are built against. */
-  protected baseAddress(): string {
-    return this.descriptor.address
+  protected baseAddress(req?: ConduitRequest): string {
+    return this.descriptor.address_from === 'request' ? (req?.address ?? '') : this.descriptor.address
   }
 
   /** Last chance to adjust fetch options before the request goes out. */
@@ -568,7 +602,7 @@ export class HttpTransport extends BaseTransport {
   }
 
   protected buildUrl(req: ConduitRequest): string {
-    const base = this.baseAddress().replace(/\/$/, '')
+    const base = this.baseAddress(req).replace(/\/$/, '')
     const path = req.path ? `/${req.path.replace(/^\//, '')}` : ''
 
     // Parsed rather than concatenated: `path` may already carry a query

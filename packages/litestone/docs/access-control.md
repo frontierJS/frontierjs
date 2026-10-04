@@ -582,6 +582,15 @@ model User {
 
 `asSystem()` always sees and writes all fields.
 
+**A `where` narrows, an `orderBy` does not.** A `where` or a cursor naming a
+read-policied field is ANDed with the predicate, so a row whose cell the caller
+cannot read matches nothing — not even `null`. A sort is not a filter: a hidden
+cell sorts as NULL (`nulls:` applies) and its row stays, so `count()` and the
+sorted list agree. When the predicate reads only the caller and is false for
+them, every cell would be NULL and the sort is refused by name. `findManyCursor`
+refuses a sort on a per-row field outright — a hidden cell has no value to
+resume from — so page those with `limit`/`offset` (`FJS-1664`).
+
 **It does not lift row tenancy.** A `tenancy { strategy row }` declaration
 desugars into `@@deny`, and those are the one kind of policy a system context
 keeps — while a tenant is in scope. `db.$setAuth(user).asSystem()` crosses the

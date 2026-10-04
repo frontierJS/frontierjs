@@ -158,18 +158,39 @@ export class MailBuilder {
 // ─── Resend adapter ───────────────────────────────────────────────────────
 // ONLY this file imports from the Resend SDK.
 
-export interface ResendOptions {
-  apiKey:  string
+// What a battery needs of a credential store, and nothing more. Structural, so
+// Conduit's `CredentialResolver` satisfies it with no import in either
+// direction, and `{ get: k => process.env[k] }` satisfies it with no Conduit
+// at all (`FJS-D219`).
+export interface CredentialSource {
+  get(ref: string): Promise<string | null | undefined> | string | null | undefined
+}
+
+// The key is named, not held: `credentials` + `apiKeyRef` resolve it at send
+// time, which is Conduit's convention for a secret. A literal `apiKey` still
+// works and keeps the secret in this closure for the life of the process.
+export type ResendOptions = {
   from:    string    // default sender
   replyTo?: string
-}
+} & (
+  | { apiKey: string; credentials?: never; apiKeyRef?: never }
+  | { credentials: CredentialSource; apiKeyRef: string; apiKey?: never }
+)
 
 export function createResendMailer(opts: ResendOptions): IMail {
 
-  const { apiKey, from: defaultFrom, replyTo: defaultReplyTo } = opts
+  const { from: defaultFrom, replyTo: defaultReplyTo } = opts
   const BASE_URL = 'https://api.resend.com'
 
+  async function resolveKey(): Promise<string> {
+    if (opts.apiKey !== undefined) return opts.apiKey
+    const key = await opts.credentials?.get(opts.apiKeyRef!)
+    if (!key) throw new Error(`Resend API key: credential "${opts.apiKeyRef}" did not resolve`)
+    return key
+  }
+
   async function post(path: string, body: unknown): Promise<unknown> {
+    const apiKey = await resolveKey()
     const res = await fetch(BASE_URL + path, {
       method:  'POST',
       headers: {
@@ -350,8 +371,9 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
 //   import { mailerPlugin, createResendMailer } from '@frontierjs/junction'
 //
 //   app.configure(mailerPlugin(createResendMailer({
-//     apiKey: process.env.RESEND_API_KEY!,
-//     from:   'Elite Lawn Care <noreply@elitelawncare.com>',
+//     credentials: { get: ref => process.env[ref] },   // or a Conduit resolver
+//     apiKeyRef:   'RESEND_API_KEY',
+//     from:        'Elite Lawn Care <noreply@elitelawncare.com>',
 //   })))
 //
 //   // Then anywhere in hooks or services:

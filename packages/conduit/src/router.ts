@@ -10,6 +10,7 @@ import { UnixTransport }           from './transports/unix.ts'
 import { NotImplementedTransport } from './transports/not_implemented.ts'
 import { BaseTransport }           from './transports/base.ts'
 import type { ConduitStore, CredentialResolver } from './types.ts'
+import { observedRequest }         from './address.ts'
 import type {
   TargetDescriptor, ConduitObservers, ConduitError, ConduitRequest
 } from './types.ts'
@@ -91,7 +92,7 @@ export class Router {
         try {
           // Observers are declared `=> void` so `(req) => arr.push(req)` stays
           // legal, but an async one really does return a promise at runtime.
-          const result: unknown = this.observers.onRetry?.(req, err, attempt)
+          const result: unknown = this.observers.onRetry?.(observedRequest(req), err, attempt)
           if (result instanceof Promise) {
             result.catch(e => console.error(`[conduit] observer 'onRetry' rejected:`, e))
           }

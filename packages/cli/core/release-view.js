@@ -400,12 +400,7 @@ export function describeSteps() {
  * Start one step as `fli` in the directory it belongs in, output line by line.
  *
  * Returns `{ error }` for anything the table does not allow, or `{ child, done }`
- * where `done` resolves to the exit code. Detached into its own process group
- * so a stop takes what the step started (a drive's server, a deploy's ssh)
- * rather than only the wrapper.
- *
- * Stdin is closed unless the person approved a `confirm` step — then it answers
- * `y`, which is what `deploy:rollback` asks on a terminal.
+ * where `done` resolves to the exit code — see `spawnStep`.
  */
 export function runReleaseStep({ root, fliRoot, id, app = null, target = 'default', fix = false, approved = false, onLine }) {
   const step = RELEASE_STEPS.find(s => s.id === id)
@@ -422,12 +417,31 @@ export function runReleaseStep({ root, fliRoot, id, app = null, target = 'defaul
   }
 
   const argv = [...(fix ? step.fix : step.argv), ...(step.scope === 'app' && !step.targetless ? TARGETS[target] : [])]
-  const child = spawn(process.execPath, [resolve(fliRoot, 'bin/fli.js'), ...argv], {
+  const { child, done } = spawnStep({ fliRoot, cwd, argv, answerYes: Boolean(step.confirm), onLine })
+  return { child, argv, cwd: relative(root, cwd) || '.', done }
+}
+
+/**
+ * One step's process: `fli <argv>` (or another allow-listed binary) in `cwd`,
+ * each output line handed to `onLine`, `done` resolving to the exit code —
+ * `null` for a signal or a spawn that failed. Shared by every flow the GUI
+ * walks, so a stop, a stream and an exit code mean one thing on every screen.
+ *
+ * Detached into its own process group so a stop takes what the step started
+ * (a drive's server, a deploy's ssh, a `bun publish`) rather than only the
+ * wrapper. Stdin is closed unless `answerYes` — then it answers `y`, which is
+ * what `deploy:rollback` asks on a terminal.
+ */
+export function spawnStep({ fliRoot, cwd, argv, bin = 'fli', answerYes = false, onLine }) {
+  const [cmd, args] = bin === 'fli'
+    ? [process.execPath, [resolve(fliRoot, 'bin/fli.js'), ...argv]]
+    : [bin, argv]
+  const child = spawn(cmd, args, {
     cwd, detached: true,
-    stdio: [step.confirm ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    stdio: [answerYes ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     env: { ...process.env, FORCE_COLOR: '0' },
   })
-  if (step.confirm) child.stdin.end('y\n')
+  if (answerYes) child.stdin.end('y\n')
 
   for (const stream of [child.stdout, child.stderr]) {
     let buf = ''
@@ -445,5 +459,5 @@ export function runReleaseStep({ root, fliRoot, id, app = null, target = 'defaul
     child.on('error', err => { onLine?.(err.message); ok(null) })
     child.on('close', code => ok(code))
   })
-  return { child, argv, cwd: relative(root, cwd) || '.', done }
+  return { child, done }
 }

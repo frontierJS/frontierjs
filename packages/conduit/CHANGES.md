@@ -1,6 +1,30 @@
 # Changes — @frontierjs/conduit
 
 
+## 2026-10-03 — a connection failure no longer carries the address's password (`FJS-1678`)
+
+Bun's connection error holds the request URL as `path`, userinfo included, and `raw: err`
+put it into `JSON.stringify(result)`: a log line, a stored job result, a response. The http
+transport now runs the message through `redactUrl` and answers `raw` as the error's own
+fields with each string redacted. The host stays, since which target refused is what an
+operator reads, and `code` is still there for `declineReplay`. This is `conduit-11`'s first
+third under `FJS-710`; observer bodies and a throwing observer's stack are still open.
+
+## 2026-10-03 — a target whose address comes per send (`FJS-1667`)
+
+`address_from: 'request'` declares a target with no address of its own: each send names one
+as `ConduitRequest.address`, with `path` and `query` applied as usual. It is for a destination
+an app holds in a row, such as a Slack or webhook URL somebody pasted, which is its own
+credential and must not sit in the registry or reach an observer. Before every attempt, a
+retry included, the URL is checked with junction's `assertPublicUrl`: no private or loopback
+address and no http unless the target's `destinations` allows it, refused as
+`invalid_request`. register() refuses such a target with `bearer` or `api_key` auth, a followed
+redirect, a pinned certificate or `trace`; `none` and `hmac` are allowed. Its breaker and
+concurrency cap are kept per origin, under the target's policy, so one dead URL does not close
+the target for every other row. Observers and `stats().breakers` see the origin only. A send
+naming an address to any other target is refused, so a caller cannot redirect a registered
+one. The SQLite store keeps both new fields.
+
 ## 2026-09-30 — `signal` ends one send (`FJS-1408`)
 
 `ConduitRequest.signal` joins the caller's `AbortSignal` to the transport's own

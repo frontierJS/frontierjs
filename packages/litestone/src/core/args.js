@@ -6,11 +6,12 @@
 // `$checkWhere`/`$checkOrderBy` before a call exists.
 
 import {
-  centerOf, filterableKeysFor, sortableKeysFor, OPAQUE_SORT, rawClause, isNamedAgg,
+  centerOf, filterableKeysFor, sortableKeysFor, OPAQUE_SORT, rawClause, isNamedAgg, quoteIdent,
 } from './query.js'
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
 import { compileFieldPredicate, buildPolicyFilter } from './policy.js'
+import { hoistedFieldRead } from './field-policy.js'
 
 // Suggest the closest match for an unknown key from a set of valid keys.
 // Used in write-data validation to give users actionable typo hints —
@@ -853,6 +854,14 @@ export function withArgValidation(table, model, ctx) {
   // cannot read the column on cannot be distinguished by it. Through a relation:
   // refused, because the predicate decides rows of the OTHER model and there is
   // no row of it here to decide against (`FJS-D129`).
+  //
+  // An orderBy is not a filter, so it narrows nothing (`FJS-1664`): a cell the
+  // caller cannot read sorts as NULL and its row stays. Conjoined, a sort
+  // changed the result set — count() said 2 and the sorted page held 1.
+  const readExprs   = (key) => ctx.fieldPolicyMap?.[modelName]?.[key]?.allow?.read
+  const predicateFor = (key) => compileFieldPredicate(
+    modelName, readExprs(key), 'read', ctx, ctx.policyMap ?? {}, ctx.schema, ctx.relationMap)
+
   const applyFieldRead = (args, method) => {
     const found = collectGuardedArgs(args, modelName, fieldReadMap)
     if (!found.length) return args
@@ -860,11 +869,20 @@ export function withArgValidation(table, model, ctx) {
     const foreign = found.filter(f => f.model !== modelName)
     if (foreign.length) throw fieldReadRelationError(foreign, modelName, method)
 
+    const conjoin = new Set([
+      ...walkGuardedWhere(args.where, modelName, fieldReadMap, []),
+      ...walkGuardedWhere(args.cursor, modelName, fieldReadMap, []),
+    ].map(f => f.key))
+    if (method === 'groupBy' || method === 'aggregate')
+      for (const f of found) conjoin.add(f.key)
+    else {
+      const orderBy = maskOrderBy(args.orderBy, method, conjoin)
+      if (orderBy !== args.orderBy) args = { ...args, orderBy }
+    }
+
     const parts = []
-    for (const key of new Set(found.map(f => f.key))) {
-      const exprs = ctx.fieldPolicyMap?.[modelName]?.[key]?.allow?.read
-      const pred  = compileFieldPredicate(
-        modelName, exprs, 'read', ctx, ctx.policyMap ?? {}, ctx.schema, ctx.relationMap)
+    for (const key of conjoin) {
+      const pred = predicateFor(key)
       if (pred) parts.push(pred)
     }
     if (!parts.length) return args
@@ -877,6 +895,61 @@ export function withArgValidation(table, model, ctx) {
     // becomes one operand, so nothing they wrote — a NOT above all of it
     // included — can reach the predicate.
     return { ...args, where: args?.where ? { AND: [args.where, { $raw: raw }] } : { $raw: raw } }
+  }
+
+  // A plain same-model sort on a field-read column becomes
+  // CASE WHEN <predicate> THEN col END — NULL exactly where the read strips the
+  // cell. A predicate that reads only the caller has one answer for every row:
+  // true sorts the column as it is, false is refused, because every cell would
+  // be NULL and the order the caller asked for would silently be none. A
+  // near-order cannot take an expression, so it is added to `conjoin`.
+  const maskOrderBy = (orderBy, method, conjoin) => {
+    if (!orderBy || typeof orderBy !== 'object') return orderBy
+    const own = fieldReadMap.own[modelName] ?? NO_KEYS
+    let changed = false
+    const items = (Array.isArray(orderBy) ? orderBy : [orderBy]).flatMap(item => {
+      if (!item || typeof item !== 'object') return [item]
+      const out = []
+      let rest = null
+      for (const [k, dir] of Object.entries(item)) {
+        const keep = () => { (rest ??= {})[k] = dir }
+        if (!own.has(k)) { keep(); continue }
+        const plain = typeof dir === 'string' || (dir !== null && typeof dir === 'object' && !('near' in dir))
+        if (!plain) { conjoin.add(k); keep(); continue }
+        const pred = predicateFor(k)
+        if (!pred) { keep(); continue }
+        const answer = hoistedFieldRead(ctx, readExprs(k))
+        if (answer === true) { keep(); continue }
+        if (answer === false) throw new AccessDeniedError(
+          `${modelName}.${method} cannot sort by "${k}": its @allow('read') admits this caller on no row, so every ` +
+          `value would sort as NULL and the order asked for would be none. Sort by a column this caller can read.`,
+          { model: modelName, operation: 'read' })
+        // A keyset cursor resumes from the value the last row holds, and a cell
+        // this caller cannot read holds none for them.
+        if (method === 'findManyCursor') throw new ValidationError([{ path: ['orderBy', k], message:
+          `${modelName}.findManyCursor cannot sort by "${k}": its @allow('read') is decided per row, and a cursor ` +
+          `resumes from the value each row holds, which a row this caller cannot read has none of. Page with limit/offset.` }])
+        if (rest) { out.push(rest); rest = null }
+        changed = true
+        if (typeof dir === 'object' && dir.dir == null) continue
+        const d = String(typeof dir === 'string' ? dir : dir.dir).toUpperCase()
+        if (d !== 'ASC' && d !== 'DESC')
+          throw new ValidationError([{ path: ['orderBy', k], message: `orderBy direction must be 'asc' or 'desc', got: ${typeof dir === 'string' ? dir : dir.dir}` }])
+        let nulls = ''
+        if (typeof dir === 'object' && dir.nulls) {
+          const n = String(dir.nulls).toUpperCase()
+          if (n !== 'FIRST' && n !== 'LAST')
+            throw new ValidationError([{ path: ['orderBy', k], message: `orderBy nulls must be 'first' or 'last', got: ${dir.nulls}` }])
+          nulls = ` NULLS ${n}`
+        }
+        const col = quoteIdent(ctx.columnMaps?.[modelName]?.[k] ?? k)
+        out.push({ $raw: rawClause(`CASE WHEN (${pred.sql}) THEN ${col} END ${d}${nulls}`, pred.params) })
+      }
+      if (rest) out.push(rest)
+      return out
+    })
+    if (!changed) return orderBy
+    return Array.isArray(orderBy) || items.length !== 1 ? items : items[0]
   }
 
   const _pointFields = pointFieldsOf(model)

@@ -176,6 +176,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | Key | On | Value | Read by |
 |---|---|---|---|
 | `x-messages` | field | `{ ruleName: msg, keyword: msg }` — the same authored string under both aliases | junction `schema.ts`, sierra `field-rules.js` |
+| `x-transforms` | field | `['trim', 'lower', …]` — `@trim`/`@lower`/`@upper`/`@slug` in declaration order; apply BEFORE any validator keyword on the same field, via `@frontierjs/toolbelt/transforms` | junction `litestone.ts` → `schema.ts`, sierra `field-rules.js` |
 | `x-relations` | model | `[{field, model, type: 'belongsTo'\|'hasMany'\|'m2m', fields, references, onDelete, optional}]` | sierra `field-rules.js`, `resource.js`, `fli` |
 | `x-gate` | model | `{read, create, update, delete}` — the `@@gate` levels, 0–9 | sierra `field-rules.js` (affordance), static-safety |
 | `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null, system: bool} } }` | sierra `field-rules.js`, `example`'s orders screen |
@@ -190,6 +191,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
 | `x-litestone-accept` | field | the `@accept("image/png,image/jpeg")` **string**, verbatim — not an array | tests only |
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |
+| `x-determined` | model | `{ hostId: 'auth().id' }` — a column every create `@@allow` pins to the caller as a top-level `&&` conjunct (`hostId == auth().id`) | sierra drops it from a generated form and `required`, and fills it from the session at create (`FJS-D492`) |
 | `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | sierra (`buildFieldRules` → `withheldFields`), `<Form>`, `<Field>` |
 | `x-litestone-write-policy` | field | `true` when a field-level `@allow('write', …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
 | `x-litestone-required-where` | field | the AST of `@required(where: …)` — the predicate deciding whether this column needs a value | sierra (`buildFieldRules` → `requiredFor`), `<Form>` |

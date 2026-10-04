@@ -20,6 +20,7 @@ import { levelPasses, canAtLevel }   from '@frontierjs/toolbelt/gate'
 import { hookChainMessage }          from '@frontierjs/toolbelt/hooks'
 import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
 import { humanize }                    from '@frontierjs/toolbelt/inflect'
+import { transform }                   from '@frontierjs/toolbelt/transforms'
 // The evaluator litestone's own `evalJs` is, so an affordance and the boundary
 // cannot disagree about a row (`FJS-D259`).
 import { evaluate as evaluatePredicate, truth } from '@frontierjs/toolbelt/predicate'
@@ -83,6 +84,11 @@ const _CARRIED = [
   // this key exists only to pick the control, because `<input type="time">`
   // shows a seconds box or does not and nothing in a pattern says which.
   'x-time',
+  // `@trim`/`@lower`/`@upper`/`@slug`, in order. The checks below grade the
+  // value AFTER these, as the Data boundary does; without them a person typing
+  // `W` into a `@lower` field with a lowercase `@regex` cannot save it and is
+  // told the format is wrong (`FJS-401`).
+  'x-transforms',
   // `x-money` is `@money` and `x-scale` is `@scale`: an integer column whose
   // stored value is a SCALED one — 1299 for $12.99. Both are carried for the
   // reason `x-time` is, and it is the sharper case: nothing else on the rule
@@ -239,6 +245,16 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     if (Object.keys(messages).length) rule.messages = messages
 
     out[name] = rule
+  }
+
+  // A column a create policy pins to the caller (`x-determined`, `FJS-D492`) has
+  // no choice to offer, and the client supplies it at create — so it is no
+  // longer the person's to supply. Left `required`, a form with the control
+  // removed refuses to submit at all, for a value the browser is about to fill.
+  for (const [name, claim] of Object.entries(schema['x-determined'] ?? {})) {
+    if (!out[name] || typeof claim !== 'string') continue
+    out[name].determined = claim
+    out[name].required   = false
   }
 
   // Mark foreign keys. `accountId` is emitted as a plain integer, so without
@@ -708,6 +724,34 @@ function _builtinControl(rule) {
 }
 
 /**
+ * The caller-supplied value of every determined column the record leaves
+ * blank — what `x-determined` says the create policy will demand.
+ *
+ * `auth().id` is the session's `userId`; any other claim is read off the session
+ * by name. A claim the session does not carry is left unset, and the Data
+ * boundary refuses by name, which is the right answer for a caller it cannot
+ * name. A value the record already states is never replaced.
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules()
+ * @param {object} data     the create payload
+ * @param {object|null} user  the session's user
+ */
+export function seedDetermined(fields, data, user) {
+  if (!user || !data || typeof data !== 'object' || Array.isArray(data)) return data
+  let out = data
+  for (const [name, rule] of Object.entries(fields ?? {})) {
+    if (!rule?.determined) continue
+    if (out[name] != null && out[name] !== '') continue
+    const claim = rule.determined.slice('auth().'.length)
+    const value = claim === 'id' ? (user.userId ?? user.id) : user[claim]
+    if (value == null) continue
+    if (out === data) out = { ...data }
+    out[name] = value
+  }
+  return out
+}
+
+/**
  * The form's field list, in schema order.
  *
  * The field SET is the last thing a form still restates about a model. A list
@@ -735,6 +779,9 @@ export function formFieldList(fields, { only, except, model } = {}) {
 
   for (const name of names) {
     if (removed.has(name)) continue
+    // Left out of the generated set and still reachable by name: `only` is the
+    // person saying they will draw it.
+    if (rules[name]?.determined && names === known) continue
     if (!(name in rules)) {
       out.push({ name, rule: null, control: null, reason: 'no such field on this model' })
       continue
@@ -1485,6 +1532,8 @@ function _checkConstraints(name, rule, value, errors) {
   const label = fieldLabel(name, rule)
   const add = (message) => errors.push({ field: name, message })
   const say = (keyword, fallback) => add(_say(rule, keyword, fallback))
+
+  if (typeof value === 'string') value = transform(rule['x-transforms'], value)
 
   if (rule.enum && !rule.enum.includes(value)) {
     say('enum', `${label} must be one of: ${rule.enum.join(', ')}`)

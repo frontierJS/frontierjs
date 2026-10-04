@@ -1,5 +1,21 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-03 — an orderBy on a field `@allow('read')` sorts the hidden cells as NULL rather than dropping their rows (`FJS-1664`)
+
+`applyFieldRead` ANDed the field predicate into the `where` for every position that named the field, `orderBy` included, so `orderBy: { secret: 'asc' }` returned only the rows whose `secret` the caller could read — `count()` said 3 and the sorted list held 2. A plain same-model sort now becomes `CASE WHEN (predicate) THEN col END` with the caller's direction and `nulls:`, through the `@map` name; a `where` or cursor naming the field still conjoins. A predicate that reads only the caller is answered once by `hoistedFieldRead` (now exported from `core/field-policy.js`): true sorts the column as it is, false is an `AccessDeniedError` naming the field, since every cell would be NULL. `findManyCursor` refuses a sort on a per-row field by name, a near-order still conjoins, and `groupBy`/`aggregate` are unchanged. The test that pinned the old narrowing (`ada` sorting by an admin-only `salary` got `[]`) now pins the refusal. `test/field-predicate.test.ts` § *sorts the hidden cells as NULL*, `docs/access-control.md`.
+
+## 2026-10-03 — the provenance closure can name the kind of the actor behind a principal (`FJS-1248`)
+
+`LogRequestContext.operatorType` is read by `buildLogEntry` where `operatorId` is set: `actorType` is that string, and `support` where it is absent. Junction uses it for a device that attested a person (`FJS-D490`); the swap of `actorId` and `subjectId` is the branch support mode already had. Pinned by `junction/test/attested-by.test.ts`, which runs the crossing against a real client.
+
+## 2026-10-03 — a column a create policy pins to the caller crosses as `x-determined` (`FJS-1229`)
+
+`@@allow('create', hostId == auth().id)` has one legal value for `hostId`, and the schema document flattened it to `x-litestone-policies: true`, so a generated form drew a picker over every `User` and the person's own submit was refused. `determinedColumns(model)` (`core/policy.js`) reads the create `@@allow`s and names a column when EVERY one pins it to the same claim as a top-level `&&` conjunct, in either operand order; an allow that leaves it free, a pin under `||`, and a read-only policy each leave the column a choice. `generateJsonSchema` emits it on the model as `"x-determined": { "hostId": "auth().id" }`. `test/determined.test.ts`, `docs/jsonschema.md`.
+
+## 2026-10-03 — JSON Schema carries a field's transforms as `x-transforms` (`FJS-401`)
+
+`@trim`, `@lower`, `@upper` and `@slug` are emitted on the field, in declaration order, as `"x-transforms": ["upper", "trim"]` — on a model column and inside a `type T { … }` alike, since both go through `applyValidators`. The Data boundary still applies them before it validates; the keyword is what lets a realm that grades earlier do the same. The implementations moved to `@frontierjs/toolbelt/transforms` and `transformValue` calls them. `test/messages.test.ts`, `docs/jsonschema.md`.
+
 ## 2026-10-03 — a PascalCase view reads through its camelCase accessor (`FJS-1631`)
 
 `view OrderByCustomer` was created as `"OrderByCustomer"` and every read of `db.orderByCustomer` said `no such table: order_by_customer`. The DDL was right; the accessor was not. A view's stub joins `schema.models`, so the model loop registered a TABLE builder at `modelToAccessor(view.name)` over the snake-case name, and the view registered its own builder at `view.name` verbatim. For a camelCase view the two were one key and the view won; for a PascalCase one they were two, and the accessor typegen declares was the table. The view's builder, the client's `ownKeys` and `exportableDatasets` now key a view by `modelToAccessor`, as a model is keyed — so `db.OrderByCustomer` no longer exists, and `db.orderByCustomer` is the view, refuses a write by name and reads its rows. The SQL name stays `view.name`. `test/view-access.test.ts` § *a view named in PascalCase*.
