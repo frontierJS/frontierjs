@@ -1197,6 +1197,50 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return _cascadeTargetsCache
   }
 
+  // Runs `step(target, parentPKs)` for every edge out of every model the
+  // cascade reaches, starting at this model's `rootPKs`. `step` returns the
+  // child keys it reached, or nothing for a leaf. A worklist rather than one
+  // pass over the targets, because an edge back into a model already reached
+  // (Page → Page, a child two parents share) has new rows to follow each time
+  // it lands; one pass stopped a self-relation one level down (`FJS-1723`).
+  // A key is followed once per model, which is what ends a cycle in the data.
+  function walkCascade(rootPKs, step) {
+    const targets = _cascadeTargets()
+    const reached = new Map([[modelName, new Set(rootPKs)]])
+    const queue   = [[modelName, rootPKs]]
+    while (queue.length) {
+      const [parent, parentPKs] = queue.shift()
+      for (const target of targets) {
+        if (target.parentModel !== parent) continue
+        const childPKs = step(target, parentPKs)
+        if (!childPKs?.length) continue
+        if (!reached.has(target.childModel)) reached.set(target.childModel, new Set())
+        const seen  = reached.get(target.childModel)
+        const fresh = childPKs.filter(pk => !seen.has(pk) && seen.add(pk))
+        if (fresh.length) queue.push([target.childModel, fresh])
+      }
+    }
+  }
+
+  // The soft-delete cascade remove() and removeMany() share. A @hardDelete
+  // child is DELETEd and goes no further; a soft one is stamped with the
+  // root's `ts`, and its keys are read back only when something hangs off it.
+  function cascadeSoftRemove(rootPKs, ts, doomed) {
+    walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
+      const ph = parentPKs.map(() => '?').join(',')
+      if (hardDelete) {
+        const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
+        if (heard) doomed.push(...heard)
+        try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
+        catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
+        return null
+      }
+      writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
+      if (!_cascadeParents.has(childModel)) return null
+      return readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
+    })
+  }
+
   // ── Transition enforcement ───────────────────────────────────────────────
   //
   // Runs on update() and upsert() when the data touches a transitions-typed field.
@@ -6832,7 +6876,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // again: the caller asked for precision, and knowing which half a row fell
       // in is the difference between announcing `create` and announcing `update`
       // — the compromise the collection form has to make and this one does not.
-      const _usNeedRows = tableHasLogWork || _usWantRows
+      // The conflict half's post-update rule reads the row as it is now, which
+      // only RETURNING carries — updateMany's reason (FJS-1730).
+      const _usPost = ctx.hasPolicies && !!ctx.policyMap[modelName]?.['post-update']
+      const _usNeedRows = tableHasLogWork || _usWantRows || _usPost
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       // The conflict half is an update and is graded as one — without this a
       // caller below the update gate overwrote any row by naming its key
@@ -7035,8 +7082,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           try {
             if (_usNeedRows) {
               const written = stmt.get(...args)
-              if (written) (present.has(keyOf(row)) ? _usUpdated : _usCreated).push(written)
+              const _usUpd  = written && present.has(keyOf(row))
+              if (written) (_usUpd ? _usUpdated : _usCreated).push(written)
               else if (_usSeal || _usGuardSql) _usWrote = false
+              // A later row repeating this key conflicts with the row just written.
+              if (written) present.add(keyOf(row))
+              // One refused row refuses the batch: the throw rolls the unit back.
+              if (_usUpd && _usPost)
+                checkPostUpdatePolicy(modelName, read(written, { mode: 'single', hydrateFrom: true }), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
             } else {
               stmt.run(...args)
               if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
@@ -7126,34 +7179,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (!softResult) return
 
         // Cascade soft delete to child tables under @@softDelete(cascade)
-        if (softDeleteCascade) {
-          const cascadeTargets = _cascadeTargets()
-          if (cascadeTargets.length > 0) {
-            // Track affected PK values per table so multi-level cascades work correctly
-            // e.g. accounts(id=1) → users(id=1,2) → posts: use users' ids for posts cascade
-            const affectedPKs = new Map([[modelName, [softResult.id]]])
-            for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
-              const parentPKs = affectedPKs.get(parentModel) ?? []
-              if (!parentPKs.length) continue
-              const ph = parentPKs.map(() => '?').join(',')
-              if (hardDelete) {
-                // @hardDelete: physically remove child rows instead of stamping deletedAt
-                const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
-                if (heard) _rmSoftDoomed.push(...heard)
-                try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
-                catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
-                // Hard-delete children are terminal — no need to track their PKs for further cascade
-              } else if (_cascadeParents.has(childModel)) {
-                writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
-                const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-                affectedPKs.set(childModel, childPKs)
-              } else {
-                // Leaf child — nothing downstream consumes its PKs, skip the readback SELECT
-                writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
-              }
-            }
-          }
-        }
+        if (softDeleteCascade && _cascadeTargets().length > 0) cascadeSoftRemove([softResult.id], ts, _rmSoftDoomed)
         }).catch(async e => { throw await nameBlockerForCaller(e) })
         if (!softResult) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
 
@@ -7229,42 +7255,26 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // refused part way would otherwise leave the earlier children stamped
         // under a parent that is still live (`FJS-1714`).
         await tx.wrapExclusive(() => {
-          // If cascading, fetch affected PKs first so we can cascade precisely
-          if (softDeleteCascade) {
-            const cascadeTargets = _cascadeTargets()
-            if (cascadeTargets.length > 0) {
-              const exclWhere2 = injectSoftDeleteFilter(where, 'live')
-              const params2 = []
-              const whereSql2 = buildWhereWithEncryption(exclWhere2, params2)
-              const liveRows = readDb.query(`SELECT * FROM "${tableName}"${whereSql2 ? ` WHERE ${whereSql2}` : ''}`).all(...params2)
-              // Seed affected PKs with root table values
-              const firstTarget = cascadeTargets[0]
-              const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
-              const affectedPKs = new Map([[modelName, liveRows.map(r => r[rootPKCol])]])
-              for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
-                const parentPKs = affectedPKs.get(parentModel) ?? []
-                if (!parentPKs.length) continue
-                const ph = parentPKs.map(() => '?').join(',')
-                if (hardDelete) {
-                  const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
-                  if (heard) _rmsDoomed.push(...heard)
-                  try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
-                  catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
-                } else {
-                  writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
-                  if (_cascadeParents.has(childModel)) {
-                    const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-                    affectedPKs.set(childModel, childPKs)
-                  }
-                }
-              }
-            }
+          // The roots are read before anything is stamped, and stamped before
+          // the cascade: under a self-relation a root can be another root's
+          // child, and stamped by the cascade first it would fall out of the
+          // count and the trail. They are read through the stamp's own filter,
+          // policy included: a row the policy refused keeps its children
+          // (`FJS-1728`).
+          let rootPKs = null
+          if (softDeleteCascade && _cascadeTargets().length > 0) {
+            const live = `"${col('deletedAt')}" IS NULL`
+            const liveRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${rmFinalSql ? `(${rmFinalSql}) AND ${live}` : live}`).all(...params)
+            const rootPKCol = _cascadeTargets()[0].referencedKey
+            rootPKs = liveRows.map(r => r[rootPKCol])
           }
 
           noteCardinalityBySql(rmFinalSql, params)
           _rmsRows = _rmNeedRows ? writeDb.query(_rmsSql).all(ts, ...params) : null
           if (!_rmsRows) writeDb.run(_rmsSql, ts, ...params)
           softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
+
+          if (rootPKs?.length) cascadeSoftRemove(rootPKs, ts, _rmsDoomed)
         }).catch(async e => { throw await nameBlockerForCaller(e) })
         if (tableHasLogWork && _rmsRows?.length) emitLogs('delete', _rmsRows)
         await cascadeRemoved(_rmsDoomed)
@@ -7356,32 +7366,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // an older one, so matching the stamp is what separates what this
       // cascade removed from what somebody deleted on its own (`FJS-1583`).
       // One walk per stamp, because `where` can match roots removed apart.
-      if (softDeleteCascade) {
-        const cascadeTargets = _cascadeTargets()
-        if (cascadeTargets.length > 0) {
-          const deletedRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).all(...params)
-          const firstTarget = cascadeTargets[0]
-          const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
-          const byStamp = new Map()
-          for (const r of deletedRows) {
-            const stamp = r[col('deletedAt')]
-            byStamp.set(stamp, [...(byStamp.get(stamp) ?? []), r[rootPKCol]])
-          }
-          for (const [stamp, rootPKs] of byStamp) {
-            const affectedPKs = new Map([[modelName, rootPKs]])
-            for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
-              const parentPKs = affectedPKs.get(parentModel) ?? []
-              if (!parentPKs.length) continue
-              if (hardDelete) continue  // hard-deleted children are gone — cannot restore
-              const ph = parentPKs.map(() => '?').join(',')
-              // Read before the write: after it, the stamp that names them is gone.
-              if (_cascadeParents.has(childModel)) {
-                const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`).all(...parentPKs, stamp).map(r => r[referencedKey])
-                affectedPKs.set(childModel, childPKs)
-              }
-              writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`, ...parentPKs, stamp)
-            }
-          }
+      // The roots come back before the walk: under a self-relation a root can
+      // be another root's child, and restored by the walk first it would be
+      // missing from the rows returned, logged and announced.
+      const byStamp = new Map()
+      if (softDeleteCascade && _cascadeTargets().length > 0) {
+        const rootPKCol = _cascadeTargets()[0].referencedKey
+        for (const r of readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).all(...params)) {
+          const stamp = r[col('deletedAt')]
+          byStamp.set(stamp, [...(byStamp.get(stamp) ?? []), r[rootPKCol]])
         }
       }
 
@@ -7392,6 +7385,19 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       restored = writeDb.query(_rsSql).all(...params)
       for (const r of restored) { noteCardinality(read(r)); noteExclusion(read(r)) }
       fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
+
+      for (const [stamp, rootPKs] of byStamp) {
+        walkCascade(rootPKs, ({ childModel, childTable, foreignKey, referencedKey, hardDelete }, parentPKs) => {
+          if (hardDelete) return null  // hard-deleted children are gone — cannot restore
+          const ph = parentPKs.map(() => '?').join(',')
+          // Read before the write: after it, the stamp that names them is gone.
+          const childPKs = _cascadeParents.has(childModel)
+            ? readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`).all(...parentPKs, stamp).map(r => r[referencedKey])
+            : null
+          writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = NULL WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" = ?`, ...parentPKs, stamp)
+          return childPKs
+        })
+      }
       })
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
       // the entry vocabulary is create|update|delete|read, and a restored row is

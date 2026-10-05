@@ -622,6 +622,361 @@ export function sameValue(a, b) {
 }
 
 /**
+ * `next`, with every node that equals its counterpart in `prev` replaced by
+ * `prev`'s own.
+ *
+ * `JSON.parse` answers a document in which every object is new, and a view
+ * keyed on identity — Mesa's `{#each}` hands a row its item through a signal
+ * that compares with `===` — redraws all of it for a one-character edit. This
+ * walk costs one comparison per node, which is what re-drawing would have
+ * cost per node without the DOM.
+ *
+ * An array is aligned from both ends before it is compared by position, so a
+ * row deleted or pasted in the text leaves every row after it the same object
+ * it was, rather than each one compared with its old neighbor. An object is
+ * the same only with the same keys in the same order, since key order is the
+ * only order a JSON object has.
+ */
+export function keepUnchanged(prev, next) {
+  if (prev === next) return prev
+  const kind = classify(next)
+  if (kind !== classify(prev)) return next
+
+  if (kind === 'array') {
+    const n = prev.length
+    const m = next.length
+    const out = new Array(m)
+    let head = 0
+    while (head < n && head < m && (out[head] = keepUnchanged(prev[head], next[head])) === prev[head]) head++
+    if (head === n && n === m) return prev
+    let tail = 0
+    while (tail < n - head && tail < m - head) {
+      const v = keepUnchanged(prev[n - 1 - tail], next[m - 1 - tail])
+      if (v !== prev[n - 1 - tail]) break
+      out[m - 1 - tail] = v
+      tail++
+    }
+    // Between the two runs the rows are compared by position; out[head] was
+    // already compared by the first run.
+    for (let t = head; t < m - tail; t++) {
+      if (t === head && head < n) continue
+      out[t] = t < n - tail ? keepUnchanged(prev[t], next[t]) : next[t]
+    }
+    return out
+  }
+
+  if (kind === 'object') {
+    const before = Object.keys(prev)
+    const after = Object.keys(next)
+    let same = before.length === after.length
+    const out = {}
+    for (let i = 0; i < after.length; i++) {
+      const k = after[i]
+      const v = Object.hasOwn(prev, k) ? keepUnchanged(prev[k], next[k]) : next[k]
+      if (before[i] !== k || v !== prev[k]) same = false
+      put(out, k, v)
+    }
+    return same ? prev : out
+  }
+
+  return sameValue(prev, next) ? prev : next
+}
+
+// ── Writing a change back into the text ───────────────────────────────────────
+
+/**
+ * `text` with only the spans that differ between `prev` and `next` replaced.
+ *
+ * `prev` is the document `text` parses to and `next` is what a write (`setIn`,
+ * `removeIn`, `insertIn`, `renameKey`) made of it. Where the text IS the record
+ * — a JSON box beside a grid, a config file, a fixture someone hand-formatted —
+ * `format(next)` is the wrong way back: one cell edit rewrites every line, a
+ * condensed document comes back pretty-printed, and `78.0` comes back as `78`.
+ * Here every byte outside a changed value stays as it was, `78.0` included,
+ * because a number whose value did not change is never re-written.
+ *
+ * The walk skips a branch by identity, so it costs the size of the text to find
+ * where the changed value sits and nothing per untouched node when `next`
+ * shares them with `prev`, which is what the writers here make. A `next` that
+ * shares nothing gives the same answer, only slower.
+ *
+ * A member that is new is written in the style of its siblings — the separator
+ * between them, the indent and colon spacing — and into an empty container in
+ * the style of the one around it. Two cases rewrite a whole container rather
+ * than patch it: its keys were reordered, since a reorder is not a span, and its
+ * text holds a duplicate key, which `prev` cannot describe.
+ *
+ * @param {string} text
+ * @param {*} prev  what `text` parses to
+ * @param {*} next
+ * @returns {string}
+ */
+export function patchText(text, prev, next) {
+  if (prev === next) return text
+  if (JSON.stringify(next) === undefined) {
+    throw new TypeError('patchText: the next document is not a value JSON can hold')
+  }
+  const edits = []
+  const at = skipSpace(text, 0)
+  const root = { unit: text.includes('\n') ? '  ' : '', comma: ',', colon: text.includes('\n') ? ': ' : ':', nl: '\n' }
+  patchValue(text, at, prev, next, root, edits)
+
+  // A zero-width insert sorts before a replacement that starts where it does.
+  edits.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  let out = ''
+  let cursor = 0
+  for (const [start, end, replacement] of edits) {
+    out += text.slice(cursor, start) + replacement
+    cursor = end
+  }
+  return out + text.slice(cursor)
+}
+
+function patchValue(src, at, prev, next, inherit, edits) {
+  if (prev === next) return
+  const kind = classify(prev)
+  const container = kind === 'array' || kind === 'object'
+
+  if (container) {
+    const group = scanGroup(src, at)
+    if (group.object !== (kind === 'object')) {
+      throw new RangeError(`patchText: the text holds ${group.object ? 'an object' : 'an array'} where the document has ${kind === 'object' ? 'an object' : 'an array'}`)
+    }
+    if (classify(next) === kind) return patchGroup(src, group, prev, next, inherit, edits)
+    edits.push([at, group.close + 1, emit(next, styleOf(src, group, inherit), lineIndent(src, at))])
+    return
+  }
+  edits.push([at, skipValue(src, at), emit(next, inherit, lineIndent(src, at))])
+}
+
+function patchGroup(src, group, prev, next, inherit, edits) {
+  const { members, object } = group
+  const n = members.length
+  const style = styleOf(src, group, inherit)
+  const base = lineIndent(src, group.at)
+  const inner = style.unit ? base + style.unit : base
+  const separator = style.unit ? ',' + style.nl + inner : style.comma
+
+  const whole = () => edits.push([group.at, group.close + 1, emit(next, style, base)])
+
+  // Members [x, y) of the text leave, together with the comma on one side.
+  const remove = (x, y) => {
+    if (x > 0) edits.push([members[x - 1].end, members[y - 1].end, ''])
+    else if (y < n) edits.push([members[0].start, members[y].start, ''])
+    else edits.push([group.at + 1, group.close, ''])
+  }
+
+  // Items of `next`, as member text, join the group before member `x`.
+  const insert = (x, items) => {
+    if (x > 0) edits.push([members[x - 1].end, members[x - 1].end, separator + items.join(separator)])
+    else if (n > 0) edits.push([members[0].start, members[0].start, items.join(separator) + separator])
+    else {
+      const body = style.unit ? style.nl + inner + items.join(separator) + style.nl + base : items.join(separator)
+      edits.push([group.at + 1, group.close, body])
+    }
+  }
+
+  // Text members [a, b) stand against next items [c, d): the first pairs are
+  // the same member changed, and what is left over on either side left or came.
+  const settle = (a, b, c, d, pair, item) => {
+    const k = Math.min(b - a, d - c)
+    for (let t = 0; t < k; t++) pair(a + t, c + t)
+    if (b - a > k) remove(a + k, b)
+    else if (d - c > k) insert(a + k, Array.from({ length: d - c - k }, (_, t) => item(c + k + t)))
+  }
+
+  if (!object) {
+    const m = next.length
+    if (n !== prev.length) throw new RangeError('patchText: the text and the document it parses to differ in length')
+    // Aligned from both ends first, so a row removed from the front leaves
+    // every row after it unpatched rather than each compared with its neighbor.
+    let head = 0
+    while (head < n && head < m && prev[head] === next[head]) head++
+    let tail = 0
+    while (tail < n - head && tail < m - head && prev[n - 1 - tail] === next[m - 1 - tail]) tail++
+    settle(
+      head, n - tail, head, m - tail,
+      (pi, ni) => patchValue(src, members[pi].vs, prev[pi], next[ni], style, edits),
+      ni => emit(next[ni], style, inner),
+    )
+    return
+  }
+
+  const keys = members.map(m => JSON.parse(src.slice(m.ks, m.ke)))
+  const nextKeys = Object.keys(next).filter(k => emits(next[k]))
+  if (n !== Object.keys(prev).length) return whole()
+
+  const inText = new Set(keys)
+  const inNext = new Set(nextKeys)
+  const sharedText = keys.filter(k => inNext.has(k))
+  const sharedNext = nextKeys.filter(k => inText.has(k))
+  if (sharedText.some((k, i) => k !== sharedNext[i])) return whole()
+
+  const pair = (pi, ni) => {
+    if (keys[pi] !== nextKeys[ni]) edits.push([members[pi].ks, members[pi].ke, JSON.stringify(nextKeys[ni])])
+    patchValue(src, members[pi].vs, member(prev, keys[pi]), member(next, nextKeys[ni]), style, edits)
+  }
+  const item = ni => JSON.stringify(nextKeys[ni]) + style.colon + emit(member(next, nextKeys[ni]), style, inner)
+
+  // The members both sides keep are in one order, so each run of keys between
+  // two of them is a gap that settles on its own.
+  let i = 0
+  let j = 0
+  while (i < n || j < nextKeys.length) {
+    let i2 = i
+    while (i2 < n && !inNext.has(keys[i2])) i2++
+    let j2 = j
+    while (j2 < nextKeys.length && !inText.has(nextKeys[j2])) j2++
+    settle(i, i2, j, j2, pair, item)
+    if (i2 < n) pair(i2, j2)
+    i = i2 + 1
+    j = j2 + 1
+  }
+}
+
+/** Does JSON.stringify keep this as an object member? */
+function emits(v) {
+  return v !== undefined && typeof v !== 'function' && typeof v !== 'symbol'
+}
+
+/** A value as text in `style`, for a line that starts with `base`. */
+function emit(value, style, base) {
+  if (value !== null && typeof value === 'object' && typeof value.toJSON === 'function') value = value.toJSON()
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+
+  const pretty = style.unit !== ''
+  const inner = pretty ? base + style.unit : base
+  const isArray = Array.isArray(value)
+  const parts = isArray
+    ? value.map(v => emit(v, style, inner))
+    : Object.keys(value).filter(k => emits(value[k])).map(k => JSON.stringify(k) + style.colon + emit(member(value, k), style, inner))
+  const open = isArray ? '[' : '{'
+  const close = isArray ? ']' : '}'
+  if (!parts.length) return open + close
+  return pretty
+    ? open + style.nl + inner + parts.join(',' + style.nl + inner) + style.nl + base + close
+    : open + parts.join(style.comma) + close
+}
+
+/**
+ * How the container in `group` is laid out — read from its first two members, so
+ * a hand-formatted document is matched rather than normalized. An empty one has
+ * nothing to read and takes the style around it.
+ */
+function styleOf(src, group, inherit) {
+  const { at, members, object } = group
+  if (!members.length) return inherit
+  const style = { ...inherit }
+  const gap = src.slice(at + 1, members[0].start)
+  const newline = gap.lastIndexOf('\n')
+
+  if (newline === -1) {
+    style.unit = ''
+    if (members.length > 1) style.comma = src.slice(members[0].end, members[1].start)
+  } else {
+    const indent = gap.slice(newline + 1)
+    const base = lineIndent(src, at)
+    style.unit = indent.startsWith(base) && indent.length > base.length ? indent.slice(base.length) : (indent || inherit.unit || '  ')
+    style.nl = gap[newline - 1] === '\r' ? '\r\n' : '\n'
+  }
+  if (object) {
+    style.colon = src.slice(members[0].ke, members[0].vs)
+  } else if (src[members[0].vs] === '{') {
+    // An array of rows has no colon of its own; its first row's is the one a new row copies.
+    const k = skipSpace(src, members[0].vs + 1)
+    if (src[k] === '"') {
+      const ke = skipString(src, k)
+      const vs = skipSpace(src, ke)
+      if (src[vs] === ':') style.colon = src.slice(ke, skipSpace(src, vs + 1))
+    }
+  }
+  return style
+}
+
+/** The whitespace that starts the line `at` is on. */
+function lineIndent(src, at) {
+  const from = src.lastIndexOf('\n', at - 1) + 1
+  let to = from
+  while (to < at && (src[to] === ' ' || src[to] === '\t')) to++
+  return src.slice(from, to)
+}
+
+function badText(src, i) {
+  throw new SyntaxError(`patchText: the text is not JSON at position ${i}${i < src.length ? '' : ' (its end)'}`)
+}
+
+function skipSpace(src, i) {
+  while (i < src.length) {
+    const c = src.charCodeAt(i)
+    if (c !== 32 && c !== 10 && c !== 13 && c !== 9) break
+    i++
+  }
+  return i
+}
+
+const STRING_AT = /"[^"\\]*(?:\\.[^"\\]*)*"/y
+const SCALAR_AT = /[^\s,\]}]+/y
+const STRUCTURE = /["{}[\]]/g
+
+function skipString(src, i) {
+  STRING_AT.lastIndex = i
+  if (!STRING_AT.test(src)) badText(src, i)
+  return STRING_AT.lastIndex
+}
+
+/** The index just past the value that starts at `i`. */
+function skipValue(src, i) {
+  const c = src[i]
+  if (c === '"') return skipString(src, i)
+  if (c === '{' || c === '[') {
+    let depth = 0
+    STRUCTURE.lastIndex = i
+    for (let m = STRUCTURE.exec(src); m; m = STRUCTURE.exec(src)) {
+      const ch = m[0]
+      if (ch === '"') STRUCTURE.lastIndex = skipString(src, m.index)
+      else if (ch === '{' || ch === '[') depth++
+      else if (--depth === 0) return m.index + 1
+    }
+    badText(src, src.length)
+  }
+  SCALAR_AT.lastIndex = i
+  if (!SCALAR_AT.test(src)) badText(src, i)
+  return SCALAR_AT.lastIndex
+}
+
+/**
+ * Where each member of the object or array that starts at `at` sits in `src`:
+ * `start`..`end` is the whole member, `ks`..`ke` its key and `vs` where its
+ * value begins.
+ */
+function scanGroup(src, at) {
+  const object = src[at] === '{'
+  if (!object && src[at] !== '[') badText(src, at)
+  const closer = object ? '}' : ']'
+  const members = []
+  let i = skipSpace(src, at + 1)
+
+  while (src[i] !== closer) {
+    const m = { start: i, ks: -1, ke: -1, vs: i, end: 0 }
+    if (object) {
+      if (src[i] !== '"') badText(src, i)
+      m.ks = i
+      m.ke = skipString(src, i)
+      i = skipSpace(src, m.ke)
+      if (src[i] !== ':') badText(src, i)
+      i = skipSpace(src, i + 1)
+      m.vs = i
+    }
+    m.end = skipValue(src, i)
+    members.push(m)
+    i = skipSpace(src, m.end)
+    if (src[i] === ',') i = skipSpace(src, i + 1)
+    else if (src[i] !== closer) badText(src, i)
+  }
+  return { at, close: i, members, object }
+}
+
+/**
  * before, after → one walkable document plus what happened at each path.
  *
  * The merged document is the point. A removed key exists in neither `after`

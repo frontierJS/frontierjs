@@ -13,7 +13,7 @@
 
 import {
   accessorPath, arrayKind, classify, coerceLike, convertTo, diffDocs, expandToDepth, format, getIn,
-  insertIn, isContainer, jsonPointer, markRuns, mergeKeys, pathKey, preview, removeIn, renameKey,
+  insertIn, isContainer, jsonPointer, keepUnchanged, markRuns, mergeKeys, patchText, pathKey, preview, removeIn, renameKey,
   sameValue, searchDoc, setIn, summarize, treeRows, tryParse,
 } from '../../src/json/json.js'
 
@@ -582,4 +582,177 @@ test('json: getIn answers a member of the DOCUMENT, never an inherited one', fun
   assert.equal(getIn(JSON.parse('{"__proto__":7}'), ['__proto__']), 7)
   assert.equal(getIn({ constructor: 'blue' }, ['constructor']), 'blue')
   assert.equal(getIn([1, 2], [1]), 2)
+})
+
+test('keepUnchanged: every node equal to its counterpart in prev is prev\'s own object', () => {
+  const prev = JSON.parse('[{"a":1,"b":{"c":[1,2]}},{"a":2,"b":{"c":[3]}},{"a":3,"b":{"c":[]}}]')
+  const next = JSON.parse('[{"a":1,"b":{"c":[1,2]}},{"a":9,"b":{"c":[3]}},{"a":3,"b":{"c":[]}}]')
+  const out = keepUnchanged(prev, next)
+  assert.deepEqual(out, next)
+  assert.equal(out[0], prev[0], 'an untouched row is the same object')
+  assert.equal(out[2], prev[2])
+  assert.ok(out[1] !== prev[1], 'the edited row is new')
+  assert.equal(out[1].b, prev[1].b, 'and keeps its untouched child')
+  assert.equal(keepUnchanged(prev, JSON.parse(JSON.stringify(prev))), prev, 'an equal document is prev itself')
+})
+
+test('keepUnchanged: a row deleted or inserted leaves the rows after it the objects they were', () => {
+  const prev = JSON.parse('[{"i":0},{"i":1},{"i":2},{"i":3}]')
+  const gone = keepUnchanged(prev, JSON.parse('[{"i":1},{"i":2},{"i":3}]'))
+  assert.deepEqual(gone, [{ i: 1 }, { i: 2 }, { i: 3 }])
+  const dropped = keepUnchanged(prev, JSON.parse('[{"i":0},{"i":1},{"i":3}]'))
+  assert.equal(dropped[2], prev[3], 'the tail is aligned from the end')
+  assert.equal(dropped[0], prev[0])
+  const added = keepUnchanged(prev, JSON.parse('[{"i":0},{"i":1},{"i":"new"},{"i":2},{"i":3}]'))
+  assert.equal(added[3], prev[2])
+  assert.equal(added[4], prev[3])
+  assert.deepEqual(added[2], { i: 'new' })
+})
+
+test('keepUnchanged: key order is the only order an object has, so a reorder is a change', () => {
+  const prev = JSON.parse('{"a":1,"b":2}')
+  assert.equal(keepUnchanged(prev, JSON.parse('{"a":1,"b":2}')), prev)
+  const swapped = keepUnchanged(prev, JSON.parse('{"b":2,"a":1}'))
+  assert.ok(swapped !== prev)
+  assert.deepEqual(Object.keys(swapped), ['b', 'a'])
+})
+
+test('keepUnchanged: a parsed own __proto__ stays a key and null, a Date and kind changes are not lost', () => {
+  const prev = JSON.parse('{"__proto__":{"x":1},"k":[1]}')
+  const next = JSON.parse('{"__proto__":{"x":2},"k":[1]}')
+  const out = keepUnchanged(prev, next)
+  assert.deepEqual(Object.keys(out), ['__proto__', 'k'])
+  assert.equal(Object.getPrototypeOf(out), Object.prototype)
+  assert.equal(Object.getOwnPropertyDescriptor(out, '__proto__').value.x, 2)
+  assert.equal(out.k, prev.k)
+  assert.equal(keepUnchanged({ a: 1 }, null), null)
+  assert.deepEqual(keepUnchanged([1], { 0: 1 }), { 0: 1 })
+  const d = new Date(5)
+  assert.equal(keepUnchanged({ d }, { d: new Date(5) }).d, d, 'an equal Date is the same Date')
+})
+
+test('keepUnchanged: whatever it hands back equals next, over random edits', () => {
+  let seed = 7
+  const rnd = n => (seed = (seed * 1103515245 + 12345) % 2147483648) % n
+  const make = depth => {
+    const k = rnd(depth > 2 ? 3 : 5)
+    if (k === 0) return rnd(4)
+    if (k === 1) return 's' + rnd(3)
+    if (k === 2) return null
+    if (k === 3) return Array.from({ length: rnd(5) }, () => make(depth + 1))
+    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ['k' + rnd(4), make(depth + 1)]))
+  }
+  for (let i = 0; i < 500; i++) {
+    const prev = make(0)
+    const next = rnd(2) ? make(0) : JSON.parse(JSON.stringify(prev))
+    const out = keepUnchanged(prev, next)
+    assert.deepEqual(out, next)
+    assert.equal(JSON.stringify(out), JSON.stringify(next))
+    if (sameValue(prev, next) && JSON.stringify(prev) === JSON.stringify(next)) assert.equal(out, prev)
+  }
+})
+
+// ── patchText ─────────────────────────────────────────────────────────────────
+
+const patched = (text, write) => {
+  const prev = JSON.parse(text)
+  return patchText(text, prev, write(prev))
+}
+
+test('patchText: a cell edit changes the bytes of that cell and no others', () => {
+  const text = '{"rows":[{"a":1,"b":78.0},{"a":2,"b":3}],"note":"x"}'
+  assert.equal(patched(text, d => setIn(d, ['rows', 1, 'a'], 9)), '{"rows":[{"a":1,"b":78.0},{"a":9,"b":3}],"note":"x"}')
+  const pretty = '{\n  "rows": [\n    {\n      "a": 1,\n      "b": 78.0\n    }\n  ]\n}\n'
+  assert.equal(patched(pretty, d => setIn(d, ['rows', 0, 'a'], 2)), pretty.replace('"a": 1', '"a": 2'),
+    'a pretty document stays as it was, 78.0 and the trailing newline included')
+  assert.equal(patched(text, d => d), text, 'no change is the same text')
+  assert.equal(patched('  [1, 2]  ', d => setIn(d, [0], 5)), '  [5, 2]  ', 'space around the root stays')
+})
+
+test('patchText: an edit to a large condensed document stays one line', () => {
+  const doc = Array.from({ length: 2000 }, (_, i) => ({ id: i, name: 'row ' + i, score: 1.0 }))
+  const text = JSON.stringify(doc)
+  const out = patched(text, d => setIn(d, [1500, 'name'], 'changed'))
+  assert.equal(out.includes('\n'), false)
+  assert.equal(out, text.replace('"row 1500"', '"changed"'))
+})
+
+test('patchText: a new member takes the style of its siblings', () => {
+  const pretty = '{\n    "a": 1,\n    "b": [\n        1\n    ]\n}'
+  assert.equal(patched(pretty, d => setIn(d, ['c'], { x: 1 })),
+    '{\n    "a": 1,\n    "b": [\n        1\n    ],\n    "c": {\n        "x": 1\n    }\n}', 'four-space indent carries into the new object')
+  assert.equal(patched(pretty, d => insertIn(d, ['b'], 2)), '{\n    "a": 1,\n    "b": [\n        1,\n        2\n    ]\n}')
+  assert.equal(patched('{"a": 1, "b": 2}', d => setIn(d, ['c'], 3)), '{"a": 1, "b": 2, "c": 3}', 'comma and colon spacing')
+  assert.equal(patched('[{"a": 1}, {"a": 2}]', d => insertIn(d, [], { a: 3 })), '[{"a": 1}, {"a": 2}, {"a": 3}]')
+  assert.equal(patched('[\n\t1\n]', d => insertIn(d, [], 2)), '[\n\t1,\n\t2\n]', 'a tab indent')
+  assert.equal(patched('[\r\n  1\r\n]', d => insertIn(d, [], 2)), '[\r\n  1,\r\n  2\r\n]', 'CRLF')
+  assert.equal(patched('{"k": {}}', d => setIn(d, ['k', 'a'], 1)), '{"k": {"a": 1}}', 'an empty container takes the style around it')
+  assert.equal(patched('{\n  "k": {}\n}', d => setIn(d, ['k', 'a'], 1)), '{\n  "k": {\n    "a": 1\n  }\n}')
+  assert.equal(patched('{\n  "k": [1]\n}', d => removeIn(d, ['k', 0])), '{\n  "k": []\n}')
+})
+
+test('patchText: a removal takes its comma, and a rename takes only the key', () => {
+  const text = '{\n  "a": 1,\n  "b": 78.0,\n  "c": 3\n}'
+  assert.equal(patched(text, d => removeIn(d, ['a'])), '{\n  "b": 78.0,\n  "c": 3\n}')
+  assert.equal(patched(text, d => removeIn(d, ['b'])), '{\n  "a": 1,\n  "c": 3\n}')
+  assert.equal(patched(text, d => removeIn(d, ['c'])), '{\n  "a": 1,\n  "b": 78.0\n}')
+  assert.equal(patched(text, d => renameKey(d, [], 'b', 'bee')), text.replace('"b"', '"bee"'), 'the value 78.0 is not re-written')
+  const rows = '[{"i":0},{"i":1},{"i":2},{"i":3}]'
+  assert.equal(patched(rows, d => removeIn(d, [0])), '[{"i":1},{"i":2},{"i":3}]')
+})
+
+test('patchText: a reorder or a duplicate key rewrites that container and nothing past it', () => {
+  assert.equal(patched('{"a":1,"b":[ 1.0 ],"c":2}', d => ({ c: d.c, b: d.b, a: d.a })), '{"c":2,"b":[1.0],"a":1}'.replace('1.0', '1'), 'the container is written whole')
+  assert.equal(patched('{"x":{"a":1,"b":2},"y": 5.0}', d => setIn(d, ['x'], { b: 2, a: 1 })), '{"x":{"b":2,"a":1},"y": 5.0}')
+  assert.equal(patched('{"a":1,"a":2}', d => setIn(d, ['a'], 3)), '{"a":3}')
+})
+
+test('patchText: a __proto__ member is an own key like any other', () => {
+  const text = '{"__proto__": {"x": 1}, "k": 2}'
+  assert.equal(patched(text, d => setIn(d, ['__proto__', 'x'], 5)), '{"__proto__": {"x": 5}, "k": 2}')
+  assert.equal(patched(text, d => setIn(d, ['k'], 3)), '{"__proto__": {"x": 1}, "k": 3}')
+})
+
+test('patchText: refuses text that is not the document, and a next that is not JSON', () => {
+  assert.throws(() => patchText('[1, 2]', { a: 1 }, { a: 2 }), /holds an array/)
+  assert.throws(() => patchText('{"a": ', { a: 1 }, { a: 2 }), /not JSON/)
+  assert.throws(() => patchText('1', 1, undefined), /not a value JSON can hold/)
+})
+
+test('patchText: over random writes the text parses to next, and a formatted one comes back as format(next) would', () => {
+  let seed = 11
+  const rnd = n => (seed = (seed * 1103515245 + 12345) % 2147483648) % n
+  const make = depth => {
+    const k = rnd(depth > 2 ? 3 : 5)
+    if (k === 0) return rnd(4)
+    if (k === 1) return 's' + rnd(3)
+    if (k === 2) return rnd(2) ? null : true
+    if (k === 3) return Array.from({ length: rnd(5) }, () => make(depth + 1))
+    return Object.fromEntries(Array.from({ length: rnd(4) }, () => ['k' + rnd(5), make(depth + 1)]))
+  }
+  const paths = (v, here = []) => [here, ...(isContainer(v) ? Object.keys(v).flatMap(k => paths(v[k], [...here, Array.isArray(v) ? Number(k) : k])) : [])]
+  const write = doc => {
+    const at = paths(doc)[rnd(paths(doc).length)]
+    const target = at.length ? getIn(doc, at) : doc
+    const k = rnd(4)
+    if (k === 0 && at.length) return removeIn(doc, at)
+    if (k === 1 && Array.isArray(target)) return insertIn(doc, at, make(2))
+    if (k === 2 && target && typeof target === 'object' && !Array.isArray(target) && Object.keys(target).length) {
+      return renameKey(doc, at, Object.keys(target)[0], 'fresh' + rnd(3))
+    }
+    if (k === 3 && target && typeof target === 'object' && !Array.isArray(target)) return setIn(doc, [...at, 'k' + rnd(5)], make(2))
+    return at.length ? setIn(doc, at, make(2)) : make(0)
+  }
+  for (let i = 0; i < 600; i++) {
+    const prev = make(0)
+    const indent = [0, 2, 4, '\t'][rnd(4)]
+    const text = JSON.stringify(prev, null, indent || undefined)
+    const next = write(prev)
+    const out = patchText(text, prev, next)
+    assert.deepEqual(JSON.parse(out), next)
+    assert.equal(JSON.stringify(JSON.parse(out)), JSON.stringify(next))
+    const emptyRoot = isContainer(prev) && Object.keys(prev).length === 0
+    if (!emptyRoot) assert.equal(out, JSON.stringify(next, null, indent || undefined))
+    assert.equal(patchText(out, next, next), out)
+  }
 })

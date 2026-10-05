@@ -104,7 +104,9 @@ model Customer {
 `@keep` covers the whole subtree beneath that child — if the order survives, its
 lines survive with it, or the receipt is half a receipt. It says nothing about
 removing the child directly: `db.order.remove()` still works and still cascades
-into the order's own children.
+into the order's own children. It holds for the relation it is written on: a row
+the cascade reaches through another relation, or through a self-relation such
+as a page's sub-pages, is stamped by that one.
 
 It is also what silences the warning below, which is why it exists. Without it
 the only way to stop a schema warning about children left live is to stop

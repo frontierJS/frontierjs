@@ -1,5 +1,17 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-05 — `upsertMany` grades its conflict half's post-update rule (`FJS-1730`)
+
+`FJS-1713` taught `updateMany` the post-update rule; `upsertMany`'s conflict half is the same write through SQLite's `DO UPDATE`, whose `WHERE` grades the row before, and it moved a row into another tenant and past a hand-written `@@deny('post-update', …)`. Where the model declares a post-update rule it now takes `RETURNING *` and grades each updated row inside the unit — one refusal rolls the batch back and names its row. A key repeated later in the same batch conflicts with the row just written and is graded, and logged, as an update. `verifyTenantIsolation`'s post-update crossing tries `upsertMany` too. `test/tenancy.test.ts` § *a row cannot be moved out of its tenant*, two cases. Litestone 5674 pass.
+
+## 2026-10-05 — `removeMany()` cascades only from the rows its delete policy let it stamp (`FJS-1728`)
+
+On a `@@softDelete(cascade)` model, `removeMany()` read the cascade's roots from the caller's where and the live filter alone, so a row the delete policy refused stayed live while its children were stamped under it — `$setAuth({ id: 1 }).folder.removeMany({ where: {} })` behind `@@allow('delete', ownerId == auth().id)` stamped one folder and every folder's docs. The roots are now read through the stamp's own filter (`rmFinalSql`: the where, the read flags, the delete policy and the seal) restricted to live rows, so the cascade starts from exactly what the UPDATE stamps. `remove()` already walked from its RETURNING row. `test/remove-many-cascade-policy.test.ts`.
+
+## 2026-10-05 — a soft-delete cascade follows a self-relation and every edge into a shared child (`FJS-1723`)
+
+`getCascadeTargets` seeded its visited set with the model being removed and skipped any `hasMany` into a visited model, so `Page → Page` was dropped before the walk began: trashing a page stamped the page and its own blocks and left every page under it, and their blocks, live and readable. The same skip dropped the second edge into a child two parents share (`Project → Task` under `Account → Task`). It now returns one edge per relation and expands each model once, and the three walkers — `remove()`, `removeMany()`, `restore()` — run through one worklist, `walkCascade` in `client.js`, which follows an edge again each time it lands new keys and follows a key once per model, so a cycle in the data ends. `remove()` and `removeMany()` share `cascadeSoftRemove`. `removeMany()` and `restore()` now write the roots before the walk, so a root that is another root's descendant stays in the count, the rows returned and the trail. A `@keep` relation blocks only itself: a child kept on one edge is still reached through another. `test/soft-delete-self-relation.test.ts`.
+
 ## 2026-10-05 — `contains`, `startsWith` and `endsWith` look for the text they are given (`FJS-1464`)
 
 The operand went to `LIKE` as a pattern, so `contains: '_'` matched every row and `startsWith: 'j_'` matched every `J` followed by anything; a person's `50%` or `snake_case` answered rows that did not hold it. `likePattern()` in `query.js` escapes `\`, `%` and `_`, and the clause is `LIKE ? ESCAPE '\'` at all three owners — the column path, the typed-JSON path and the `@edge` filter's `contains` in `client.js` (`edgeFilterSql`, which has no test of its own). A caller who wants a pattern has `$raw`. `test/like-escape.test.ts`.

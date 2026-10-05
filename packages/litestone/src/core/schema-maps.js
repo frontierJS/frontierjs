@@ -948,9 +948,16 @@ export function buildSoftDeleteCascadeMap(schema) {
 // is also PascalCase, so the BFS traverses model names. SQL table names are derived
 // on the way out via modelToTable, which converts the PascalCase model to its
 // snake_case (or plural) SQL name.
+//
+// The result is a list of EDGES, one per relation, and a model can be the
+// child of several of them: a self-relation (Page → Page) and a child two
+// parents share are both edges into a model already reached. Skipping those
+// left every page under a trashed page live (`FJS-1723`). Each model is
+// expanded once, so a cycle terminates here; following an edge back into the
+// rows it reached is the walker's job — `walkCascade` in client.js.
 export function getCascadeTargets(modelName, relationMap, softDeleteMap, modelToTable) {
   const targets  = []
-  const visited  = new Set([modelName])
+  const expanded = new Set([modelName])
   const queue    = [modelName]
 
   while (queue.length) {
@@ -958,11 +965,10 @@ export function getCascadeTargets(modelName, relationMap, softDeleteMap, modelTo
     for (const [relName, rel] of Object.entries(relationMap[parent] ?? {})) {
       if (rel.kind !== 'hasMany') continue
       const child = rel.targetModel
-      if (visited.has(child)) continue
-      visited.add(child)
       // @keep is the opt-out: these children stay live when the parent goes,
-      // and so does everything below them — a kept child is not a door into a
-      // subtree, it is a statement that the subtree is not the parent's.
+      // and so does everything below them through this relation — a kept child
+      // is not a door into a subtree, it is a statement that the subtree is not
+      // the parent's.
       if (rel.keep) continue
       // @hardDelete children are always included regardless of their own softDelete setting.
       // Non-hardDelete children must also be a soft-delete table to cascade.
@@ -978,7 +984,7 @@ export function getCascadeTargets(modelName, relationMap, softDeleteMap, modelTo
         hardDelete:    rel.hardDelete ?? false,
       })
       // Only recurse into soft-delete children — hard-delete children are terminal
-      if (!rel.hardDelete) queue.push(child)
+      if (!rel.hardDelete && !expanded.has(child)) { expanded.add(child); queue.push(child) }
     }
   }
 

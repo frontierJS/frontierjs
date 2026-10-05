@@ -1,49 +1,44 @@
 ---
 title: "The allegory — FrontierJS"
-description: "Running software is running a town: buildings, roads, utilities, a watch, an inspector and a records office, all working from one set of plans."
+description: "Running software is running a restaurant: the dish, the doors, the walk-in, the pass, the alarms, the prep crew, the menu, the keys, the suppliers, the bad night, the books and the second location, all cooked from one recipe card."
 render: static
 ---
 
 <!--
-  The same arc as the-story, told as a town. The tools named here are the ones
-  that page names; a new one is checked there first.
+  The tools named here are the ones the-story names; a new one is checked
+  there first. A chapter wearing a .stamp says its question was answered on
+  the recipe card in 01, so a stamp on a chapter whose answer lives elsewhere
+  is a false claim.
 -->
+
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The allegory</p>
-    <h1>Building software is like building a town on the frontier.</h1>
+    <h1>Building software is like opening a restaurant.</h1>
     <p class="lede">
-      Data, services, screens, mail, jobs, servers, secrets, deploys,
-      backups, the logs at two in the morning. Each one is a district with its
-      own work to do, and all of them share the same streets, the same pipes
-      and, when it goes well, the same map.
+      On the first night you have a dish worth eating and somewhere to cook
+      it. Every night after that brings something new to look after, and each
+      one turns up because you dealt with the one before.
     </p>
   </div>
 </section>
 
-<section class="plan-wrap" aria-labelledby="plan-title">
+<section class="rail-wrap" aria-labelledby="rail-title">
   <div class="container">
-    <h2 id="plan-title" class="sr-only">The town plan</h2>
-    <nav class="plan" aria-label="Districts">
-      <a class="lot app" href="#ch-03">
-        <span class="num">03</span>
-        <strong>Main street</strong>
-        <span class="floors">
-          <span>UI</span>
-          <span>API</span>
-          <span>Data</span>
-        </span>
-      </a>
-      <a class="lot post" href="#ch-04"><span class="num">04</span><strong>Post office</strong><span>roads out of town</span></a>
-      <a class="lot survey" href="#ch-01"><span class="num">01</span><strong>Surveyor</strong><span>the map</span></a>
-      <a class="lot night" href="#ch-05"><span class="num">05</span><strong>Night crew</strong><span>jobs, schedules, agents</span></a>
-      <a class="lot planning" href="#ch-02"><span class="num">02</span><strong>Planning office</strong><span>decided once</span></a>
-      <a class="lot utilities" href="#ch-06"><span class="num">06</span><strong>Utilities</strong><span>servers, config, secrets, ports</span></a>
-      <a class="lot watch" href="#ch-07"><span class="num">07</span><strong>Watchtower</strong><span>traces, health</span></a>
-      <a class="lot inspector" href="#ch-08"><span class="num">08</span><strong>Inspector</strong><span>tests, proofs</span></a>
-      <a class="lot records" href="#ch-12"><span class="num">12</span><strong>Records office</strong><span>why it's like this</span></a>
-      <a class="lot hall" href="#ch-10"><span class="num">10</span><strong>Town hall</strong><span>you, and sometimes an agent beside you</span></a>
-      <a class="lot depot" href="#ch-09"><span class="num">09</span><strong>Depot</strong><span>ship, roll back, restore</span></a>
+    <h2 id="rail-title" class="sr-only">The order rail</h2>
+    <nav class="rail" aria-label="Chapters">
+      <a class="ticket" href="#ch-01"><span class="num">01 · Cook</span><strong>The dish</strong><span class="q">Does it work?</span></a>
+      <a class="ticket" href="#ch-02"><span class="num">02 · Deploy</span><strong>The doors</strong><span class="q">Can anyone get in?</span></a>
+      <a class="ticket" href="#ch-03"><span class="num">03 · Persist</span><strong>The walk-in</strong><span class="q">What if the fridge dies?</span></a>
+      <a class="ticket" href="#ch-04"><span class="num">04 · Observe</span><strong>The pass</strong><span class="q">Is tonight going well?</span></a>
+      <a class="ticket" href="#ch-05"><span class="num">05 · Alert</span><strong>The alarm</strong><span class="q">Will I hear when it isn't?</span></a>
+      <a class="ticket" href="#ch-06"><span class="num">06 · Automate</span><strong>Morning prep</strong><span class="q">Why am I doing this by hand?</span></a>
+      <a class="ticket" href="#ch-07"><span class="num">07 · Release</span><strong>The new menu</strong><span class="q">Can I change it safely?</span></a>
+      <a class="ticket" href="#ch-08"><span class="num">08 · Secure</span><strong>The keys</strong><span class="q">Who can touch what?</span></a>
+      <a class="ticket" href="#ch-09"><span class="num">09 · Integrate</span><strong>Suppliers</strong><span class="q">What if the fish doesn't come?</span></a>
+      <a class="ticket" href="#ch-10"><span class="num">10 · Recover</span><strong>The bad night</strong><span class="q">What happens at eight on a Saturday?</span></a>
+      <a class="ticket" href="#ch-11"><span class="num">11 · Operate</span><strong>The books</strong><span class="q">Is the whole place healthy?</span></a>
+      <a class="ticket last" href="#ch-12"><span class="num">12 · Again</span><strong>Second location</strong><span class="q">Do I do all of that twice?</span></a>
     </nav>
   </div>
 </section>
@@ -51,148 +46,241 @@ render: static
 <section class="chapters">
   <div class="container">
     <ol class="arc">
-      <li id="ch-00">
-        <span class="n">00</span>
-        <div>
-          <h2>Many jobs, one place</h2>
-          <p>Somebody writes the code. Somebody also keeps the database healthy, lets the payment provider in, rotates the keys, watches the logs, ships the fix and checks there's a backup from before it. In a big company those are departments. In a small team they're the same three people. On your own, they're all you.</p>
-          <p>None of those jobs is hard on its own. What wears you down is that each arrives with its own tool, its own config file and its own words, and none of them knows the others exist. It's like running a town where the water board and the road crew have never met.</p>
-          <p class="takeaway">The hard part isn't any one job. It's keeping them in agreement.</p>
-        </div>
-      </li>
+
       <li id="ch-01">
         <span class="n">01</span>
         <div>
-          <p class="district">The surveyor</p>
-          <h2>Walk the land</h2>
-          <p>Nobody runs a town without a map. What's built, and where? Which streets lead where? Who holds the keys to which building, and what stops working if the bridge closes?</p>
-          <p>In most projects that map lives in someone's head. In FrontierJS it starts on the ground. The data is described once, in <code>db/schema.lite</code>, and every surface is a folder you can see from the root: <code>api/</code>, <code>web/</code>, <code>site/</code>, and whatever you build next beside them. List the directory and you've read the street plan.</p>
-          <p class="takeaway">You can't look after what you can't see.</p>
-        </div>
-      </li>
-      <li id="ch-02">
-        <span class="n">02</span>
-        <div>
-          <p class="district">The planning office</p>
-          <h2>Settle it once</h2>
-          <p>A good town doesn't argue about road widths every time someone builds a house. It decided once, wrote it down, and every new street follows. That's what makes a town easy to walk: you can turn a corner you've never turned and still know roughly what's there.</p>
-          <p>FrontierJS makes those decisions up front and keeps them. A model is singular and capitalized, so <code>model Lead</code> is <code>db.lead</code> everywhere. The app has three nouns: Model, Service, Resource. Ports come from a formula, not a list. Who may read or change a record is settled on the model, and nowhere else.</p>
-          <p class="takeaway">A decision made once can't be made two different ways.</p>
-        </div>
-      </li>
-      <li id="ch-03">
-        <span class="n">03</span>
-        <div>
-          <p class="district">Main street</p>
-          <h2>Raise the buildings</h2>
-          <p>Main street is where people come: the shops, the offices, the counters. Every building on it has the same bones. Records are kept downstairs, requests come in at the counter, and people walk through the rooms upstairs. And every door has a lock.</p>
-          <p>In FrontierJS those bones are Model, Service and Resource, all raised from the same schema. The locks are on the model itself: a <code>@@gate</code> on Lead holds whether someone walks in off the street, arrives with the night crew or sends an agent.</p>
-          <p class="takeaway">Every building has the same bones, so you can find your way around any of them.</p>
+          <p class="asks">Does it work?</p>
+          <h2>The dish</h2>
+          <p>Every restaurant starts with one plate somebody wants to eat. Behind it is a recipe card: what goes in, how it's made, how it's served, and the line at the bottom that says who mustn't eat it.</p>
+          <figure class="card" aria-label="A recipe card">
+            <p class="card-title">Lead</p>
+            <ul>
+              <li><span>name</span><span>Text</span></li>
+              <li><span>email</span><span>Email</span></li>
+              <li><span>stage</span><span>new · won · lost</span></li>
+              <li><span>owner</span><span>User</span></li>
+            </ul>
+            <p class="card-warn">@@gate: staff read, owner writes</p>
+          </figure>
+          <p>In FrontierJS the recipe card is <code>db/schema.lite</code>. You write a model once and the rest is cooked from it: the data (Model), the API that serves it (Service) and the screens people use (Resource). The line at the bottom goes on the card too. A <code>@@gate</code> on the model says who may read a record and who may change it.</p>
+          <p class="takeaway">Everything after this is cooked from the card.</p>
           <p class="see">See: <a href="/flow/">Flow</a></p>
         </div>
       </li>
+
+      <li id="ch-02">
+        <span class="n">02</span>
+        <div>
+          <p class="asks">Can anyone get in?</p>
+          <h2>Open the doors</h2>
+          <p>A dish nobody can reach isn't a restaurant. It needs an address, a sign, the lights on and a door that unlocks at six. Behind the door are the gas, the water and the power, and the meter room stays locked.</p>
+          <p><code>fli deploy</code> puts the app on a server, and Outpost on that server acts only on signed instructions. Config is read in one place, through <code>$.config</code>, and <code>fli env:*</code> moves each environment's values between machines. Ports follow a formula of environment, category, project and service, so dev, test and prod never share a door.</p>
+          <p class="takeaway">Where it lives is part of the plan.</p>
+        </div>
+      </li>
+
+      <li id="ch-03">
+        <span class="n">03</span>
+        <div>
+          <p class="asks">What if the fridge dies?</p>
+          <h2>Stock the walk-in</h2>
+          <p>Everything the kitchen knows sits in the walk-in: the stock, the prep, the sauce that took two days. The night the compressor fails is the night you find out whether anything was kept anywhere else.</p>
+          <p><code>fli db:backup</code> takes a hot copy of every database the schema declares, while it's serving. Migrations come from diffing the schema against the database, so the walk-in always matches the card. Restoring a copy is one command.</p>
+          <p class="takeaway">Keep a second copy of what you can't cook again.</p>
+        </div>
+      </li>
+
       <li id="ch-04">
         <span class="n">04</span>
         <div>
-          <p class="district">The post office</p>
-          <h2>Roads out of town</h2>
-          <p>No town feeds itself. Mail goes out, deliveries come in, payments cross the border, and the neighbors want to hear when something changes. Every road out is somewhere a parcel can go missing.</p>
-          <p>Each outside service gets one address. They're declared in one place, each with its own timeouts and retries, and every call goes through <code>app.conduit.send()</code>. When something changes inside, webhooks go out at least once, and try again when nobody answers.</p>
-          <p class="takeaway">Every road out of town is on the map.</p>
-          <p class="see">See: <a href="/seams/">Seams</a></p>
+          <p class="asks">Is tonight going well?</p>
+          <h2>Watch the pass</h2>
+          <p>A good manager stands where the plates come out. Which tickets are waiting, which tables have turned, which plate came back untouched. You can't fix a service you can't see.</p>
+          <p>Every request carries a trace id from the door to the database and back. Health checks and metrics are registered next to the code they describe, and the devtools panel shows calls as they happen.</p>
+          <p class="takeaway">See the service while it's still going on.</p>
         </div>
       </li>
+
       <li id="ch-05">
         <span class="n">05</span>
         <div>
-          <p class="district">The night crew</p>
-          <h2>Work done while you sleep</h2>
-          <p>Much of what keeps a town going happens after dark. Streets get swept, lamps get lit, the post is sorted before dawn. Nobody asks for it each night. It just happens, and it follows the same rules as everything else.</p>
-          <p>Caravan runs the queue and the schedule, on SQLite. A follow-up can be queued in the same transaction as the save that prompted it, so it only runs if the save did. A notification lands in the app and in an inbox at once. And an agent working through MCP joins the night crew carrying exactly the keys your gates already hand out.</p>
-          <p class="takeaway">Work nobody clicked answers to the same rules.</p>
+          <p class="asks">Will I hear when it isn't?</p>
+          <h2>The alarm</h2>
+          <p>Nobody can stand at the pass all night. So there's a smoke alarm, a fridge that beeps when it warms, and a cook who shouts when a ticket has waited forty minutes. The building tells you when something's wrong.</p>
+          <p>Basecamp, itself a FrontierJS app, watches every server and every app on it and raises an alert when one stops answering or a check fails. Alerts are notifications, so each one lands in the app and in an inbox at once.</p>
+          <p class="takeaway">Hear it from the building, not from a customer.</p>
         </div>
       </li>
+
       <li id="ch-06">
         <span class="n">06</span>
         <div>
-          <p class="district">Utilities</p>
-          <h2>Water, power and land</h2>
-          <p>You only notice the utilities when they stop. Every building needs ground to stand on, power, water and a locked meter room. Software needs servers, storage, config for each environment, secrets that never belong in the repo, and addresses that never collide.</p>
-          <p>Config is read in one place, through <code>$.config</code>. <code>fli env:*</code> moves environment values between machines. Ports follow a formula of environment, category, project and service, so dev, test and prod never share a door. Outpost runs on each server and acts only on signed instructions.</p>
-          <p class="takeaway">Where the software lives is part of the plan.</p>
+          <p class="asks">Why am I doing this by hand?</p>
+          <h2>Morning prep</h2>
+          <p>Half the work of a kitchen happens when nobody's eating. The prep crew comes in at seven, the standing order goes out on Mondays, the floors get done after close. Nobody asks for it each day. It just happens, by the same rules as the rest of the kitchen.</p>
+          <p>Caravan runs the queue and the schedule, on SQLite. A follow-up can be queued in the same transaction as the save that prompted it, so it only runs if the save did. A job reads and writes through the same gates as a person.</p>
+          <p class="stamp"><a href="#ch-01">Settled at 01 · the card</a></p>
+          <p class="takeaway">Work nobody clicked answers to the same card.</p>
         </div>
       </li>
+
       <li id="ch-07">
         <span class="n">07</span>
         <div>
-          <p class="district">The watchtower</p>
-          <h2>Keep watch</h2>
-          <p>A town needs someone on the wall. Not to fix things, but to notice them: smoke over the east side, a bridge that's gone quieter than it should, a light that went out at the wrong hour.</p>
-          <p>Every request carries a trace id. Health checks and metrics are registered next to the code they describe. The devtools panel shows calls as they happen, and Basecamp, itself a FrontierJS app, watches the whole fleet.</p>
-          <p class="takeaway">Hear about it before a resident has to tell you.</p>
+          <p class="asks">Can I change it safely?</p>
+          <h2>Change the menu</h2>
+          <p>Sooner or later the menu changes. You taste it on Tuesday, print it on Wednesday and keep last season's in the drawer, because a new dish that sinks on Friday has to come off by Saturday.</p>
+          <p>A new menu comes from new cards. The migration is diffed from the schema, and <code>fli test:access</code> writes the whole access policy out as a snapshot, so a change to who can do what shows up in review. <code>fli proves</code> names the checks a change needs, <code>fli release:mint</code> shows exactly what would ship, and <code>fli deploy:rollback</code> puts the last release back.</p>
+          <p class="stamp"><a href="#ch-01">Settled at 01 · the card</a></p>
+          <p class="takeaway">Know what changes before anyone eats it.</p>
         </div>
       </li>
+
       <li id="ch-08">
         <span class="n">08</span>
         <div>
-          <p class="district">The inspector</p>
-          <h2>Inspect before anyone moves in</h2>
-          <p>Nobody moves into a building the inspector hasn't seen. Change in a town passes a few checkpoints on purpose, not to slow it down, but so that what opens is what was meant.</p>
-          <p><code>createTestEnv</code> gives a test a real database and a real API, built from the schema. Migrations come from diffing it. <code>fli test:access</code> writes the whole access policy out as a snapshot, so a change to who can do what shows up in review. <code>fli proves</code> reads a change and names the checks it needs, and <code>fli done</code> says whether you're finished.</p>
-          <p class="takeaway">Know what a change does before anyone lives with it.</p>
+          <p class="asks">Who can touch what?</p>
+          <h2>The keys</h2>
+          <p>A busy restaurant ends up with a ring of keys: the walk-in, the till, the office safe, the wine store. People join and leave, and the question is never who has a key. It's whether anyone remembers who has a key.</p>
+          <p>Here it was answered on the card. The <code>@@gate</code> on each model holds whether the caller is a person at the door, a job at dawn or an agent working through MCP. <code>@encrypted</code> and <code>@guarded</code> fields stay locked at the data layer, secrets never sit in the repo, and the audit trail records each change with protected fields written as <code>[redacted]</code>.</p>
+          <p class="stamp"><a href="#ch-01">Settled at 01 · the card</a></p>
+          <p class="takeaway">One lock, whoever's at the door.</p>
         </div>
       </li>
+
       <li id="ch-09">
         <span class="n">09</span>
         <div>
-          <p class="district">The depot</p>
-          <h2>Open the doors, keep a fire brigade</h2>
-          <p>Opening day isn't the end of the job. It's where looking after the place begins. Something will break, and then what matters is how quickly the old version goes back up and whether there's a copy of what was lost.</p>
-          <p><code>fli release:mint</code> works out exactly what would ship, without changing anything. <code>fli deploy</code> ships it, the deploy journal records every attempt, and <code>fli deploy:rollback</code> puts the last release back. <code>fli db:backup</code> takes a hot backup of every database the schema declares. One gap remains: restoring a backup into production is still done by hand.</p>
-          <p class="takeaway">Production is where the responsibility starts.</p>
+          <p class="asks">What if the fish doesn't come?</p>
+          <h2>The suppliers</h2>
+          <p>No kitchen grows its own fish. There's the fish guy, the bakery, the card machine and the delivery apps, and every one of them is a way for Friday to go wrong without anyone in the building doing anything.</p>
+          <p>Each outside service is declared once, with its own timeouts and retries, and every call goes through <code>app.conduit.send()</code>. When something changes inside, webhooks go out at least once and try again when nobody answers. Sign-in with another provider comes through the same door.</p>
+          <p class="takeaway">Every supplier is on the books.</p>
+          <p class="see">See: <a href="/seams/">Seams</a></p>
         </div>
       </li>
+
       <li id="ch-10">
         <span class="n">10</span>
         <div>
-          <p class="district">Town hall</p>
-          <h2>One desk for the whole place</h2>
-          <p>Somewhere there's a desk where everything lands: the reports, the requests, the alarms, the plans. In a small town it's one person's desk, and whoever sits there needs to see the whole place and act on it without crossing town for every errand.</p>
-          <p><code>fli</code> is that desk. Its commands are written in markdown, and your project's own sit beside the framework's. <code>fli check</code> turns your conventions into checks that fail, so nobody has to remember them. Basecamp shows the fleet. And when an agent lends a hand, it reads the same map and keeps the same rules you do.</p>
+          <p class="asks">What happens at eight on a Saturday?</p>
+          <h2>The bad night</h2>
+          <p>The oven dies with a full room. The card machine goes down. A delivery never turns up. A good kitchen has been through it before and knows the next move without stopping to think.</p>
+          <p>A deploy that went wrong is one <code>fli deploy:rollback</code>, and the deploy journal says what happened. A lost database comes back from the last backup. A failed job retries on its own, and a supplier that's down is retried by conduit without anyone writing a loop.</p>
+          <p class="takeaway">Have the next move ready before you need it.</p>
+        </div>
+      </li>
+
+      <li id="ch-11">
+        <span class="n">11</span>
+        <div>
+          <p class="asks">Is the whole place healthy?</p>
+          <h2>The books</h2>
+          <p>One day you notice you don't cook much anymore. You do the rota, the books, the repairs and the inspections, and you keep a notebook of why the walk-in is where it is so nobody moves it. You're the owner now.</p>
+          <p><code>fli</code> is the office desk. Its commands are written in markdown, and your project's own sit beside the framework's. <code>fli check</code> turns your conventions into checks that fail, so nobody has to remember them. The reasons live in <code>DECISIONS.md</code>, what's broken in <code>ISSUES.md</code>, and <code>fli next</code> suggests what to work on.</p>
           <p class="takeaway">Less running around for the person who answers for all of it.</p>
         </div>
       </li>
-      <li id="ch-11" class="reveal">
-        <span class="n">11</span>
+
+      <li id="card" class="reveal">
+        <span class="n">··</span>
         <div>
-          <h2>One set of plans</h2>
-          <p>What makes a town feel like a town, and not a pile of buildings, is that everyone works from the same plans. The road crew and the water board use the same street names. The inspector checks against the code the planners wrote. Nobody keeps a private map.</p>
-          <p>Take the <code>@@gate</code> on Lead. You wrote it once, and it turns up all over town:</p>
+          <h2>One card, every station</h2>
+          <p>Write "contains nuts" on the card once, and nobody has to remember to say it again.</p>
+          <div class="stations" aria-label="Where one line on the card turns up">
+            <div class="station s-menu"><b>Menu</b><span>marks the dish</span></div>
+            <div class="station s-ticket"><b>Ticket</b><span>flags the order</span></div>
+            <div class="hub"><span>the card</span><b>contains nuts</b></div>
+            <div class="station s-floor"><b>Floor</b><span>warns the table</span></div>
+            <div class="station s-insp"><b>Inspector</b><span>checks the line</span></div>
+          </div>
+          <p>The <code>@@gate</code> on Lead works the same way. You wrote it once, and it turns up at every station:</p>
           <table class="views">
             <tbody>
-              <tr><th>Main street</th><td>the query refuses rows the caller can't see, and the screen hides the button</td></tr>
-              <tr><th>Front desk</th><td>a refused call gets its status from the one place that maps errors</td></tr>
-              <tr><th>Night crew</th><td>an agent isn't offered a tool it isn't allowed to use</td></tr>
-              <tr><th>Inspector</th><td><code>fli test:access</code> puts any change to it in the diff</td></tr>
+              <tr><th>Screens</th><td>the query refuses rows the caller can't see, and the screen hides the button</td></tr>
+              <tr><th>API</th><td>a refused call gets its status from the one place that maps errors</td></tr>
+              <tr><th>Prep crew</th><td>a job reads through the same gate as a person</td></tr>
+              <tr><th>Agents</th><td>an agent isn't offered a tool it isn't allowed to use</td></tr>
+              <tr><th>Review</th><td><code>fli test:access</code> puts any change to it in the diff</td></tr>
             </tbody>
           </table>
-          <p class="takeaway">One set of plans for the whole town.</p>
+          <p class="takeaway">One card for the whole kitchen.</p>
         </div>
       </li>
+
       <li id="ch-12">
         <span class="n">12</span>
         <div>
-          <p class="district">The records office</p>
-          <h2>Keep the records</h2>
-          <p>Towns outlast the people who built them. There's usually a reason a road bends where it does, and the town that wrote it down doesn't knock out a wall it still needs.</p>
-          <p>Code says what. It rarely says why. In a FrontierJS project the reasons live in <code>DECISIONS.md</code>, what's broken in <code>ISSUES.md</code>, and what isn't built yet in <code>IDEAS/</code>. <code>fli</code> reads all three: <code>fli next</code> suggests what to work on, <code>fli file</code> logs a problem, and <code>fli decide</code> records a decision.</p>
-          <p class="takeaway">The next person to read the plans might be you, a year from now.</p>
+          <p class="asks">Do I do all of that twice?</p>
+          <h2>The second location</h2>
+          <p>Then it goes well enough that you open another. Without the cards, you rebuild the kitchen from memory and every station comes out slightly different. With them, you open the binder.</p>
+          <figure class="branches" aria-label="Two restaurants opened from one binder">
+            <svg viewBox="0 0 120 80" class="shop" aria-hidden="true">
+              <path d="M10 30 h100 v45 h-100 z" />
+              <path d="M6 30 l8 -16 h92 l8 16" />
+              <path d="M6 30 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0" />
+              <path d="M48 75 v-26 h24 v26" />
+              <path d="M18 44 h22 v16 h-22 z M80 44 h22 v16 h-22 z" />
+            </svg>
+            <div class="binder"><b>db/schema.lite</b><span>the binder</span></div>
+            <svg viewBox="0 0 120 80" class="shop" aria-hidden="true">
+              <path d="M10 30 h100 v45 h-100 z" />
+              <path d="M6 30 l8 -16 h92 l8 16" />
+              <path d="M6 30 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0 q9 8 18 0" />
+              <path d="M48 75 v-26 h24 v26" />
+              <path d="M18 44 h22 v16 h-22 z M80 44 h22 v16 h-22 z" />
+            </svg>
+          </figure>
+          <p>Every FrontierJS app is laid out the same way: <code>db/</code> at the root and each surface beside it, <code>api/</code>, <code>web/</code>, <code>site/</code>. <code>fli new</code> opens the next one already set up, Outpost runs on each server, and Basecamp runs every location from one office.</p>
+          <p class="takeaway">The second one opens as a restaurant, not a dish.</p>
         </div>
       </li>
+
     </ol>
 
+    <section class="kitchens" aria-labelledby="kitchens-title">
+      <h2 id="kitchens-title">Eleven jobs, two kitchens</h2>
+      <div class="pair">
+        <div class="kitchen loose">
+          <p class="k-head">Every job brings its own</p>
+          <ol>
+            <li><b>Dish</b><span>a framework</span></li>
+            <li><b>Doors</b><span>a host</span></li>
+            <li><b>Walk-in</b><span>a backup script</span></li>
+            <li><b>Pass</b><span>a log service</span></li>
+            <li><b>Alarm</b><span>a pager</span></li>
+            <li><b>Prep</b><span>a cron box</span></li>
+            <li><b>Menu</b><span>a CI file</span></li>
+            <li><b>Keys</b><span>an auth vendor</span></li>
+            <li><b>Suppliers</b><span>six SDKs</span></li>
+            <li><b>Bad night</b><span>a runbook</span></li>
+            <li><b>Books</b><span>a spreadsheet</span></li>
+          </ol>
+        </div>
+        <div class="kitchen bound">
+          <p class="k-head">Every job reads the card</p>
+          <p class="spine-top">db/schema.lite</p>
+          <ol>
+            <li><b>Dish</b><span>Model · Service · Resource</span></li>
+            <li><b>Doors</b><span>fli deploy</span></li>
+            <li><b>Walk-in</b><span>fli db:backup</span></li>
+            <li><b>Pass</b><span>traces · health</span></li>
+            <li><b>Alarm</b><span>Basecamp</span></li>
+            <li><b>Prep</b><span>Caravan</span></li>
+            <li><b>Menu</b><span>fli release:mint</span></li>
+            <li><b>Keys</b><span>@@gate</span></li>
+            <li><b>Suppliers</b><span>conduit</span></li>
+            <li><b>Bad night</b><span>fli deploy:rollback</span></li>
+            <li><b>Books</b><span>fli</span></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
     <div class="closing">
-      <p>FrontierJS is a framework for building and running software systems, for the few people who look after the whole town.</p>
+      <p class="punch">You thought you were cooking.<br />You were running a restaurant.</p>
+      <p>FrontierJS is a framework for building and running software systems, for the few people who look after the whole place.</p>
       <p class="see">The same arc, with the tools up front: <a href="/the-story/">The story</a> · <a href="/map/">Map</a></p>
     </div>
   </div>
@@ -205,78 +293,132 @@ render: static
   .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  /* The plan: the grid's own background shows through the gaps as the streets. */
-  .plan-wrap { padding: 1rem 0 2rem; }
-  .plan {
-    display: grid; gap: .7rem; padding: .7rem;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-areas:
-      "app app post survey"
-      "app app night planning"
-      "utilities utilities watch inspector"
-      "records hall hall depot";
-    background: var(--surface-sunken);
-    border: 1px dashed var(--rule); border-radius: 10px;
-    font-family: var(--font-primary);
+  /* The rail is a background stripe repeating at the row pitch, so each wrapped
+     row of tickets hangs from its own bar at any width. Pitch = ticket height
+     + row gap; changing one without the other floats the tickets off the bar. */
+  .rail-wrap { padding: 1rem 0 2.5rem; }
+  .rail {
+    --ticket-h: 7.5rem; --row-gap: 1.5rem; --pitch: calc(var(--ticket-h) + var(--row-gap));
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    column-gap: .8rem; row-gap: var(--row-gap);
+    padding-top: .4rem;
+    background: repeating-linear-gradient(to bottom, var(--rule-strong) 0 .25rem, transparent .25rem var(--pitch));
   }
-  .lot {
-    display: flex; flex-direction: column; gap: .15rem;
-    padding: .7rem .8rem; min-height: 5.5rem;
-    background: var(--surface); border: 1px solid var(--rule); border-radius: 4px;
-    text-decoration: none; color: var(--ink-mute); font-size: .8rem; line-height: 1.35;
+  .ticket {
+    display: flex; flex-direction: column; gap: .2rem;
+    height: var(--ticket-h); overflow: hidden;
+    padding: .55rem .7rem .7rem;
+    background: var(--surface-raised); border: 1px solid var(--rule); border-top: 0;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    text-decoration: none; color: var(--ink-soft); font-size: .76rem; line-height: 1.35;
+    transform-origin: top center; transform: rotate(-1.2deg);
+    transition: transform .15s ease, border-color .15s ease;
   }
-  .lot:hover, .lot:focus-visible { border-color: var(--color-primary); }
-  .lot strong { color: var(--ink); font-size: .95rem; font-weight: 600; }
-  .lot .num { font-size: .7rem; letter-spacing: .14em; color: var(--ink-mute); }
-  .app { grid-area: app; border-color: var(--color-primary); }
-  .post { grid-area: post; }
-  .survey { grid-area: survey; }
-  .night { grid-area: night; }
-  .planning { grid-area: planning; }
-  .utilities { grid-area: utilities; }
-  .watch { grid-area: watch; }
-  .inspector { grid-area: inspector; }
-  .records { grid-area: records; }
-  .hall { grid-area: hall; }
-  .depot { grid-area: depot; }
-
-  .floors { display: flex; flex-direction: column; gap: .3rem; margin-top: auto; padding-top: .6rem; }
-  .floors span { padding: .4rem .6rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--ink-soft); }
-
-  @media (max-width: 40rem) {
-    .plan {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-areas:
-        "app app"
-        "survey planning"
-        "post night"
-        "utilities utilities"
-        "watch inspector"
-        "depot records"
-        "hall hall";
-    }
-    .floors { flex-direction: row; }
-    .floors span { flex: 1; text-align: center; }
-  }
+  .ticket:nth-child(even) { transform: rotate(.9deg); }
+  .ticket:nth-child(3n) { transform: rotate(-.4deg); }
+  .ticket:hover, .ticket:focus-visible { transform: none; border-color: var(--color-primary); }
+  .ticket .num { font-size: .66rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); padding-bottom: .3rem; border-bottom: 1px dashed var(--rule); }
+  .ticket strong { color: var(--ink); font-size: .9rem; font-weight: 600; font-family: var(--font-primary); }
+  .ticket.last { border-color: var(--color-primary); }
+  @media (prefers-reduced-motion: reduce) { .ticket { transition: none; } }
 
   .chapters { padding: 1rem 0 5rem; }
   .arc { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
-  .arc li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 1rem; padding: 1.6rem 0; border-top: 1px solid var(--rule); scroll-margin-top: calc(var(--sticky-offset) + 1rem); }
+  .arc > li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); gap: 1rem; padding: 1.6rem 0; border-top: 1px solid var(--rule); scroll-margin-top: calc(var(--sticky-offset) + 1rem); }
   .arc .n { font-size: .78rem; letter-spacing: .14em; color: var(--ink-mute); padding-top: .3rem; }
   .arc h2 { font-size: 1.15rem; letter-spacing: -.01em; margin: 0 0 .4rem; }
   .arc p { margin: 0; max-width: 64ch; line-height: 1.6; color: var(--ink-soft); }
-  .arc p + p, .arc table + p, .arc p + table { margin-top: .45rem; }
-  .arc .district { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--color-primary); margin-bottom: .2rem; }
-  .arc .district + h2 { margin-top: 0; }
+  .arc p + p, .arc table + p, .arc p + table, .arc figure + p, .arc p + figure, .arc div + p, .arc p + div { margin-top: .55rem; }
+  .arc .asks { font-family: var(--font-mono, ui-monospace, monospace); font-size: .74rem; letter-spacing: .06em; color: var(--color-primary); margin-bottom: .15rem; }
   .takeaway { color: var(--ink); font-weight: 600; }
   .see { font-size: .82rem; color: var(--ink-mute); }
   .reveal h2 { color: var(--color-primary); }
+
+  /* A rubber stamp: the question was answered on the card back in 01. */
+  .stamp a {
+    display: inline-block; transform: rotate(-2deg);
+    padding: .15rem .55rem; border: 2px solid var(--color-primary); border-radius: 4px;
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--color-primary); text-decoration: none;
+  }
+  .stamp a:hover, .stamp a:focus-visible { transform: none; }
+
+  /* The recipe card: ruled lines are the background, so every row and the
+     title are pinned to the 1.6rem pitch and the .8rem + 1.7rem header, or the
+     text floats between the lines. */
+  .card {
+    max-width: 24rem; margin: .9rem 0 0; padding: .8rem 1rem .4rem;
+    background:
+      linear-gradient(to bottom, transparent 2.5rem, var(--color-danger) 2.5rem calc(2.5rem + 1px), transparent calc(2.5rem + 1px)),
+      repeating-linear-gradient(to bottom, transparent 0 calc(1.6rem - 1px), var(--rule) calc(1.6rem - 1px) 1.6rem) 0 2.5rem / 100% calc(100% - 2.5rem) no-repeat,
+      var(--surface-raised);
+    border: 1px solid var(--rule); border-radius: 3px;
+    box-shadow: 0 1px 0 var(--rule), 0 6px 14px -10px rgba(0, 0, 0, .3);
+    transform: rotate(-.6deg);
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem;
+  }
+  .card .card-title { color: var(--ink); font-weight: 700; font-size: .95rem; height: 1.7rem; margin: 0; }
+  .card ul { list-style: none; margin: 0; padding: 0; }
+  .card li { display: flex; justify-content: space-between; gap: 1rem; height: 1.6rem; align-items: flex-end; padding-bottom: .15rem; color: var(--ink-soft); }
+  .card li span:last-child { color: var(--ink-mute); }
+  .card .card-warn { display: flex; align-items: flex-end; height: 1.6rem; padding-bottom: .15rem; margin: 0; color: var(--color-danger); font-weight: 600; }
+
+  /* One line on the card, four stations around it. */
+  .stations {
+    display: grid; gap: .6rem; max-width: 34rem; margin-top: .9rem;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    grid-template-areas: "menu . ticket" ". hub ." "floor . insp";
+    position: relative;
+  }
+  .stations::before {
+    content: ''; position: absolute; inset: 1.4rem 18%;
+    border: 1px dashed var(--rule-strong); border-radius: 6px; z-index: 0;
+  }
+  .station, .hub { position: relative; z-index: 1; display: flex; flex-direction: column; gap: .1rem; padding: .55rem .7rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); font-size: .8rem; color: var(--ink-mute); }
+  .station b { color: var(--ink); font-size: .88rem; }
+  .s-menu { grid-area: menu; } .s-ticket { grid-area: ticket; } .s-floor { grid-area: floor; } .s-insp { grid-area: insp; }
+  .hub { grid-area: hub; align-items: center; text-align: center; background: var(--surface-raised); border-color: var(--color-danger); font-family: var(--font-mono, ui-monospace, monospace); }
+  .hub b { color: var(--color-danger); font-size: .9rem; }
 
   .views { border-collapse: collapse; max-width: 64ch; width: 100%; font-size: .92rem; }
   .views th { text-align: left; font-weight: 600; color: var(--ink); padding: .35rem 1rem .35rem 0; white-space: nowrap; vertical-align: top; }
   .views td { color: var(--ink-soft); padding: .35rem 0; }
   .views tr + tr > * { border-top: 1px solid var(--rule); }
 
+  /* Two storefronts drawn in currentColor, so the theme colors them. */
+  .branches { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .8rem; max-width: 34rem; margin: .9rem 0 0; }
+  .shop { width: 100%; height: auto; color: var(--ink-soft); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+  .binder { display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .6rem .8rem; border: 1px solid var(--color-primary); border-left-width: 6px; border-radius: 4px; background: var(--surface-raised); font-size: .75rem; color: var(--ink-mute); }
+  .binder b { font-family: var(--font-mono, ui-monospace, monospace); color: var(--ink); font-size: .8rem; }
+
+  /* The two kitchens: the left list has nothing in common, the right hangs
+     every row off one spine that starts at the card. */
+  .kitchens { border-top: 1px solid var(--rule); padding: 2rem 0 1rem; }
+  .kitchens h2 { font-size: 1.15rem; margin: 0 0 1rem; }
+  .pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+  .kitchen ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+  .kitchen li { display: flex; justify-content: space-between; gap: .8rem; padding: .4rem .65rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); font-size: .82rem; }
+  .kitchen li b { color: var(--ink); font-weight: 600; }
+  .kitchen li span { color: var(--ink-mute); font-family: var(--font-mono, ui-monospace, monospace); font-size: .74rem; text-align: right; }
+  .k-head { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .6rem; }
+  .loose li:nth-child(odd) { margin-left: .5rem; transform: rotate(.6deg); }
+  .loose li:nth-child(3n) { margin-left: 0; margin-right: .5rem; transform: rotate(-.8deg); border-style: dashed; }
+  .bound .spine-top { display: inline-block; margin: 0 0 .5rem; padding: .3rem .6rem; border: 1px solid var(--color-primary); border-radius: 4px; font-family: var(--font-mono, ui-monospace, monospace); font-size: .78rem; color: var(--ink); background: var(--surface-raised); }
+  .bound ol { position: relative; padding-left: 1.2rem; }
+  .bound ol::before { content: ''; position: absolute; left: .45rem; top: -.5rem; bottom: 1rem; border-left: 2px solid var(--color-primary); }
+  .bound li { position: relative; border-color: var(--rule-strong); }
+  .bound li::before { content: ''; position: absolute; left: -.75rem; top: 50%; width: .75rem; border-top: 2px solid var(--color-primary); }
+
   .closing { border-top: 1px solid var(--rule); padding-top: 2rem; margin-top: 1rem; }
-  .closing p:first-child { font-size: 1.25rem; line-height: 1.5; max-width: 52ch; color: var(--ink); font-weight: 500; margin: 0 0 .6rem; }
+  .closing .punch { font-size: clamp(1.4rem, 3.4vw, 1.9rem); letter-spacing: -.02em; line-height: 1.3; color: var(--ink); font-weight: 600; margin: 0 0 1rem; }
+  .closing p { max-width: 52ch; margin: 0 0 .6rem; }
+  .closing .punch + p { font-size: 1.1rem; line-height: 1.5; color: var(--ink-soft); }
+
+  @media (max-width: 40rem) {
+    .pair { grid-template-columns: minmax(0, 1fr); }
+    .stations { grid-template-columns: 1fr 1fr; grid-template-areas: "hub hub" "menu ticket" "floor insp"; }
+    .stations::before { display: none; }
+    .branches { grid-template-columns: 1fr 1fr; }
+    .branches .binder { grid-column: 1 / -1; grid-row: 2; }
+  }
 </style>

@@ -1137,13 +1137,20 @@ export async function createTestEnv(opts = {}) {
             if (rowB) {
               const move = _tenantMove(schema, model, va, parents)
               if (move) {
-                // Both verbs, because each grades the moved row on its own path
-                // and a bulk write that skipped the rule read as isolation (FJS-1713).
+                // Every verb that updates, because each grades the moved row on
+                // its own path and a bulk write that skipped the rule read as
+                // isolation (FJS-1713, FJS-1730). upsertMany's row is a whole
+                // create payload, since its rows are validated as creates.
                 const where = _idWhere(schema, model.name, rowB)
                 const key   = Object.keys(move)[0]
-                for (const verb of ['update', 'updateMany']) {
+                const calls = [
+                  ['update',     { where, data: move }],
+                  ['updateMany', { where, data: move }],
+                  ['upsertMany', { data: [{ ..._columnPayload(schema, model, rowB), ...where, ...move }] }],
+                ]
+                for (const [verb, args] of calls) {
                   let moved = null
-                  try { moved = await clientB[acc][verb]({ where, data: move }) }
+                  try { moved = await clientB[acc][verb](args) }
                   catch { /* refused */ }
 
                   // A refusal and a no-match are both acceptable; what is not is

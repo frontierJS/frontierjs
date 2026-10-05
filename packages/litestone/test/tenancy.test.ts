@@ -499,6 +499,36 @@ describe('a row cannot be moved out of its tenant', () => {
     expect(await caller.task.updateMany({ where: { id: 1 }, data: { status: 'done' } })).toEqual({ count: 1 })
   })
 
+  // upsertMany's conflict half is an update by SQLite's DO UPDATE, whose WHERE
+  // grades the row before, as updateMany's does (FJS-1730).
+  it('refuses the same move through upsertMany\'s conflict half, and rolls the batch back', async () => {
+    const { sys, caller } = await seeded()
+
+    const err: any = await caller.doc.upsertMany({ data: [
+      { id: 9, workspaceId: 1, title: 'new' },
+      { id: 1, workspaceId: 2, title: 'mine' },
+    ] }).catch((e: any) => e)
+    expect(err.message).toMatch(/data\[1\] of 2 failed/)
+    expect(err.message).toMatch(/Outside your workspaceId/)
+    expect((await sys.doc.findUnique({ where: { id: 1 } })).workspaceId).toBe(1)
+    expect(await sys.doc.findUnique({ where: { id: 9 } })).toBeNull()
+  })
+
+  it('grades a hand-written post-update rule on upsertMany, a key repeated in the batch included', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `
+      model Task { id Int @id  status String  @@allow('all', true)  @@deny('post-update', status == 'locked') }
+    ` })
+    const sys = db.asSystem()
+    await sys.task.create({ data: { id: 1, status: 'open' } })
+    const caller = db.$setAuth({ id: 'u1' })
+
+    await expect(caller.task.upsertMany({ data: [{ id: 1, status: 'locked' }] })).rejects.toThrow(/post-update/)
+    await expect(caller.task.upsertMany({ data: [{ id: 2, status: 'open' }, { id: 2, status: 'locked' }] })).rejects.toThrow(/post-update/)
+    expect((await sys.task.findMany()).map((t: any) => [t.id, t.status])).toEqual([[1, 'open']])
+    // A new row may start locked: the rule is about the row after an UPDATE.
+    expect(await caller.task.upsertMany({ data: [{ id: 1, status: 'done' }, { id: 3, status: 'locked' }] })).toEqual({ count: 2 })
+  })
+
   it('still allows an ordinary edit — the rule is about the tenant, not the row', async () => {
     const { sys, caller } = await seeded()
 

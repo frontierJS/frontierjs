@@ -6377,6 +6377,18 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d587"></a>2026-10-05 · `FJS-D587` — A conduit response over `max_response_bytes` is `invalid_response`, not `invalid_request`.
+
+Asked by the `FJS-710` fix-loop session that moved it. The caller's request was well formed and the answer was unusable, so the fault is the response's; a caller reading `invalid_request` would go looking for a bug in what it sent. No new kind, because `FJS-D201`'s vocabulary already has the one that fits.
+
+### <a id="fjs-d586"></a>2026-10-05 · `FJS-D586` — Conduit's WebSocket transport honors every per-target setting http honors, with no option of its own.
+
+Asked splitting `FJS-710` (`conduit-13`). The seven policy numbers (`FJS-728`), `max_response_bytes`, the request's headers and query, and the idempotency key (`FJS-733`) reach a WS request the way they reach an http one. A target's descriptor means the same thing whichever transport carries it, so a setting that silently stops at one transport is a defect, not a choice. Junction's `wsSend()` is the owner of a bounded send queue; a conduit that needs one lifts it into `@frontierjs/toolbelt` rather than writing a second (Invariant 4), and core conduit does not import junction, which is only its plugin's peer.
+
+### <a id="fjs-d585"></a>2026-10-05 · `FJS-D585` — A conduit response body that is not text arrives as a `Uint8Array`.
+
+Asked splitting `FJS-710` (`conduit-10`). Picked over base64 (a third larger, and a string that is not the body) and `Blob` (async to read, and a browser's noun on a server). A JSON or `text/*` body is decoded with the charset its `content-type` names; anything else is the bytes. HTTP `stream()` keeps answering `not_implemented` until an app needs it (`IDEAS/conduit-batteries.md`).
+
 ### <a id="fjs-d573"></a>2026-10-03 · `FJS-D573` — A file leaves through a raw route that reads its records by calling a service as the requester, and only encodes them. A service answers JSON and nothing else.
 
 **Why.** `FJS-D13` put a stream outside the envelope and said nothing about a

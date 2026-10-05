@@ -318,7 +318,17 @@ license.
   filter instead of letting the Data boundary refuse it by name.
 - **`sameValue` is deep equality for JSON and nothing else** — no Map, no Set,
   no cycle guard, no NaN. A general one here would be a second answer to a
-  question this kit already scopes.
+  question this kit already scopes. **`keepUnchanged(prev, next)` is the third
+  question over a pair of documents** — equal, different, and *which nodes of
+  `next` may be `prev`'s own*. A view keyed on `===` needs the last one after
+  every re-parse of text a person is editing (`FJS-1619`).
+- **`patchText(text, prev, next)` is the way back to TEXT, and `format()` of the
+  whole document is the wrong one.** It replaces only the changed spans, so a
+  hand-formatted document, a condensed one and `78.0` survive a cell edit
+  (`FJS-1623`). `prev` must be what `text` parses to — a mismatch of kind or
+  length throws. A reordered object is rewritten whole, as is one whose text holds
+  a duplicate key, and an object whose integer-like keys do not lead its text
+  reads as reordered, because `JSON.parse` moves them to the front.
 
 - **`ctx.result` is an ACCESSOR and the value is not the test.** Three ordinary
   hook mistakes end the pipeline with nothing having run — an `around` that

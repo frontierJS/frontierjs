@@ -1,5 +1,13 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-05 — `patchText`: a write goes back into the text it was read from, changing only the bytes it changed (`FJS-1623`)
+
+`patchText(text, prev, next)` answers `text` with only the spans that differ between the document it parses to and the document a write made of it. The only way back to text was `format()` of the whole document, so one cell edit rewrote every line, a condensed document came back pretty-printed and `78.0` came back as `78`. It scans the text once for where each member sits, skips a branch by identity (so a `next` that shares its untouched branches with `prev` costs nothing per node), aligns an array from both ends so a removal at the front leaves the rows after it unpatched, and writes a new member in the layout of its siblings — separator, indent, colon spacing, CRLF. A renamed key replaces the key and not its value's text. A reordered object and an object holding a duplicate key are rewritten whole, since neither is a span. Proved by `json.spec.js`, whose random-write row asserts the patched text equals `JSON.stringify(next)` at the indent the text was written in, over 600 edits at four indents.
+
+## 2026-10-05 — `keepUnchanged`: a re-parsed document that keeps the objects it did not change (`FJS-1619`)
+
+`keepUnchanged(prev, next)` answers `next`, with every node equal to its counterpart in `prev` replaced by `prev`'s own object. `JSON.parse` hands back a document in which every object is new, and a view keyed on identity — Mesa's `{#each}` hands a row its item through a signal that compares with `===` — redrew every row for a one-character edit in a CodeInput over a grid (dragonfly: 642 ms a keystroke at 1,000 rows against 55 ms without the text). An array is aligned from both ends so a row deleted or pasted leaves the rows after it the same objects; an object is the same only with the same keys in the same order; a parsed own `__proto__` stays a key (`put`). Lives beside `sameValue`, which answers equal-or-not and keeps nothing. `test/specs/json.spec.js`, including a 500-case random-edit row that checks the answer always equals `next`.
+
 ## 2026-10-03 — `transforms`: what `@trim`, `@lower`, `@upper` and `@slug` do to a value (`FJS-401`)
 
 `transform(names, value)` runs an ordered list of transform names over a value, and `TRANSFORM_NAMES` / `isTransform` say which names exist. Litestone applied these at the Data boundary and nobody else could, so a service payload and a generated form graded a value the Data boundary would have changed first. Litestone, Junction and Sierra now read this one table. An unknown name is skipped, so a newer schema read by an older reader does not throw. `test/specs/transforms.spec.js`.
