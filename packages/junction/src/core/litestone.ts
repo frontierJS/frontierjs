@@ -72,6 +72,7 @@ interface LitestoneTable {
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   upsert:           (args:  Record<string, unknown>) => Promise<unknown>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
+  $declaredFields?: (args?: Record<string, unknown>) => Promise<unknown[]>   // @@extensible models only
   transition:       (id: number | string, name: string, opts?: { system?: boolean }) => Promise<unknown>  // @@transitions models only
   search:           (query: string, args?: Record<string, unknown>) => Promise<unknown[]>  // @@fts models only — the ROWS, ranked
   // The two shapes the `aggregate` verb dispatches between (`FJS-D226`): with a
@@ -819,6 +820,26 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     return table.restore({ where: q.where })
   }
 
+  // The custom fields this caller's workspace declared on an @@extensible model
+  // (`FJS-D487`). It reads through the caller's own client, so the declaring
+  // model's @@gate and policies grade it as they would a direct read, and the
+  // scope to THIS model is litestone's — a plain find over the declaring table
+  // answers another model's keys with nothing failing.
+  async function declaredFieldsImpl(ctx: ServiceContext): Promise<unknown> {
+    const table = getTable(ctx)
+    if (typeof table.$declaredFields !== 'function')
+      throw new NotFound(`${modelLabel(ctx)} declares no @@extensible fields`)
+    try {
+      return await table.$declaredFields()
+    } catch (err) {
+      // Litestone names a model with no @@extensible by a capability error,
+      // which is a 500 to a caller who only asked the wrong model.
+      if ((err as Error)?.name === 'CapabilityNotDeclaredError')
+        throw new NotFound(`${modelLabel(ctx)} declares no @@extensible fields`)
+      throw err
+    }
+  }
+
   function softDeleteFilter(): Record<string, unknown> {
     return softDelete ? { [softDelete]: null } : {}
   }
@@ -1366,6 +1387,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     // For Junction-side softDelete override models, this is a no-op
     // (those don't use Litestone's native restore).
     restore: restoreImpl,
+
+    declaredFields: declaredFieldsImpl,
   }
 }
 
@@ -2703,6 +2726,9 @@ function warnFloorRefusal(service: string, method: string, need: number): void {
 const OP_FOR_METHOD: Record<string, GateOp> = {
   find: 'read', get: 'read', aggregate: 'read', create: 'create',
   patch: 'update', update: 'update', remove: 'delete',
+  // Graded as the model's own read, which is how `FJS-D487` states it. The
+  // custom fields it names are then read through the declaring model's gate.
+  declaredFields: 'read',
 }
 
 export function gateAuthAround(
@@ -3468,7 +3494,10 @@ export interface BearerClaimOptions {
    *  or the header that carried it, nowhere else. */
   column:  string
   /** Claim name → the column on the grant row it is read from. These are what a
-   *  policy compares, so they are ids and states, never the token. */
+   *  policy compares, so they are ids and states, never the token. A dotted
+   *  column reads through a relation — `'page.workspaceId'` — which is how a
+   *  grant scoped `@@tenant(via: page)` emits the tenant claim without a copy
+   *  of the parent's workspace on every grant. */
   claims:  Record<string, string>
   /** The app secret the digest is keyed on. A function where it is per tenant. */
   key:     string | ((ctx: ServiceContext) => string)
@@ -3536,7 +3565,14 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     // somewhere, because the purpose and the key are not theirs to reproduce.
     const digest = await fingerprint(token, { key, purpose })
 
-    const row = await table.findFirst({ where: { [opts.column]: digest } }) as Record<string, unknown> | null
+    // A dotted claim column ('page.workspaceId') is read through the relation,
+    // so a grant on a child of a scoped model needs no copy of its parent's scope.
+    const relations = [...new Set(Object.values(opts.claims).filter(c => c.includes('.')).map(c => c.split('.')[0]))]
+
+    const row = await table.findFirst({
+      where: { [opts.column]: digest },
+      ...(relations.length ? { include: Object.fromEntries(relations.map(r => [r, true])) } : {}),
+    }) as Record<string, unknown> | null
 
     // No row is no claim, and it is the same answer as an expired one on
     // purpose: *this link does not work* is all a bearer may learn, or the
@@ -3553,7 +3589,10 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     } satisfies ResolvedBearer
 
     return Object.fromEntries(
-      Object.entries(opts.claims).map(([claim, column]) => [claim, row[column] ?? null]),
+      Object.entries(opts.claims).map(([claim, column]) => [
+        claim,
+        column.split('.').reduce<unknown>((at, key) => (at as Record<string, unknown> | null | undefined)?.[key], row) ?? null,
+      ]),
     )
   }
 

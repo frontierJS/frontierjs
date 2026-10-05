@@ -87,6 +87,10 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
     name: `sqlite-wasm/${vfs}`,
     sync: true,
 
+    // A device holds a window of the server's rows, which cannot be closed
+    // under a foreign key, and the server enforced them (`FJS-D485`).
+    foreignKeys: false,
+
     // ─── no vector capability, and it is not a gap ────────────────────────
     //
     // This build's own compile-option list carries `SQLITE_OMIT_LOAD_EXTENSION`

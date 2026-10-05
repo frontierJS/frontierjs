@@ -212,3 +212,54 @@ describe('the header a principal reads reaches the call-header allow-list', () =
     expect(declaredCallHeaders(createApp({}), { http: {} })).toEqual([])
   })
 })
+
+// A grant whose scope lives on its PARENT: `ShareLink` is `@@tenant(via: page)`,
+// the idiomatic child of a scoped model, so the grant row has no workspace
+// column of its own. A dotted claim column walks the relation instead of the
+// app copying `page.workspaceId` onto every grant (`FJS-1731`).
+describe('a claim column may name a relation path', () => {
+  const NESTED = `
+    model Page {
+      id          Int    @id @default(autoincrement())
+      workspaceId Int
+      title       String
+      links       ShareLink[]
+      @@gate("0")
+    }
+
+    model ShareLink {
+      id        Int    @id @default(autoincrement())
+      pageId    Int
+      page      Page   @relation(fields: [pageId], references: [id])
+      tokenHash String @unique @guarded
+      @@gate("8")
+    }
+  `
+  const nested = bearerClaim({
+    from:    header('x-share-link'),
+    model:   'shareLink',
+    column:  'tokenHash',
+    key:     KEY,
+    claims:  { linkPageId: 'pageId', linkWorkspaceId: 'page.workspaceId' },
+  })
+
+  test('the claim is read through the relation, and the plain column beside it still is', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: NESTED, claims: ['linkPageId', 'linkWorkspaceId'] })
+    const sys = db.asSystem()
+    await sys.page.create({ data: { workspaceId: 7, title: 'shared' } })
+    await sys.shareLink.create({
+      data: { pageId: 1, tokenHash: await fingerprint('tok', { key: KEY, purpose: 'shareLink.tokenHash' }) },
+    })
+
+    const headers = { 'x-share-link': 'tok' }
+    const ctx = { locals: { db }, headers, caller: { headers } }
+    const claims = await enterRequest({ origin: 'http', headers, caller: { headers } } as never,
+      () => (nested as any)(ctx, null))
+    expect(claims).toEqual({ linkPageId: 1, linkWorkspaceId: 7 })
+
+    // A token that resolves to nothing reads no claim through the relation either.
+    const none = { locals: { db }, headers: { 'x-share-link': 'nope' }, caller: { headers: { 'x-share-link': 'nope' } } }
+    expect(await enterRequest({ origin: 'http', headers: none.headers, caller: none.caller } as never,
+      () => (nested as any)(none, null))).toEqual({})
+  })
+})

@@ -80,6 +80,14 @@
 // use, and `arm` must be idempotent because the caller holds a statement cache
 // rather than a database and cannot track which connection it is on.
 //
+//   engine.foreignKeys  →  false, or absent
+//
+// Connections open with foreign keys ENFORCED. An engine that holds only a
+// window of the server's rows — the browser's — declares `false`, because a
+// window cannot be referentially closed and an enforced key refuses the whole
+// batch holding one child whose parent is outside it (`FJS-D485`, `FJS-1373`).
+// The server enforced them already; the replica is a cache.
+//
 // It is absent-by-default rather than required: an engine that says nothing
 // about vectors is complete, which is what keeps `REQUIRED` at one entry and
 // keeps a third-party engine from having to answer a question it has no stake

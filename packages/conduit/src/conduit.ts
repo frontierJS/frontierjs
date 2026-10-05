@@ -23,6 +23,7 @@ import type {
 import { ConduitStreamError } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
 import { BrokerTransport } from './transports/broker.ts'
+import { DEFAULT_TIMEOUT_MS } from './transports/http.ts'
 
 // What a policy field may say. A number here is refused at register() rather
 // than clamped, for the reason `follow_redirects` beside `hmac` is: a
@@ -422,7 +423,7 @@ export function createConduit(
       recordResult(validated, duration_ms)
 
       outcome = validated.error
-        ? (countsAsTargetFault(validated.error.kind) ? 'target_fault' : 'other')
+        ? (countsAsTargetFault(validated.error.kind) && !outwaited(req, key, validated.error.kind) ? 'target_fault' : 'other')
         : 'success'
 
       if (validated.error) {
@@ -437,6 +438,16 @@ export function createConduit(
       counters.requests.in_flight--
       resilience.release(key, outcome)
     }
+  }
+
+  // A `timeout` whose timer was the caller's own, because the request asked to
+  // wait less than the target's declared timeout. The breaker is per target
+  // and the patience is per caller: counted, one impatient caller opens a
+  // healthy target's breaker for every other caller of the conduit (`FJS-1409`).
+  function outwaited(req: ConduitRequest, key: string, kind: ConduitError['kind']): boolean {
+    if (kind !== 'timeout' || req.timeout_ms === undefined) return false
+    const own = resilience.declaredTimeout(key) ?? opts.timeout_ms ?? DEFAULT_TIMEOUT_MS
+    return req.timeout_ms < own
   }
 
   // A 200 is not proof the payload is what the caller's type says it is.

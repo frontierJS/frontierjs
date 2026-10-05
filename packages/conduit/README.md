@@ -369,7 +369,7 @@ Backoff is jittered, so N callers hitting the same degraded provider don't retry
 
 `signal` ends the call: the attempt in flight is closed at the socket, no further attempt starts, and a backoff sleep wakes early. The answer is `aborted`, and it never counts against the target's breaker. A signal that is already aborted sends nothing and takes no concurrency slot.
 
-It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `policy.deadline_ms` is still the ceiling.
+It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `policy.deadline_ms` is still the ceiling. A per-request `timeout_ms` shorter than the target's own is the same patience: its miss answers `timeout` and the breaker does not count it.
 
 ```ts
 const ac      = new AbortController()

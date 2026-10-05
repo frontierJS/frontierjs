@@ -285,6 +285,9 @@ export interface ConduitRequest {
   // HTTP 200 types and behaves as a success.
   validate?: ResponseValidator
 
+  // Per attempt. Shorter than the target's own `timeout_ms`, a miss answers
+  // `timeout` and the breaker does not count it: the caller's patience, not the
+  // target's health (`FJS-1409`).
   timeout_ms?: number
 
   // Ends the call: the attempt in flight is cut at the socket, no further

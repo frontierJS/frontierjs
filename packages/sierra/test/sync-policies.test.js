@@ -72,6 +72,7 @@ model Ledger { id String @id @default(uuid())  name String                  @@ga
 model Plain  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0") }
 model Photo  { id String @id @default(uuid())  name String  damage File?    @@gate("0.0.0.0")  @@sync(append) }
 model Merge  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0")  @@sync(field) }
+model Roster { id String @id @default(uuid())  name String                  @@gate("0.0.0.0")  @@sync(read) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */
@@ -125,6 +126,31 @@ describe('the policy reaches the browser as itself', () => {
     expect(schemaFor('Ledger')['x-sync']).toBe('append')
     expect(schemaFor('Plain')['x-sync']).toBeUndefined()
     expect(schemaFor('Merge')['x-sync']).toBe('field')
+    expect(schemaFor('Roster')['x-sync']).toBe('read')
+  })
+})
+
+// ─── read ─────────────────────────────────────────────────────────────────
+
+// FJS-1280: held on a device and never written there, so a write is the
+// ordinary live call — no queue entry, no drain, no minted key.
+describe('read — held, never written', () => {
+  test('a write that cannot reach the server fails and holds nothing', async () => {
+    _proxy.create = offline
+    const roster = createResource('rosters', { model: 'Roster' })
+    await expect(roster.save({ name: 'Ada' })).rejects.toThrow(/Failed to fetch/)
+    expect(held().length).toBe(0)
+  })
+
+  test('a patch is not refused by name and is not held — the policy that holds writes would', async () => {
+    const roster = createResource('rosters', { model: 'Roster' })
+    await expect(roster.service.patch('ROW-1', { name: 'Ada' })).resolves.toBeDefined()
+    expect(held().length).toBe(0)
+  })
+
+  test('the declaration arms no drain, there being nothing to replay', () => {
+    createResource('rosters', { model: 'Roster' })
+    expect(_listeners.filter(([e]) => e === 'connect').length).toBe(0)
   })
 })
 

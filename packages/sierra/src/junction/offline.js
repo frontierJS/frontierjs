@@ -116,13 +116,11 @@ export function declareOffline({ service, model, find, query, directives }) {
  * a hope, and a screen can say which of the two it is reading.
  *
  * **Every read is made before any row is written, and the writes run in
- * passes** (`FJS-1279`). The device keeps the foreign keys between `@@sync`
- * models and refuses a batch naming a parent it does not hold yet, so writing
- * in declaration order made a child declared before its parent a device that
- * held neither the child nor anything saying so — and declaration order is the
- * order modules happen to evaluate, which an app does not control. A batch the
- * device refused is written again after the others land, until a pass lands
- * nothing; what never lands is on the report as `error`, with its rows.
+ * passes** (`FJS-1279`). A batch the device refused is written again after the
+ * others land, until a pass lands nothing; what never lands is on the report as
+ * `error`, with its rows. A parent the device does not hold is not a refusal
+ * (`FJS-D485`) — its connection does not enforce foreign keys — so what the
+ * passes retry is a refusal of any other kind, a quota or a locked pool.
  *
  * @returns {Promise<Array<{service: string, rows?: number, kept?: boolean, error?: string}>>}
  */
@@ -168,8 +166,41 @@ export async function warmOffline() {
   for (const r of read)
     if (!r.entry.kept) await listCache().remember(listKey(r.service, r.query, r.directives), r.rows)
 
+  _last = { report: out, ranAt: Date.now() }
+  _listeners.forEach(fn => fn(_status))
   return out
 }
+
+/* ─── what the warm answered ───────────────────────────────────────────────── */
+
+let _last = null
+const _listeners = new Set()
+
+const _status = {
+  /** The last warm's report, per service — `null` until one has finished. */
+  report:    () => _last?.report ?? null,
+  /** When that warm finished, ms since the epoch; `null` until one has. */
+  ranAt:     () => _last?.ranAt ?? null,
+  /** What was declared, which the report says the outcome of. */
+  services:  () => offlineServices(),
+  /** After every warm; answers the unsubscribe. */
+  subscribe: (fn) => { _listeners.add(fn); return () => _listeners.delete(fn) },
+}
+
+/**
+ * What this device holds, as the last warm found it (`FJS-D484`).
+ *
+ * The boot and reconnect warms are armed by Sierra and answer to nobody, so
+ * their report was discarded and an app could not tell a device holding its
+ * window from one that holds nothing. It is a status object beside
+ * `pendingQueue()` for the same reason: one noun a screen reads, subscribes to
+ * and shows, rather than a raw promise from a call it did not make.
+ *
+ * `report()` is `warmOffline()`'s answer — `{service, rows?, kept?, error?}`
+ * per declared service — and `kept` is what says the rows are on the device
+ * rather than only in the list cache.
+ */
+export function offlineStatus() { return _status }
 
 // Once per service per document: the warm re-runs on every reconnect, and a
 // window the device cannot hold is refused the same way every time.
@@ -212,4 +243,4 @@ function _armWarm() {
 }
 
 /** Test seam: forget every declaration so a suite can build its own. */
-export function _resetOffline() { _declared.clear(); _armed = false; _warned.clear() }
+export function _resetOffline() { _declared.clear(); _armed = false; _warned.clear(); _last = null; _listeners.clear() }

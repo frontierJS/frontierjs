@@ -63,6 +63,8 @@ export { configureLocalDb } from './local-db.js'
 // The writes this device holds, for a screen that shows what is waiting and
 // what was refused, and retries or discards it (`FJS-D300`).
 export { pendingQueue } from './pending.js'
+// What the offline warm last found the device holding (`FJS-D484`).
+export { offlineStatus } from './offline.js'
 import { clearLocalDb } from './local-db.js'
 
 // The live stores' half of a token change — see _tokenChanged below.

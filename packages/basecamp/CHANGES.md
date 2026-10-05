@@ -1,5 +1,13 @@
 # Changes — Basecamp
 
+## 2026-10-05 — the screens drive waits for the rename to finish before it renames back (`FJS-1736`)
+
+The workspace screen disables Save while the call is in flight as well as when nothing changed, and the drive's *settled* wait read only `disabled`, so it passed mid-save. The name typed back then landed while `busy` was still set, the click hit a disabled button and was dropped, and nothing ever disabled Save again (`last value undefined`). The wait now needs the *Workspace saved* toast, which is raised after the reload just before `busy` clears; the typed-back name must enable Save before it is pressed, and the final wait reads the saved name back off the screen. The defect was in the drive, not the screen. `verify:screens` 234/234.
+
+## 2026-10-05 — the no-version patch test reads the wording the ruling gave it (`FJS-1729`)
+
+`services.test.ts` pinned `/version/i` on the 400 for a patch carrying no `version`, but `VersionRequiredError`'s message speaks to the person on the screen since `FJS-1478` and the column rides on the server-side `hint`. The test now asserts a 400, `retryable: false`, a message that says to reload and a message that names neither `asSystem`, `data.version` nor `@version`. No source changed; basecamp is 577/577.
+
 ## 2026-10-04 — the seed leaves every workspace one machine that says online (`FJS-1606`)
 
 The per-workspace unhealthy-server pass took the last online machine of any workspace with more than two, and `skunkworks` draws only one, so it ended with none. It now runs only where a second online machine remains. `verify:outpost` finds its decoy again (33/33), and `db/test/seed.test.ts` asserts every workspace keeps an online server.

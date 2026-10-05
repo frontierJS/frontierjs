@@ -158,8 +158,10 @@ export async function writeThrough(model, rows) {
  * `upsertMany` and not a row at a time: an autocommit INSERT over OPFS is one
  * filesystem sync, measured at 9.23 ms against 0.033 ms batched, which is the
  * difference between a page that pauses and one that does not. The batch is one
- * transaction, so a single row naming a parent the device does not hold — the
- * device keeps the foreign keys between `@@sync` models — refuses all of it.
+ * transaction, so one refused row refuses all of it. A parent the device does
+ * not hold is not a refusal: the device's connection does not enforce foreign
+ * keys, because it holds a window the server's keys were enforced over
+ * (`FJS-D485`), so a screen's `load()` writes in whatever order it arrives.
  *
  * Answers false where there is nothing to write to: no config, no rows, no
  * database, or a model the device does not hold.

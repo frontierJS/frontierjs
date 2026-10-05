@@ -1755,6 +1755,41 @@ describe('retry policy', () => {
     } finally { s.stop() }
   })
 
+  it('a binary 200 arrives as the bytes, not as UTF-8 replacement characters (FJS-1726)', async () => {
+    // 0xFF 0xFE are not valid UTF-8; decoding them as text turns each into
+    // U+FFFD and the PDF/image is gone before the caller sees it.
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0xff, 0xfe, 0x00, 0x80])
+    const s = recorder(() => new Response(bytes, {
+      status: 200, headers: { 'content-type': 'application/pdf' },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send<Uint8Array>({ target: target.id, method: 'GET', path: '/invoice.pdf' })
+
+      expect(result.error).toBe(null)
+      expect(result.data).toBeInstanceOf(Uint8Array)
+      expect(Array.from(result.data as Uint8Array)).toEqual(Array.from(bytes))
+    } finally { s.stop() }
+  })
+
+  it('a text body is decoded with the charset its content-type names (FJS-1726)', async () => {
+    // 0xE9 is "é" in latin-1 and an invalid sequence in UTF-8.
+    const s = recorder(() => new Response(new Uint8Array([0x63, 0x61, 0x66, 0xe9]), {
+      status: 200, headers: { 'content-type': 'text/plain; charset=iso-8859-1' },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send({ target: target.id, method: 'GET', path: '/menu' })
+
+      expect(result.error).toBe(null)
+      expect(result.data).toBe('café')
+    } finally { s.stop() }
+  })
+
   // Not tested: a response with NO content-type at all and a non-JSON body,
   // which falls through to the JSON.parse failure below. `new Response(…, {
   // headers: { 'content-type': '' } })` does not produce it — Bun normalizes
@@ -4605,6 +4640,34 @@ describe('signal (FJS-1408)', () => {
       const next = await c.send({ target: id, method: 'GET', signal: AbortSignal.timeout(30) })
       expect(next.error?.kind).toBe('aborted')
       expect(p.hits).toBe(4)
+    } finally { p.stop() }
+  })
+
+  it('a request\'s own timeout_ms shorter than the target\'s is the caller\'s patience, not the target\'s fault (FJS-1409)', async () => {
+    const p = holding()
+    try {
+      const { c, id } = await conduitFor(p.url, { retry_limit: 0, resilience: { failure_threshold: 2, reset_ms: 10_000 } })
+      for (let i = 0; i < 3; i++) {
+        const r = await c.send({ target: id, method: 'GET', timeout_ms: 30 })
+        expect(r.error?.kind).toBe('timeout')
+      }
+      expect(c.stats().breakers[id]?.state ?? 'closed').toBe('closed')
+      const next = await c.send({ target: id, method: 'GET', timeout_ms: 30 })
+      expect(next.error?.kind).toBe('timeout')
+      expect(p.hits).toBe(4)
+    } finally { p.stop() }
+  })
+
+  it('a timeout the target\'s own policy produced still opens the breaker, and a request timeout that is not shorter does not change that', async () => {
+    const p = holding()
+    try {
+      const target = providerTarget({ address: p.url, policy: { timeout_ms: 30, retry_limit: 0, failure_threshold: 2, reset_ms: 10_000 } })
+      const c = createConduit({ credentials: creds(), targets: [target] })
+      await c.init()
+      // No request timeout, then one equal to the target's own: neither is shorter.
+      expect((await c.send({ target: target.id, method: 'GET' })).error?.kind).toBe('timeout')
+      expect((await c.send({ target: target.id, method: 'GET', timeout_ms: 30 })).error?.kind).toBe('timeout')
+      expect((await c.send({ target: target.id, method: 'GET' })).error?.kind).toBe('circuit_open')
     } finally { p.stop() }
   })
 

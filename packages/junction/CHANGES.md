@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-05 — a service answers `declaredFields` for an @@extensible model (`FJS-1388`)
+
+Litestone's `$declaredFields()` had no reader above it, so a browser could not learn which custom fields a workspace declared (`FJS-D487`). Every model service now answers `declaredFields`: the model's own read gate grades it (`OP_FOR_METHOD`), the declaring model's gate and policies grade the read through the caller's client, and a model with no `@@extensible` is a 404 rather than an empty list. It is a read, so it is never announced or kept for an Idempotency-Key, and a `readOnly` service answers it wherever it answers `find`. It sits outside the custom-method table, so `describe()`, the manifest and OpenAPI do not advertise it on a model that will 404. `test/declared-fields.test.ts`.
+
+## 2026-10-05 — a `bearerClaim` claim column may name a relation path (`FJS-1731`)
+
+`claims` read only the grant row's own columns, so a share link scoped `@@tenant(via: page)` could not emit the tenant claim and read 0 rows under a strategy-row deny, and the app's way out was a `workspaceId` copied onto every grant. A dotted column (`'page.workspaceId'`) now reads through the relation: the resolver includes the first segment of each dotted column on its one grant read and walks the path. The grant row parked in `ctx.locals[BEARER]` carries the included relation. `describe()` still answers `tenant: null`; the claim name is the app's. Pinned by `test/bearer-claim.test.ts` § a claim column may name a relation path.
+
 ## 2026-10-05 — a raw route's own stream held for gzip now says so in dev (`FJS-1427`)
 
 A route that returns `new Response(readable)` with `text/csv` or `application/x-ndjson` is still read to its end for a caller that accepts gzip, because a Bun Response body of any kind is a stream with no length and the finalizer can tell only what `ctx.stream()` and `ctx.sse()` marked. `FJS-D509` kept that contract rather than guess. What was missing was the signal: outside production the finalizer now times the read for compression and warns once per route when it takes over a second, naming `ctx.stream()` and `content-encoding`. The README's response-helpers section and the api-hazards entry state the rule. Pinned by `test/index.test.ts` § ctx.sse().

@@ -107,8 +107,9 @@ src/
   the transport's `AbortController`, and what it ends is `aborted`, outside
   `TARGET_FAULTS`. It is also the only per-send deadline
   (`AbortSignal.timeout`): a `deadline_ms` on the request would expire as
-  `timeout` and open a healthy target's breaker for every caller, the trap
-  `req.timeout_ms` still sets (`FJS-1409`). A transport that ignores the signal
+  `timeout` and open a healthy target's breaker for every caller. `req.timeout_ms`
+  was that trap until `send()` stopped counting a `timeout` from a request
+  timeout shorter than the target's own (`outwaited`, `FJS-1409`). A transport that ignores the signal
   looks like it honors it until a provider's own log shows the loser ran on, so
   the suite asserts the close from the SERVER's `req.signal` (`FJS-1408`).
 - **`replayable` and `idempotency_key` are two different claims.** A key asserts

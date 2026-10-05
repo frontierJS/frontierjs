@@ -167,3 +167,36 @@ describe('x-mint', () => {
     expect(Object.keys(d.S.properties)).not.toContain('id')
   })
 })
+
+// ─── @@sync(read) ─────────────────────────────────────────────────────────────
+//
+// A model HELD on a device and never written there (`FJS-D488`, `FJS-1280`): a
+// roster, a reference table, a published schedule. The word is the same one, so
+// a device schema keeps the table; the argument says no write is held, so none
+// of the write half's machinery applies — no @version, no client-minted key.
+
+describe('@@sync(read)', () => {
+  const defs = (src: string) => generateJsonSchema(parse(src).schema).$defs
+
+  it('parses, and needs no @version', () => {
+    expect(refusal(model('  @@sync(read)'))).toBe(null)
+    expect(syncOf(model('  @@sync(read)'))).toBe('read')
+  })
+
+  it('crosses to the browser as x-sync: read', () => {
+    expect(crossing(model('  @@sync(read)'))).toBe('read')
+  })
+
+  // The Id box on an employee's form: a client-mintable key on a syncable model
+  // becomes a column the client may write, and a held, never-written model has
+  // no offline create to name its children.
+  it('mints no key, so a create form offers no Id', () => {
+    const src = (attr: string) => `model S { id String @id @default(uuid())  n String  @@gate("2")  ${attr} }`
+    expect(defs(src('@@sync(server)')).S['x-mint']).toEqual({ field: 'id', kind: 'uuid' })
+    expect(defs(src('@@sync(read)')).S['x-mint']).toBeUndefined()
+  })
+
+  it('the refusal for an unknown policy lists read', () => {
+    expect(refusal(model('  @@sync(lww)'))).toContain('read')
+  })
+})

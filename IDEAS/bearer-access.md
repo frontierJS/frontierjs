@@ -149,6 +149,15 @@ principal: bearerClaim({
 })
 ```
 
+**Under tenancy, a claim column may be dotted** (`FJS-1731`). A grant on a child
+of a scoped model — `PageLink`, `@@tenant(via: page)` — has no workspace column
+of its own, and a `tenant:` strategy-row deny fires on an UNKNOWN tenant claim, so
+the grant must still emit one: `claims: { workspaceId: 'page.workspaceId' }`
+reads it through the relation, where the alternative is a `workspaceId` copied
+onto every grant that nothing keeps in step with the page. The tenant claim also
+ADMITS its holder to the tenant, so state it only where that is the access the
+link means to give.
+
 **The by-construction form is not shipped**, and what it costs to lose is
 measured rather than assumed: a read on a unique column per guest call, which
 an authenticated call already pays for its session. What it buys is that

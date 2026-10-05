@@ -126,3 +126,37 @@ describe('WHERE_OPS is the switch it claims to be', () => {
     expect([...cases].sort()).toEqual([...declared].sort())
   })
 })
+
+// ─── a list operator takes a list (FJS-1313) ──────────────────────────────
+//
+// `?priority[in]=urgent,high` parses to the STRING 'urgent,high', and a string
+// has a `.length`, so it passed the empty-list guard and then died on `.map` —
+// a TypeError carrying the engine's own words, answered 500.
+
+describe('a list operator given a non-list is a ValidationError', () => {
+  for (const op of ['in', 'notIn'] as const) {
+    test(`${op} with a string names the field`, async () => {
+      const sys = await db()
+      const err = await refusal(() => sys.book.findMany({ where: { title: { [op]: 'B,C' } } })) as any
+      expect(err).toBeInstanceOf(ValidationError)
+      expect(err.errors?.[0]?.path).toEqual(['where', 'title'])
+      expect(err.message).toMatch(new RegExp(op))
+    })
+  }
+
+  for (const op of ['hasEvery', 'hasSome', 'hasNone'] as const) {
+    test(`${op} with a string names the field`, async () => {
+      const sys = await db()
+      const err = await refusal(() => sys.book.findMany({ where: { tags: { [op]: 'x,y' } } })) as any
+      expect(err).toBeInstanceOf(ValidationError)
+      expect(err.errors?.[0]?.path).toEqual(['where', 'tags'])
+    })
+  }
+
+  test('…and a real list still answers', async () => {
+    const sys = await db()
+    expect(await sys.book.findMany({ where: { title: { in: ['B', 'C'] } } })).toHaveLength(1)
+    expect(await sys.book.findMany({ where: { title: { notIn: ['B'] } } })).toHaveLength(0)
+    expect(await sys.book.findMany({ where: { tags: { hasSome: ['x', 'y'] } } })).toHaveLength(1)
+  })
+})

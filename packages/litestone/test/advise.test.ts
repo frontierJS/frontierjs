@@ -545,6 +545,13 @@ describe('sync-reference-to-a-server-assigned-id', () => {
       }`, ID)).toEqual([])
   })
 
+  test('a model held with @@sync(read) is silent on either side — nothing is written to need a key', () => {
+    // Paired with the firing case above: the same shape, one word changed.
+    const held = pair('id String @id').replace('@@sync(server)', '@@sync(read)')
+    expect(findings(held, ID).length).toBe(0)
+    expect(findings(pair('id String @id', '@@sync(read)'), ID).length).toBe(0)
+  })
+
   test('a syncable model with no child referencing it is silent', () => {
     expect(findings(`
       model Movement {

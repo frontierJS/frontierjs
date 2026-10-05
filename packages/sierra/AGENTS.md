@@ -193,7 +193,10 @@ around: `orders.conflict(err)` gives `{ model, field, expected, actual }`.
 model declaring `@@sync(server | append | refuse | field)` has its writes held
 and its reads kept on the device; a model declaring nothing fails offline the
 way it fails anywhere. The argument is what a replay does when the row moved
-meanwhile — `litestone explain @@sync`. There is no offline mode in a page.
+meanwhile — `litestone explain @@sync`. **`@@sync(read)` is the direction
+instead**: the model is held on the device and never written there (a roster, a
+reference table), so its reads are kept, no write is held and no key is
+minted. There is no offline mode in a page.
 
 ```js
 // web/config/sierra.config.js
@@ -254,6 +257,20 @@ export const sheets = createResource('stocktakeSheets', {
 **An `offlineQuery` exists only once its module has been imported**, and routes
 are code-split — the screen nobody opened declares nothing. Import every
 resource that must work offline from `main.js`, after `virtual:sierra`.
+
+**`offlineStatus()` from `@frontierjs/sierra/junction` is what the last warm found**
+(`FJS-D484`), beside `pendingQueue()`:
+
+```js
+const s = offlineStatus()
+s.report()       // [{ service, rows?, kept?, error? }] — null until a warm finishes
+s.ranAt()        // ms since the epoch, or null
+s.services()     // what was declared
+s.subscribe(s => …)   // after every warm; answers the unsubscribe
+```
+
+`kept: false` is rows held in the list cache only; `error` is a read or a device
+write that never landed.
 
 Pinned by `test/pending-queue.test.js` and `test/offline-query.test.js`.
 

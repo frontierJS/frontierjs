@@ -256,6 +256,11 @@ const JSON_LEAF_OPS = new Set([
 // is a caller error, not a SQLite error — see the guard in buildWhere.
 const ARRAY_OPS = new Set(['has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty'])
 
+// Operators whose operand is a list. A string has a `.length`, so the empty-list
+// guards let `?priority[in]=urgent,high` through to a `.map` TypeError — a 500
+// in the engine's words for what is a caller's malformed value.
+const LIST_OPS = new Set(['in', 'notIn', 'hasEvery', 'hasSome', 'hasNone'])
+
 // Operators that compile to LIKE, which asks a question about TEXT.
 const TEXT_OPS = new Set(['contains', 'startsWith', 'endsWith'])
 
@@ -789,6 +794,11 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       if (ARRAY_OPS.has(op) && fieldKinds && !isArrayCol)
         throw new ValidationError([{ path: ['where', key], message:
           `"${op}" is an array operator and "${key}" is not an array field` }])
+
+      if (LIST_OPS.has(op) && operand != null && !Array.isArray(operand))
+        throw new ValidationError([{ path: ['where', key], message:
+          `"${op}" takes a list, got ${typeof operand === 'object' ? 'an object' : `a ${typeof operand}`} — ` +
+          `\`${key}: { ${op}: ['a', 'b'] }\`; a comma-separated string is one value` }])
 
       // A string operator on a column that does not hold text answers the wrong
       // question instead of failing — see TEXT_OP_REFUSALS.

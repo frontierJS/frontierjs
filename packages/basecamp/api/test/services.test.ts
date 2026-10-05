@@ -224,14 +224,19 @@ describe('optimistic locking — the lost update, executed', () => {
     expect(settled.name).toBe('Backlog v3')
   })
 
-  test('a patch carrying no version is a 400 that names the column', async () => {
-    // The failure a hand-written client hits, and the one that tells it what
-    // to send. A resource injects the version it read; a curl does not.
+  test('a patch carrying no version is a 400 that reads for the person, not the author', async () => {
+    // The failure a hand-written client hits. A resource injects the version
+    // it read; a curl does not. The message reaches a screen, so it says to
+    // reload; which column to send rides on the server-side `hint`.
     const dev  = () => env.as(developer).service('projects')
     const made = await dev().create({ name: 'Notes', slug: slug() })
 
-    await expect(dev().patch(made.id, { name: 'Notes 2' }))
-      .rejects.toThrow(/version/i)
+    let err: any = null
+    try { await dev().patch(made.id, { name: 'Notes 2' }) } catch (e) { err = e }
+    expect(err?.code).toBe(400)
+    expect(err.retryable).toBe(false)
+    expect(err.message).toMatch(/reload/i)
+    expect(err.message).not.toMatch(/asSystem|data\.version|@version/)
   })
 
   test('a patch that changes nothing does not bump, so it cannot make anyone else stale', async () => {

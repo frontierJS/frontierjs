@@ -444,15 +444,23 @@ export class HttpTransport extends BaseTransport {
         }, meta)
       }
 
-      const text = await readBody(res, maxBytes)
+      const bytes = await readBytes(res, maxBytes)
 
-      if (text === '') return this.ok<T>(null as T, res.status, headers)
+      if (bytes.byteLength === 0) return this.ok<T>(null as T, res.status, headers)
+
+      // Neither JSON nor text/* is not text: a PDF or an image decoded as UTF-8
+      // is destroyed, so it is handed over as the bytes (`FJS-D585`). An absent
+      // content-type stays on the text path and meets the JSON parse below.
+      const contentType = res.headers.get('content-type') ?? ''
+      if (contentType !== '' && !isJsonType(contentType) && !isTextType(contentType) && !isMarkupType(contentType))
+        return this.ok<T>(bytes as T, res.status, headers)
+
+      const text = decodeText(bytes, contentType)
 
       // A 200 carrying HTML is a captive portal, a proxy interstitial or a
       // provider error page — common in exactly this layer. The connection
       // succeeded, so classifying it as connection_failed { retryable } was
       // both the wrong kind and three wasted attempts (§2.5).
-      const contentType = res.headers.get('content-type') ?? ''
       if (isMarkupType(contentType)) {
         return this.fail('invalid_response', `Expected a payload, got '${contentType}'`, {
           retryable: false,
@@ -717,8 +725,8 @@ function serialize(body: unknown, encoding: BodyEncoding): EncodedBody {
 //
 // The response's abort signal stays live here, so a stalled body read is
 // cut off by the request timeout instead of hanging forever.
-async function readBody(res: Response, limit: number): Promise<string> {
-  if (!res.body) return ''
+async function readBytes(res: Response, limit: number): Promise<Uint8Array> {
+  if (!res.body) return new Uint8Array(0)
 
   const reader = res.body.getReader()
   const chunks: Uint8Array[] = []
@@ -740,8 +748,6 @@ async function readBody(res: Response, limit: number): Promise<string> {
     reader.releaseLock()
   }
 
-  if (chunks.length === 0) return ''
-
   const joined = new Uint8Array(size)
   let offset = 0
   for (const chunk of chunks) {
@@ -749,5 +755,25 @@ async function readBody(res: Response, limit: number): Promise<string> {
     offset += chunk.byteLength
   }
 
-  return new TextDecoder().decode(joined)
+  return joined
+}
+
+// Text is decoded with the charset the content-type names, UTF-8 when it names
+// none or one the runtime does not know. A fixed UTF-8 turns every byte of a
+// latin-1 body above 0x7F into U+FFFD.
+function decodeText(bytes: Uint8Array, contentType: string): string {
+  const label = /;\s*charset\s*=\s*"?([^";\s]+)"?/i.exec(contentType)?.[1]
+  try {
+    return new TextDecoder(label ?? 'utf-8').decode(bytes)
+  } catch {
+    return new TextDecoder().decode(bytes)
+  }
+}
+
+async function readBody(res: Response, limit: number): Promise<string> {
+  return decodeText(await readBytes(res, limit), res.headers.get('content-type') ?? '')
+}
+
+function isTextType(contentType: string): boolean {
+  return contentType.split(';')[0].trim().toLowerCase().startsWith('text/')
 }

@@ -1246,11 +1246,18 @@ try {
   check('the workspace is renamed from its admin screen', !!renamed)
   // The screen settles on the saved row before it is edited again: the save
   // resets the draft from the answer, and a keystroke before that is lost.
+  // Save is disabled while the call is in flight too, so `disabled` cannot tell
+  // in flight from settled and a click on it is dropped; the toast is raised
+  // after the reload, just before busy clears.
+  await until(`[...document.querySelectorAll('.toast-stack .toast')]
+    .some(t => t.textContent.includes('Workspace saved'))`, v => v === true, 'the rename never settled')
   await until(`document.getElementById('ws-save')?.disabled`, v => v === true, 'the rename never settled')
   await typeIn('#ws-name', wsName)
+  await until(`document.getElementById('ws-save')?.disabled`, v => v === false, 'the name typed back never enabled Save')
   await click('#ws-save')
-  await until(`document.getElementById('ws-save')?.disabled || document.getElementById('workspace-error')?.textContent`,
-    v => v === true, 'renaming back never settled')
+  await until(`document.getElementById('ws-save')?.disabled && document.getElementById('ws-name')?.value
+    || document.getElementById('workspace-error')?.textContent`,
+    v => v === wsName, 'renaming back never settled')
 
   await typeIn('#ws-new-name', 'Drive scratch')
   await click('#ws-create')

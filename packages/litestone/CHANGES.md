@@ -1,5 +1,21 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-05 — `@@sync(read)` holds a model on a device without claiming it is written there (`FJS-1280`)
+
+`@@sync`'s argument was a collision policy, and sierra refuses `offlineQuery` without the word, so a roster or a published schedule had to declare a policy about a write that never happens — and `server`, the least false, put an **Id** box on the model's create form because a syncable model with a generated key mints one. `FJS-D488` ruled the direction an argument on the same word. `read` joins `SYNC_POLICIES`: no `@version` needed, `x-sync: 'read'` crosses, `mintableId` answers null so no client-mintable key is offered, a device schema keeps the table, and the advisor's four rules about a held write skip it (`syncsWrites`). `test/sync-attribute.test.ts` § `@@sync(read)` and `test/advise.test.ts`, each paired with the policy it differs from; the catalog entry and three snapshots follow.
+
+## 2026-10-05 — a list operator given a string is a 400 naming the field (`FJS-1313`)
+
+`?priority[in]=urgent,high` parses to the string `'urgent,high'`, which has a `.length`, so it passed the empty-list guard and died on `.map` — a TypeError, answered 500 in the engine's words. `buildWhere` now refuses a non-list operand of `in`, `notIn`, `hasEvery`, `hasSome` and `hasNone` with a `ValidationError` whose path is `['where', field]`; `null` keeps its old meaning. `test/where-operators.test.ts`, paired with a real list that still answers.
+
+## 2026-10-05 — a device's connection does not enforce foreign keys (`FJS-1373`)
+
+A device holds a window of the server's rows, so a child naming a parent outside it is its ordinary state, and the enforced key refused the whole batch holding that child — every time, for a mismatched window, and by arrival order for a screen's own `load()`. `FJS-D485` ruled the replica a cache. The engine contract gains one optional capability, `foreignKeys: false`, which `sqlite-wasm.js` declares and `core/databases.js` reads when it opens the write and read connections; an engine that says nothing keeps them on, so a server is unchanged. `test/engine-foreign-keys.test.ts` pairs an engine that says nothing (refused) with one that declares it (lands), and the browser drive writes a child naming a parent the device never received over OPFS.
+
+## 2026-10-05 — the JSON Schema names an @@extensible model's column with `x-extensible` (`FJS-1388`)
+
+The declared keys are per tenant and stay out of the shared schema, so a browser had no way to know a model takes them or which column they live under. The model definition now carries `x-extensible: '<column>'` on every mode, absent on a model that declares none. `test/model-extensible-key.test.ts`, asserted as a pair over one schema.
+
 ## 2026-10-05 — `upsertMany` grades its conflict half's post-update rule (`FJS-1730`)
 
 `FJS-1713` taught `updateMany` the post-update rule; `upsertMany`'s conflict half is the same write through SQLite's `DO UPDATE`, whose `WHERE` grades the row before, and it moved a row into another tenant and past a hand-written `@@deny('post-update', …)`. Where the model declares a post-update rule it now takes `RETURNING *` and grades each updated row inside the unit — one refusal rolls the batch back and names its row. A key repeated later in the same batch conflicts with the row just written and is graded, and logged, as an update. `verifyTenantIsolation`'s post-update crossing tries `upsertMany` too. `test/tenancy.test.ts` § *a row cannot be moved out of its tenant*, two cases. Litestone 5674 pass.

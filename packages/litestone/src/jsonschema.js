@@ -156,13 +156,15 @@ import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js
  * offer the column, and `x-mint` below, which tells a client how to fill it.
  * Asked of `@@sync` because that is the declaration that makes a client-stated
  * key necessary — a row written with no server reachable is named by its
- * children before any INSERT has happened.
+ * children before any INSERT has happened. `@@sync(read)` writes nothing on a
+ * device, so it answers null and its create form offers no key (`FJS-D488`).
  *
  * A composite key answers null: minting one member of a key is not minting the
  * key, and the other members are offered for the caller to supply already.
  */
 function mintableId(model) {
-  if (!model.attributes?.some(a => a.kind === 'sync')) return null
+  const sync = model.attributes?.find(a => a.kind === 'sync')
+  if (!sync || sync.policy === 'read') return null
   const ids = (model.fields ?? []).filter(f => f.attributes.some(a => a.kind === 'id'))
   if (ids.length !== 1) return null
   const gen = ids[0].attributes.find(a => a.kind === 'default')?.value
@@ -864,6 +866,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // does not depend on whether you are writing one.
   const ftsAttr = model.attributes.find(a => a.kind === 'fts')
   if (ftsAttr?.fields?.length) result['x-search'] = ftsAttr.fields
+
+  // ── x-extensible ───────────────────────────────────────────────────────────
+  // The column whose keys a tenant declares. The keys themselves are per
+  // tenant and never in this shared schema; this names the column a client
+  // reads them under (`fields.<key>`) and tells it to ask the service for the
+  // list (`FJS-D487`). Emitted on every mode, like `x-search`.
+  const extAttr = model.attributes.find(a => a.kind === 'extensible')
+  if (extAttr) result['x-extensible'] = extAttr.column
 
   // ── x-gate ─────────────────────────────────────────────────────────────────
   // Emitted when the model has @@gate — structural metadata, emitted on all modes.

@@ -357,6 +357,7 @@ export interface Service {
   patch:    (ctx: ServiceContext) => Promise<unknown>
   remove:   (ctx: ServiceContext) => Promise<unknown>
   restore?: (ctx: ServiceContext) => Promise<unknown>
+  declaredFields?: (ctx: ServiceContext) => Promise<unknown>
   // Optional for the reason `restore` is: a service built over no model, or by
   // a caller that supplied its own method map, answers neither.
   aggregate?: (ctx: ServiceContext) => Promise<unknown>
@@ -480,6 +481,11 @@ export interface HookTelemetryEvent {
 }
 
 const CRUD_METHODS = new Set(['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'])
+// The one method the framework answers beside CRUD (`FJS-D487`): the custom
+// fields a workspace declared on an @@extensible model. It is not in the
+// custom table, which is what `describe()`, the manifest and OpenAPI list, so a
+// service over a model with none does not advertise a method it will 404.
+const DECLARED_FIELDS = 'declaredFields'
 // The CRUD verbs that write nothing. A custom method joins them only by
 // declaring it (`isReadMethod`).
 const CRUD_READ_METHODS = new Set(['find', 'get', 'aggregate'])
@@ -500,6 +506,7 @@ const CRUD_READ_METHODS = new Set(['find', 'get', 'aggregate'])
  * the two that resolved to something.
  */
 function customMethodFn(service: Service, method: string): CustomMethodFn | undefined {
+  if (method === DECLARED_FIELDS) return service.declaredFields as CustomMethodFn | undefined
   const table = service._customMethods
   if (!table || !Object.hasOwn(table, method)) return undefined
   const fn = table[method]
@@ -1158,6 +1165,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
 /** Keys present on a *built* Service — CRUD, bypass twins, and internals. */
 export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore',
+  'declaredFields',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
   '_hookMap', '_meta', '_schemas', '_methods', '_customMethods', '_transactional',
   'pipelines', 'describe',
@@ -1658,7 +1666,7 @@ export function collectReadMethods(
  * announcement both take.
  */
 export function isReadMethod(service: Service, method: string): boolean {
-  return CRUD_READ_METHODS.has(method) || !!service._readMethods?.includes(method)
+  return CRUD_READ_METHODS.has(method) || method === DECLARED_FIELDS || !!service._readMethods?.includes(method)
 }
 
 /**
@@ -1788,7 +1796,9 @@ export function serviceMethodNames(svc: object): string[] {
  */
 export function isMethodAllowed(svc: object, method: string): boolean {
   const allowed = (svc as { _methods?: Set<string> | null })._methods
-  return !allowed || allowed.has(method)
+  // Offered wherever a list can be read: a `readOnly` service is exactly the
+  // one whose screen needs the columns it can filter on.
+  return !allowed || allowed.has(method) || (method === DECLARED_FIELDS && allowed.has('find'))
 }
 
 /** The callable method names, policy applied. Ordered as CRUD then custom. */
@@ -2084,6 +2094,7 @@ export function createBaseService(
     patch:   withDb(base.patch),
     remove:  withDb(base.remove),
     restore: withDb(base.restore as Method),
+    declaredFields: withDb(base.declaredFields as Method),
     ...overrides,
     // They land twice on purpose: as own keys, which is how a spread carries
     // them and how a caller reaches `svc.reboot`, and as the table, which is
@@ -2339,6 +2350,7 @@ export interface ServiceDefinition {
   patch?:     (ctx: ServiceContext) => Promise<unknown>
   remove?:    (ctx: ServiceContext) => Promise<unknown>
   restore?:   (ctx: ServiceContext) => Promise<unknown>
+  declaredFields?: (ctx: ServiceContext) => Promise<unknown>
   aggregate?: (ctx: ServiceContext) => Promise<unknown>
 
   // Custom methods — defined directly alongside CRUD methods
@@ -2633,6 +2645,7 @@ export function createService(def: ServiceDefinition): Service {
     patch:   def.patch   ?? base.patch,
     remove:  def.remove  ?? base.remove,
     restore: def.restore ?? base.restore,
+    declaredFields: def.declaredFields ?? base.declaredFields,
 
     // ── Hook-bypass methods ────────────────────────────────────────────────────
     // Direct method access — skips the hook pipeline entirely.
@@ -2714,6 +2727,7 @@ export function createService(def: ServiceDefinition): Service {
     ...((def as { _customMethods?: CustomMethodMap })._customMethods ?? {}),
     ...collectCustomMethods(def, defName ?? '(unnamed)', def.methods, report),
   }
+
 
   // On the object as well as in the table: a spread has to carry them, and
   // `svc.reboot` is a shape callers already use.

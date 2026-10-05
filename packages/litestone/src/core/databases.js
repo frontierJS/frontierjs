@@ -7,7 +7,7 @@
 // are views over a handle — exact 64-bit integers for `@big`, and `@map`
 // column names read back to field names.
 
-import { openDatabase } from './engine.js'
+import { openDatabase, currentEngine } from './engine.js'
 import { applyWal, applyBusyTimeout, busyTimeoutFor } from './pragmas.js'
 import { resolve, dirname, existsSync, mkdirSync, mkdtempSync, join, tmpdir, extname } from '#host'
 import { noteMintedDirectory } from './db-path.js'
@@ -292,7 +292,11 @@ function openSqliteConnections(absPath, busyTimeout) {
   // threw `SQLITE_BUSY_RECOVERY` out of `createClient`, before a line of the
   // app had run. Measured at 1 in 10 simultaneous boots (`FJS-655`).
   applyWal(rawWriteDb, busyTimeout)
-  rawWriteDb.run('PRAGMA foreign_keys = ON')
+  // An engine that holds a window of the server's rows says so (`FJS-D485`): a
+  // child naming a parent outside the window is its ordinary state, and an
+  // enforced key refuses the whole batch holding it.
+  const foreignKeys = currentEngine()?.foreignKeys === false ? 'OFF' : 'ON'
+  rawWriteDb.run(`PRAGMA foreign_keys = ${foreignKeys}`)
   rawWriteDb.run('PRAGMA page_size = 8192')
   rawWriteDb.run('PRAGMA synchronous = NORMAL')
   rawWriteDb.run('PRAGMA cache_size = -32768')
@@ -310,7 +314,7 @@ function openSqliteConnections(absPath, busyTimeout) {
     // recovery a crashed writer leaves behind — which is exactly when the
     // timeout has to already be set.
     applyBusyTimeout(rawReadDb, busyTimeout)
-    rawReadDb.run('PRAGMA foreign_keys = ON')
+    rawReadDb.run(`PRAGMA foreign_keys = ${foreignKeys}`)
     rawReadDb.run('PRAGMA query_only = ON')
     rawReadDb.run('PRAGMA cache_size = -32768')
     rawReadDb.run('PRAGMA temp_store = MEMORY')

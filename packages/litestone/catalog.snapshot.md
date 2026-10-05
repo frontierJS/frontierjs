@@ -117,7 +117,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
-| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field |  |
+| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field · read |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |

@@ -47,7 +47,11 @@ const KEYWORDS = new Set([
 //           the write travelled with: two people who touched different columns
 //           both win, and only a column they both moved is a conflict
 //           (`FJS-D334`). Needs `@version` for the same reason `refuse` does
-export const SYNC_POLICIES = new Set(['server', 'append', 'refuse', 'field'])
+//   read    not a collision policy but the direction (`FJS-D488`): the table is
+//           HELD on a device and never written there, so no write is held, no
+//           revision is carried and no key is minted — a roster, a reference
+//           table, a published schedule
+export const SYNC_POLICIES = new Set(['server', 'append', 'refuse', 'field', 'read'])
 
 // The policies that name a revision, and so cannot work without a column
 // holding one. Kept as a set rather than two comparisons because the next value
@@ -2536,9 +2540,9 @@ class Parser {
         // reachable, and the queue that holds such a write replays it when one
         // is (`FJS-D298`).
         //
-        // The argument is the COLLISION policy and nothing else. Whether a
-        // model leaves the device, and in which direction, is a second question
-        // this attribute has not been asked (`IDEAS/homestead.md`).
+        // The argument is a COLLISION policy, or `read` — the one member that
+        // states the direction: held on a device, never written there
+        // (`FJS-D488`).
         //
         // There is no default: a model that says nothing is not syncable and an
         // offline client refuses to queue a write against it. The refusal is

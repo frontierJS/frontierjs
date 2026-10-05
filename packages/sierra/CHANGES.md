@@ -1,5 +1,21 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-05 — a model declared `@@sync(read)` is kept and warmed on a device and its writes are not held (`FJS-1280`)
+
+`offlineQuery` over a `read` model registers and warms like any syncable one, and `load()` answers it from the device with no network. `createResource` splits what the declaration means: `syncPolicy` still gates the read path, and a `writePolicy` that is null for `read` gates everything about a held write — the queue, the boot drain, the per-policy handling — so a write to such a model goes live and fails offline the way a model with no `@@sync` does. The refusal for a missing declaration names `@@sync(read)`. `test/sync-policies.test.js` § *read* (the held-write cases fail with the split removed) and `test/offline-query.test.js`.
+
+## 2026-10-05 — an app can read what the offline warm found (`FJS-1374`)
+
+`_armWarm` discarded `warmOffline()`'s answer, so an app could not tell a device holding its window from one holding nothing; `offlineServices()` only names what was declared. `offlineStatus()` (`FJS-D484`) is a status object beside `pendingQueue()`: `report()` is the last warm's per-service `{rows, kept, error}` (null until one finishes), `ranAt()` is when, `services()` is the declared names, and `subscribe(fn)` hears each warm. `warmOffline` records its own report, so the warms Sierra arms and one an app awaits land the same way. `test/offline-query.test.js` drives the unarmed, armed-by-socket and subscribed cases.
+
+## 2026-10-05 — a screen's write-through lands whatever order its rows arrive in (`FJS-1373`)
+
+`load()` writes through fire-and-forget, in the order responses arrive, and a child ahead of its parent — or naming a parent outside the parent's window — was refused whole by the device's foreign key. The fix is in litestone: the device's connection no longer enforces them (`FJS-D485`), so `writeRows` needs no ordering and no per-row fallback. The comments in `local-db.js` and `offline.js` that said the device keeps its keys now say it does not, and the warm's passes retry other refusals only.
+
+## 2026-10-05 — a generated list names the workspace's declared custom fields (`FJS-1388`)
+
+The JSON Schema is shared by every tenant and stopped naming the `@@extensible` slot columns (`FJS-1387`), so nothing offered `fields.<key>` and a workspace's own `severity` was neither a column nor a filter. `resource.declaredFields()` asks the service's built-in `declaredFields` once per identity (`FJS-D487`), only for a model whose schema carries `x-extensible`, and `columns()`/`filters()` merge what it loaded as `fields.<key>`. A slotted key filters through its slot (`queryKey`, since the boundary takes no where on a key inside a Json column), a key with no slot is returned with the reason, and none sorts. A failed ask is not remembered and an identity change drops the list. `test/declared-fields.test.js` drives it, paired with a model that declares nothing. A screen awaits `declaredFields()` once; `columns()` stays synchronous and names nothing before it resolves.
+
 ## 2026-10-05 — the dev server regenerates the client schema after `db/schema.lite` is recreated (`FJS-1470`)
 
 `schemaPlugin.configureServer` watched the schema FILE and listened for `change` alone. The watcher goes deaf to a path after it is unlinked and recreated (`git stash`, `git checkout`, a pull), so the dev server served the last schema it saw: models added since had no client schema, `make()` was bare and a generated `<Form>` rendered no fields, with only a console warning. It now watches `dirname(schemaPath)` and regenerates on `add` as well as `change`, filtered by path, which is what Vite's watcher reports for a recreate. `test/schema-generation.test.js` drives the plugin against a fake server: the directory is watched, `add` regenerates and reloads, and a neighbour file in the same directory does not.

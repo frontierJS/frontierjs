@@ -120,9 +120,9 @@ export function deviceSchema(parseResult) {
       if (!scalar && (viewNames.has(typeName) || (isModelName(source, typeName) && !keptNames.has(typeName)))) {
         // The relation comes out and the foreign key stays. `ddl.js` writes a
         // `FOREIGN KEY (…) REFERENCES "<target>"` out of a relation, and SQLite
-        // accepts a CREATE TABLE naming a table that does not exist and then
-        // fails every INSERT against it — so a relation left in would build a
-        // device database that reads and cannot be written to.
+        // accepts a CREATE TABLE naming a table that does not exist. The device
+        // does not enforce keys (`FJS-D485`), but the relation would still name
+        // a model the client does not have.
         //
         // `StocktakeCount.variant` is the case: `variantId Int` is still there,
         // which is what the held write carries and what the server joins on.

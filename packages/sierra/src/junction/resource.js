@@ -824,11 +824,17 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // sees rather than a row nobody knows was lost.
   const syncPolicy = schema?.['x-sync'] ?? null
 
+  // `read` says the rows are HELD here and never written here (`FJS-D488`), so
+  // it keeps the device read path and holds no write: a write to such a model
+  // goes live and fails the way a model with no `@@sync` fails, because a queue
+  // entry for it would replay a write nobody declared could happen offline.
+  const writePolicy = syncPolicy === 'read' ? null : syncPolicy
+
   // The queue is built by the DECLARATION rather than the first write, because
   // building it is what arms its drain — and a device reopened after an outage
   // makes no write, so what the last session held sat unsent until somebody
   // happened to make one (FJS-1277).
-  if (syncPolicy) pendingQueue()
+  if (writePolicy) pendingQueue()
 
   // How this model's key is made when the CALLER makes it — `{ field, kind }`,
   // or null where only the server can key it. Crossed only for a model that
@@ -1227,10 +1233,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // raw client, because the bytes of a row THIS device created arriving
       // late are not a second writer. It still carries a version on a
       // `@version` model, read at drain, since the boundary refuses one without.)
-      if (syncPolicy === 'append' && APPEND_REFUSES.has(method))
+      if (writePolicy === 'append' && APPEND_REFUSES.has(method))
         throw _appendOnly(model, method)
 
-      const files = syncPolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
+      const files = writePolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
       const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
       const attachable = !Object.keys(files).length || rowId != null
 
@@ -1243,14 +1249,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // Only a write against an EXISTING row has one — a create was made
       // against nothing — and only `field` reads it, since litestone refuses a
       // base on every other policy by name.
-      const heldBase = syncPolicy === 'field' && ctx.id != null
+      const heldBase = writePolicy === 'field' && ctx.id != null
         ? _read.get(ctx.id) ?? null
         : null
 
-      const held = syncPolicy && !NEVER_QUEUED.has(method) && attachable
+      const held = writePolicy && !NEVER_QUEUED.has(method) && attachable
         ? await pendingQueue().add({
             service: serviceName, model, method, id: ctx.id,
-            data: _heldData(_withoutFiles(ctx.data, files), syncPolicy, versionOf),
+            data: _heldData(_withoutFiles(ctx.data, files), writePolicy, versionOf),
             ...(heldBase ? { base: heldBase } : {}),
             callHeaders: client.callHeaders(),
           })
@@ -1759,6 +1765,53 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     return formFieldList(fields, { ...opts, model })
   }
 
+  // ── The workspace's declared custom fields ────────────────────────────────
+  //
+  // An @@extensible model's keys are one tenant's own, so the schema this
+  // resource was built from cannot name them (`FJS-D487`). The service answers
+  // them per caller, once; `columns()` and `filters()` are synchronous, so they
+  // merge what `declaredFields()` has already loaded and name nothing before
+  // it has.
+  const extensibleColumn = readModel?.['x-extensible'] ?? modelDef?.['x-extensible'] ?? null
+  let _declared        = null
+  let _declaredPending = null
+
+  const _DECLARED_TYPES = { number: 'number', integer: 'number', boolean: 'boolean' }
+
+  function _declaredRules() {
+    const out = {}
+    for (const d of _declared ?? []) {
+      const key = `${extensibleColumn}.${d.key}`
+      out[key] = {
+        type:  _DECLARED_TYPES[d.type] ?? 'string',
+        title: d.label ?? columnLabel(d.key),
+        // A key lives inside one column, which an order cannot name. A slot is
+        // the column a filter can; a key with none is a scan the boundary
+        // refuses by name.
+        'x-sortable': 'a declared field is a key inside one column, which an order cannot name',
+        ...(d.slot
+          ? { 'x-slot': d.slot }
+          : { 'x-filterable': 'no slot — the workspace\'s pool is full, so the boundary takes no filter on it' }),
+      }
+    }
+    return out
+  }
+
+  /**
+   * The custom fields this workspace declared on the model, loaded once.
+   *
+   * `[]` for a model that is not @@extensible, with no request. A failure is
+   * not remembered, so the next ask retries rather than leaving a list with no
+   * custom columns for the session.
+   */
+  function declaredFields() {
+    if (!extensibleColumn) return Promise.resolve([])
+    _declaredPending ??= service.invoke('declaredFields')
+      .then((rows) => { _declared = Array.isArray(rows) ? rows : (rows?.data ?? []); return _declared })
+      .catch((err) => { _declaredPending = null; throw err })
+    return _declaredPending
+  }
+
   /**
    * Which columns a TABLE shows of this model, ranked, and what it left out.
    *
@@ -1783,7 +1836,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // different question from a table — what a FORM cannot show — so a table's
   // `only` narrowing it would drop columns from a detail screen in silence.
   function rankColumns(opts) {
-    const answer = columnList(readFields, {
+    const answer = columnList({ ...readFields, ..._declaredRules() }, {
       identify: modelDef?.['x-identify'],
       label:    modelDef?.['x-label-field'],
       ...opts,
@@ -1850,7 +1903,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       filters: cols.map((c) => {
         // The boundary's own answer first: a `@computed` column has no column
         // to compare, and no display name makes it filterable.
-        const refused = readModel?.properties?.[c.name]?.['x-filterable']
+        const refused = readModel?.properties?.[c.name]?.['x-filterable'] ?? c.rule?.['x-filterable']
         if (refused) return { ...c, op: null, kind: null, reason: refused }
 
         // Amounts held in several currencies share no scale, so one range
@@ -1861,7 +1914,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
         const f = filterOpFor(c.display)
         if (!f) return { ...c, op: null, kind: null, reason: `no filter for a ${c.display ?? 'column of unknown kind'}` }
-        return { ...c, ...f }
+        // A declared key is filtered through the column its slot generated,
+        // since the boundary takes no where on a key inside a Json blob.
+        return { ...c, ...f, ...(c.rule?.['x-slot'] ? { queryKey: c.rule['x-slot'] } : {}) }
       }),
       omitted,
     }
@@ -2689,6 +2744,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // construction cache whose whole purpose is that a resource is built once,
   // and the other is a report about the SCHEMA. Neither holds a row.
   _liveResources.add(() => {
+    _declared = _declaredPending = null
     _options.clear()
     _read.clear()
     _seen.clear()
@@ -2732,7 +2788,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         `[Sierra] ${serviceName}: offlineQuery needs @@sync on model ${model}.\n` +
         `  Rows are only kept on a device for a model that declared it — putting what a gate\n` +
         `  let this caller read onto disk outlives the session, so it is the schema's word and\n` +
-        `  not a resource option (FJS-D298). Declared here, nothing is held and nothing says so\n` +
+        `  not a resource option (FJS-D298). A model held and never written offline says\n` +
+        `  @@sync(read). Declared here, nothing is held and nothing says so\n` +
         `  until the screen is opened with no network.`)
     } else {
       declareOffline({
@@ -2756,7 +2813,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     cachedAt: () => _cachedAt,
     fields, relations, gate, can, transitions, commitments, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
-    formFields, columns, summary, children, filters, options, sealedFields, requiredFields, declined,
+    formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, declined,
     withheld: withheldFor,
     labelField: labelInfo.field, labelSource: labelInfo.source,
     fieldErrors, context, hooks: addHooks,
@@ -2794,6 +2851,7 @@ function _emptyResource(name) {
     relations: {},
     formFields: () => [],
     columns:    () => ({ columns: [], omitted: [] }),
+    declaredFields: () => Promise.resolve([]),
     summary:    () => ({ columns: [], omitted: [] }),
     children:   () => [],
     filters:    () => ({ filters: [], omitted: [], search: { fields: null, reason: 'no schema for this model' } }),

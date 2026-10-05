@@ -1,5 +1,27 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-05 — A request's own `timeout_ms` shorter than the target's no longer opens the target's breaker (`FJS-1409`)
+
+`timeout` is a target fault whichever timer produced it, so five sends with `timeout_ms: 100` against a
+healthy 600 ms target opened its breaker and the next caller, willing to wait two seconds, was told
+`circuit_open`. `send()` now grades such a `timeout` as `other` (counts nothing, clears nothing) when
+the request's `timeout_ms` is below the target's declared `policy.timeout_ms`, else the conduit's, else the
+10 s default (`outwaited`, with `Resilience.declaredTimeout`). A timeout equal to or longer than the target's
+own, and the target's own timer with no request timeout, still count. The trade: a dead target asked only with
+short request timeouts never trips on those sends. `signal` is the same exemption at any length, answering
+`aborted`. Two tests in `conduit.test.ts` (the first red
+before the fix); Portal's pin in `fanout.test.ts` now asserts the patient send is answered.
+
+## 2026-10-05 — A response body that is not text arrives as a `Uint8Array`, and text is decoded with the charset it names (`FJS-1726`, `FJS-D585`)
+
+`readBody()` ended in `new TextDecoder().decode(joined)` whatever the content-type said, so a PDF or an image
+came back as U+FFFD and a latin-1 body lost every byte above 0x7F. The transport now reads bytes
+(`readBytes`) and decodes in one place (`decodeText`): JSON, `text/*` and markup types use the charset the
+`content-type` names, UTF-8 when it names none or an unknown label; any other declared type is handed over
+as the bytes. An absent content-type stays on the text path and meets the JSON parse. Error bodies (`raw`)
+decode with the same charset. Two tests in `conduit.test.ts` were red first. HTTP `stream()` stays
+`not_implemented`.
+
 ## 2026-10-04 — A response over `max_response_bytes` is an `invalid_response`, not the caller's `invalid_request` (`FJS-710`, conduit-10)
 
 The http transport answered a body past the cap as `invalid_request`, the kind that says the caller sent

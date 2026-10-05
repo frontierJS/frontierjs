@@ -92,6 +92,10 @@ const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
 const hasDefault = f => has(f, 'default') || has(f, 'generated') || has(f, 'sequence')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
 
+// A model whose rows may be WRITTEN on a device. `@@sync(read)` holds the table
+// there and writes nothing, so the rules about a held write have nothing to say.
+const syncsWrites = m => { const s = modelAttr(m, 'sync'); return !!s && s.policy !== 'read' }
+
 // ─── reading a JSON path out of a @generated expression ───────────────────────
 //
 // Three spellings reach the same place: `json_extract(col, 'path')`, and
@@ -691,7 +695,7 @@ export const RULES = [
       const byName = new Map(models.map(m => [m.name, m]))
 
       for (const child of models) {
-        if (!modelAttr(child, 'sync')) continue
+        if (!syncsWrites(child)) continue
         for (const f of child.fields ?? []) {
           // The OWNING side only — the back-reference carries no foreign key, so
           // it is the same relation read from the end that has nothing to write.
@@ -701,7 +705,7 @@ export const RULES = [
           const parent = byName.get(f.type.name)
           // A parent that is not syncable cannot be made offline at all, so it
           // already exists and already has an id. Nothing is owed here.
-          if (!parent || !modelAttr(parent, 'sync')) continue
+          if (!parent || !syncsWrites(parent)) continue
           if (mintableIdField(parent)) continue
 
           const idField = (parent.fields ?? []).find(x => has(x, 'id'))
@@ -731,7 +735,7 @@ export const RULES = [
     run(schema) {
       const out = []
       for (const model of schema.models ?? []) {
-        if (!modelAttr(model, 'sync')) continue
+        if (!syncsWrites(model)) continue
         if (mintableIdField(model)) continue
         for (const f of model.fields ?? []) {
           if (f.type?.name !== 'File') continue
@@ -760,7 +764,7 @@ export const RULES = [
     run(schema) {
       const out = []
       for (const model of schema.models ?? []) {
-        if (!modelAttr(model, 'sync')) continue
+        if (!syncsWrites(model)) continue
         for (const f of model.fields ?? []) {
           if (f.type?.name !== 'File' || isOptional(f) || hasDefault(f)) continue
           out.push({

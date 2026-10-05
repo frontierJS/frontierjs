@@ -424,8 +424,8 @@ async function main() {
     `return await window.boot`,
     v => v?.models?.sort().join() === crossed)
 
-  // The variants first: `ProductVariant` crosses, so a count's `variantId` is a
-  // foreign key into a table the device holds, and a made-up id is refused.
+  // `ProductVariant` crosses, so a count's `variantId` is a foreign key into a
+  // table the device holds only a window of, and the device does not enforce it.
   await t(b, 'a stocktake is counted in the stockroom and reads back',
     `const tee  = await db.productVariant.create({ data: { productId: 1, sku: 'TEE-S', price: 1200, stock: 11 } })
      const mug  = await db.productVariant.create({ data: { productId: 2, sku: 'MUG-1', price: 900,  stock: 4 } })
@@ -442,6 +442,16 @@ async function main() {
      return { counts: back.counts.length, gap: first.expected - first.counted, sku: first.variant?.sku,
               ledger: await db.inventoryMovement.count() }`,
     v => v?.counts === 2 && v.gap === 2 && v.sku === 'TEE-S' && v.ledger === 1)
+
+  // A window cannot be referentially closed (`FJS-D485`): a child naming a
+  // parent the device never received lands, in a batch with the rows that do.
+  await t(b, 'a child naming a parent outside the device\'s window still lands',
+    `const sheet = await db.stocktakeSheet.create({ data: { note: 'aisle 4' } })
+     await db.stocktakeCount.upsertMany({ data: [
+       { sheetId: sheet.id, variantId: 987654, counted: 1, expected: 1 },
+     ] })
+     return await db.stocktakeCount.count({ where: { variantId: 987654 } })`,
+    v => v === 1)
 
   // The relation that did NOT cross. `productId` is a column and `product` is
   // not, and the device has to say so rather than answering an empty join —

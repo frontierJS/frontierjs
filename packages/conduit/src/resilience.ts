@@ -147,6 +147,11 @@ export class Resilience {
     this.state(key).policy = this.states.get(target)?.policy
   }
 
+  /** The `timeout_ms` a target declared, or undefined for one that declared none. */
+  declaredTimeout(target: string): number | undefined {
+    return this.states.get(target)?.policy?.timeout_ms
+  }
+
   /** Report the outcome of an admitted request and free its slot. */
   release(target: string, outcome: 'success' | 'target_fault' | 'other'): void {
     const s = this.state(target)

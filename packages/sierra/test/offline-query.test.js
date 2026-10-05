@@ -38,7 +38,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
 const { registerSchemas }  = await import('../src/junction/schema-registry.js')
 const { createResource }   = await import('../src/junction/resource.js')
-const { warmOffline, offlineServices, declareOffline, _resetOffline } = await import('../src/junction/offline.js')
+const { warmOffline, offlineServices, offlineStatus, declareOffline, _resetOffline } = await import('../src/junction/offline.js')
 const { listCache, listKey, _resetListCache } = await import('../src/junction/list-cache.js')
 
 // `Sheet` declares `@@sync`, `Plain` does not — which is the whole permission
@@ -46,6 +46,7 @@ const { listCache, listKey, _resetListCache } = await import('../src/junction/li
 // they could be (`FJS-D298`).
 const SOURCE = `
 model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate("0.0.0.0")  @@sync(server) }
+model Roster { id String @id @default(uuid())  name String                     @@gate("0.0.0.0")  @@sync(read) }
 model Plain { id String @id @default(uuid())  name String                      @@gate("0.0.0.0") }
 `
 
@@ -134,6 +135,22 @@ describe('a resource says what it must hold', () => {
     createResource('plains', { model: 'Plain', offlineQuery: OPEN })
     expect(offlineServices()).toEqual([])
     expect(warned.join('\n')).toMatch(/offlineQuery needs @@sync on model Plain/)
+  })
+})
+
+// FJS-1280: `@@sync(read)` is the word for a model held on a device and never
+// written there, so it is permission enough for the read — a roster in a
+// basement without declaring a collision policy that is not true.
+describe('a model held with @@sync(read) may be warmed', () => {
+  test('it is registered, with no refusal, and answers offline', async () => {
+    const r = createResource('rosters', { model: 'Roster', offlineQuery: {} })
+    expect(offlineServices()).toEqual(['rosters'])
+    expect(warned.join('\n')).not.toMatch(/offlineQuery needs @@sync/)
+
+    await warmOffline()
+    _proxy.find = offline
+    const rows = await r.load({})
+    expect(rows[0].id).toBe('S1')
   })
 })
 
@@ -293,5 +310,46 @@ describe('a warm that cannot reach the server', () => {
     expect(report.map(r => r.service)).toEqual(['a', 'b'])
     expect(report[0].error).toBeTruthy()
     expect(report[1].rows).toBe(1)
+  })
+})
+
+// ─── what the device says it holds ────────────────────────────────────────
+
+describe('offlineStatus() — the last warm, readable by an app (FJS-1374)', () => {
+  test('before any warm it says nothing ran, and names what was declared', () => {
+    _client = makeClient({ connected: false })
+    sheets({ offlineQuery: OPEN })
+    const s = offlineStatus()
+    expect(s.report()).toBeNull()
+    expect(s.ranAt()).toBeNull()
+    expect(s.services()).toEqual(['sheets'])
+  })
+
+  test('after a warm it holds that warm\'s report and when it ran', async () => {
+    sheets({ offlineQuery: OPEN })
+    _proxy.find = offline
+    const before = Date.now()
+    const report = await warmOffline()
+    const s = offlineStatus()
+    expect(s.report()).toEqual(report)
+    expect(s.report()[0].error).toMatch(/Failed to fetch/)
+    expect(s.ranAt()).toBeGreaterThanOrEqual(before)
+  })
+
+  test('the warm the socket arms lands on it without the app calling warmOffline', async () => {
+    sheets({ offlineQuery: OPEN })
+    await vi.waitFor(() => expect(offlineStatus().report()).toEqual([{ service: 'sheets', rows: 1, kept: false }]))
+  })
+
+  test('a subscriber hears each warm, and stops hearing after it unsubscribes', async () => {
+    _client = makeClient({ connected: false })
+    sheets({ offlineQuery: OPEN })
+    const heard = []
+    const off = offlineStatus().subscribe(s => heard.push(s.report()))
+    await warmOffline()
+    expect(heard).toEqual([[{ service: 'sheets', rows: 1, kept: false }]])
+    off()
+    await warmOffline()
+    expect(heard.length).toBe(1)
   })
 })
