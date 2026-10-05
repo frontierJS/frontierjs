@@ -23,13 +23,14 @@ what they mean in any app.
 
 - `bin/site-kit.js` — the command. Bun, because the prerender imports each
   route's companion under the running runtime.
-- `config/vite.js` — `siteKit({ root, port })`, the whole Vite + Sierra config.
+- `config/vite.js` — `siteKit({ root, port, host })`, the whole Vite + Sierra config.
   Owns `target`, `routesDir: 'content/routes'`, `outDir`, `trailingSlash`, and
   the route table's home in `<site>/.sierra/` (never `node_modules/`, which
   the browser caches `immutable`); the site's
   `content/settings/site.js` default export is spread over it, and is also
   `_configPath`, the file the browser imports whole (FJS-1544) — so it stays
-  plain data.
+  plain data. Without one, `_configPath` is `config/no-settings.js` (`{}`);
+  unnamed, Sierra would look for `config/sierra.config.js` (FJS-1709).
 - `config/shell.js` — serves `index.html` for a site whose root has none: a dev
   middleware for HTML requests, and a `load` of the root's `index.html` id in the
   build, so it emits as `dist/index.html`, the file the prerender reads. Also

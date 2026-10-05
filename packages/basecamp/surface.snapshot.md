@@ -151,7 +151,7 @@ a method — it applies to each one.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `anonymous` → `anonymous` → `anonymous` |
-| before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `refuseSuspended` → `requireOutpostSignature` → `basecampAuditPreImage` |
+| before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `refuseSuspended` → `outpostScope` → `basecampAuditPreImage` |
 | after | `all` | `basecampAuditLog` → `apiKeyUsage` |
 | error | `all` | `anonymous` |
 

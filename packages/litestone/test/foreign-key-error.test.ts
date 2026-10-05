@@ -107,3 +107,145 @@ describe('a delete a Restrict child refuses (FJS-1454)', () => {
     expect(e.child).toEqual({ model: 'Offer', id: o.id })
   })
 })
+
+describe('a bulk or soft-delete cascade a Restrict child refuses (FJS-1609)', () => {
+  const SOFT = `
+    model Account {
+      id        Int        @id @default(autoincrement())
+      deletedAt DateTime?
+      projects  Project[]  @hardDelete
+      @@softDelete(cascade)
+    }
+
+    model Project {
+      id        Int      @id @default(autoincrement())
+      accountId Int
+      account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+      tasks     Task[]
+    }
+
+    model Task {
+      id        Int      @id @default(autoincrement())
+      projectId Int
+      project   Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+    }
+  `
+
+  async function chain(d: any) {
+    const c = await d.candidate.create({ data: {} })
+    const a = await d.application.create({ data: { candidateId: c.id } })
+    const o = await d.offer.create({ data: { applicationId: a.id } })
+    return { c, a, o }
+  }
+
+  test('deleteMany names the child', async () => {
+    const { a, o } = await chain(db)
+    const e = await thrown(db.application.deleteMany({ where: { id: a.id } }))
+    expect(e).toBeInstanceOf(ForeignKeyError)
+    expect(e.model).toBe('Application')
+    expect(e.child).toEqual({ model: 'Offer', id: o.id })
+    expect(await db.application.count()).toBe(1)
+  })
+
+  test('deleteMany through a cascade too', async () => {
+    const { o } = await chain(db)
+    const e = await thrown(db.candidate.deleteMany({}))
+    expect(e).toBeInstanceOf(ForeignKeyError)
+    expect(e.child).toEqual({ model: 'Offer', id: o.id })
+  })
+
+  test('a hard remove and removeMany name the child', async () => {
+    const { a, o } = await chain(db)
+    for (const e of [
+      await thrown(db.application.remove({ where: { id: a.id } })),
+      await thrown(db.application.removeMany({ where: { id: a.id } })),
+    ]) {
+      expect(e).toBeInstanceOf(ForeignKeyError)
+      expect(e.child).toEqual({ model: 'Offer', id: o.id })
+    }
+  })
+
+  test('a soft remove whose @hardDelete child is held by a Restrict grandchild', async () => {
+    const d = await createClient({ db: ':memory:', schema: SOFT })
+    const acc = await d.account.create({ data: {} })
+    const p = await d.project.create({ data: { accountId: acc.id } })
+    const t = await d.task.create({ data: { projectId: p.id } })
+    const one = await thrown(d.account.remove({ where: { id: acc.id } }))
+    expect(one).toBeInstanceOf(ForeignKeyError)
+    expect(one.child).toEqual({ model: 'Task', id: t.id })
+    const many = await thrown(d.account.removeMany({ where: { id: acc.id } }))
+    expect(many).toBeInstanceOf(ForeignKeyError)
+    expect(many.child).toEqual({ model: 'Task', id: t.id })
+  })
+
+  test('a refused removeMany cascade leaves the children it reached before the refusal live (FJS-1714)', async () => {
+    const d = await createClient({ db: ':memory:', schema: `
+      model Account {
+        id        Int        @id @default(autoincrement())
+        deletedAt DateTime?
+        notes     Note[]
+        projects  Project[]  @hardDelete
+        @@softDelete(cascade)
+      }
+
+      model Note {
+        id        Int       @id @default(autoincrement())
+        accountId Int
+        account   Account   @relation(fields: [accountId], references: [id])
+        deletedAt DateTime?
+        @@softDelete
+      }
+
+      model Project {
+        id        Int      @id @default(autoincrement())
+        accountId Int
+        account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+        tasks     Task[]
+      }
+
+      model Task {
+        id        Int      @id @default(autoincrement())
+        projectId Int
+        project   Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+      }
+    ` })
+    const acc = await d.account.create({ data: {} })
+    await d.note.create({ data: { accountId: acc.id } })
+    const p = await d.project.create({ data: { accountId: acc.id } })
+    await d.task.create({ data: { projectId: p.id } })
+    for (const verb of ['remove', 'removeMany'] as const) {
+      const e = await thrown(d.account[verb]({ where: { id: acc.id } }))
+      expect(e).toBeInstanceOf(ForeignKeyError)
+      expect(await d.note.count()).toBe(1)
+      expect(await d.account.count()).toBe(1)
+    }
+  })
+})
+
+describe('a value the column cannot hold (FJS-1609, FJS-D521)', () => {
+  const TYPED = `
+    model Doc {
+      id Int    @id @default(autoincrement())
+      n  Int
+      f  Float?
+    }
+  `
+  test('every write names the field in a ValidationError', async () => {
+    const d = await createClient({ db: ':memory:', schema: TYPED })
+    const row = await d.doc.create({ data: { n: 1 } })
+    const writes: Array<() => Promise<unknown>> = [
+      () => d.doc.create({ data: { n: 1.5 } }),
+      () => d.doc.create({ data: { n: 1, f: 'x' as any } }),
+      () => d.doc.createMany({ data: [{ n: 1.5 }] }),
+      () => d.doc.update({ where: { id: row.id }, data: { n: 1.5 } }),
+      () => d.doc.updateMany({ where: {}, data: { n: 'abc' as any } }),
+      () => d.doc.upsert({ where: { id: 99 }, create: { n: 1.5 }, update: {} }),
+    ]
+    for (const w of writes) {
+      const e = await thrown(w())
+      expect(e?.name).toBe('ValidationError')
+      expect(['n', 'f']).toContain(e.errors[0].path[0])
+      expect(e.errors[0].message).toContain('cannot hold')
+    }
+  })
+})

@@ -121,3 +121,22 @@ describe('@from aggregate under the target\'s row policy', () => {
     await expect(u1.kid.findMany({ include: { parent: { where: { kidCount: 1 } } } })).rejects.toThrow(/kidCount/)
   })
 })
+
+describe('a @from field named through a relation', () => {
+  it('filters on it as system, and on an unpolicied one as a caller', async () => {
+    const { sys, u1 } = await seeded()
+    const where = { parent: { is: { kidCount: { gt: 1 } } } }
+    expect((await sys.tag.findMany({ where })).map((r: any) => r.id)).toEqual([1, 2])
+    expect(await sys.tag.count({ where })).toBe(2)
+    expect(await sys.tag.count({ where: { parent: { is: { kidCount: { gt: 2 } } } } })).toBe(0)
+    expect(await u1.tag.count({ where: { parent: { is: { tagCount: { gt: 1 } } } } })).toBe(2)
+  })
+
+  it('correlates at every depth of a nested relation filter', async () => {
+    const { sys } = await seeded()
+    const where = { parent: { is: { tags: { some: { parent: { is: { kidCount: 2 } } } } } } }
+    expect(await sys.tag.count({ where })).toBe(2)
+    expect(await sys.kid.count({ where: { parent: { is: { kidCount: 1 } } } })).toBe(1)
+    expect(await sys.kid.count({ where: { parent: { is: { kidCount: 2 } } } })).toBe(2)
+  })
+})

@@ -166,8 +166,8 @@ h2 { font-size: 1.05rem; margin: 0 0 .6rem; letter-spacing: -.01em; }
 }
 
 /* ── Showroom ──────────────────────────────────────────────────────── */
-.shop { display: grid; gap: 1.75rem; align-items: start; }
-@media (min-width: 64rem) { .shop { grid-template-columns: 1fr 1.15fr; } }
+.shop { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.75rem; align-items: start; }
+@media (min-width: 64rem) { .shop { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); } }
 @media (min-width: 64rem) { .shop-right { position: sticky; top: 5rem; } }
 
 .lite .ln { display: block; padding: 0 .35rem; margin: 0 -.35rem; border-radius: 4px; transition: background .18s ease, opacity .18s ease; }

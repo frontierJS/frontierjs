@@ -470,6 +470,18 @@ export function isCheckViolation(err) {
          !!(err?.message && err.message.includes('CHECK constraint failed'))
 }
 
+// `cannot store REAL value in INTEGER column doc.n` → the storage class SQLite
+// was handed, the one the column holds, and the physical column. The only
+// account of WHICH column refused, so it is parsed like the other two.
+export function datatypeMismatch(err) {
+  const m = /cannot store (\w+) value in (\w+) column\s+(?:\w+\.)?(\w+)/.exec(err?.message ?? '')
+  return m ? { stored: m[1], declared: m[2], column: m[3] } : null
+}
+
+export function isDatatypeMismatch(err) {
+  return err?.code === 'SQLITE_CONSTRAINT_DATATYPE' || datatypeMismatch(err) != null
+}
+
 export function isUniqueConflict(err) {
   // The translated error answers yes too. Two paths depend on it after the
   // translation has happened — upsert's race fallback and the factory's

@@ -181,6 +181,10 @@ export function createResendMailer(opts: ResendOptions): IMail {
 
   const { from: defaultFrom, replyTo: defaultReplyTo } = opts
   const BASE_URL = 'https://api.resend.com'
+  // No retry and no breaker: a send is not idempotent, and a second attempt
+  // after a lost response is a second email. An app that needs either routes
+  // through Conduit, which owns both (`FJS-659`).
+  const REQUEST_TIMEOUT_MS = 30_000
 
   async function resolveKey(): Promise<string> {
     if (opts.apiKey !== undefined) return opts.apiKey
@@ -191,14 +195,25 @@ export function createResendMailer(opts: ResendOptions): IMail {
 
   async function post(path: string, body: unknown): Promise<unknown> {
     const apiKey = await resolveKey()
-    const res = await fetch(BASE_URL + path, {
-      method:  'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json'
-      },
-      body: JSON.stringify(body)
-    })
+    let res: Response
+    try {
+      res = await fetch(BASE_URL + path, {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type':  'application/json'
+        },
+        body:   JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      })
+    } catch (e) {
+      // Named, because the bare DOMException says "operation timed out" and
+      // nothing about which vendor, which is all a log line has to go on.
+      if (e instanceof Error && e.name === 'TimeoutError') {
+        throw new Error(`Resend API timed out after ${REQUEST_TIMEOUT_MS}ms`)
+      }
+      throw e
+    }
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: res.statusText })) as { message?: string }

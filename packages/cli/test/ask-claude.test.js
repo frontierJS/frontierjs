@@ -118,6 +118,7 @@ describe('readAskEvent', () => {
       { type: 'text', text: 'It failed because…' },
       { type: 'tool', text: 'Bash git status --short' },
       { type: 'tool', text: 'Read ISSUES.md' },
+      { type: 'read', file: 'ISSUES.md' },
     ])
     expect(readAskEvent({ type: 'rate_limit_event' })).toEqual([])
   })

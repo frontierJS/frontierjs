@@ -1,5 +1,15 @@
 # Changes — Basecamp
 
+## 2026-10-05 — a machine's signature is a credential, and a signed machine reaches only its own three endpoints (`FJS-1715`)
+
+`requireOutpostSignature`, a per-method hook, is gone; `createApp({ credentials: [outpostCredential({ db, logger })] })` verifies the signature at the transport and the machine becomes a principal, `outpost:<serverId>`, `authMethod: 'outpost'`, carrying its own workspace (every service is row-scoped, and `tenantClaimGuard` refuses a signed-in caller holding no claim). `keyFor` names the machine from `X-Service-Method`, the path and the body — one table, `OUTPOST_ENDPOINTS`, which also gives the router's reading of the same call. `outpostScope()` is the grade: a machine anywhere but its own three endpoints is a 403, an endpoint naming a different machine or with none behind it is a 401, so a signed principal cannot be a `servers.drain`. A signature on any request that is not one of the three is now refused at the transport rather than passed on as anonymous.
+
+Replay memory is unchanged (`OutpostNonce`); a failing nonce store is logged before it reaches the transport as a refusal. What is not carried over: a bad signature's `reason` is no longer logged, since the verifier returns a bare refusal. Proved by `api/test/outpost-scope.test.ts` and `services.test.ts` § an outpost endpoint takes a signature or nothing.
+
+## 2026-10-04 — `@frontierjs/cli` is a dev dependency
+
+As in a scaffolded app. It is what turns on the ask panel in `web/`'s dev server: shift+alt-click an element to ask Claude to change it, with edits scoped to `web/` (`packages/sierra/src/build/ask-plugin.js`).
+
 ## 2026-10-04 — removing a server records its event first, so the removal no longer answers 422 (`FJS-1706`)
 
 `servers.remove` soft-deleted the row and then wrote the `removed` event naming it. Since a foreign key became a read (`FJS-D576`), that event was refused as a parent the caller cannot see, so a removal that had already happened answered 422. The event and the removal are now one transaction, event first. `api/test/services.test.ts` § *removing a server that is not online* (red on the old order for a pending, draining and stopped server, each with a widget pointing at it); `verify:screens` is back to 234/234.

@@ -2,9 +2,8 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { verifyRequest } from '@frontierjs/toolbelt/signature'
-import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, $} from '@frontierjs/junction'
-import type { Hook, AroundHook, ServiceContext }  from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, signedRequest, $} from '@frontierjs/junction'
+import type { Hook, AroundHook, ServiceContext, CredentialVerifier, InboundRequest }  from '@frontierjs/junction'
 import { env }                             from './env.ts'
 import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
@@ -466,11 +465,14 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
   }
 }
 
-// ─── requireOutpostSignature ─────────────────────────────────────────────────
+// ─── outpostCredential · outpostScope ─────────────────────────────────────────────────
 // The three endpoints an OUTPOST calls, and the only ones exempted from
 // `sessionScope`: `servers.heartbeat`, `volumes.report`, `cleanup.report`. A
 // machine holds no session, so those exemptions are right — what was missing is
-// the credential that replaces one.
+// the credential that replaces one. It is `createApp({ credentials })`: the
+// transport verifies the signature and the machine becomes a principal
+// (`outpostCredential`), and `outpostScope` is the grade that says which
+// methods that principal may reach.
 //
 // Until 2026-08-19 there was none. The comment beside the exemption said the
 // request was *HMAC-authenticated at the transport*, and no such verification
@@ -506,13 +508,20 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 // Dropping it also closed a hole rather than only narrowing one. Enrollment
 // minted a secret, wrote it to the machine through cloud-init, and nothing on
 // this side ever read it: the outpost signed with what it had been given and
-// this hook compared against the fleet key, so **a provisioned machine could
+// the verifier compared against the fleet key, so **a provisioned machine could
 // never come online**. Measured — own secret 401, fleet secret 200, row stuck at
 // `installing` forever.
 //
 // Replay protection is the app's own database and therefore survives a restart
 // and is shared between replicas (`OutpostNonce`, `FJS-376`). It used to be a
 // module-level Map, which was neither.
+
+/**
+ * What the credential reads. It is built BEFORE `createApp` returns — the
+ * transport takes its verifiers at construction — so it holds the pieces
+ * rather than the app.
+ */
+type OutpostDeps = Pick<BasecampApp, 'db' | 'logger'>
 
 /**
  * Has this nonce been spent inside the freshness window — and claim it if not.
@@ -535,7 +544,7 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
  * Swept on write rather than on a timer: no clock to own, and the table only
  * grows while signed requests are arriving.
  */
-async function rememberNonce(app: BasecampApp, nonce: string, windowMs: number): Promise<boolean> {
+async function rememberNonce(app: OutpostDeps, nonce: string, windowMs: number): Promise<boolean> {
   const sys    = app.db.asSystem() as any
   const cutoff = new Date(Date.now() - windowMs).toISOString()
 
@@ -550,24 +559,70 @@ async function rememberNonce(app: BasecampApp, nonce: string, windowMs: number):
   }
 }
 
+/** What a machine's principal is named, so the id survives into `ctx.auth.user.userId`. */
+const OUTPOST_PRINCIPAL = 'outpost:'
+
 /**
  * Which machine is this request about?
  *
- * One entry per guarded endpoint, and a table rather than a header for a
+ * One entry per outpost endpoint, and a table rather than a header for a
  * reason: the id is already in each of these requests, so a header carrying it
  * again would be a second place it can be wrong and nothing would compare them.
- * A new outpost endpoint adds a row here — and an endpoint that is guarded with
- * no row resolves to null, which refuses rather than falling through to the
- * fleet key.
+ * A new outpost endpoint adds a row here, and is then graded, signed for and
+ * exempted in one place.
+ *
+ * Asked twice and the two must agree. `fromRequest` runs at the transport,
+ * before routing, so it reads the wire — `X-Service-Method`, the path, the
+ * body — and names the machine whose key to verify against. `fromCall` runs in
+ * the hook pipeline and reads what the router decided. `outpostScope` compares
+ * them, which is what stops a path that this table and the router read
+ * differently from being signed for one machine and executed for another.
  *
  * `servers.heartbeat` addresses the machine in the path; the two `report`
  * methods carry it in the body as `server_id`, which is the OUTPOST's
  * snake_case contract and not this app's.
  */
-const OUTPOST_SUBJECT: Record<string, (ctx: ServiceContext) => string | null> = {
-  'servers.heartbeat': ctx => (ctx.id as string) ?? null,
-  'volumes.report':    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
-  'cleanup.report':    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+const OUTPOST_ENDPOINTS: Record<string, {
+  fromRequest: (req: InboundRequest) => string | null
+  fromCall:    (ctx: ServiceContext) => string | null
+}> = {
+  'servers.heartbeat': {
+    fromRequest: req => addresses(req, 'heartbeat', 'servers', 2) ? decodeSegment(req.path.split('/').filter(Boolean).at(-1)) : null,
+    fromCall:    ctx => (ctx.id as string) ?? null,
+  },
+  'volumes.report': {
+    fromRequest: req => addresses(req, 'report', 'volumes', 1) ? serverIdInBody(req.body) : null,
+    fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+  },
+  'cleanup.report': {
+    fromRequest: req => addresses(req, 'report', 'cleanup', 1) ? serverIdInBody(req.body) : null,
+    fromCall:    ctx => ((ctx.data as { server_id?: string })?.server_id) ?? null,
+  },
+}
+
+/**
+ * Is this the POST that calls `method` on `service`: the header names the
+ * method, and the service is the path segment `fromEnd` back from the end
+ * (the last for a collection route, the one before the id for a record route).
+ */
+function addresses(req: InboundRequest, method: string, service: string, fromEnd: number): boolean {
+  if (req.method.toUpperCase() !== 'POST' || req.headers['x-service-method']?.trim() !== method) return false
+  return req.path.split('/').filter(Boolean).at(-fromEnd) === service
+}
+
+function decodeSegment(segment: string | undefined): string | null {
+  if (!segment) return null
+  try { return decodeURIComponent(segment) } catch { return null }
+}
+
+function serverIdInBody(body: string | Uint8Array): string | null {
+  try {
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body)
+    const id   = (JSON.parse(text) as { server_id?: unknown } | null)?.server_id
+    return typeof id === 'string' && id ? id : null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -578,8 +633,8 @@ const OUTPOST_SUBJECT: Record<string, (ctx: ServiceContext) => string | null> = 
  * fleet secret should be able to rescue.
  */
 async function outpostSecretFor(
-  app: BasecampApp, serverId: string | null,
-): Promise<{ secret: string; own: boolean } | null> {
+  app: OutpostDeps, serverId: string | null,
+): Promise<{ secret: string; own: boolean; workspaceId: string } | null> {
   if (!serverId) return null
 
   const sys    = app.db.asSystem() as any
@@ -606,89 +661,94 @@ async function outpostSecretFor(
   if (!row?.data) return null
   try {
     const value = JSON.parse(row.data as string)?.secret
-    return typeof value === 'string' && value ? { secret: value, own: true } : null
+    return typeof value === 'string' && value ? { secret: value, own: true, workspaceId: server.workspaceId as string } : null
   } catch {
     return null
   }
 }
 
-/** The raw search string of a request URL, `''` when there is none or it will not parse. */
-function searchOf(url: string | undefined): string {
-  if (!url) return ''
-  try { return new URL(url).search } catch { return '' }
-}
-
-export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?: string[] } = {}): Hook {
-  const guarded = new Set(only)
+/**
+ * The signature as a credential: the transport asks this before the bearer path
+ * and a good one becomes the machine's principal, `outpost:<serverId>`.
+ *
+ * ONE sentence for every refusal on this door, because *no such machine* and
+ * *that signature is wrong* must not be distinguishable from outside — the
+ * caller is unauthenticated by definition, and telling the two apart tells them
+ * which server ids are real. `REFUSE` answers a bare 401 and the reason is
+ * logged, never returned. A request with no signature header is not this
+ * credential's and falls through to `outpostScope`, which refuses an outpost
+ * endpoint that arrives with no machine behind it.
+ */
+export function outpostCredential(app: OutpostDeps): CredentialVerifier {
   const TOLERANCE_S = 300
 
-  // ONE sentence for every refusal on this door, the same rule the enrollment
-  // route follows. *No such machine* and *that signature is wrong* must not be
-  // distinguishable from outside: the caller here is unauthenticated by
-  // definition, and telling the two apart tells them which server ids are real.
-  // The reason is logged and never returned.
+  return signedRequest({
+    window: TOLERANCE_S,
+    // WHICH machine, then WHICH key — see `outpostSecretFor` above. A null is a
+    // refusal and never a fall-through: a request naming no machine, naming one
+    // that does not exist, or addressing something that is not an outpost
+    // endpoint is not something the fleet key should rescue.
+    keyFor: async (req) => {
+      const serverId = Object.values(OUTPOST_ENDPOINTS).map(e => e.fromRequest(req)).find(Boolean) ?? null
+      const keyed    = await outpostSecretFor(app, serverId)
+      if (!serverId || !keyed) {
+        app.logger.warn('outpost signature refused', {
+          path: req.path,
+          reason: serverId ? 'no usable secret for that machine' : 'the request names no machine',
+        })
+        return null
+      }
+      return {
+        secret:  keyed.secret,
+        // The machine's own workspace rides on the principal: every service is
+        // row-scoped and `tenantClaimGuard` refuses a signed-in caller who
+        // holds no claim, and nothing here may let it name another one.
+        session: { userId: `${OUTPOST_PRINCIPAL}${serverId}`, userType: 'service', authMethod: 'outpost', workspaceId: keyed.workspaceId },
+      }
+    },
+    // A throw here reaches the transport as a refusal, so a broken database
+    // would read as a caller's bad signature. Logged first, where it can be told apart.
+    seenNonce: async (nonce) => {
+      try {
+        return await rememberNonce(app, nonce, TOLERANCE_S * 1_000)
+      } catch (err) {
+        app.logger.error('outpost nonce store failed', { error: err instanceof Error ? err.message : String(err) })
+        throw err
+      }
+    },
+  })
+}
+
+/**
+ * The grade on a machine principal, and the only place that decides what it
+ * may reach. A signed principal arrives at EVERY service method, so this is the
+ * hook that keeps a check-in from being a `servers.drain`.
+ *
+ *   a machine, anywhere but its own three endpoints   -> 403
+ *   a machine, an endpoint naming a different machine -> 401
+ *   an outpost endpoint with no machine behind it     -> 401
+ *
+ * The middle row is the router and `OUTPOST_ENDPOINTS.fromRequest` disagreeing
+ * about the same request. An in-process call has no principal and is refused by
+ * the last: an app that needs to write a heartbeat for itself uses the system
+ * client, not this door.
+ */
+export function outpostScope(): Hook {
+  // One sentence, as in `outpostCredential`.
   const REFUSED = 'This endpoint requires a signed outpost request'
 
-  return async function requireOutpostSignature(ctx: ServiceContext): Promise<void> {
-    if (!guarded.has(`${ctx.service}.${ctx.method}`)) return
+  return function outpostScope(ctx: ServiceContext): void {
+    const name     = `${ctx.service}.${ctx.method}`
+    const user     = userOf(ctx)
+    const endpoint = OUTPOST_ENDPOINTS[name]
+    const machine  = user?.authMethod === 'outpost'
 
-    // WHICH machine, then WHICH key — see `outpostSecretFor` above. A null is a
-    // refusal and never a fall-through: a request naming no machine, or one
-    // that does not exist, is not something the fleet key should rescue.
-    //
-    // Resolved before `$raw` is read so that an endpoint guarded with no
-    // subject row refuses on its own terms rather than on the transport's.
-    const subject = OUTPOST_SUBJECT[`${ctx.service}.${ctx.method}`]?.(ctx) ?? null
-    const keyed   = await outpostSecretFor(app, subject)
-    if (!keyed) {
-      app.logger.warn('outpost signature refused', {
-        service: ctx.service, method: ctx.method,
-        reason: subject ? 'no usable secret for that machine' : 'the request names no machine',
-      })
-      throw new Unauthorized(REFUSED)
+    if (!endpoint) {
+      if (machine) throw new Forbidden('An outpost may only call its own endpoints')
+      return
     }
-    const secret = keyed.secret
-    const raw    = (ctx as {
-      $raw?: {
-        rawBody?: string
-        headers?: Record<string, string>
-        method?:  string
-        path?:    string
-        $raw?:    { url?: string }
-      }
-    }).$raw
-
-    // Fail closed, and say which half is missing. An in-process call has no
-    // `$raw` at all — the jobs call these methods through the app — so this
-    // refuses those too rather than letting the absence of a transport read as
-    // permission. An app that needs to write a heartbeat for itself uses the
-    // system client, not this door.
-    if (!raw) throw new BadRequest(`${ctx.service}.${ctx.method} is the outpost's endpoint and is only reachable over HTTP`)
-
-    const result = await verifyRequest({
-      secret,
-      method:    raw.method ?? 'POST',
-      path:      raw.path ?? '',
-      // The query is part of the canonical string since `FJS-678`, and it is
-      // read off the RAW url rather than off `ctx.$raw.query`, which is the
-      // PARSED bag — a signature is over the bytes the sender put on the wire,
-      // and a re-serialization of a parsed query is a different string.
-      query:     searchOf(raw.$raw?.url),
-      body:      raw.rawBody ?? '',
-      headers:   raw.headers ?? {},
-      toleranceSeconds: TOLERANCE_S,
-      // The clock is this side's, stated: the kit is pure and takes no ambient
-      // state, which is what lets litestone and mesa import it.
-      now:       Math.floor(Date.now() / 1000),
-      seenNonce: (n: string) => rememberNonce(app, n, TOLERANCE_S * 1_000),
-    })
-
-    if (!result.ok) {
-      app.logger.warn('outpost signature refused', {
-        service: ctx.service, method: ctx.method, reason: result.reason,
-      })
-      throw new Unauthorized(REFUSED)
-    }
+    const subject = user?.userId?.slice(OUTPOST_PRINCIPAL.length)
+    if (!machine || endpoint.fromCall(ctx) !== subject) throw new Unauthorized(REFUSED)
   }
 }
 

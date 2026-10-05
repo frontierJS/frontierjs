@@ -9,6 +9,7 @@
     "build": "site-kit build site",
     "preview": "site-kit preview site --port 8790",
     "verify": "node tests/verify.mjs",
+    "verify:ask": "bun tests/verify-ask.mjs",
     "clean": "rm -rf site/dist",
     "test": "bun run build && bun run verify",
     "typecheck": "node ../scripts/typecheck.mjs",
@@ -22,6 +23,7 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "devDependencies": {
+    "@frontierjs/cli": "workspace:*",
     "vite": "^8.0.3",
     "wrangler": "^4.145.0"
   }

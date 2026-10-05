@@ -1,6 +1,6 @@
 ---
 title: "The allegory — FrontierJS"
-description: "A software system is a town, and the app is its biggest building. Running it means the roads, the utilities, the watch, the inspector and the records office too."
+description: "Running software is running a town: buildings, roads, utilities, a watch, an inspector and a records office, all working from one set of plans."
 render: static
 ---
 
@@ -11,13 +11,12 @@ render: static
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The allegory</p>
-    <h1>Your app is one building in a town.</h1>
+    <h1>Building software is like building a town on the frontier.</h1>
     <p class="lede">
-      Building software is one job. Running it is a dozen: the data, the
-      services, the servers, the secrets, the deploys, the backups, the logs at
-      two in the morning. Picture all of it as a town and the work gets easier
-      to see. The app is the biggest building on main street. Someone still
-      has to run the rest of the place.
+      Data, services, screens, mail, jobs, servers, secrets, deploys,
+      backups, the logs at two in the morning. Each one is a district with its
+      own work to do, and all of them share the same streets, the same pipes
+      and, when it goes well, the same map.
     </p>
   </div>
 </section>
@@ -55,7 +54,7 @@ render: static
       <li id="ch-00">
         <span class="n">00</span>
         <div>
-          <h2>A town, not a building</h2>
+          <h2>Many jobs, one place</h2>
           <p>Somebody writes the code. Somebody also keeps the database healthy, lets the payment provider in, rotates the keys, watches the logs, ships the fix and checks there's a backup from before it. In a big company those are departments. In a small team they're the same three people. On your own, they're all you.</p>
           <p>None of those jobs is hard on its own. What wears you down is that each arrives with its own tool, its own config file and its own words, and none of them knows the others exist. It's like running a town where the water board and the road crew have never met.</p>
           <p class="takeaway">The hard part isn't any one job. It's keeping them in agreement.</p>
@@ -67,7 +66,7 @@ render: static
           <p class="district">The surveyor</p>
           <h2>Walk the land</h2>
           <p>Nobody runs a town without a map. What's built, and where? Which streets lead where? Who holds the keys to which building, and what stops working if the bridge closes?</p>
-          <p>In most projects that map lives in someone's head. In FrontierJS it starts on the ground. The data is described once, in <code>db/schema.lite</code>, and every part of the app is a folder you can see from the root: <code>api/</code>, <code>web/</code>, <code>site/</code>, and whatever you build next beside them. List the directory and you've read the street plan.</p>
+          <p>In most projects that map lives in someone's head. In FrontierJS it starts on the ground. The data is described once, in <code>db/schema.lite</code>, and every surface is a folder you can see from the root: <code>api/</code>, <code>web/</code>, <code>site/</code>, and whatever you build next beside them. List the directory and you've read the street plan.</p>
           <p class="takeaway">You can't look after what you can't see.</p>
         </div>
       </li>
@@ -86,9 +85,9 @@ render: static
         <div>
           <p class="district">Main street</p>
           <h2>Raise the buildings</h2>
-          <p>The app is the biggest building in town, the one people come to visit. It has floors: data at the bottom, the API in the middle, the screens on top, and a front desk that checks who you are. Most frameworks are about this building, and fair enough. It's where most of the work happens.</p>
-          <p>But it stands on a street, draws from the mains and gets its post from the post office. In FrontierJS its floors are Model, Service and Resource, all raised from the same schema. The locks are on the model itself: a <code>@@gate</code> on Lead holds whether someone came in through the front door, a background job or an agent.</p>
-          <p class="takeaway">The app is the main building. It's still one building.</p>
+          <p>Main street is where people come: the shops, the offices, the counters. Every building on it has the same bones. Records are kept downstairs, requests come in at the counter, and people walk through the rooms upstairs. And every door has a lock.</p>
+          <p>In FrontierJS those bones are Model, Service and Resource, all raised from the same schema. The locks are on the model itself: a <code>@@gate</code> on Lead holds whether someone walks in off the street, arrives with the night crew or sends an agent.</p>
+          <p class="takeaway">Every building has the same bones, so you can find your way around any of them.</p>
           <p class="see">See: <a href="/flow/">Flow</a></p>
         </div>
       </li>
@@ -177,7 +176,6 @@ render: static
               <tr><th>Inspector</th><td><code>fli test:access</code> puts any change to it in the diff</td></tr>
             </tbody>
           </table>
-          <p>Laravel showed how calm an app becomes when its decisions are made once and kept consistent. FrontierJS carries that past the front door: out to the utilities, the watchtower, the depot and the records office.</p>
           <p class="takeaway">One set of plans for the whole town.</p>
         </div>
       </li>
@@ -194,7 +192,7 @@ render: static
     </ol>
 
     <div class="closing">
-      <p>FrontierJS is a framework for building and running software systems. The app is where it starts. The town is what it's for.</p>
+      <p>FrontierJS is a framework for building and running software systems, for the few people who look after the whole town.</p>
       <p class="see">The same arc, with the tools up front: <a href="/the-story/">The story</a> · <a href="/map/">Map</a></p>
     </div>
   </div>

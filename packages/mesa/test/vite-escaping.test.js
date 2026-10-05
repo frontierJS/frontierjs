@@ -168,9 +168,9 @@ function runInspector(root = '/app') {
     parentElement: null,
     getBoundingClientRect: () => ({ top: 0, left: 0, width: 0, height: 0 })
   })
-  const altClick = (loc) => {
+  const altClick = (loc, { shiftKey = false } = {}) => {
     const el = element(loc)
-    const ev = { type: 'click', altKey: true, preventDefault: () => {}, stopPropagation: () => {}, composedPath: () => [el] }
+    const ev = { type: 'click', altKey: true, shiftKey, preventDefault: () => {}, stopPropagation: () => {}, composedPath: () => [el] }
     for (const fn of listeners.get('mousemove')) fn({ ...ev, type: 'mousemove' })
     for (const fn of listeners.get('click')) fn(ev)
   }
@@ -210,5 +210,16 @@ describe('the inspector only ever asks the editor for a file under the root', ()
     expect(i.window.__fjsInspect.open).toBeUndefined()
     expect(typeof i.window.__fjsInspect.locate).toBe('function')
     expect(i.window.__fjsInspect.root).toBe('/app')
+  })
+
+  test('a pick carries the modifier and an opener bound to what was picked', () => {
+    const i = runInspector()
+    const got = []
+    i.window.__fjsInspect.onPick(p => got.push(p))
+    i.altClick('src/pages/Home.mesa:12:3', { shiftKey: true })
+    expect(i.fetched).toEqual([])
+    expect(got[0].key).toBe('alt')
+    got[0].open()
+    expect(i.fetched).toEqual(['/__open-in-editor?file=' + encodeURIComponent('/app/src/pages/Home.mesa:12:3')])
   })
 })

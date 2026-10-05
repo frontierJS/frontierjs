@@ -803,7 +803,8 @@ try {
 
   // Both bars are sticky, so a subnav pinned higher than the topbar is tall
   // slides under it and nothing errors; and a jump to a section has to clear
-  // both. Measured at desktop and at a width where the topbar wraps.
+  // both. Measured at desktop and at a phone width, where the bar holds the
+  // menu button instead of the links.
   const stack = {}
   for (const width of [1280, 390]) {
     await cmd('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false })
@@ -823,8 +824,30 @@ try {
                anchorsClear: underBars.length === 0, underBars: underBars.join(' ') };
     `)
   }
-  await cmd('Emulation.clearDeviceMetricsOverride')
   t('layout.stickyStack', stack)
+
+  // On a phone the links live in a popover the menu button opens. A row that
+  // overflows sideways is silent in every other check here, and the launch
+  // pages each have a grid that floors at its widest code sample.
+  await cmd('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  const wide = []
+  for (const path of ['/', '/start/', '/docs/', '/packages/', '/why/', '/journey/', '/pitch/', '/tutor/', '/seams/', '/showroom/', '/specs/', '/litestone/', '/vscode/']) {
+    await goto(`${ORIGIN}${path}`)
+    const sw = await evaluate(`return document.documentElement.scrollWidth`)
+    if (sw > 390) wide.push(`${path} ${sw}px`)
+  }
+  t('mobile.noSidewaysScroll', wide, none)
+  await goto(`${ORIGIN}/pitch/`)
+  t('mobile.menu', await evaluate(`
+    const menu = document.getElementById('site-menu'), btn = document.querySelector('.navtoggle');
+    const shown = (el) => el.getBoundingClientRect().height > 0;
+    const closedAtLoad = !shown(menu) && shown(btn) && document.querySelector('.topbar').getBoundingClientRect().height <= 70;
+    btn.click(); await sleep(50);
+    const opens = shown(menu) && shown(menu.querySelector('a[href="/start/"]')) && shown(menu.querySelector('.swatch'));
+    btn.click(); await sleep(50);
+    return { closedAtLoad, opens, closes: !shown(menu) };
+  `))
+  await cmd('Emulation.clearDeviceMetricsOverride')
 
   t('console.clean', consoleErrors, none)
 } finally {

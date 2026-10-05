@@ -39,6 +39,7 @@ and `unix` answers `not_implemented`.
 src/
   conduit.ts        the core — declare targets, send, apply policy
   router.ts         target resolution
+  observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
   credentials.ts    credential resolvers — a target names one, never inlines it
   resilience.ts     per-target load shedding
@@ -202,7 +203,9 @@ src/
   under `observers:` receives and cannot act — a throw is caught, a promise is
   never awaited — so nothing there can change a request or suppress an error.
   `management.hooks` is Junction's own pipeline and does refuse calls. A new
-  `on*` states which tier it is (`FJS-D06` §1).
+  `on*` states which tier it is (`FJS-D06` §1). What an observer is handed is `observedRequest`'s
+  doing: origin-only address, and body, headers and query run through the
+  logger's credential-name walk. Any new observer call site goes through it.
 - **A body becomes bytes in `transports/encode.ts` and nowhere else.** `rawBody`
   is the same string handed to `buildAuthHeaders`, which hashes it — so an
   encoder anywhere else signs bytes the transport did not send, and every signed

@@ -145,6 +145,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
 - allow **update** — `auth().isStaff`
+- allow **update** — `userId == auth().id && status == 'draft'`
 
 ### `InvoiceLine`
 

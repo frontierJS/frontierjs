@@ -226,3 +226,139 @@ describe('the gate ladder over a parent its levels cannot read', () => {
     env.close()
   })
 })
+
+// A create rule that reads a parent's column read the REAL row, so a caller who
+// chose the key and the value compared with it read a hidden parent's column a
+// guess at a time: ownerId 42 admitted userId 42 to the hidden-parent refusal
+// and refused userId 41 by policy, where a missing team refused both (FJS-1712).
+describe('a create rule reading a parent the caller cannot read', () => {
+  const RULES = (tenancy: string) => `
+    ${tenancy}
+    model Team {
+      id          Int       @id
+      workspaceId Int
+      ownerId     Int
+      private     Boolean   @default(false)
+      deletedAt   DateTime?
+      members     TeamMember[]
+      @@softDelete
+      @@allow('all', private == false)
+    }
+    model TeamMember {
+      id     Int  @id
+      teamId Int
+      team   Team @relation(fields: [teamId], references: [id])
+      userId Int
+      @@allow('read', true)
+      @@allow('create', team.ownerId == userId)
+    }
+  `
+  const seed = async (tenancy = '') => {
+    const db: any = await createClient({ db: ':memory:', schema: RULES(tenancy) })
+    await db.asSystem().team.createMany({ data: [
+      { id: 1, workspaceId: 10, ownerId: 42, private: true },
+      { id: 2, workspaceId: 10, ownerId: 42 },
+      { id: 3, workspaceId: 10, ownerId: 42 },
+      { id: 4, workspaceId: 20, ownerId: 42 },
+    ] })
+    await db.asSystem().team.delete({ where: { id: 2 } })
+    return { db, me: db.$setAuth({ id: 1, workspaceId: 10 }) }
+  }
+  const answer = (p: Promise<unknown>) => p.then(() => 'created', (e: any) => e.name)
+
+  test('a private team, a removed one and a missing one answer alike, whatever the guess', async () => {
+    const { db, me } = await seed()
+    for (const teamId of [1, 2, 999])
+      for (const userId of [41, 42])
+        expect(await answer(me.teamMember.create({ data: { id: 9, teamId, userId } }))).toBe('AccessDeniedError')
+    // A team the caller reads is read for real, both ways.
+    expect(await answer(me.teamMember.create({ data: { id: 9, teamId: 3, userId: 41 } }))).toBe('AccessDeniedError')
+    expect(await answer(me.teamMember.create({ data: { id: 9, teamId: 3, userId: 42 } }))).toBe('created')
+    db.$close()
+  })
+
+  // A gate is a tier above any compiled predicate, so check() saw a team the
+  // caller's level cannot read as found and a missing one as not.
+  test('check() across a parent the caller cannot read finds no row, as across a missing one', async () => {
+    const GATED = (rule: string) => `
+      model Team {
+        id     Int   @id
+        guests Guest[]
+        @@gate("6.6.6.6")
+        ${rule}
+      }
+      model Guest {
+        id     Int  @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        @@allow('read', true)
+        @@allow('create', check(team))
+      }
+    `
+    const plugins = [new GatePlugin({ getLevel: (u: any) => u?.level ?? 0 })]
+    const answers = async (rule: string) => {
+      const db: any = await createClient({ db: ':memory:', schema: GATED(rule), plugins })
+      await db.asSystem().team.create({ data: { id: 1 } })
+      const out = []
+      for (const level of [4, 6])
+        for (const teamId of [1, 999])
+          out.push(await answer(db.$setAuth({ id: 1, level }).guest.create({ data: { id: 9 + teamId, teamId } })))
+      db.$close()
+      return out
+    }
+    expect(await answers(`@@allow('all', true)`)).toEqual(['AccessDeniedError', 'AccessDeniedError', 'created', 'AccessDeniedError'])
+    // No row policy: check() admits without a lookup, so both reach the
+    // missing-parent answer.
+    expect(await answers('')).toEqual(['ForeignKeyError', 'ForeignKeyError', 'created', 'ForeignKeyError'])
+  })
+
+  // Every hidden parent of the row is read as missing, not the first alone.
+  test('a row naming two hidden parents reads the second as missing too', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `
+      model Team {
+        id      Int     @id
+        ownerId Int
+        private Boolean @default(false)
+        a       Pair[]  @relation("a")
+        b       Pair[]  @relation("b")
+        @@allow('all', private == false)
+      }
+      model Pair {
+        id     Int  @id
+        aId    Int
+        a      Team @relation("a", fields: [aId], references: [id])
+        bId    Int
+        b      Team @relation("b", fields: [bId], references: [id])
+        userId Int
+        @@allow('read', true)
+        @@allow('create', b.ownerId == userId)
+      }
+    ` })
+    await db.asSystem().team.createMany({ data: [{ id: 1, ownerId: 42, private: true }, { id: 2, ownerId: 42, private: true }] })
+    const me = db.$setAuth({ id: 1 })
+    for (const bId of [2, 999])
+      for (const userId of [41, 42])
+        expect(await answer(me.pair.create({ data: { id: 9, aId: 1, bId, userId } }))).toBe('AccessDeniedError')
+    db.$close()
+  })
+
+  test('createMany and upsertMany answer alike too', async () => {
+    const { db, me } = await seed()
+    for (const verb of ['createMany', 'upsertMany'])
+      for (const teamId of [1, 2, 999])
+        for (const userId of [41, 42]) {
+          const err: any = await me.teamMember[verb]({ data: [{ id: 9, teamId, userId }] }).catch((e: any) => e)
+          expect(err.cause?.name ?? err.name).toBe('AccessDeniedError')
+        }
+    db.$close()
+  })
+
+  test('under row tenancy, another workspace\'s team is one of them', async () => {
+    const { db, me } = await seed('tenancy { strategy row  column workspaceId  claim workspaceId }')
+    for (const teamId of [1, 4, 999])
+      for (const userId of [41, 42])
+        expect(await answer(me.teamMember.create({ data: { id: 9, teamId, userId } }))).toBe('AccessDeniedError')
+    expect(await answer(me.teamMember.create({ data: { id: 9, teamId: 3, userId: 42 } }))).toBe('created')
+    db.$close()
+  })
+})

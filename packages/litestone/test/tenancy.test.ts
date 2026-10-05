@@ -474,11 +474,37 @@ describe('a row cannot be moved out of its tenant', () => {
     expect((await sys.note.findUnique({ where: { id: 1 } })).docId).toBe(1)
   })
 
+  // The WHERE grades the row before; only the post-update rule reads the row
+  // after, and a bulk write that skips it moves rows update() refuses (FJS-1713).
+  it('refuses the same move through updateMany, and rolls back every row of it', async () => {
+    const { sys, caller } = await seeded()
+    await sys.doc.create({ data: { workspaceId: 1, title: 'mine too' } })
+
+    await expect(caller.doc.updateMany({ where: {}, data: { workspaceId: 2 } }))
+      .rejects.toThrow(/Outside your workspaceId/)
+    expect((await sys.doc.findMany({ where: { workspaceId: 1 } })).map((d: any) => d.id).sort()).toEqual([1, 3])
+  })
+
+  it('grades a hand-written post-update rule on updateMany as update() does', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `
+      model Task { id Int @id @default(autoincrement())  status String  @@allow('all', true)  @@deny('post-update', status == 'locked') }
+    ` })
+    const sys = db.asSystem()
+    await sys.task.create({ data: { status: 'open' } })
+    const caller = db.$setAuth({ id: 'u1' })
+
+    await expect(caller.task.update({ where: { id: 1 }, data: { status: 'locked' } })).rejects.toThrow(/post-update/)
+    await expect(caller.task.updateMany({ where: { id: 1 }, data: { status: 'locked' } })).rejects.toThrow(/post-update/)
+    expect((await sys.task.findUnique({ where: { id: 1 } })).status).toBe('open')
+    expect(await caller.task.updateMany({ where: { id: 1 }, data: { status: 'done' } })).toEqual({ count: 1 })
+  })
+
   it('still allows an ordinary edit — the rule is about the tenant, not the row', async () => {
     const { sys, caller } = await seeded()
 
     await caller.doc.update({ where: { id: 1 }, data: { title: 'renamed' } })
     expect((await sys.doc.findUnique({ where: { id: 1 } })).title).toBe('renamed')
+    expect(await caller.doc.updateMany({ where: {}, data: { title: 'bulk' } })).toEqual({ count: 1 })
   })
 
   it('asSystem() still moves a row deliberately', async () => {

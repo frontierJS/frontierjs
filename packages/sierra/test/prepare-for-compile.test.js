@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { prepareForCompile } from '../src/build/mesa-plugin.js'
+import { locLines, prepareForCompile } from '../src/build/mesa-plugin.js'
 
 const map = new Map([
   ['Hero', { kind: 'default', from: '/app/content/blocks/Hero.md', imported: null }],
@@ -52,5 +52,39 @@ describe('prepareForCompile — a .mesa file', () => {
     const out = prepareForCompile('---\nrender: static\n---\n<Hero />\n', '/app/src/routes/index.mesa', map)
     expect(out).not.toContain('render: static')
     expect(out).toContain("import Hero from '/app/content/blocks/Hero.md'")
+  })
+})
+
+// The compiler stamps `data-fjs-loc` from what it was handed, and preparation
+// inserts and drops lines: every element below an auto-import opened its source
+// a line off, and below a frontmatter block three lines the other way.
+describe('locLines — each prepared line back to the file\'s', () => {
+  const line = (orig, prep, text) => locLines(orig, prep)[prep.split('\n').findIndex(l => l.includes(text))]
+
+  test('nothing moved: no map', () => {
+    expect(locLines('<p>a</p>\n', '<p>a</p>\n')).toBeNull()
+  })
+
+  test('an auto-import and a slot prop, inserted after the script tag', () => {
+    const src = '<script>\n  let a = 1\n</script>\n\n<main>\n  <slot />\n  <p>after</p>\n</main>\n'
+    const prepared = prepareForCompile(src, '/app/content/routes/_module.mesa', map)
+    expect(prepared).not.toBe(src)
+    expect(line(src, prepared, '<p>after</p>')).toBe(7)
+    expect(line(src, prepared, '<main>')).toBe(5)
+  })
+
+  test('a frontmatter block stripped from a .mesa route', () => {
+    const src = '---\ntitle: Home\n---\n<h1>Hi</h1>\n<p>there</p>\n'
+    const prepared = prepareForCompile(src, '/app/content/routes/index.mesa', null)
+    expect(line(src, prepared, '<h1>')).toBe(4)
+    expect(line(src, prepared, '<p>there')).toBe(5)
+  })
+
+  test('a script block synthesized above markup that had none', () => {
+    const src = '<div>\n  <Hero />\n</div>\n'
+    const prepared = prepareForCompile(src, '/app/content/routes/index.mesa', map)
+    expect(prepared.startsWith('<script>')).toBe(true)
+    expect(line(src, prepared, '<div>')).toBe(1)
+    expect(line(src, prepared, '<Hero')).toBe(2)
   })
 })

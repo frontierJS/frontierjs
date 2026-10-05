@@ -1,5 +1,25 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-04 — a block inside `<svg>` is SVG whatever its root tag (`FJS-1613`)
+
+`{#each}<a><ellipse/></a>{/each}` inside an `<svg>` compiled to the HTML `$$runtime.template`, so on the client the `<ellipse>` was an `HTMLUnknownElement` that drew nothing and had no `getBBox`. `buildBlock` judged the namespace from the block's root tags, and `<a>` is legal in both vocabularies. The element walk now carries a namespace on `ctx`: `<svg>` enters SVG, `<foreignObject>` returns to HTML, and a `<mesa:portal>`'s children are HTML because they land in `to`. A block that starts inside SVG compiles to `svgToFragment`. The prerender was always right, since the browser parses its text. `compiler.test.js` grades `{#each}` and `{#if}` with a root `<a>` and an HTML block in a `<foreignObject>`. The website's `map.mesa` drops its `<g>` workaround; `/map/` under vite dev measured 18 ellipses in the SVG namespace with a `getBBox`, and XHTML with the fix turned off.
+
+## 2026-10-04 — `<mesa:window|document|body>` honours the same event modifiers an element does
+
+`<mesa:window on:keydown|capture={f}>` registered a bubble-phase listener: the global-target branch kept only the four guards and emitted `addGlobalEvent(target, event, handler)` with no options, so `capture`, `once`, `passive`, `debounce` and `throttle` were dropped and a misspelled modifier was accepted (`FJS-1627`). The element branch and the global branch now share one `applyEventModifiers`, so a modifier means one thing on both and an unknown one is refused by name on both. `test/global-event-modifiers.test.js` pins the options, the timers, the guards and the refusal.
+
+## 2026-10-04 — `locLines`: a caller that rewrote the file says where its lines came from
+
+`compile()` takes `locLines`, an array that maps each line of the source it was handed to the line of the file the source came from (1-based). When it is given, `data-fjs-loc` stamps the mapped line. Sierra passes it because it rewrites a file before compiling it (`FJS-1710`). Without the option, nothing changes.
+
+## 2026-10-04 — a pick carries its modifier and an opener
+
+A picker now gets `{ el, loc, file, key, open }`. `key` is the inspector's modifier (`alt` by default), so a picker can name the click that opens the editor. `open()` opens the picked line in the editor through the same check a click uses. `open` stays off `window.__fjsInspect`: there, a page script could open the editor without anyone clicking. `test/vite-escaping.test.js` pins the payload, and the `inspect` drive is 17/17.
+
+## 2026-10-04 — the inspector takes a picker (`__fjsInspect.onPick`)
+
+Shift with the inspector's modifier now PICKS instead of opening. The element goes to every function registered with `window.__fjsInspect.onPick(fn)`, as `{ el, loc, file }`, and `onPick` returns an unregister function. With no picker registered, or only pickers that threw, the click opens the editor as before. The inspector does not know what a pick is for; the first picker is the CLI's ask-Claude panel. The `inspect` drive asserts that the picker gets the element and its location, that the editor does not also open, and that unregistering hands the click back (17/17).
+
 ## 2026-10-03 — Renders that run at once no longer corrupt each other's imports (`FJS-1661`)
 
 `compileTree` walked a compiled module's imports with `IMPORT_RE.exec`, one module-level `/g` regex, and awaited each child's compile inside the loop. A second render compiling at the same time moved the same `lastIndex`, so each render skipped imports the other had already passed. A skipped `.mesa` import was never rewritten to its temp module, and Bun loaded it as a path string. Transit's PDF with one page group per currency renders three times under `Promise.all`, and it died with *Table is not a function*. On HEAD, six concurrent `renderFile` calls of a component that imports three others threw in four of six. The matches are now collected with `matchAll`, which walks a clone, before the first await. The tree cache (`FJS-1659`) now holds the build in progress, so renders that arrive during a compile wait for it instead of starting their own. A send to fifty recipients compiles once. A failed build is dropped, so the next caller compiles again and gets the error itself. `test/render-cache.test.js` renders six at once: every one renders its own data, and all six share one module stamp. 2,076 pass.

@@ -1085,7 +1085,11 @@ export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
 // tenancy delegation (`parent` names the relation): the caller answers it as a
 // missing parent, where SQLite would refuse one, or the place it is thrown
 // tells it from a hidden one (FJS-1704).
-export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
+//
+// `hidden` names the relations whose parent the caller cannot read; a path or
+// a check() across one answers as across a missing parent (FJS-1712).
+export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap, hidden = null) {
+  if (hidden?.size) ctx = Object.assign(Object.create(ctx), { _hiddenParents: hidden })
   const v = policyVerdict(modelName, withLiteralDefaults(data, ctx.literalDefaultMap?.[modelName]), ctx, policyMap, relationMap, 'create')
   if (v.ok) return
   plog(ctx, 'create', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'})`)
@@ -1546,6 +1550,9 @@ function evalCheck(node, ctx, data, modelName, policyMap, relationMap, op) {
   const params  = []
   const subSql  = buildFilterSql(rel.targetModel, checkOp, params, ctx, policyMap, schema, relationMap, new Set([modelName]), !!node.tenancy)
   if (!subSql) return true   // target has no policy — allow, as compileSql does
+  // The lookup below finds a row the caller cannot read, where a missing one
+  // finds none (FJS-1712).
+  if (ctx._hiddenParents?.has(node.field)) return false
 
   const sql = `SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = ? AND (${subSql}) LIMIT 1`
   const hit = db.query(sql).get(fk, ...params)
@@ -1575,6 +1582,9 @@ function evalPath(node, ctx, data, modelName, relationMap) {
 
   const fk = data?.[rel.foreignKey]
   if (fk == null) return null
+  // The lookup below reads past the parent's own rules, so a parent the caller
+  // cannot read is absent here, or the rule answers by its column (FJS-1712).
+  if (ctx._hiddenParents?.has(node.rel)) return null
 
   const schema = ctx.schema
   const db     = ctx.readDb

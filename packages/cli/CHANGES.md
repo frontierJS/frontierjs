@@ -1,5 +1,63 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-04 — `fli check` sees a raw `apiKey` in a Resend mailer constructor (`FJS-1668`)
+
+`battery-raw-secret` (warn) reads `api/` source for `createResendMailer({ apiKey … })` — the literal, an `process.env` read and the `{ apiKey, from }` shorthand alike, since all three hold the secret in a closure for the life of the process — and points at `credentials` + `apiKeyRef`. `FJS-D219` kept the raw option and named this rule as what stops it living forever. Comments are blanked first, so the paragraph describing the hazard is silent. `test/checks.test.js` pins the three shapes, the reference form and the comment.
+
+## 2026-10-04 — the ask panel undoes any run, and keeps its log across a reload
+
+**Every run that changed a file ends in a row with its own Undo**, in place of the one "Undo last" that a newer run took away. An older run can be undone after a newer one: its ledger already treats a later run in the same file as another writer and reverses only its own hunk. A spent Undo reads "Undone". New chat no longer clears the log, since the Undo buttons in it still work.
+
+**The log and the panel's open state survive a full reload** in sessionStorage beside the session id, and a reload with the panel open draws it again over the log. Before, an edit HMR could not swap reloaded the page and took the diff and the Undo with it. The log keeps its last 300 entries. Run ids are now `<boot>.<n>`, with a random id per dev-server process: a saved log outlives a restart, and a bare count would have pointed an old Undo at a new run.
+
+**`verify:ask`** edits the heading and then the paragraph of one file directly, undoes the OLDER run and asserts the file is back except the newer run's line, then undoes the newer one byte for byte. Then it edits, reloads, and undoes from the log that came back. It also checks that a panel closed before a reload stays closed. With the reopen turned off, the reload check fails.
+
+## 2026-10-04 — the ask panel hands its conversation to a terminal
+
+**"Continue in terminal"** in the panel's header copies `cd <root> && claude --resume <id>` for the conversation the panel holds, so the person goes on with their own session's tools and settings rather than the panel's edit-only scope. `resumeCommand(root, session)` in `ask-claude.js` builds it from the same `root` the runs are spawned in; a root a shell would split or expand is single-quoted, and anything that is not a session id gets no command. Measured on 2.1.288: `claude --resume <id>` finds a session from any directory and appends to it where it was made, so the `cd` is for the session's relative paths and its tools, not for finding it.
+
+**Before there is a conversation** it copies what a first ask would send — the unsent instruction, each pick's source made absolute, and its HTML — for any agent. It is `editPrompt` with `followUp: true`, so the run's rules stay out; `editPrompt` now leaves out the `Change:` line when there is no instruction. `POST /__fjs/ask/handoff` answers both, and shares `readPicks` with the ask route. The clipboard is a secure-context API, so a page reached over plain http from another machine shows the text to select instead.
+
+**`verify:ask`** clicks it after the first run and asserts the copied command, then runs that command through `sh` against the fake CLI, which records where it was started and its argv: the root, and `--resume <id>`. Then New chat, an unsent instruction, and the copied block carries it with the absolute source and the HTML and none of the run's rules. With the `cd` dropped, two checks fail.
+
+## 2026-10-04 — the ask panel edits text with no Claude run
+
+**"Edit text" on a pick row** lays a textarea over the element, with the element's font, and never makes the element itself editable. Enter commits, Escape or a click away cancels. `POST /__fjs/ask/text` makes the swap when `locateText` finds the old text exactly once. In a `.mesa` file the search covers only the text between the element's own open and close tags, skipping attributes, `{…}` expressions, comments and script/style. Whitespace matches any run of whitespace, a character the source wrote as an entity (`&amp;`, `&mdash;`) matches the character the page shows, and a word inside a longer word is not a hit. The edit goes through `createLedger` as one Edit whose hunk is the whole searched region, so the diff, Undo and the another-writer rule are a run's. In `.mesa`, `& < >` in the new text are written as entities.
+
+**Anything else goes to Claude** with *Change the text "X" to exactly: Y*, and the log says which path ran: text interpolated or split by inline markup, text found twice, braces in the new text (plus Markdown's emphasis and link characters in a `.md`), or a loc the file no longer matches. A `.md` loc names the template Markdown compiles to (`FJS-1711`), so a `.md` searches its whole body after the frontmatter.
+
+**Measured on `website/site`, all 29 routes**: 3545 of 6770 text-bearing elements (52%) take the direct path. 769 (11%) are split by markup, and 2456 (36%) are interpolated: loops, component props, `data/*.js`. Before Sierra mapped locs back to file lines (`FJS-1710`), 33 did.
+
+**`verify:ask`** edits a static heading in place and asserts the fake CLI was never spawned, the file changed by exactly that one line, no `contenteditable` appeared, and Undo restored it byte for byte. Then it edits an interpolated heading, which falls back, is changed by the fake, and is undone. The route now has frontmatter, and the drive asserts the heading's loc is the line it is written on.
+
+## 2026-10-04 — the ask panel takes several elements in one ask
+
+**Shift+alt-click before a send adds to the list.** The panel shows one row per pick (its `loc`, its tag and a glimpse of its text, since two items of one loop share a `loc`), each with "Open source" and a × that leaves it out. One instruction goes out with all of them, as one run with one ledger, so one Undo puts every file back. The first pick after a send, or into a closed panel, starts a new list; a follow-up with no new pick keeps the last one. At most 10.
+
+**`editPrompt` takes `picks: [{ loc, html, size }]`** in place of `loc` and `html`, and numbers them (`Element 1 of 2`) when there is more than one. `EDIT_MAX_HTML` is now the budget for the whole prompt rather than for each element: `shareBudget` gives a short element all of its own and splits what it leaves among the long ones. The panel cuts each outerHTML to that budget before sending and passes its whole length as `size`, so ten section-sized picks stay under the request limit and the prompt still says how much was cut. `EDIT_RULES` says an instruction can cover several elements, so `verify:ask --real` is owed once.
+
+**`verify:ask` picks two headings in two files** (the scratch route now imports `content/parts/Lede.mesa`), leaves a third pick out again, and asserts one instruction changes both and one Undo restores both byte for byte. The fake CLI refuses unless the second pick reached the prompt; sending only the first pick fails the drive.
+
+## 2026-10-04 — the ask panel shows its diff, creates files, and undoes whole
+
+**An undo restores each file's original when nobody has touched it since.** `createLedger(root)` in `core/vite-ask.js` follows one run. It copies a file at the run's first Read of it. The CLI will not edit a file it has not read, and refuses one that changed since, so that copy comes before the change. When the first change to the file lands, the ledger replays that change against the copy, and a copy that does not replay to what is on disk is dropped. Undo writes the copy back only when the file is still byte for byte what the run left. Otherwise it reverses the run's own hunks as before, so another writer's work is never overwritten. This covers the three cases hunks could not: a replace-all, a deletion, and changed text that now occurs twice.
+
+**Write is allowed, inside the app.** `EDIT_TOOLS` gains `Write`, and the one `Edit(//dir/**)` rule scopes it too. Measured against the real CLI: a Write inside the scope landed and one beside it was denied. A new file is known new by the CLI's own result ("File created successfully"), because looking at the call can lose the race with the write. Undo deletes it only if it is unchanged since Claude wrote it, then removes the folders above it while they are empty. `readAskEvent` now also reports `read`, `write` and `landed` events, which the GUI console ignores.
+
+**The panel shows the diff**: after a run, each file the run changed, with removed and added lines and three lines of context (`lineDiff`). It also says which click does what ("alt-click opens the source in your editor · shift+alt-click asks here") and has an "Open source" button.
+
+**`verify:ask` gains a replace-all, a new file plus the edit that imports it, and another writer's line surviving an undo**, plus the diff, the hint and the button. Five consecutive runs passed. The fake CLI now takes a reply turn after its last edit: without it, the undo landed about 20ms after the edit, the dev server's watcher reported only the first write, and the page kept the edit over a file that had already been put back.
+
+## 2026-10-04 — ask Claude to change a picked element (`core/vite-ask.js`)
+
+**Edit mode for `ask-claude.js`.** `askArgv({ edit: dir })` gives the tools `Read,Grep,Glob,Edit`, with `Edit(//dir/**)` the only allow rule. It also passes `--setting-sources ''`, so no allow rule in any settings file reaches past that, and `--permission-mode dontAsk`, so a call outside the scope is denied instead of accepted by whatever mode the account defaults to. Measured against the real CLI: an edit inside the scope landed, and the one beside it came back as a permission denial. It has no Bash and no Write, so every change is a hunk on a file that already exists. `editPrompt` builds the prompt from the instruction, the element's `data-fjs-loc`, its outerHTML (first `EDIT_MAX_HTML` chars) and the page URL. `readAskEvent` now reports an Edit call with its hunk, and a refused tool result by call id.
+
+**`core/vite-ask.js` is a dev-only Vite plugin.** It serves `core/vite-ask-client.js`, which registers as the Mesa inspector's picker: shift+alt-click opens a panel, and the panel streams the reply. The plugin also adds `POST /__fjs/ask`, `/stop` and `/undo` middleware that runs the session in edit mode, scoped to the Vite root. The dev server's own watcher reloads the page. A request must carry this server's Origin and a JSON content type, so another tab's form or no-cors fetch is refused before anything spawns. One question runs at a time, and closing the tab stops it. **Undo reverses the run's own hunks**, newest first, and only where the new text still occurs exactly once. A replace-all edit, a deletion, or a file someone else has rewritten is reported as not undone. Nothing is restored whole. `test/vite-ask.test.js` covers it.
+
+**Sierra turns it on, in every dev server whose app has the cli** (`packages/sierra/src/build/ask-plugin.js`). `website/`, `example/` and `basecamp` declare `@frontierjs/cli` as a devDependency, as a scaffolded app already does. `bun run build` ships none of it.
+
+**Proved end to end by `website`'s `verify:ask`**: a scratch site on the `siteKit()` dev config, a real shift+alt-click in Chrome, the edit reaching the page through the watcher, and the undo putting the file back byte for byte. By default it reaches a fake `claude` on PATH; `--real` uses the CLI. The first real run passed in 7s and cost $0.03.
+
 ## 2026-10-03 — `fli new` ignores Sierra's build route table (`FJS-1695`)
 
 The scaffolded `.gitignore` lists `routes.build.js`, the table a Sierra build now writes beside `config/routes.js` so it cannot overwrite the one a running dev server serves.

@@ -51,7 +51,7 @@ import {
   VersionConflictError, SyncConflictError, TransitionGateError, TransitionSystemError,
   TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError, SealedDocumentError,
   UniqueConflictError, uniqueConflictColumns, checkViolationExpr, isCheckViolation,
-  isUniqueConflict, ForeignKeyError, isForeignKeyFailure, CapabilityNotDeclaredError, LockNotAcquiredError,
+  datatypeMismatch, isDatatypeMismatch, isUniqueConflict, ForeignKeyError, isForeignKeyFailure, CapabilityNotDeclaredError, LockNotAcquiredError,
   LockReleasedByOtherError, LockExpiredError,
 } from './errors.js'
 import { threeWay } from './three-way.js'
@@ -534,11 +534,27 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return out
   }
 
-  // One owner for "SQLite refused this write". Both constraints route through
+  // A value of the wrong storage class in a STRICT column (FJS-1609, FJS-D521).
+  // SQLite's sentence is true of a physical column and tells nobody what to
+  // send, so it becomes the same 422 a validator's refusal is.
+  function asDatatypeMismatch(err) {
+    if (!isDatatypeMismatch(err) || err instanceof ValidationError) return err
+    const m = datatypeMismatch(err)
+    if (!m) return err
+    const field = _fieldOf(m.column)
+    const out = new ValidationError([
+      { path: [field], message: `cannot hold a ${m.stored} value — the field is ${m.declared}` },
+    ])
+    out.model = modelName
+    return out
+  }
+
+  // One owner for "SQLite refused this write". Every constraint routes through
   // here, because eight call sites each choosing which translator to try is how
   // one of them ends up trying neither.
   function asConstraintError(err, data) {
     if (isCheckViolation(err)) return asCheckViolation(err)
+    if (isDatatypeMismatch(err)) return asDatatypeMismatch(err)
     if (isForeignKeyFailure(err)) return asMissingParent(err, data)
     return asUniqueConflict(err, data)
   }
@@ -631,6 +647,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //
   // `stamped` is per row, as writeData's is: one row's stamp must not excuse
   // another row's caller-named key.
+  //
+  // A refusal names the first hidden relation and carries every one in
+  // `hidden`, for the create policy to read as missing: a rule reading a
+  // hidden parent's column answers by that column, and the caller chose both
+  // the key and the payload it is compared with (FJS-1712).
   async function hiddenParents(rows, stamped = []) {
     const out = []
     if (ctx.isSystem || !_parentKeys.length) return out
@@ -640,7 +661,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (!tbl || !sink) continue
       const verdict = new Map()
       for (const [i, row] of rows.entries()) {
-        if (out[i] || !row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
+        if (!row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
         if (p.fields.every(f => stamped[i]?.has(f))) continue
         const values = p.fields.map(f => row[f])
         if (values.some(v => v == null || typeof v === 'object')) continue
@@ -648,7 +669,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
         if (!verdict.has(key)) verdict.set(key,
           await canRead(tbl, Object.fromEntries(p.references.map((r, j) => [r, values[j]]))) ||
           !sink.rowsWhere(p.references[0], [values[0]]).some(r => p.references.every((f, j) => r[f] == values[j])))
-        if (!verdict.get(key)) out[i] = parentRefusal(p.relation, p.fields, values, p.target)
+        if (verdict.get(key)) continue
+        if (out[i]) { out[i].hidden.add(p.relation); continue }
+        out[i] = parentRefusal(p.relation, p.fields, values, p.target)
+        Object.defineProperty(out[i], 'hidden', { value: new Set([p.relation]), enumerable: false })
       }
     }
     return out
@@ -660,9 +684,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // and a private one in the caller's own tenant is not. RETURNS that refusal,
   // for the caller to throw where hiddenParents' lands: thrown here, before
   // validation and ahead of earlier rows of a batch, a payload that also fails
-  // validation told a missing parent from a hidden one (FJS-1704).
-  function checkCreate(row) {
-    const v = checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+  // validation told a missing parent from a hidden one (FJS-1704). `hidden` is
+  // hiddenParents' refusal for the row, whose parents the policy reads as missing.
+  function checkCreate(row, hidden) {
+    const v = checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap, hidden?.hidden)
     if (!v) return
     const p = _parentKeys.find(k => k.relation === v.parent)
     if (!p) throw new AccessDeniedError(v.message, { model: modelName, operation: 'create' })
@@ -685,10 +710,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //
   // The walk is a system lookup, so every blocker is kept and
   // `nameBlockerForCaller` picks the one this caller may be told about.
-  function asRestrictedDelete(err, rows) {
+  function asRestrictedDelete(err, rows, from = modelName) {
     if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
     try {
-      let frontier = [[modelName, rows]]
+      let frontier = [[from, rows]]
       const seen = new Set()
       const blockers = []
       while (frontier.length) {
@@ -720,6 +745,27 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     } catch { return err }
     return new ForeignKeyError(modelName)
+  }
+
+  // The same answer for a statement that deleted this table's rows by a WHERE
+  // (deleteMany, a hard remove): the refused DELETE rolled back, so the rows it
+  // named are still there to be read.
+  function refusedDelete(err, whereSql, params) {
+    if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
+    let rows
+    try { rows = readAll(writeDb.query(`SELECT * FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`).all(...params)) }
+    catch { return err }
+    return asRestrictedDelete(err, rows)
+  }
+
+  // A `@hardDelete` child removed by a soft delete's cascade. The refusing row
+  // sits under the CHILD, so the walk starts from the child rows.
+  function refusedChildDelete(err, childModel, childTable, foreignKey, parentPKs) {
+    if (!isForeignKeyFailure(err) || err instanceof ForeignKeyError) return err
+    let rows
+    try { rows = writeDb.query(`SELECT * FROM "${childTable}" WHERE "${foreignKey}" IN (${parentPKs.map(() => '?').join(',')})`).all(...parentPKs) }
+    catch { return err }
+    return asRestrictedDelete(err, rows, childModel)
   }
 
   // The first blocking child the caller can read is named by id; when every
@@ -3218,11 +3264,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // knows this model's fields, so `user: { is: { email } }` on a `@lower`
     // email compared the raw spelling and matched nothing (`FJS-1468`).
     const targetTransformed = transformedOf(rel.targetModel)
+    // A target's @from and @derived fields are subqueries, not columns, so the
+    // alias this level gave the target is what they correlate on.
+    const targetFrom = ctx.fromMap?.[rel.targetModel]
+    const targetExprs = targetFrom
+      ? Object.fromEntries(Object.entries(targetFrom).map(([n, d]) => [n, d.subquerySqlFor(t)]))
+      : null
     const innerOf = (w) => {
       if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
       if (targetTransformed) w = rewriteTransformedWhere(w, targetTransformed)
       const p = []
-      const sql = buildWhere(w, p, null, t, null,
+      const sql = buildWhere(w, p, targetExprs, t, null,
         (k, v, pp, al) => relationFilterOn(rel.targetModel, depth + 1, k, v, pp, al), ctx.filterKindMap?.[rel.targetModel], tmap)
       return { sql, p }
     }
@@ -5697,8 +5749,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       data = applyGeneratedDefaults(data, ctx.generatedDefaultMap?.[modelName], stamped)
       data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth, stamped)
       data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth, stamped)
+      const [_crHid] = await hiddenParents([data], [stamped])
       // After the auth stamps, never before — see authStamped (FJS-1402).
-      const _crParent = ctx.hasPolicies ? checkCreate(data) : undefined
+      const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
       // A new row is version 1, whatever the payload says. Honouring a supplied
       // version would let a client start a row at 500 and make the first real
       // editor's read look stale.
@@ -5720,7 +5773,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
       }
       extractWriteOps(data, { where: 'create' })
-      const _crHidden = firstRefusal(_crParent, (await hiddenParents([data], [stamped]))[0])
+      const _crHidden = firstRefusal(_crParent, _crHid)
 
       // ── Everything that touches the database, as one unit ────────────────
       //
@@ -5888,9 +5941,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       await enforceValueSets(modelName, data, ctx)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       refuseOffEntry(data)
-      const _cmParent = ctx.hasPolicies ? data.map(row => checkCreate(authStamped(row, modelName, ctx))) : []
       // The rows as the caller wrote them: every stamp lands later, inside the unit.
       const _cmHidden = await hiddenParents(data)
+      const _cmParent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), _cmHidden[i])) : []
       for (const [i, r] of _cmParent.entries()) _cmHidden[i] = firstRefusal(r, _cmHidden[i])
 
       // Auto-generate @id and run writeData (transforms + validation) on every row
@@ -6258,6 +6311,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // this column when there is an update policy; one more read on the
           // losing side of a race is not a cost worth carrying a flag for.
           const cur = readDb.query(`SELECT "${_transResult.field}" AS v FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
+          // Still at `from` means no writer moved it, so the refusal is one of
+          // the other conjuncts — and a conflict reading "expected 'sent', the
+          // row is at 'sent'" would contradict itself. The seal and the version
+          // ride the same WHERE and have their own answers.
+          if (cur && cur.v === _transResult.from) {
+            throwIfVersionMoved()
+            throwIfSealedSelf(_vSelf.frozen, _vWhereSql0, _vWhereParams0)
+            throwIfSealed(_vWhereSql0, _vWhereParams0, 'update')
+          }
           throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to,
             { actual: cur ? cur.v : undefined, move: _transResult.transitionName })
         }
@@ -6459,7 +6521,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // A logged model takes RETURNING so the trail can name the rows it changed.
       // Still one statement — bulk ops record WHICH rows and WHAT operation, never
       // their contents (same shape as createMany; see emitLogs).
-      const _umNeedRows = tableHasLogWork || _umWantRows
+      // The WHERE grades each row as it was; the post-update rule reads the row
+      // as it is now, which only RETURNING carries (FJS-1713).
+      const _umPost = ctx.hasPolicies && !!ctx.policyMap[modelName]?.['post-update']
+      const _umNeedRows = tableHasLogWork || _umWantRows || _umPost
       const _umSql = `UPDATE "${tableName}" SET ${_umSetCols}${finalWhere ? ` WHERE ${finalWhere}` : ''}`
                    + (_umNeedRows ? ` RETURNING *` : '')
       const _nt = needsTiming()
@@ -6482,6 +6547,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         count = _umRows ? _umRows.length : rowsChanged(writeDb)
         // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
         if (count && _umMoves) throw _umHidden
+        // One refused row refuses the batch: the throw rolls the unit back.
+        if (_umPost) for (const r of _umRows)
+          checkPostUpdatePolicy(modelName, read(r, { mode: 'single', hydrateFrom: true }), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
         if (_umRows) for (const r of _umRows) noteCardinality(read(r))
         else noteCardinalityBySql(finalWhere, _umWhereP)
       })
@@ -6844,7 +6912,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (ctx.hasPolicies) {
           for (const [i, row] of rows.entries()) {
             if (present.has(keyOf(row))) continue
-            try { _usHidden[i] = firstRefusal(checkCreate(authStamped(data[i], modelName, ctx)), _usHidden[i]) }
+            try { _usHidden[i] = firstRefusal(checkCreate(authStamped(data[i], modelName, ctx), _usHidden[i]), _usHidden[i]) }
             catch (e) { throw asBatchRowError(e, i, rows.length, data[i]) }
           }
         }
@@ -7031,7 +7099,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
               const ph = parentPKs.map(() => '?').join(',')
               if (hardDelete) {
                 // @hardDelete: physically remove child rows instead of stamping deletedAt
-                writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
+                try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
+                catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
                 // Hard-delete children are terminal — no need to track their PKs for further cascade
               } else if (_cascadeParents.has(childModel)) {
                 writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
@@ -7044,7 +7113,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             }
           }
         }
-        })
+        }).catch(async e => { throw await nameBlockerForCaller(e) })
         if (!softResult) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
 
         fireRowEvent('remove', 'remove', softResult)
@@ -7063,8 +7132,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const row = await tx.wrapExclusive(() => {
         if (cascadeHeard()) _rmHDoomed = cascadeDoomed(
           readAll(readDb.query(`SELECT * FROM "${tableName}" WHERE ${removeFinalSql}`).all(...removeFinalParams)))
-        return read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true })
-      })
+        try { return read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true }) }
+        catch (e) { throw refusedDelete(e, removeFinalSql, removeFinalParams) }
+      }).catch(async e => { throw await nameBlockerForCaller(e) })
       fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
       if (!row) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
       fireRowEvent('remove', 'remove', row)
@@ -7107,46 +7177,50 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (softDelete) {
         const ts = nowISO(ctx.now)
 
-        // If cascading, fetch affected PKs first so we can cascade precisely
-        if (softDeleteCascade) {
-          const cascadeTargets = _cascadeTargets()
-          if (cascadeTargets.length > 0) {
-            const exclWhere2 = injectSoftDeleteFilter(where, 'live')
-            const params2 = []
-            const whereSql2 = buildWhereWithEncryption(exclWhere2, params2)
-            const liveRows = readDb.query(`SELECT * FROM "${tableName}"${whereSql2 ? ` WHERE ${whereSql2}` : ''}`).all(...params2)
-            // Seed affected PKs with root table values
-            const firstTarget = cascadeTargets[0]
-            const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
-            const affectedPKs = new Map([[modelName, liveRows.map(r => r[rootPKCol])]])
-            for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
-              const parentPKs = affectedPKs.get(parentModel) ?? []
-              if (!parentPKs.length) continue
-              const ph = parentPKs.map(() => '?').join(',')
-              if (hardDelete) {
-                writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs)
-              } else {
-                writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
-                if (_cascadeParents.has(childModel)) {
-                  const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
-                  affectedPKs.set(childModel, childPKs)
-                }
-              }
-            }
-          }
-        }
-
         // RETURNING only on a logged model — see updateMany.
         const _rmsSets = [`"${col('deletedAt')}" = ?`, ...stampSets(['deletedAt'])].join(', ')
         const _rmsSql = `UPDATE "${tableName}" SET ${_rmsSets}${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
                       + (_rmNeedRows ? ` RETURNING *` : '')
         let _rmsRows, softCount
+        // The cascade and the stamp are one unit, as in remove(): a child
+        // refused part way would otherwise leave the earlier children stamped
+        // under a parent that is still live (`FJS-1714`).
         await tx.wrapExclusive(() => {
+          // If cascading, fetch affected PKs first so we can cascade precisely
+          if (softDeleteCascade) {
+            const cascadeTargets = _cascadeTargets()
+            if (cascadeTargets.length > 0) {
+              const exclWhere2 = injectSoftDeleteFilter(where, 'live')
+              const params2 = []
+              const whereSql2 = buildWhereWithEncryption(exclWhere2, params2)
+              const liveRows = readDb.query(`SELECT * FROM "${tableName}"${whereSql2 ? ` WHERE ${whereSql2}` : ''}`).all(...params2)
+              // Seed affected PKs with root table values
+              const firstTarget = cascadeTargets[0]
+              const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
+              const affectedPKs = new Map([[modelName, liveRows.map(r => r[rootPKCol])]])
+              for (const { childModel, childTable, foreignKey, referencedKey, parentModel, hardDelete } of cascadeTargets) {
+                const parentPKs = affectedPKs.get(parentModel) ?? []
+                if (!parentPKs.length) continue
+                const ph = parentPKs.map(() => '?').join(',')
+                if (hardDelete) {
+                  try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
+                  catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
+                } else {
+                  writeDb.run(`UPDATE "${childTable}" SET "deletedAt" = ? WHERE "${foreignKey}" IN (${ph}) AND "deletedAt" IS NULL`, ts, ...parentPKs)
+                  if (_cascadeParents.has(childModel)) {
+                    const childPKs = readDb.query(`SELECT "${referencedKey}" FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`).all(...parentPKs).map(r => r[referencedKey])
+                    affectedPKs.set(childModel, childPKs)
+                  }
+                }
+              }
+            }
+          }
+
           noteCardinalityBySql(rmFinalSql, params)
           _rmsRows = _rmNeedRows ? writeDb.query(_rmsSql).all(ts, ...params) : null
           if (!_rmsRows) writeDb.run(_rmsSql, ts, ...params)
           softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
-        })
+        }).catch(async e => { throw await nameBlockerForCaller(e) })
         if (tableHasLogWork && _rmsRows?.length) emitLogs('delete', _rmsRows)
         announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count: softCount, rows: _rmsRows })
         return { count: softCount }
@@ -7162,10 +7236,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       await tx.wrapExclusive(() => {
         if (cascadeHeard()) _rmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
           : readAll(readDb.query(`SELECT * FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`).all(...params)))
-        _rmnRows = _rmNeedRows ? writeDb.query(_rmnSql).all(...params) : null
-        if (!_rmnRows) writeDb.run(_rmnSql, ...params)
+        try {
+          _rmnRows = _rmNeedRows ? writeDb.query(_rmnSql).all(...params) : null
+          if (!_rmnRows) writeDb.run(_rmnSql, ...params)
+        } catch (e) { throw refusedDelete(e, rmFinalSql, params) }
         count = _rmnRows ? _rmnRows.length : rowsChanged(writeDb)
-      })
+      }).catch(async e => { throw await nameBlockerForCaller(e) })
       fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: count })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
@@ -7879,10 +7955,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         noteCardinalityBySql(dmFinalSql, params)
         if (cascadeHeard()) _dmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
           : readAll(readDb.query(`SELECT * FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`).all(...params)))
-        _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
-        if (!_dmnRows) writeDb.run(_dmnSql, ...params)
+        try {
+          _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
+          if (!_dmnRows) writeDb.run(_dmnSql, ...params)
+        } catch (e) { throw refusedDelete(e, dmFinalSql, params) }
         result = { changes: _dmnRows ? _dmnRows.length : rowsChanged(writeDb) }
-      })
+      }).catch(async e => { throw await nameBlockerForCaller(e) })
       fireQuery({ operation: 'deleteMany', args: { where }, sql: _dmnSql, params, duration: _nt ? performance.now() - _dmnT0 : 0, rowCount: result.changes })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)

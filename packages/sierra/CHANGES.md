@@ -1,5 +1,24 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-04 — `data-fjs-loc` names the file's line again (`FJS-1710`)
+
+`prepareForCompile` strips a `.mesa` route's frontmatter and inserts auto-imports and slot props, and Mesa stamped `data-fjs-loc` from what it was handed. So alt-click opened a line or more off in any file that went through a rewrite: on `website/site`, the layout's skip link stamped `:20` when it is written on `:19`. **`locLines(original, prepared)`** in `src/build/mesa-plugin.js` maps each prepared line to the line of the file it came from, aligning the two line by line. An inserted line maps to the line before it, and a line rewritten in place maps to itself. The transform passes the map to the compiler as `locLines` in dev, and never for a `.md` (`FJS-1711`). `test/prepare-for-compile.test.js` covers an insertion after the script tag, a stripped frontmatter block and a synthesized script block.
+
+## 2026-10-04 — leaving an `[id]` screen no longer mounts it again with the next screen's id (`FJS-1684`)
+
+`apps/[id]` → `deployments/[id]` called `apps.get` with a deployment's id, and leaving for a list ran the
+old screen with no id at all. The router's commit order was innocent: `ChainRenderer` derived `Component`
+from an `entry` memo, one derived layer below the remount key that reads `entry` as well, so when the
+route and its params moved together the key block re-ran first and mounted the screen being left — still
+the stale `Component` — under the new params. `Component` and the key now both read `chain[depth]`
+directly, one layer, which is the only shape the flush orders correctly. `test/screen-leave-router.test.js`
+mounts the real router, `RouterView` and `ChainRenderer` and is red without the change in both the
+`[id]` → `[id]` and `[id]` → list rows; a hand-written commit of `params` then `route` does not reproduce it.
+
+## 2026-10-04 — every dev server has the ask panel
+
+**`src/build/ask-plugin.js` turns on `@frontierjs/cli`'s ask panel** (shift+alt-click an element, ask Claude to change it) in every Sierra dev server, beside the inspector whose pick it answers. Site-kit wired it on its own first; that line is gone, so the website, `example/web`, basecamp and a scaffolded app all get it from here. Sierra does not depend on the cli: `@frontierjs/cli/core/vite-ask.js` is resolved from the Vite root at `configResolved`, and the cli plugin's hooks are forwarded once it loads. An app without the cli gets no panel and no warning; one whose cli fails to load gets a warning. `mesa: { inspect: false }` turns it off with the inspector, read through the new `inspectOn()` so the two cannot disagree. Proved by `test/ask-plugin.test.js` (against a stub cli in a temp root) and `website`'s `verify:ask`, which goes red naming the missing plugin and client when the line is removed.
+
 ## 2026-10-04 — the device keeps an append-only model insert-only rather than nothing (`FJS-1700`)
 
 `writeRows` mirrors server rows with `asSystem().upsertMany`, and litestone now grades that call's conflict half as an update. Example's `InventoryMovement` is `@@gate("5.5.9.9")`, and a 9 refuses the system client too, so the offline warm kept nothing of `inventory` and `example verify` failed on the console warning. A refusal naming `update` at 9 is retried with `update: []`. Such a row never changes on the server, so insert-only replay loses nothing. Any other refusal is still reported. `test/local-db.test.js` has both halves.

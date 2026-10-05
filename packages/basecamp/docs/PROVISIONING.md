@@ -375,7 +375,7 @@ wrong is the one that bills somebody. An address nobody recognizes is treated as
 real.
 
 **P3 — the key a machine signs with. — DONE 2026-09-08.**
-`requireOutpostSignature` resolves the secret PER MACHINE: a row carrying
+`outpostCredential` resolves the secret PER MACHINE: a row carrying
 `outpostSecretId` is verified against that secret and **refused on the fleet
 key**, which is the security property rather than tidiness — the fleet key is
 one string every machine holds, so accepting it for an enrolled machine would
@@ -384,12 +384,12 @@ leave any compromised box able to forge that machine's check-in.
 **It closed a hole rather than only narrowing one, and the hole was total.**
 Enrollment minted a secret, cloud-init wrote it to the machine, and nothing on
 this side ever read it: the outpost signed with what it had been given and the
-hook compared against the fleet key. Measured before the change — own secret
+verifier compared against the fleet key. Measured before the change — own secret
 401, fleet key 200, row stuck at `installing`. **A machine Basecamp bought could
 never come online**, and every test in the suite passed.
 
 Which machine a request is about comes from a **per-endpoint table**
-(`OUTPOST_SUBJECT`), not a header: the id is already in every guarded request —
+(`OUTPOST_ENDPOINTS`), not a header: the id is already in every guarded request —
 `servers.heartbeat` in the path, both `report` methods as `server_id` in the
 body — so a header would be a second place it can be wrong with nothing
 comparing the two. An endpoint guarded with no row resolves to null, and null is

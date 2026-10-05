@@ -15171,6 +15171,30 @@ describe('createTestEnv', () => {
     mutant.close()
   })
 
+  test('verifyFieldProtection does not ask asSystem() to read a @hashed column', async () => {
+    // @hashed is the one protection asSystem() does not lift, so the "came back
+    // to asSystem()" half has nothing to find: every model with one reported
+    // 'unreadable, not protected' on an unmutated schema (FJS-1639).
+    const HASHED = `
+      model Address {
+        id    Int     @id
+        label String
+        token String? @hashed
+        @@gate("4.8.8.8")
+      }
+    `
+    const original = parse(HASHED).schema
+    const env = await createTestEnv({ schema: HASHED })
+    expect((await env.verifyFieldProtection()).map((m: any) => m.message)).toEqual([])
+    env.close()
+
+    // The first half still grades it: drop @hashed and the value comes back.
+    const mutant = await createTestEnv({ schema: HASHED.replace('String? @hashed', 'String?') })
+    const bad = await mutant.verifyFieldProtection({ against: original })
+    expect(bad.map((m: any) => [m.field, m.got])).toEqual([['token', 'exposed']])
+    mutant.close()
+  })
+
   test('verifyConstraints checks @unique, which is the one rule needing an existing row', async () => {
     const env = await createTestEnv({ schema: RULES_ENV_SCHEMA })
     expect(await env.verifyConstraints()).toEqual([])

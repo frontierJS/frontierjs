@@ -17,6 +17,13 @@
 // tree's close-out — and the hook writes which items were SHOWN beside `.git`,
 // so an ask would silence them for the person's own session. `--strict-mcp-config`
 // with no config drops every MCP tool the account would otherwise lend it.
+//
+// EDIT is the one widening, and it is a path, not a mode: `Edit` and `Write`
+// scoped to one directory, every settings source dropped so no allow rule in a
+// settings file reaches past it, and `dontAsk` so a call outside it is denied
+// rather than accepted by whatever mode the account defaults to. The one
+// `Edit(<dir>/**)` rule covers Write too — measured, for each tool the call
+// inside the scope landed and the one beside it came back as a denial.
 
 import { spawn, spawnSync } from 'node:child_process'
 
@@ -45,9 +52,55 @@ export const ASK_RULES = [
 // its tokens re-reading on every turn.
 export const ASK_MAX_RULES = 4000
 
+export const EDIT_TOOLS = ['Read', 'Grep', 'Glob', 'Edit', 'Write']
+
+// What the browser's picker sends with an element: the page renders as narrow
+// a reply as the console does, and the file and line are where to start, not a
+// fence — a change asked of one element is often one in the component it uses.
+export const EDIT_RULES = [
+  'I picked one or more elements on a page running in a FrontierJS dev server and asked for a change to them. When I pick several, the one instruction covers all of them.',
+  'Make the change with the Edit tool. Use Write only to create a new file, such as a new section or component. You may change files under the app directory and nowhere else; a call outside it is denied, so say what you would change there instead.',
+  'The page hot-reloads when a file is saved, so I will see the result as soon as you edit. Make the smallest change that does what I asked, in the style of the file you are in.',
+  'Another session may be editing this tree. Re-read a file before you edit it, and never rewrite more of it than the change needs.',
+  'Reply in two or three short lines: what you changed and where (file:line).',
+].join('\n\n')
+
+// An outerHTML is context, not the subject; a page section is easily 50KB. The
+// budget is for the whole prompt, so ten picks cost what one does.
+export const EDIT_MAX_HTML = 4000
+
+// Each length's cut of `total`: a short one keeps all of its own and what it
+// leaves over goes to the longer ones, rather than every pick getting total/n.
+export function shareBudget(lengths, total = EDIT_MAX_HTML) {
+  const out = new Array(lengths.length).fill(0)
+  let left = total
+  const order = lengths.map((n, i) => i).sort((a, b) => lengths[a] - lengths[b])
+  order.forEach((i, k) => {
+    out[i] = Math.min(lengths[i], Math.floor(left / (order.length - k)))
+    left -= out[i]
+  })
+  return out
+}
+
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function askArgv({ session = null } = {}) {
+export function askArgv({ session = null, edit = null } = {}) {
+  if (edit) {
+    const argv = [
+      '-p',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--settings',        JSON.stringify({ disableAllHooks: true }),
+      '--setting-sources', '',
+      '--permission-mode', 'dontAsk',
+      '--strict-mcp-config',
+      '--tools',           EDIT_TOOLS.join(','),
+      '--allowedTools',    `Edit(/${String(edit).replace(/\/+$/, '')}/**)`,
+      '--max-budget-usd',  String(ASK_BUDGET_USD),
+    ]
+    if (session) argv.push('--resume', session)
+    return argv
+  }
   const argv = [
     '-p',
     '--output-format', 'stream-json',
@@ -61,6 +114,16 @@ export function askArgv({ session = null } = {}) {
   if (session) argv.push('--resume', session)
   return argv
 }
+
+// The terminal half of a panel conversation. `claude --resume` finds the
+// session from any directory (measured, 2.1.288), but the session's paths are
+// relative to the root its runs were spawned in, and so is every tool it runs.
+export function resumeCommand(root, session) {
+  if (!SESSION_ID.test(String(session))) return null
+  return `cd ${shellWord(root)} && claude --resume ${session}`
+}
+
+const shellWord = s => /^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`
 
 export function gitContext(root) {
   const r = spawnSync('git', ['status', '--short', '--branch'], { cwd: root, encoding: 'utf8' })
@@ -94,12 +157,43 @@ export function askPrompt({ question, output = '', context = {}, git = null, rul
   return parts.join('\n\n')
 }
 
+/**
+ * The prompt for one ask: the picked elements, where each one's source is, what
+ * to do. `picks` is `[{ loc, html, size }]`, where `size` is the outerHTML's
+ * whole length when the page already cut `html`. The rules travel only on a
+ * first question, as in `askPrompt`.
+ */
+export function editPrompt({ instruction, picks = [], page = null, followUp = false }) {
+  const parts = []
+  if (!followUp) parts.push(EDIT_RULES)
+  const change = String(instruction ?? '').trim()
+  if (change) parts.push(`Change: ${change}`)
+  if (page) parts.push(`The page: ${String(page).slice(0, 300)}`)
+  const htmls = picks.map(p => String(p.html ?? ''))
+  const cuts  = shareBudget(htmls.map(h => h.length))
+  picks.forEach((p, i) => {
+    const lines = [picks.length > 1 ? `Element ${i + 1} of ${picks.length}:` : 'The element:']
+    if (p.loc) lines.push(`- source: ${p.loc}`)
+    const h = htmls[i], size = Math.max(Number(p.size) || 0, h.length)
+    if (h) lines.push(`- rendered HTML${cuts[i] < size ? ` (first ${cuts[i]} of ${size} chars)` : ''}:\n\`\`\`html\n${h.slice(0, cuts[i])}\n\`\`\``)
+    parts.push(lines.join('\n'))
+  })
+  return parts.join('\n\n')
+}
+
 // A tool call in one line: the part of its input a person would recognize.
 function toolLine(part) {
   const i = part.input ?? {}
   const what = i.command ?? i.file_path ?? i.pattern ?? i.path ?? ''
   return `${part.name}${what ? ` ${String(what).split('\n')[0].slice(0, 160)}` : ''}`
 }
+
+// A Write's result is the one witness that the file did not exist before it:
+// looking at the call races the write itself. Measured wording; if it ever
+// changes, a new file is only undone when the look won the race.
+const CREATED = /^File created successfully/
+const resultText = part => typeof part.content === 'string' ? part.content
+  : (part.content ?? []).map(c => c?.text ?? '').join('')
 
 /** One parsed stream-json event → the events the page draws (often none). */
 export function readAskEvent(event) {
@@ -111,9 +205,26 @@ export function readAskEvent(event) {
     for (const part of event.message?.content ?? []) {
       if (part.type === 'text' && part.text?.trim()) out.push({ type: 'text', text: part.text })
       if (part.type === 'tool_use') out.push({ type: 'tool', text: toolLine(part) })
+      // What an undo reverses. Reported at the CALL, which may yet be denied;
+      // the tool's result below is what says whether it landed. A Read is
+      // reported because it comes before any change to that file, so it is
+      // the moment the file's original can be copied without racing the write.
+      if (part.type !== 'tool_use' || !part.input?.file_path) continue
+      if (part.name === 'Read') out.push({ type: 'read', id: part.id, file: part.input.file_path })
+      if (part.name === 'Edit') out.push({
+        type: 'edit', id: part.id, file: part.input.file_path,
+        old: part.input.old_string ?? '', new: part.input.new_string ?? '', all: !!part.input.replace_all,
+      })
+      if (part.name === 'Write') out.push({
+        type: 'write', id: part.id, file: part.input.file_path, content: part.input.content ?? '',
+      })
     }
     return out
   }
+  if (event.type === 'user') return (event.message?.content ?? [])
+    .filter(part => part?.type === 'tool_result')
+    .map(part => part.is_error ? { type: 'refused', id: part.tool_use_id }
+      : { type: 'landed', id: part.tool_use_id, ...(CREATED.test(resultText(part)) ? { created: true } : {}) })
   if (event.type === 'result') return [{
     type:   'result',
     ok:     event.subtype === 'success' && !event.is_error,
@@ -130,11 +241,11 @@ export function readAskEvent(event) {
  * `{ child, done }` where `done` resolves to the exit code. Detached, so a stop
  * signals the group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, bin = 'claude', onEvent }) {
+export function runAsk({ root, prompt, session = null, edit = null, bin = 'claude', onEvent }) {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
 
-  const child = spawn(bin, askArgv({ session }), {
+  const child = spawn(bin, askArgv({ session, edit }), {
     cwd: root, detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   })

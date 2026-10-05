@@ -129,6 +129,9 @@
  * takes the whole layout with it.
  */
 .table-wrap {
+  /* A containing block, or a hideLabel column's absolute .visually-hidden
+   * label escapes the scroller and widens the page to the table's width. */
+  position:              relative;
   overflow-x:            auto;
   -webkit-overflow-scrolling: touch;
   /* Let the scroll container be a scroll target for keyboard users. */

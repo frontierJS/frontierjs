@@ -1,5 +1,9 @@
 # Changes — @frontierjs/css
 
+## 2026-10-04 — `.table-wrap` is a containing block (`FJS-1626`)
+
+`.table-wrap` gains `position: relative`. A Table column with `hideLabel` renders its label as `.visually-hidden`, which is `position: absolute`; with no positioned ancestor its containing block was the page, so the label sat at the far edge of a wide table outside the scroller and widened the document to the table's width — a 721px pane measured a 2,259px page in dragonfly. `tables.spec.js` grades that the label's `offsetParent` is the wrap. 514 passing.
+
 ## 2026-10-03 — `.section-header` carries no margin; Pane owns the space between its children
 
 `.section-header` lost its `margin-bottom: 0.5rem`. In a Card or Container it collapsed into the flow margin and went unseen; in a `.stack` it added to the gap, so a heading sat 24px from its own content and 16px from the section before it, on every page that used `.stack`. It now lands at `--space-2xl` from its content wherever it sits. A Section Header in a box that spaces nothing (a bare `<div>`, a component's root) now sits flush where it had 8px; the fix is `stack` on that box. `.pane` joins the flow rule in cards.css, since the Frame anatomy puts a Section Header straight into a Pane over a Card. `cards.spec.js` grades the header's gap in a Stack and in all four owners. 513 passing.

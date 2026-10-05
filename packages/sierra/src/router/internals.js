@@ -134,9 +134,9 @@ export function resolveChain(routeNode) {
   // Return a cached chain array if we've seen this exact sequence before.
   // Two routes with the same layout chain but different pages get different
   // arrays (because the page entry differs), BUT the layout entry objects
-  // within are shared via _stableEntry — so ChainRenderer's `entry` memo at
+  // within are shared via _stableEntry — so ChainRenderer's `chain[depth]` at
   // layout depths returns the same object reference across navigations.
-  // That makes `Component = entry.component` stable, and keyBlock skips remount.
+  // That makes `Component = chain[depth].component` stable, and keyBlock skips remount.
   const cached = _chainCache.get(routeNode.id)
   if (
     cached &&

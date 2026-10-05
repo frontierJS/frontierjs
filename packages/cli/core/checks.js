@@ -123,6 +123,8 @@ export const RULES = [
     title: 'asSystem() off the app client crosses tenants; off the request client it does not' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
+  { id: 'battery-raw-secret',   scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a battery takes its credential by reference, not as a constructor argument' },
   { id: 'queue-operator-verb',  scope: 'app',  severity: 'error', invariant: null,
     title: 'pausing, resuming or draining a queue — or every queue — is an operator\'s act, not a service\'s' },
   { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: 6,
@@ -2090,7 +2092,33 @@ const CHECKS = {
   // any USER can reach is a pause any USER can make. Read in the two kinds of
   // file that run on somebody else's behalf, and nowhere else: a console script
   // or a deploy hook calling one is what the verb is for.
-  'queue-operator-verb': ({ root }) => {
+  // `FJS-D219`: Conduit's rule is that a secret is named and resolved at send
+  // time, so it stays out of closures, registries and hooks. The mailer's raw
+  // `apiKey` stays accepted, and nothing says an app still holds the secret
+  // for the life of the process unless this does.
+  'battery-raw-secret': ({ root }) => {
+    const files = scripts(root, 'api')
+    if (!files.length) return { skipped: 'no api/ source' }
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      for (const m of code.matchAll(/\bcreateResendMailer\s*\(/g)) {
+        const call = spanFrom(code, m.index + m[0].length - 1)
+        if (!/[{,\s]apiKey\s*(?::|[,}])/.test(call)) continue
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          message: `createResendMailer({ apiKey }) holds the secret in a closure for the life of the ` +
+                   `process, where Conduit resolves a credential by reference at send time. Pass ` +
+                   `{ credentials: { get: ref => process.env[ref] }, apiKeyRef: 'RESEND_API_KEY' } — ` +
+                   `or a Conduit resolver in place of the object — so the key is read per send.`,
+        })
+      }
+    }
+    return { findings }
+  },
+
+  'queue-operator-verb':({ root }) => {
     const files = scripts(root, 'api').filter(p => /\.(service|job)\.[cm]?[jt]s$/.test(p))
     if (!files.length) return { skipped: 'no *.service.* or *.job.* under api/' }
 

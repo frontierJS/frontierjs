@@ -10,6 +10,11 @@
  * The root is baked in at serve time because the attribute holds a path
  * relative to the app, and only the plugin knows what it is relative to.
  *
+ * Shift with the modifier PICKS rather than opens: the element goes to whatever
+ * registered with `__fjsInspect.onPick(fn)`, and to the editor when nothing
+ * did. The picker is somebody else's — this client knows no more about what a
+ * pick is for than it knows about the editor `/__open-in-editor` launches.
+ *
  * A path holding a backtick or `${` would break the template literal it is
  * embedded in, so both are JSON-encoded rather than interpolated raw.
  */
@@ -31,6 +36,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
 
   const ROOT = ${JSON.stringify(root)}
   const FLAG = ${JSON.stringify(flag)}
+  const KEY  = ${JSON.stringify(flag.replace(/Key$/, ''))}
   const ATTR = 'data-fjs-loc'
 
   // The element a pointer is over, in the shadow trees too: composedPath()[0]
@@ -73,6 +79,20 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
   // the next mousemove reports as the target.
 
   let box = null, label = null, current = null, armed = false
+  const pickers = []
+
+  // A picker that throws must not leave the click swallowed and nothing done.
+  // The opener rides on the pick rather than the global: a page script reaches it
+  // only after a person picked something.
+  function pick(el) {
+    const loc = el.getAttribute(ATTR)
+    if (!pickers.length || !absolute(loc)) return open(el)
+    let took = false
+    for (const fn of pickers) {
+      try { fn({ el, loc, file: absolute(loc), key: KEY, open: () => open(el) }); took = true } catch (err) { console.warn('[mesa] picker failed', err) }
+    }
+    return took || open(el)
+  }
 
   function paint(el) {
     current = el
@@ -115,7 +135,7 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     if (!el) return
     e.preventDefault()
     e.stopPropagation()
-    if (e.type === 'click') { open(el); disarm() }
+    if (e.type === 'click') { e.shiftKey && FLAG !== 'shiftKey' ? pick(el) : open(el); disarm() }
   }
   window.addEventListener('mousedown', swallow, true)
   window.addEventListener('click',     swallow, true)
@@ -131,7 +151,11 @@ export function inspectClientSource({ root = '', key = 'alt' } = {}) {
     if (el) { e.preventDefault(); open(el) }
   }, true)
 
-  window.__fjsInspect = { locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) }, root: ROOT }
+  window.__fjsInspect = {
+    locate: (el) => { const f = locatedFrom(el); return f && f.getAttribute(ATTR) },
+    root:   ROOT,
+    onPick: (fn) => { pickers.push(fn); return () => { const i = pickers.indexOf(fn); if (i !== -1) pickers.splice(i, 1) } },
+  }
 
   console.log('%c[mesa] inspector ready — hold ${key} and click an element to open its source', 'color:#38bdf8')
 })()

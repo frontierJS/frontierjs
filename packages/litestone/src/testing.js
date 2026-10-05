@@ -1137,17 +1137,25 @@ export async function createTestEnv(opts = {}) {
             if (rowB) {
               const move = _tenantMove(schema, model, va, parents)
               if (move) {
-                let moved = null
-                try { moved = await clientB[acc].update({ where: _idWhere(schema, model.name, rowB), data: move }) }
-                catch { /* refused */ }
-
-                // A refusal and a no-match are both acceptable; what is not is
-                // the row arriving in A's tenant.
-                const after = moved ? await sys[acc].findUnique({ where: _idWhere(schema, model.name, rowB) }) : null
+                // Both verbs, because each grades the moved row on its own path
+                // and a bulk write that skipped the rule read as isolation (FJS-1713).
+                const where = _idWhere(schema, model.name, rowB)
                 const key   = Object.keys(move)[0]
-                if (after && String(after[key]) === String(move[key])) out.push({
-                  model: model.name, op: 'post-update', actor: 'B', got: 'leaked',
-                  message: `${model.name}#${_rowId(schema, model.name, rowB)} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}'` })
+                for (const verb of ['update', 'updateMany']) {
+                  let moved = null
+                  try { moved = await clientB[acc][verb]({ where, data: move }) }
+                  catch { /* refused */ }
+
+                  // A refusal and a no-match are both acceptable; what is not is
+                  // the row arriving in A's tenant.
+                  const after = moved ? await sys[acc].findUnique({ where }) : null
+                  if (after && String(after[key]) === String(move[key])) {
+                    out.push({
+                      model: model.name, op: 'post-update', actor: 'B', got: 'leaked',
+                      message: `${model.name}#${_rowId(schema, model.name, rowB)} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}' through ${verb}()` })
+                    break
+                  }
+                }
               }
             }
             restore(built.db, before)
@@ -1346,9 +1354,11 @@ export async function createTestEnv(opts = {}) {
 
           // The other half, and not symmetry for its own sake: a column that is
           // absent for EVERYONE is a broken column, and it would pass the check
-          // above perfectly.
+          // above perfectly. `@hashed` is excluded: it is the one protection
+          // asSystem() does not lift, so its column is absent here by design.
           const [asSys] = await sys[acc].findMany({ limit: 1 })
           for (const field of protectedFields) {
+            if (field.attributes.some(a => a.kind === 'hashed')) continue
             if (asSys && !(field.name in asSys)) mismatches.push({
               model: model.name, field: field.name, level: 8, got: 'hidden', thrown: null,
               message: `${model.name}.${field.name} did not come back to asSystem() either — the column is unreadable, not protected`,

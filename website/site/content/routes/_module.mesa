@@ -21,63 +21,74 @@
 <header class="topbar">
   <div class="container topbar-inner">
     <a class="brand" href="/">Frontier<span>JS</span></a>
-    <nav class="navset" aria-label="Site">
-      <a href="/start/">Start</a>
-      <a href="/docs/">Docs</a>
-      <a href="/packages/">Packages</a>
-      <a href="/why/">Why</a>
-      <a href="/journey/">Journey</a>
-      <!-- A <details>, so the menu opens and closes with no script on the page.
-           Linked from the launch pages, kept out of the top row. -->
-      <details class="popover-anchor navmenu">
-        <summary>Explore</summary>
-        <div class="popover align-end">
-          <ul class="navlist">
-            <li><a class="navlink" href="/pitch/">The pitch</a></li>
-            <li><a class="navlink" href="/tutor/">Tutorial</a></li>
-            <li><a class="navlink" href="/seams/">The seams</a></li>
-            <li><a class="navlink" href="/showroom/">Showroom</a></li>
-            <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
-            <li><a class="navlink" href="/the-story/">The story</a></li>
-            <li><a class="navlink" href="/specs/">Specifications</a></li>
-          </ul>
-        </div>
-      </details>
-      <!-- Pages to fold into a launch page or cut before launch. A page leaves
-           this menu when it is merged or deleted. -->
-      <details class="popover-anchor navmenu">
-        <summary>Drafts</summary>
-        <div class="popover align-end">
-          <div class="navlist-label">Folding into Why</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
-            <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
-            <li><a class="navlink" href="/landscape/">Landscape</a></li>
-          </ul>
-          <div class="navlist-label">Design rounds</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
-            <li><a class="navlink" href="/showroom3/">The ripple</a></li>
-            <li><a class="navlink" href="/showroom4/">The loop</a></li>
-            <li><a class="navlink" href="/showroom5/">The stack</a></li>
-            <li><a class="navlink" href="/flow/">The flow</a></li>
-            <li><a class="navlink" href="/map/">The map</a></li>
-            <li><a class="navlink" href="/allegory/">The allegory</a></li>
-          </ul>
-          <div class="navlist-label">Hero drafts</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/index2/">Round one</a></li>
-            <li><a class="navlink" href="/index3/">Round two</a></li>
-          </ul>
-          <div class="navlist-label">Tools</div>
-          <ul class="navlist">
-            <li><a class="navlink" href="/splash-tune/">Splash tuner</a></li>
-          </ul>
-        </div>
-      </details>
-      <a href="https://github.com/frontierjs/frontierjs">GitHub</a>
-    </nav>
-    <ThemeSwitch client:load />
+    <!-- On a wide screen this is the row itself; on a narrow one it is a
+         native popover the button opens, so the menu needs no script and
+         gets Escape and tap-outside-to-close from the browser. -->
+    <div id="site-menu" class="sitemenu" popover>
+      <nav class="navset" aria-label="Site">
+        <a href="/start/">Start</a>
+        <a href="/docs/">Docs</a>
+        <a href="/packages/">Packages</a>
+        <a href="/why/">Why</a>
+        <a href="/journey/">Journey</a>
+        <!-- A <details>, so the menu opens and closes with no script on the page.
+             Linked from the launch pages, kept out of the top row. -->
+        <details class="popover-anchor navmenu">
+          <summary>Explore</summary>
+          <div class="popover align-end">
+            <ul class="navlist">
+              <li><a class="navlink" href="/pitch/">The pitch</a></li>
+              <li><a class="navlink" href="/tutor/">Tutorial</a></li>
+              <li><a class="navlink" href="/seams/">The seams</a></li>
+              <li><a class="navlink" href="/showroom/">Showroom</a></li>
+              <li><a class="navlink" href="/before-after/">Before &amp; after</a></li>
+              <li><a class="navlink" href="/the-story/">The story</a></li>
+              <li><a class="navlink" href="/specs/">Specifications</a></li>
+            </ul>
+          </div>
+        </details>
+        <!-- Pages to fold into a launch page or cut before launch. A page leaves
+             this menu when it is merged or deleted. -->
+        <details class="popover-anchor navmenu">
+          <summary>Drafts</summary>
+          <div class="popover align-end">
+            <div class="navlist-label">Folding into Why</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/comparisons/">Comparisons</a></li>
+              <li><a class="navlink" href="/vs-laravel/">vs Laravel</a></li>
+              <li><a class="navlink" href="/landscape/">Landscape</a></li>
+            </ul>
+            <div class="navlist-label">Design rounds</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/showroom2/">Walkthrough</a></li>
+              <li><a class="navlink" href="/showroom3/">The ripple</a></li>
+              <li><a class="navlink" href="/showroom4/">The loop</a></li>
+              <li><a class="navlink" href="/showroom5/">The stack</a></li>
+              <li><a class="navlink" href="/flow/">The flow</a></li>
+              <li><a class="navlink" href="/map/">The map</a></li>
+              <li><a class="navlink" href="/allegory/">The allegory</a></li>
+            </ul>
+            <div class="navlist-label">Hero drafts</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/index2/">Round one</a></li>
+              <li><a class="navlink" href="/index3/">Round two</a></li>
+            </ul>
+            <div class="navlist-label">Tools</div>
+            <ul class="navlist">
+              <li><a class="navlink" href="/splash-tune/">Splash tuner</a></li>
+            </ul>
+          </div>
+        </details>
+        <a href="https://github.com/frontierjs/frontierjs">GitHub</a>
+      </nav>
+      <ThemeSwitch client:load />
+    </div>
+    <button class="navtoggle" popovertarget="site-menu" aria-label="Menu">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <path class="bars" d="M4 7h16M4 12h16M4 17h16" />
+        <path class="cross" d="M6 6l12 12M18 6L6 18" />
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -129,14 +140,16 @@
 
   .navset { display: flex; gap: .25rem; }
 
-  /* Below this the bar cannot hold one row, and a wrapped sticky bar is a
-     third of a phone screen — so it scrolls away and the subnav pins at 0. */
-  @media (max-width: 37rem) {
-    :global(:root) { --sticky-offset: 0px; }
-    .topbar { position: relative; height: auto; }
-    .topbar-inner { padding-block: .75rem; }
-    .navset { flex-wrap: wrap; }
+  /* A closed popover is display:none by the UA's rule alone, so on a wide
+     screen an author display puts it back in the row as ordinary flow. */
+  .sitemenu {
+    display: flex; align-items: center; gap: 1.5rem;
+    position: static; inset: auto; margin: 0; padding: 0; border: 0;
+    width: auto; height: auto; overflow: visible;
+    background: none; color: inherit;
   }
+  .navtoggle { display: none; }
+
   .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
   .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
 
@@ -162,6 +175,50 @@
       content: ''; position: absolute; inset-inline: 0;
       bottom: 100%; height: calc(var(--space-2xs) + 2px);
     }
+  }
+
+  /* Below this the row overflows the screen sideways. Measure the row's
+     natural width again when a link joins it. Last among the bar's rules:
+     scoping hashes only a selector's final compound, so these tie with the
+     rules above on specificity and win on order. */
+  @media (max-width: 56rem) {
+    .sitemenu { display: none; }
+    .sitemenu:popover-open {
+      display: flex; flex-direction: column; align-items: stretch; gap: 0;
+      position: fixed; inset: var(--sticky-offset) 0 auto 0;
+      max-height: calc(100dvh - var(--sticky-offset)); overflow-y: auto;
+      padding: .5rem 1.25rem 1.25rem;
+      background: var(--surface); border-bottom: 1px solid var(--rule);
+      box-shadow: var(--shadow-md);
+      font-family: var(--font-primary);
+    }
+    .navset { flex-direction: column; gap: 0; }
+    /* 44px rows: a finger, not a pointer, is what lands on these. */
+    .navset > a, .navmenu summary { padding: .75rem .5rem; font-size: 1rem; }
+    .navmenu { display: block; }
+    /* In the panel a group opens in place: a floating card inside a
+       full-width sheet would cover the links under it. */
+    .navmenu .popover {
+      position: static; max-width: none; box-shadow: none; border: 0;
+      background: none; padding: 0 0 .5rem 1rem;
+    }
+    .navmenu .popover a { padding: .6rem .5rem; font-size: .95rem; }
+    .sitemenu :global(.swatches) {
+      gap: .75rem; padding: 1rem .5rem 0; margin-top: .5rem;
+      border-top: 1px solid var(--rule);
+    }
+    .sitemenu :global(.swatches .swatch) { width: 2rem; height: 2rem; }
+
+    .navtoggle {
+      display: grid; place-items: center; width: 2.75rem; height: 2.75rem;
+      margin: 0 -.5rem 0 0; padding: 0; border: 0; border-radius: 6px;
+      background: none; color: var(--ink); cursor: pointer;
+    }
+    .navtoggle:hover { background: var(--surface-sunken); }
+    .navtoggle path { stroke: currentColor; stroke-width: 2; stroke-linecap: round; fill: none; }
+    .navtoggle .cross { display: none; }
+    .sitemenu:popover-open ~ .navtoggle .bars { display: none; }
+    .sitemenu:popover-open ~ .navtoggle .cross { display: inline; }
   }
 
   /* A page's own section nav. Five pages carry one, so the rule is here rather

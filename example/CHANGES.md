@@ -1,5 +1,21 @@
 # Changes — example
 
+## 2026-10-04 — the offline shell's baseline is 941 kB (`FJS-1653`)
+
+`web/offline-baseline.json` read 938 and the shell built at 941, so `verify:build` and `verify:shell` stopped at the byte budget before either drive ran. The weight is the sum of other changes sharing the tree (no one of them accounts for it: the uncommitted mesa, sierra and schema edits are each a few lines), so it was paid with `FJS_OFFLINE_BASELINE=update` (`FJS-D302`) rather than cut. `verify:shell` passes, 30 of 30.
+
+## 2026-10-04 — `@frontierjs/cli` is a dev dependency
+
+As in a scaffolded app. It is what turns on the ask panel in `web/`'s dev server: shift+alt-click an element to ask Claude to change it, with edits scoped to `web/` (`packages/sierra/src/build/ask-plugin.js`).
+
+## 2026-10-04 — billing issues invoices on the caller's client (`FJS-D575`)
+
+`issueInvoice`, `changePlan` and `renewPeriod` stopped writing documents through `asSystem()`. Each write is made on the client of whoever caused it, staff or a subscriber on `subscriptions.changePlan` and the shop's own principal on a renewal. It names what it lifts: `'@@gate'` plus the `@system` columns it stamps, and `issue` with `{ system: true }`. So the row policies grade the person and the write carries their identity. Example's `Invoice` declares no `@@log`, so there is no audit entry to carry `meta.lifted`. Three things still use `asSystem()`, each for a stated reason. The invoice and credit-note numbers are read through it, because they are a sequence over the whole table and the caller's read sees only its own rows. `reanchorPeriod` uses it because `transition()` cannot lift a gate and `SubscriptionPeriod` updates at 7. `openPeriodOf` in `subscriptions.service.ts` was not part of this change.
+
+A subscriber may still change their own plan. The lift keeps `Invoice`'s staff-only update policy, so the `issue` seal refused them, and `Invoice` now carries `@@allow('update', userId == auth().id && status == 'draft')`. A draft exists only inside `issueInvoice`'s transaction and its one move is `@system`, so the policy admits nothing a request can ask for. `access.snapshot.md` is regenerated.
+
+Proof: `verify:billing` 40, `verify:proration` 35, `verify:collect` 49. `verify:account` gained *a subscriber changing their own plan…*. It passes, and it goes red with the policy removed (403, nothing moved). The drive is still red at *and their invoices*, filed as `FJS-1708`.
+
 ## 2026-10-04 — the shopper is told when support acts as them (`FJS-1697`)
 
 `onCredentialChanged` has a line for `support.started` and sends it under its own subject, *Support is acting in your account*, since the shared *Your sign-in settings changed* would misname it. `verify:support` clears the outbox and asserts the shopper got exactly one mail, for the one start that happened, after three refused ones. 25 checks.

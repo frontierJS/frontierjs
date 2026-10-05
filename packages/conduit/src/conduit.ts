@@ -7,6 +7,7 @@ import { createMemoryStore }  from './stores/memory.ts'
 import { createEnvResolver }  from './credentials.ts'
 import { Resilience, countsAsTargetFault } from './resilience.ts'
 import { Router }             from './router.ts'
+import { createObserverGuard } from './observe.ts'
 import { observedRequest, originOf } from './address.ts'
 import type {
   IConduit,
@@ -193,6 +194,12 @@ export function createConduit(
   const store       = opts.store ?? createMemoryStore()
   const credentials = opts.credentials ?? createEnvResolver()
   const observers   = opts.observers ?? {}
+  // Observers are arbitrary user code. A throwing one must not take down the
+  // caller's request: send() documents that it never throws, and a failed
+  // metrics export is not a failed deployment. Swallowing here is what makes
+  // the tier true — an observer receives and cannot act, including by failing.
+  // One guard for the conduit and its router, so a name is reported once.
+  const safe        = createObserverGuard()
   const router      = new Router(
     store,
     credentials,
@@ -203,6 +210,7 @@ export function createConduit(
       max_response_bytes: opts.max_response_bytes,
     },
     observers,
+    safe,
     learn,
     _overrides
   )
@@ -236,27 +244,6 @@ export function createConduit(
     const headers = opts.trace(req)
     if (!headers) return req
     return { ...req, headers: { ...headers, ...req.headers } }
-  }
-
-  // Observers are arbitrary user code. A throwing one must not take down the
-  // caller's request: send() documents that it never throws, and a failed
-  // metrics export is not a failed deployment. Swallowing here is what makes
-  // the tier true — an observer receives and cannot act, including by failing.
-  //
-  // They are never awaited — an async observer exporting a span must not add
-  // its latency to every request — so a rejected promise is caught here
-  // too, or it would surface as an unhandled rejection with no context.
-  function safe(name: string, fn: () => void) {
-    try {
-      // Declared `=> void` so `(req) => arr.push(req)` stays legal, but an
-      // async observer really does return a promise at runtime.
-      const result: unknown = fn()
-      if (result instanceof Promise) {
-        result.catch(err => console.error(`[conduit] observer '${name}' rejected:`, err))
-      }
-    } catch (err) {
-      console.error(`[conduit] observer '${name}' threw:`, err)
-    }
   }
 
   // ─── Counters ──────────────────────────────────────────────
@@ -479,13 +466,14 @@ export function createConduit(
   }
 
   async function* stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
-    safe('onRequest', () => observers.onRequest?.(req))
+    const seen = observedRequest(req)
+    safe('onRequest', () => observers.onRequest?.(seen))
 
     // Throw so callers can distinguish "stream failed" from "stream ended"
     const abort = (err: ConduitError): never => {
       counters.streams.failed++
       bump(counters.errors, err.kind, 1)
-      safe('onError', () => observers.onError?.(req, err))
+      safe('onError', () => observers.onError?.(seen, err))
       throw new ConduitStreamError(err)
     }
 
@@ -512,7 +500,7 @@ export function createConduit(
     }
 
     counters.streams.opened++
-    safe('onStreamStart', () => observers.onStreamStart?.(req))
+    safe('onStreamStart', () => observers.onStreamStart?.(seen))
 
     let chunks = 0
     try {
@@ -534,11 +522,11 @@ export function createConduit(
             retryable: false,
           }
       bump(counters.errors, conduitErr.kind, 1)
-      safe('onError', () => observers.onError?.(req, conduitErr))
+      safe('onError', () => observers.onError?.(seen, conduitErr))
       throw err
     }
 
-    safe('onStreamEnd', () => observers.onStreamEnd?.(req, chunks))
+    safe('onStreamEnd', () => observers.onStreamEnd?.(seen, chunks))
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {
@@ -586,7 +574,7 @@ export function createConduit(
     subscriptions.set(target, transport)
     opts.registerHealth?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
     try {
-      await transport.subscribe(handler)
+      await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers)
     } catch (err) {
       subscriptions.delete(target)
       throw err

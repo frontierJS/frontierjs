@@ -134,3 +134,18 @@ describe('a model that declares no seal keeps the shipped meaning', () => {
     expect(e?.name).toBe('ValidationError')
   })
 })
+
+// A move written as `update({ state, … })` that also names a frozen column is
+// refused by the seal. It used to be answered as a TransitionConflictError
+// reading "expected 'issued', the row is at 'issued'", because the transition's
+// WHERE was the first thing asked and a row still at `from` was assumed raced.
+describe('a one-write move carrying a frozen column', () => {
+  beforeEach(async () => { await db.invoice.transition(1, 'issue') })
+
+  test('is refused by the seal, not as a transition conflict', async () => {
+    const e = await refusal(() => db.invoice.update({ where: { id: 1 }, data: { state: 'paid', number: 'F1' } }))
+    expect(e?.name).toBe('SealedDocumentError')
+    expect(e.fields).toEqual(['number'])
+    expect((await db.invoice.findUnique({ where: { id: 1 } })).state).toBe('issued')
+  })
+})

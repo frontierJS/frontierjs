@@ -137,6 +137,32 @@ export function prepareForCompile(source, id, autoImportMap) {
   return (source.match(FRONTMATTER_BLOCK)?.[0] ?? '') + injected
 }
 
+/**
+ * Which line of `original` each line of `prepared` came from, 1-based, or null
+ * when nothing moved. `prepareForCompile` inserts lines (an auto-import, a
+ * slot's prop) and drops them (frontmatter), and the compiler stamps
+ * `data-fjs-loc` from what it was handed, so without this every element below
+ * an insertion opened its source a line or more off. An inserted line maps to
+ * the line before it; a line rewritten in place maps to itself.
+ */
+export function locLines(original, prepared) {
+  if (original === prepared) return null
+  const a = original.split('\n'), b = prepared.split('\n')
+  const out = new Array(b.length)
+  const WINDOW = 200
+  let i = 0, j = 0
+  while (j < b.length) {
+    if (i < a.length && a[i] === b[j]) { out[j++] = ++i; continue }
+    let ins = -1, del = -1
+    for (let k = j + 1; k < Math.min(b.length, j + WINDOW) && i < a.length; k++) if (b[k] === a[i]) { ins = k; break }
+    for (let k = i + 1; k < Math.min(a.length, i + WINDOW); k++) if (a[k] === b[j]) { del = k; break }
+    if (ins !== -1 && (del === -1 || ins - j <= del - i)) while (j < ins) out[j++] = Math.max(1, i)
+    else if (del !== -1) i = del
+    else out[j++] = i < a.length ? ++i : Math.max(1, i)
+  }
+  return out
+}
+
 /** A `.md` body: the slot rewrite, and no fence escaping — `compileMd` owns fences. */
 function prepareMarkdownBody(source, id) {
   const { frontmatter, content: raw } = parseFrontmatter(source)
@@ -176,11 +202,13 @@ function _escapeFencedCodeBlocks(src) {
   )
 }
 
+/** Click-to-source is on unless the app says `inspect: false`. The ask panel reads this too. */
+export const inspectOn = (mesaOptions = {}) => mesaOptions.inspect !== false
+
 export function mesaPlugin(mesaOptions = {}, sierraContext) {
   // Click-to-source. `inspect: false` turns off the injection AND the attribute
   // the compiler would stamp — the client is its only reader.
   const inspect    = mesaOptions.inspect ?? true
-  const inspectOn  = inspect !== false
   const inspectKey = (typeof inspect === 'object' && inspect.key) || 'alt'
   // Files that received an import.meta.hot.accept boundary via injectHMR.
   // Mesa's own accept handler owns updates for these, so handleHotUpdate must
@@ -249,7 +277,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
     // Dev only. A production build stamps no location attribute, so the client
     // would have nothing to read and every element would be a dead zone.
     transformIndexHtml() {
-      if (!isDev || !inspectOn) return []
+      if (!isDev || !inspectOn(mesaOptions)) return []
       return [{
         tag:      'script',
         attrs:    { type: 'module', src: INSPECT_CLIENT_ID },
@@ -394,8 +422,11 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           externalReactivityHints: 'strict',
           filename: id,
           dev: isDev,
-          loc: isDev && inspectOn,
+          loc: isDev && inspectOn(mesaOptions),
           locRoot: root,
+          // A `.md` file's locs name the template Markdown compiles to, not
+          // its lines, so there is nothing to map them back onto.
+          locLines: isDev && !id.endsWith('.md') ? locLines(source, content) : null,
           // Everything the app configured, including any `externalSignals` of
           // its own. Sierra declares NONE: it exports no module-level signal, so
           // it has nothing to tell the compiler about (`FJS-060`). The map is an

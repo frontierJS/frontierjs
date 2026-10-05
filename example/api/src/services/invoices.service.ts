@@ -4,12 +4,13 @@
 // because an invoice is issued by billing and by nothing else. Update
 // is staff's, and reaches only the moves. There is no
 // `create` a person can reach, and that is the schema's statement rather than
-// this file's: `api/src/domain/billing` writes them through `asSystem()`, and it is
-// the only thing that does.
+// this file's: `api/src/domain/billing` writes them, on the client of whoever
+// caused the document with the gate named (`system: ['@@gate']`, `FJS-D575`),
+// and it is the only thing that does.
 //
-// What `asSystem()` does NOT get past is `@immutable`, which is the whole
-// reason that arrangement is safe. A renewal runs with no session and could
-// otherwise restate a total it had already issued.
+// What no lift gets past is `@immutable`, which is the whole reason that
+// arrangement is safe. A renewal runs as the shop and could otherwise restate a
+// total it had already issued.
 import { createBaseService, NotFound, $ } from '@frontierjs/junction'
 import { settleInvoice, voidInvoice }     from '../domain/billing'
 

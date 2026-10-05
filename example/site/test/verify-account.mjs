@@ -292,6 +292,23 @@ check('staff changing the same plan moves the quantity and issues the invoice fo
        staffChange?.data?.kind ?? staffChange?.kind, await documentsFor()],
       [200, 3, 'invoice', 1])
 
+// The subscriber's OWN plan. The invoice is written on their client with the
+// gate lifted (`FJS-D575`), so `Invoice`'s row policy grades the seal — and the
+// one update it admits a subscriber is their own draft. The refusal it pairs
+// with is the settle above: the same policy on an ISSUED invoice of theirs is 403.
+const MINE_SUB = `SUB-MIN${RUN}`
+const mineSub = await startSubscription(sys, {
+  reference: MINE_SUB, customerId: buyerCust.id, planVersionId: paidVersion.id,
+  status: 'active', quantity: 1, userId: buyerCust.userId,
+}, { startsOn: TODAY, endsOn: NEXT })
+const repriceMine = await callAs(buyerToken, `/subscriptions/${mineSub.id}`, 'changePlan', { quantity: 2 })
+const mineChange  = repriceMine.ok ? await repriceMine.json() : null
+const mineDocs    = await sys.invoice.findMany({ where: { subscriptionId: mineSub.id } })
+check('a subscriber changing their own plan moves it and is issued the invoice, sealed and theirs',
+      [repriceMine.status, (await sys.subscription.findFirst({ where: { id: mineSub.id } })).quantity,
+       mineChange?.data?.kind ?? mineChange?.kind, mineDocs.map(d => [d.status, d.userId])],
+      [200, 2, 'invoice', [['issued', buyerCust.userId]]])
+
 // ─── the browser ──────────────────────────────────────────────────────────
 
 const browser = await openChrome().catch((e) => { console.error(e.message); stopAll(); process.exit(1) })
@@ -576,7 +593,10 @@ try {
   await sys.invoice.deleteMany({ where: { subscriptionId: otherSub.id } })
   await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: OTHER_SUB } } } })
   await sys.subscription.delete({ where: { reference: OTHER_SUB } })
-} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB} / ${OTHER_SUB}: ${e.message}`) }
+  await sys.invoice.deleteMany({ where: { subscriptionId: mineSub.id } })
+  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: MINE_SUB } } } })
+  await sys.subscription.delete({ where: { reference: MINE_SUB } })
+} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB} / ${OTHER_SUB} / ${MINE_SUB}: ${e.message}`) }
 
 const noisy = pageErrors.filter(t => t && !/favicon|ERR_FILE_NOT_FOUND/.test(t))
 check('no console errors anywhere in it', noisy, [])

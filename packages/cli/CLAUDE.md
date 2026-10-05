@@ -110,6 +110,16 @@ core/
                 would keep a one-question session chasing `fli done`, and it
                 records items as shown for the person's own session too. Not
                 `ask.js`, which resolves a question against the registers
+  vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
+                (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
+                which run `ask-claude.js` in EDIT mode scoped to the Vite root,
+                and `/text`, a text edit with no model (`locateText`) that
+                falls back to an ask when the text is not there exactly once.
+                Sierra turns it on (`src/build/ask-plugin.js`); nothing here
+                does. A request must carry this server's Origin. An undo
+                restores a file whole only while it is exactly what the run
+                left (`createLedger`); a file another writer touched since
+                gets the run's own hunks reversed instead
   done.js       is the change in the working tree FINISHED — a CHANGES entry per
                 package touched, a new module or command named where its
                 siblings are, then test-files-run, register:check and the
@@ -1193,7 +1203,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,
-  `service-module-db`, `scheduler-dispatch`, `gate-unreachable`,
+  `service-module-db`, `scheduler-dispatch`, `battery-raw-secret`, `gate-unreachable`,
   `transition-methods`, `commitment-swept` and `static-publish-db` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files
   are full of them. Comments are blanked (to spaces, so every line number

@@ -12,6 +12,7 @@ import { BrokerTransport }         from './transports/broker.ts'
 import { BaseTransport }           from './transports/base.ts'
 import type { ConduitStore, CredentialResolver } from './types.ts'
 import { observedRequest }         from './address.ts'
+import { createObserverGuard }     from './observe.ts'
 import type {
   TargetDescriptor, ConduitObservers, ConduitError, ConduitRequest
 } from './types.ts'
@@ -29,6 +30,7 @@ export class Router {
       max_response_bytes?: number
     } = {},
     private observers:   ConduitObservers = {},
+    private safe:        (name: string, fn: () => unknown) => void = createObserverGuard(),
     // Fired with every descriptor this router reads out of the store, so the
     // layer above learns a target's policy at the moment the target becomes
     // reachable — including one another replica registered, which this process
@@ -89,23 +91,13 @@ export class Router {
       retry_limit:        policy.retry_limit        ?? this.opts.retry_limit,
       deadline_ms:        policy.deadline_ms        ?? this.opts.deadline_ms,
       max_response_bytes: policy.max_response_bytes ?? this.opts.max_response_bytes,
-      onRetry: (req: ConduitRequest, err: ConduitError, attempt: number) => {
-        try {
-          // Observers are declared `=> void` so `(req) => arr.push(req)` stays
-          // legal, but an async one really does return a promise at runtime.
-          const result: unknown = this.observers.onRetry?.(observedRequest(req), err, attempt)
-          if (result instanceof Promise) {
-            result.catch(e => console.error(`[conduit] observer 'onRetry' rejected:`, e))
-          }
-        } catch (obsErr) {
-          console.error(`[conduit] observer 'onRetry' threw:`, obsErr)
-        }
-      },
+      onRetry: (req: ConduitRequest, err: ConduitError, attempt: number) =>
+        this.safe('onRetry', () => this.observers.onRetry?.(observedRequest(req), err, attempt)),
     }
 
     // A broker is a kind, not a protocol: how it is reached is still the
     // protocol slot, and what it is — subscribed to, never sent to — is this.
-    if (descriptor.kind === 'broker') return new BrokerTransport(descriptor, this.credentials)
+    if (descriptor.kind === 'broker') return new BrokerTransport(descriptor, this.credentials, httpOpts)
 
     switch (descriptor.protocol) {
       case 'http':
@@ -116,13 +108,7 @@ export class Router {
         // Guarded: this fires from a reconnect timer with no caller to
         // catch it, so a throwing observer would surface as an unhandled
         // rejection rather than a failed request.
-        ws.onReconnect = (target) => {
-          try {
-            this.observers.onReconnect?.(target)
-          } catch (err) {
-            console.error(`[conduit] observer 'onReconnect' threw:`, err)
-          }
-        }
+        ws.onReconnect = (target) => this.safe('onReconnect', () => this.observers.onReconnect?.(target))
         return ws
       }
 

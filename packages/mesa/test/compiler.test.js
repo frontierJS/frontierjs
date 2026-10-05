@@ -3163,6 +3163,29 @@ function grow() { items = items.map(i => ({ ...i, r: i.r + 10 })) }
     expect(circles()[1].getAttribute('r')).toBe('50')
     app.destroy()
   })
+
+  // FJS-1613: the namespace came from the block's root tag, and <a> is legal
+  // in both vocabularies, so a hotspot's <ellipse> was an HTMLUnknownElement
+  // that drew nothing.
+  it('a block whose root is <a> inside <svg> renders SVG children', async () => {
+    const fn = await compileAndExec(`
+<script>
+let spots = [1, 2]
+let on = true
+</script>
+<svg viewBox="0 0 200 100">
+  {#each spots as s}<a href="#"><ellipse class="spot" rx="3" ry="3"/></a>{/each}
+  {#if on}<a href="#"><circle class="dot" r="1"/></a>{/if}
+  <foreignObject width="10" height="10">{#if on}<div class="html"><span>x</span></div>{/if}</foreignObject>
+</svg>`, runtime)
+
+    const app = mount(fn, runtime)
+    const SVG = 'http://www.w3.org/2000/svg'
+    expect(app.findAll('.spot').map((n) => n.namespaceURI)).toEqual([SVG, SVG])
+    expect(app.find('.dot').namespaceURI).toBe(SVG)
+    expect(app.find('.html').namespaceURI).toBe('http://www.w3.org/1999/xhtml')
+    app.destroy()
+  })
 })
 
 // ── §E2E  ifBlock + keyBlock same-branch reactivity ───────────────────────────
@@ -4495,6 +4518,13 @@ describe('source locations — the inspector\'s half of click-to-source', () => 
   it('keeps the whole path when no root is given', async () => {
     const out = await withLoc('<p>hi</p>', { locRoot: undefined })
     expect(out).toContain('data-fjs-loc="/app/web/src/pages/Home.mesa:1:1"')
+  })
+
+  // A caller that inserted a line before compiling says where each line came
+  // from; the stamp names the FILE's line, which is what the editor opens.
+  it('names the line `locLines` maps it to', async () => {
+    const out = await withLoc('<script>\n  let injected = 1\n</script>\n<p>hi</p>', { locLines: [1, 1, 2, 3] })
+    expect(out).toContain('<p data-fjs-loc="src/pages/Home.mesa:3:1"')
   })
 })
 

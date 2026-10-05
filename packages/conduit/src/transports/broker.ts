@@ -16,6 +16,7 @@ import type {
   BrokerHealth,
 } from '../types.ts'
 import { ConduitStreamError } from '../types.ts'
+import { DEFAULT_MAX_BYTES, DEFAULT_TIMEOUT_MS } from './http.ts'
 
 const RECONNECT_BACKOFF = [1000, 2000, 4000, 8000, 16000]
 
@@ -31,7 +32,17 @@ export class BrokerTransport extends BaseTransport {
   private lastReceivedAt: number | null = null
   private received   = 0
 
-  constructor(descriptor: TargetDescriptor, credentials: CredentialResolver) {
+  private traceHeaders: (() => Record<string, string> | undefined) | null = null
+
+  // `timeout_ms` bounds one dial and `max_response_bytes` one frame. The other
+  // two request-shaped numbers have nothing to bound: a reconnect is unbounded
+  // on purpose (below), so `retry_limit` and `deadline_ms` would end the
+  // subscription they exist to keep.
+  constructor(
+    descriptor: TargetDescriptor,
+    credentials: CredentialResolver,
+    private opts: { timeout_ms?: number; max_response_bytes?: number } = {},
+  ) {
     super(descriptor, credentials)
   }
 
@@ -68,9 +79,15 @@ export class BrokerTransport extends BaseTransport {
   // Resolves once the first dial has been attempted, so a refused credential
   // reaches the caller; an unreachable broker does not — it is retried, and
   // `health().connected` says so.
-  async subscribe(handler: BrokerHandler): Promise<void> {
+  // `traceHeaders` is asked afresh on every dial, so a reconnect is a new span
+  // rather than a replay of the first.
+  async subscribe(
+    handler: BrokerHandler,
+    traceHeaders: (() => Record<string, string> | undefined) | null = null,
+  ): Promise<void> {
     if (this.handler) throw new Error(`[conduit] ${this.descriptor.id} already has a subscriber`)
-    this.handler = handler
+    this.handler      = handler
+    this.traceHeaders = traceHeaders
     try {
       await this.connect()
     } catch (err) {
@@ -93,22 +110,33 @@ export class BrokerTransport extends BaseTransport {
     // Resolved before the socket exists, so an unresolvable ref opens no
     // unauthenticated connection — the websocket transport's rule.
     const address = this.descriptor.address
-    const headers = await this.buildAuthHeaders({
+    // Trace sits under auth, so nothing can displace a credential.
+    const headers = this.mergeHeaders(this.traceHeaders?.(), await this.buildAuthHeaders({
       method: 'CONNECT',
       path:   pathOf(address),
       query:  queryOf(address),
-    })
+    }))
 
     await new Promise<void>((resolve) => {
       const ws = new WebSocket(address, { headers } as unknown as string[])
 
+      // A broker that accepts the connection and never completes the upgrade
+      // neither opens nor errors, which would hold `subscribe()` for good.
+      const dialTimer = setTimeout(() => {
+        ws.close()
+        resolve()
+        this.scheduleReconnect()
+      }, this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS)
+
       ws.addEventListener('open', () => {
+        clearTimeout(dialTimer)
         this.ws       = ws
         this.attempts = 0
         resolve()
       })
-      ws.addEventListener('error', () => resolve())
+      ws.addEventListener('error', () => { clearTimeout(dialTimer); resolve() })
       ws.addEventListener('close', () => {
+        clearTimeout(dialTimer)
         if (this.ws === ws) this.ws = null
         resolve()
         if (!this.destroyed) this.scheduleReconnect()
@@ -135,6 +163,14 @@ export class BrokerTransport extends BaseTransport {
   // fails to go out is a redelivery that costs nothing (FJS-D235). A handler
   // that throws leaves the message unacknowledged for the broker to redeliver.
   private async onMessage(ws: WebSocket, e: MessageEvent) {
+    // Dropped unhandled and unacked, so the broker redelivers it and an
+    // operator sees it, rather than the process buffering what it was told not to.
+    const size = typeof e.data === 'string' ? Buffer.byteLength(e.data) : (e.data as ArrayBuffer).byteLength
+    if (size > (this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES)) {
+      console.error(`[conduit] broker ${this.descriptor.id} sent a ${size}-byte frame over max_response_bytes; dropped`)
+      return
+    }
+
     let frame: { id?: unknown; type?: unknown; body?: unknown }
     try {
       frame = JSON.parse(e.data as string)

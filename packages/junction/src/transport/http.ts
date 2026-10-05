@@ -10,7 +10,7 @@ import { WS_PROTOCOL, bearerFromProtocols, withoutBearer } from '../core/ws-auth
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
 import { serveStatic }                    from './static.ts'
-import { REFUSE, type CredentialVerifier } from '../auth/credentials.ts'
+import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/credentials.ts'
 // `type` matters: StaticOptions is an interface, and importing it as a value
 // breaks any runtime that strips types rather than transpiling — Node's
 // --experimental-strip-types fails with "does not provide an export named
@@ -24,7 +24,7 @@ import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet,
               RouteSegment }              from './types.ts'
-import type { SessionVerifier }           from '../auth/types.ts'
+import type { SessionContext, SessionVerifier } from '../auth/types.ts'
 import type { TrustProxy } from './forwarded.ts'
 
 import { isCompressible } from '@frontierjs/toolbelt/mime'
@@ -747,38 +747,26 @@ export class HttpTransport {
     }) as Record<string, string>
 
     // ── Resolve auth ───────────────────────────────────────────────
-    let user = null
-    for (const verify of this._opts.credentials ?? []) {
-      // A verifier that throws is refused rather than skipped: skipping would
-      // let a broken key lookup fall through to anonymous.
-      let answer
-      try {
-        answer = await verify({
-          method, path, query: url.search.slice(1), headers,
-          body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host: (headers.host ?? url.host) || null,
-        })
-      } catch { answer = REFUSE }
-      if (answer === REFUSE) return new Response('Unauthorized', { status: 401 })
-      if (answer) { user = answer; break }
-    }
-    if (!user && this._opts.auth) {
-      const token = extractToken(headers, this._opts.authCookie ?? null)
-      if (token) {
-        // The headers come with it. A provider that binds one database ignores
-        // the second argument; one whose people live per tenant needs it,
-        // because this runs before any hook and therefore before a tenant has
-        // been resolved (`CredentialOrigin`).
-        // `headers.host ?? url.host`: a request built in-process — a test, an
-        // internal call, `app.http.fetch(new Request(...))` — carries no Host
-        // header at all, because Host is a forbidden header name for a Request
-        // the platform did not put on a socket. The URL still names it.
-        try {
-          user = await this._opts.auth.verifySession(token, {
-            host: (headers.host ?? url.host) || null, headers,
-          })
-        } catch {}
-      }
-    }
+    // The headers come with the bearer token. A provider that binds one
+    // database ignores them; one whose people live per tenant needs them,
+    // because this runs before any hook and therefore before a tenant has been
+    // resolved (`CredentialOrigin`).
+    // `headers.host ?? url.host`: a request built in-process — a test, an
+    // internal call, `app.http.fetch(new Request(...))` — carries no Host
+    // header at all, because Host is a forbidden header name for a Request
+    // the platform did not put on a socket. The URL still names it.
+    let user: SessionContext | null = null
+    const principal = await resolvePrincipal({
+      verifiers: this._opts.credentials,
+      req: {
+        method, path, query: url.search.slice(1), headers,
+        body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host: (headers.host ?? url.host) || null,
+      },
+      auth:  this._opts.auth,
+      token: this._opts.auth ? extractToken(headers, this._opts.authCookie ?? null) : null,
+    }).catch(() => null)
+    if (principal === REFUSE) return new Response('Unauthorized', { status: 401 })
+    user = principal
 
     // Parse query once and pass to _buildContext to avoid double parsing
     const query = parseQuery(url.search)
@@ -1182,6 +1170,7 @@ export class HttpTransport {
     // every frame's `ctx.caller.headers`, and the logger redacts by name, which
     // `sec-websocket-protocol` is not.
     const credential = this._opts.auth ? extractToken(headers, this._opts.authCookie ?? null) : null
+    const search     = url.search.slice(1)
     const offered    = headers['sec-websocket-protocol']
     const rest       = withoutBearer(offered)
     if (rest === undefined) delete headers['sec-websocket-protocol']
@@ -1198,6 +1187,7 @@ export class HttpTransport {
       path,
       params:   matchedParams,
       query,
+      search,
       headers,
       ip,
       user:     null,
@@ -1256,40 +1246,50 @@ export class HttpTransport {
     this._sockets.add(ws)
     this._wsPerIp.set(ws.data.ip, (this._wsPerIp.get(ws.data.ip) ?? 0) + 1)
 
-    // Verified here rather than at upgrade because verifySession is async and
+    // Verified here rather than at upgrade because a verifier is async and
     // Bun's upgrade() is synchronous. The credential was read there, from the
     // same places an HTTP request's is — the cookie included, or a
-    // cookie-authenticated app connects as anonymous.
-    if (this._opts.auth) {
+    // cookie-authenticated app connects as anonymous. The upgrade is a GET with
+    // no body, so a signed request is signed over an empty one.
+    if (this._opts.auth || this._opts.credentials?.length) {
       const token = ws.data.credential ?? null
       ws.data.credential = null
-      if (token) {
-        // The UPGRADE request's headers — the only ones a socket ever has, and
-        // the same ones `withTenantDb` reads off a frame's context.
-        try {
-          ws.data.user = await this._opts.auth.verifySession(token, {
-            host:    ws.data.headers?.host ?? null,
-            headers: ws.data.headers ?? null,
-          })
-        } catch {
-          // A token that was PRESENT and did not verify is a refusal, not
-          // anonymity. Swallowing it connected a revoked, expired or forged
-          // session as a stranger with no error frame and no close, so the
-          // client's own `4001` no-reconnect branch was dead code and the
-          // plugin's doc comment promised an `auth_failed` message nothing ever
-          // sent (`FJS-702`). A socket with NO token is still anonymous —
-          // that is a caller who claimed nothing.
-          //
-          // Closed before `open` runs, so nothing joins a channel and no
-          // `connected` frame goes out. 4001 is application-defined and the
-          // reason rides it, because a bare code reads as a network fault.
-          ws.close(4001, 'auth_failed')
-          this.stats.performance.online--
-          this._sockets.delete(ws)
-          this._releaseIp(ws.data.ip)
-          return
-        }
+      const headers = ws.data.headers ?? {}
+      let principal: SessionContext | null | typeof REFUSE
+      try {
+        principal = await resolvePrincipal({
+          verifiers: this._opts.credentials,
+          // The UPGRADE request's headers — the only ones a socket ever has, and
+          // the same ones `withTenantDb` reads off a frame's context.
+          req: {
+            method: 'GET', path: ws.data.path, query: ws.data.search ?? '', headers,
+            body: '', host: headers.host ?? null,
+          },
+          auth:  this._opts.auth,
+          token,
+        })
+      } catch {
+        principal = REFUSE
       }
+      if (principal === REFUSE) {
+        // A credential that was PRESENT and did not verify is a refusal, not
+        // anonymity. Swallowing it connected a revoked, expired or forged
+        // session as a stranger with no error frame and no close, so the
+        // client's own `4001` no-reconnect branch was dead code and the
+        // plugin's doc comment promised an `auth_failed` message nothing ever
+        // sent (`FJS-702`). A socket with NO credential is still anonymous —
+        // that is a caller who claimed nothing.
+        //
+        // Closed before `open` runs, so nothing joins a channel and no
+        // `connected` frame goes out. 4001 is application-defined and the
+        // reason rides it, because a bare code reads as a network fault.
+        ws.close(4001, 'auth_failed')
+        this.stats.performance.online--
+        this._sockets.delete(ws)
+        this._releaseIp(ws.data.ip)
+        return
+      }
+      ws.data.user = principal
     }
 
     const ctx = this._buildWsContext(ws)

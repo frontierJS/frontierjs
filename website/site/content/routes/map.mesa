@@ -44,11 +44,9 @@ render: static
            role="group" aria-label="FrontierJS territory map">
         <image href={d.image.src} width={d.image.width} height={d.image.height} />
         {#each d.territories as t}
-          <g>
-            <a href={'#' + t.id} class="territory" data-id={t.id} aria-label={t.name}>
-              <ellipse cx={t.cx} cy={t.cy} rx={t.rx} ry={t.ry} />
-            </a>
-          </g>
+          <a href={'#' + t.id} class="territory" data-id={t.id} aria-label={t.name}>
+            <ellipse cx={t.cx} cy={t.cy} rx={t.rx} ry={t.ry} />
+          </a>
         {/each}
       </svg>
 

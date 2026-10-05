@@ -9,7 +9,7 @@
  * against a location pointing at the wrong line.
  */
 export const name = 'inspect — click-to-source'
-export const covers = ['inspect-attr', 'inspect-client', 'inspect-open']
+export const covers = ['inspect-attr', 'inspect-client', 'inspect-open', 'inspect-pick']
 
 export async function run(t) {
   await t.goto('/', 'window.__appReady')
@@ -72,6 +72,35 @@ export async function run(t) {
     'with an absolute path, line and column — what launch-editor takes')
   t.ok(opened.highlighted, 'and the element under the pointer was outlined while armed')
   t.is(opened.after, opened.before, "while the app's own click handler never ran")
+
+  // ── the pick ──────────────────────────────────────────────────────────
+  // Shift with the modifier hands the element to a registered picker INSTEAD
+  // of the editor, and unregistering puts the editor back. A picker that ran
+  // AND the editor opened would be two answers to one click.
+  const picked = await t.evaluate(`
+    const asked = [], got = [];
+    const real  = window.fetch;
+    window.fetch = (url, ...rest) => {
+      if (String(url).includes('__open-in-editor')) { asked.push(String(url)); return Promise.resolve(new Response('')); }
+      return real(url, ...rest);
+    };
+    const el = document.querySelector('#counter');
+    const at = (type) => el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, altKey: true, shiftKey: true }));
+    const off = window.__fjsInspect.onPick((p) => got.push({ loc: p.loc, file: p.file, same: p.el === el }));
+    at('mousemove'); at('mousedown'); at('click');
+    const whilePicking = asked.length;
+    off();
+    at('mousemove'); at('mousedown'); at('click');
+    await new Promise((r) => setTimeout(r, 50));
+    window.fetch = real;
+    return { got, whilePicking, after: asked.length, loc: el.getAttribute('data-fjs-loc') };
+  `)
+  t.is(picked.got.length, 1, 'a shift+alt-click goes to the registered picker')
+  t.is(picked.got[0]?.loc, picked.loc, 'with the location the element carries')
+  t.match(picked.got[0]?.file ?? '', /\/src\/Counter\.mesa:\d+:\d+$/, 'and the absolute path the editor would have been given')
+  t.ok(picked.got[0]?.same, 'and the element itself')
+  t.is(picked.whilePicking, 0, 'and does not also open the editor')
+  t.is(picked.after, 1, 'unregistering hands the click back to the editor')
 
   // The middleware is Vite's own. A spec that stubbed the whole path would
   // pass against a dev server that has no such route at all.

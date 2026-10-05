@@ -2257,6 +2257,40 @@ describe('scheduler-dispatch', () => {
   })
 })
 
+describe('battery-raw-secret', () => {
+  test('a literal apiKey in a mailer constructor is a warning', () => {
+    const root = tree('brs-literal', api(
+      "app.configure(mailerPlugin(createResendMailer({ apiKey: 're_live_x', from: 'a@b.test' })))\n"))
+    const { findings } = only(root, 'battery-raw-secret')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/apiKeyRef/)
+  })
+
+  test('a key read from the environment is still a key held in the closure', () => {
+    const root = tree('brs-env', api(
+      'const mail = createResendMailer({\n  from: "a@b.test",\n  apiKey: process.env.RESEND_API_KEY!,\n})\n'))
+    expect(only(root, 'battery-raw-secret').findings).toHaveLength(1)
+  })
+
+  test('the shorthand is the same key', () => {
+    const root = tree('brs-short', api(
+      "const mail = createResendMailer({ apiKey, from: 'a@b.test' })\n"))
+    expect(only(root, 'battery-raw-secret').findings).toHaveLength(1)
+  })
+
+  test('a credential reference is the shape the rule is asking for, and is silent', () => {
+    const root = tree('brs-ref', api(
+      "createResendMailer({ credentials: { get: k => process.env[k] }, apiKeyRef: 'RESEND_API_KEY', from: 'a@b.test' })\n"))
+    expect(only(root, 'battery-raw-secret').findings).toEqual([])
+  })
+
+  test('the hazard described in a comment is not the hazard', () => {
+    const root = tree('brs-comment', api(
+      '// createResendMailer({ apiKey }) holds the secret for the life of the process\n'))
+    expect(only(root, 'battery-raw-secret').findings).toEqual([])
+  })
+})
+
 describe('queue-operator-verb', () => {
   test('a service that pauses a queue is an error, and names the gate it skips', () => {
     const root = tree('qov-service', {

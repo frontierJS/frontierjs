@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-04 — a WebSocket upgrade asks the credentials list, and a bearer token is its last entry (`FJS-1607`)
+
+`createApp({ credentials })` was read only by the HTTP path, so a signed machine could call a service and could not open a socket, and `verifyApiKey` was reached only when a provider's own `verifySession` fell through to it. `resolvePrincipal` in `auth/credentials.ts` is now the one loop: the declared verifiers in order, then `verifySession`, then `verifyApiKey` when that answers null. `_handleRequest` and `_wsOpen` both call it; a socket's upgrade is a GET signed over an empty body, and a refusal or a verifier that throws closes `4001` as a bad bearer does. `WsData.search` carries the raw query string a signature is over. `test/credentials-ws.test.ts` pins the signed upgrade, both refusals, an unsigned upgrade going to bearer, and a key reachable only through `verifyApiKey` over HTTP and WS. basecamp's `requireOutpostSignature` has not moved onto `signedRequest`; that is `FJS-1715`.
+
+## 2026-10-04 — the Resend mailer's fetch has a deadline (`FJS-1668`)
+
+`createResendMailer` called `fetch` with no signal, so a socket Resend's edge left open held the request that called `send()` for as long as the runtime allowed. Both endpoints now carry `AbortSignal.timeout(30_000)`, and a timeout throws `Resend API timed out after 30000ms` rather than the bare `TimeoutError`, which names no vendor. There is still no retry and no breaker: a send is not idempotent, and a second attempt after a lost response is a second email, so an app that needs either routes through Conduit. `test/resend-credentials.test.ts` pins both endpoints with `AbortSignal.timeout` stubbed to an aborted signal.
+
 ## 2026-10-04 — `ctx.system.add('@@gate')` lifts the model's gate for one call (`FJS-D575`)
 
 No code moved: the bridge already handed `ctx.system` to litestone as `system: [...]`, and litestone now reads `'@@gate'` there. `test/system-fields.test.ts` pins it with a paired service. The one whose hook names the gate creates on a `@@gate("0.8.8.9")` model, and the identical one without the hook takes 403. The `ctx.system` doc comment names the entry.

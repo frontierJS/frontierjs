@@ -21,11 +21,11 @@ import type {
   TargetDescriptor
 } from '../types.ts'
 
-const DEFAULT_TIMEOUT_MS   = 10_000
+export const DEFAULT_TIMEOUT_MS   = 10_000
 const DEFAULT_RETRY_LIMIT  = 3
 const DEFAULT_DEADLINE_MS  = 45_000
 const RETRY_BACKOFF_MS     = [500, 1500, 1500] // before retry N (1-based)
-const DEFAULT_MAX_BYTES    = 10 * 1024 * 1024  // 10 MiB
+export const DEFAULT_MAX_BYTES    = 10 * 1024 * 1024  // 10 MiB
 
 // Equal jitter: half the nominal backoff, plus a random half. Without it,
 // N callers hitting the same degraded provider retry in lockstep and
@@ -489,10 +489,18 @@ export class HttpTransport extends BaseTransport {
         return this.fail('auth_failed', err.message, { retryable: false })
       }
 
-      // Caller's fault, not the target's — retrying sends the same bad
-      // request, or re-buffers the same oversized response.
-      if (err instanceof SerializeError || err instanceof ResponseTooLargeError) {
+      // Caller's fault, not the target's — retrying sends the same bad request.
+      if (err instanceof SerializeError) {
         return this.fail('invalid_request', (err as Error).message, {
+          retryable: false
+        })
+      }
+
+      // The answer is what was unusable, and the request was fine: blaming it
+      // on `invalid_request` told a caller to fix a request that was never wrong.
+      // Retrying re-buffers the same oversized response.
+      if (err instanceof ResponseTooLargeError) {
+        return this.fail('invalid_response', (err as Error).message, {
           retryable: false
         })
       }

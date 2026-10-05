@@ -10,7 +10,7 @@
 //   createApp({ credentials: [signedRequest({ keyFor })] })
 
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
-import type { SessionContext } from './types.ts'
+import type { IAuth, SessionContext } from './types.ts'
 
 /** What a verifier is shown: the request as the signer signed it. */
 export interface InboundRequest {
@@ -72,4 +72,38 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
     })
     return verdict.ok ? key.session : REFUSE
   }
+}
+
+// ─── The one door ───────────────────────────────────────────────────────────
+
+/**
+ * Who is this caller, for HTTP and a WebSocket upgrade alike: the declared
+ * verifiers in order, then the bearer token as the last entry. `REFUSE` is a
+ * verifier that claimed the request and found it wrong, or threw — a broken key
+ * lookup refused rather than skipped, since skipping reads as anonymous. A
+ * bearer that throws propagates, because HTTP answers it anonymous and a socket
+ * closes 4001 (`FJS-702`) and that is the transport's to choose.
+ *
+ * `verifyApiKey` is asked here, after `verifySession` answers null: a provider
+ * that routes keys from inside its own `verifySession` costs one repeated
+ * lookup on a token that was already bad, and one that does not no longer
+ * leaves an issued key unusable.
+ */
+export async function resolvePrincipal(opts: {
+  verifiers: readonly CredentialVerifier[] | undefined
+  req:       InboundRequest
+  auth?:     Pick<IAuth, 'verifySession'> & Partial<Pick<IAuth, 'verifyApiKey'>> | undefined
+  token?:    string | null
+}): Promise<SessionContext | null | typeof REFUSE> {
+  for (const verify of opts.verifiers ?? []) {
+    let answer: CredentialAnswer
+    try { answer = await verify(opts.req) } catch { return REFUSE }
+    if (answer === REFUSE) return REFUSE
+    if (answer) return answer
+  }
+  if (!opts.auth || !opts.token) return null
+  const origin = { host: opts.req.host, headers: opts.req.headers }
+  const session = await opts.auth.verifySession(opts.token, origin)
+  if (session) return session
+  return opts.auth.verifyApiKey ? opts.auth.verifyApiKey(opts.token) : null
 }

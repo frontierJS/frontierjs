@@ -1,5 +1,13 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-04 — `--host` opens a server to the LAN
+
+`site-kit dev` and `site-kit preview` both take `--host`, which makes them listen on every interface. Without it, both answer on localhost only. Before this, `dev` was localhost-only with no way to change it, while `preview` was always on `0.0.0.0` through Sierra's `serveSite` default. `--host` takes no value, so `site-kit dev --host site` still reads `site` as the directory.
+
+## 2026-10-04 — a site without settings runs in dev (`FJS-1709`)
+
+A site with no `content/settings/site.js` hung in dev. With no settings file, site-kit named no `_configPath`, so Sierra pointed `virtual:sierra` at `config/sierra.config.js`, which a content-only site never has. Sierra's hard failure there is deliberate for an app, so the fix is here: site-kit names its own `config/no-settings.js`, an empty default export. The `verify:ask` drive no longer writes a settings file to get past this.
+
 ## 2026-10-04 — the route table leaves node_modules
 
 The generated route table is now `<site>/.sierra/routes.js`, gitignored, and

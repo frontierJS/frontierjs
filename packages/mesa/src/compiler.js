@@ -277,6 +277,79 @@ export function parseModifiers(fullName) {
   return { directive, modifiers }
 }
 
+/**
+ * Turn an event's modifier chain into what the emitted listener needs: the
+ * handler wrapped in its guards and timers, and the addEventListener options.
+ * The one owner for an element and for <mesa:window|document|body> — a second
+ * copy dropped capture, once, passive, debounce and throttle in silence on the
+ * global targets.
+ *
+ * `ctx` is the compile context: the reactive arg of debounce/throttle is
+ * rewritten against its accessors and registered as a dependency.
+ */
+function applyEventModifiers(ctx, modifiers, event, handler) {
+  const listenerOpts = {}   // once, passive, capture → addEventListener options
+  const wrapMods = []       // debounce, throttle → wrap handler at runtime
+  const guardMods = []      // preventDefault, stopPropagation, self, trusted → inline guards
+
+  for (const mod of modifiers) {
+    switch (mod.name) {
+      case 'once':    listenerOpts.once    = true; break
+      case 'passive': listenerOpts.passive = true; break
+      case 'capture': listenerOpts.capture = true; break
+      case 'preventDefault':
+      case 'stopPropagation':
+      case 'self':
+      case 'trusted':
+        guardMods.push(mod.name); break
+      case 'debounce':
+      case 'throttle':
+        wrapMods.push(mod); break
+      default:
+        ctx.analysis.errors.push(
+          `Unknown event modifier '${mod.name}' on '${event}'. ` +
+          `Valid: once, passive, capture, preventDefault, stopPropagation, self, trusted, debounce, throttle`
+        )
+    }
+  }
+
+  // Compile-time guards: ($$e) => { guards...; handler($$e) }
+  if (guardMods.length) {
+    const guards = guardMods.map((g) => {
+      if (g === 'preventDefault')  return '$$e.preventDefault();'
+      if (g === 'stopPropagation') return '$$e.stopPropagation();'
+      if (g === 'self')    return 'if ($$e.target !== $$e.currentTarget) return;'
+      if (g === 'trusted') return 'if (!$$e.isTrusted) return;'
+    }).join(' ')
+    handler = `($$e) => { ${guards} (${handler})($$e); }`
+  }
+
+  // Runtime wrappers (debounce, throttle)
+  for (const mod of wrapMods) {
+    let msArg
+    if (!mod.arg) {
+      ctx.analysis.errors.push(`'${mod.name}' modifier requires a duration: |${mod.name}(300)`)
+      continue
+    }
+    // Reactive arg: {expr} → pass as getter () => expr
+    if (mod.arg.startsWith('{') && mod.arg.endsWith('}')) {
+      const inner = mod.arg.slice(1, -1).trim()
+      const rewritten = ctx.accessors ? rewriteExpr(inner, ctx.accessors) : inner
+      ctx.detectDependency(inner)
+      msArg = `() => (${rewritten})`
+    } else {
+      msArg = mod.arg
+    }
+    handler = `$$runtime.${mod.name}(${handler}, ${msArg})`
+  }
+
+  const hasListenerOpts = Object.keys(listenerOpts).length > 0
+  const optsStr = hasListenerOpts
+    ? `, { ${Object.entries(listenerOpts).map(([k, v]) => `${k}: ${v}`).join(', ')} }`
+    : ''
+  return { handler, optsStr, hasListenerOpts, hasWrappers: wrapMods.length > 0 }
+}
+
 export function unwrapExp(e) {
   assert(e, 'Empty expression')
   const rx = e.match(/^\{(.*)\}$/s)
@@ -4740,7 +4813,10 @@ export function buildBlock(data, option = {}) {
         if (svgElements[node.name]) svg = true
         else other = true
       })
-      if (svg && !other) rootSVG = true
+      // A block inside <svg> parses in the SVG namespace whatever its root
+      // tag is; a root <a> is legal in both, and judged alone it made a
+      // hotspot's <ellipse> an HTMLUnknownElement (FJS-1613).
+      if ((svg && !other) || (ctx.namespace === 'svg' && (svg || other))) rootSVG = true
     }
 
     let labelRequest = null
@@ -4934,20 +5010,11 @@ export function buildBlock(data, option = {}) {
                 const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
                 let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
-                const guardMods = modifiers.filter(m =>
-                  ['preventDefault','stopPropagation','self','trusted'].includes(m.name))
-                if (guardMods.length) {
-                  const guards = guardMods.map((g) => {
-                    if (g.name === 'preventDefault')  return '$$e.preventDefault();'
-                    if (g.name === 'stopPropagation') return '$$e.stopPropagation();'
-                    if (g.name === 'self')    return 'if ($$e.target !== $$e.currentTarget) return;'
-                    if (g.name === 'trusted') return 'if (!$$e.isTrusted) return;'
-                  }).join(' ')
-                  handler = `($$e) => { ${guards} (${handler})($$e); }`
-                }
+                const mods = applyEventModifiers(ctx, modifiers, event, handler)
+                handler = mods.handler
 
-                binds.push(xNode('globalEvent', { target, event, handler }, (w, nd) => {
-                  w.writeLine(`$$runtime.addGlobalEvent('${nd.target}', '${nd.event}', ${nd.handler});`)
+                binds.push(xNode('globalEvent', { target, event, handler, optsStr: mods.optsStr }, (w, nd) => {
+                  w.writeLine(`$$runtime.addGlobalEvent('${nd.target}', '${nd.event}', ${nd.handler}${nd.optsStr});`)
                 }))
                 return
               }
@@ -4984,7 +5051,12 @@ export function buildBlock(data, option = {}) {
             const toRaw = toProp?.value ? unwrapExp(toProp.value) : 'document.body'
             const toExp = ctx.accessors ? rewriteExpr(toRaw, ctx.accessors) : toRaw
             ctx.detectDependency(toRaw)
+            // A portal's children land in `to`, not here, so they are HTML
+            // even when the portal is written inside an <svg>.
+            const ns = ctx.namespace
+            ctx.namespace = 'html'
             const portalBlock = ctx.buildBlock(n, { inline: true })
+            ctx.namespace = ns
             binds.push(xNode('portal', { block: portalBlock, toExp }, (w, nd) => {
               if (nd.block.source) {
                 w.write(true, `$$runtime.portal(() => (${nd.toExp}), $$runtime.makeBlock(`)
@@ -5208,7 +5280,13 @@ export function buildBlock(data, option = {}) {
         const _loc = ctx.locOf(n.start)
         if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc })
         el.voidTag = n.voidTag
-        if (!n.closedTag) go(n, false, el)
+        if (!n.closedTag) {
+          const ns = ctx.namespace
+          if (n.name === 'svg') ctx.namespace = 'svg'
+          else if (n.name === 'foreignObject') ctx.namespace = 'html'
+          go(n, false, el)
+          ctx.namespace = ns
+        }
       } else if (n.type === 'each') {
         if (isRoot) requireFragment = true
         binds.push(ctx.makeEachBlock(n, { label: ownAnchor() }).source)
@@ -6831,70 +6909,12 @@ export function bindProp(prop, node, element) {
     ctx.detectDependency(rawHand)
     let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
-    // Separate compile-time modifiers from runtime ones
-    const listenerOpts = {}   // once, passive, capture → addEventListener options
-    const wrapMods = []       // debounce, throttle → wrap handler at runtime
-    const guardMods = []      // preventDefault, stopPropagation, self, trusted → inline guards
-
-    for (const mod of modifiers) {
-      switch (mod.name) {
-        case 'once':    listenerOpts.once    = true; break
-        case 'passive': listenerOpts.passive = true; break
-        case 'capture': listenerOpts.capture = true; break
-        case 'preventDefault':
-        case 'stopPropagation':
-        case 'self':
-        case 'trusted':
-          guardMods.push(mod.name); break
-        case 'debounce':
-        case 'throttle':
-          wrapMods.push(mod); break
-        default:
-          ctx.analysis.errors.push(
-            `Unknown event modifier '${mod.name}' on '${event}'. ` +
-            `Valid: once, passive, capture, preventDefault, stopPropagation, self, trusted, debounce, throttle`
-          )
-      }
-    }
-
-    // Apply compile-time guard wrappers (preventDefault etc.)
-    // Build the guard body then wrap: ($$e) => { guards...; handler($$e) }
-    if (guardMods.length) {
-      const guards = guardMods.map((g) => {
-        if (g === 'preventDefault')  return '$$e.preventDefault();'
-        if (g === 'stopPropagation') return '$$e.stopPropagation();'
-        if (g === 'self')    return 'if ($$e.target !== $$e.currentTarget) return;'
-        if (g === 'trusted') return 'if (!$$e.isTrusted) return;'
-      }).join(' ')
-      handler = `($$e) => { ${guards} (${handler})($$e); }`
-    }
-
-    // Apply runtime wrappers (debounce, throttle)
-    for (const mod of wrapMods) {
-      let msArg
-      if (!mod.arg) {
-        ctx.analysis.errors.push(`'${mod.name}' modifier requires a duration: |${mod.name}(300)`)
-        continue
-      }
-      // Reactive arg: {expr} → pass as getter () => expr
-      if (mod.arg.startsWith('{') && mod.arg.endsWith('}')) {
-        const inner = mod.arg.slice(1, -1).trim()
-        const rewritten = ctx.accessors ? rewriteExpr(inner, ctx.accessors) : inner
-        ctx.detectDependency(inner)
-        msArg = `() => (${rewritten})`
-      } else {
-        msArg = mod.arg
-      }
-      handler = `$$runtime.${mod.name}(${handler}, ${msArg})`
-    }
-
-    const hasListenerOpts = Object.keys(listenerOpts).length > 0
-    const optsStr = hasListenerOpts
-      ? `, { ${Object.entries(listenerOpts).map(([k, v]) => `${k}: ${v}`).join(', ')} }`
-      : ''
+    const mods = applyEventModifiers(ctx, modifiers, event, handler)
+    handler = mods.handler
+    const { optsStr, hasListenerOpts } = mods
 
     // Delegate bubbling events with no special options to a single root listener.
-    const canDelegate = !hasListenerOpts && wrapMods.length === 0 && !NON_DELEGATED_EVENTS.has(event)
+    const canDelegate = !hasListenerOpts && !mods.hasWrappers && !NON_DELEGATED_EVENTS.has(event)
 
     if (canDelegate) {
       ctx.delegatedEvents.add(event)
@@ -9298,7 +9318,10 @@ export async function compile(source, config = {}) {
     locOf(index) {
       if (!_locate || index == null || !_locFile) return null
       const { line, column } = _locate(index)
-      return `${_locFile}:${line}:${column}`
+      // A caller that rewrote the file before handing it over (Sierra injects
+      // imports and props) says which line of the FILE each line it handed
+      // over came from; without it the editor opens a line or two off.
+      return `${_locFile}:${config.locLines?.[line - 1] ?? line}:${column}`
     },
     /**
      * The same, for an error message rather than for `data-fjs-loc`. It does

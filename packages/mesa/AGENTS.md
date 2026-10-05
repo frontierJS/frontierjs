@@ -150,8 +150,9 @@ or no component watching that object hears it.
 - **On an element, `bind:` is `value`, `checked`, `files`, `group` and `this`.**
   Anything else is refused and names `attr={expr}`.
 - Modifiers: `once` `passive` `capture` `preventDefault` `stopPropagation`
-  `self` `trusted` `debounce(ms)` `throttle(ms)`. `onclick={fn}` also works on
-  an element.
+  `self` `trusted` `debounce(ms)` `throttle(ms)`, on an element and on
+  `<mesa:window|document|body>` alike; an unknown one is refused by name.
+  `onclick={fn}` also works on an element.
 - `{@attach fn}` runs `fn(el)` when the element mounts and a returned function
   is its cleanup. `$.fade()`, `$.slide()`, `$.fly()` and `$.entrance({ in, out })`
   return attachments.

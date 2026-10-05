@@ -436,7 +436,7 @@ export function buildGeneratedMap(schema) {
 }
 
 // ─── @from map ───────────────────────────────────────────────────────────────
-// { modelName: { fieldName: { subquerySql, subquerySqlAliased, isObject } } }
+// { modelName: { fieldName: { subquerySql, subquerySqlAliased, subquerySqlFor, isObject } } }
 // subquerySql: the correlated subquery string to inject into SELECT
 // isObject: true for last/first (returns JSON-encoded row), false for scalars
 //
@@ -472,6 +472,7 @@ export function addDerivedFields(map, model, schema) {
     map[model.name][field.name] = {
       subquerySql:        sql,
       subquerySqlAliased: sql.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, 't."$1"'),
+      subquerySqlFor:     alias => sql.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, `${alias}."$1"`),
       isObject: false,
       isBool:   field.type?.name === 'Boolean',
       derived:  true,
@@ -608,6 +609,8 @@ export function buildFromMap(schema, pluralize = false) {
         target:             targetModel.name,
         subquerySql:        subquerySql.replaceAll('%SELF%', `"${selfTable}"`),
         subquerySqlAliased: subquerySql.replaceAll('%SELF%', 't'),
+        // A relation filter names the model under whatever alias its depth gave it.
+        subquerySqlFor:     alias => subquerySql.replaceAll('%SELF%', alias),
         isObject,
         isBool: op === 'exists',
         rowRef,

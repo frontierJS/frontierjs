@@ -55,3 +55,39 @@ describe('createResendMailer credentials', () => {
     expect((await sent(() => mailer.send(MSG))).auth).toBe('Bearer raw')
   })
 })
+
+// A fetch with no deadline holds the request that called send() for as long as
+// Resend's edge cares to leave the socket open (`FJS-1668`).
+describe('createResendMailer deadline', () => {
+
+  async function withTimeoutStub<T>(run: (asked: number[]) => Promise<T>): Promise<T> {
+    const realFetch = globalThis.fetch
+    const realTimeout = AbortSignal.timeout
+    const asked: number[] = []
+    AbortSignal.timeout = ((ms: number) => {
+      asked.push(ms)
+      return AbortSignal.abort(new DOMException('The operation timed out.', 'TimeoutError'))
+    }) as never
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      if (init.signal?.aborted) throw init.signal.reason
+      return Response.json({ id: 'r1' })
+    }) as never
+    try { return await run(asked) }
+    finally { globalThis.fetch = realFetch; AbortSignal.timeout = realTimeout }
+  }
+
+  test('a send that outlives its deadline fails by name', async () => {
+    const mailer = createResendMailer({ apiKey: 'raw', from: 'shop@test' })
+    await withTimeoutStub(async (asked) => {
+      await expect(mailer.send(MSG)).rejects.toThrow(/Resend API timed out after \d+ms/)
+      expect(asked).toHaveLength(1)
+    })
+  })
+
+  test('the batch endpoint has the same deadline', async () => {
+    const mailer = createResendMailer({ apiKey: 'raw', from: 'shop@test' })
+    await withTimeoutStub(async () => {
+      await expect(mailer.batch([MSG])).rejects.toThrow(/Resend API timed out/)
+    })
+  })
+})

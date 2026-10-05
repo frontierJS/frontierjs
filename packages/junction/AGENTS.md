@@ -394,6 +394,7 @@ service source for the shapes above, by id:
 | `set-auth-discarded` | `db.$setAuth(user)` called for its side effect |
 | `call-header-declared` | a per-call header missing from `http.callHeaders` |
 | `scheduler-dispatch` | `app.scheduler` dispatching into the queue |
+| `battery-raw-secret` | `createResendMailer({ apiKey })` — name the key with `credentials` + `apiKeyRef` |
 | `queue-operator-verb` | a service pausing, resuming or draining a queue |
 | `transition-methods` | a `@@transitions` move and the method that makes it drifting apart |
 | `commitment-swept` | a job still making a move a `@@commitment` already makes |

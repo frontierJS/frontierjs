@@ -33,9 +33,9 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
+| `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
+| `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | 6 |
 | `resource.options(field)` | `packages/sierra/src/junction/resource.js` | 5 |
-| `app.principal()` | `packages/junction/src/core/app.ts` | 5 |
-| `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | 5 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
@@ -119,7 +119,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `runStartPhases(bindHost)` | `packages/junction/src/core/app.ts` | yes | — |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | yes | 12 |
 | `app.withDb(fn)` / `app.onTenantClient(observer)` | `packages/junction/src/core/app.ts` | yes | 1 |
-| `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 5 |
+| `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 6 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
 | `manifestPlugin()` | `packages/junction/src/plugins/manifest/index.ts` | yes | — |
 | `app.registerMetricsSource(name, fn)` / `app.registerHealthCheck(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
@@ -134,7 +134,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
 | `publish()` | `packages/junction/src/transport/channels.ts` | yes | 3 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
-| `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | yes | 5 |
+| `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | yes | 6 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |

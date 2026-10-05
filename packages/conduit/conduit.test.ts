@@ -521,7 +521,8 @@ describe('HTTP transport — response limits', () => {
       })
 
       const result = await t.send({ target: target.id, method: 'GET' })
-      expect(result.error!.kind).toBe('invalid_request')
+      // The target's answer is what was unusable, not the caller's request.
+      expect(result.error!.kind).toBe('invalid_response')
       expect(result.error!.retryable).toBe(false)
       expect(result.error!.message).toContain('1024')
     } finally { s.stop() }
@@ -2584,6 +2585,23 @@ describe('a throwing observer does not take down the caller', () => {
 
     const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
     expect(result.error).toBeNull()
+  })
+
+  it('a broken observer prints its stack once, then one line per call', async () => {
+    const { conduit } = await createTestConduit(
+      { 'outpost:srv-abc': { '/ping': { pong: true } } },
+      { observers: { onRequest() { throw new Error('boom') } } }
+    )
+    const logged: unknown[][] = []
+    const errors = console.error
+    console.error = (...a: unknown[]) => { logged.push(a) }
+    try {
+      for (let i = 0; i < 3; i++) await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
+    } finally {
+      console.error = errors
+    }
+    expect(logged).toHaveLength(3)
+    expect(logged.flat().filter(a => a instanceof Error)).toHaveLength(1)
   })
 
   it('onError', async () => {
@@ -4801,6 +4819,50 @@ describe('a target whose address comes per send (FJS-1667)', () => {
       expect(seen).toEqual([r.url, r.url])
     } finally { r.stop() }
   })
+
+  // conduit-11 · an observer receives and cannot act, so it gets the floor the
+  // logger gets: a credential-named key in the body, headers or query is
+  // `[redacted]`, and what the caller passed is not touched.
+  it('shows observers a request with credential-named fields redacted', async () => {
+    const r = receiver(500)
+    try {
+      const seen: ConduitRequest[] = []
+      const c = await conduitWith(hookTarget(local), {
+        observers: { onRequest: (q) => seen.push(q), onError: (q) => seen.push(q), onResponse: (q) => seen.push(q) },
+      })
+      const req: ConduitRequest = {
+        target:  'hook:slack',
+        address: `${r.url}/x`,
+        method:  'POST',
+        headers: { authorization: 'Bearer abc123', 'x-note': 'visible' },
+        query:   { api_key: 'k-789', page: '2' },
+        body:    { name: 'visible', password: 'hunter2', nested: { token: 't-456' } },
+      }
+      await c.send(req)
+      expect(seen.length).toBeGreaterThan(0)
+      for (const q of seen) {
+        const wire = JSON.stringify(q)
+        for (const secret of ['abc123', 'k-789', 'hunter2', 't-456']) expect(wire).not.toContain(secret)
+        expect(wire).toContain('visible')
+        expect(q.query?.page).toBe('2')
+      }
+      expect((req.body as { password: string }).password).toBe('hunter2')
+      expect(req.headers?.authorization).toBe('Bearer abc123')
+    } finally { r.stop() }
+  })
+
+  it('shows a stream observer the origin only, and the same floor', async () => {
+    const seen: ConduitRequest[] = []
+    const c = await conduitWith(hookTarget(local), { observers: { onRequest: (q) => seen.push(q) } })
+    try {
+      for await (const _ of c.stream({
+        target: 'hook:slack', address: 'http://127.0.0.1:1/services/T0/B0/secret', method: 'POST', body: { password: 'hunter2' },
+      })) { /* drained */ }
+    } catch { /* the transport may refuse to stream; the observer already ran */ }
+    expect(seen).toHaveLength(1)
+    expect(JSON.stringify(seen[0])).not.toContain('secret')
+    expect(JSON.stringify(seen[0])).not.toContain('hunter2')
+  })
 })
 
 // ─── conduit-11 · a connection failure carries the URL, userinfo and all ─────
@@ -4841,10 +4903,14 @@ function brokerTarget(address: string, overrides: Partial<TargetDescriptor> = {}
 // A broker that pushes the frames it is given and records what comes back.
 function fakeBroker() {
   const acks: string[] = []
+  const dials: Headers[] = []
   const sockets = new Set<{ send(s: string): void }>()
   const server = Bun.serve({
     port: 0,
-    fetch(req, srv) { return srv.upgrade(req) ? undefined : new Response('no', { status: 400 }) },
+    fetch(req, srv) {
+      dials.push(req.headers)
+      return srv.upgrade(req) ? undefined : new Response('no', { status: 400 })
+    },
     websocket: {
       open(ws)    { sockets.add(ws) },
       close(ws)   { sockets.delete(ws) },
@@ -4857,6 +4923,7 @@ function fakeBroker() {
   return {
     url:  `ws://localhost:${server.port}/`,
     acks,
+    dials,
     push: (id: string, body: unknown) => { for (const s of sockets) s.send(JSON.stringify({ id, type: 'message', body })) },
     stop: () => server.stop(true),
   }
@@ -4958,6 +5025,51 @@ describe('broker target', () => {
     expect(c.stats().subscriptions).toEqual({})
     expect(checks.get('conduit:broker:orders')!()).toBe(true)   // nothing owed once it is gone
     await c.destroy()
+  })
+
+  it('applies the target\'s timeout_ms to the dial, so a broker that never answers the upgrade does not hold subscribe()', async () => {
+    // Accepts the TCP connection and says nothing, which is a dial that neither opens nor errors.
+    const silent = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {}, open() {} } })
+    const c = createConduit()
+    await c.register(brokerTarget(`ws://127.0.0.1:${silent.port}/`, { policy: { timeout_ms: 150 } }))
+    const settled = await Promise.race([
+      c.subscribe('broker:orders', () => {}).then(() => 'settled'),
+      new Promise(r => setTimeout(() => r('hung'), 1500)),
+    ])
+    expect(settled).toBe('settled')
+    expect(c.stats().subscriptions['broker:orders']!.connected).toBe(false)
+    await c.destroy()
+    silent.stop(true)
+  })
+
+  it('applies max_response_bytes as a frame cap: an oversize frame is not handled and not acked', async () => {
+    const broker = fakeBroker()
+    const c = createConduit()
+    await c.register(brokerTarget(broker.url, { policy: { max_response_bytes: 120 } }))
+    const seen: string[] = []
+    await c.subscribe('broker:orders', (m) => { seen.push(m.id) })
+    broker.push('big', 'x'.repeat(500))
+    broker.push('small', 1)
+    expect(await until(() => broker.acks.length === 1)).toBe(true)
+    expect(seen).toEqual(['small'])
+    expect(broker.acks).toEqual(['small'])
+    expect(c.stats().subscriptions['broker:orders']!.received).toBe(1)
+    await c.destroy()
+    broker.stop()
+  })
+
+  it('sends the conduit trace on the dial only for a target that declared trace: true', async () => {
+    const broker = fakeBroker()
+    const trace = () => ({ traceparent: '00-' + 'a'.repeat(32) + '-' + 'b'.repeat(16) + '-01' })
+    const c = createConduit({ trace })
+    await c.register(brokerTarget(broker.url, { trace: true }))
+    await c.register(brokerTarget(broker.url, { id: 'broker:plain' }))
+    await c.subscribe('broker:orders', () => {})
+    expect(broker.dials.at(-1)!.get('traceparent')).toBe(trace().traceparent)
+    await c.subscribe('broker:plain', () => {})
+    expect(broker.dials.at(-1)!.get('traceparent')).toBeNull()
+    await c.destroy()
+    broker.stop()
   })
 
   it('reports down for a broker that never answered, rather than nothing', async () => {

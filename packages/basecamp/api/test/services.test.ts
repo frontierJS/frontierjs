@@ -646,6 +646,19 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     expect((await req.send(body)).status).toBe(401)
   })
 
+  test('a good signature is a machine principal and reaches no other method (FJS-1715)', async () => {
+    // The credential is app-wide, so a signature on a request that is not one of
+    // the three endpoints is refused at the transport rather than passed on as
+    // anonymous: `drain` is what a machine must never be able to call.
+    const path = `/servers/${machine.id}`
+    const req  = env.http.post(path).set('x-service-method', 'drain')
+    for (const [k, v] of Object.entries(await signed(path, {}))) req.set(k, v)
+
+    expect((await req.send({})).status).toBe(401)
+    const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
+    expect(after.status).not.toBe('draining')
+  })
+
   test('the body cannot be swapped under a good signature', async () => {
     const honest = { outpost_version: '0.4.1', outpost_url: 'http://outpost.internal:7810' }
     const req    = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')

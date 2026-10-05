@@ -72,6 +72,8 @@ src/
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints; `prepareMesaSource`
                          is what a .mesa becomes before Mesa sees it
+    ask-plugin.js        dev only — turns on `@frontierjs/cli`'s ask panel when
+                         the app has the cli, resolved from the Vite root
     mesa-check.js        `@frontierjs/sierra/check` — compile without building,
                          for `fli check`'s `mesa-compiles` (`FJS-1228`)
     scanner-plugin.js    runs the scanner
@@ -663,6 +665,10 @@ src/
   `inspect-client.js` at `/@frontierjs/sierra/inspect-client` and injects it into
   the shell, dev only; `mesaPlugin({ inspect: false })` turns off both ends, since
   that client is the only reader of the `data-fjs-loc` the compiler stamps.
+  The same switch turns off the ask panel (`ask-plugin.js`): it answers the
+  inspector's shift+pick, so without the inspector it could never open. The
+  panel is the cli's, and an app without `@frontierjs/cli` gets none and no
+  warning. `website`'s `verify:ask` is the drive.
 - **A missing auto-import does not fail a build.** Mesa compiles a reference to
   an undefined name without complaint, so the symptom is a component that renders
   as nothing, and only what reached the BUNDLE separates *injected* from *silently

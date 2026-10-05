@@ -1,5 +1,43 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-04 — A response over `max_response_bytes` is an `invalid_response`, not the caller's `invalid_request` (`FJS-710`, conduit-10)
+
+The http transport answered a body past the cap as `invalid_request`, the kind that says the caller sent
+something wrong, so a send whose request was fine told its caller to fix it. The answer is what was
+unusable, which is `invalid_response`'s definition: not retryable, no breaker count, and a misconfigured cap
+or an unexpectedly large target answer is something a breaker cannot heal. `SerializeError` keeps
+`invalid_request`. The `types.ts` comments and the README kind table moved with it. The existing cap test
+in `conduit.test.ts` now asserts the new kind and was red first. Still open under conduit-10: charset and
+binary decoding, a body buffered whole, and `stream()` over http.
+
+## 2026-10-04 — An observer is shown a request with its credential-named fields redacted (`FJS-710`, conduit-11)
+
+`onRequest`, `onResponse`, `onError` and `onRetry` received the caller's whole request, so an observer doing
+what an observer is for — writing it to a log — wrote `authorization`, a body's `password` and a query's
+`api_key`. `observedRequest` is already the one place that shapes what observers see (a per-send address
+is the origin only), and it now runs body, headers and query through `redactSecrets`, the logger's name
+walk. It is a floor: a secret under `note` survives, and no option was added. The stream path called its
+observers with the raw request, address included, and now goes through the same function. Two tests in
+`conduit.test.ts`, both red before; the caller's own request is asserted untouched.
+
+## 2026-10-04 — A broker target's `timeout_ms`, `max_response_bytes` and trace apply to its dial (`FJS-1680`)
+
+`BrokerTransport` dialed with auth headers alone, though `FJS-D235` says a target's policy numbers and
+trace headers apply unchanged. `timeout_ms` now bounds one dial — a broker that took the connection and
+never completed the upgrade held `subscribe()` forever, and now closes and goes to the reconnect backoff.
+`max_response_bytes` is a frame cap: an oversize frame is logged, not handled and not acked, so the broker
+redelivers it. A target declaring `trace: true` sends the conduit's trace on every dial, a fresh span per
+reconnect, under the credential. `retry_limit` and `deadline_ms` stay unapplied, since a reconnect is
+unbounded on purpose. Three tests in `conduit.test.ts` (`broker target`), each red before.
+
+## 2026-10-04 — A broken observer prints its stack once, then a line per call (`FJS-710`, conduit-11)
+
+An observer that throws throws on every request, and each one printed a full stack, so one bad
+metrics hook filled the log with the same trace per `send()`. The guard now lives in `observe.ts`
+and is the one place an observer is called — `conduit.ts` and the router's `onRetry` and
+`onReconnect` had three copies of it. The first failure of a name prints the error whole; later
+ones print `threw again: <message>`. Test in `conduit.test.ts` (red at three stacks, wanted one).
+
 ## 2026-10-04 — `withCache` collapses concurrent misses into one inner call (`FJS-1707`)
 
 `withCache` stored a value only after `inner.get` resolved and kept nothing while it was

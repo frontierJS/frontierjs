@@ -38,7 +38,7 @@ import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript, isCertificate } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, workspaceOrKeys } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { apiKeyGuard, apiKeyUsage, narrowToKey } from './services/api-keys/scopes.ts'
@@ -56,14 +56,6 @@ import type { BasecampApp } from './basecamp.types.ts'
 // that is never written. All three are an outpost on a timer — fifty machines
 // reporting their disks every minute buries every action a person took.
 const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report']
-
-// The same three, under the name that says why they are a set: each is called
-// by an Outpost rather than by a person, each is exempted from sessionScope for
-// that reason, and each therefore needs a signature instead. Two lists, one
-// membership — they are separate constants because they answer different
-// questions (what the trail skips, what the signature guards) and a method
-// could legitimately be in one and not the other.
-const OUTPOST_ENDPOINTS = ['servers.heartbeat', 'volumes.report', 'cleanup.report']
 
 /**
  * Build the app.
@@ -219,6 +211,7 @@ export async function buildBasecampApp(
   // INTO that workspace and every read answers 200.
   const app = createApp({
     config, auth, db, logger, autoload: servicesDir, configPath: configDir,
+    credentials: [outpostCredential({ db, logger })],
     principal: membershipClaim({
       tenantFrom:  workspaceOrKeys,
       model:       'workspaceMember',
@@ -526,12 +519,13 @@ export async function buildBasecampApp(
       // session already (sessionFields above).
       all: [
         apiKeyGuard(app), refuseSuspended(),
-        // The three endpoints a machine calls. They are exempted from
-        // sessionScope because an outpost holds no session — this is the
-        // credential that replaces one, and it is registered app-level so a new
-        // outpost-facing method cannot be added to a service and quietly
-        // inherit the exemption without it (`FJS-349`).
-        requireOutpostSignature(app, { only: OUTPOST_ENDPOINTS }),
+        // The three endpoints a machine calls are exempted from sessionScope
+        // because an outpost holds no session. The signature is the credential
+        // that replaces one (`credentials` below); this is the grade on the
+        // principal it makes, app-level so a new outpost-facing method cannot
+        // inherit the exemption without it (`FJS-349`) and a signed machine
+        // cannot reach any other method (`FJS-1715`).
+        outpostScope(),
         // The other half of the trail. A diff needs the row as it stands, and
         // an `after` hook cannot have it — so the pre-image is read here, under
         // the same exception list the `after` half takes.

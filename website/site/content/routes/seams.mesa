@@ -127,19 +127,22 @@ render: static
 <style>
 .wrap { max-width: 92rem; margin-inline: auto; padding-inline: 1.25rem; }
 
-.head { padding: 2.5rem 0 1.25rem; }
+.head { padding-block: 2.5rem 1.25rem; }
 .head h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); }
 .head p { margin: .3rem 0 0; color: var(--ink-mute); font-size: .95rem; }
 
-.stage { display: grid; gap: 1.5rem; align-items: start; }
-@media (min-width: 78rem) { .stage { grid-template-columns: 1fr 17rem; } }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 78rem) { .stage { grid-template-columns: minmax(0, 1fr) 17rem; } }
 
 /* ── Lanes ─────────────────────────────────────────────────────────── */
 .board {
   position: relative; border: 1px solid var(--rule); border-radius: 14px;
   background: var(--surface-raised); padding: 0 0 1.25rem;
-  overflow: hidden;
+  overflow: auto hidden;
 }
+/* Four lanes squeezed under a phone's width clip every card, so below this
+   the board scrolls sideways instead. */
+.lanehead, .grid { min-width: 42rem; }
 .lanehead { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--rule); }
 .lanehead div {
   padding: .7rem .85rem; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
@@ -161,9 +164,11 @@ render: static
 .lanebg i:first-child { border-left: 0; }
 
 svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-svg.wires path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+/* SeamsBoard writes the paths with innerHTML, so they carry no scope class:
+   a scoped rule misses them and every bent wire fills solid black. */
+svg.wires :global(path) { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
                  opacity: .22; transition: opacity .25s ease, stroke-width .25s ease; }
-svg.wires path.lit { opacity: 1; stroke-width: 2.5; }
+svg.wires :global(path.lit) { opacity: 1; stroke-width: 2.5; }
 
 /* Own class, not .step — @frontierjs/css owns that one as a stepper item:
    a column flex with a connector bar drawn between siblings. */

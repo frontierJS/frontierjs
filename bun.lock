@@ -31,6 +31,7 @@
         "@sqlite.org/sqlite-wasm": "^3.53.4-build1",
       },
       "devDependencies": {
+        "@frontierjs/cli": "workspace:*",
         "@modelcontextprotocol/client": "^2.0.0",
         "vite": "^8.0.3",
       },
@@ -67,6 +68,7 @@
         "@frontierjs/ui": "workspace:*",
       },
       "devDependencies": {
+        "@frontierjs/cli": "workspace:*",
         "@frontierjs/outpost": "workspace:*",
         "@frontierjs/testing": "workspace:*",
         "@modelcontextprotocol/client": "^2.0.0",
@@ -428,6 +430,7 @@
         "@frontierjs/toolbelt": "workspace:*",
       },
       "devDependencies": {
+        "@frontierjs/cli": "workspace:*",
         "vite": "^8.0.3",
         "wrangler": "^4.145.0",
       },

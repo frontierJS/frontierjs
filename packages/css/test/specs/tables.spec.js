@@ -157,3 +157,24 @@ test('table: .compact and .hover do not disturb row tones', function () {
     'a tone was lost once .compact and .hover joined .striped'
   );
 });
+
+test('table-wrap: a hidden header label scrolls with the table, not the page', function () {
+  /*
+   * A Table column with hideLabel renders its label as .visually-hidden,
+   * which is position:absolute. Its containing block is the nearest
+   * positioned ancestor, and when .table-wrap is not one the label escapes
+   * the scroller and stretches the document to the table's full width — a
+   * 721px pane measured a 2,259px page (FJS-1626).
+   */
+  var wrap = el(
+    '<div class="table-wrap" style="width:200px">' +
+    '<table class="table" style="width:2000px"><thead><tr>' +
+    '<th>Name</th><th><span id="hidden" class="visually-hidden">Row actions</span></th>' +
+    '</tr></thead></table></div>'
+  );
+  assert.equal(
+    wrap.querySelector('#hidden').offsetParent,
+    wrap,
+    'a .visually-hidden label inside .table-wrap is positioned against the page, not the scroller'
+  );
+});

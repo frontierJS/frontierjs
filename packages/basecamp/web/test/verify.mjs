@@ -67,7 +67,7 @@ const MAIL_PORT = 8121
 // does — exchange a one-time token, once, for a key nothing else holds.
 //
 // Keyed by server id and looked up per call, which is the same rule the app
-// answers on its side (`OUTPOST_SUBJECT` in core/hooks.ts): the machine is named
+// answers on its side (`OUTPOST_ENDPOINTS` in core/hooks.ts): the machine is named
 // in the path for a heartbeat and in `server_id` for the two reports. A single
 // shared secret here would be this drive disagreeing with the app about what a
 // machine is.

@@ -252,7 +252,8 @@ render: static
 
   .carry { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .25rem 1rem; max-width: 64ch; margin: .7rem 0 0; padding: .55rem .9rem; border-left: 2px solid var(--rule); font-size: .9rem; line-height: 1.5; }
   .carry dt { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); padding-top: .15rem; }
-  .carry dd { margin: 0; color: var(--ink-soft); }
+  /* A package path is one unbreakable token wider than a phone. */
+  .carry dd { margin: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
 
   .pairs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .6rem 1.4rem; max-width: 64ch; margin: 0; line-height: 1.55; }
   .pairs dt { font-weight: 600; color: var(--ink); }

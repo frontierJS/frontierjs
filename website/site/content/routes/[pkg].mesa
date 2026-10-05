@@ -128,10 +128,14 @@ render: static
   .phero .who { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; color: var(--ink-mute); }
   .phero .pitch { font-size: 1.1rem; color: var(--ink-soft); max-width: 60ch; margin: .55rem 0 0; }
   .phero .install { margin-top: 1.5rem; max-width: 34rem; }
+  /* vscode's install line is wider than a phone. */
+  .phero .install pre { overflow-x: auto; }
 
-  .pbody { display: grid; gap: 2.5rem; align-items: start; padding-bottom: 3rem; }
+  /* minmax(0, …): a bare 1fr track floors at its widest code sample, and the
+     page then scrolls sideways on a phone. */
+  .pbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2.5rem; align-items: start; padding-bottom: 3rem; }
   @media (min-width: 62rem) {
-    .pbody { grid-template-columns: 13.5rem 1fr; }
+    .pbody { grid-template-columns: 13.5rem minmax(0, 1fr); }
     .ptoc { position: sticky; top: 5rem; }
   }
 

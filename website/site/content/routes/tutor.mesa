@@ -349,8 +349,8 @@ render: static
   section { padding: var(--space-3xl) 0; }
   section + section { border-top: 1px solid var(--rule); }
 
-  .hero { display: grid; gap: var(--space-2xl); align-items: center; }
-  @media (min-width: 60rem) { .hero { grid-template-columns: 1fr 1fr; } }
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2xl); align-items: center; }
+  @media (min-width: 60rem) { .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 
   h1 { font-size: var(--text-4xl); line-height: var(--leading-display); letter-spacing: -.02em; margin: 0; }
   h2 { letter-spacing: -.01em; }
@@ -366,7 +366,7 @@ render: static
      color vocabulary and it is a TONE, never a hex. */
   .tick { color: var(--color-success); font-weight: 700; }
 
-  .pair { display: grid; gap: var(--space-lg); }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-lg); }
   /* The right column is the longer of the two — a transcript is short and the
      source that produced it is not — so the split is uneven rather than even,
      which is what keeps the gap under the left one from reading as a mistake. */

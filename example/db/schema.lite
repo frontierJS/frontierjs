@@ -2114,10 +2114,17 @@ model Invoice {
   /// `@immutable`. The ladder cannot say *staff* — a verified shopper grades 4
   /// too — so the policy does, and a move is an update underneath, so the
   /// policy grades `transition()` without the machine restating it.
+  ///
+  /// The owner's one update is their own DRAFT, which is the `issue` seal: a
+  /// subscriber changing their plan causes the invoice, `issueInvoice` writes
+  /// it on their client with the gate lifted (`FJS-D575`), and the lift keeps
+  /// this policy. A draft exists only inside that transaction and its one move
+  /// is `@system`, so this admits nothing a request can ask for.
   @@gate("1.8.4.8")
   @@allow('read',   auth().isStaff)
   @@allow('read',   userId == auth().id)
   @@allow('update', auth().isStaff)
+  @@allow('update', userId == auth().id && status == 'draft')
 
   /// The one-row half of the receipt identity. The other half — that the lines
   /// sum to `subtotal` — is the cross-row invariant this language cannot state.

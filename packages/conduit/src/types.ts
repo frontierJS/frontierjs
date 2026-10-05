@@ -411,7 +411,7 @@ export const CONDUIT_ERROR_KINDS = [
   'client_error',
   // The target answered and the answer is unusable: HTML where a payload was
   // expected, a body that did not parse as the JSON its own content-type
-  // claimed. Not retryable — the same request renders the same error page —
+  // claimed, a body past `max_response_bytes`. Not retryable — the same request renders the same error page —
   // and not a target fault, because a captive portal, a proxy interstitial or
   // a wrong content-type is a misconfiguration and a breaker cannot heal one.
   // A body that arrived SHORT is not this: that is a `connection_failed`,
@@ -425,9 +425,9 @@ export const CONDUIT_ERROR_KINDS = [
   // after it failed `circuit_open` — load shed by the one status that means
   // *slow down* rather than *I am broken* (`FJS-650`).
   'rate_limited',
-  // The request itself is unusable — a body that will not serialize, a
-  // response larger than the configured cap. The caller is at fault, not
-  // the network or the target, so these are never retryable.
+  // The request itself is unusable — a body that will not serialize, a method
+  // that is not an HTTP verb. The caller is at fault, not the network or the
+  // target, so these are never retryable.
   'invalid_request',
   // The breaker for this target is open: it failed repeatedly and Conduit
   // is refusing to send until the reset window elapses. Nothing left the

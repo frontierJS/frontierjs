@@ -55,6 +55,7 @@
     "@frontierjs/ui": "workspace:*"
   },
   "devDependencies": {
+    "@frontierjs/cli": "workspace:*",
     "@frontierjs/outpost": "workspace:*",
     "@frontierjs/testing": "workspace:*",
     "@modelcontextprotocol/client": "^2.0.0",

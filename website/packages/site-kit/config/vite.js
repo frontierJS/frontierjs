@@ -23,9 +23,10 @@ const KIT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * @param {object} opts
  * @param {string} opts.root — the site directory, the one holding `content/`
  * @param {number} [opts.port] — dev port; `SITE_PORT` / `FLI_PORT_SITE` otherwise
+ * @param {boolean} [opts.host] — listen on every interface, not just localhost
  * @returns {Promise<import('vite').InlineConfig>}
  */
-export async function siteKit({ root, port }) {
+export async function siteKit({ root, port, host = false }) {
   root = resolve(root)
   const content = resolve(root, 'content')
   if (!existsSync(content)) throw new Error(`site-kit: no content/ in ${root}`)
@@ -48,9 +49,10 @@ export async function siteKit({ root, port }) {
     // server ran stayed missing, even across reloads, until the cache was
     // cleared, and editing it updated nothing.
     routeTable: { output: '.sierra/routes.js' },
-    // The browser's half of the config is the site's settings file, and only
-    // when there is one; `virtual:sierra` imports it whole (FJS-1544).
-    ...(existsSync(settingsPath) ? { _configPath: settingsPath } : {}),
+    // The browser's half of the config is the site's settings file;
+    // `virtual:sierra` imports it whole (FJS-1544). Without one it is an empty
+    // module, never Sierra's guess at config/sierra.config.js (FJS-1709).
+    _configPath: existsSync(settingsPath) ? settingsPath : resolve(KIT, 'config/no-settings.js'),
     // No theme class here — a `theme` block puts it on <html>, where the
     // switcher writes. On <body> it would shadow the switcher for every token
     // both define (FJS-501).
@@ -67,6 +69,7 @@ export async function siteKit({ root, port }) {
     server: {
       ...base.server,
       port: port ?? parseInt(process.env.SITE_PORT ?? process.env.FLI_PORT_SITE ?? '8600', 10),
+      host,
       // Vite hops to the next free port without a word, and a drive pointed at
       // the port it hopped from then tests whatever else is listening.
       strictPort: true,

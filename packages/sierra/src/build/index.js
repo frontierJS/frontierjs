@@ -17,7 +17,7 @@ import { resolve, isAbsolute } from 'path'
 import { existsSync } from 'fs'
 import { readdir, rm } from 'fs/promises'
 import { pathToFileURL } from 'url'
-import { mesaPlugin, prepareForCompile } from './mesa-plugin.js'
+import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
 import { devtoolsPlugin } from './devtools-plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
@@ -33,6 +33,7 @@ import { expandGlobs } from './glob-expand.js'
 import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
 import { fsAllowPlugin } from './fs-allow-plugin.js'
+import { askPlugin } from './ask-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
 
@@ -172,6 +173,8 @@ export function createSierraViteConfig(config = {}) {
   sierraPlugins.push(appAliasPlugin())
 
   sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext))
+  // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.
+  if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin())
 
   // Build the base Vite config per target
   const baseConfig = buildBaseConfig(config, sierraPlugins, userPlugins)

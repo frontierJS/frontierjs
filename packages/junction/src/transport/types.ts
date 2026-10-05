@@ -248,6 +248,8 @@ export interface WsData {
   params:   Record<string, string>
   /** The UPGRADE request's search string, parsed — see TransportContext.query. */
   query:    Record<string, unknown>
+  /** The same search string raw, `?` excluded — what a signature is over. */
+  search?:  string
   headers:  Record<string, string>
   ip:       string
   // Resolved during _wsOpen after async auth — null until then.

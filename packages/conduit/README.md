@@ -312,13 +312,13 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 |---|---|---|
 | `target_not_found` | no | no target registered under that ID |
 | `auth_failed` | no | 401/403 from the target, or a credential ref that would not resolve |
-| `invalid_request` | no | body would not serialize, response exceeded `max_response_bytes`, or the method is not a valid HTTP verb |
+| `invalid_request` | no | body would not serialize, or the method is not a valid HTTP verb |
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
 | `rate_limited` | yes | 429, or a 503 that named a `Retry-After`. Carries `retry_after_ms`, which the retry ladder waits instead of its own backoff, and **does not count toward the circuit breaker** — a rate limit says the target is healthy and we are asking too fast |
 | `server_error` | yes | 5xx **only**. The one response-shaped kind the breaker counts |
 | `client_error` | no | any other 4xx — the target understood and refused. `raw` carries the body, which on a 4xx is usually the half you can act on: a validation report, a decline code |
-| `invalid_response` | no | the target answered and the answer is unusable — HTML where a payload was expected, a body that did not parse as the JSON it claimed, or a response that failed the `validate` you declared |
+| `invalid_response` | no | the target answered and the answer is unusable — HTML where a payload was expected, a body that did not parse as the JSON it claimed, a body past `max_response_bytes`, or a response that failed the `validate` you declared |
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
 | `circuit_open` | yes | the target's breaker is open — nothing was sent, and the message names the seconds to wait |
 | `overloaded` | yes | the target's concurrency cap is full — nothing was sent |

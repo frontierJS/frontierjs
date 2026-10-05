@@ -1,5 +1,41 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-04 — `removeMany` under `@@softDelete(cascade)` runs its cascade inside the write lock (`FJS-1714`)
+
+The child stamps and `@hardDelete` deletes ran before `removeMany`'s `tx.wrapExclusive`, as bare auto-commits, so a Restrict grandchild refusing a later child left the earlier children stamped under a parent that stayed live — and the walk could be swallowed by another context's open transaction (`FJS-638`). `remove()` already did this walk inside the lock. The cascade and the parent stamp are now one unit, and the refusal is named by the same `.catch` that `remove()` uses.
+
+`test/foreign-key-error.test.ts`.
+
+## 2026-10-04 — a bulk delete, a soft-delete cascade and a wrong-typed value throw litestone's own errors (`FJS-1609`)
+
+`FJS-1454` taught `delete` to name the Restrict child that refused it and `create`/`update` to name a missing parent; `deleteMany`, a hard `remove`/`removeMany`, and the `@hardDelete` step of a `@@softDelete(cascade)` still threw SQLite's `FOREIGN KEY constraint failed`. They now route through the same walk (`refusedDelete`, `refusedChildDelete`, the second starting from the child rows, since the refusing row sits under the child) and `nameBlockerForCaller`, so `ForeignKeyError.child` names the blocker and a hidden one is named by model alone.
+
+`SQLITE_CONSTRAINT_DATATYPE` (`cannot store REAL value in INTEGER column doc.n`) escaped every write. `asConstraintError` now turns it into a `ValidationError` on the field's path (through `@map`), which reaches create, createMany, update, updateMany and upsert. It is translated after the write rather than checked before it as `FJS-D521` words it; the refusal and its path are the same.
+
+`test/foreign-key-error.test.ts`.
+
+## 2026-10-04 — `updateMany` grades the post-update rule, so a bulk write cannot move a row out of its tenant (`FJS-1713`)
+
+`updateMany` put only the `update` rule — the row as it was — into its WHERE, and `checkPostUpdatePolicy` ran in `update()` alone. So `updateMany({ data: { workspaceId: 20 } })` moved a workspace-10 caller's rows into workspace 20 past tenancy's own generated deny, and a hand-written `@@deny('post-update', …)` was ignored the same way. Where the model has a post-update rule the statement now takes `RETURNING *` and every changed row is graded inside the unit, so one refused row refuses the batch and nothing persists. `verifyTenantIsolation`'s post-update crossing tries `updateMany` after `update`, and with the grading stubbed out it reports the leak; before, it crossed with `update()` only and reported isolation.
+
+## 2026-10-04 — a create rule reads a parent the caller cannot read as missing (`FJS-1712`)
+
+A create rule reading a parent's column (`@@allow('create', team.ownerId == userId)`) looked the parent up past its own rules, so a caller who named a hidden team, or another workspace's, and varied `userId` was refused by policy for every wrong guess and passed through to the hidden-parent refusal for the right one, while a missing team was refused by policy for both. `hiddenParents` now runs before the create policy, and each refusal carries in `hidden` every relation whose named parent the caller cannot read; `checkCreatePolicy` takes that set, `evalPath` answers a hop across one as `null`, and `evalCheck` as no row — after its no-policy return, since `check()` over a target with no row policy admits a missing parent without looking. `create`, `createMany` and `upsertMany`. An update is not reached: a move onto a hidden parent is thrown before the post-update rule runs. `test/hidden-parent.test.ts` § *a create rule reading a parent the caller cannot read* — 5 cases; dropping the path guard turns 3 red, the check() guard 1, the per-row set 1. Litestone 5642 pass.
+
+Found beside it and filed, not fixed: `updateMany` grades no post-update rule, tenancy's generated one included (`FJS-1713`).
+
+## 2026-10-04 — a one-write move that also writes a sealed column is refused by the seal (`FJS-1629`)
+
+`update({ status: 'accepted', signedName })` at `sent`, with `signedName` `@immutable` on a sealing model, gave `TransitionConflictError` reading "expected 'sent', the row is at 'sent'". `throwTransitionRefusal` answered first and treated any row still at `from` as raced, but the move's WHERE also carries the version and the seal, and either narrows it with nothing having moved. A row still at `from` now asks `throwIfVersionMoved`, `throwIfSealedSelf` and `throwIfSealed` before it reports a conflict, so the caller gets `SealedDocumentError` (or `VersionConflictError`) and not a retryable 409 that can never succeed. `test/seal-immutable.test.ts`.
+
+## 2026-10-04 — `verifyFieldProtection` no longer asks asSystem() to read a `@hashed` column (`FJS-1639`)
+
+The "came back to asSystem() too" half held every protected column to a system read, and `@hashed` is the one protection asSystem() does not lift — the digest has no inverse, so the column is absent for everyone. Every model with a `@hashed` column therefore failed on an unmutated schema with `the column is unreadable, not protected`, and `test:mutate` refused to grade it. The half now skips `@hashed`; the SYSADMIN(7) half still grades it, so a mutant that drops `@hashed` is caught as `exposed`. Pinned in `test/litestone.test.ts`.
+
+## 2026-10-04 — a `where` naming a `@from` or `@derived` field through a relation works (`FJS-1654`)
+
+`where: { parent: { is: { kidCount: { gt: 1 } } } }` died with `no such column: t.kidCount`, as system and for a caller alike: the relation hop built the target's where with no `@from` map, so the field was read as a column of the aliased target. The hop now passes the target's `@from`/`@derived` subqueries, correlated on the alias that level gave the target (`t`, `t1`, …) through a new `subquerySqlFor(alias)` beside `subquerySql` and `subquerySqlAliased`. A policied aggregate is still refused for a non-system caller by `guardArgs`, which was never the failing step. `test/from-policy.test.ts`.
+
 ## 2026-10-04 — under row tenancy a create naming a missing, hidden or another tenant's parent gets one answer (`FJS-1704`)
 
 The generated tenancy delegation on a child scoped through its parent denies a create when the parent is not in the caller's tenant, and a missing row and another tenant's are both that, so a missing team answered `Outside your workspaceId` while a private team in the caller's own workspace answered `ForeignKeyError`. `policyVerdict` now names the relation whose delegated tenancy deny fired, `checkCreatePolicy` carries it on the `AccessDeniedError`, and the new `checkCreate` in `makeTable` turns it into `parentRefusal` for `create`, `createMany` and `upsertMany`'s insert half. A caller carrying no tenant claim is still refused as tenancy, and a create whose own tenant column names another tenant still answers `Outside your workspaceId`. `test/tenancy-delegation.test.ts` § *FJS-1319*; the five older cross-tenant-parent assertions there now expect `ForeignKeyError`.
