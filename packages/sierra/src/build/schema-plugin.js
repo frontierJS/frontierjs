@@ -434,9 +434,13 @@ export function schemaPlugin(config, sierraContext) {
 
     configureServer(server) {
       if (!schemaPath) return
-      server.watcher.add(schemaPath)
+      // The DIRECTORY, and `add` beside `change`: a watch on the file alone goes
+      // deaf the first time it is unlinked and recreated (`git stash`,
+      // `git checkout`, a pull), and the dev server then serves the last schema
+      // it saw until restarted (`FJS-1470`).
+      server.watcher.add(dirname(schemaPath))
 
-      server.watcher.on('change', async (file) => {
+      const regenerate = async (file) => {
         if (resolve(file) !== resolve(schemaPath)) return
 
         await generate()
@@ -448,7 +452,9 @@ export function schemaPlugin(config, sierraContext) {
         const mod = server.moduleGraph.getModuleById('\0virtual:sierra')
         if (mod) server.moduleGraph.invalidateModule(mod)
         server.ws.send({ type: 'full-reload' })
-      })
+      }
+      server.watcher.on('change', regenerate)
+      server.watcher.on('add', regenerate)
     },
   }
 }

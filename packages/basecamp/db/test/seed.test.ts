@@ -174,6 +174,22 @@ describe('db/seed.js', () => {
     }
   }, 120_000)
 
+  test('every workspace keeps a machine that says online', async () => {
+    // verify:outpost places a release beside a seeded online machine with no
+    // outpost; the unhealthy-server pass took the only one a small workspace had
+    // (FJS-1606).
+    const dir = scratch()
+    expect((await runSeed(dir)).code).toBe(0)
+    const db = new Database(join(dir, 'db', 'basecamp.db'), { readonly: true })
+    const rows = db.query(
+      `SELECT w.slug AS slug, sum(s.status = 'online') AS online
+         FROM workspace w LEFT JOIN server s ON s.workspaceId = w.id GROUP BY w.id`
+    ).all() as { slug: string; online: number | null }[]
+    db.close()
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) expect({ slug: r.slug, online: (r.online ?? 0) > 0 }).toEqual({ slug: r.slug, online: true })
+  }, 120_000)
+
   test('…and --force re-seeds the same database', async () => {
     // The half that rotted. `--force` deletes by an explicit model list, so a
     // model added to the schema and forgotten there survives the wipe and the

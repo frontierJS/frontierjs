@@ -1,5 +1,23 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-05 — `$async` on an async function; `fetching` is `pending`; RULE 16 is refused
+
+**A top-level `async function` whose `$async` is read gets the state an awaited `const` has** (`IDEAS/async-function-state.md`). `disabled={$async.remove.pending}` and `{#if $async.remove.error}` replace the hand-kept `busy`/`error` pair a button write needed. `status` starts `'idle'`, `loading` is the first call in flight, `pending` any call, and `error` the most recently settled call's rejection, cleared when the next call starts. The runtime half is `makeCallState`, and its `run` hands back a promise that rejects as the call did. The compiler renames the declaration to `$$fn_<name>` and declares a wrapper under the original name, so the template, other functions and `registerExports` reach it unchanged. A function nobody reads `$async` of compiles as written.
+
+**A template that reads `$async.f.error` has handled the rejection** (`FJS-D582`). The wrapper marks its promise handled, so a failed click does not also reach `unhandledrejection`. Without that read it still does. **Overlapping calls are counted** (`FJS-D584`): `pending` holds until each one settles.
+
+**`$async.x.fetching` is `$async.x.pending` on both forms** (`FJS-D583`). No app in the repo or the prototypes read `$async`, so VISION, the README, the REPL examples and the editor hovers were the only callers moved.
+
+**A template read of `$async` alone is reactive.** Every field is a getter behind a property read, and `_isReactive` saw none of it, so `title={$async.rows.status}` and VISION's own `disabled={$async.cities.fetching}` were written once and never moved. A text node only updated when a reactive name shared its expression.
+
+**RULE 16 is enforced** (`FJS-1720`). A read of `$async.<name>` where `<name>` is neither an awaited top-level `const` nor a top-level `async function` is an error naming both forms. A hint is added for an async arrow held in a `const` and for an async generator. Script reads are taken from the AST and template reads from the code regions only, so prose and strings do not count, and a computed `$async[key]` is not judged. VISION § 20.2 listed this as a warning nothing emitted, and it is now in § 20.1.
+
+Proof: `test/async-function-state.test.js` (15) and `makeCallState` in `test/runtime.test.js`, including a rejection that is unhandled only without the flag. `test/browser/runtime/specs/async-function.spec.mjs` runs it in Chrome: a shown failure reports no page error, and an unread one reaches `unhandledrejection`.
+
+## 2026-10-04 — an entity beside an `{expression}` decodes (`FJS-1537`)
+
+`&copy; {year}` showed "&copy; 2026" on the client and "&amp;copy; 2026" from the server. A text node of text alone reaches the page through `innerHTML` or `htmlEntitiesToText`, which decode; one with an expression is written as a template literal into `nodeValue`, and `parseText`'s text parts were emitted as source. `htmlEntitiesToText` is now the one decoder: a single pass (the old chain of replaces turned `&amp;lt;`, the text "&lt;", into "<"), numeric references of any value, and a table of the named ones prose uses, with an unknown name left as written. `rewriteTextResult` and `parseText().result` run each text part through it, so dynamic attributes follow the same rule. An expression's own value is never decoded. `&nbsp;` is now U+00A0, as `innerHTML` makes it, and `&lbrace;` the brace the parser error text offers. `test/text-entities.test.js` renders through `renderComponent`.
+
 ## 2026-10-04 — a block inside `<svg>` is SVG whatever its root tag (`FJS-1613`)
 
 `{#each}<a><ellipse/></a>{/each}` inside an `<svg>` compiled to the HTML `$$runtime.template`, so on the client the `<ellipse>` was an `HTMLUnknownElement` that drew nothing and had no `getBBox`. `buildBlock` judged the namespace from the block's root tags, and `<a>` is legal in both vocabularies. The element walk now carries a namespace on `ctx`: `<svg>` enters SVG, `<foreignObject>` returns to HTML, and a `<mesa:portal>`'s children are HTML because they land in `to`. A block that starts inside SVG compiles to `svgToFragment`. The prerender was always right, since the browser parses its text. `compiler.test.js` grades `{#each}` and `{#if}` with a root `<a>` and an HTML block in a `<foreignObject>`. The website's `map.mesa` drops its `<g>` workaround; `/map/` under vite dev measured 18 ellipses in the SVG namespace with a `getBBox`, and XHTML with the fix turned off.

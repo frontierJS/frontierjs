@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-04 — `fli sig` prints an exported signature, so a caller does not grep src (`FJS-1547`)
+
+`fli sig bearerClaim` answers the declaration an app imports — its head with the body cut off, its comment, `file:line` and the `import` line — where an agent used to grep `src/` and read a hundred lines around each hit (1384 greps, 2.0M characters across 77 sessions). `core/signatures.js` hands every published package's entry points (`exports`, else `main`, a `.d.ts` outranking the source it describes) to one TypeScript program and walks each module's exports through the checker, so `export *` and renamed re-exports resolve as an import resolves them. An interface or class over 40 lines is its members cut to signatures, which is what makes `CallOptions` and `App` one screen. A name with no export falls to a substring and then to the declarations that name it as a member, which is where `sessionFields` (an option) and `verifyGateLadder` (a method on the test env) live. `fli explain` was not widened: it is `db:explain`'s, a `.lite` word catalog. `test/signatures.test.js` grades a fixture workspace and the real junction, auth and litestone surfaces.
+
 ## 2026-10-04 — `fli check` sees a raw `apiKey` in a Resend mailer constructor (`FJS-1668`)
 
 `battery-raw-secret` (warn) reads `api/` source for `createResendMailer({ apiKey … })` — the literal, an `process.env` read and the `{ apiKey, from }` shorthand alike, since all three hold the secret in a closure for the life of the process — and points at `credentials` + `apiKeyRef`. `FJS-D219` kept the raw option and named this rule as what stops it living forever. Comments are blanked first, so the paragraph describing the hazard is silent. `test/checks.test.js` pins the three shapes, the reference form and the comment.

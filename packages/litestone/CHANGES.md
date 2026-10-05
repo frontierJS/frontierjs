@@ -1,5 +1,25 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-05 — `contains`, `startsWith` and `endsWith` look for the text they are given (`FJS-1464`)
+
+The operand went to `LIKE` as a pattern, so `contains: '_'` matched every row and `startsWith: 'j_'` matched every `J` followed by anything; a person's `50%` or `snake_case` answered rows that did not hold it. `likePattern()` in `query.js` escapes `\`, `%` and `_`, and the clause is `LIKE ? ESCAPE '\'` at all three owners — the column path, the typed-JSON path and the `@edge` filter's `contains` in `client.js` (`edgeFilterSql`, which has no test of its own). A caller who wants a pattern has `$raw`. `test/like-escape.test.ts`.
+
+## 2026-10-04 — `VersionRequiredError`'s message speaks to the person on the screen (`FJS-1478`)
+
+The message told its reader to use `asSystem()` and send `data.version`, and it crosses junction's error boundary into a browser, where linear showed it verbatim. `message` is now plain words (reload and try again); the app author's sentence moved to `hint`, an instance property that stays server-side and is typed in `index.d.ts`. Pinned in `test/litestone.test.ts` § `@version — runtime`.
+
+## 2026-10-04 — a committed write's `@@log` line survives the process ending in the same tick (`FJS-1481`)
+
+`fireLog` defers the append one tick with `setImmediate`, so `process.exit()` or an uncaught throw right after `await create()` left the row in main and no line in the trail. A queued write is now held in a pending set until it runs, `flushPendingLogs()` runs what is left on the process `exit` event, and `$close()` flushes first so a queued line lands before its table closes. The drivers' `create` does its file I/O before its first await, so the flush appends synchronously. `test/log-flush-on-exit.test.ts` spawns a process per ending: `exit`, `throw`, `$close()` and a natural end.
+
+## 2026-10-04 — a child a foreign key's `onDelete: SetNull` clears is an updated row to the plugins and the trail (`FJS-1505`)
+
+SQLite clears a `SetNull` child's key inside the parent's own DELETE, so `@@log` wrote no `update` line and a plugin's `afterWrite` never ran — the child's last trail line still named the parent that was gone. `cascadeDoomed` now collects `SetNull` children beside the `Cascade` ones, as `[sink, rows, fk]`, and `cascadeRemoved` hands them to a new sink method, `nulled`, which fires `afterWrite('update')` and one `update` line per row with its own before and after. A `SetNull` child is not walked further (it stays), and a row the same DELETE also removes is reported as removed only. `cascadeHeard` counts a listening `SetNull` child too, so an app with none still pays nothing. Pinned in `test/cascade-seen.test.ts`: `delete`, `deleteMany`, plugin and trail.
+
+## 2026-10-04 — the `@hardDelete` children of a soft cascade reach the plugins and the trail (`FJS-1506`)
+
+`remove` and `removeMany` on a `@@softDelete(cascade)` parent ran `DELETE FROM child WHERE fk IN (…)` for each `@hardDelete` child with no pre-read, so `FileStorage` kept the bytes and `@@log` wrote no line — the same blind spot `FJS-1497` closed for the hard verbs. The cascade loop now reads a hard child's doomed rows (and whatever `onDelete: Cascade` takes below them) in the same exclusive unit, just before its DELETE, and hands them to each table's `afterDelete` and `emitLogs('delete')` once the unit commits. `cascadeHeard` and `cascadeDoomed` take the model they start from, so the walk can begin at the child; a model with nothing listening pays no pre-read. Pinned in `test/cascade-seen.test.ts`: both verbs, two hops, plugin and trail.
+
 ## 2026-10-04 — `removeMany` under `@@softDelete(cascade)` runs its cascade inside the write lock (`FJS-1714`)
 
 The child stamps and `@hardDelete` deletes ran before `removeMany`'s `tx.wrapExclusive`, as bare auto-commits, so a Restrict grandchild refusing a later child left the earlier children stamped under a parent that stayed live — and the walk could be swallowed by another context's open transaction (`FJS-638`). `remove()` already did this walk inside the lock. The cascade and the parent stamp are now one unit, and the refusal is named by the same `.catch` that `remove()` uses.

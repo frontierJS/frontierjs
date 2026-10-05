@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-05 — a raw route's own stream held for gzip now says so in dev (`FJS-1427`)
+
+A route that returns `new Response(readable)` with `text/csv` or `application/x-ndjson` is still read to its end for a caller that accepts gzip, because a Bun Response body of any kind is a stream with no length and the finalizer can tell only what `ctx.stream()` and `ctx.sse()` marked. `FJS-D509` kept that contract rather than guess. What was missing was the signal: outside production the finalizer now times the read for compression and warns once per route when it takes over a second, naming `ctx.stream()` and `content-encoding`. The README's response-helpers section and the api-hazards entry state the rule. Pinned by `test/index.test.ts` § ctx.sse().
+
 ## 2026-10-04 — a WebSocket upgrade asks the credentials list, and a bearer token is its last entry (`FJS-1607`)
 
 `createApp({ credentials })` was read only by the HTTP path, so a signed machine could call a service and could not open a socket, and `verifyApiKey` was reached only when a provider's own `verifySession` fell through to it. `resolvePrincipal` in `auth/credentials.ts` is now the one loop: the declared verifiers in order, then `verifySession`, then `verifyApiKey` when that answers null. `_handleRequest` and `_wsOpen` both call it; a socket's upgrade is a GET signed over an empty body, and a refusal or a verifier that throws closes `4001` as a bad bearer does. `WsData.search` carries the raw query string a signature is over. `test/credentials-ws.test.ts` pins the signed upgrade, both refusals, an unsigned upgrade going to bearer, and a key reachable only through `verifyApiKey` over HTTP and WS. basecamp's `requireOutpostSignature` has not moved onto `signedRequest`; that is `FJS-1715`.

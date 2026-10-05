@@ -138,7 +138,7 @@ function dollarCompletions(inScript) {
       item('$attributes', K.Variable, 'Non-prop attributes',
         '`$attributes` — all non-prop attributes (class, style, attachments, events).'),
       item('$async', K.Variable, 'Async state',
-        '`$async.x.loading/fetching/error/status` — auto-generated for async derived consts.'),
+        '`$async.x.loading/pending/error/status` — generated for an awaited top-level const and for a top-level async function.'),
     )
   }
 

@@ -1679,11 +1679,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const _relationKeys = new Set((modelDef?.['x-relations'] ?? []).map(r => r?.field).filter(Boolean))
   const _composedWarned = new Set()
 
+  function isComposed(k, v) {
+    return _relationKeys.has(k) || (!_declaredKeys.has(k) && v !== null && typeof v === 'object')
+  }
+
   function composedKeysOf(rows) {
     const keys = new Set()
     for (const row of rows.slice(0, 20)) {
       for (const [k, v] of Object.entries(row ?? {})) {
-        if (_relationKeys.has(k) || (!_declaredKeys.has(k) && v !== null && typeof v === 'object')) keys.add(k)
+        if (isComposed(k, v)) keys.add(k)
       }
     }
     return [...keys]
@@ -2621,16 +2625,24 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * time a control replaced it and never when nothing touched it: `<Form>`
    * rewrites the record as `{ ...record, [name]: value }`, so an untouched key
    * is still the identical reference the read produced.
+   *
+   * A COMPOSED key never travels, baseline or not: a relation or a child list
+   * the caller assembled is not a column, and the service that owns its write
+   * refuses it on a patch. Identity alone would send it whenever the read the
+   * resource last recorded was not the one the form was opened on
+   * (`FJS-1576`). A resource with no schema declares nothing, so nothing is
+   * composed there.
    */
   function _changed(id, data) {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return data
     const base = _read.get(id)
-    if (!base || typeof base !== 'object') return data
+    const noBase = !base || typeof base !== 'object'
 
     const out = {}
     for (const key of Object.keys(data)) {
       if (key === idField || (versionOf && key === versionOf)) { out[key] = data[key]; continue }
-      if (!(key in base) || base[key] !== data[key]) out[key] = data[key]
+      if (schema && isComposed(key, data[key])) continue
+      if (noBase || !(key in base) || base[key] !== data[key]) out[key] = data[key]
     }
     return out
   }

@@ -802,8 +802,10 @@ export class BasecampSeeder extends Seeder {
         // One server left deliberately unhealthy per workspace, so the alert
         // and the drain paths have something real to point at. It is the last
         // ONLINE one, because `loseContact` is the only move into `unreachable`
-        // and `asSystem()` makes only declared moves (`FJS-D502`).
-        const quiet = servers.length > 2 ? [...servers].reverse().find(s => s.status === 'online') : null
+        // and `asSystem()` makes only declared moves (`FJS-D502`). Never the
+        // workspace's ONLY online one: a drive needs a machine that says online.
+        const onlineServers = servers.filter(s => s.status === 'online')
+        const quiet = servers.length > 2 && onlineServers.length > 1 ? onlineServers[onlineServers.length - 1] : null
         if (quiet) {
           await sys.server.update({
             where: { id: quiet.id },

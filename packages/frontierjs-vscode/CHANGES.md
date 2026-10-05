@@ -1,5 +1,9 @@
 # Changes — frontierjs-vscode
 
+## 2026-10-05 — `$async` hovers say `pending`, and cover an async function
+
+Follows mesa's rename of `$async.x.fetching` to `pending` (`FJS-D583`). The status hover lists `'idle'`, and the `$async` hover names both forms RULE 16 allows.
+
 ## 2026-10-03 — `@syntax` replaces `@markdown` in the grammar, hover and snippets
 
 Follows litestone's rename. The snippet offers the common languages as a choice.

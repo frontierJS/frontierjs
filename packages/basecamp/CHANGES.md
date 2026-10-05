@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-04 — the seed leaves every workspace one machine that says online (`FJS-1606`)
+
+The per-workspace unhealthy-server pass took the last online machine of any workspace with more than two, and `skunkworks` draws only one, so it ended with none. It now runs only where a second online machine remains. `verify:outpost` finds its decoy again (33/33), and `db/test/seed.test.ts` asserts every workspace keeps an online server.
+
 ## 2026-10-05 — a machine's signature is a credential, and a signed machine reaches only its own three endpoints (`FJS-1715`)
 
 `requireOutpostSignature`, a per-method hook, is gone; `createApp({ credentials: [outpostCredential({ db, logger })] })` verifies the signature at the transport and the machine becomes a principal, `outpost:<serverId>`, `authMethod: 'outpost'`, carrying its own workspace (every service is row-scoped, and `tenantClaimGuard` refuses a signed-in caller holding no claim). `keyFor` names the machine from `X-Service-Method`, the path and the body — one table, `OUTPOST_ENDPOINTS`, which also gives the router's reading of the same call. `outpostScope()` is the grade: a machine anywhere but its own three endpoints is a 403, an endpoint naming a different machine or with none behind it is a 401, so a signed principal cannot be a `servers.drain`. A signature on any request that is not one of the three is now refused at the transport rather than passed on as anonymous.

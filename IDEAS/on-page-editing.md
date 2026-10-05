@@ -42,7 +42,7 @@ BugHerd/Marker.io, React Grab. Sources at the end.
 | Small text edits need no AI round trip | Lovable ("chatting with AI for every small edit wasn't ideal"; text edits free), Framer, Webflow click-and-type | **ships** — step 2, for text written in the source |
 | Stack several edits, commit once | Bolt: edits batch above the chatbox, tokens spent only on save | **ships** — step 1 |
 | Hand precise context to an agent | React Grab: file + component + HTML to the clipboard | **ships** — step 3 |
-| Feedback anchored to an element, screenshot captured for you | BugHerd, Marker.io, Vercel comments → PR | **gap** |
+| Feedback anchored to an element, screenshot captured for you | BugHerd, Marker.io, Vercel comments → PR | **gap** — `anchored-feedback.md` |
 | Content unlocked, layout locked | Framer locks layout templates; Webflow Editor cannot touch design | not this panel's job: it is a developer tool and the tree is the review |
 | Never publish someone else's half-done work | Webflow's top complaint: an Editor publish ships the Designer's unpublished changes | **ships** — the ledger's another-writer rule is this answer |
 

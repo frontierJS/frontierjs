@@ -66,6 +66,24 @@ function streamed(response: Response): Response {
   return response
 }
 
+// A raw route's own `new Response(readable)` looks like any other body, so it
+// is read to its end for a gzip caller and arrives in one piece (FJS-D509).
+// The read taking this long is the sign of that; the dev warning names the fix.
+const SLOW_COMPRESS_MS = 1000
+const _slowWarned = new Set<string>()
+
+function warnSlowCompress(method: string, path: string, type: string, ms: number): void {
+  if (ms < SLOW_COMPRESS_MS) return
+  const key = `${method} ${path}`
+  if (_slowWarned.has(key)) return
+  _slowWarned.add(key)
+  console.warn(
+    `[Junction] ${method} ${path}: held ${Math.round(ms)}ms reading a '${type}' body to its end ` +
+    `so it could be gzipped, and a caller that accepts gzip saw nothing until then. If this is a ` +
+    `stream, build it with ctx.stream() or set 'content-encoding' on the Response.`
+  )
+}
+
 const ENCODER  = new TextEncoder()  // singleton — not per-request
 
 // Frozen response-header constants — Response copies the init object into
@@ -932,7 +950,11 @@ export class HttpTransport {
       return new Response(response.body, { status: response.status, headers })
     }
 
+    const readStart = performance.now()
     const bytes = new Uint8Array(await response.arrayBuffer())
+    if (process.env.NODE_ENV !== 'production') {
+      warnSlowCompress(ctx.method, ctx.path, rawContentType, performance.now() - readStart)
+    }
 
     if (bytes.byteLength < MIN_COMPRESS_BYTES) {
       // Too small — compression overhead not worth it

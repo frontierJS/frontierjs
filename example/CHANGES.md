@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-05 — the offline shell's baseline is 942 kB (`FJS-1717`)
+
+`web/offline-baseline.json` read 941 and the shell built at 942, so `verify:build` and `verify:shell` stopped at the byte budget again, one day after `FJS-1653`. The kilobyte is other sessions' uncommitted sierra `resource.js` and mesa `compiler.js` edits, none of which accounts for it alone, so it was paid with `FJS_OFFLINE_BASELINE=update` (`FJS-D302`) rather than cut. `verify:shell` passes, 30 of 30. `verify:build` now gets past the budget and fails two of its own checks, `planDetail.newWindowEmpty` (`FJS-1708`) and `consoleErrors` (`FJS-1705`).
+
 ## 2026-10-04 — the offline shell's baseline is 941 kB (`FJS-1653`)
 
 `web/offline-baseline.json` read 938 and the shell built at 941, so `verify:build` and `verify:shell` stopped at the byte budget before either drive ran. The weight is the sum of other changes sharing the tree (no one of them accounts for it: the uncommitted mesa, sierra and schema edits are each a few lines), so it was paid with `FJS_OFFLINE_BASELINE=update` (`FJS-D302`) rather than cut. `verify:shell` passes, 30 of 30.

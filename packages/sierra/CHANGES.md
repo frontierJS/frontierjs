@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-05 — the dev server regenerates the client schema after `db/schema.lite` is recreated (`FJS-1470`)
+
+`schemaPlugin.configureServer` watched the schema FILE and listened for `change` alone. The watcher goes deaf to a path after it is unlinked and recreated (`git stash`, `git checkout`, a pull), so the dev server served the last schema it saw: models added since had no client schema, `make()` was bare and a generated `<Form>` rendered no fields, with only a console warning. It now watches `dirname(schemaPath)` and regenerates on `add` as well as `change`, filtered by path, which is what Vite's watcher reports for a recreate. `test/schema-generation.test.js` drives the plugin against a fake server: the directory is watched, `add` regenerates and reloads, and a neighbour file in the same directory does not.
+
+## 2026-10-04 — a patch never carries a composed key (`FJS-1576`)
+
+`save()` kept a key whenever it was absent from the last read or a different reference from it, so a form opened on `record(id, { composed: true })` sent the child list (`params`) the service refuses on a patch — or did not, depending on which read the resource last recorded. `_changed` now drops a composed key (a relation, or an object under a name the model does not declare) before it compares anything, and does so with no baseline too. A declared `Json` column is a column and still travels when it changed. `test/resource-save-composed.test.js` asserts the patch for a re-created list, for no baseline, and for a changed `Json` column.
+
 ## 2026-10-04 — `data-fjs-loc` names the file's line again (`FJS-1710`)
 
 `prepareForCompile` strips a `.mesa` route's frontmatter and inserts auto-imports and slot props, and Mesa stamped `data-fjs-loc` from what it was handed. So alt-click opened a line or more off in any file that went through a rewrite: on `website/site`, the layout's skip link stamped `:20` when it is written on `:19`. **`locLines(original, prepared)`** in `src/build/mesa-plugin.js` maps each prepared line to the line of the file it came from, aligning the two line by line. An inserted line maps to the line before it, and a line rewritten in place maps to itself. The transform passes the map to the compiler as `locLines` in dev, and never for a `.md` (`FJS-1711`). `test/prepare-for-compile.test.js` covers an insertion after the script tag, a stripped frontmatter block and a synthesized script block.

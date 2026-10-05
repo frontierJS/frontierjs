@@ -187,3 +187,143 @@ describe('the two stores the stressor measured', () => {
     db.$close()
   })
 })
+
+describe('the @hardDelete children of a soft cascade are removed rows too (FJS-1506)', () => {
+  const HARD = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Person {
+      id        Int @id
+      deletedAt DateTime?
+      docs      Document[] @hardDelete
+      @@softDelete(cascade)
+    }
+    model Document {
+      id        Int @id
+      personId  Int
+      person    Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+      pages     Page[]
+      @@log(main)
+    }
+    model Page {
+      id     Int @id
+      docId  Int
+      doc    Document @relation(fields: [docId], references: [id], onDelete: Cascade)
+      @@log(main)
+    }
+  `
+
+  async function seededHard() {
+    const spy = new Spy()
+    const db: any = await createClient({ schema: HARD, db: ':memory:', plugins: [spy] })
+    await autoMigrate(db)
+    const sys = db.asSystem()
+    for (const id of [1, 2]) await sys.person.create({ data: { id } })
+    await sys.document.create({ data: { id: 10, personId: 1 } })
+    await sys.document.create({ data: { id: 11, personId: 1 } })
+    await sys.document.create({ data: { id: 20, personId: 2 } })
+    await sys.page.create({ data: { id: 100, docId: 10 } })
+    await sys.page.create({ data: { id: 200, docId: 20 } })
+    await tick()
+    return { db, sys, spy }
+  }
+
+  test('remove() — the children and what they cascade to', async () => {
+    const { db, sys, spy } = await seededHard()
+    await sys.person.remove({ where: { id: 1 } })
+    expect(await sys.document.count({})).toBe(1)
+    expect(spy.deleted.Document?.sort()).toEqual([10, 11])
+    expect(spy.deleted.Page).toEqual([100])
+    const lines = await deleteLines(sys)
+    expect(lines.document).toEqual([10, 11])
+    expect(lines.page).toEqual([100])
+    db.$close()
+  })
+
+  test('removeMany() — the whole set\'s children', async () => {
+    const { db, sys, spy } = await seededHard()
+    await sys.person.removeMany({ where: { id: { in: [1, 2] } } })
+    expect(spy.deleted.Document?.sort()).toEqual([10, 11, 20])
+    expect(spy.deleted.Page?.sort()).toEqual([100, 200])
+    const lines = await deleteLines(sys)
+    expect(lines.document).toEqual([10, 11, 20])
+    db.$close()
+  })
+})
+
+describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (FJS-1505)', () => {
+  const NULLED = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Person {
+      id    Int @id
+      notes Note[]
+    }
+    model Note {
+      id        Int @id
+      personId  Int?
+      person    Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
+      @@log(main)
+    }
+  `
+
+  class Writes extends Plugin {
+    written: Array<[string, string, any]> = []
+    async onAfterWrite(model: string, op: string, row: any) { this.written.push([model, op, row]) }
+  }
+
+  async function seededNotes(plugin?: Plugin) {
+    const db: any = await createClient({ schema: NULLED, db: ':memory:', ...(plugin ? { plugins: [plugin] } : {}) })
+    await autoMigrate(db)
+    const sys = db.asSystem()
+    await sys.person.create({ data: { id: 1 } })
+    await sys.person.create({ data: { id: 2 } })
+    await sys.note.create({ data: { id: 10, personId: 1 } })
+    await sys.note.create({ data: { id: 11, personId: 1 } })
+    await sys.note.create({ data: { id: 20, personId: 2 } })
+    await tick()
+    return { db, sys }
+  }
+
+  async function updateLines(sys: any) {
+    await tick()
+    const rows = await sys.auditRow.findMany({ where: { operation: 'update' } })
+    return rows.filter((r: any) => r.model === 'note')
+  }
+
+  for (const verb of ['delete', 'deleteMany'] as const) {
+    test(`${verb}() — each nulled child is an update line, before and after`, async () => {
+      const { db, sys } = await seededNotes()
+      await sys.person[verb]({ where: { id: 1 } })
+      expect((await sys.note.findMany({ where: { personId: null } })).map((n: any) => n.id).sort()).toEqual([10, 11])
+      const lines = await updateLines(sys)
+      const ids = lines.flatMap((l: any) => l.records).sort((a: number, b: number) => a - b)
+      expect(ids).toEqual([10, 11])
+      for (const l of lines) {
+        expect(l.before.personId).toBe(1)
+        expect(l.after.personId).toBeNull()
+      }
+      db.$close()
+    })
+  }
+
+  test('a plugin hears an update for each nulled child', async () => {
+    const spy = new Writes()
+    const { db, sys } = await seededNotes(spy)
+    spy.written.length = 0
+    await sys.person.delete({ where: { id: 1 } })
+    const notes = spy.written.filter(([m, op]) => m === 'Note' && op === 'update')
+    expect(notes.map(([, , r]) => r.id).sort()).toEqual([10, 11])
+    expect(notes.every(([, , r]) => r.personId === null)).toBe(true)
+    await tick()
+    db.$close()
+  })
+
+  test('a child of another parent is not reported', async () => {
+    const { db, sys } = await seededNotes()
+    await sys.person.delete({ where: { id: 1 } })
+    const lines = await updateLines(sys)
+    expect(lines.flatMap((l: any) => l.records)).not.toContain(20)
+    db.$close()
+  })
+})

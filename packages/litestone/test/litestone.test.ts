@@ -690,7 +690,7 @@ describe('query helpers', () => {
   test('buildWhere — contains', () => {
     const p: any[] = []
     const w = buildWhere({ name: { contains: 'Smith' } }, p)
-    expect(w).toBe('"name" LIKE ?')
+    expect(w).toBe(`"name" LIKE ? ESCAPE '\\'`)
     expect(p[0]).toBe('%Smith%')
   })
 
@@ -24521,6 +24521,17 @@ describe('@version — runtime', () => {
     expect(err?.name).toBe('VersionRequiredError')
     expect(err.status).toBe(400)
     expect(err.retryable).toBe(false)
+    db.$close()
+  })
+
+  test('the refusal reads for the person on the screen; the author\'s advice rides on hint', async () => {
+    const db = await makeDb(SCHEMA, 'ver-required-words')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    let err: any = null
+    try { await db.order.update({ where: { id: 1 }, data: { status: 'x' } }) } catch (e) { err = e }
+    expect(err.message).not.toMatch(/asSystem|data\.version|@version/)
+    expect(err.hint).toMatch(/asSystem\(\)/)
+    expect(err.hint).toMatch(/data\.version/)
     db.$close()
   })
 

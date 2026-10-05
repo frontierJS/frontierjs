@@ -9782,6 +9782,24 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d584"></a>2026-10-05 · `FJS-D584` — Overlapping calls — Take no position: `disabled={$async.f.pending}` is the caller's guard.
+
+Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **A** was picked over **B** (the wrapper drops or queues a call made while one is in flight).
+
+The paper's recommendation, taken as written: a drop-or-queue policy would be a second proposal.
+
+### <a id="fjs-d583"></a>2026-10-05 · `FJS-D583` — `fetching` reads wrong on a write — Rename it to `pending` for both forms, with every caller moved, which the evolution policy allows.
+
+Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **A** was picked over **B** (keep `fetching` on both forms).
+
+The paper's recommendation, taken as written: one object read the same way for a load and a write, and the name says what a write is doing.
+
+### <a id="fjs-d582"></a>2026-10-05 · `FJS-D582` — An unhandled rejection from an `onclick` — When `$async.f.error` is read in the template, the generated wrapper treats the rejection as handled.
+
+Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **B** was picked over **A** (rethrow anyway. The console noise is honest and an error boundary catches it).
+
+The paper's recommendation, taken as written: reading the error is the handling, and the template is where the compiler can see that.
+
 ### <a id="fjs-d569"></a>2026-10-03 · `FJS-D569` — Does R9 still prototype A, now that the escape test it owes cannot pass under A — Keep the A prototype on § R9's three terms, and ship Phase 5 with the escape test written and failing until C lands.
 
 Asked in [`IDEAS/data-layer-v1.md`](IDEAS/data-layer-v1.md) § Open questions. **A** was picked over **B** (drop A. Write the escape test now as C's spec, and make Phase 5 the smallest C: the policy-expression parser moved into toolbelt, a mesa expression mode where a `{…}` is evaluated and never executed, formatters from `/units` only, and a registered component allowlist), **C** (move R9 to V2, and leave stored templates out of Transit's V1).

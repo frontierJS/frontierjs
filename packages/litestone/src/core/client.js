@@ -20,7 +20,7 @@ import {
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
   serializeBooleans, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
-  aggregatableKeysFor,
+  aggregatableKeysFor, LIKE_SQL, likePattern,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -89,7 +89,7 @@ import { refuseUntrustedSchema } from './untrusted.js'
 import {
   checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter,
 } from './hooks.js'
-import { makeLoggerAutoModel, buildLogMap, buildLogEntry, fireLog } from './audit-log.js'
+import { makeLoggerAutoModel, buildLogMap, buildLogEntry, fireLog, flushPendingLogs } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
 export { buildRelationMap } from './schema-maps.js'
@@ -1140,7 +1140,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           else if (op === 'lt')  { inner.push(`${col} < ?`);  innerParams.push(_ecp(v)) }
           else if (op === 'lte') { inner.push(`${col} <= ?`); innerParams.push(_ecp(v)) }
           else if (op === 'in')  { inner.push(`${col} IN (${v.map(() => '?').join(', ')})`); v.forEach(x => innerParams.push(_ecp(x))) }
-          else if (op === 'contains') { inner.push(`${col} LIKE ?`); innerParams.push(`%${v}%`) }
+          else if (op === 'contains') { inner.push(`${col} ${LIKE_SQL}`); innerParams.push(likePattern(op, v)) }
         }
       } else {
         inner.push(`${col} = ?`); innerParams.push(_ecp(val))
@@ -2025,44 +2025,63 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, rows, ctx)
       if (tableHasLogWork) emitLogs('delete', rows)
     },
+    // `onDelete: SetNull` is an UPDATE SQLite makes inside the same DELETE: the
+    // row stays and its key column is cleared (FJS-1505). One line a row, since
+    // each row's before and after are its own.
+    async nulled(rows, fk) {
+      for (const before of rows) {
+        const after = { ...before, [fk]: null }
+        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', after, ctx)
+        if (tableHasLogWork) emitLogs('update', [after], { before, after })
+      }
+    },
   })
 
   // null when no model the cascade can reach has a plugin or a log to tell,
   // which is every app without one, so the walk costs those nothing.
   let _cascadeHeard = null
-  function cascadeHeard() {
-    if (_cascadeHeard !== null) return _cascadeHeard
-    _cascadeHeard = false
+  function cascadeHeard(from = modelName) {
+    const own = from === modelName
+    if (own && _cascadeHeard !== null) return _cascadeHeard
+    if (own) _cascadeHeard = false
     if (!ctx.cascadeSinkFor) return false
-    const seen = new Set([modelName])
-    const queue = [modelName]
+    const seen = new Set([from])
+    const queue = [from]
     while (queue.length) {
       for (const rel of Object.values(ctx.relationMap?.[queue.shift()] ?? {})) {
-        if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade' || seen.has(rel.targetModel)) continue
+        if (rel.kind !== 'hasMany' || (rel.onDelete !== 'Cascade' && rel.onDelete !== 'SetNull') || seen.has(rel.targetModel)) continue
         seen.add(rel.targetModel)
-        queue.push(rel.targetModel)
-        if (ctx.cascadeSinkFor(rel.targetModel)?.hears) return (_cascadeHeard = true)
+        // A SetNull child stays, so nothing under it is reached through it.
+        if (rel.onDelete === 'Cascade') queue.push(rel.targetModel)
+        if (ctx.cascadeSinkFor(rel.targetModel)?.hears) return own ? (_cascadeHeard = true) : true
       }
     }
     return false
   }
 
   // Every row the cascade will remove under `rows`, as [sink, rows] per child
-  // model and hop. Run BEFORE the DELETE, inside its exclusive unit.
-  function cascadeDoomed(rows) {
-    if (!rows?.length || !cascadeHeard()) return null
+  // model and hop, and every row a SetNull will clear, as [sink, rows, fk].
+  // Run BEFORE the DELETE, inside its exclusive unit.
+  function cascadeDoomed(rows, from = modelName) {
+    if (!rows?.length || !cascadeHeard(from)) return null
     const doomed = []
+    const nulled = []
     const seen = new Set()
-    let frontier = [[modelName, rows]]
+    let frontier = [[from, rows]]
     while (frontier.length) {
       const next = []
       for (const [parent, parentRows] of frontier) {
         for (const rel of Object.values(ctx.relationMap?.[parent] ?? {})) {
-          if (rel.kind !== 'hasMany' || rel.onDelete !== 'Cascade') continue
+          const clears = rel.onDelete === 'SetNull'
+          if (rel.kind !== 'hasMany' || (rel.onDelete !== 'Cascade' && !clears)) continue
           const sink = ctx.cascadeSinkFor(rel.targetModel)
           if (!sink) continue
           const keys = [...new Set(parentRows.map(r => r[rel.referencedKey]).filter(v => v != null))]
           if (!keys.length) continue
+          if (clears) {
+            if (sink.hears) nulled.push([sink, sink.rowsWhere(rel.foreignKey, keys), rel.foreignKey, rel.targetModel])
+            continue
+          }
           // A self-relation or a diamond reaches a row twice; SQLite removes it once.
           const found = sink.rowsWhere(rel.foreignKey, keys).filter(r => {
             const k = `${rel.targetModel}\0${r[sink.idField]}`
@@ -2077,11 +2096,30 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
       frontier = next
     }
+    // A row the same DELETE removes is not also updated.
+    if (nulled.length) {
+      const gone = new Set(seen)
+      const own = ctx.cascadeSinkFor(from)
+      for (const r of rows) gone.add(`${from}\0${r[own.idField]}`)
+      for (const [sink, found, fk, model] of nulled) {
+        const kept = found.filter(r => !gone.has(`${model}\0${r[sink.idField]}`))
+        if (kept.length) doomed.push([sink, kept, fk])
+      }
+    }
     return doomed.length ? doomed : null
   }
 
+  // The rows a soft cascade's @hardDelete child loses, and what those cascade
+  // to, as cascadeDoomed answers them. Run BEFORE the child's DELETE.
+  function hardChildDoomed(childModel, foreignKey, keys) {
+    const sink = ctx.cascadeSinkFor?.(childModel)
+    if (!sink || !(sink.hears || cascadeHeard(childModel))) return null
+    const rows = sink.rowsWhere(foreignKey, keys)
+    return rows.length ? [[sink, rows], ...(cascadeDoomed(rows, childModel) ?? [])] : null
+  }
+
   async function cascadeRemoved(doomed) {
-    if (doomed) for (const [sink, rows] of doomed) await sink.removed(rows)
+    if (doomed) for (const [sink, rows, fk] of doomed) await (fk ? sink.nulled(rows, fk) : sink.removed(rows))
   }
 
   // ── Field policy helpers ──────────────────────────────────────────────────
@@ -7078,6 +7116,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // be swallowed by another context's open transaction (`FJS-638`). No
         // await inside, so the cheaper sync-body entry point applies.
         let softResult
+        const _rmSoftDoomed = []
         await tx.wrapExclusive(() => {
         softResult = read(writeDb.query(_rmSql).get(ts, ...removeFinalParams), { mode: 'single', hydrateFrom: true })
         // A soft delete is a write that moves a COUNT: the row is still there
@@ -7099,6 +7138,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
               const ph = parentPKs.map(() => '?').join(',')
               if (hardDelete) {
                 // @hardDelete: physically remove child rows instead of stamping deletedAt
+                const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
+                if (heard) _rmSoftDoomed.push(...heard)
                 try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
                 catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
                 // Hard-delete children are terminal — no need to track their PKs for further cascade
@@ -7120,6 +7161,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', softResult, ctx)
         // ── Logging ──────────────────────────────────────────────────────────
         if (tableHasLogWork) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
+        await cascadeRemoved(_rmSoftDoomed)
         return softResult
       }
 
@@ -7182,6 +7224,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _rmsSql = `UPDATE "${tableName}" SET ${_rmsSets}${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
                       + (_rmNeedRows ? ` RETURNING *` : '')
         let _rmsRows, softCount
+        const _rmsDoomed = []
         // The cascade and the stamp are one unit, as in remove(): a child
         // refused part way would otherwise leave the earlier children stamped
         // under a parent that is still live (`FJS-1714`).
@@ -7203,6 +7246,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
                 if (!parentPKs.length) continue
                 const ph = parentPKs.map(() => '?').join(',')
                 if (hardDelete) {
+                  const heard = hardChildDoomed(childModel, foreignKey, parentPKs)
+                  if (heard) _rmsDoomed.push(...heard)
                   try { writeDb.run(`DELETE FROM "${childTable}" WHERE "${foreignKey}" IN (${ph})`, ...parentPKs) }
                   catch (e) { throw refusedChildDelete(e, childModel, childTable, foreignKey, parentPKs) }
                 } else {
@@ -7222,6 +7267,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
         }).catch(async e => { throw await nameBlockerForCaller(e) })
         if (tableHasLogWork && _rmsRows?.length) emitLogs('delete', _rmsRows)
+        await cascadeRemoved(_rmsDoomed)
         announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count: softCount, rows: _rmsRows })
         return { count: softCount }
       }
@@ -11517,6 +11563,7 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   function _closeAll() {
+    flushPendingLogs()   // a queued audit line appends before its table closes
     stopCrossProcessWatch()
     for (const a of _attached) {
       try { rawWriteDb.prepare(`DETACH DATABASE "${a}"`).run() } catch {}

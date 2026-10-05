@@ -47,6 +47,7 @@ Detail: `references/routes-query-and-headers.md`
 - **Every READ carries `$withDeleted`; on a WRITE only `update`/`patch` by id do.**
 - **`hasRoute()` is a matching question, not an existence one**
 - **A header the caller varies per call must be DECLARED, or it works until the socket connects.**
+- **A raw route's own `new Response(readable)` is held to its end for a gzip caller; build a stream with `ctx.stream()` or name `content-encoding`** (`FJS-D509`)
 - **The client's address is declared, never discovered.**
 
 ## Sockets

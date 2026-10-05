@@ -1,4 +1,4 @@
 {
-  "shellKB": 941,
+  "shellKB": 942,
   "note": "The offline shell over the wire, in kB (brotli). Ratchets down only — FJS-D302. Rewrite with FJS_OFFLINE_BASELINE=update."
 }

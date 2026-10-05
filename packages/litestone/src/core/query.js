@@ -259,6 +259,16 @@ const ARRAY_OPS = new Set(['has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty'])
 // Operators that compile to LIKE, which asks a question about TEXT.
 const TEXT_OPS = new Set(['contains', 'startsWith', 'endsWith'])
 
+// The operand of contains/startsWith/endsWith is TEXT to find, not a pattern.
+// Handed to LIKE raw, a person's `50%` or `snake_case` is a wildcard and
+// `contains: '_'` matches every row. `\`, `%` and `_` are escaped and the clause
+// says so with ESCAPE; a caller who wants a pattern has `$raw`.
+export const LIKE_SQL = `LIKE ? ESCAPE '\\'`
+export function likePattern(op, operand) {
+  const text = String(operand).replace(/[\\%_]/g, '\\$&')
+  return op === 'contains' ? `%${text}%` : op === 'startsWith' ? `${text}%` : `%${text}`
+}
+
 // A column whose stored text is not the value cannot answer one, and the way it
 // fails is a plausible answer rather than an error: on an array column `contains`
 // substring-matches the stored JSON, so `contains: '['` matches every row and
@@ -511,9 +521,9 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
         case 'gte':        params.push(coerce(operand));        clauses.push(`${rawCol} >= ?`);  break
         case 'lt':         params.push(coerce(operand));        clauses.push(`${rawCol} < ?`);   break
         case 'lte':        params.push(coerce(operand));        clauses.push(`${rawCol} <= ?`);  break
-        case 'contains':   params.push(`%${operand}%`);         clauses.push(`${textCol} LIKE ?`); break
-        case 'startsWith': params.push(`${operand}%`);          clauses.push(`${textCol} LIKE ?`); break
-        case 'endsWith':   params.push(`%${operand}`);          clauses.push(`${textCol} LIKE ?`); break
+        case 'contains':
+        case 'startsWith':
+        case 'endsWith':   params.push(likePattern(op, operand)); clauses.push(`${textCol} ${LIKE_SQL}`); break
         case 'in':
           if (!operand?.length) { clauses.push('0 = 1'); break }
           operand.forEach(v => params.push(coerce(v)))
@@ -792,9 +802,9 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         case 'gte':        push(operand);              clauses.push(`${col} >= ?`);          break
         case 'lt':         push(operand);              clauses.push(`${col} < ?`);           break
         case 'lte':        push(operand);              clauses.push(`${col} <= ?`);          break
-        case 'contains':   push(`%${operand}%`);       clauses.push(`${col} LIKE ?`);        break
-        case 'startsWith': push(`${operand}%`);        clauses.push(`${col} LIKE ?`);        break
-        case 'endsWith':   push(`%${operand}`);        clauses.push(`${col} LIKE ?`);        break
+        case 'contains':
+        case 'startsWith':
+        case 'endsWith':   push(likePattern(op, operand)); clauses.push(`${col} ${LIKE_SQL}`); break
         // `in` and the bare-array shorthand are documented as the same question,
         // so they have to compile the same way: on an array column the row
         // supplies several values and the IN moves inside json_each. Without

@@ -28,8 +28,8 @@ const HOVER_ENTRIES = [
     hover: '**`$async.x.loading`** — `boolean`\n\n`true` on the **first** fetch only. `false` once the first result arrives. Use to show a skeleton UI on initial load.\n\n```js\nconst cities = await getCities(selectedState)\n// $async.cities.loading — true until first result\n```'
   },
   {
-    match: (word, line) => /\$async\.\w+\.fetching/.test(line) && word === 'fetching',
-    hover: '**`$async.x.fetching`** — `boolean`\n\n`true` whenever a fetch is in flight (including refetches). Use to show a spinner or disable controls during reload.\n\n```js\n<select disabled={$async.cities.fetching}>\n```'
+    match: (word, line) => /\$async\.\w+\.pending/.test(line) && word === 'pending',
+    hover: '**`$async.x.pending`** — `boolean`\n\n`true` whenever a fetch or a call is in flight (including refetches and overlapping calls). Use to show a spinner or disable a control.\n\n```js\n<button disabled={$async.save.pending}>\n```'
   },
   {
     match: (word, line) => /\$async\.\w+\.error/.test(line) && word === 'error',
@@ -37,11 +37,11 @@ const HOVER_ENTRIES = [
   },
   {
     match: (word, line) => /\$async\.\w+\.status/.test(line) && word === 'status',
-    hover: "**`$async.x.status`** — `'pending' | 'success' | 'error'`\n\nThe current state of the async derivation.\n\n| Value | Meaning |\n|---|---|\n| `'pending'` | First fetch not yet resolved |\n| `'success'` | Last fetch succeeded |\n| `'error'` | Last fetch threw |"
+    hover: "**`$async.x.status`** — `'idle' | 'pending' | 'success' | 'error'`\n\nThe current state of the async derivation or call.\n\n| Value | Meaning |\n|---|---|\n| `'idle'` | An async function that has not been called |\n| `'pending'` | In flight |\n| `'success'` | Last fetch succeeded |\n| `'error'` | Last fetch threw |"
   },
   {
     match: (word, line) => line.includes('$async.') && word === '$async',
-    hover: "**`$async.x`** — compiler-generated async state\n\nAuto-created for any `const` initialized with `await` that has reactive deps:\n\n```js\nconst cities = await getCities(selectedState)\n// Generates:\n//   $async.cities.loading   — true on first fetch only\n//   $async.cities.fetching  — true any time a fetch is in flight\n//   $async.cities.error     — Error | null\n//   $async.cities.status    — 'pending' | 'success' | 'error'\n```\n\n> `$async.x` only exists on variables declared with `await` at the top level."
+    hover: "**`$async.x`** — compiler-generated async state\n\nCreated for a top-level `const` initialized with `await`, and for a top-level `async function` whose `$async` is read:\n\n```js\nconst cities = await getCities(selectedState)\n// Generates:\n//   $async.cities.loading   — true on first fetch only\n//   $async.cities.pending   — true any time a fetch is in flight\n//   $async.cities.error     — Error | null\n//   $async.cities.status    — 'pending' | 'success' | 'error'\n```\n\n> RULE 16 — `$async.x` exists on those two forms only, and a read of any other name is a compile error."
   },
 
   // ── $context ─────────────────────────────────────────────────────────────────

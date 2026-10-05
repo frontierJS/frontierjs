@@ -317,6 +317,9 @@ src/
   the old behavior and never a lost value. Keys are compared with `!==`, so
   Invariant 9 holds — a diff OMITS a key and never substitutes one, and an
   explicit `null` differs from a non-null baseline, travels, and clears.
+  **A composed key (a relation, or an object under an undeclared name) never
+  travels, baseline or not** — identity would send a child list whenever the
+  last recorded read was not the one the form opened on (`FJS-1576`).
   `service.patch(id, data)` is the escape and sends what it is handed: this verb
   takes a record, that one takes a payload.
 - **Neither the baseline nor the `@version` moves on a push.** Both are recorded

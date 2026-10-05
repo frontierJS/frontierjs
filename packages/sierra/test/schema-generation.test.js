@@ -469,3 +469,48 @@ describe('a found litestone that will not load', () => {
     expect(src).not.toContain('client schema')
   })
 })
+
+// A watcher on the FILE sees `change` and `unlink` and then nothing for the
+// recreate that `git stash` / `git checkout` / a pull does, so the dev server
+// served the last schema it saw for good (`FJS-1470`). The DIRECTORY gives
+// `unlink`, `add`, then `change` for every later write.
+describe('the dev watcher survives the schema being recreated', () => {
+
+  function fakeServer() {
+    const added = []
+    const handlers = {}
+    const sent = []
+    return {
+      added, handlers, sent,
+      watcher: {
+        add: (p) => { added.push(p) },
+        on: (ev, fn) => { handlers[ev] = fn },
+      },
+      moduleGraph: { getModuleById: () => null, invalidateModule() {} },
+      ws: { send: (m) => sent.push(m) },
+    }
+  }
+
+  test('watches the directory, and regenerates on add as well as change', async () => {
+    const { dir, path } = fixture()
+    const ctx = {}
+    const plugin = schemaPlugin({}, ctx)
+    await plugin.configResolved({ root: dir })
+    const server = fakeServer()
+    plugin.configureServer(server)
+
+    expect(server.added).toContain(dirname(path))
+
+    ctx.schemaDefs = null
+    await server.handlers.add(path)
+    expect(ctx.schemaDefs).not.toBeNull()
+    expect(server.sent).toEqual([{ type: 'full-reload' }])
+
+    // A neighbour in the same directory is not the schema.
+    ctx.schemaDefs = null
+    await server.handlers.add(resolve(dirname(path), 'other.lite'))
+    await server.handlers.change(resolve(dirname(path), 'other.lite'))
+    expect(ctx.schemaDefs).toBeNull()
+    expect(server.sent.length).toBe(1)
+  })
+})

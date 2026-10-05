@@ -1,0 +1,23 @@
+<script>
+  // async-function.mesa -- two writes that fail, one whose error the template
+  // shows and one whose error nothing reads. Only the second is unhandled.
+  window.__unhandled = []
+  window.addEventListener('unhandledrejection', (e) => window.__unhandled.push(e.reason?.message))
+
+  let gate = null
+
+  async function shown() {
+    await new Promise((r) => { gate = r })
+    throw new Error('shown failure')
+  }
+
+  async function silent() {
+    throw new Error('silent failure')
+  }
+</script>
+
+<button type="button" id="shown" onclick={() => shown()} disabled={$async.shown.pending}>shown</button>
+<button type="button" id="release" onclick={() => gate?.()}>release</button>
+<button type="button" id="silent" onclick={() => silent()} disabled={$async.silent.pending}>silent</button>
+<p id="status">{$async.shown.status}</p>
+{#if $async.shown.error}<p id="error">{$async.shown.error.message}</p>{/if}

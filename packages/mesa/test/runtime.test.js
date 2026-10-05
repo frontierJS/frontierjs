@@ -114,6 +114,7 @@ import {
   localWatchProxy,
   // Async state
   makeAsyncState,
+  makeCallState,
   asyncDerived,
   // Misc
   noop,
@@ -3759,7 +3760,7 @@ describe('makeAsyncState', () => {
   it('starts in pending state', () => {
     const state = makeAsyncState()
     expect(state.loading).toBe(true)
-    expect(state.fetching).toBe(true)
+    expect(state.pending).toBe(true)
     expect(state.error).toBeNull()
     expect(state.status).toBe('pending')
   })
@@ -3768,7 +3769,7 @@ describe('makeAsyncState', () => {
     const state = makeAsyncState()
     state._update('done')
     expect(state.loading).toBe(false)
-    expect(state.fetching).toBe(false)
+    expect(state.pending).toBe(false)
     expect(state.status).toBe('success')
   })
 
@@ -3780,11 +3781,11 @@ describe('makeAsyncState', () => {
     expect(state.error).toBe(err)
   })
 
-  it('fetching resets on _update("start") after success', () => {
+  it('pending resets on _update("start") after success', () => {
     const state = makeAsyncState()
     state._update('done')
     state._update('start')
-    expect(state.fetching).toBe(true)
+    expect(state.pending).toBe(true)
     expect(state.status).toBe('pending')
   })
 
@@ -3797,7 +3798,97 @@ describe('makeAsyncState', () => {
 
     state._update('start') // retry
     expect(state.loading).toBe(false) // stays false
-    expect(state.fetching).toBe(true) // fetching resets normally
+    expect(state.pending).toBe(true) // pending resets normally
+  })
+})
+
+// The state of an `async function` whose `$async` is read. A call is recorded,
+// never absorbed: the promise the caller holds settles as the call did.
+describe('makeCallState', () => {
+  const deferred = () => {
+    let resolve, reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
+  it('starts idle, since a function may never have run', () => {
+    const state = makeCallState()
+    expect(state.status).toBe('idle')
+    expect(state.loading).toBe(false)
+    expect(state.pending).toBe(false)
+    expect(state.error).toBeNull()
+  })
+
+  it('is pending while a call is in flight and returns its value', async () => {
+    const state = makeCallState()
+    const d = deferred()
+    const p = state.run(() => d.promise, null, [])
+    expect(state.pending).toBe(true)
+    expect(state.loading).toBe(true)
+    expect(state.status).toBe('pending')
+    d.resolve(42)
+    expect(await p).toBe(42)
+    expect(state.pending).toBe(false)
+    expect(state.loading).toBe(false)
+    expect(state.status).toBe('success')
+  })
+
+  it('passes this and the arguments through', async () => {
+    const state = makeCallState()
+    const self = { k: 2 }
+    const out = await state.run(function (a, b) { return Promise.resolve(this.k + a + b) }, self, [3, 4])
+    expect(out).toBe(9)
+  })
+
+  it('records a rejection AND rethrows it to an awaiting caller', async () => {
+    const state = makeCallState(true)
+    const err = new Error('nope')
+    await expect(state.run(() => Promise.reject(err), null, [])).rejects.toBe(err)
+    expect(state.error).toBe(err)
+    expect(state.status).toBe('error')
+    expect(state.pending).toBe(false)
+  })
+
+  it('clears the error when the next call starts', async () => {
+    const state = makeCallState(true)
+    await state.run(() => Promise.reject(new Error('x')), null, []).catch(() => {})
+    const d = deferred()
+    state.run(() => d.promise, null, [])
+    expect(state.error).toBeNull()
+    expect(state.loading).toBe(false) // only the first call is a load
+    d.resolve()
+    await d.promise
+  })
+
+  it('stays pending until every overlapping call settles', async () => {
+    const state = makeCallState()
+    const a = deferred(), b = deferred()
+    const pa = state.run(() => a.promise, null, [])
+    const pb = state.run(() => b.promise, null, [])
+    a.resolve()
+    await pa
+    expect(state.pending).toBe(true)
+    expect(state.status).toBe('pending')
+    b.resolve()
+    await pb
+    expect(state.pending).toBe(false)
+    expect(state.status).toBe('success')
+  })
+
+  // `unhandledrejection` is what the flag is for; whether it fires is the
+  // browser drive's to show. Here: an unhandled call is NOT marked handled.
+  it('leaves the rejection unhandled unless told the template handles it', async () => {
+    const seen = []
+    const onUnhandled = (e) => seen.push(e)
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      makeCallState(false).run(() => Promise.reject(new Error('loud')), null, [])
+      makeCallState(true).run(() => Promise.reject(new Error('quiet')), null, [])
+      await new Promise((r) => setTimeout(r, 10))
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    expect(seen.map((e) => e.message)).toEqual(['loud'])
   })
 })
 
@@ -4527,7 +4618,7 @@ describe('boundaryBlock', () => {
     expect(container.textContent).toBe('content')
   })
 
-  it('content stays mounted after subsequent refetch (fetching=true, loading=false)', () => {
+  it('content stays mounted after subsequent refetch (pending=true, loading=false)', () => {
     const container = div()
     const anchor = document.createComment('')
     container.appendChild(anchor)
@@ -4547,7 +4638,7 @@ describe('boundaryBlock', () => {
     flushSync()
     expect(container.textContent).toBe('content')
 
-    // Refetch starts — fetching=true but loading=false (not first load)
+    // Refetch starts — pending=true but loading=false (not first load)
     state._update('start')
     // manually set loading to false to simulate refetch (not first load)
     // In real usage loading stays false after first done

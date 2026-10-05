@@ -511,18 +511,35 @@ export function extractKeywords(exp) {
   return [...keys]
 }
 
+// The named references an author types in prose, not HTML5's 2,231: a compiler
+// that cannot reach a DOM needs a table, and one name missing from it prints as
+// its own source rather than failing. A numeric reference is general.
+const NAMED_ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", lbrace: '{', rbrace: '}',
+  nbsp: ' ', copy: '©', reg: '®', trade: '™', sect: '§', para: '¶', deg: '°',
+  plusmn: '±', times: '×', divide: '÷', middot: '·', bull: '•', hellip: '…',
+  ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  laquo: '«', raquo: '»', larr: '←', rarr: '→', uarr: '↑', darr: '↓',
+  cent: '¢', pound: '£', yen: '¥', euro: '€', frac12: '½', frac14: '¼', frac34: '¾',
+  check: '✓', star: '☆', hearts: '♥'
+}
+const ENTITY = /&(?:#[xX]([0-9a-fA-F]+)|#(\d+)|([a-zA-Z][a-zA-Z0-9]*));/g
+
+/**
+ * Decode character references in ONE pass. A chain of replaces decodes its own
+ * output: `&amp;lt;` is the text "&lt;", and `.replace(/&amp;/g, '&')` before
+ * `.replace(/&lt;/g, '<')` turns it into "<".
+ */
 export function htmlEntitiesToText(text) {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&apos;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
-    .replace(/&#39;/g, "'")
-    .replace(/&#47;/g, '/')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
+  return text.replace(ENTITY, (whole, hex, dec, name) => {
+    if (hex || dec) {
+      const code = hex ? parseInt(hex, 16) : parseInt(dec, 10)
+      return code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+        ? String.fromCodePoint(code)
+        : whole
+    }
+    return name in NAMED_ENTITIES ? NAMED_ENTITIES[name] : whole
+  })
 }
 
 export function checkRootName(name, script, warning) {
@@ -1161,7 +1178,7 @@ export function rewriteTextResult(pe, accessorMap, opts) {
   const hole = (v) => (coerceNullish ? `(${v}) ?? ''` : v)
   return (
     '`' +
-    result.map((p) => (p.type === 'text' ? Q(p.value) : '${' + hole(p.value) + '}')).join('') +
+    result.map((p) => (p.type === 'text' ? Q(htmlEntitiesToText(p.value)) : '${' + hole(p.value) + '}')).join('') +
     '`'
   )
 }
@@ -2364,7 +2381,7 @@ export function parseText(source, options = {}) {
       })
       return (
         '`' +
-        result.map((p) => (p.type === 'text' ? Q(p.value) : '${' + p.value + '}')).join('') +
+        result.map((p) => (p.type === 'text' ? Q(htmlEntitiesToText(p.value)) : '${' + p.value + '}')).join('') +
         '`'
       )
     }
@@ -2672,7 +2689,7 @@ const DOOR_MEMBERS = [
  * uses of that member are that one spread, sitting in markup where `$.` is
  * JavaScript punctuation in the middle of HTML. The other four are here because
  * they are read the same way: a name, then a key. `$context.form`,
- * `$async.rows.fetching`, `$slots.default`, `$props.x`.
+ * `$async.rows.pending`, `$slots.default`, `$props.x`.
  *
  * What is NOT here is what is CALLED — `$.onMount(fn)`, `$.emit('go')`,
  * `$.mounted(fn)`, `$.tick()`, `$.inspect(x)` and the five animation helpers.
@@ -2736,6 +2753,42 @@ function templateExpressions(source) {
     i = j - 1
   }
   return out.join('\n')
+}
+
+/**
+ * Every `$async.<name>` the component reads, in either spelling, with whether
+ * the TEMPLATE reads its `.error`. The script half is asked of the AST so a
+ * `'$async.x'` in a string is not a read; the template half is the code
+ * regions only, so prose about `$async` is not one either. A computed
+ * `$async[key]` names nothing and is not judged.
+ */
+function asyncStateReads(scriptAST, source) {
+  const reads = new Map()
+  const note = (name, errorInTemplate) => {
+    const r = reads.get(name) || { errorInTemplate: false }
+    if (errorInTemplate) r.errorInTemplate = true
+    reads.set(name, r)
+  }
+  const isBag = (n) =>
+    (n?.type === 'Identifier' && n.name === '$async') ||
+    (n?.type === 'MemberExpression' && !n.computed && n.object?.type === 'Identifier' &&
+      n.object.name === '$' && n.property?.name === 'async')
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'MemberExpression' && !node.computed && isBag(node.object) &&
+        node.property?.type === 'Identifier') {
+      note(node.property.name, false)
+    }
+    for (const key of Object.keys(node)) {
+      const child = node[key]
+      if (Array.isArray(child)) child.forEach(walk)
+      else if (child && typeof child === 'object' && child.type) walk(child)
+    }
+  }
+  walk(scriptAST)
+  const rx = /(?<![\w$])(?:\$async|\$\.async)\.([A-Za-z_$][\w$]*)(?:\??\.([A-Za-z_$][\w$]*))?/g
+  for (const m of templateExpressions(source).matchAll(rx)) note(m[1], m[2] === 'error')
+  return reads
 }
 
 const REFUSED_BARE = DOOR_MEMBERS.filter((m) => !SUGAR_MEMBERS.includes(m))
@@ -8058,7 +8111,8 @@ export function emitScript(ctx) {
 
   // ── 4. $$async container ───────────────────────────────────────────────────
   const asyncVars = Object.values(vars).filter((v) => v.isAsync)
-  if (asyncVars.length) {
+  const asyncFns = ctx.analysis.asyncFns || new Map()
+  if (asyncVars.length || asyncFns.size) {
     mod.code.push(xNode.raw(`const $$async = {};`))
     // `$.async` is a plain property read like `$.props`, so it is reachable
     // from a template expression, which the script-side rewrite never sees.
@@ -8066,6 +8120,12 @@ export function emitScript(ctx) {
     // declared in this block, which the head has already run past.
     if (ctx.inuse.$mesa) mod.code.push(xNode.raw(`$.async = $$async;`))
     if (ctx.inuse.$sugar_async) mod.code.push(xNode.raw(`const $async = $$async;`))
+    // A function's state exists before the function can be called, so it is
+    // declared here rather than beside the declaration, which is hoisted.
+    for (const [name, { handled }] of asyncFns) {
+      mod.code.push(xNode.raw(`const $$async_${name} = $$runtime.makeCallState(${handled ? 'true' : ''});`))
+      mod.code.push(xNode.raw(`$$async.${name} = $$async_${name};`))
+    }
   }
 
   // ── 5. Variables (topologically sorted, props already emitted) ────────────
@@ -8465,6 +8525,19 @@ export function emitScript(ctx) {
     }
 
     const rewritten = rewriteExpr(rewriteAssignments(nodeSrc, node, ctx), ctx.accessors)
+    // An async function whose `$async` is read gives its name to the wrapper
+    // that records each call, so every caller — the template, another
+    // function, an export — goes through it without being rewritten. Nothing
+    // before the name is touched by the rewrites, so its offset still holds.
+    if (node.type === 'FunctionDeclaration' && asyncFns.has(node.id?.name)) {
+      const name = node.id.name
+      const at = node.id.start - node.start
+      mod.code.push(xNode.raw(rewritten.slice(0, at) + '$$fn_' + rewritten.slice(at)))
+      mod.code.push(xNode.raw(
+        `function ${name}() { return $$async_${name}.run($$fn_${name}, this, arguments); }`
+      ))
+      continue
+    }
     // If the statement contains a *top-level* await (e.g. `x = await fetch(...)`)
     // wrap in an async IIFE so the component function stays synchronous.
     // VariableDeclaration `const x = await y` is already handled separately above.
@@ -8922,6 +8995,10 @@ function _isReactive(expr, opaqueRe) {
   if (/\$\$arg\d+\(\)/.test(expr)) return true
   // The same shape for a destructured {#each} item, read as `$$pat1().name`.
   if (/\$\$pat\d+\(\)/.test(expr)) return true
+  // Every field of an `$async` state is a signal getter behind a property
+  // read, which no rule here can see. Classed static, `disabled={$async.f.pending}`
+  // was written once and a button never re-enabled.
+  if (/(?<![\w$])(?:\$\$?async|\$\.async)\./.test(expr)) return true
   // Bare no-arg call: identifier immediately followed by () — signal getter
   // pattern. Kept below the analysis rule rather than replaced by it: a getter
   // reached through a snippet parameter or an each binding is named by no
@@ -9206,6 +9283,8 @@ export function detectStatic(analysis, dom) {
 
   // async derived const → runtime re-fetching needed → not static
   if (vars.some((v) => v.isAsync)) return false
+  // A call's state moves when the call does, and a static render shows 'idle'.
+  if (analysis.asyncFns?.size) return false
 
   // DOM-level interactivity — walk template for event handlers and @attach
   if (dom && _domHasInteractivity(dom)) return false
@@ -9833,6 +9912,44 @@ export async function compile(source, config = {}) {
     if (needsContextLocal || /(?<![\w$])\$\.context\.(use|provide)\b/.test(templateExpressions(source))) {
       ctx.require('$context')
     }
+  }
+
+  // RULE 16: `$async.<name>` exists for an awaited top-level `const` and for a
+  // top-level `async function`, and for nothing else. A read of any other name
+  // compiled to a bare `$async.n.error` and failed on the page (`FJS-1720`).
+  // A function gets its state only where it is read, so one nobody reads
+  // compiles exactly as it always did.
+  {
+    const reads = asyncStateReads(scriptAST, source)
+    const asyncFns = new Map()
+    if (reads.size) {
+      const fns = new Map()
+      for (const n of scriptAST.body) {
+        const d = n.type === 'ExportNamedDeclaration' ? n.declaration : n
+        if (d?.type === 'FunctionDeclaration' && d.id) fns.set(d.id.name, d)
+      }
+      const vars = ctx.analysis.vars || {}
+      for (const [name, { errorInTemplate }] of reads) {
+        if (vars[name]?.isAsync) continue
+        const fn = fns.get(name)
+        if (fn?.async && !fn.generator) {
+          asyncFns.set(name, { handled: errorInTemplate })
+          continue
+        }
+        const arrow = vars[name]?.initNode
+        const hint = fn?.generator
+          ? ` '${name}' is an async generator, which has no single call to record.`
+          : arrow && /^(ArrowFunctionExpression|FunctionExpression)$/.test(arrow.type)
+            ? ` '${name}' is a function held in a variable; declare it \`async function ${name}() { … }\`.`
+            : ''
+        ctx.analysis.errors.push(
+          `\`$async.${name}\` names no async state. It exists for an awaited top-level ` +
+          `\`const ${name} = await …\` and for a top-level \`async function ${name}()\`, ` +
+          `and '${name}' is neither (RULE 16).${hint}`
+        )
+      }
+    }
+    ctx.analysis.asyncFns = asyncFns
   }
 
   await hook('js:after')

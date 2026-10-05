@@ -1927,12 +1927,46 @@ generates an async state object:
 const cities = await getCities(selectedState)
 // compiler generates:
 //   $async.cities.loading   — true on first fetch only
-//   $async.cities.fetching  — true any time a fetch is in flight
+//   $async.cities.pending   — true any time a fetch is in flight
 //   $async.cities.error     — Error | null
 //   $async.cities.status    — 'pending' | 'success' | 'error'
 ```
 
-> **RULE 16** — `$async.x` only exists on variables declared with `await` at the top level.
+**A top-level `async function` whose `$async` is read gets the same object**, so a write
+that is not a form submit needs no hand-kept `busy`/`error` pair:
+
+```html
+<script>
+  async function remove(id) {
+    await users.service.remove(id)
+    goto('/users/')
+  }
+</script>
+
+<Button onclick={() => remove(user.id)} disabled={$async.remove.pending}>Delete</Button>
+{#if $async.remove.error}<Alert tone="danger">{$async.remove.error.message}</Alert>{/if}
+```
+
+- **`status` starts `'idle'`**, the one value a function adds because it may never have
+  run. `loading` is the first call in flight, `pending` is any call in flight, and
+  `error` is the most recently settled call's rejection, cleared when the next call
+  starts.
+- **The call still returns its promise and still rejects.** The state records the
+  rejection and does not swallow it, so a caller that `await`s keeps its control flow.
+- **A template that reads `$async.f.error` has handled the rejection** (`FJS-D582`):
+  it does not also reach `unhandledrejection`. One that does not read it lets the
+  rejection through to the console, where it belongs.
+- **Overlapping calls are counted, not refused** (`FJS-D584`). `pending` holds until
+  every one has settled; `disabled={$async.f.pending}` is the guard against a double
+  click.
+- **Generated only where read.** A function nobody reads `$async` of compiles as
+  written. The name stays the function's: a wrapper records each call, so the
+  template, another function and an `export` all reach it unchanged.
+
+> **RULE 16** — `$async.x` exists for a top-level `const x = await …` and for a top-level
+> `async function x()`, and nothing else. A read of any other name — a `let`, a
+> synchronous function, an async arrow held in a `const`, an async generator — is a
+> compile error naming both forms (`FJS-1720`).
 
 ### 13.3 Optimistic Updates
 
@@ -2139,7 +2173,7 @@ above. Two things wearing one character, and the character is all they share.
 | `$attributes` | All attributes passed to this component. Use for forwarding to a child element. |
 | `$slots` | Reactive object indicating which named slots have content from the parent. Use as `{#if $slots.footer}`. See §9.6. |
 | `$context` | Subtree-scoped shared state. See §7. |
-| `$async.x` | Compiler-generated async state for any top-level `await` variable `x`. |
+| `$async.x` | Compiler-generated async state for a top-level `await` variable `x`, or for a top-level `async function x` whose state is read. See §13.2. |
 | `$.tick(fn)` | Resolves after the DOM has updated. Use it to read the result of a change you just made. See §5. |
 | `$.transition(fn)` | Wraps a state change in the View Transitions API. |
 | `$.entrance(opts)` | Creates an enter/exit animation attachment. |
@@ -2543,6 +2577,7 @@ components hydrate to their initial render and serialize cleanly.
 | `bind:` on `export const` prop | Cannot two-way bind an immutable prop |
 | `bind:` on `export var` prop | Cannot two-way bind a non-reactive prop |
 | `on:event` on a component | Use `onclick={fn}` prop instead |
+| `$async.x` where `x` is neither an awaited top-level `const` nor a top-level `async function` | `$async.x` names no async state (RULE 16) |
 | `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
 | `$.inspect` inside a function or block | `$.inspect` must be at the top level of the script block |
@@ -2552,7 +2587,6 @@ components hydrate to their initial render and serialize cleanly.
 | Condition | Warning |
 |---|---|
 | Getter on reactive object | Getter deps not tracked — use derived `const` |
-| `$async.x` on non-async variable | `$async` state does not exist on sync variables |
 | Function call inside template `${}` | Internal deps not tracked |
 | `var` used in template binding | `var` is non-reactive — template will not update |
 
@@ -2607,7 +2641,7 @@ components hydrate to their initial render and serialize cleanly.
 | 14a | Writable derived overrides are temporary — dep change always wins back; use `let` + watch+handler for permanent detachment |
 | 14b | `$: (a, b)` is a multi-path watch (sequence). `$: { ... }` is an auto-tracked block effect. Wrapping a sequence inside a block produces a block effect, not multi-path watches. |
 | 15 | Component files are always ESM — top-level `await` is valid |
-| 16 | `$async.x` only exists on variables declared with `await` at the top level |
+| 16 | `$async.x` exists for a top-level `const x = await …` and a top-level `async function x()`; any other name is a compile error |
 | 17 | Non-const reactive vars can be manually assigned anytime — last write wins |
 | 18 | Mesa's builtins are reached through `$`, which the compiler provides inside the component function — no import, and only the members used are wired |
 | 18a | `$` may not be destructured, aliased or shadowed; it is legal only as the object of a member expression (`FJS-D132`) |
@@ -2756,7 +2790,7 @@ export const cart = { items: [], total: 0 }
         bind:this={panelEl}
         data-theme={user.prefs.theme}
         style:font-size="{baseFontSize}px"
-        class:loading={$async.cities.fetching}
+        class:loading={$async.cities.pending}
         {@attach fade}
     >
         <select bind:value={selectedState}>
@@ -2765,7 +2799,7 @@ export const cart = { items: [], total: 0 }
             {/each}
         </select>
 
-        <select bind:value={selectedCity} disabled={$async.cities.fetching}>
+        <select bind:value={selectedCity} disabled={$async.cities.pending}>
             {#each cities as city (city)}
                 <option>{city}</option>
             {/each}

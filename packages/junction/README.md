@@ -553,6 +553,15 @@ with `readEvents` from `@frontierjs/sierra/fetch` — over `fetch`, because
 `EventSource` cannot send a bearer token. `send` refuses an `event` or `id`
 holding a line break.
 
+**Build a stream with `ctx.stream()` or `ctx.sse()`.** To a caller that accepts
+gzip the transport reads a compressible body to its end before it sends it, and
+a `new Response(readable)` of your own looks like any other body, so a
+`text/csv` or `application/x-ndjson` stream written that way arrives in one
+piece when it closes. The helpers mark their response as streamed. A route that
+must build its own sets `content-encoding` on it, which exempts the body.
+Outside production the transport warns, once per route, when a body is held
+over a second for compression.
+
 ---
 
 ## Methods the transport answers for you

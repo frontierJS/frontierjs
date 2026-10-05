@@ -4897,15 +4897,15 @@ function _localTrie(signalMap) {
 
 export function makeAsyncState() {
   const [loading, setLoading] = createSignal(true)
-  const [fetching, setFetching] = createSignal(true)
+  const [pending, setPending] = createSignal(true)
   const [error, setError] = createSignal(null)
   const [status, setStatus] = createSignal('pending')
   return {
     get loading() {
       return loading()
     },
-    get fetching() {
-      return fetching()
+    get pending() {
+      return pending()
     },
     get error() {
       return error()
@@ -4915,19 +4915,81 @@ export function makeAsyncState() {
     },
     _update(phase, err = null) {
       if (phase === 'start') {
-        setFetching(true)
+        setPending(true)
         setError(null)
         setStatus('pending')
       } else if (phase === 'done') {
         setLoading(false)
-        setFetching(false)
+        setPending(false)
         setStatus('success')
       } else {
         setLoading(false)
-        setFetching(false)
+        setPending(false)
         setError(err)
         setStatus('error')
       }
+    }
+  }
+}
+
+/**
+ * The `$async.<name>` state of a top-level `async function` — the same four
+ * fields an awaited `const` has, so a template reads a write the way it reads
+ * a load. `'idle'` is the one status a function adds: it may never have run.
+ *
+ * `run` hands back a promise that settles as the call does, rejection
+ * included, so a caller that awaits keeps its control flow. Recording the
+ * rejection must not swallow it. `handled` is set by the compiler where the
+ * template reads `.error`: that read IS the handling, and without it every
+ * failed click would also land on `unhandledrejection`.
+ *
+ * Overlapping calls are counted, not refused: `pending` holds while any is in
+ * flight, and `error`/`status` are the most recently settled call's.
+ */
+export function makeCallState(handled = false) {
+  const [loading, setLoading] = createSignal(false)
+  const [pending, setPending] = createSignal(false)
+  const [error, setError] = createSignal(null)
+  const [status, setStatus] = createSignal('idle')
+  let inFlight = 0
+  let settled = false
+  const settle = (err, failed) => {
+    settled = true
+    setLoading(false)
+    setError(failed ? err : null)
+    if (--inFlight === 0) {
+      setPending(false)
+      setStatus(failed ? 'error' : 'success')
+    }
+  }
+  return {
+    get loading() {
+      return loading()
+    },
+    get pending() {
+      return pending()
+    },
+    get error() {
+      return error()
+    },
+    get status() {
+      return status()
+    },
+    run(fn, self, args) {
+      inFlight++
+      if (!settled) setLoading(true)
+      setPending(true)
+      setError(null)
+      setStatus('pending')
+      // `then` on the call's own promise marks it handled whatever is passed,
+      // so the caller gets a second promise — one that is unhandled until
+      // somebody handles it.
+      const out = Promise.resolve(fn.apply(self, args)).then(
+        (value) => { settle(null, false); return value },
+        (err) => { settle(err, true); throw err }
+      )
+      if (handled) out.catch(() => {})
+      return out
     }
   }
 }

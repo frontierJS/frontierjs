@@ -260,6 +260,27 @@ export function fireLog(logTable, entry, stats) {
     }
     catch (err) { swallow(err) }   // a driver that throws before its first await
   }
-  if (typeof setImmediate === 'function') setImmediate(write)
-  else setTimeout(write, 0)
+  // Registered until it runs, so a process that ends before the next tick can
+  // still append it: a seed script ending in `process.exit`, or a crash right
+  // after a committed write, left the row in main and no line in the trail.
+  const run = () => { if (_pendingLog.delete(run)) write() }
+  _pendingLog.add(run)
+  if (_pendingLog.size === 1) armExitFlush()
+  if (typeof setImmediate === 'function') setImmediate(run)
+  else setTimeout(run, 0)
+}
+
+const _pendingLog = new Set()
+let _exitFlushArmed = false
+
+// The drivers' `create` does its file I/O before its first await, so running a
+// queued write here appends synchronously and the process can end on it.
+export function flushPendingLogs() {
+  for (const run of [..._pendingLog]) run()
+}
+
+function armExitFlush() {
+  if (_exitFlushArmed || typeof process?.on !== 'function') return
+  _exitFlushArmed = true
+  process.on('exit', flushPendingLogs)
 }

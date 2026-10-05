@@ -1265,7 +1265,7 @@ export const EXAMPLES = {
     group: 'Async',
     src: `<script>
   // const x = await expr  with no reactive deps → runs once at mount.
-  // $async.x.loading / fetching / error / status are auto-generated.
+  // $async.x.loading / pending / error / status are auto-generated.
 
   const config = await Promise.resolve({
     theme: 'light',
@@ -1291,7 +1291,7 @@ export const EXAMPLES = {
     src: `<script>
   // const x = await expr(dep)  where dep is reactive → re-runs when dep changes.
   // In-flight requests are automatically cancelled when dep changes.
-  // $async.user.fetching is true any time a fetch is in progress.
+  // $async.user.pending is true any time a fetch is in progress.
 
   let userId = 1
 
@@ -1302,7 +1302,7 @@ export const EXAMPLES = {
 
 <h2>Async derived — User {userId}</h2>
 
-{#if $async.user.fetching}
+{#if $async.user.pending}
   <p><em>Loading…</em></p>
 {:else if $async.user.error}
   <p style="color:#ef4444">Error: {$async.user.error.message}</p>
@@ -1314,6 +1314,34 @@ export const EXAMPLES = {
 
 <button on:click={() => userId = Math.min(10, userId + 1)}>Next user →</button>
 <button on:click={() => userId = Math.max(1,  userId - 1)}>← Prev user</button>`
+  },
+
+  asyncFunction: {
+    file: 'AsyncFunction.mesa',
+    group: 'Async',
+    src: `<script>
+  // An async function whose $async is read gets the same state an awaited
+  // const does -- pending, error, status -- so a write needs no busy flag.
+  // The call still returns its promise and still rejects to a caller that awaits.
+
+  let saved = 0
+
+  async function save(fail) {
+    await new Promise(r => setTimeout(r, 600))
+    if (fail) throw new Error('The server said no.')
+    saved++
+  }
+</script>
+
+<h2>Async function — saved {saved} times</h2>
+
+<button on:click={() => save(false)} disabled={$async.save.pending}>Save</button>
+<button on:click={() => save(true)} disabled={$async.save.pending}>Save (fails)</button>
+
+<p>Status: {$async.save.status}</p>
+{#if $async.save.error}
+  <p style="color:#ef4444">{$async.save.error.message}</p>
+{/if}`
   },
 
   // ── Kitchen Sink ─────────────────────────────────────────────────────────────

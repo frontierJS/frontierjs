@@ -1101,6 +1101,8 @@ export declare class TransitionConflictError extends Error {
 export declare class VersionRequiredError extends Error {
   model:     string
   field:     string
+  /** For the app author: what to change. Not shown to a user — `message` is. */
+  hint:      string
   status:    400
   retryable: false
 }

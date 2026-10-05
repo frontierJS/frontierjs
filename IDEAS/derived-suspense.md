@@ -133,7 +133,7 @@ Svelte is `experimental.async` from 5.36, with the flag slated to go in Svelte 6
 - `fork()` (5.42) preloads a future update — navigation preloading.
 
 **Against Mesa today.** First-load-only matches: `makeAsyncState` keeps `loading`
-(first load, what `boundaryBlock` gates on) apart from `fetching` (a refetch). The
+(first load, what `boundaryBlock` gates on) apart from `pending` (a refetch). The
 rest differs. Each value commits as it lands, so a multi-value update tears. `$async`
 is component-local, so a child's await is invisible to its parent's boundary. There
 is no `reset`. A component with an async `const` and no boundary renders immediately

@@ -84,10 +84,14 @@ export class TransitionConflictError extends Error {
 
 export class VersionRequiredError extends Error {
   constructor(model, field) {
-    super(`${model}.${field} is @version — an update must carry the version it read (data.${field}). Use asSystem() for a write that is not a concurrent editor.`)
+    // The message crosses junction's error boundary and is shown on a screen,
+    // so it speaks to the person editing. What the author must change rides on
+    // `hint`, an instance property that stays server-side.
+    super(`This ${model} cannot be saved because it was not opened from a current copy — reload it and try again.`)
     this.name      = 'VersionRequiredError'
     this.model     = model
     this.field     = field
+    this.hint      = `${model}.${field} is @version — an update must carry the version it read (data.${field}). Use asSystem() for a write that is not a concurrent editor.`
     // 400, not 409: nothing conflicted. The caller left out a required input,
     // and retrying the identical request will fail the identical way.
     this.status    = 400

@@ -2,7 +2,7 @@
 // Core framework tests — Bun test runner.
 // Run: bun test
 
-import { describe, it, expect, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { asRecord } from './helpers.ts'
 // Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
 // COPY under node_modules/.bun, so the package spec tests a stale reaper.
@@ -3806,6 +3806,48 @@ describe('ctx.sse()', () => {
     const { ms, first } = await firstChunkAfter(app, '/export')
     expect(ms).toBeLessThan(150)
     expect(first).toContain('a,b')
+  })
+
+  // A raw route's own `new Response(readable)` cannot be told from a string
+  // body, so it is still held for a gzip caller (FJS-D509). The dev warning is
+  // what tells its author to reach for ctx.stream().
+  it('warns, once, when a raw route stream is held for compression', async () => {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/raw-export', () => {
+      const readable = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('a,b\n'))
+          setTimeout(() => { c.enqueue(new TextEncoder().encode('1,2\n')); c.close() }, 1100)
+        },
+      })
+      return new Response(readable, { headers: { 'content-type': 'text/csv' } })
+    })
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await firstChunkAfter(app, '/raw-export')
+      await firstChunkAfter(app, '/raw-export')
+      const held = warn.mock.calls.filter(c => String(c[0]).includes('/raw-export'))
+      expect(held.length).toBe(1)
+      expect(String(held[0][0])).toContain('ctx.stream()')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not warn for a compressible body that is read at once', async () => {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/fast', (ctx) => ctx.text('x'.repeat(2000)))
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await firstChunkAfter(app, '/fast')
+      expect(warn.mock.calls.filter(c => String(c[0]).includes('/fast')).length).toBe(0)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

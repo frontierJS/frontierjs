@@ -120,7 +120,7 @@ $: selectedId, async () => {
 
 ```js
 const cities = await getCities(selectedState)
-// $async.cities.loading / .fetching / .error generated automatically
+// $async.cities.loading / .pending / .error generated automatically
 ```
 
 ### Slots — `<slot />`
