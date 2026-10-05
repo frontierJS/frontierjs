@@ -4945,15 +4945,26 @@ export function makeAsyncState() {
  *
  * Overlapping calls are counted, not refused: `pending` holds while any is in
  * flight, and `error`/`status` are the most recently settled call's.
+ *
+ * `for(key)` is the same state over only the calls whose FIRST argument is
+ * `key` (SameValueZero, as a Map compares). Without it a row action reads
+ * `pending`, and one delete shows every row's button as busy (`FJS-D591`).
+ * One version signal stands for every key, so each row re-reads on any call;
+ * a row read is two Map lookups.
  */
 export function makeCallState(handled = false) {
   const [loading, setLoading] = createSignal(false)
   const [pending, setPending] = createSignal(false)
   const [error, setError] = createSignal(null)
   const [status, setStatus] = createSignal('idle')
+  const [version, setVersion] = createSignal(0)
+  const byKey = new Map()
+  // Counted here, not read off the signal: a call made from inside an effect
+  // would otherwise subscribe that effect to every later call.
+  let changes = 0
   let inFlight = 0
   let settled = false
-  const settle = (err, failed) => {
+  const settle = (key, err, failed) => {
     settled = true
     setLoading(false)
     setError(failed ? err : null)
@@ -4961,7 +4972,25 @@ export function makeCallState(handled = false) {
       setPending(false)
       setStatus(failed ? 'error' : 'success')
     }
+    const k = byKey.get(key)
+    k.error = failed ? err : null
+    if (--k.inFlight === 0) k.status = failed ? 'error' : 'success'
+    setVersion(++changes)
   }
+  const keyed = (key) => ({
+    get pending() {
+      version()
+      return (byKey.get(key)?.inFlight ?? 0) > 0
+    },
+    get error() {
+      version()
+      return byKey.get(key)?.error ?? null
+    },
+    get status() {
+      version()
+      return byKey.get(key)?.status ?? 'idle'
+    }
+  })
   return {
     get loading() {
       return loading()
@@ -4975,18 +5004,26 @@ export function makeCallState(handled = false) {
     get status() {
       return status()
     },
+    for: keyed,
     run(fn, self, args) {
+      const key = args[0]
       inFlight++
       if (!settled) setLoading(true)
       setPending(true)
       setError(null)
       setStatus('pending')
+      const k = byKey.get(key) ?? { inFlight: 0, error: null, status: 'idle' }
+      byKey.set(key, k)
+      k.inFlight++
+      k.error = null
+      k.status = 'pending'
+      setVersion(++changes)
       // `then` on the call's own promise marks it handled whatever is passed,
       // so the caller gets a second promise — one that is unhandled until
       // somebody handles it.
       const out = Promise.resolve(fn.apply(self, args)).then(
-        (value) => { settle(null, false); return value },
-        (err) => { settle(err, true); throw err }
+        (value) => { settle(key, null, false); return value },
+        (err) => { settle(key, err, true); throw err }
       )
       if (handled) out.catch(() => {})
       return out

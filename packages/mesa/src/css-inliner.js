@@ -22,7 +22,9 @@
  */
 
 import * as csstree from 'css-tree'
-import { Window }   from 'happy-dom'
+import { missingPeer } from './optional-peer.js'
+
+const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'inlineCSS'))
 
 // ── Specificity ────────────────────────────────────────────────────────────────
 // Calculates [a, b, c] specificity from a selector string.

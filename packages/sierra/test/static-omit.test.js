@@ -36,6 +36,8 @@ const files = {
 
 const calls = []
 const log = vi.spyOn(console, 'log')
+// Read inside beforeAll: vitest clears every spy's calls before each test.
+let logged = ''
 
 beforeAll(async () => {
   await rm(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
@@ -50,6 +52,7 @@ beforeAll(async () => {
     plugins: [{ name: 'app:post', closeBundle({ outDir }) { calls.push(outDir) } }],
   })
   await build({ ...config, root: TMP, logLevel: 'silent' })
+  logged = log.mock.calls.flat().join('\n')
 }, 120_000)
 
 afterAll(async () => {
@@ -84,10 +87,9 @@ describe('a redirect is the host\'s, not a page', () => {
 })
 
 test('the build names what it left out, and why', () => {
-  const out = log.mock.calls.flat().join('\n')
-  expect(out).toMatch(/Not prerendered, by their frontmatter/)
-  expect(out).toMatch(/\/secret\/ — a draft/)
-  expect(out).toMatch(/\/old-about\/ — redirects to \/about\//)
+  expect(logged).toMatch(/Not prerendered, by their frontmatter/)
+  expect(logged).toMatch(/\/secret\/ — a draft/)
+  expect(logged).toMatch(/\/old-about\/ — redirects to \/about\//)
 })
 
 test('a post-build plugin is called once, with the output directory', () => {

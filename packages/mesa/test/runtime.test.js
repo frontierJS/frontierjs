@@ -3875,6 +3875,72 @@ describe('makeCallState', () => {
     expect(state.status).toBe('success')
   })
 
+  it('keys a call by its first argument, so one row pending leaves the others idle', async () => {
+    const state = makeCallState(true)
+    const a = deferred(), b = deferred()
+    const pa = state.run((id, gate) => gate, null, [1, a.promise])
+    expect(state.for(1).pending).toBe(true)
+    expect(state.for(1).status).toBe('pending')
+    expect(state.for(2).pending).toBe(false)
+    expect(state.for(2).status).toBe('idle')
+
+    const pb = state.run((id, gate) => gate, null, [2, b.promise])
+    const err = new Error('row 2')
+    b.reject(err)
+    await pb.catch(() => {})
+    expect(state.for(2).error).toBe(err)
+    expect(state.for(2).status).toBe('error')
+    expect(state.for(1).pending).toBe(true)
+    expect(state.for(1).error).toBeNull()
+
+    a.resolve()
+    await pa
+    expect(state.for(1).status).toBe('success')
+    expect(state.for(2).error).toBe(err)
+
+    const again = deferred()
+    state.run((id, gate) => gate, null, [2, again.promise])
+    expect(state.for(2).error).toBeNull()
+    again.resolve()
+  })
+
+  it('holds a key pending until every call on it settles', async () => {
+    const state = makeCallState()
+    const a = deferred(), b = deferred()
+    const pa = state.run((id, gate) => gate, null, ['x', a.promise])
+    const pb = state.run((id, gate) => gate, null, ['x', b.promise])
+    a.resolve()
+    await pa
+    expect(state.for('x').pending).toBe(true)
+    b.resolve()
+    await pb
+    expect(state.for('x').pending).toBe(false)
+  })
+
+  it('wakes an effect reading one key when that key settles', async () => {
+    const state = makeCallState()
+    const seen = []
+    createEffect(() => { seen.push(state.for(7).pending) })
+    flushSync()
+    const d = deferred()
+    const p = state.run((id, gate) => gate, null, [7, d.promise])
+    flushSync()
+    d.resolve()
+    await p
+    flushSync()
+    expect(seen).toEqual([false, true, false])
+  })
+
+  it('does not subscribe the effect a call is made from', async () => {
+    const state = makeCallState()
+    let runs = 0
+    createEffect(() => { runs++; state.run(() => Promise.resolve(), null, [runs]) })
+    flushSync()
+    await new Promise((r) => setTimeout(r, 0))
+    flushSync()
+    expect(runs).toBe(1)
+  })
+
   // `unhandledrejection` is what the flag is for; whether it fires is the
   // browser drive's to show. Here: an unhandled call is NOT marked handled.
   it('leaves the rejection unhandled unless told the template handles it', async () => {

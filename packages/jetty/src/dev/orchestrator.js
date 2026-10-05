@@ -18,7 +18,6 @@
 // are a future optimization. The dev WS still broadcasts the precise event
 // so clients reload only what's needed.
 
-import chokidar from 'chokidar'
 import { resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
@@ -29,11 +28,14 @@ import { classifyChange } from './classifier.js'
 import { DevServer }      from './server.js'
 import { assertExtDevPort } from './fjs-ports.js'
 import { startBrowsers }  from './browser-launcher.js'
+import { loadPeer }       from '../peer.js'
 
 const WATCH_DIRS = ['src', 'config', 'public']
 
 export async function startDev({ root, browser = 'chrome', verbose = false, launch = false, startUrl } = {}) {
   const log = (...args) => console.log('[jetty:dev]', ...args)
+  // Before the initial build, so a missing watcher fails in a second, not after it.
+  const { default: chokidar } = await loadPeer('chokidar', 'dev server')
 
   // Normalize browser arg to array. Accept 'chrome', 'firefox', 'both', or array.
   const browsers = Array.isArray(browser)

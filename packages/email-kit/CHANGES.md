@@ -1,5 +1,13 @@
 # Changes — @frontierjs/email-kit
 
+## 2026-10-05 — happy-dom is a peer
+
+Every render goes through mesa's server render, which no longer brings `happy-dom` with it (it is an optional peer of mesa now). email-kit declares it as a required peer, so the package manager installs it at the app, which is where mesa resolves it from. In a packed install without that peer, `renderEmail` failed with mesa's *renderToHTML needs happy-dom*; with it, the same install rendered and inlined. The README's install line names it.
+
+## 2026-10-05 — vitest 5
+
+`vitest` `^2.0.0` → `^5.0.3`, the version mesa and sierra share. The suite passed unchanged.
+
 ## 2026-09-05 — four defects the audit found, fixed
 
 **[FJS-928](../../ISSUES_ARCHIVE.md#fjs-928) — a `<Button>`'s Outlook fallback escaped nothing.** The

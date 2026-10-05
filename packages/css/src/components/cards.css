@@ -39,8 +39,16 @@
  * Pane joined when `.section-header` gave up its own margin: the Frame
  * anatomy puts one straight into a Pane, over a Card, and nothing else would
  * have spaced the two.
+ *
+ * The child is `:not(:first-child)`, not `* + *`, which picks the same
+ * elements. Written `* + *` under these `:is()` owners, Chrome tried the rule
+ * against every element on the page and recorded each parent's children as
+ * depending on their siblings — so removing one child anywhere restyled
+ * everything under its parent: 300 ms a keystroke in a CodeInput holding
+ * 22,000 lines (FJS-1621). `.field-row > * + *`, behind a plain class, does
+ * not. `:where` keeps the weight `* + *` had, which is none.
  */
-:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > * + * {
+:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > :where(:not(:first-child)) {
   margin-block-start: var(--space-2xl);
 }
 

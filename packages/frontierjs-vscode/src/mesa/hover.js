@@ -24,19 +24,23 @@ const HOVER_ENTRIES = [
   // ── $async.name.prop ────────────────────────────────────────────────────────
 
   {
-    match: (word, line) => /\$async\.\w+\.loading/.test(line) && word === 'loading',
+    match: (word, line) => /\$async\.\w+\.for\(/.test(line) && word === 'for',
+    hover: "**`$async.x.for(key)`** — `{ pending, error, status }`\n\nThe state of an `async function` over only the calls whose **first argument** is `key`. Use it for a row action, where `pending` would show every row as busy.\n\n```html\n<button disabled={$async.remove.for(row.id).pending}>Delete</button>\n```"
+  },
+  {
+    match: (word, line) => /\$async\.\w+(?:\.for\(.*?\))?\.loading/.test(line) && word === 'loading',
     hover: '**`$async.x.loading`** — `boolean`\n\n`true` on the **first** fetch only. `false` once the first result arrives. Use to show a skeleton UI on initial load.\n\n```js\nconst cities = await getCities(selectedState)\n// $async.cities.loading — true until first result\n```'
   },
   {
-    match: (word, line) => /\$async\.\w+\.pending/.test(line) && word === 'pending',
+    match: (word, line) => /\$async\.\w+(?:\.for\(.*?\))?\.pending/.test(line) && word === 'pending',
     hover: '**`$async.x.pending`** — `boolean`\n\n`true` whenever a fetch or a call is in flight (including refetches and overlapping calls). Use to show a spinner or disable a control.\n\n```js\n<button disabled={$async.save.pending}>\n```'
   },
   {
-    match: (word, line) => /\$async\.\w+\.error/.test(line) && word === 'error',
+    match: (word, line) => /\$async\.\w+(?:\.for\(.*?\))?\.error/.test(line) && word === 'error',
     hover: '**`$async.x.error`** — `Error | null`\n\nHolds the error thrown by the most recent failed fetch, or `null` if the last fetch succeeded.\n\n```js\n{#if $async.cities.error}\n  <p>{$async.cities.error.message}</p>\n{/if}\n```'
   },
   {
-    match: (word, line) => /\$async\.\w+\.status/.test(line) && word === 'status',
+    match: (word, line) => /\$async\.\w+(?:\.for\(.*?\))?\.status/.test(line) && word === 'status',
     hover: "**`$async.x.status`** — `'idle' | 'pending' | 'success' | 'error'`\n\nThe current state of the async derivation or call.\n\n| Value | Meaning |\n|---|---|\n| `'idle'` | An async function that has not been called |\n| `'pending'` | In flight |\n| `'success'` | Last fetch succeeded |\n| `'error'` | Last fetch threw |"
   },
   {

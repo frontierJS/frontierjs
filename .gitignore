@@ -82,6 +82,8 @@ temp/
 # byte-compared nor committed — its sibling `repo-atlas.snapshot.html` is the
 # one CI checks.
 repo-atlas.live.html
+# `fli ws:atlas --as=rings` counts the registers too, so it is not committed either.
+repo-rings.html
 
 # mesa
 _tmp_slots_*/

@@ -357,6 +357,26 @@ test passes with the promotion silently not happening. The assertion is the
 `EXPLAIN`, exactly as it is for `@@index([cols], where: …)`
 ([partial-indexes.md](partial-indexes.md)), and for the same reason.
 
+## Open questions
+
+- **Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`)**
+  Measured in the notion stressor (PLAN § Q6, 2026-10-05; `FJS-1758`). A
+  Notion database is a row whose columns its users declare, and one workspace
+  holds fifty of them. The declarer that says so, unique on
+  `[databaseId, key]`, is refused at parse. The per-tenant shape that parses
+  turned away 277 of 290 realistic declarations (*Status* exists once per
+  workspace), mirrored one database's values into another's slot, and checked
+  no kind. Declared to nothing, the app wrote the kind check by hand, had no
+  filter or sort on the wire, and let a row moved into another database carry
+  its values unchecked. On the way it measured three defects in the per-tenant
+  half: `FJS-1752` (a re-used slot keeps the deleted field's values), `FJS-1754`
+  (a `via:`-scoped declarer reopens `FJS-1290`), and the pool index under
+  `strategy row`, which no filter ever chose (`FJS-1724`, amended).
+  - **A** — no. A schema per parent row is the per-tenant schema § *What it must not become* refuses. The app keeps its own declaring model and checks values in a `validated` hook; document that shape, and say in the doc that `@@extensible` is per tenant only
+  - **B** — `@@extensible(column, declaredBy: Model, scope: field)`, `field` a foreign key on the extended model whose twin is on the declarer. The key is unique on `[scope, key]` (and the tenant, under row tenancy), and the pool is per scope row, the way FJS-1290 made it per tenant. Allocation, the mirror, the filter rewrite and `$declaredFields` read the scope off the row, the payload or the where; a where that pins no scope is refused. A write that changes the scope column re-mirrors the row against the new scope's declarations
+  - **C** — B, plus the declared kind is enforced on write: a value that is not its declaration's kind (a select not among its options) is refused beside `column.key`, the way `@required(where:)` refuses beside its field. Keys stay open (*declaring is not a whitelist*); kinds stop being advisory
+  - **Recommend B** — it is D365's ruling again, for columns instead of moves: the schema owns the shape and a ROW owns the members. B also gives the pool's index an equality to lead with that the tenancy deny cannot spoil: `parentId = ?` seeks, and `FJS-1724`'s deny does not. A is what the notion run already pays for: about 70 lines of checking, no filter on the wire, and a move that skips the check. C is the honest product answer for Notion, but it reverses this paper's whitelist argument for kinds, so it should be its own ruling once B has a second user. The move is the open edge either way: under a scoped declaration, `parentId` decides which columns a row has, as it decides who may read it (notion Q1)
+
 ## Open
 
 - Whether a tenant-declared key can carry a `@@unique`, which is the second thing

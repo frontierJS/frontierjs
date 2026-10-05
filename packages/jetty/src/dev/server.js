@@ -19,7 +19,7 @@
 // Only Harbor handles 'island:reload-tabs' — it has chrome.tabs access.
 // All clients ignore events not addressed to them via clientType matching.
 
-import { WebSocketServer } from 'ws'
+import { loadPeer } from '../peer.js'
 
 export class DevServer {
   /**
@@ -36,6 +36,7 @@ export class DevServer {
   }
 
   async start() {
+    const { WebSocketServer } = await loadPeer('ws', 'dev server')
     return new Promise((resolve, reject) => {
       try {
         this.server = new WebSocketServer({ port: this.port, host: '127.0.0.1' })

@@ -1,5 +1,9 @@
 # Changes — frontierjs-vscode
 
+## 2026-10-05 — a hover for `$async.x.for(key)`
+
+Follows mesa's keyed call state (`FJS-D591`). The `loading`, `pending`, `error` and `status` hovers also answer when the read goes through `.for(…)`.
+
 ## 2026-10-05 — `$async` hovers say `pending`, and cover an async function
 
 Follows mesa's rename of `$async.x.fetching` to `pending` (`FJS-D583`). The status hover lists `'idle'`, and the `$async` hover names both forms RULE 16 allows.

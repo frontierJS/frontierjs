@@ -37,8 +37,10 @@
  * See docs/STATIC_RENDERING.md for the full model and the Sierra integration status.
  */
 
-import { Window } from 'happy-dom'
 import { setRenderEnvironment, createRoot, flushSync } from './runtime.js'
+import { missingPeer } from './optional-peer.js'
+
+const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
 
 // ─── Global render window ─────────────────────────────────────────────────────
 

@@ -14,14 +14,21 @@
  *   6. Reconstruct as .mesa source and feed to compile()
  */
 
-import { unified }     from 'unified'
-import remarkParse     from 'remark-parse'
-import remarkGfm       from 'remark-gfm'
-import remarkRehype    from 'remark-rehype'
-import rehypeSlug      from 'rehype-slug'
-import rehypeStringify from 'rehype-stringify'
 import { glow }        from '@frontierjs/toolbelt/glow'
 import { compile }     from './compiler.js'
+import { missingPeer } from './optional-peer.js'
+
+const MD = 'Compiling a .md file'
+const MD_PEERS = 'unified remark-parse remark-gfm remark-rehype rehype-slug rehype-stringify'
+const [{ unified }, { default: remarkParse }, { default: remarkGfm }, { default: remarkRehype },
+  { default: rehypeSlug }, { default: rehypeStringify }] = await Promise.all([
+  import('unified').catch(missingPeer('unified', MD, MD_PEERS)),
+  import('remark-parse').catch(missingPeer('remark-parse', MD, MD_PEERS)),
+  import('remark-gfm').catch(missingPeer('remark-gfm', MD, MD_PEERS)),
+  import('remark-rehype').catch(missingPeer('remark-rehype', MD, MD_PEERS)),
+  import('rehype-slug').catch(missingPeer('rehype-slug', MD, MD_PEERS)),
+  import('rehype-stringify').catch(missingPeer('rehype-stringify', MD, MD_PEERS)),
+])
 
 // ─── Frontmatter ──────────────────────────────────────────────────────────────
 

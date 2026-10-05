@@ -62,6 +62,6 @@
   "//knownAdvisories": "advisories phase — a package `bun audit` advises against that IS reachable from a published package's runtime dependencies, and is known. Each entry says which VERSION is installed at runtime and why the entry exists, because the advisory names a package and a package can be installed twice. An entry is a record that somebody looked, never a reason not to look again.",
   "knownAdvisories": {
     "nanoid": "REAL and open — FJS-475's second half. 3.3.17 installed, advisory is <3.3.18: one patch, reached transitively rather than declared, so it moves when whatever pulls it in is updated. happy-dom, the first half, is fixed — every copy is 20.11.6 and no advisory names it.",
-    "vite": "NOT vulnerable at runtime: the copy the closure resolves is 8.2.0 and every advisory here is <=6.4.2. `bun audit` reports a package by NAME, so the old copy installed for a dev tool is reported against the current one. Re-check this entry if the runtime version ever drops."
+    "vite": "NOT vulnerable at runtime: the copy the closure resolves is 8.3.2 and every advisory here is <=6.4.2. `bun audit` reports a package by NAME, so the old copy installed for a dev tool is reported against the current one. Re-check this entry if the runtime version ever drops."
   }
 }

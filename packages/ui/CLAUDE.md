@@ -369,6 +369,13 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   fewer. `JsonInput` is a `CodeInput` with `language="json"` and its own parse.
   `code-input.spec.mjs` measures the glyph origin against the textarea's
   content box — a presence check passes against every one of those failures.
+  **The paint is repainted by the line, in `<code>` chunks of 64** (`FJS-1621`):
+  re-glowing the whole value cost the document's size per keystroke, and one
+  block holding every line re-lays all of them when one is swapped. The spec
+  holds that untouched chunks keep their nodes; it cannot see a stylesheet
+  rule that restyles the whole paint per key, which is what the last 300 ms
+  was (css `CLAUDE.md`). Chrome's `Performance.getMetrics` around one
+  keystroke at 10,000 rows splits script, style and layout.
 - **A component file may export the verbs that belong to its noun** (`FJS-D116`).
   `import FileUpload, { formatBytes, isImage } from '.../FileUpload.mesa'` — a
   `<script module>` export compiles to a plain top-level ESM export beside the

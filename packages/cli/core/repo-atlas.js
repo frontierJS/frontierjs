@@ -411,7 +411,7 @@ const FALLBACK_THEME = 'press'
 const themesFor = (model) => model.css ? ['field', ...THEMES] : THEMES
 const defaultThemeFor = (model) => model.css ? 'field' : FALLBACK_THEME
 
-function stylesheet() {
+export function stylesheet() {
   return 'https://unpkg.com/@frontierjs/css/dist/frontier.min.css'
 }
 
@@ -1420,7 +1420,7 @@ function rows(cells) {
   }</tbody></table></div>`
 }
 
-function severityTone(severity) {
+export function severityTone(severity) {
   return severity === 'S1' || severity === 'S2' ? 'danger'
        : severity === 'S3' ? 'warning'
        : severity === 'decision' ? 'info'

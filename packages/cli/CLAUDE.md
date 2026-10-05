@@ -481,6 +481,12 @@ core/
                 `toString()` and every band and score is graded in node, so the
                 page cannot lay a file out differently from the PNG. Its own
                 stylesheet writes no hex (tested)
+  repo-rings.js the same model as rings, center out — `ws:atlas --as=rings`,
+                for somebody opening the workspace cold. A package's ring is the
+                `Ring` column of the root `CLAUDE.md` table, and one with none is
+                drawn *unplaced* and warned about; the test fails on any in this
+                tree. Reads no files; `client` is serialized with `toString()`.
+                Not a snapshot: it counts the registers (`FJS-D589`)
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
@@ -628,7 +634,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   CI's recheck never reads it. A new kind of APP register gets a row there too,
   or a fresh app never has it.
 - **`core/repo-map.js` reads the workspace; it never describes it — and it is
-  the ONE reader behind both presentations** (`FJS-D223`). `collect()` builds
+  the ONE reader behind every presentation** (`FJS-D223`). `collect()` builds
   the model; `renderHtml` is the report and `core/repo-atlas.js` is the deck,
   and that module reads no files at all. `fli ws:atlas --as=report`
   writes one self-contained `repo-report.snapshot.html` — snapshots and their

@@ -210,3 +210,4 @@ before you meet it.
 | Pass | open | | | | |
 | Origin | open | | | | |
 | Start | open | | | | |
+| Ring | open | Framework | | one band of the order a newcomer reads the workspace in, center out — a package's is the `Ring` column of the root `CLAUDE.md` table | `fli ws:atlas --as=rings`. Not a dependency layer: the spine imports the substrate one ring out, and is read first anyway |

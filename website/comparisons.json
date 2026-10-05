@@ -1,0 +1,129 @@
+{
+  "$comment": "FrontierJS beside other systems, scored by hand. whoWritesIt: for each job, who supplies the answer on the documented default path, one letter per system in `systems` order. depth: each territory on a 0-4 ladder; laravel is [framework, +first-party, +ecosystem], fjs one number because nothing outside the tree supplies it. Judgments by one grader against the September 2026 tree; FrontierJS is pre-alpha and mostly unpublished. Correcting a row is a one-cell edit.",
+  "graded": "2026-09-07",
+  "whoWritesIt": {
+    "levels": {
+      "b": "In the box",
+      "a": "Official add-on",
+      "p": "Community",
+      "h": "Hosted",
+      "y": "You write it",
+      "n": "n/a"
+    },
+    "systems": [
+      { "name": "FrontierJS", "version": "the tree", "shape": "all or nothing" },
+      { "name": "Laravel", "version": "12", "shape": "a team behind every box" },
+      { "name": "AdonisJS", "version": "6", "shape": "a thin core, chosen well" },
+      { "name": "Next.js", "version": "15", "shape": "a router with opinions" },
+      { "name": "RedwoodJS", "version": "8", "shape": "one schema, half a stack" },
+      { "name": "Supabase", "version": "current", "shape": "someone else runs it" }
+    ],
+    "jobs": [
+      { "id": "1.7", "name": "An audit trail", "cells": "bpyyyy" },
+      { "id": "1.5", "name": "File storage", "cells": "bbbyyh" },
+      { "id": "2.2", "name": "State machines", "cells": "bpyyyy" },
+      { "id": "2.4", "name": "Background jobs", "cells": "bbpybh" },
+      { "id": "3.3", "name": "Forms from the schema", "cells": "bpyybn" },
+      { "id": "3.6", "name": "Internationalization", "cells": "ybapyn" },
+      { "id": "4.2", "name": "Realtime", "cells": "baaybh" },
+      { "id": "4.4", "name": "A message broker", "cells": "ybpyyh" },
+      { "id": "5.3", "name": "Authorization", "cells": "bbaybh" },
+      { "id": "5.2", "name": "Sessions and a second factor", "cells": "baapbh" },
+      { "id": "6.4", "name": "Deploy with a rollback", "cells": "bayhah" },
+      { "id": "6.6", "name": "Provisioning a machine", "cells": "yayhyh" },
+      { "id": "7.1", "name": "Metrics you can read", "cells": "bapyyh" },
+      { "id": "7.4", "name": "Error tracking", "cells": "yaypph" },
+      { "id": "8.2", "name": "Executable proof of a claim", "cells": "byyyyy" },
+      { "id": "8.5", "name": "Crossing a major version", "cells": "ybbbbh" },
+      { "id": "9.2", "name": "One declaration drives the app", "cells": "byyybh" },
+      { "id": "9.7", "name": "Reference documentation", "cells": "bbbbbb" }
+    ]
+  },
+  "depth": {
+    "against": "Laravel",
+    "tiers": ["The framework", "+ first-party", "+ ecosystem"],
+    "domains": [
+      { "n": 1, "name": "Information", "territories": [
+        { "id": "1.1", "name": "Schema & Modeling", "laravel": [3, 3, 3], "fjs": 4 },
+        { "id": "1.2", "name": "Persistence", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "1.3", "name": "Query & Retrieval", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "1.4", "name": "Search", "laravel": [2, 4, 4], "fjs": 3 },
+        { "id": "1.5", "name": "Files & Objects", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "1.6", "name": "Data Lifecycle", "laravel": [2, 2, 3], "fjs": 4 },
+        { "id": "1.7", "name": "Provenance & Audit", "laravel": [0, 0, 3], "fjs": 4 }
+      ] },
+      { "n": 2, "name": "Application", "territories": [
+        { "id": "2.1", "name": "Domain Logic", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "2.2", "name": "Workflow & State", "laravel": [1, 1, 3], "fjs": 4 },
+        { "id": "2.3", "name": "Validation & Enforcement", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "2.4", "name": "Automation & Jobs", "laravel": [3, 4, 4], "fjs": 4 },
+        { "id": "2.5", "name": "Extensibility", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "2.6", "name": "Configuration", "laravel": [4, 4, 4], "fjs": 3 }
+      ] },
+      { "n": 3, "name": "Interface", "territories": [
+        { "id": "3.1", "name": "UI Components", "laravel": [2, 4, 4], "fjs": 4 },
+        { "id": "3.2", "name": "Navigation & Composition", "laravel": [3, 4, 4], "fjs": 4 },
+        { "id": "3.3", "name": "Forms & Input", "laravel": [3, 3, 4], "fjs": 4 },
+        { "id": "3.4", "name": "Design System", "laravel": [0, 2, 4], "fjs": 4 },
+        { "id": "3.5", "name": "Accessibility", "laravel": [1, 1, 2], "fjs": 3 },
+        { "id": "3.6", "name": "Internationalization", "laravel": [4, 4, 4], "fjs": 0 },
+        { "id": "3.7", "name": "Embedded & Native Surfaces", "laravel": [0, 1, 2], "fjs": 4 }
+      ] },
+      { "n": 4, "name": "Integration", "territories": [
+        { "id": "4.1", "name": "APIs", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "4.2", "name": "Realtime", "laravel": [2, 4, 4], "fjs": 4 },
+        { "id": "4.3", "name": "Contracts & Schemas", "laravel": [2, 2, 3], "fjs": 3 },
+        { "id": "4.4", "name": "Messaging & Events", "laravel": [4, 4, 4], "fjs": 1 },
+        { "id": "4.5", "name": "External Integration", "laravel": [3, 4, 4], "fjs": 2 },
+        { "id": "4.6", "name": "Notifications", "laravel": [4, 4, 4], "fjs": 3 }
+      ] },
+      { "n": 5, "name": "Identity & Trust", "territories": [
+        { "id": "5.1", "name": "Identity", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "5.2", "name": "Authentication & Sessions", "laravel": [3, 4, 4], "fjs": 3 },
+        { "id": "5.3", "name": "Authorization", "laravel": [3, 3, 4], "fjs": 4 },
+        { "id": "5.4", "name": "Multi-tenancy", "laravel": [0, 0, 3], "fjs": 4 },
+        { "id": "5.5", "name": "Data Protection", "laravel": [2, 2, 3], "fjs": 4 },
+        { "id": "5.6", "name": "Secrets & Keys", "laravel": [2, 2, 3], "fjs": 3 },
+        { "id": "5.7", "name": "Privacy", "laravel": [1, 1, 2], "fjs": 1 }
+      ] },
+      { "n": 6, "name": "Runtime & Delivery", "territories": [
+        { "id": "6.1", "name": "Build", "laravel": [3, 3, 3], "fjs": 4 },
+        { "id": "6.2", "name": "Packaging & Distribution", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "6.3", "name": "Environments", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "6.4", "name": "Deployment", "laravel": [1, 4, 4], "fjs": 4 },
+        { "id": "6.5", "name": "Rollback & Recovery", "laravel": [2, 4, 4], "fjs": 4 },
+        { "id": "6.6", "name": "Infrastructure & Provisioning", "laravel": [0, 4, 4], "fjs": 0 },
+        { "id": "6.7", "name": "Fleet & Machines", "laravel": [0, 3, 3], "fjs": 2 },
+        { "id": "6.8", "name": "Scaling & Capacity", "laravel": [2, 4, 4], "fjs": 1 }
+      ] },
+      { "n": 7, "name": "Operations", "territories": [
+        { "id": "7.1", "name": "Observability", "laravel": [2, 4, 4], "fjs": 3 },
+        { "id": "7.2", "name": "Health & Diagnostics", "laravel": [2, 2, 3], "fjs": 3 },
+        { "id": "7.3", "name": "Alerting & Incident Response", "laravel": [0, 1, 3], "fjs": 2 },
+        { "id": "7.4", "name": "Error Tracking", "laravel": [2, 3, 4], "fjs": 1 },
+        { "id": "7.5", "name": "Availability & Resilience", "laravel": [3, 3, 4], "fjs": 3 },
+        { "id": "7.6", "name": "Performance & Saturation", "laravel": [2, 4, 4], "fjs": 1 },
+        { "id": "7.7", "name": "Cost & Economics", "laravel": [0, 2, 2], "fjs": 0 }
+      ] },
+      { "n": 8, "name": "Assurance & Governance", "territories": [
+        { "id": "8.1", "name": "Testing", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "8.2", "name": "Verification & Proof", "laravel": [1, 1, 1], "fjs": 4 },
+        { "id": "8.3", "name": "Architecture Governance", "laravel": [1, 1, 3], "fjs": 4 },
+        { "id": "8.4", "name": "Security Assurance", "laravel": [3, 3, 4], "fjs": 2 },
+        { "id": "8.5", "name": "Change Management", "laravel": [4, 4, 4], "fjs": 3 },
+        { "id": "8.6", "name": "Dependency & Supply Chain", "laravel": [3, 3, 3], "fjs": 3 },
+        { "id": "8.7", "name": "Release Governance", "laravel": [1, 3, 3], "fjs": 3 },
+        { "id": "8.8", "name": "Policy & Compliance", "laravel": [0, 0, 2], "fjs": 1 }
+      ] },
+      { "n": 9, "name": "Developer Experience", "territories": [
+        { "id": "9.1", "name": "Scaffolding & Generators", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "9.2", "name": "Code Generation & Derivation", "laravel": [2, 2, 3], "fjs": 4 },
+        { "id": "9.3", "name": "Local Development", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "9.4", "name": "Command & Tooling Surface", "laravel": [4, 4, 4], "fjs": 4 },
+        { "id": "9.5", "name": "Editor & Language Support", "laravel": [2, 3, 4], "fjs": 3 },
+        { "id": "9.6", "name": "Introspection & Inspection", "laravel": [3, 4, 4], "fjs": 4 },
+        { "id": "9.7", "name": "Documentation & Learning", "laravel": [4, 4, 4], "fjs": 3 }
+      ] }
+    ]
+  }
+}

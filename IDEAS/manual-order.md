@@ -96,7 +96,24 @@ model Issue {
 ```
 
 One attribute on a `String`, meaning *ordered within `scope`, stable under
-concurrent insert*:
+concurrent insert*.
+
+**The scope is a list of columns, and NULL is a value in it.** The notion
+stressor (2026-10-05) is a tree, and one column cannot express its scope: a
+`Page` orders among siblings under `[workspaceId, parentId]`, and a `Block`
+under `[pageId, parentId]`, where `parentId` is NULL at the top level.
+`scope: stateId` is shorthand for `scope: [stateId]`, the same list shape
+`@@unique([…])` and `@@index([…])` already use. The scope compares with `IS`,
+not `=`, so every root row shares ONE scope. A `UNIQUE` would put each NULL row
+in a scope of its own, and the sidebar's roots would all default to the same key
+with nothing to say so.
+
+**A move can change the scope.** Moving a page under a different parent writes
+`parentId` and `rank` together, and the key has to be minted against the
+DESTINATION's siblings. A write that changes a scope column without stating
+`rank` defaults the rank to the end of the new scope; a write that states both
+is taken as written. Linear's drags never hit this case, because changing a
+state kept the column the scope is keyed on.
 
 - **Litestone**: validates the alphabet (base-62, no trailing `0`); defaults a
   create to the end of its scope (the one lookup default the language would
@@ -105,8 +122,9 @@ concurrent insert*:
   rewrite, which is announced, and announced per row.
 - **Toolbelt**: `between(a, b)` and `jittered(a, b)` in `@frontierjs/toolbelt/rank`,
   so the device and the server mint keys with one function.
-- **Sierra**: `resource.move(id, { after, before })`, which mints the key from
-  the rows the resource read and patches one column: one queued entry, one
+- **Sierra**: `resource.move(id, { after, before, into })`, which mints the key
+  from the rows the resource read and patches one row: `into` is the destination
+  scope (`{ parentId }`), left out for a move within the scope. One queued entry, one
   broadcast, and a merge under `@@sync(field)` that conflicts only when two
   people drag the SAME row (case X, the right answer).
 - **Schema metadata**: `x-rank: { scope }` in the JSON Schema, so a board can
@@ -129,14 +147,16 @@ writer jittering, and only a single owner can promise that.
 
 ## Open questions
 
-- **Q1 — is *ordered within a scope, stable under concurrent insert* a column trait the framework owns, or an app pattern with a toolbelt helper? (`FJS-D366`)**
+- ~~**Q1 — is *ordered within a scope, stable under concurrent insert* a column trait the framework owns, or an app pattern with a toolbelt helper? (`FJS-D366`)**~~ **Answered 2026-10-05 (`FJS-D366`): B — `@rank(scope: [col, …])` on a `String` column: the scope is a column list compared with `IS`, so NULL is one scope. Litestone validates the key, defaults a create (or a write that changes the scope without stating `rank`) to the end of the scope, orders by `(rank, id)` and owns `rebalance()`. The toolbelt mints keys. Sierra gets `resource.move(id, { after, before, into })`.**
   Measured in linear Phase 4: the fractional key is the only spelling that stays
   one write, one queued entry and one broadcast per drag, and merges under
   `@@sync(field)`. The integer spelling conflicts across different rows under
   `@version`, and offline one drag is 57 queued writes. The app still had to
-  mint, default, tie-break and bound the key itself.
+  mint, default, tie-break and bound the key itself. **The notion stressor
+  (2026-10-05) was the second app**: it copied the helper word for word, and its
+  scopes are tuples with a nullable member, which B now spells.
   - **A** — an app pattern. Ship `between`/`jittered` in `@frontierjs/toolbelt/rank`, document *order by `(rank, id)`* and the rebalance, and leave the column a plain `String`
-  - **B** — `@rank(scope: field)` on a `String` column: litestone validates it, defaults a create to the end of its scope, orders by `(rank, id)` and owns `rebalance()`; the toolbelt mints keys; sierra gets `resource.move(id, { after, before })`
+  - **B** — `@rank(scope: [col, …])` on a `String` column: the scope is a column list compared with `IS`, so NULL is one scope. Litestone validates the key, defaults a create (or a write that changes the scope without stating `rank`) to the end of the scope, orders by `(rank, id)` and owns `rebalance()`. The toolbelt mints keys. Sierra gets `resource.move(id, { after, before, into })`
   - **C** — B, with the key hidden: the column is managed entirely by the engine, and the only way to write it is `move()`
   - **Recommend B** — three of the four things the app had to do are Data-boundary facts (a default that is a lookup, the tie-break every reader must apply, a rebalance that must announce), and a helper reaches none of them. C would hide a value the offline queue has to carry and the merge has to compare, so the key stays an ordinary column that a trait describes. A leaves every app to rediscover the 46-way tie a literal default makes, which this run hit on its first seed
 

@@ -89,6 +89,8 @@ export function collect({ root }) {
     issues:    issues(root),
     decisions: decisions(root),
     ideas:     ideas(root),
+    field:     field(root),
+    specs:     specs(root),
     commands:  commands(root),
     registers: registers(root),
   }
@@ -111,6 +113,8 @@ export function structureOf(model) {
     issues:    null,
     decisions: null,
     ideas:     null,
+    field:     null,
+    specs:     null,
     packages:  model.packages.map(p => ({
       ...p,
       files:      null,
@@ -370,8 +374,10 @@ function topics(pkgDir, root) {
  */
 function readmeSections(pkgDir) {
   const src = read(join(pkgDir, 'README.md'))
-  if (!src) return []
+  return src ? sectionsOf(src) : []
+}
 
+function sectionsOf(src) {
   const out = []
   let at = null
   let fenced = false
@@ -459,6 +465,9 @@ function packageNotes(root) {
       what:  firstSentence(plain(cells[2]), 200),
       state: firstSentence(plain(cells[3]), 200),
     }
+    // The ring is the order a newcomer reads the packages in (`--as=rings`).
+    // Absent rather than null, so a table without the column changes no page.
+    if (cells[4] && plain(cells[4])) notes[name].ring = plain(cells[4]).toLowerCase()
   }
 
   return notes
@@ -601,10 +610,60 @@ function apps(root) {
       desc:   pkg.description ?? null,
       schema: hasSchema,
       scripts: Object.entries(pkg.scripts ?? {}).map(([n, run]) => ({ name: n, run })).sort(byName),
+      uses:     Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(n => n.startsWith('@frontierjs/')).sort(),
+      surfaces: surfacesOf(dir),
+      ...(hasSchema ? seedOf(read(join(dir, 'db', 'schema.lite')) ?? '') : {}),
     })
   }
 
   return out.sort(byFile2)
+}
+
+// Invariant 3's surfaces, in the order a request travels them: the seed, the
+// API that serves it, then each surface a person opens.
+const APP_SURFACES = ['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'cli']
+
+/**
+ * The surfaces an app has, each with the directories under its source and how
+ * many files are in each — the same *where does this live* answer a package's
+ * subsystems give. A desktop surface's source is its shell's; `db/` has none,
+ * since what it holds is the seed and what was generated from it.
+ */
+function surfacesOf(appDir) {
+  return APP_SURFACES.filter(s => isDir(join(appDir, s))).map(s => {
+    const src = join(appDir, s, s === 'desktop' ? 'shell/src' : 'src')
+    const parts = s === 'db' ? [] : safeRead(src)
+      .filter(n => !SKIP.has(n) && !n.startsWith('.') && isDir(join(src, n)))
+      .map(n => ({ name: n, files: countFiles(join(src, n)) }))
+      .filter(x => x.files)
+    return { dir: s, files: s === 'db' ? null : countFiles(src), parts }
+  })
+}
+
+/**
+ * The models a seed declares, in the order it declares them, and the first one
+ * as written. Column-0 `model` only: an indented one is inside a fenced example
+ * in a doc comment, and `model String` was one.
+ */
+function seedOf(src) {
+  const lines  = src.split('\n')
+  const models = []
+  let sample   = null
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^model\s+([A-Z]\w*)/)
+    if (!m) continue
+    models.push(m[1])
+    if (sample !== null) continue
+    // Comments are dropped: a seed documents itself at length, and the sample is
+    // there to show the declarations.
+    const end  = lines.findIndex((l, j) => j > i && /^\}/.test(l))
+    const body = lines.slice(i, end === -1 ? i + 1 : end + 1)
+      .filter((l, j, all) => !/^\s*\/\//.test(l) && !(l.trim() === '' && all[j - 1]?.trim() === ''))
+    sample = (body.length > 18 ? [...body.slice(0, 16), '  …', '}'] : body).join('\n')
+  }
+
+  return { models, sample }
 }
 
 function byFile2(a, b) { return a.folder.localeCompare(b.folder) }
@@ -670,12 +729,19 @@ function issues(root) {
   if (!src) return null
 
   const rows   = []
+  const labels = {}
   let section  = null
   let closed   = 0
 
   for (const line of src.split('\n')) {
     const heading = line.match(/^##\s+(.+?)\s*$/)
-    if (heading) { section = heading[1]; continue }
+    if (heading) {
+      section = heading[1]
+      // `## S2 — high` names its severity in the register's own words.
+      const sev = severityOf(section)
+      if (sev !== 'other') labels[sev] ??= plain(section.replace(/^S[1-4]\s*[—–-]\s*/, ''))
+      continue
+    }
     // A row may lead with its own link anchor — `| <a id="fjs-282"></a>FJS-282 |`
     // — which half the register does so a ruling can cite a row by id. Matching
     // on a bare `| FJS-` skipped every one of them, and the miss is invisible:
@@ -717,6 +783,7 @@ function issues(root) {
     file: relative(root, file),
     open: rows.length,
     closed,
+    labels,
     bySeverity,
     byPackage: Object.entries(byPackage).map(([pkg, count]) => ({ pkg, count }))
       .sort((a, b) => b.count - a.count || a.pkg.localeCompare(b.pkg)),
@@ -925,6 +992,70 @@ function statusOf(cell = '') {
   return STATUS[plain(cell).match(/[a-z-]+/i)?.[0]?.toLowerCase()] ?? 'other'
 }
 
+// ─── the field ────────────────────────────────────────────────────────────────
+//
+// The projects FrontierJS is placed among, and how it compares with a few of
+// them. Both files are scored by hand and move without the structure moving,
+// so the field stays out of `structureOf`. The website's landscape page reads
+// the same projects file, and a copy here would drift from it. No projects
+// file, no field.
+
+function field(root) {
+  const projects = readJson(join(root, 'website', 'projects.json'))
+  if (!Array.isArray(projects?.projects)) return null
+  const cmp = readJson(join(root, 'website', 'comparisons.json'))
+  return {
+    projects:    projects.projects,
+    stances:     projects.scales?.stance ?? {},
+    whoWritesIt: cmp?.whoWritesIt ?? null,
+    depth:       cmp?.depth ?? null,
+    graded:      cmp?.graded ?? null,
+  }
+}
+
+// ─── the specifications ───────────────────────────────────────────────────────
+//
+// The ranked spine of `IDEAS/specifications.md`: the entries the rest lean on,
+// in the order to write them. A paper under IDEAS moves without the structure
+// moving, so it stays out of `structureOf` like the ideas themselves. No spine
+// section, no specs.
+
+function specs(root) {
+  const file = join(relative(root, registerLayout(root).dir), 'IDEAS', 'specifications.md')
+  const src  = read(join(root, file))
+  const body = src?.match(/^## The spine\s*$([\s\S]*?)^## /m)?.[1]
+  if (!body) return null
+
+  const paras = body.split(/\n\s*\n/).map(p => p.trim()).filter(p => p && p !== '---')
+  const list  = paras.find(p => /^1\.\s/.test(p))
+  if (!list) return null
+  const flat  = p => p.replace(/\s*\n\s*/g, ' ').replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '$1')
+
+  // `1. **Model description** (1). The root …` — the parenthesis is the entry's
+  // number in § The list, and may nest: `(3, with field protection (5) folded in)`.
+  const entries = list.split(/\n(?=\d+\.\s)/).map(item => {
+    const m = item.replace(/\s*\n\s*/g, ' ').match(/^(\d+)\.\s+\*\*([^*]+)\*\*\s*(.*)$/)
+    if (!m) return null
+    let rest = m[3], ref = ''
+    if (rest.startsWith('(')) {
+      let depth = 0, i = 0
+      for (; i < rest.length; i++) {
+        if (rest[i] === '(') depth++
+        else if (rest[i] === ')' && --depth === 0) break
+      }
+      ref  = rest.slice(1, i)
+      rest = rest.slice(i + 1).replace(/^\.\s*/, '')
+    }
+    return { n: +m[1], name: plain(m[2]), ref, note: flat(rest.trim()) }
+  }).filter(Boolean)
+
+  // The claims around the list are its bolded paragraphs; the rest is notes to
+  // whoever edits the file.
+  const after = paras.slice(paras.indexOf(list) + 1).filter(p => p.startsWith('**')).map(flat)
+  const lede  = flat(paras[0] ?? '').match(/^\*\*(.+?)\*\*/)?.[1] ?? ''
+  return { file, lede, entries, after }
+}
+
 // ─── registers ────────────────────────────────────────────────────────────────
 //
 // The markdown files at the root, each with the first thing it says about
@@ -938,7 +1069,7 @@ function registers(root) {
     if (!name.endsWith('.md') || name.includes('.snapshot.')) continue
     const src = read(join(root, name))
     if (src === null) continue
-    out.push({ file: name, claim: openingClaim(src) })
+    out.push({ file: name, claim: openingClaim(src), sections: sectionsOf(src) })
   }
   return out.sort(byFile)
 }

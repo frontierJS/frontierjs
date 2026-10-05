@@ -1,20 +1,22 @@
 ---
 title: workspace:atlas
-description: Write the workspace atlas — one model of the tree, presented as a deck, a report or JSON
+description: Write the workspace atlas — one model of the tree, presented as a deck, a report, rings or JSON
 alias: ws:atlas
 examples:
   - fli ws:atlas
   - fli ws:atlas --as=report
+  - fli ws:atlas --as=rings --open
   - fli ws:atlas --json
   - fli ws:atlas --check
 flags:
   as:
     char: a
     type: string
-    description: Which page — atlas (the deck) or report (one page read top to bottom)
+    description: Which page — atlas (the deck), report (one page read top to bottom) or rings (a newcomer's way in, center out)
     choices:
       - atlas
       - report
+      - rings
     defaultValue: atlas
   json:
     type: boolean
@@ -86,6 +88,7 @@ const openInBrowser = (path) => {
 // SyntaxError the compiler reports as a clean build (Invariant 15).
 const { collect, structureOf, renderHtml, renderJson } = await import(resolve(global.fliRoot, 'core/repo-map.js'))
 const { renderAtlas, cards }              = await import(resolve(global.fliRoot, 'core/repo-atlas.js'))
+const { renderRings, placement, docsOf }  = await import(resolve(global.fliRoot, 'core/repo-rings.js'))
 
 // `--as` picks the page a person reads and `--json` is the model a program
 // reads (`FJS-D401`), so the two together are two answers to one run.
@@ -114,6 +117,14 @@ if (flag.live && as !== 'atlas') {
   return
 }
 
+// The rings page counts the registers, so like the live deck it is never
+// committed and there is nothing for a check to compare.
+if (flag.check && as === 'rings') {
+  log.error('`--as=rings` counts the registers, so it is not a snapshot and `--check` has nothing to compare. Drop `--check`.')
+  process.exitCode = 1
+  return
+}
+
 if (flag.check && flag.live) {
   log.error('`--check` has nothing to compare on a live page — it holds a clock. Drop one of the two flags.')
   process.exitCode = 1
@@ -137,6 +148,7 @@ if (flag.live) {
 // `--check` compares (`FJS-D589`).
 const page = (m) => as === 'json'   ? renderJson(m)
                   : as === 'report' ? renderHtml(structureOf(m))
+                  : as === 'rings'  ? renderRings(m, { root: wsRoot })
                   : renderAtlas(flag.live ? m : structureOf(m), live)
 const render = () => page(collect({ root: wsRoot }))
 
@@ -147,6 +159,7 @@ if (flag.stdout || (as === 'json' && !flag.out)) { echo(body); return }
 const DEFAULT_OUT = {
   atlas:  flag.live ? 'repo-atlas.live.html' : 'repo-atlas.snapshot.html',
   report: 'repo-report.snapshot.html',
+  rings:  'repo-rings.html',
   json:   'repo-atlas.json',
 }
 
@@ -179,11 +192,21 @@ writeFileSync(outPath, body, 'utf8')
 // file nobody had touched. Writing twice on creation lands on the fixed point;
 // every run after this one is already there. The live page is not counted and
 // the JSON is not committed, so neither needs it.
-if (!existed && !flag.live && as !== 'json') writeFileSync(outPath, render(), 'utf8')
+if (!existed && !flag.live && as !== 'json' && as !== 'rings') writeFileSync(outPath, render(), 'utf8')
 
 echo(`  ✓  ${shown}`)
 
-if (as === 'report') {
+if (as === 'rings') {
+  const { rings, unplaced, unknown } = placement(model)
+  const { docs, unordered, missing } = docsOf(model)
+  echo(`  ${rings.filter(r => r.pkgs.length).length} ring(s) of packages · ${docs.length} root document(s)`)
+  echo('  Not a snapshot — nothing checks this file. Do not commit it.')
+  for (const u of unknown) log.warn(`${u.folder}: ring "${u.ring}" is not one this page defines (${rings.filter(r => r.id !== 'seed' && r.id !== 'unplaced').map(r => r.id).join(', ')})`)
+  const blank = unplaced.filter(f => !unknown.some(u => u.folder === f))
+  if (blank.length) log.warn(`No ring in the root CLAUDE.md Packages table, so drawn as unplaced: ${blank.join(', ')}`)
+  if (unordered.length) log.warn(`Not in READING_ORDER (core/repo-rings.js), so read last: ${unordered.join(', ')}`)
+  if (missing.length) log.warn(`In READING_ORDER but not at the root: ${missing.join(', ')}`)
+} else if (as === 'report') {
   const counts = [
     `${model.packages.filter(p => !p.claimed).length} package(s)`,
     `${model.snapshots.length} snapshot(s)`,
@@ -250,9 +273,9 @@ the tree AND the registry, and those drift independently — every id in the ope
 register is a statement about the tree alone, so *published is a release behind*
 is invisible from inside it. On this workspace the first run said ten.
 
-## The three presentations
+## The presentations
 
-One model, read three ways (`FJS-D223`). They are not three pages that happen
+One model, read several ways (`FJS-D223`). They are not separate pages that happen
 to share a reader: `collect()` is the reader and `core/repo-atlas.js` opens no
 files at all. `--as` picks the page a person reads, and `--json` is the model a
 program reads, so a page can change its layout without breaking a program
@@ -262,12 +285,34 @@ program reads, so a page can change its layout without breaking a program
 | --- | --- | --- |
 | `--as=atlas` (default) | one plate per part, navigated — *what is in here and what does it touch* | `repo-atlas.snapshot.html` |
 | `--as=report` | one page top to bottom — *what do I run and where* | `repo-report.snapshot.html` |
+| `--as=rings` | center out, one ring at a time — *where do I start* | `repo-rings.html`, not committed |
 | `--json` | the model itself | stdout, or `--out` |
 
 **What decides where a new section goes is the reading mode, not the size.** A
 report is read across; an atlas is navigated. Defining the report as *the small
 one* is how it gets trimmed, and the 47 KB proofs table is the case that settles
 it: a table read across belongs there whatever it weighs.
+
+## `--as=rings` — where to start
+
+For somebody opening the workspace for the first time. Two sets of concentric
+rings, each read from the center out: **the packages** (spine, substrate,
+batteries, tooling, frontier), and **the project** (the root documents, then
+the invariants, rulings, open issues and ideas). The seed is no ring, since it
+holds no package; the home page links its page, and its *Brand new?* strip
+ends on the field (`website/projects.json`) and the specifications (§ *The
+spine* of `IDEAS/specifications.md`, read in rank). Each ring opens
+into cards and each card into a page; the side panel keeps the map and fills a
+ring as its pages are opened.
+
+**A package's ring is the `Ring` column of the root `CLAUDE.md` Packages
+table**, parsed beside the realm. One with no ring, or a ring the page does not
+define, is drawn in an *unplaced* ring and the command warns by name. The order
+the root documents are read in is `READING_ORDER` in `core/repo-rings.js`; a new
+root document is appended and warned about.
+
+It counts the registers and the files, so like `--live` it is **not a snapshot**:
+no generator line, gitignored, and `--check` is refused.
 
 ## In CI
 

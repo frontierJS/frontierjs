@@ -161,6 +161,19 @@ export function createMakeFromSchema(properties, opts = {}) {
       continue
     }
 
+    // Nullability is read off the RAW schema, because the deref has already
+    // followed the non-null branch of an `anyOf`.
+    const { type, nullable } = fieldShape(raw, resolve)
+
+    // NOT NULL, not demanded of the caller, and no default the client can see:
+    // the server supplies it — `@default(auth().id)`, `uuid()`, a copied
+    // sibling. A blank seeded here is a value, so the stamp never applies and
+    // the row is written with `''` for its owner, or a policy over that column
+    // refuses a form whose every visible control is valid. Tested before the
+    // enum and foreign-key nulls below: an owner is usually a relation too, and
+    // its null is just as much a value as `''`.
+    if (demanded && !nullable && !demanded.has(key)) continue
+
     // An enum with no `@default` has no blank value that is a member of it.
     // `''` would be as invalid as null, and picking the first member would
     // invent a choice nobody made — so leave it unset for the form to fill.
@@ -186,19 +199,10 @@ export function createMakeFromSchema(properties, opts = {}) {
       continue
     }
 
-    // Nullability is read off the RAW schema, because the deref has already
-    // followed the non-null branch of an `anyOf`.
-    const { type, nullable } = fieldShape(raw, resolve)
-
-    // NOT NULL, not demanded of the caller, and no default the client can see:
-    // the server supplies it — `@default(auth().id)`, `uuid()`, a copied
-    // sibling. A blank seeded here is a value, so the stamp never applies and
-    // the row is written with `''` for its owner, or a policy over that column
-    // refuses a form whose every visible control is valid.
-    if (demanded && !nullable && !demanded.has(key)) continue
-
-    // A date-time is left undefined rather than guessed at.
-    if (type === 'string' && def.format === 'date-time') {
+    // A date-time is left undefined rather than guessed at, and so is a file.
+    // `FileRef` is an object, and `{}` is a stored reference with no key —
+    // which FileField reports as unresolved, in red, on a form nobody touched.
+    if ((type === 'string' && def.format === 'date-time') || def['x-litestone-file']) {
       fieldDefaults[key] = undefined
       continue
     }

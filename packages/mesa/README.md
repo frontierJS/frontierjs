@@ -32,7 +32,7 @@ For the language specification, see
 ## Quick start
 
 ```bash
-bun install         # acorn, astring, unified, remark, rehype, vitest
+bun install         # acorn, astring, vitest -- and the optional peers, as devDependencies
 bun run serve       # then open /packages/mesa/example/ — the live REPL
 bun run test        # vitest, then Chrome — compiler, runtime, render, css
 ```
@@ -50,6 +50,15 @@ those two degrade to a console warning and unstyled components.
 For a real project, install the Vite plugin in your app and write `.mesa`
 or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 
+**The server half's packages are optional peers**, so a client-only app installs
+none of them. An app that uses one adds its packages itself; without them, the
+import fails with an error naming the feature and the install line:
+
+| To use | Add to the app |
+|---|---|
+| `.md` pages | `unified remark-parse remark-gfm remark-rehype rehype-slug rehype-stringify` |
+| `render`, `render-component`, `css-inliner` | `happy-dom` |
+
 ---
 
 ## Files
@@ -62,6 +71,7 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 | `src/render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `docs/STATIC_RENDERING.md` |
 | `src/render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
 | `src/css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
+| `src/optional-peer.js` | `missingPeer(name, feature)` — the error when an optional peer is not installed |
 | `example/index.html` | Browser REPL — `bun run serve`, then open `/packages/mesa/example/`. Mounts previews via `mount()`; see `test/repl.test.js` |
 | `example/examples.js` | All REPL examples — 66 across 22 groups |
 | `example/README.md` | What the REPL is, how to run it, how to add an example |

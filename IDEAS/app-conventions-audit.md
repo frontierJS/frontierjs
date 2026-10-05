@@ -255,3 +255,19 @@ no rule, a global with no module, a permission with no boundary. That is the sam
 diagnosis `IDEAS/overview.md` records from the ten-problem survey — *strong wherever
 the compiler or the schema owns a fact, weak wherever the fact lives in imperative
 client glue* — arrived at from a completely different direction.
+
+## Open questions
+
+- ~~**FJS-390 — Who owns the busy state of an element that is not a submit button?**~~ **Answered 2026-10-05 (`FJS-D590`), then reopened the same day below**: that ruling was written without reading `IDEAS/async-function-state.md`, shipped the same day, which already owns *a write outside `<Form>` is in flight*.
+- ~~**FJS-390 — Does a row action's busy state come from keying `$async` per call, or from a `busy(el)` handle beside it?**~~ **Answered 2026-10-05 (`FJS-D591`): A — key `$async` per call: `$async.remove.pendingFor(row.id)` is true while a call whose first argument is `row.id` is in flight, with the error keyed the same way. A function that has to lock only part of its body is split in two. (`pendingFor` is a placeholder name.).**
+  A submit button is covered by `Button.mesa` reading `form?.submitting`, and a
+  write outside a form by `$async.f.pending` (`packages/mesa/docs/VISION.md`
+  § 13.2). What neither says is the case FJS-390 counts: `disabled={busy === row.id}`.
+  `pending` counts every call in flight (`FJS-D584`), so one delete shows every
+  row's button as busy. A `busy(el)` handle is tied to the clicked element, but it
+  writes `disabled` onto a node Mesa may also bind, which gives one attribute two
+  owners, and `release()` can put back a value the binding has since changed.
+  - **A** — key `$async` per call: `$async.remove.pendingFor(row.id)` is true while a call whose first argument is `row.id` is in flight, with the error keyed the same way. A function that has to lock only part of its body is split in two. (`pendingFor` is a placeholder name.)
+  - **B** — `busy(el)` in `@frontierjs/ui`, as `FJS-D590` ruled: answers `release(error?)`, and `busy(el, promise)` releases itself when the promise settles.
+  - **C** — both: keyed `$async` inside a `.mesa` component, `busy(el)` for plain JS that RULE 16 cannot reach.
+  - **Recommend A** — `$async` is already the owner of *this call is in flight*, so a handle beside it is a second origin for one fact (§ V question 6). Per-call keys close the one case it misses while staying declarative, and nothing then writes to a node the template also binds. C is worth reopening only when a busy element outside a `.mesa` file turns up; none has.

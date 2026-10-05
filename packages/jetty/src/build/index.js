@@ -14,6 +14,7 @@ import { buildManifest }                   from './manifest.js'
 import { autoGenForPage, autoGenForIsland } from './auto-gen.js'
 import { harborViteConfig, pagesViteConfig, islandsViteConfig, htmlEntriesFor } from './vite-config.js'
 import { runAudit, formatAuditReport }    from '../audit/index.js'
+import { loadPeer }                        from '../peer.js'
 
 const HERE         = dirname(fileURLToPath(import.meta.url))
 const PACKAGE_ROOT = resolve(HERE, '../..')
@@ -83,7 +84,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
   const htmlEntries = htmlEntriesFor(found, { autoGenPaths }, { cacheRoot: cacheDir })
   if (Object.keys(htmlEntries).length > 0) {
     log('building pages:', Object.keys(htmlEntries).join(', '))
-    const { build } = await import('vite')
+    const { build } = await loadPeer('vite', 'build')
     await build(await pagesViteConfig({
       cacheRoot: cacheDir,
       htmlEntries,
@@ -96,7 +97,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
   // --- 3. Build Islands (one Vite lib build each, no HTML) ---
   if (found.islands.length > 0) {
     log('building islands:', found.islands.map((i) => i.id).join(', '))
-    const { build } = await import('vite')
+    const { build } = await loadPeer('vite', 'build')
     // One build per island. inlineDynamicImports takes a single input —
     // content scripts can't load chunks not in web_accessible_resources, so
     // each island bundles its full graph (including the dynamically-imported
@@ -117,7 +118,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
   // --- 4. Build Harbor (Vite lib) ---
   if (found.harbor) {
     log('building harbor')
-    const { build } = await import('vite')
+    const { build } = await loadPeer('vite', 'build')
     await build(harborViteConfig({
       extRoot: root,
       harborEntry: found.harbor.path,

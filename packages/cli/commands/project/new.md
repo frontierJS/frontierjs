@@ -142,7 +142,7 @@ const { scaffoldSiteSurface, siteScripts } =
   await import(resolve(global.fliRoot, 'core/site-surface.js'))
 
 // The extension surface, same rule: one owner, shared with `fli make:extension`.
-const { scaffoldExtensionSurface, extensionScripts } =
+const { scaffoldExtensionSurface, extensionScripts, extensionDevDeps } =
   await import(resolve(global.fliRoot, 'core/extension-surface.js'))
 
 // Split closing-script tags inside template strings — stops the FLI compiler
@@ -221,6 +221,10 @@ function makePackageJson(spec) {
   }
   if (useUI) {
     devDeps['vite'] = VITE_VERSION
+  }
+  if (useExtension) {
+    // After the UI's vite on purpose: jetty's peer range is the narrower one.
+    Object.assign(devDeps, extensionDevDeps())
   }
 
   // Scripts. Each surface contributes its own pair and `dev`/`build` run

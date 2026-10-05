@@ -2787,7 +2787,21 @@ function asyncStateReads(scriptAST, source) {
   }
   walk(scriptAST)
   const rx = /(?<![\w$])(?:\$async|\$\.async)\.([A-Za-z_$][\w$]*)(?:\??\.([A-Za-z_$][\w$]*))?/g
-  for (const m of templateExpressions(source).matchAll(rx)) note(m[1], m[2] === 'error')
+  const code = templateExpressions(source)
+  for (const m of code.matchAll(rx)) {
+    // `$async.f.for(row.id).error` handles the rejection as `.error` does, and
+    // the key between the parens may hold parens of its own.
+    let field = m[2]
+    if (field === 'for' && code[m.index + m[0].length] === '(') {
+      let i = m.index + m[0].length, depth = 0
+      for (; i < code.length; i++) {
+        if (code[i] === '(') depth++
+        else if (code[i] === ')' && --depth === 0) break
+      }
+      field = /^\??\.([A-Za-z_$][\w$]*)/.exec(code.slice(i + 1))?.[1]
+    }
+    note(m[1], field === 'error')
+  }
   return reads
 }
 

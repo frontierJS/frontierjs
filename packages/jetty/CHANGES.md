@@ -1,5 +1,23 @@
 # Changes — @frontierjs/jetty
 
+## 2026-10-05 — vite, chokidar and ws are the app's to install
+
+They were `dependencies`, so every install of jetty pulled a bundler, a file watcher and a
+WebSocket server. Now they are optional peers, with the ranges unchanged. An extension's users
+get bundled output and need none of them. The app that builds the extension names them as
+devDependencies, and `fli new --extension` and `fli make:extension` write that line
+(`extensionDevDeps()` in `packages/cli/core/extension-surface.js`).
+
+The build needs vite, not only the dev server: `src/build/` runs Vite for every page, island and
+harbor. That is why all three moved and nothing was left behind for the build.
+
+**`src/peer.js` loads them.** A missing one fails with *jetty's dev server needs "ws", which the
+app installs: bun add -d ws*. Before, it was a bare "Cannot find package" thrown from inside
+jetty. The dev server loads chokidar before its first build, so a missing watcher fails at once.
+Only a missing package with that exact name is reworded. If vite cannot find one of its own
+dependencies, that error passes through unchanged. Bun ships a `ws` of its own, so under bun only
+chokidar and vite can be missing. The bins run on node, though.
+
 ## 2026-09-20 — the vocabulary check asks Junction, not one of its files
 
 `phase3` reads `AUTO_EVENT_MAP` out of Junction's source rather than restating it — that is

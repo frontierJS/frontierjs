@@ -16,6 +16,9 @@
     'const long = "' + 'x'.repeat(240) + '"',
   ].join('\n')
 
+  // More lines than one chunk of the paint holds, so an edit can cross a seam.
+  const many = Array.from({ length: 150 }, (_, i) => 'line ' + i).join('\n')
+
   window.__value = undefined
 </script>
 
@@ -27,6 +30,10 @@
   <CodeInput id="trailing" value={'one\ntwo\n'} rows={1} />
 
   <CodeInput id="hostile" language="js" value={'x // <img src=x onerror="window.__xss = 1">'} />
+
+  <CodeInput id="lines" language="js" value={'a = 1\nb = 2\nc = 3\nd = 4'} />
+
+  <CodeInput id="many" language="js" numbered value={many} />
 
   <CodeInput name="body" label="Body" language="md" value="# Title" />
 </div>

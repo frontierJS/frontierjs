@@ -162,6 +162,14 @@ test/run.js        the harness
   anything visual. code.css writes the clamp out per role instead of reading
   `--tone-ink`, because it needs six roles at once off six theme colors and
   `--tone-ink` is one tone per element.
+- **A sibling combinator behind an `:is()` ancestor is paid for page-wide.**
+  `:is(.card, …) > * + *` was tried against every element and marked every
+  parent's children as sibling-dependent, so one DOM removal anywhere
+  restyled the whole subtree under its parent — 300 ms a keystroke in a
+  22,000-line `CodeInput` (`FJS-1621`). The same `* + *` behind a plain
+  `.field-row >` measured free. Write the child as `:where(:not(:first-child))`.
+  Find one with Chrome's invalidation trace, which names the selector's
+  effect on the node (`Related style rule`), never by reading the CSS.
 - **`theme-notebook`'s `--ink-mute` is 2.67:1 and under AA wherever it is
   text** — nine files use it. Pre-existing, `FJS-125`; the code theme reads it
   for comments and does not compensate.

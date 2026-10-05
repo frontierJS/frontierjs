@@ -106,6 +106,76 @@ export async function run(t) {
   const grew = await t.evaluate(`${layers('plain')} return text.scrollHeight <= text.clientHeight;`)
   t.ok(grew, 'a new line grows the box rather than scrolling it')
 
+  /* ── a keystroke repaints its own chunk, and no other ─────────────────── */
+
+  // Re-glowing the whole buffer per key cost the size of the document: 37.7 s a
+  // keystroke on a 4.2 MB JSON text (FJS-1621). Each chunk of the paint is
+  // tagged, so a chunk repainted anyway comes back untagged.
+  const chunks = `[...paint.querySelectorAll('code')]`
+  await t.evaluate(`${layers('many')}
+    ${chunks}.forEach((c, i) => c.__chunk = i);
+    text.focus();
+    const at = text.value.indexOf('line 70') + 7;
+    text.setSelectionRange(at, at);
+    return true;
+  `)
+  await t.type('x')
+  await t.eventually(`(() => { ${layers('many')} return paint.textContent === text.value; })()`, true,
+    'the paint follows a keystroke')
+  t.is(await t.evaluate(`${layers('many')} return ${chunks}.map(c => c.__chunk ?? '-').join(',');`), '0,-,2',
+    'and replaced the chunk holding the line it changed, keeping every other chunk’s nodes')
+
+  const spans = `[...paint.querySelectorAll('code > span')]`
+
+  // A block comment is the one thing glow carries from line to line, so
+  // opening one must recolor the lines after it, and closing it must stop.
+  const comments = `${spans}.map(s => s.firstElementChild?.tagName === 'SUP' && !s.querySelector(':not(sup)') ? 'c' : '.').join('')`
+  await t.evaluate(`${layers('lines')} text.focus(); const at = text.value.indexOf('b = 2'); text.setSelectionRange(at, at); return true;`)
+  await t.type('/* ')
+  await t.eventually(`(() => { ${layers('lines')} return ${comments}; })()`, '.ccc',
+    'an opened comment runs on to the end of the box')
+  await t.evaluate(`${layers('lines')} const end = text.value.indexOf('c = 3') + 5; text.setSelectionRange(end, end); return true;`)
+  await t.type(' */')
+  await t.eventually(`(() => { ${layers('lines')} return ${comments}; })()`, '.cc.',
+    'and closing it gives the line after back its colors')
+  t.is(await t.evaluate(`${layers('lines')} return paint.textContent === text.value;`), true,
+    'with the paint still holding exactly the characters typed')
+
+  /* ── the paint is chunked, and a seam is invisible ────────────────────── */
+
+  // Each chunk is its own <code>, and a newline at a seam that drew a line, or
+  // one missing, moves every line below it off the textarea's. Gaps are read
+  // pairwise: 22.4px is not on the layout grid, so a line's distance from the
+  // first drifts past a pixel by line 107 with nothing wrong.
+  const aligned = `(() => {
+    ${layers('many')}
+    const s = [...paint.querySelectorAll('code > span')];
+    const lh = parseFloat(getComputedStyle(text).lineHeight);
+    const tops = s.map(e => e.getBoundingClientRect().top);
+    const off = tops.findIndex((y, i) => i > 0 && Math.abs(y - tops[i - 1] - lh) > 1);
+    return [paint.textContent === text.value, s.length === text.value.split('\\n').length, off].join(',');
+  })()`
+  t.ok((await t.evaluate(`${layers('many')} return paint.querySelectorAll('code').length;`)) > 1,
+    'a long document is painted in more than one chunk')
+  t.is(await t.evaluate(`return ${aligned};`), 'true,true,-1', 'and every line sits one line-height below the last')
+
+  await t.evaluate(`${layers('many')}
+    text.focus();
+    const end = text.value.indexOf('line 63') + 7;
+    text.setSelectionRange(end, end);
+    return true;
+  `)
+  await t.press('Enter')
+  await t.type('new')
+  await t.eventually(aligned, 'true,true,-1', 'a line added at a seam')
+
+  await t.evaluate(`${layers('many')}
+    text.setSelectionRange(text.value.indexOf('line 60') + 3, text.value.indexOf('line 70') + 3);
+    return true;
+  `)
+  await t.press('Backspace')
+  await t.eventually(aligned, 'true,true,-1', 'and lines removed across one')
+
   /* ── scrolling sideways moves the paint with it ───────────────────────── */
 
   const widths = await t.evaluate(`${layers('plain')} return [text.scrollWidth, paint.scrollWidth];`)

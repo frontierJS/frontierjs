@@ -51,7 +51,7 @@ Everything but the harbor is optional and discovered by position —
 `packages/jetty/src/build/discover.js` is the contract.
 
 ```js
-const { scaffoldExtensionSurface, extensionScripts } =
+const { scaffoldExtensionSurface, extensionScripts, extensionDevDeps } =
   await import(resolve(global.fliRoot, 'core/extension-surface.js'))
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
@@ -102,9 +102,18 @@ if (existsSync(pkgPath)) {
     pkg.dependencies['@frontierjs/jetty'] = 'latest'
     log.info('Added @frontierjs/jetty to dependencies — run bun install before building.')
   }
-  if (added.length || !hasJetty) {
+  // jetty's build and dev server run on these but do not install them.
+  const tools = []
+  for (const [key, spec] of Object.entries(extensionDevDeps())) {
+    if (pkg.dependencies?.[key] || pkg.devDependencies?.[key]) continue
+    pkg.devDependencies ??= {}
+    pkg.devDependencies[key] = spec
+    tools.push(key)
+  }
+  if (added.length || !hasJetty || tools.length) {
     writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8')
     if (added.length) log.success(`Added scripts: ${added.join(', ')}`)
+    if (tools.length) log.success(`Added devDependencies: ${tools.join(', ')}`)
   }
 }
 

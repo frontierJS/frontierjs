@@ -61,20 +61,29 @@
     "test:bun:phase9": "bun test/phase9.test.js"
   },
   "dependencies": {
-    "@frontierjs/toolbelt": "workspace:*",
-    "chokidar": "^5.0.0",
-    "vite": "^8.0.10",
-    "ws": "^8.20.0"
+    "@frontierjs/toolbelt": "workspace:*"
   },
   "peerDependencies": {
     "@frontierjs/mesa": "^0.1.0",
-    "@frontierjs/junction": "^0.1.0"
+    "@frontierjs/junction": "^0.1.0",
+    "chokidar": "^5.0.0",
+    "vite": "^8.3.2",
+    "ws": "^8.20.0"
   },
   "peerDependenciesMeta": {
     "@frontierjs/mesa": {
       "optional": true
     },
     "@frontierjs/junction": {
+      "optional": true
+    },
+    "chokidar": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    },
+    "ws": {
       "optional": true
     }
   },
@@ -88,8 +97,11 @@
   "devDependencies": {
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
+    "chokidar": "^5.0.0",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^29.1.1"
+    "jsdom": "^29.1.1",
+    "vite": "^8.3.2",
+    "ws": "^8.20.0"
   },
   "publishConfig": {
     "access": "public"

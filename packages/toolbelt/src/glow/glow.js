@@ -387,47 +387,63 @@ function isTrailingComment(line) {
   })
 }
 
-export function parseSyntax(lines, lang, prefix = true) {
+/*
+  A block comment carries state from one line to the next, and it is the only
+  thing that does: every other rule reads one line alone. So a line is fully
+  described by its text and whether a comment is open before it, which is what
+  lets a caller repaint only the lines that changed (`glowLine`).
+*/
+function commentStep(line, open) {
   const [comm_start, comm_end] = COMMENT
-  const html = []
+  if (open) return { comment: true, open: !comm_end.test(line) }
+  if (comm_start.test(line) && !isTrailingComment(line))
+    return { comment: true, open: !(comm_end.test(line) && line?.trim() != "'''") }
+  return { comment: false, open: false }
+}
 
-  // multi-line comment
-  let comment
+/*
+  The language glow highlights a document in: the one asked for, or html when
+  the first line opens a tag. A caller painting line by line asks here rather
+  than restating the guess.
+*/
+export function glowLanguage(source, language) {
+  if (language) return language
+  const first = Array.isArray(source) ? source[0] : source
+  return first?.[0] == '<' ? 'html' : language
+}
 
-  function endComment() {
-    html.push({ comment })
-    comment = null
+/*
+  One line as glow paints it inside its <code>, and whether a block comment is
+  still open after it. `open` is the same answer for the line before; the first
+  line of a document has none open. `opts.language` is taken as given — the
+  document-level guess is `glowLanguage`.
+*/
+export function glowLine(line, opts = {}, open = false) {
+  const lang = opts.language
+  const step = commentStep(line, open)
+  let html
+
+  if (step.comment) html = elem('sup', encode(line))
+  else {
+    const prefix = opts.prefix ?? true
+    const is_md = isMD(primaryLang(lang))
+    const c = line[0]
+    let wrap = prefix && (is_md ? c == '|' && 'dfn' : PREFIXES[c])
+    if (wrap && is_md && line == '---') wrap = null
+    /* `--custom-property: …` is not a removed line. Two dashes never
+       start a diff marker, so this costs nothing and stops the marker
+       eating one character off every CSS variable declaration. */
+    if (wrap && c == '-' && line[1] == '-') wrap = null
+    if (wrap) line = (line[1] == ' ' ? ' ' : '') + line.slice(1)
+
+    // escape character
+    if (prefix && c == '\\') line = line.slice(1)
+
+    html = renderRow(line, lang, opts.mark ?? true)
+    if (wrap) html = elem(wrap, html)
   }
 
-  lines.forEach((line, i) => {
-    if (!comment) {
-      if (comm_start.test(line) && !isTrailingComment(line)) {
-        comment = [line]
-        if (comm_end.test(line) && line?.trim() != "'''") endComment()
-      } else {
-        // highlighted line
-        const is_md = isMD(primaryLang(lang))
-        const c = line[0]
-        let wrap = prefix && (is_md ? c == '|' && 'dfn' : PREFIXES[c])
-        if (wrap && is_md && line == '---') wrap = null
-        /* `--custom-property: …` is not a removed line. Two dashes never
-           start a diff marker, so this costs nothing and stops the marker
-           eating one character off every CSS variable declaration. */
-        if (wrap && c == '-' && line[1] == '-') wrap = null
-        if (wrap) line = (line[1] == ' ' ? ' ' : '') + line.slice(1)
-
-        // escape character
-        if (prefix && c == '\\') line = line.slice(1)
-
-        html.push({ line, wrap })
-      }
-    } else {
-      comment.push(line)
-      if (comm_end.test(line)) endComment()
-    }
-  })
-
-  return html
+  return { html: opts.numbered ? elem('span', html) : html, open: step.open }
 }
 
 // code, { language: 'js', numbered: true }
@@ -440,29 +456,19 @@ export function glow(str, opts = { prefix: true, mark: true }) {
      empty array returns nothing. One of them has to be wrong. */
   if (!lines || !lines.length || (lines.length == 1 && !lines[0])) return ''
 
-  // language
-  let lang = opts.language
-  if (!lang && lines[0][0] == '<') lang = 'html'
-  const attr = primaryLang(lang)
+  const lang = glowLanguage(lines, opts.language)
+  const line = { ...opts, language: lang }
   const html = []
+  let open = false
 
-  function push(line) {
-    html.push(opts.numbered ? elem('span', line) : line)
+  /* A comment still open at the end is painted as one. It used to be held
+     back until it closed, so an unclosed `/*` dropped every line after it —
+     in an editor, the paint went blank below the line being typed. */
+  for (const text of lines) {
+    const out = glowLine(text, line, open)
+    html.push(out.html)
+    open = out.open
   }
 
-  parseSyntax(lines, lang, opts.prefix).forEach(function (block) {
-    let { line, comment, wrap } = block
-
-    // EOL comment
-    if (comment) {
-      return comment.forEach((el) => push(elem('sup', encode(el))))
-    } else {
-      line = renderRow(line, lang, opts.mark)
-    }
-
-    if (wrap) line = elem(wrap, line)
-    push(line)
-  })
-
-  return `<code language="${attr || '*'}">${html.join(NL)}</code>`
+  return `<code language="${primaryLang(lang) || '*'}">${html.join(NL)}</code>`
 }

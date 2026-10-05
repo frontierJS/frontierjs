@@ -23,6 +23,9 @@
   //   - A `<pre>` draws no line for a trailing newline, so the box would hold
   //     one line more than the paint and scroll by it; `paintable` gives that
   //     empty last line a space.
+  //   - Every line is its own `<span>`, numbered or not — code.css numbers
+  //     `code > span`, so an unnumbered box hides the counter rather than
+  //     painting lines of a different shape.
   //   - Both layers share one grid cell, so the cell is as tall as the longer
   //     of the two and the textarea never scrolls vertically — and both carry
   //     `overflow: auto`, so a horizontal scrollbar appears on both at the same
@@ -36,7 +39,7 @@
   // bind:this exposes: focus()
 
   import Field    from './Field.mesa'
-  import { glow } from '@frontierjs/toolbelt/glow'
+  import { glowLine, glowLanguage } from '@frontierjs/toolbelt/glow'
   import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
 
   export let value       = ''
@@ -79,10 +82,130 @@
 
   $: source    = value ?? ''
   $: paintable = source.endsWith('\n') ? source + ' ' : source
-  // glow encodes every slice of the source it emits, so this is safe to hand
-  // {@html}. A highlighter that did not is a stored XSS in any field somebody
-  // else can write.
-  $: painted   = glow(paintable, { language: language || undefined, prefix: false, mark: false, numbered })
+
+  // ── The paint is repainted by the line ───────────────────────────────
+  //
+  // A keystroke changes a line or two, and re-glowing the whole buffer into
+  // one {@html} made it cost the size of the document instead: 37.7 s a key on
+  // a 4.2 MB JSON text, most of it the collector clearing the paint the key
+  // before had thrown away (FJS-1621). So only the lines between the first and
+  // last that differ are glowed, plus any after them whose block-comment state
+  // the edit changed, which is the one thing glow carries from line to line.
+  //
+  // Replacing them is the other half. Adding or removing an element among a
+  // block's lines re-lays every line in it: 200-460 ms of layout a key with
+  // 22,000 lines in one <code>, against 11-30 ms in chunks. So the paint is a
+  // run of <code> blocks of at most CHUNK lines, and an edit rebuilds only the
+  // chunks it touches. Each chunk but the last ends in the newline before the
+  // next one, which a block draws no line for.
+  //
+  // glow encodes every slice of the source it emits, so its lines are safe to
+  // hand to innerHTML. A highlighter that did not is a stored XSS in any field
+  // somebody else can write.
+  //
+  // `var`, because none of this is state the template follows: the first paint
+  // is the server's, and every later one is written here.
+  const LINE  = { prefix: false, mark: false, numbered: true }
+  const CHUNK = 64
+
+  function glowLines(lines, lang, from, to, open) {
+    const opts = { ...LINE, language: lang || undefined }
+    const html = [], opens = []
+    for (let i = from; i < to; i++) {
+      const out = glowLine(lines[i], opts, open)
+      html.push(out.html)
+      opens.push(open = out.open)
+    }
+    return { html, opens }
+  }
+
+  // `html[from..to)` as chunks; `last` is whether `to` ends the document.
+  function chunk(html, from, to, last, lang) {
+    const open = `<code language="${lang || '*'}">`
+    const parts = [], sizes = []
+    for (let i = from; i < to; i += CHUNK) {
+      const end = Math.min(i + CHUNK, to)
+      parts.push(open + html.slice(i, end).join('\n') + (end === to && last ? '' : '\n') + '</code>')
+      sizes.push(end - i)
+    }
+    return { markup: parts.join(''), sizes }
+  }
+
+  function paintAll(lines, lang) {
+    const out = glowLines(lines, lang, 0, lines.length, false)
+    const c   = chunk(out.html, 0, lines.length, true, lang)
+    return { lines, lang, html: out.html, opens: out.opens, sizes: c.sizes, markup: c.markup }
+  }
+
+  var shown      = paintAll(paintable.split(/\r?\n/), glowLanguage(paintable, language) || '')
+  var firstPaint = shown.markup
+
+  function repaint(text) {
+    if (!paint) return
+    const next = text.split(/\r?\n/)
+    const lang = glowLanguage(next, language) || ''
+
+    if (lang !== shown.lang) {
+      shown = paintAll(next, lang)
+      paint.innerHTML = shown.markup
+      return
+    }
+
+    const prev = shown.lines
+    const min  = Math.min(prev.length, next.length)
+    let from = 0
+    while (from < min && prev[from] === next[from]) from++
+    if (from === prev.length && from === next.length) return
+    let tail = 0
+    while (tail < min - from && prev[prev.length - 1 - tail] === next[next.length - 1 - tail]) tail++
+
+    let prevTo = prev.length - tail
+    let nextTo = next.length - tail
+    if (prevTo === from || nextTo === from) {
+      if (from > 0) from--
+      else { prevTo++; nextTo++ }
+    }
+
+    const out = glowLines(next, lang, from, nextTo, from > 0 ? shown.opens[from - 1] : false)
+    // Opening or closing a comment recolors every line up to where the old and
+    // new paints agree on it again.
+    while (nextTo < next.length && out.opens[out.opens.length - 1] !== shown.opens[prevTo - 1]) {
+      const more = glowLines(next, lang, nextTo, nextTo + 1, out.opens[out.opens.length - 1])
+      out.html.push(more.html[0])
+      out.opens.push(more.opens[0])
+      prevTo++
+      nextTo++
+    }
+
+    // The chunks holding old lines [from, prevTo), and the lines they span.
+    const { sizes } = shown
+    let first = 0, start = 0
+    while (start + sizes[first] <= from) start += sizes[first++]
+    let last = first, end = start + sizes[first]
+    while (end < prevTo) end += sizes[++last]
+
+    const html  = shown.html.slice(0, from).concat(out.html, shown.html.slice(prevTo))
+    const shift = nextTo - prevTo
+    const c     = chunk(html, start, end + shift, end === prev.length, lang)
+
+    const range = document.createRange()
+    range.setStartBefore(paint.children[first])
+    range.setEndAfter(paint.children[last])
+    range.deleteContents()
+    const tpl = document.createElement('template')
+    tpl.innerHTML = c.markup
+    range.insertNode(tpl.content)
+
+    shown = {
+      lines: next,
+      lang,
+      html,
+      opens: shown.opens.slice(0, from).concat(out.opens, shown.opens.slice(prevTo)),
+      sizes: sizes.slice(0, first).concat(c.sizes, sizes.slice(last + 1)),
+    }
+  }
+
+  $: repaint(paintable)
 
   function handleInput(e) {
     value = e.target.value
@@ -98,7 +221,7 @@
 
 {#snippet control()}
   <div class="fjs-code-input" class:numbered>
-    <pre bind:this={paint} class="code fjs-code-input-layer fjs-code-input-paint" aria-hidden="true">{@html painted}</pre>
+    <pre bind:this={paint} class="code fjs-code-input-layer fjs-code-input-paint" aria-hidden="true">{@html firstPaint}</pre>
     <textarea
       bind:this={el}
       class="fjs-code-input-layer fjs-code-input-text"
@@ -189,6 +312,19 @@
     pointer-events: none;
     user-select:    none;
     border-color:   var(--rule);
+  }
+
+  /* Every line is a <span> so it can be replaced alone, and code.css numbers
+     every `code > span` from 1 in each <code>. The paint is several <code>s,
+     so the count is the <pre>'s and runs across them; unnumbered, there is
+     none. */
+  .fjs-code-input-paint { counter-reset: code-line 0; }
+  .fjs-code-input .fjs-code-input-paint :global(code) { counter-reset: none; }
+  .fjs-code-input:not(.numbered) > .fjs-code-input-paint :global(code > span) {
+    counter-increment: none;
+  }
+  .fjs-code-input:not(.numbered) > .fjs-code-input-paint :global(code > span::before) {
+    content: none;
   }
 
   /* code.css makes a highlighted <code> its own scroller; here the <pre> is,

@@ -1959,6 +1959,21 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 - **Overlapping calls are counted, not refused** (`FJS-D584`). `pending` holds until
   every one has settled; `disabled={$async.f.pending}` is the guard against a double
   click.
+- **`$async.f.for(key)` is the same state for one key** (`FJS-D591`): `pending`,
+  `error` and `status` over only the calls whose first argument is `key`. A row
+  action reads it, since `pending` counts every call and one delete would show
+  every row as busy. A function that should lock only part of its body is split
+  into two functions.
+
+  ```html
+  {#each users as user (user.id)}
+    <Button onclick={() => remove(user.id)} disabled={$async.remove.for(user.id).pending}>Delete</Button>
+    {#if $async.remove.for(user.id).error}<span class="text-danger">{$async.remove.for(user.id).error.message}</span>{/if}
+  {/each}
+  ```
+
+  Reading `.error` through `for` counts as handling the rejection, the same as
+  reading `$async.f.error`.
 - **Generated only where read.** A function nobody reads `$async` of compiles as
   written. The name stays the function's: a wrapper records each call, so the
   template, another function and an `export` all reach it unchanged.

@@ -1,5 +1,10 @@
 # Changes — @frontierjs/css
 
+
+## 2026-10-05 — a block's flow spacing no longer restyles the page on every DOM removal (`FJS-1621`)
+
+The rule that spaces the children of `.card`, `.screen`, `.container` and `.pane` selected them as `* + *` and now selects `:where(:not(:first-child))`. Both match the same elements at the same weight. Written the first way under its `:is()` owners, the rule was tried against every element on the page and recorded every parent's children as depending on their siblings, so removing one child anywhere restyled everything under that parent: 300 ms of style recalc a keystroke in a `CodeInput` holding 22,000 lines.
+
 ## 2026-10-04 — `.table-wrap` is a containing block (`FJS-1626`)
 
 `.table-wrap` gains `position: relative`. A Table column with `hideLabel` renders its label as `.visually-hidden`, which is `position: absolute`; with no positioned ancestor its containing block was the page, so the label sat at the far edge of a wide table outside the scroller and widened the document to the table's width — a 721px pane measured a 2,259px page in dragonfly. `tables.spec.js` grades that the label's `offsetParent` is the wrap. 514 passing.

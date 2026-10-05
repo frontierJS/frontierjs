@@ -35,6 +35,9 @@ const { default: Page } = await import('./Page.mesa.js')   // 2. then import
 const html = await renderToHTML(Page, { title: 'Hello' })  // 3. then render
 ```
 
+`happy-dom` is an optional peer of mesa, so the app installs it (`bun add
+happy-dom`); without it this import fails, naming that install.
+
 **The order is not stylistic.** Compiled components call `htmlToFragment()` at
 module-load time, so the DOM must exist before the `import()`, not merely before
 the render. Import first and the module throws while evaluating, with an error

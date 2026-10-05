@@ -1,5 +1,25 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-05 — happy-dom and the markdown stack are optional peers
+
+**A client-only app installs mesa without happy-dom or unified, remark-parse, remark-gfm, remark-rehype, rehype-slug and rehype-stringify.** They are optional `peerDependencies` (mirrored in `devDependencies` for this suite), so a packed install of mesa alone is 16 packages and 7.4 MB. `render.js`, `css-inliner.js` and `compiler-md.js` reach them through a top-level `await import()`, so `initRenderer()` and `inlineCSS()` stay synchronous and no caller or doc example changed. A missing peer fails at import with `missingPeer` (`src/optional-peer.js`), which names the feature and the install line, and for `.md` names all six packages at once. It matches on the package name, because Node and Bun both report a package missing deeper in the chain with the same `ERR_MODULE_NOT_FOUND`.
+
+Proof: `test/optional-peers.test.js` walks the static import graph from the runtime, the compiler, `drive.js` and each `mesa-vite` entry and finds no peer. A packed mesa installed alone in a scratch app ran the runtime, compiled a `.mesa` file and imported the Vite plugin under bun and node, and `render`, `css-inliner` and a `.md` compile each failed with the named error. With the peers added to the app, all three worked.
+
+## 2026-10-05 — vite peer `>=4.0.0` → `^8.3.2`
+
+The peer range claimed vite 4–7, which nothing here builds on or tests; it now names the version the suite runs, the same range sierra and every app in the workspace declare. Every vite in the workspace resolves to 8.3.2. Still optional.
+
+## 2026-10-05 — vitest 5
+
+`vitest` `^2.0.0` → `^5.0.3`, the version sierra and email-kit share. The suite passed unchanged.
+
+## 2026-10-05 — `$async.f.for(key)`: one row of a row action (`FJS-390`)
+
+**`$async.remove.for(row.id)` is the function's state over only the calls whose first argument is `row.id`**: `pending`, `error` and `status`, the fields the whole state has (`FJS-D591`). `pending` counts every call, so a row action reading it showed every row as busy while one was deleting, and the 101 hand-kept `busy === row.id` locals FJS-390 counted had nothing to move to. `makeCallState` keeps a per-key count, error and status beside the whole-function ones, behind one version signal. The version is bumped from a plain counter rather than by reading the signal, because a call made inside an effect would otherwise subscribe that effect to every later call; the mutation spins the effect loop. The compiler counts a template read of `$async.f.for(…).error` as handling the rejection, scanning past parens inside the key. VISION § 13.2 documents it.
+
+Proof: `test/async-function-state.test.js` mounts an `{#each}` and asserts only the clicked row disables and only the failed row shows its error; `makeCallState` in `test/runtime.test.js` grades keys, overlap on one key, an effect waking on its key, and no subscription from the calling effect. Making `for(key).pending` read the whole count turns two red; reading the signal in `run` turns one red.
+
 ## 2026-10-05 — `$async` on an async function; `fetching` is `pending`; RULE 16 is refused
 
 **A top-level `async function` whose `$async` is read gets the state an awaited `const` has** (`IDEAS/async-function-state.md`). `disabled={$async.remove.pending}` and `{#if $async.remove.error}` replace the hand-kept `busy`/`error` pair a button write needed. `status` starts `'idle'`, `loading` is the first call in flight, `pending` any call, and `error` the most recently settled call's rejection, cleared when the next call starts. The runtime half is `makeCallState`, and its `run` hands back a promise that rejects as the call did. The compiler renames the declaration to `$$fn_<name>` and declares a wrapper under the original name, so the template, other functions and `registerExports` reach it unchanged. A function nobody reads `$async` of compiles as written.

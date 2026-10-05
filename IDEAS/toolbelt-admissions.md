@@ -112,7 +112,7 @@ it as an oversight.
   - **A** — a toolbelt kit holding a declared subset; sierra drops js-yaml and both callers agree by construction.
   - **B** — full YAML is the meaning; the parser stays sierra's, and mesa's hand-rolled reader is the defect to close rather than the shape to standardize.
   - **Recommend A** — a frontmatter block is configuration written by hand into a route file, and anchors, aliases and merge keys are the part of YAML that produced `FJS-821` in the first place, so dropping them removes the mitigation along with the feature. **B is the honest answer if an app is found relying on nesting**, which nothing in this repo does — every `.md` and `.mesa` frontmatter here is flat.
-- **FJS-D549 — Does FJS-D533 stand now that an app relies on nesting?** The
+- ~~**FJS-D549 — Does FJS-D533 stand now that an app relies on nesting?**~~ **Answered 2026-10-05 (`FJS-D549`): C — a declared subset that includes nesting: block maps and sequences at any depth, `|` and `>` scalars, and flow collections, with anchors, aliases, merge keys and tags refused by name. It's one toolbelt kit with no dependency, as A intended, and it holds everything ksite writes. - **Recommend C.** D533's reason was the part of YAML that caused `FJS-821`, and C still refuses that part. The nesting D533 gave up is something a real client site depends on. A leaves ksite's content split across two formats, which is a cost every client site cut from the template would pay.** The
   ksite stressor (Phase 3, 2026-09-28) is the app the recommendation above was
   waiting for, and it lives outside this repo. Its content writes a list of maps
   in every menu (`items: - name: … link: …`), a list of maps two deep for the

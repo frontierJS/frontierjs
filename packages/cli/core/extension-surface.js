@@ -269,6 +269,20 @@ export function scaffoldExtensionSurface({
   return { written, skipped }
 }
 
+/**
+ * What the app installs for jetty's build and dev server. jetty declares them
+ * as optional peers so they never reach an extension's users, which makes them
+ * this app's to name. The ranges are jetty's own peer ranges, kept equal by
+ * test/app-config.test.js. Merged by the caller.
+ */
+export function extensionDevDeps() {
+  return {
+    'chokidar': '^5.0.0',
+    'vite':     '^8.0.10',
+    'ws':       '^8.20.0',
+  }
+}
+
 /** The scripts an app with this surface runs. Merged by the caller. */
 export function extensionScripts({ dir = 'extension' } = {}) {
   return {

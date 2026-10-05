@@ -1,5 +1,17 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-05 — `glowLine`: one line of a document, and whether a block comment is open after it (`FJS-1621`)
+
+`glowLine(line, opts, open)` answers `{ html, open }`. It paints a line the way `glow()` does inside its `<code>`, given whether a block comment was open before it. A comment is the only state glow carries between lines, so this is everything an editor needs to repaint just the lines that changed. `glowLanguage(source, language)` is the document-level guess (html when the first line opens a tag), so a caller painting line by line does not restate it. `glow()` is now built on the two, and `parseSyntax` is gone. One behavior change: a block comment left open at the end of a document is painted as comment. It used to be held back until it closed, so an unclosed `/*` dropped every line after it.
+
+## 2026-10-05 — `make()`: a `File` column is left undefined, not `{}` (`FJS-1507`)
+
+A column whose schema carries `x-litestone-file` seeds `undefined`, as a date-time does. `FileRef` is an object, so it seeded `{}`, which `FileField` reads as a stored reference never resolved into a URL — every blank create form with a `File` column opened with a red error.
+
+## 2026-10-05 — `make()`: a server-filled foreign key is left out, not seeded null (`FJS-1669`)
+
+The skip for a NOT NULL column the caller is not asked for now runs before the enum and foreign-key branches. `ownerId String @default(auth().id)`, a relation to `User`, was seeded `null` by the foreign-key branch, so the stamp never applied and the server answered 400 on a form whose every visible control was valid. A demanded foreign key or enum still seeds `null`.
+
 ## 2026-10-05 — `patchText`: a write goes back into the text it was read from, changing only the bytes it changed (`FJS-1623`)
 
 `patchText(text, prev, next)` answers `text` with only the spans that differ between the document it parses to and the document a write made of it. The only way back to text was `format()` of the whole document, so one cell edit rewrote every line, a condensed document came back pretty-printed and `78.0` came back as `78`. It scans the text once for where each member sits, skips a branch by identity (so a `next` that shares its untouched branches with `prev` costs nothing per node), aligns an array from both ends so a removal at the front leaves the rows after it unpatched, and writes a new member in the layout of its siblings — separator, indent, colon spacing, CRLF. A renamed key replaces the key and not its value's text. A reordered object and an object holding a duplicate key are rewritten whole, since neither is a span. Proved by `json.spec.js`, whose random-write row asserts the patched text equals `JSON.stringify(next)` at the indent the text was written in, over 600 edits at four indents.

@@ -3186,6 +3186,12 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d366"></a>2026-10-05 · `FJS-D366` — Q1 — is *ordered within a scope, stable under concurrent insert* a column trait the framework owns, or an app pattern with a toolbelt helper? (`FJS-D366`) — `@rank(scope: [col, …])` on a `String` column: the scope is a column list compared with `IS`, so NULL is one scope. Litestone validates the key, defaults a create (or a write that changes the scope without stating `rank`) to the end of the scope, orders by `(rank, id)` and owns `rebalance()`. The toolbelt mints keys. Sierra gets `resource.move(id, { after, before, into })`.
+
+Asked in [`IDEAS/manual-order.md`](IDEAS/manual-order.md) § Open questions. **B** was picked over **A** (an app pattern. Ship `between`/`jittered` in `@frontierjs/toolbelt/rank`, document *order by `(rank, id)`* and the rebalance, and leave the column a plain `String`), **C** (B, with the key hidden: the column is managed entirely by the engine, and the only way to write it is `move()`).
+
+The paper's recommendation, taken as written: three of the four things the app had to do are Data-boundary facts (a default that is a lookup, the tie-break every reader must apply, a rebalance that must announce), and a helper reaches none of them. C would hide a value the offline queue has to carry and the merge has to compare, so the key stays an ordinary column that a trait describes. A leaves every app to rediscover the 46-way tie a literal default makes, which this run hit on its first seed.
+
 ### <a id="fjs-d556"></a>2026-09-29 · `FJS-D556` — `@money` states its currency: a bare `@money` is refused at parse, and there is no app default currency.
 
 Asked in [`FJS-1589`](ISSUES.md#fjs-1589). **Refusing** was picked over a new top-level `.lite` declaration naming a default, and over a `sierra.config.js` key.
@@ -9794,6 +9800,21 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d591"></a>2026-10-05 · `FJS-D591` — FJS-390 — Does a row action's busy state come from keying `$async` per call, or from a `busy(el)` handle beside it — Key `$async` per call: `$async.remove.pendingFor(row.id)` is true while a call whose first argument is `row.id` is in flight, with the error keyed the same way. A function that has to lock only part of its body is split in two. (`pendingFor` is a placeholder name.).
+
+Asked in [`IDEAS/app-conventions-audit.md`](IDEAS/app-conventions-audit.md) § Open questions. **A** was picked over **B** (`busy(el)` in `@frontierjs/ui`, as `FJS-D590` ruled: answers `release(error?)`, and `busy(el, promise)` releases itself when the promise settles), **C** (both: keyed `$async` inside a `.mesa` component, `busy(el)` for plain JS that RULE 16 cannot reach).
+
+The paper's recommendation, taken as written: `$async` is already the owner of *this call is in flight*, so a handle beside it is a second origin for one fact (§ V question 6). Per-call keys close the one case it misses while staying declarative, and nothing then writes to a node the template also binds. C is worth reopening only when a busy element outside a `.mesa` file turns up; none has.
+
+*Spelled:* `$async.f.for(key)`, answering `{ pending, error, status }` — the fields the whole state has, so a keyed read teaches nothing new. `pendingFor` was the placeholder. Built 2026-10-05, `packages/mesa/CHANGES.md`.
+
+### <a id="fjs-d590"></a>2026-10-05 · `FJS-D590` — FJS-390 — Who owns the busy state of an element that is not a submit button — `busy(el)` in `@frontierjs/ui` answers `release(error?)`, and `busy(el, promise)` releases itself when the promise settles. It sets `disabled` and `aria-busy` and puts back whatever was there before.
+**Status:** superseded-by [`FJS-D591`](#fjs-d591) — `$async` already owned *this call is in flight*, and this ruling was written without reading it.
+
+Asked in [`IDEAS/app-conventions-audit.md`](IDEAS/app-conventions-audit.md) § Open questions. **A** was picked over **B** (the same function in `@frontierjs/toolbelt`, over a DOM node), **C** (a context, the way `$context.form` already answers `submitting`: a `<Busy>` region owns the state for every control inside it).
+
+The paper's recommendation, taken as written: B fails toolbelt's license (`FJS-D26`), because writing to a node is not a pure function, and that is the line `FJS-D111` held against `createStore`. C already exists for the case it fits, a form, and a row action has no region to wrap. The promise form is what closes the defect: with it there is no `finally` to forget.
+
 ### <a id="fjs-d584"></a>2026-10-05 · `FJS-D584` — Overlapping calls — Take no position: `disabled={$async.f.pending}` is the caller's guard.
 
 Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **A** was picked over **B** (the wrapper drops or queues a call made while one is in flight).
@@ -13837,6 +13858,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d549"></a>2026-10-05 · `FJS-D549` — Does FJS-D533 stand now that an app relies on nesting — A declared subset that includes nesting: block maps and sequences at any depth, `|` and `>` scalars, and flow collections, with anchors, aliases, merge keys and tags refused by name. It's one toolbelt kit with no dependency, as A intended, and it holds everything ksite writes. - **Recommend C.** D533's reason was the part of YAML that caused `FJS-821`, and C still refuses that part. The nesting D533 gave up is something a real client site depends on. A leaves ksite's content split across two formats, which is a cost every client site cut from the template would pay.
+
+Asked in [`IDEAS/toolbelt-admissions.md`](IDEAS/toolbelt-admissions.md) § Open questions. **C** was picked over **A** (D533 stands. The kit is the flat subset, it refuses what it does not read, and a site keeps nested content in a JS module. ksite's port already does this for five files, so `content/` stops being all Markdown), **B** (full YAML (D533's option B). The parser stays sierra's, mesa reads what sierra reads, and the `FJS-821` mitigation stays with js-yaml).
+
+D533's reason was the part of YAML that caused FJS-821, and C still refuses that part. The nesting D533 gave up is something a real client site depends on, and A would leave ksite's content split across two formats, a cost every client site cut from the template would pay.
 
 ### <a id="fjs-d554"></a>2026-09-29 · `FJS-D554` — The browser drive an app imports is `@frontierjs/mesa/drive`: the driver half of mesa's harness, published; the spec runner stays in `test/browser/` and is not.
 

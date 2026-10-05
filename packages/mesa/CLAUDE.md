@@ -37,6 +37,7 @@ src/
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
   css-inliner.js       — scoped-style extraction and inlining
+  optional-peer.js     — missingPeer(): the error when a server-half peer is absent
   drive.js             — Chrome over CDP, @frontierjs/mesa/drive: openChrome,
                          findChrome, createNetwork. Published: an app's drive
                          and every in-repo drive import it (`FJS-D554`). No
@@ -81,6 +82,13 @@ on npm. The compiler is now a sibling and reached by relative path, which is
 also the rule for every in-repo consumer of mesa (`bun install` copies workspace
 deps, so a package-name import serves a stale snapshot). `vite` is an optional
 peer — mesa stays a leaf.
+
+**happy-dom and the six markdown packages are optional peers too**, mirrored in
+`devDependencies` for this suite. The server half reaches them through a
+top-level `await import()` that `missingPeer` (`src/optional-peer.js`) turns into
+an error naming the install. **A static `import` of one from anything a client
+build reaches breaks every client-only install.** `test/optional-peers.test.js`
+walks that graph.
 
 **The file EXTENSION decides the language.** A `.mesa` file with frontmatter is
 Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).

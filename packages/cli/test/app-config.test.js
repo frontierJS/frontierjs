@@ -14,6 +14,7 @@ import {
   appTsconfig, appBiomeJson, appCheckScripts, appWorkflow, appAgentsMd, appClaudeMd,
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
+import { extensionDevDeps }                  from '../core/extension-surface.js'
 import { checkDocCommands, builtinCommands } from '../core/doc-commands.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -177,6 +178,26 @@ describe('what fli new actually writes', () => {
     // the command is a second answer that no test would contradict.
     expect(source).not.toContain('function makeTsconfig')
     expect(source).not.toContain('moduleResolution')
+  })
+})
+
+describe('an extension app names what jetty builds with', () => {
+  // jetty declares vite, chokidar and ws as optional peers so an extension's
+  // users never install them; the app is then the only thing that does, and a
+  // range here that drifts from jetty's is a peer warning on every install.
+  test('the scaffold\'s devDependencies are jetty\'s peer ranges', () => {
+    const jetty = JSON.parse(readFileSync(join(CLI, '..', 'jetty', 'package.json'), 'utf8'))
+    for (const [name, range] of Object.entries(extensionDevDeps())) {
+      expect(jetty.peerDependencies[name]).toBe(range)
+      expect(jetty.peerDependenciesMeta[name]?.optional).toBe(true)
+      expect(jetty.dependencies[name]).toBeUndefined()
+    }
+  })
+
+  test('both commands that add the surface write them', () => {
+    for (const cmd of [['project', 'new.md'], ['make', 'extension.md']]) {
+      expect(readFileSync(join(CLI, 'commands', ...cmd), 'utf8')).toContain('extensionDevDeps(')
+    }
   })
 })
 

@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { glow } from '../../src/glow/glow.js'
+import { glow, glowLine } from '../../src/glow/glow.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SAMPLES = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'guide-samples.json'), 'utf8'))
@@ -209,6 +209,29 @@ test('glow: a trailing block comment does not swallow the code before it', funct
   assert.ok(/<sup>\/\* trailing \*\/<\/sup>/.test(lines[1]), 'the trailing comment is a comment')
   assert.ok(lines[2].startsWith('<sup>'), 'a block that runs on is not stolen')
   assert.ok(lines[3].startsWith('<sup>'), 'and its second line stays inside it')
+})
+
+test('glow: a block comment left open paints every line after it as comment', function () {
+  // Held back until it closed, so an unclosed `/*` dropped every line below it
+  // and an editor's paint went blank under the line being typed.
+  const out = glow('a = 1\n/* never closed\nline two', { language: 'js' })
+  assert.ok(out.includes('<sup>/* never closed</sup>\n<sup>line two</sup>'), out)
+})
+
+/* ── glowLine ──────────────────────────────────────────────────────── */
+
+test('glow: glowLine, line by line, is glow', function () {
+  // A caller repainting only the lines that changed must get what a whole
+  // repaint would, so the pieces are compared against the whole, comment state
+  // and all — every line after a change depends on whether one is still open.
+  const src = ['const a = 1', '/* opens', '   still */', 'b("x") // c', '<p>&</p>', '+ kept', '•m•']
+  for (const opts of [{ language: 'js' }, { language: 'js', numbered: true, prefix: false, mark: false }, { language: ['js', 'sql'] }]) {
+    let open = false
+    const lines = src.map((line) => { const out = glowLine(line, opts, open); open = out.open; return out.html })
+    assert.equal(`<code language="js">${lines.join('\n')}</code>`, glow(src.join('\n'), opts))
+  }
+  assert.equal(glowLine('/* x', {}).open, true, 'an opened comment is open after its line')
+  assert.equal(glowLine('x */', {}, true).open, false, 'and closed by the line that ends it')
 })
 
 test('glow: a multi-character token is escaped', function () {

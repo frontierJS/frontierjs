@@ -130,6 +130,56 @@ describe('an async function whose $async is read', () => {
   })
 })
 
+// FJS-390 / FJS-D591: `pending` counts every call, so a row action reading it
+// disables every row while one is in flight.
+describe('$async.f.for(key) — one row of a row action', () => {
+  const SRC = `<script>
+  export let api
+  let rows = [{ id: 'a' }, { id: 'b' }]
+  async function remove(id, gate) { await gate }
+  api.remove = remove
+</script>
+{#each rows as row (row.id)}
+  <button id={row.id} disabled={$async.remove.for(row.id).pending}>Delete</button>
+  {#if $async.remove.for(row.id).error}<p class="error">{row.id}: {$async.remove.for(row.id).error.message}</p>{/if}
+{/each}`
+
+  it('disables only the row whose call is in flight, and shows only its error', async () => {
+    const api = {}
+    const c = mount(await build(SRC), { api })
+    const a = c.querySelector('#a'), b = c.querySelector('#b')
+
+    let open
+    const call = api.remove('a', new Promise((r) => { open = r }))
+    $rt.flushSync()
+    expect(a.disabled).toBe(true)
+    expect(b.disabled).toBe(false)
+
+    open()
+    await call
+    await settle()
+    expect(a.disabled).toBe(false)
+
+    await api.remove('b', Promise.reject(new Error('refused'))).catch(() => {})
+    await settle()
+    expect([...c.querySelectorAll('.error')].map((p) => p.textContent)).toEqual(['b: refused'])
+  })
+
+  it('counts a keyed .error read as handling the rejection', async () => {
+    expect((await compile(SRC)).result).toContain('makeCallState(true)')
+    const unshown = SRC.replace(/\s*\{#if[\s\S]*?\{\/if\}/, '')
+    expect((await compile(unshown)).result).toContain('makeCallState()')
+    const nested = `<script>async function f(k) {}</script>
+{#if $async.f.for(String(1)).error}x{/if}`
+    expect((await compile(nested)).result).toContain('makeCallState(true)')
+  })
+
+  it('refuses a keyed read of a name that is not async state', async () => {
+    const { analysis } = await compile(`<script>let n = 1</script><p>{$async.n.for(1).pending}</p>`)
+    expect(analysis.errors).toHaveLength(1)
+  })
+})
+
 describe('an async function nobody reads $async of', () => {
   it('compiles exactly as it did before the feature', async () => {
     const ctx = await compile(`<script>

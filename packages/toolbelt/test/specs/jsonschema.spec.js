@@ -131,10 +131,46 @@ test('jsonschema: a NOT NULL column the caller is not asked for and has no defau
   assert.deepEqual(Object.keys(createMakeFromSchema(properties)()), ['name', 'ownerId', 'note', 'status'])
 })
 
+test('jsonschema: a server-filled column is left out even when it is a foreign key or an enum', function () {
+  // `ownerId String @default(auth().id)` as a relation to User: the foreign-key
+  // branch seeded null, the null was sent, and the server answered 400
+  // 'ownerId must be a string' on a form whose every visible control was valid.
+  const defs = { '#/$defs/Tier': { type: 'string', enum: ['a', 'b'] } }
+  const properties = {
+    name:       { type: 'string' },
+    ownerId:    { type: 'string' },
+    tier:       { $ref: '#/$defs/Tier' },
+    customerId: { type: 'integer' },
+    plan:       { $ref: '#/$defs/Tier' },
+  }
+  const make = createMakeFromSchema(properties, {
+    resolve:     (r) => defs[r],
+    foreignKeys: ['ownerId', 'customerId'],
+    required:    ['name', 'customerId', 'plan'],
+  })
+  assert.deepEqual(make(), { name: '', customerId: null, plan: null },
+    'a demanded foreign key and enum still seed null')
+})
+
 test('jsonschema: a date-time is left undefined rather than guessed', function () {
   const make = createMakeFromSchema({ dueAt: { type: 'string', format: 'date-time' } })
   assert.ok('dueAt' in make(), 'the key exists')
   assert.equal(make().dueAt, undefined, 'with no value invented for it')
+})
+
+test('jsonschema: a File column is left undefined, not an empty reference', function () {
+  // `{}` read as a stored reference that was never resolved into a URL, so
+  // every blank create form with a File column opened with a red error.
+  const defs = { '#/$defs/FileRef': { type: 'object', 'x-litestone-file': true, properties: { key: { type: 'string' } } } }
+  const make = createMakeFromSchema({
+    file:  { $ref: '#/$defs/FileRef' },
+    photo: { anyOf: [{ $ref: '#/$defs/FileRef' }, { type: 'null' }] },
+    meta:  { type: 'object' },
+  }, { resolve: (r) => defs[r] })
+  assert.ok('file' in make(), 'the key exists')
+  assert.equal(make().file, undefined, 'the value FileField reads as keep')
+  assert.equal(make().photo, undefined, 'and a nullable one the same')
+  assert.deepEqual(make().meta, {}, 'a plain object keeps its blank')
 })
 
 test('jsonschema: spec wins over every default', function () {

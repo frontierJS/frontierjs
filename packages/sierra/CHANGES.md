@@ -1,5 +1,17 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-05 — happy-dom `^20.11.1` → `^20.11.6`
+
+The devDependency now matches mesa and email-kit, so the workspace installs one happy-dom instead of two.
+
+## 2026-10-05 — vite peer `>=4.0.0` → `^8.3.2`
+
+The peer range claimed vite 4–7, which nothing here builds on or tests; it now names the version the suite runs, the same range mesa and every app in the workspace declare. Every vite in the workspace resolves to 8.3.2. Still optional.
+
+## 2026-10-05 — vitest 5
+
+`vitest` `^4.1.2` → `^5.0.3`, the version mesa and email-kit now share. Vitest 5 defaults `clearMocks: true`, so a spy made at module scope has its calls cleared before every test: `test/static-omit.test.js` read the build's `console.log` in a test after `beforeAll` ran the build and saw nothing. It now reads the log inside `beforeAll`. The default is kept rather than set back — a test reads a spy in the hook that drove it.
+
 ## 2026-10-05 — a model declared `@@sync(read)` is kept and warmed on a device and its writes are not held (`FJS-1280`)
 
 `offlineQuery` over a `read` model registers and warms like any syncable one, and `load()` answers it from the device with no network. `createResource` splits what the declaration means: `syncPolicy` still gates the read path, and a `writePolicy` that is null for `read` gates everything about a held write — the queue, the boot drain, the per-policy handling — so a write to such a model goes live and fails offline the way a model with no `@@sync` does. The refusal for a missing declaration names `@@sync(read)`. `test/sync-policies.test.js` § *read* (the held-write cases fail with the split removed) and `test/offline-query.test.js`.

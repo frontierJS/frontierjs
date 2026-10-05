@@ -28,6 +28,7 @@ src/
   resources/     the pure logic shared with Sierra now lives in
                  @frontierjs/toolbelt; what is left here is jetty's own
                  orchestrator, not a copy
+  peer.js        loadPeer — vite, chokidar and ws are the APP's, not jetty's
 bin/             build-ext.js · dev-ext.js
 test/            phase0 … phase9 (11 files, incl. phase2.5)
 ```

@@ -1,12 +1,12 @@
 # FrontierJS
 
-A full-stack JavaScript framework built on Bun. One schema. Three realms. Everything derived.
+A full-stack JavaScript framework built on Sqlite & Bun. One schema. Three realms. Everything derived.
 
 ---
 
 ## The Problem
 
-Web development doesn't have a writing problem. It has a coherence problem.
+Software development doesn't have a writing problem. It has a coherence problem.
 
 The same intent gets redeclared across schemas, validators, APIs, and interfaces until no single source of truth remains. A field is declared in the database, redeclared as a type, redeclared again as a validator, and once more as a form shape. Each declaration is a gap — a place where one system doesn't know what another already said.
 
