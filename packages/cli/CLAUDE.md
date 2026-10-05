@@ -633,10 +633,12 @@ test/     one file per module under core/, plus the deploy pipeline's own
   and that module reads no files at all. `fli ws:atlas --as=report`
   writes one self-contained `repo-report.snapshot.html` — snapshots and their
   generators, the CI phases out of `main()` in `scripts/ci.mjs` (with each
-  phase's own section comment as its description), the open register by
-  severity, packages and their sibling deps, every `verify*` drive, the port
+  phase's own section comment as its description), packages and their sibling deps, every `verify*` drive, the port
   registry, the command tree, the root markdown files by their opening claim. A
-  section whose source is absent is omitted rather than faked. **The output is
+  section whose source is absent is omitted rather than faked. **A committed
+  page renders `structureOf(model)`** — no registers, no file counts — because
+  those move on commits that change no structure and kept both pages red
+  (`FJS-D589`); `--live` and `--json` carry the whole model. **The output is
   committed and rechecked**, so nothing in it may vary between two runs over one
   tree: no dates, no timings, every list sorted — and the generator line sits
   BELOW the doctype, because anything above one is quirks mode. The page lists
@@ -689,8 +691,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
   carries **no version range**: below 1.0 a caret pins the MINOR, so the derived
   `@^0.16` excluded every published copy and rendered the page unstyled the day
   css bumped its minor in the tree.
-  **The workspace is not one more plate and the page opens on it.** A hub pane
-  leads: the totals as tiles, then **the three registers as one row** — `Open`
+  **The workspace is not one more plate and the page opens on it.** On the
+  `--live` deck, where the registers are, a hub pane leads: the totals as tiles, then **the three registers as one row** — `Open`
   (`ISSUES.md`, what is wrong), `Rulings` (`DECISIONS.md`, what is settled),
   `Ideas` (`IDEAS/`, what is not started) — then every part carrying anything
   open, worst first, and the root registers each quoted. They are one row

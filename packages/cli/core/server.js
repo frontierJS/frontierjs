@@ -22,6 +22,7 @@
 //   POST /api/decide          → rule on one — `core/decide.js`, the command's own writer
 //   GET  /api/ci              → the CI run log — `core/ci-log.js`
 //   POST /api/ci/run · POST /api/ci/stop
+//   POST /api/ci/fix          → SSE stream, the remedy a failure names — `fix` in the run log
 //   GET  /api/release/steps   → the release in order — `core/release-view.js`
 //   POST /api/release/step    → SSE stream, one step as `fli` in its directory
 //   POST /api/release/step/stop
@@ -231,6 +232,9 @@ function route(req, res) {
   // POST /api/ci/run · POST /api/ci/stop — start `scripts/ci.mjs`, or stop it
   if (req.method === 'POST' && path === '/api/ci/run') {
     return handleCiRun(req, res)
+  }
+  if (req.method === 'POST' && path === '/api/ci/fix') {
+    return handleCiFix(req, res)
   }
   if (req.method === 'POST' && path === '/api/ci/stop') {
     return handleCiStop(req, res)
@@ -789,6 +793,39 @@ async function handleCiRun(req, res) {
   } catch (err) {
     json(res, 500, { error: err.message })
   }
+}
+
+// A failure's `fix` arrives as a KIND and the argv is built here, so the run
+// log — a file anything on this machine can write — never names a command.
+// The snapshot path goes to `fli` as one argv element, and the command refuses
+// one discovery did not find.
+const CI_FIXES = {
+  snapshot: (fix) => typeof fix.file === 'string' && fix.file
+    ? ['test:snapshots', '--fix', '--only', fix.file]
+    : null,
+}
+let ciFix = null
+
+async function handleCiFix(req, res) {
+  const foreign = foreignOrigin(req)
+  if (foreign) return json(res, 403, { error: `a CI fix is not run from ${foreign}` })
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
+  const make = Object.hasOwn(CI_FIXES, body?.kind) ? CI_FIXES[body.kind] : null
+  const argv = make?.(body)
+  if (!argv) return json(res, 400, { error: `no fix of kind ${JSON.stringify(String(body?.kind).slice(0, 40))}` })
+  if (ciFix) return json(res, 409, { error: `${ciFix} is still running` })
+
+  const { spawnStep } = await import('./release-view.js')
+  const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  ciFix = `fli ${argv.join(' ')}`
+  emit({ type: 'log', level: 'info', text: `$ ${ciFix}` })
+  const { done } = spawnStep({ fliRoot: global.fliRoot, cwd: global.projectRoot, argv, onLine: text => emit({ type: 'output', text }) })
+  const code = await done
+  ciFix = null
+  emit({ type: 'done', code })
+  res.end()
 }
 
 async function handleCiStop(req, res) {

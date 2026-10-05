@@ -11734,6 +11734,16 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d589"></a>2026-10-05 · `FJS-D589` — The committed workspace pages hold the structure only. The three registers and the file counts are on `fli ws:atlas --live`, which is never committed.
+
+Asked while reading a red `snapshots` phase in `fli gui`. **Structure only** was picked over **keeping both pages as they were** and over **committing the report and building the deck on demand**. The two pages are one model read two ways (`FJS-D223`), so a stale model staled both, and what staled it was nearly always a register: filing one row in `ISSUES.md` moved the open count, a severity table and the plate heat, and a new file anywhere moved a tracked-file count. Both pages were red on every branch, and the change `--check` exists to surface (a new command, drive, CI phase, snapshot or package) arrived under a diff of counts nobody read. Committing one page would halve that noise and keep its cause.
+
+**`structureOf(model)` in `core/repo-map.js` is the line.** It returns the model with `issues`, `decisions` and `ideas` set to null and every package's `files` and subsystem counts set to null. `fli ws:atlas` renders it for both committed pages. `collect()` stays the one reader and still reads all of it, so `--json` carries the whole model and `--live` renders it. The renderers already omitted an absent source, so the deck's hub, plate heat, ⌘K rows and dossier issue lists appear on the live deck and nowhere committed. **The report drops its register section outright** rather than gaining a live edition. It is the runbook (*what do I run and where*), the registers are not runbook material, and a live report would need a second header path to avoid naming a generator.
+
+No adjudication beyond § IV *preservation vs. evolution*: nobody reads a committed page for register state, since `fli next`, the GUI and the files themselves answer it, and nothing here has shipped.
+
+*Decision rules.* Origin: fewer — the pages stop restating three registers. Concept: none added; `--live` already meant *varies between commits, never committed*. Complexity: the design's — a byte-compared page restating append-only files. Predictability: raised — these pages now move when their structure does, as `ddl` moves when the schema does. Derived: the projection is a function of the one model. Owner: `structureOf`, beside `collect()`. Boundary: exported and tested. Failure: a reader who wants the registers runs `--live`; nothing is lost. Silence: *a register edit or a new file leaves both committed pages byte-identical* — `test/repo-map.test.js`, which also asserts the model did change, so it cannot pass with nothing collected.
+
 ### <a id="fjs-d567"></a>2026-09-30 · `FJS-D567` — An App running on no online machine KEEPS its ingress record, pointing where it last ran, and the drift read names it red. The DNS is never emptied to follow a fleet that went down.
 
 Asked in `FJS-1614`, the push that follows a machine leaving `online`. **Keep** was picked over **delete the record**. Deleting turns *the machine is down* into *the name does not exist*, which resolvers cache as a negative answer, so the hostname stays dark after the machine returns, until a push runs and the negative TTL lapses. Keeping costs nothing, since traffic to a dead machine fails either way, and the hostname answers again the moment the machine does. This is Route 53's rule: when every health-checked record fails, it answers them all rather than none.
@@ -12564,7 +12574,7 @@ consulting the doctrine.
 
 ### <a id="fjs-d223"></a>2026-09-05 · `FJS-D223` — `ws:map` and `ws:atlas` are one command. One model, three presentations of it, chosen by `--as`.
 
-**Status:** amended-by [`FJS-D401`](#fjs-d401) — the clause *`--as` absorbs `--json`*. The model is `--json`; `--as` picks between the deck and the report. That the two pages and the model are one command over one reader is unchanged.
+**Status:** amended-by [`FJS-D401`](#fjs-d401) — the clause *`--as` absorbs `--json`*; amended-by [`FJS-D589`](#fjs-d589) — what the two committed pages hold. The model is `--json`; `--as` picks between the deck and the report. That the two pages and the model are one command over one reader is unchanged.
 
 They were never two things. `collect()` in `core/repo-map.js` is the one reader,
 and `core/repo-atlas.js` performs **no filesystem reads at all** — every plate on

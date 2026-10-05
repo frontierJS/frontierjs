@@ -220,6 +220,22 @@ describe('latestByItem', () => {
     const a = latestByItem(readRuns(root, { alive })).find(i => i.key === 'a')
     expect(a.usualMs).toBe(108)
   })
+
+  test('a keyless failure travels on its phase with its detail, output and fix — it has no row of its own', () => {
+    writeRun({ scope: 'fast', phases: ['snapshots'] }, [
+      ['phase', { name: 'snapshots' }],
+      ['step', { phase: 'snapshots', status: 'fail', label: 'a.snapshot.md no longer matches its source',
+                 detail: 'Run it and read the diff.', output: '- old\n+ new', fix: { kind: 'snapshot', file: 'a.snapshot.md' } }],
+      ['step', { phase: 'snapshots', status: 'fail', label: 'packages/a exited 1', key: 'packages/a' }],
+      ['step', { phase: 'snapshots', status: 'ok', label: '3 current' }],
+      ['phase-end', { name: 'snapshots', ms: 10, ok: false }],
+    ])
+    const phase = latestByItem(readRuns(root, { alive })).find(i => i.kind === 'phase')
+    expect(phase.failures).toEqual([{
+      label: 'a.snapshot.md no longer matches its source', detail: 'Run it and read the diff.',
+      output: '- old\n+ new', fix: { kind: 'snapshot', file: 'a.snapshot.md' },
+    }])
+  })
 })
 
 describe('ciState', () => {

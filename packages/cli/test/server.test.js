@@ -888,6 +888,16 @@ describe('GET /api/ci · POST /api/ci/run · POST /api/ci/stop', () => {
     expect(r.status).toBe(403)
   })
 
+  test('a fix is a KIND the server turns into argv — an unknown one, or one from another origin, runs nothing', async () => {
+    const post = (body, headers = {}) => fetch(`${base}/api/ci/fix`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+    })
+    expect((await post({ kind: 'snapshot', file: 'a.snapshot.md' }, { Origin: 'https://elsewhere.example' })).status).toBe(403)
+    expect((await post({ kind: 'shell', cmd: 'rm -rf /' })).status).toBe(400)
+    expect((await post({ kind: 'toString' })).status).toBe(400)
+    expect((await post({ kind: 'snapshot' })).status).toBe(400)
+  })
+
 })
 
 describe('POST /api/ask-claude · POST /api/ask-claude/stop', () => {

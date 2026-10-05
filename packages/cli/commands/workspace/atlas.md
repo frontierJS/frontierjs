@@ -32,7 +32,7 @@ flags:
   live:
     char: l
     type: boolean
-    description: Add git and registry state — writes repo-atlas.live.html, which is NOT a snapshot
+    description: Add the registers, file counts, git and npm state — writes repo-atlas.live.html, which is NOT a snapshot
     defaultValue: false
   offline:
     type: boolean
@@ -84,7 +84,7 @@ const openInBrowser = (path) => {
 ```js
 // `args` is already bound in the compiled shim — a second declaration is a
 // SyntaxError the compiler reports as a clean build (Invariant 15).
-const { collect, renderHtml, renderJson } = await import(resolve(global.fliRoot, 'core/repo-map.js'))
+const { collect, structureOf, renderHtml, renderJson } = await import(resolve(global.fliRoot, 'core/repo-map.js'))
 const { renderAtlas, cards }              = await import(resolve(global.fliRoot, 'core/repo-atlas.js'))
 
 // `--as` picks the page a person reads and `--json` is the model a program
@@ -132,11 +132,15 @@ if (flag.live) {
   live = collectLive({ root: wsRoot, packages: model.packages, registry: !flag.offline })
 }
 
-const render = () => as === 'json'   ? renderJson(collect({ root: wsRoot }))
-               : as === 'report' ? renderHtml(collect({ root: wsRoot }))
-               :                   renderAtlas(collect({ root: wsRoot }), live)
+// A committed page holds the structure only; the registers and file counts move
+// on every commit, so they reach the live deck and the JSON and nothing
+// `--check` compares (`FJS-D589`).
+const page = (m) => as === 'json'   ? renderJson(m)
+                  : as === 'report' ? renderHtml(structureOf(m))
+                  : renderAtlas(flag.live ? m : structureOf(m), live)
+const render = () => page(collect({ root: wsRoot }))
 
-const body = as === 'json' ? renderJson(model) : as === 'report' ? renderHtml(model) : renderAtlas(model, live)
+const body = page(model)
 
 if (flag.stdout || (as === 'json' && !flag.out)) { echo(body); return }
 
@@ -185,12 +189,10 @@ if (as === 'report') {
     `${model.snapshots.length} snapshot(s)`,
     model.ci        ? `${model.ci.phases.length} CI phase(s)`   : null,
     `${model.drives.length} drive(s)`,
-    model.issues    ? `${model.issues.open} open issue(s)`      : null,
-    model.decisions ? `${model.decisions.count} ruling(s)`      : null,
   ].filter(Boolean)
   echo(`  ${counts.join(' · ')}`)
 } else {
-  echo(`  ${cards(model).length} plate(s) · ${model.issues ? `${model.issues.open} open issue(s) crossed in` : 'no register'}`)
+  echo(`  ${cards(model).length} plate(s)${flag.live && model.issues ? ` · ${model.issues.open} open issue(s) crossed in` : ''}`)
 }
 
 if (live) {
@@ -225,11 +227,14 @@ The register files by short name, the snapshot walker by path and the drives by
 directory — three vocabularies for one noun — so the crossing is done in
 `core/repo-atlas.js` rather than assumed.
 
-## `--live` — the two facts a snapshot cannot hold
+## `--live` — what a snapshot cannot hold
 
 A committed page is byte-compared, so nothing in it may vary between two runs
-over one tree. That rules out the two things most often wanted about a package:
-when anyone last touched it, and whether the registry has what the tree has.
+over one tree, and it holds the STRUCTURE only (`FJS-D589`): the three registers
+and the file counts move on commits that change no structure, so they are on the
+live deck — its hub, plate heat, ⌘K rows and each dossier's open issues. The
+live deck also adds the two things most often wanted about a package: when
+anyone last touched it, and whether the registry has what the tree has.
 
 ```
 fli ws:atlas --live            # git + npm

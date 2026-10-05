@@ -933,8 +933,8 @@ function dossier(card, model) {
   if (card.subsystems?.length) {
     body.push(block('What the source is made of', card.subsystems.length,
       `<div class="cluster gap-2xs">${card.subsystems.map(s =>
-        `<span class="chip">${esc(s.name)} <span class="pill">${s.files}</span></span>`).join('')}</div>
-      <p class="text-xs text-muted">Directories under <code>${esc(card.home)}/src/</code> with the files in each${
+        `<span class="chip">${esc(s.name)}${s.files != null ? ` <span class="pill">${s.files}</span>` : ''}</span>`).join('')}</div>
+      <p class="text-xs text-muted">Directories under <code>${esc(card.home)}/src/</code>${card.subsystems[0].files != null ? ' with the files in each' : ''}${
         card.files ? `, of ${card.files} tracked in the package` : ''}. Structure, not features — the answer to <em>where does this live</em>.</p>`))
   }
 

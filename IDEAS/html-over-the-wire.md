@@ -118,6 +118,38 @@ Fail closed on the missing answer. This is the same comparison `static-safety.md
 (4.4 / `FJS-081`) makes one axis over — *is this data publishable to this audience*
 — and the two should report through one surface rather than two.
 
+### Measured on a page room (notion stressor, Q4, 2026-10-05)
+
+[`probes/q4`](../../fjs-prototypes/notion/probes/q4/out.txt) asked which payloads in
+a Notion page room actually differ per subscriber. Five clients over real sockets,
+one room per page (`page:<id>`, presence on), and the room entered by a call that
+reads the page as the caller.
+
+- **Uniform, given a room whose members may all read the page:** cursors
+  (presence meta), block rows, comment rows, and any fragment rendered from them.
+  Every member's read of them is the page's read. No per-subscriber filtering is
+  needed for any of it.
+- **Not uniform, even inside a correct room:** anything rendered from a row
+  *outside* the page, and who the people in the room are. A `linkPage` block on the
+  page reads 200 for every member, and its target reads 200 for a member and 404
+  for a guest, so `↗ <target title>` is two renderings. The roster's user ids
+  resolve to names for 4 of 4 people as the owner and 1 of 4 as a guest
+  ([`FJS-1744`](../ISSUES.md#fjs-1744)).
+- **The two options above leave out the condition that decided the measurement:
+  membership.** A uniform channel is exactly as safe as who is in it, and today
+  nothing keeps that true. Nothing grades a join, and nothing re-grades one when a
+  grant is revoked or a page moves. After the revoke, one `channel.send` fragment
+  reached the revoked guest in both of his tabs, while a graded comment frame sent
+  in the same second did not ([`FJS-1743`](../ISSUES.md#fjs-1743)).
+
+So the ruling has a third shape, and it is the one a document room wants:
+**uniform, over a channel whose membership is bound to a row's read policy**,
+graded at join and re-graded when the grant moves. It costs one check per
+membership change instead of one render per subscriber per frame. Without that
+binding, *uniform* is unsafe for any room keyed to a row, and *per-socket* is the
+only answer that fails closed. A fragment that names a row outside the room's
+page is per-socket either way.
+
 ## What it must not become
 
 **Not a second UI realm.** The Resource stays the UI-realm noun (Invariants 18–19)

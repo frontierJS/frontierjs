@@ -5,6 +5,7 @@ alias: test-snapshots
 examples:
   - fli test:snapshots
   - fli test:snapshots --fix
+  - fli test:snapshots --fix --only example/db/release.snapshot.md
   - fli test:snapshots --list
 flags:
   fix:
@@ -17,6 +18,10 @@ flags:
     type: boolean
     description: List the snapshots and their generators without running anything
     defaultValue: false
+  only:
+    char: o
+    type: string
+    description: One snapshot, by its path from the root as a failure names it
   json:
     char: j
     type: boolean
@@ -31,6 +36,15 @@ const { findSnapshots, missingSnapshots, checkSnapshots, formatSnapshotResults, 
   await import(resolve(global.fliRoot, 'core/snapshots.js'))
 
 const root = context.paths.root
+
+// Matched exactly against what discovery found, so a path that names nothing
+// is refused rather than read as zero snapshots, all current.
+const only = flag.only ? [String(flag.only)] : null
+if (only && !findSnapshots({ root }).some(s => s.file === only[0])) {
+  echo(`\n  No snapshot at ${only[0]} — \`fli test:snapshots --list\` names them.\n`)
+  process.exitCode = 1
+  return
+}
 
 if (flag.list) {
   const found   = findSnapshots({ root })
@@ -59,7 +73,7 @@ if (flag.list) {
 // generator that exits 0 having written nothing is the failure this catches,
 // and it is the shape a stale snapshot already has.
 if (flag.fix) {
-  const wrote = checkSnapshots({ root, write: true })
+  const wrote = checkSnapshots({ root, only, write: true })
 
   echo('')
   echo('  fli test:snapshots --fix\n')
@@ -74,7 +88,7 @@ if (flag.fix) {
     return
   }
 
-  const after = checkSnapshots({ root })
+  const after = checkSnapshots({ root, only })
   if (after.failed) {
     for (const line of formatSnapshotResults(after.results)) echo(line)
     echo('')
@@ -93,7 +107,7 @@ if (flag.fix) {
   return
 }
 
-const { results, checked, failed } = checkSnapshots({ root })
+const { results, checked, failed } = checkSnapshots({ root, only })
 
 // Printed and never failed on: an app is allowed to not commit a register, and
 // a fresh one has none. What must not happen is `0 checked` reading as clean.

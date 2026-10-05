@@ -43,6 +43,24 @@ const SCRIPTED = {
   phases: ['hygiene', 'tests'],
 }
 
+// A finished run whose red phases have no rows of their own — a hygiene finding
+// and two stale snapshots — so the phase has to say why it is red.
+const FAILED = {
+  ...SCRIPTED,
+  active: null,
+  selected: { id: 'done', status: 'failed', argv: ['--fast'], notes: [], phases: [] },
+  latest: [
+    { kind: 'phase', phase: 'hygiene', key: 'hygiene', status: 'fail', ms: 1800, at: NOW - 60_000, commit: 'abc', scope: 'fast', usualMs: 300,
+      failures: [{ label: '.gitignore hides a source file: a/routes.build.js', detail: 'If it is GENERATED, add it to generatedIgnored.', output: null, fix: null }] },
+    { kind: 'phase', phase: 'tests', key: 'tests', status: 'fail', ms: 21_000, at: NOW - 60_000, commit: 'abc', scope: 'fast', usualMs: 20_000,
+      failures: [
+        { label: 'a.snapshot.md no longer matches its source', detail: 'Run it and read the diff.', output: '\u001b[31m- old\u001b[0m', fix: { kind: 'snapshot', file: 'a.snapshot.md' } },
+        { label: 'b.snapshot.md no longer matches its source', detail: null, output: null, fix: { kind: 'snapshot', file: 'b.snapshot.md' } },
+      ] },
+  ],
+  runs: [{ id: 'done', at: NOW - 60_000, status: 'failed', argv: ['--fast'], failures: [], planned: [], done: 2 }],
+}
+
 export async function run(t) {
   const real = await t.evaluate(`
     const body = await fetch('/api/ci').then(r => r.json());
@@ -97,4 +115,71 @@ export async function run(t) {
   t.ok(drawn.partial && /running/.test(drawn.partial), 'the suite running now is marked in the list')
   t.is(drawn.rerunOff, true, 'a suite cannot be rerun while a run is going')
   t.is(drawn.notes, false, 'the run\'s notes are offered')
+
+  const failed = await t.evaluate(`
+    const realFetch = window.fetch;
+    const posted = [];
+    let askPosts = 0;
+    window.fetch = async (url, opts) => {
+      if (String(url).endsWith('/api/ci')) return new Response(JSON.stringify(${JSON.stringify(FAILED)}));
+      // The defaults are ask-claude.spec's to prove; the real GET queues behind
+      // whatever the page's other loaders have the server doing.
+      if (String(url).endsWith('/api/ask-claude')) {
+        if (opts?.method === 'POST') askPosts++;
+        else return new Response(JSON.stringify({ question: 'q', rules: '', tools: [], bash: [], budget: 1 }));
+      }
+      if (String(url).endsWith('/api/ci/fix')) {
+        posted.push(JSON.parse(opts.body));
+        return new Response('data: {"type":"output","text":"wrote"}\\n\\ndata: {"type":"done","code":0}\\n\\n');
+      }
+      return realFetch(url, opts);
+    };
+    try {
+      ciOpen.clear(); ciOutputOpen.clear();
+      await loadCi();
+      const row = name => document.querySelector('#ci-rows [data-ci-phase="' + name + '"]');
+      const buttons = name => [...row(name).querySelectorAll('button')].map(b => b.textContent.trim());
+      const before = {
+        hygiene:  row('hygiene').textContent,
+        hygieneButtons: buttons('hygiene'),
+        tests:    row('tests').textContent,
+        testsButtons: buttons('tests'),
+        output:   row('tests').querySelector('details pre')?.textContent ?? null,
+      };
+      clearOutput();
+      [...row('hygiene').querySelectorAll('button')].find(b => b.textContent.trim() === 'ask claude').click();
+      for (let i = 0; i < 20 && !/hygiene/.test(document.getElementById('ask-q').value); i++) await new Promise(r => setTimeout(r, 50));
+      const asked = {
+        output:   document.getElementById('output-lines').textContent,
+        question: document.getElementById('ask-q').value,
+        open:     !document.getElementById('ask-form').hidden,
+        sent:     askPosts,
+      };
+      row('tests').querySelector('details').open = true;
+      await new Promise(r => setTimeout(r, 0));
+      renderCi();
+      const keptOpen = row('tests').querySelector('details').open;
+      const fix = [...row('tests').querySelectorAll('button')].find(b => b.textContent.trim() === 'fix');
+      await ciRunFix(JSON.parse(fix.getAttribute('onclick').match(/ciRunFix\\((.*)\\)$/)[1]));
+      return { before, asked, keptOpen, posted, after: row('tests').textContent, afterButtons: buttons('tests') };
+    } finally {
+      window.fetch = realFetch;
+      clearTimeout(ciTimer);
+    }
+  `)
+  t.ok(/routes\.build\.js/.test(failed.before.hygiene) && /generatedIgnored/.test(failed.before.hygiene), 'a keyless failure is drawn under its phase, with its remedy')
+  t.ok(!failed.before.hygieneButtons.includes('fix'), 'a failure whose remedy is a judgment gets no fix button')
+  t.ok(failed.before.hygieneButtons.includes('ask claude'), 'a failing phase can be handed to Claude')
+  t.ok(/phase hygiene failed/.test(failed.asked.output) && /routes\.build\.js/.test(failed.asked.output) && /generatedIgnored/.test(failed.asked.output),
+    'asking puts the failure and its remedy in the output')
+  t.ok(failed.asked.open && /hygiene/.test(failed.asked.question), 'with a question about the phase waiting in the field')
+  t.is(failed.asked.sent, 0, 'and nothing is sent until ask is pressed')
+  t.ok(/a\.snapshot\.md no longer matches/.test(failed.before.tests), 'each stale snapshot is named')
+  t.is(failed.before.testsButtons.filter(b => b === 'fix').length, 2, 'each one fixable has its own button')
+  t.ok(failed.before.testsButtons.includes('fix 2'), 'and two or more get one button for all of them')
+  t.is(failed.before.output, '- old', 'the output is offered, with the escapes stripped')
+  t.is(failed.keptOpen, true, 'an unfolded output survives the poll redrawing the rows')
+  t.is(JSON.stringify(failed.posted), JSON.stringify([{ kind: 'snapshot', file: 'a.snapshot.md' }]), 'the fix posts back the kind the log named, nothing composed')
+  t.ok(/regenerated/.test(failed.after) && failed.afterButtons.includes('see changes'), 'a fix that exited 0 turns into regenerated, with the diff a press away')
+  t.ok(!failed.afterButtons.includes('fix 2'), 'and leaves the all-button once only one is left')
 }

@@ -16,7 +16,8 @@ import { execFileSync } from 'child_process'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { collect, renderHtml, renderJson } from '../core/repo-map.js'
+import { collect, structureOf, renderHtml, renderJson } from '../core/repo-map.js'
+import { renderAtlas }                                  from '../core/repo-atlas.js'
 
 const REPO = new URL('../../..', import.meta.url).pathname
 
@@ -758,8 +759,10 @@ describe('the page', () => {
       'package.json': pkg({ name: 'ws' }),
       'ISSUES.md': '# Issues\n\n## S2 — high\n\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n| FJS-9 | ui | **A `<script>` tag in a title** | open | 2026-08-14 | — |\n',
     })
-    const html = renderHtml(collect({ root: dir }))
-    expect(html).toContain('&lt;script&gt;')
+    // The live deck is the page that quotes the register (`FJS-D589`).
+    const html = renderAtlas(collect({ root: dir }))
+    expect(html).toContain('&lt;script&gt; tag in a title')
+    expect(html).not.toContain('<script> tag in a title')
   })
 
   test('the json is the same model the page renders', () => {
@@ -813,38 +816,40 @@ describe('ports', () => {
 
 describe('the three registers', () => {
 
+  const withRegistersDecisions = [
+    '# Decisions',
+    '',
+    '## Access control',
+    '',
+    '### <a id="fjs-d21"></a>2026-09-01 · `FJS-D21` — a gate refuses and a policy filters',
+    '',
+    'The argument.',
+    '',
+    '### <a id="fjs-d20"></a>2026-08-01 · `FJS-D20` — an older ruling in the same section',
+    '',
+    'Its argument.',
+    '',
+    '## Naming',
+    '',
+    '### <a id="fjs-d09"></a>2026-07-01 · `FJS-D09` — a model is PascalCase singular',
+    '',
+    'Because three resolvers agree by it.',
+    '',
+  ].join('\n')
+  const withRegistersIssues = [
+    '# Issues',
+    '',
+    '## S2 — high',
+    '',
+    '| Id | Pkg | Title | Status | Verified | Detail |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| FJS-1 | cli | **Something is wrong** | open | 2026-09-01 | — |',
+    '',
+  ].join('\n')
   const withRegisters = (name) => tree(name, {
     'package.json': pkg({ name: 'ws' }),
-    'DECISIONS.md': [
-      '# Decisions',
-      '',
-      '## Access control',
-      '',
-      '### <a id="fjs-d21"></a>2026-09-01 · `FJS-D21` — a gate refuses and a policy filters',
-      '',
-      'The argument.',
-      '',
-      '### <a id="fjs-d20"></a>2026-08-01 · `FJS-D20` — an older ruling in the same section',
-      '',
-      'Its argument.',
-      '',
-      '## Naming',
-      '',
-      '### <a id="fjs-d09"></a>2026-07-01 · `FJS-D09` — a model is PascalCase singular',
-      '',
-      'Because three resolvers agree by it.',
-      '',
-    ].join('\n'),
-    'ISSUES.md': [
-      '# Issues',
-      '',
-      '## S2 — high',
-      '',
-      '| Id | Pkg | Title | Status | Verified | Detail |',
-      '| --- | --- | --- | --- | --- | --- |',
-      '| FJS-1 | cli | **Something is wrong** | open | 2026-09-01 | — |',
-      '',
-    ].join('\n'),
+    'DECISIONS.md': withRegistersDecisions,
+    'ISSUES.md': withRegistersIssues,
   })
 
   test('a ruling in the migrated heading form is read, and grouped by section', () => {
@@ -862,29 +867,39 @@ describe('the three registers', () => {
     expect(decisions.sections[0].rulings[0].id).toBe('FJS-D21')
   })
 
-  test('all three registers are on one page, counted, in one section', () => {
-    const html = renderHtml(collect({ root: withRegisters('reg-page') }))
-    const at   = html.indexOf('id="register"')
-    const body = html.slice(at, html.indexOf('</section>', at))
+  // The committed pages are byte-compared, so anything in them that moves
+  // without the structure moving turns `--check` red on every branch. The pair
+  // below is what keeps this from passing vacuously: the model DID change.
+  test('a committed page holds the structure — a register edit or a new file leaves both pages byte-identical', () => {
+    const dir = withRegisters('reg-structure')
+    tree('reg-structure', {
+      'packages/thing/package.json': pkg({ name: '@x/thing' }),
+      'packages/thing/src/core/a.js': '',
+    })
+    const pages = () => {
+      const model = collect({ root: dir })
+      return { model, report: renderHtml(structureOf(model)), atlas: renderAtlas(structureOf(model)) }
+    }
+    const before = pages()
 
-    expect(at).toBeGreaterThan(-1)
-    expect(body).toContain('What is wrong')
-    expect(body).toContain('What is settled')
-    expect(body).toContain('FJS-D21')
-    expect(body).toContain('FJS-1')
+    tree('reg-structure', {
+      'ISSUES.md': withRegistersIssues + '| FJS-2 | cli | **Something else is wrong** | open | 2026-09-02 | — |\n',
+      'DECISIONS.md': withRegistersDecisions.replace('## Naming\n',
+        '## Naming\n\n### <a id="fjs-d30"></a>2026-09-03 · `FJS-D30` — a newer ruling\n\nIts argument.\n'),
+      'packages/thing/src/core/b.js': '',
+    })
+    const after = pages()
+
+    expect(after.model.issues.open).toBe(before.model.issues.open + 1)
+    expect(after.model.decisions.count).toBe(before.model.decisions.count + 1)
+    expect(after.report).toBe(before.report)
+    expect(after.atlas).toBe(before.atlas)
   })
 
-  test('a workspace with only one of them still renders, and says only that one', () => {
-    const dir = tree('reg-partial', {
-      'package.json': pkg({ name: 'ws' }),
-      'ISSUES.md': '# Issues\n\n## S2 — high\n\n| Id | Pkg | Title | Status | Verified | Detail |\n| --- | --- | --- | --- | --- | --- |\n| FJS-1 | cli | **Wrong** | open | 2026-09-01 | — |\n',
-    })
-    const html = renderHtml(collect({ root: dir }))
-    const at   = html.indexOf('id="register"')
-    const body = html.slice(at, html.indexOf('</section>', at))
-
-    expect(body).toContain('What is wrong')
-    expect(body).not.toContain('What is settled')
+  test('the report carries no register — it is the runbook, and the live deck is where they are read', () => {
+    const html = renderHtml(structureOf(collect({ root: withRegisters('reg-none') })))
+    expect(html).not.toContain('id="register"')
+    expect(html).not.toContain('FJS-D21')
   })
 })
 

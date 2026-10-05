@@ -441,6 +441,7 @@ table `invoice` · db `main` · gate `1.8.4.8`
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 @@allow('update', auth().isStaff)
+@@allow('update', userId == auth().id && status == 'draft')
 transition reminded.remind: false → true @system
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system

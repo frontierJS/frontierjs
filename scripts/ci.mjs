@@ -264,25 +264,38 @@ function hygiene() {
     .filter(Boolean)
     .filter(isSourcePath)
 
-  const allowed   = allowances.generatedIgnored ?? {}
-  const unexpected = ignoredSource.filter(p => !(p in allowed))
+  // Allowed by the RULE that hides a file, not by the file. One `routes.build.js`
+  // line covers every app a build runs in, and a file-keyed list failed once per
+  // new app for a rule somebody had already judged. What went wrong with
+  // `build/` was a rule broader than its author meant, so the rule is the thing
+  // a reviewer has to name.
+  const allowed = allowances.generatedIgnored ?? {}
+  const byRule  = new Map()
+  for (const [path, rule] of ignoringRules(ignoredSource)) {
+    if (rule in allowed) continue
+    byRule.set(rule, [...(byRule.get(rule) ?? []), path])
+  }
 
-  for (const path of unexpected) {
+  for (const [rule, paths] of byRule) {
     fail(
-      `.gitignore hides a source file: ${path}\n` +
-      `      A fresh clone will not have it. If it is GENERATED, add it to generatedIgnored in\n` +
-      `      scripts/ci-allowances.json with the reason. If it is source, un-ignore it —\n` +
-      `      \`build/\` once hid 20 files of Sierra's build pipeline with every suite green.`
+      `.gitignore hides a source file: ${paths.slice(0, 3).join(', ')}${paths.length > 3 ? `, +${paths.length - 3} more` : ''}\n` +
+      `      Hidden by the rule ${rule}. A fresh clone will not have it. If everything that rule\n` +
+      `      matches is GENERATED, add "${rule}" to generatedIgnored in scripts/ci-allowances.json\n` +
+      `      with the reason. If it is source, narrow the rule — \`build/\` once hid 20 files of\n` +
+      `      Sierra's build pipeline with every suite green.`
     )
   }
 
-  // An allowance is stale only if the file is THERE and no longer ignored.
-  // These entries are generated files, so on a clean checkout none of them
-  // exists yet — a fresh clone called all of them stale and advised removing
-  // them, which would fail the run the moment anyone started a dev server.
-  for (const path of Object.keys(allowed)) {
-    if (existsSync(join(ROOT, path)) && !ignoredSource.includes(path)) {
-      note(`generatedIgnored allowance is stale — ${path} exists and is no longer an ignored source file. Remove it.`)
+  // Stale means the rule is gone from its file. Matching files are no test:
+  // they are generated, so a fresh clone has none and would call every entry
+  // stale the moment before a dev server writes them.
+  for (const rule of Object.keys(allowed)) {
+    const at      = rule.lastIndexOf(':')
+    const source  = join(ROOT, rule.slice(0, at))
+    const pattern = rule.slice(at + 1)
+    const lines   = existsSync(source) ? readFileSync(source, 'utf8').split('\n').map(l => l.trim()) : []
+    if (!lines.includes(pattern)) {
+      note(`generatedIgnored allowance is stale — ${rule.slice(0, at)} no longer has the rule ${pattern}. Remove it.`)
     }
   }
 
@@ -293,7 +306,7 @@ function hygiene() {
     note(`${untracked.length} untracked file(s) — absent from a fresh clone: ${untracked.slice(0, 5).join(', ')}${untracked.length > 5 ? ', …' : ''}`)
   }
 
-  if (!unexpected.length) ok(`${ignoredSource.length} ignored source file(s), all accounted for`)
+  if (!byRule.size) ok(`${ignoredSource.length} ignored source file(s), all accounted for`)
 
   searchableSource()
   substratePurity()
@@ -745,7 +758,12 @@ function snapshots() {
           `      committing — a line that moved without a change you meant to make is a bug\n` +
           `      that ships.`
         : ''),
-      { stdout: r.stdout, stderr: r.stderr }
+      { stdout: r.stdout, stderr: r.stderr },
+      // Only a stale file: a generator that could not run fails the same way
+      // after a regenerate, so a button would answer nothing.
+      r.argv && !r.seeded && r.error === 'no longer matches its source'
+        ? { fix: { kind: 'snapshot', file: r.file } }
+        : {}
     )
   }
 
@@ -2000,6 +2018,26 @@ function readPackage(dir) {
 // invocation the same answer, and the hygiene phase then passes by reporting
 // nothing. Only the callers that expect a miss (resolveRef, gitShow) are
 // allowed to swallow one.
+// Each ignored path with the rule that hides it, as `<ignore file>:<pattern>`.
+// No line number in the key — an unrelated edit above the rule would turn every
+// allowance stale. A rule from a global excludes file keys by its absolute path,
+// which no allowance names, so it fails as it should: it hides source on one
+// machine only.
+function ignoringRules(paths) {
+  if (!paths.length) return []
+  const r = spawnSync('git', ['check-ignore', '-v', '-z', '--no-index', '--stdin'], {
+    cwd: ROOT, encoding: 'utf8', input: paths.join('\0'), maxBuffer: MAX_BUFFER,
+  })
+  if (r.error || r.status > 1) {
+    console.error(`[ci] git check-ignore failed: ${r.error?.message ?? r.stderr}`)
+    process.exit(2)
+  }
+  const f = r.stdout.split('\0')
+  const out = []
+  for (let i = 0; i + 3 < f.length; i += 4) out.push([f[i + 3], `${f[i]}:${f[i + 2]}`])
+  return out
+}
+
 function git(argv) {
   const r = spawnSync('git', argv, { cwd: ROOT, encoding: 'utf8', shell: false, maxBuffer: MAX_BUFFER })
   if (r.error || r.status !== 0) {
@@ -2049,14 +2087,21 @@ function warn(message, ms, meta = {}) {
   step('warn', message, { ms, ...meta })
 }
 
+// The log carries the whole finding, not just its first line: the page is read
+// by someone who never saw the terminal, and a label alone ("no longer matches
+// its source") is the symptom without the remedy. `meta.fix` names a remedy the
+// page can run itself — by kind, never as argv, so the server decides what runs.
 function fail(message, output, meta = {}) {
   problems.push({ message, output })
   console.log(`  ✗ ${message}`)
-  step('fail', message.split('\n')[0], meta)
+  const [label, ...rest] = message.split('\n')
+  const detail = rest.map(l => l.trim()).filter(Boolean).join(' ') || undefined
+  const text   = outputText(output)
+  step('fail', label, { ...meta, detail, output: text ? text.slice(0, 4000) : undefined })
 }
 
-function step(status, label, { key, ms, counts } = {}) {
-  runLog.emit('step', { phase: currentPhase, status, label, key, ms, counts })
+function step(status, label, { key, ms, counts, detail, output, fix } = {}) {
+  runLog.emit('step', { phase: currentPhase, status, label, key, ms, counts, detail, output, fix })
 }
 
 function note(message) {

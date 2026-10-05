@@ -172,7 +172,10 @@ export function foldRun(events, { alive = pidAlive } = {}) {
     } else if (ev.e === 'begin') {
       run.current = { phase: ev.phase, key: ev.key, at: ev.at }
     } else if (ev.e === 'step') {
-      phase?.steps.push({ key: ev.key ?? null, status: ev.status, label: ev.label, ms: ev.ms ?? null, counts: ev.counts ?? null, at: ev.at })
+      phase?.steps.push({
+        key: ev.key ?? null, status: ev.status, label: ev.label, ms: ev.ms ?? null, counts: ev.counts ?? null, at: ev.at,
+        detail: ev.detail ?? null, output: ev.output ?? null, fix: ev.fix ?? null,
+      })
       if (run.current && ev.key === run.current.key) run.current = null
     } else if (ev.e === 'phase-end') {
       if (phase?.name === ev.name) { phase.ms = ev.ms; phase.ok = ev.ok }
@@ -228,7 +231,7 @@ export function latestByItem(runs) {
     for (const p of run.phases) {
       if (p.ms == null) continue
       const narrowed = !!run.only && (p.name === 'tests' || p.name === 'typecheck')
-      record(`phase:${p.name}`, { kind: 'phase', phase: p.name, key: p.name, status: p.ok ? 'ok' : 'fail', ms: p.ms, narrowed, ...from })
+      record(`phase:${p.name}`, { kind: 'phase', phase: p.name, key: p.name, status: p.ok ? 'ok' : 'fail', ms: p.ms, narrowed, failures: phaseFailures(p), ...from })
       for (const s of p.steps) {
         if (!s.key) continue
         record(`${p.name}:${s.key}`, { kind: 'step', phase: p.name, key: s.key, status: s.status, ms: s.ms, counts: s.counts, label: s.label, ...from })
@@ -238,6 +241,15 @@ export function latestByItem(runs) {
 
   for (const [id, entry] of items) entry.usualMs = median(history.get(id) ?? [])
   return [...items.values()]
+}
+
+// A keyed step has a row of its own; a keyless one — a hygiene finding, a stale
+// snapshot — exists nowhere else, so the phase carries it or the page cannot
+// say why the phase is red.
+export function phaseFailures(phase) {
+  return phase.steps
+    .filter(s => s.status === 'fail' && !s.key)
+    .map(({ label, detail, output, fix }) => ({ label, detail, output, fix }))
 }
 
 /** The newest finished run that ran every phase its tier has. */

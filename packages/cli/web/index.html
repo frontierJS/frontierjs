@@ -2118,6 +2118,11 @@ let ciBody  = null
 // in-flight calls each schedule a timer and the page polls twice forever.
 let ciGen   = 0
 const ciOpen = new Set()   // phases whose suites are unfolded, kept across polls
+const ciOutputOpen = new Set()   // failures whose output is unfolded — a poll rewrites the rows
+let   ciFixing = null            // the fix running now, by its key
+const ciFixed  = new Set()       // fixes that exited 0 since the newest run started
+let   ciNewestRun = null
+let   ciAsk    = {}              // failing phases as last rendered, for askAboutCi
 
 async function loadCi() {
   clearTimeout(ciTimer)
@@ -2172,6 +2177,9 @@ function renderCi() {
   const live = active ? selected : null   // the newest run is the one going
 
   const head = active ?? b.runs[0]
+  // A new run answers for itself, whoever started it — a terminal run never
+  // passes through startCi.
+  if (b.runs[0]?.id !== ciNewestRun) { ciNewestRun = b.runs[0]?.id; ciFixed.clear() }
   document.getElementById('ci-badge').innerHTML = head ? ciBadge(head.status) : ''
   document.getElementById('ci-note').textContent = head
     ? `${active ? 'started' : 'last run'} ${ago(head.at)} · ${head.argv.join(' ') || 'full'}${head.ms != null ? ` · ${duration(head.ms)}` : ''}` +
@@ -2190,6 +2198,7 @@ function renderCi() {
   const livePhase = Object.fromEntries((live?.phases ?? []).map(p => [p.name, p]))
   const maxMs = Math.max(1, ...Object.values(phaseItem).map(i => i.ms ?? 0))
 
+  ciAsk = {}
   document.getElementById('ci-rows').innerHTML = names.map(name => {
     const item = phaseItem[name]
     const now  = livePhase[name]
@@ -2209,6 +2218,11 @@ function renderCi() {
     const steps = [...stepMap.values()]
       .sort((x, y) => (y.status === 'fail') - (x.status === 'fail') || (y.ms ?? 0) - (x.ms ?? 0))
     const open = ciOpen.has(name)
+    // A keyless failure has no row of its own, so the phase says it here.
+    const failures = now ? now.steps.filter(s => s.status === 'fail' && !s.key)
+      : status === 'fail' ? item?.failures ?? []
+      : []
+    if (status === 'fail' && !running) ciAsk[name] = { failures, steps: steps.filter(s => s.status === 'fail'), from: now ? null : item }
 
     return `
       <li class="list-row" data-ci-phase="${esc(name)}">
@@ -2222,9 +2236,12 @@ function renderCi() {
             ${running ? '' : now?.ms != null ? '<span class="text-xs text-muted">this run</span>' : item ? ciFrom(item) : ''}
             ${item?.narrowed ? '<span class="badge muted text-xs" title="that run named --only, so it answered one package">narrowed</span>' : ''}
           </div>
+          ${failures.length ? `<ul class="stack gap-2xs">${failures.map((f, i) => renderCiFailure(f, `${name}:${i}`, active)).join('')}</ul>` : ''}
           ${open ? `<ul class="rows divided">${steps.map(s => renderCiStep(s, name, active)).join('')}</ul>` : ''}
         </div>
         <div class="row-actions cluster gap-2xs">
+          ${ciFixAll(failures, active)}
+          ${ciAsk[name] ? `<button class="btn ghost text-xs" data-ask onclick="askAboutCi(${esc(JSON.stringify(name))})" title="Put this phase's failures in the output with a question for Claude">ask claude</button>` : ''}
           <button class="btn ghost text-xs" ${active ? 'disabled' : ''} onclick="startCi({ phases: [${esc(JSON.stringify(name))}] })" title="bun run ci -- --phase ${esc(name)}">rerun</button>
         </div>
       </li>`
@@ -2245,6 +2262,104 @@ function renderCi() {
         ${r.failures.length ? `<span class="text-xs text-danger">${r.failures.slice(0, 4).map(esc).join(' · ')}${r.failures.length > 4 ? ` · +${r.failures.length - 4}` : ''}</span>` : ''}
       </div>
     </li>`).join('')
+}
+
+// ─── a failure, and its fix ───────────────────────────────────────────────────
+//
+// A fix is named by KIND in the run log and turned into argv by the server, so
+// the page sends back what the log said and nothing it composed.
+
+const ciFixKey = (fix) => `${fix.kind}:${fix.file ?? ''}`
+
+function renderCiFailure(f, id, active) {
+  const fixKey = f.fix ? ciFixKey(f.fix) : null
+  const action = !f.fix ? ''
+    : ciFixed.has(fixKey)
+      ? `<span class="badge success text-xs">regenerated</span><button class="btn ghost text-xs" onclick="openPanel('tree')">see changes</button>`
+      : `<button class="btn outlined text-xs" ${active || ciFixing ? 'disabled' : ''} onclick="ciRunFix(${esc(JSON.stringify(f.fix))})" title="${esc(ciFixTitle(f.fix))}">${ciFixing === fixKey ? 'fixing…' : 'fix'}</button>`
+  return `
+    <li class="stack gap-3xs">
+      <div class="cluster gap-sm">
+        <span class="text-xs text-danger">${esc(f.label)}</span>
+        ${action}
+      </div>
+      ${f.detail ? `<span class="text-xs text-muted">${esc(f.detail)}</span>` : ''}
+      ${f.output ? `<details class="disclosure" ${ciOutputOpen.has(id) ? 'open' : ''} ontoggle="ciToggleOutput(${esc(JSON.stringify(id))}, this.open)">
+        <summary class="text-xs">output</summary>
+        <pre class="code text-xs"><code>${esc(stripAnsi(f.output))}</code></pre>
+      </details>` : ''}
+    </li>`
+}
+
+// The tail of a failure's output, since the cause is usually printed last and
+// a whole runner log buries the question under it.
+const CI_ASK_TAIL = 60
+
+function askAboutCi(name) {
+  const a = ciAsk[name]
+  if (!a) return
+  const lines = [`ci phase ${name} failed${a.from ? ` · ${ago(a.from.at)} · ${a.from.commit ?? '?'}${a.from.dirty ? '*' : ''}` : ' · this run'} · rerun: bun run ci -- --phase ${name}`]
+  for (const f of a.failures) {
+    lines.push(`- ${f.label}`)
+    if (f.detail) lines.push(`  ${f.detail}`)
+    if (f.output) {
+      const out = stripAnsi(f.output).trimEnd().split('\n')
+      if (out.length > CI_ASK_TAIL) lines.push(`  … ${out.length - CI_ASK_TAIL} earlier line(s) cut`)
+      lines.push(...out.slice(-CI_ASK_TAIL).map(l => `  ${l}`))
+    }
+  }
+  for (const s of a.steps) {
+    lines.push(`- suite ${s.key}${s.label && s.label !== s.key ? `: ${s.label}` : ''}`)
+    for (const t of s.counts?.failed ?? []) lines.push(`  ✗ ${t}`)
+  }
+  askAbout(lines, `Why is the ${name} phase failing? Find the cause and say what the fix is — the right one, not the one that silences the check.`)
+}
+
+function ciFixTitle(fix) {
+  return fix.kind === 'snapshot' ? `fli test:snapshots --fix --only ${fix.file}` : fix.kind
+}
+
+// Only when there is more than one: a single fix already has its button.
+function ciFixAll(failures, active) {
+  const fixes = failures.map(f => f.fix).filter(f => f && !ciFixed.has(ciFixKey(f)))
+  if (fixes.length < 2) return ''
+  return `<button class="btn ghost text-xs" ${active || ciFixing ? 'disabled' : ''} onclick="ciRunFixes(${esc(JSON.stringify(fixes))})">fix ${fixes.length}</button>`
+}
+
+function ciToggleOutput(id, open) {
+  if (open) ciOutputOpen.add(id); else ciOutputOpen.delete(id)
+}
+
+async function ciRunFixes(fixes) {
+  for (const fix of fixes) if (!await ciRunFix(fix)) return
+}
+
+// Streams into the console like any run; the row turns to `regenerated` on an
+// exit of 0 and stays a failure otherwise, because only a rerun of the phase
+// says the phase is green.
+async function ciRunFix(fix) {
+  if (ciFixing) return false
+  ciFixing = ciFixKey(fix)
+  renderCi()
+  let code = null
+  try {
+    const res = await fetch(`${API}/api/ci/fix`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fix),
+    })
+    if (!res.ok) appendOutput((await res.json()).error, 'error')
+    else await readEvents(res, e => {
+      if (e.type === 'output') appendOutput(stripAnsi(e.text).trimEnd(), 'output')
+      else if (e.type === 'log') appendOutput(e.text, e.level || 'info')
+      else if (e.type === 'done') code = e.code
+    })
+  } catch (err) {
+    appendOutput(`connection error: ${err.message}`, 'error')
+  }
+  appendOutput(code === 0 ? 'fixed — read the diff, then rerun the phase' : `fix failed${code != null ? ` — exit ${code}` : ''}`, code === 0 ? 'success' : 'error')
+  if (code === 0) ciFixed.add(ciFixing)
+  ciFixing = null
+  renderCi()
+  return code === 0
 }
 
 function renderCiStep(s, phase, active) {
