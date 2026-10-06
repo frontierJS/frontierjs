@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-06 — `@@extensible` refuses a declaring model scoped through a parent (`FJS-1754`)
+
+A declarer under `@@tenant(via: …)`, or scoped by the delegation that finds a parent through its foreign key, carries no tenant column, so `_extTenantCol` was null and every raw read of the declaring table was installation-wide: one key namespace across tenants (a 409 naming another tenant's key), one slot pool, and one tenant's values mirrored through another's declarations. The parse now refuses the pairing, naming the column to give it or `@@tenant(none)` for one set of declarations on purpose. Narrowing through the relation is the larger alternative and is not built: the pool's allocation, mirror and filter would each need the join, where the refusal costs a copy column the schema can state once. `test/extensible.test.ts`, § *a declaring model scoped through a parent*.
+
 ## 2026-10-06 — four more references from the same corpus: `Decision`, `Tree`, `Poller`, `Delivery`
 
 Three traits and a model. `Decision` is the `decidedAt`/`decidedById @system` pair the corpus spelled four ways (decided / approved / responded / submitted), and the file says it wants to become an attribute on the transition. `Tree` is `parentId` plus a fractional `rank`, the self-relation left to the host, written against linear's `Issue` carrying both `rank` and `position`. `Poller` is the inline state around a scheduled fetch, every column `@system`, with the run log named as the model it pairs with and not yet written. `Delivery` is lifted from transit: one row per attempt, `@@unique([runKey, address, attempt])`, and the check that a skip says why and only a skip; it is the record `@frontierjs/notifications` fans out without keeping.

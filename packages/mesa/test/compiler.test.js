@@ -4762,6 +4762,23 @@ describe('compileMd remark/rehype plugins', () => {
     expect(r.analysis.errors).toHaveLength(0)
   })
 
+  it('a plugin is given the path of the file being compiled (FJS-1502)', async () => {
+    const seen = []
+    const remarkSeePath = () => (tree, file) => { seen.push(['remark', file.path]) }
+    const rehypeSeePath = () => (tree, file) => { seen.push(['rehype', file.path]) }
+
+    const r = await compileSource('Some content.', {
+      filename: 'content/pages/index.md',
+      remarkPlugins: [remarkSeePath],
+      rehypePlugins: [rehypeSeePath],
+    })
+    expect(r.analysis.errors).toHaveLength(0)
+    expect(seen).toEqual([
+      ['remark', 'content/pages/index.md'],
+      ['rehype', 'content/pages/index.md'],
+    ])
+  })
+
   it('no plugins uses default processor (no regression)', async () => {
     const src = '# Title\n\nParagraph with **bold**.'
     const r = await compileSource(src, { filename: 'test.md' })

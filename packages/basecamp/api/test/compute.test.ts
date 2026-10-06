@@ -573,6 +573,39 @@ describe('a machine claims its own credential', () => {
     expect(script).toContain('systemctl enable --now caddy-api.service')
   })
 
+  // FJS-1763: every signed command is refused past 300 seconds of skew, and an
+  // imported machine is whatever its owner made, so the install may not lean on
+  // the image shipping a sync daemon. Two daemons running is a fight, so the
+  // one it installs displaces timesyncd.
+  test('the install puts a time-sync daemon on the machine and enables it', async () => {
+    const { installScript } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    expect(script).toMatch(/apt-get install -yqq [^\n]*\bchrony\b/)
+    expect(script).toContain('systemctl enable --now chrony.service')
+  })
+
+  // FJS-1762: the install runs as root on every machine, so nothing in it may be
+  // whatever an upstream returns that day. Docker comes from a signed apt
+  // repository, Bun and the Outpost by a version Basecamp holds.
+  test('the install pins what it runs and pipes no vendor script into a shell', async () => {
+    const { installScript, BUN_VERSION, OUTPOST_VERSION } = await import('../src/providers/compute/enrollment.ts')
+    const script = installScript()
+    expect(script).not.toContain('get.docker.com')
+    expect(script).toContain('download.docker.com/linux/$ID/gpg')
+    expect(script).toContain('signed-by=/etc/apt/keyrings/docker.asc')
+    expect(script).toContain(`bash -s "bun-v${BUN_VERSION}"`)
+    expect(script).toContain(`bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}`)
+    expect(BUN_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
+  // The pin is a value Basecamp holds, so it must move with the package it
+  // names rather than drift to a version nobody published.
+  test('the pinned Outpost is the version this workspace carries', async () => {
+    const { OUTPOST_VERSION } = await import('../src/providers/compute/enrollment.ts')
+    const pkg = await Bun.file(new URL('../../../outpost/package.json', import.meta.url)).json()
+    expect(OUTPOST_VERSION).toBe(pkg.version)
+  })
+
   // The enrollment answer is the machine's key. Over plain http to anything
   // but loopback it crosses the network readable (FJS-1603), so neither way a
   // machine is handed the install will point it there.

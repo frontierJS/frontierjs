@@ -26,16 +26,10 @@
    "cost": "no billing plan of its own",
    "escape": "split when one company runs several brands",
    "access": {
-    "members": "Membership"
+    "members": "Membership",
+    "system": true
    },
-   "links": [
-    {
-     "name": "owner",
-     "to": "User",
-     "actor": "owner",
-     "required": true
-    }
-   ]
+   "links": []
   },
   {
    "name": "Membership",

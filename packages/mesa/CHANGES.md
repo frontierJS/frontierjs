@@ -1,5 +1,25 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-06 — the REPL boots offline, and its drive is in `test` (`FJS-326`)
+
+`example/index.html` fetched nineteen things off the internet, so its drive was manual and out of CI. The Tailwind Play script and its config line are gone, since the REPL's own chrome used no utility class. lz-string and the sixteen importmap entries are now `example/vendor/`, committed, written by `bun example/build-vendor.mjs` as one `Bun.build` with splitting so the CodeMirror packages share a single `@codemirror/state`. The importmap names those files, which means the page the drive loads is the page that ships. The ten packages behind them (CodeMirror, lezer, vim, lz-string) are mesa devDependencies.
+
+The drive had not been able to run unattended, and when it did it found a break the CDN gate had hidden: the REPL passed the runtime to `new Function` as `$runtime` while the compiler emits `$$runtime`, so every example threw `ReferenceError` on mount. Renamed in `execCompiled`.
+
+`run.mjs` lost its reachability probe and `FJS_REQUIRE_NETWORK`. `test` and `test:browser` now end with `repl/`.
+
+Proof: `test/browser/repl/run.mjs` (19 assertions, no network) and three cases in `test/repl.test.js` — no external URL in a script, link or importmap, every importmap target on disk, and the `$$runtime` parameter name. The first and third fail against HEAD's `index.html`.
+
+## 2026-10-06 — a remark or rehype plugin is told which file it is compiling (`FJS-1502`)
+
+`markdownToHTML` handed the unified processor a bare string, so `file.path` was undefined in every plugin and none could key on the file under it. That is what kept ksite's `slug` (the using file's path under `content/`) from being written as an app plugin. `compileMd` now passes `config.filename` (or `config.path`) down, and the processor is given `{ value, path }`. With no filename the call is the bare string as before.
+
+## 2026-10-06 — a derivation owns what its body builds, so a const handle over a prop keeps listening (`FJS-1747`)
+
+A top-level `const` over something that moves is a memo (`FJS-D212`), and `createMemo` made itself the LISTENER while it computed and left the owner alone. An effect or `onCleanup` the body created, such as `blocks.list(...)`'s live effect or `presence(...)`'s `onDestroy(leave)`, went to whichever effect read the memo first. That was usually a render, and its next run pruned them as its own children (`FJS-852`). The list did one find and never heard another announcement, and presence unsubscribed in the tick it subscribed. `_recompute` now makes the memo the owner as well. Before each recompute it disposes the children and runs the cleanups the last computation left, the way an effect's re-run does. They also go when the memo is disposed with its component, and a reader re-running no longer touches them. The `let` workaround is no longer needed, and the warning that tells an author to add `$: page.params.id` no longer leads into the bug.
+
+Proof: `test/memo-owned-effects.test.js` covers a reader re-running, a recompute replacing what it built, disposal ending it, and a compiled `const list = blocks.list({ where: { pageId } })` over an `export let` that still hears an announcement after its template re-rendered. All of it was red before the fix. Mesa's suite and both browser drives pass. Example `verify:site` passes. Example `verify` fails only on `planDetail.newWindowEmpty`, which is `FJS-1708`'s accumulated plan versions.
+
 ## 2026-10-06 — astring is gone; rewrites splice the source (`FJS-1760`)
 
 The keyed-each key rewrite (`replaceKeyword`) and the `$.context` / `$.inspect` / `$.mounted` door rewrite edited a few nodes and re-printed the whole tree through astring, which reflowed the author's spacing and comments and was the dependency's only use. Both now splice the new text over acorn's `start`/`end` for the edited node (`spliceEdits`), so everything around the edit is byte-for-byte what the author wrote, and acorn is mesa's only runtime dependency. The door rewrite keeps its edit list, and `unspliceOffset` maps an analysis error's offset back onto the original script, so a component using the door now gets a `File.mesa:line:column` where the reprint had dropped it.

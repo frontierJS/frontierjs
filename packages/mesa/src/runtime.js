@@ -696,11 +696,29 @@ export function createMemo(fn, opts) {
   // while dirty is set, nothing had been propagated either. The memo then served
   // a value computed from pre-write state forever, while direct subscribers of
   // the same signal saw the new one.
+  //
+  // The memo is also the OWNER while fn() runs. A handle built in the body —
+  // `const list = blocks.list({ where: { pageId } })` over a prop — opens an
+  // effect or registers a teardown, and left on the ambient owner those went to
+  // whichever effect happened to read first, usually a render, whose next run
+  // pruned them as its own: the list heard one announcement and presence left
+  // its room in the tick it joined (`FJS-1747`). So what the previous
+  // computation built is torn down here, as an effect's re-run does.
   const _recompute = () => {
+    for (let i = memoNode._children.length - 1; i >= 0; i--) {
+      const child = memoNode._children[i]
+      if (!child._selfOwned) continue
+      _disposeNode(child, false)
+      memoNode._children.splice(i, 1)
+    }
+    for (let i = memoNode._cleanups.length - 1; i >= 0; i--) _safeCall(memoNode._cleanups[i])
+    memoNode._cleanups = []
     for (const sig of memoNode._deps) sig._subs.delete(memoNode)
     memoNode._deps.clear()
-    const prevL = _listener
+    const prevL = _listener,
+      prevO = _owner
     _listener = memoNode
+    _owner = memoNode
     dirty = false
     try {
       const next = fn()
@@ -730,6 +748,7 @@ export function createMemo(fn, opts) {
       throw e
     } finally {
       _listener = prevL
+      _owner = prevO
     }
   }
 

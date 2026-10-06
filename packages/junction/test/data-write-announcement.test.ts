@@ -628,3 +628,40 @@ describe('a transition inside another service call announces (FJS-567)', () => {
     expect(frames.map(f => f.event)).toEqual(['orders patched'])
   })
 })
+
+// FJS-1739 — the model → service index was built on the FIRST write the tap
+// heard and kept, so a seed written before the services registered froze an
+// empty index and every later background write announced nothing, for good.
+describe('a write before the services register (FJS-1739)', () => {
+
+  test('a seed written before registration does not silence later writes', async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    const sys = () => (db as never as { asSystem(): Record<string, Record<string, (a: unknown) => Promise<unknown>>> }).asSystem()
+    await sys().order.create({ data: { status: 'seed' } })
+    await tick()
+
+    app.services.register(createService({ name: 'orders', model: 'Order', db: db as never }))
+    await app._startForTest()
+    const seen: string[] = []
+    app.events.on('orders:updated', (row: { id: number }) => { seen.push(`orders:updated#${row.id}`) })
+
+    await sys().order.update({ where: { id: 1 }, data: { status: 'later' } })
+    await tick()
+    expect(seen).toEqual(['orders:updated#1'])
+  })
+
+  test('a service registered after a write is announced', async () => {
+    const { db, app } = await mkApp()
+    const sys = () => (db as never as { asSystem(): Record<string, Record<string, (a: unknown) => Promise<unknown>>> }).asSystem()
+    await sys().order.create({ data: { status: 'a' } })
+    await tick()
+    // A second service over the same model, registered after the index exists.
+    app.services.register(createService({ name: 'orderFeed', model: 'Order', db: db as never }))
+    const seen: string[] = []
+    app.events.on('orderFeed:updated', (row: { id: number }) => { seen.push(`orderFeed:updated#${row.id}`) })
+    await sys().order.update({ where: { id: 1 }, data: { status: 'b' } })
+    await tick()
+    expect(seen).toEqual(['orderFeed:updated#1'])
+  })
+})

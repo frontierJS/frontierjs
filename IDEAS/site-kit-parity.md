@@ -112,13 +112,4 @@ no owner. Which is which, per `conversion-ksite.md` § *Already answered here*:
 
 ## Forks a direction has to pick
 
-Listed, not answered.
-
-- **Whose engine is site-kit?** It could be ksite's engine made generic, with
-  ksite extending it (the intent in site-kit's `README.md`), or a smaller core
-  that frontierjs.com needs, with ksite's blocks staying in `@kobami/ksite`.
-- **Port on demand or port the library?** The stressor ported blocks on demand.
-  Parity with legacy means the ~70 remaining components, and
-  `conversion-ksite.md` already names the block library as the bulk of the cost.
-- **Which section 4 gaps become framework owners** (images, JSON-LD, a
-  static-host release) **and which stay engine code.**
+Argued, with options, in `site-kit-plan.md` § Open questions.

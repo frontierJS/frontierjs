@@ -392,3 +392,23 @@ describe('REPL preview is interactive', () => {
     expect(runs).toBe(1)
   })
 })
+
+describe('the REPL loads nothing from the network', () => {
+  it('names no external URL in a script, link or the importmap', () => {
+    const external = [...INDEX.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1])
+    const mapped = Object.values(JSON.parse(INDEX.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports)
+    external.push(...mapped.filter((u) => /^https?:/.test(u)))
+    expect(external).toEqual([])
+  })
+
+  it('has every importmap target and script on disk', () => {
+    const mapped = Object.values(JSON.parse(INDEX.match(/<script type="importmap">([\s\S]*?)<\/script>/)[1]).imports)
+    const scripts = [...INDEX.matchAll(/<script src="(\.\/[^"]+)"/g)].map((m) => m[1])
+    const missing = [...mapped, ...scripts].filter((rel) => !existsSync(path.join(REPL_DIR, rel)))
+    expect(missing).toEqual([])
+  })
+
+  it('hands the compiled module the runtime under the name the compiler emits', () => {
+    expect(INDEX).toContain("new Function('$$runtime', ...names, code)")
+  })
+})

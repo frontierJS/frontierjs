@@ -5,23 +5,10 @@
  *   node test/browser/repl/run.mjs --verbose   print the passing rows too
  *   node test/browser/repl/run.mjs --serve     serve the REPL and stay up
  *
- * Needs Chrome on PATH or `$FJS_CHROME`, and **needs the network**.
- *
- * ── Why this one is manual ────────────────────────────────────────────
- *
- * `example/index.html` loads eighteen things from the internet: Tailwind, an
- * lz-string off cdnjs, and an importmap of sixteen esm.sh entries — acorn,
- * which is the compiler's own dependency, the unified/remark chain, and eight
- * CodeMirror packages. Eight of those resolve from `node_modules` today and
- * eight are not in the tree at all, so making this
- * offline is real work rather than a flag: `FJS-326` has the tiers.
- *
- * Until then a suite that needs a CDN is a suite that goes red on a train, so
- * this drive is **out of `bun run test` and out of CI**, and run by hand when
- * the REPL is being changed. It is gated rather than assumed: no network is a
- * NAMED skip that exits 0, and `FJS_REQUIRE_NETWORK=1` turns that skip into a
- * failure — because a check that quietly stops running is worse than one
- * nobody wrote.
+ * Needs Chrome on PATH or `$FJS_CHROME`, and no network: the REPL's third-party
+ * code is `example/vendor/`, committed, and `index.html` names it in its own
+ * importmap. `bun example/build-vendor.mjs` rewrites it. A page that fetched
+ * these off a CDN made this drive a suite that goes red on a train (`FJS-326`).
  *
  * ── What it exists to catch ───────────────────────────────────────────
  *
@@ -36,7 +23,7 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runSpecs, dim, red } from '../drive.mjs'
+import { runSpecs } from '../drive.mjs'
 
 const PKG  = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -53,20 +40,6 @@ const TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.svg':  'image/svg+xml',
-}
-
-/* ─── is the network there ────────────────────────────────────────────── */
-
-/** One of the seventeen, asked directly. A DNS answer is not enough — a
- *  captive portal resolves everything — so this wants the module itself. */
-async function networkReachable() {
-  try {
-    const ac = AbortSignal.timeout(8000)
-    const r = await fetch('https://esm.sh/acorn@8', { signal: ac })
-    return r.ok
-  } catch {
-    return false
-  }
 }
 
 /* ─── the REPL, served ────────────────────────────────────────────────── */
@@ -113,19 +86,7 @@ const origin = await repl.listen()
 
 if (serveOnly) {
   console.log(`REPL served at ${origin}/example/index.html`)
-  console.log(dim('the CDN imports are live — this needs the network'))
 } else {
-  if (!(await networkReachable())) {
-    const strict = process.env.FJS_REQUIRE_NETWORK === '1'
-    await repl.close()
-    console.log('')
-    console.log(`${strict ? red('✗') : '•'} repl drive skipped — esm.sh is not reachable.`)
-    console.log(dim('  The REPL loads 19 things from the internet (FJS-326). Set'))
-    console.log(dim('  FJS_REQUIRE_NETWORK=1 to make this skip a failure instead.'))
-    console.log('')
-    process.exit(strict ? 1 : 0)
-  }
-
   const { infra, failures } = await runSpecs({
     origin: origin + '/example/index.html',
     specDir: join(HERE, 'specs'),

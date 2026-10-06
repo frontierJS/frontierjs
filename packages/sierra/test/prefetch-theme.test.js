@@ -122,6 +122,30 @@ describe('injectThemeScript (post-build)', () => {
     expect(html).toContain('prefers-color-scheme')
   })
 
+  // The shape both apps in this repo ship: `<head>` is optional in HTML, and a
+  // literal-tag anchor injected nothing into either.
+  test('injects into a page with no <head> tag, after the charset', async () => {
+    const outDir = await mkdir(join(TMP, 'theme-headless'), { recursive: true }) || join(TMP, 'theme-headless')
+    await writeFile(join(outDir, 'index.html'),
+      '<!doctype html>\n<meta charset="utf-8" />\n<title>T</title>\n<link rel="stylesheet" href="/a.css">\n<body class="app"></body>', 'utf8')
+
+    expect(await injectThemeScript({ default: 'theme-default' }, outDir)).toContain('Theme flash prevention')
+
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html).toMatch(/<meta charset="utf-8" \/>\s*<script id="sierra-theme">/)
+    expect(html.indexOf('sierra-theme')).toBeLessThan(html.indexOf('stylesheet'))
+  })
+
+  test('does not mistake <header> for <head>', async () => {
+    const outDir = await mkdir(join(TMP, 'theme-header'), { recursive: true }) || join(TMP, 'theme-header')
+    await writeFile(join(outDir, 'index.html'),
+      '<!doctype html>\n<title>T</title>\n<body><header>x</header></body>', 'utf8')
+
+    await injectThemeScript({ default: 'theme-default' }, outDir)
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html).toMatch(/<!doctype html>\s*<script id="sierra-theme">/)
+  })
+
   test('does not inject twice (idempotent)', async () => {
     const outDir = join(TMP, 'theme-inject')  // already has the script
 

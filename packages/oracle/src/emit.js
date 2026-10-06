@@ -178,7 +178,8 @@ function emitModel(m, backs, access) {
     rows.push([fk, `${keyType}${l.required ? '' : '?'}`, l === stamp ? '@default(auth().id)' : ''])
     rows.push([l.name, `${l.to}${l.required ? '' : '?'}`,
       `@relation(${rel ? `"${rel}", ` : ''}fields: [${fk}], references: [id], onDelete: ${l.required ? 'Cascade' : 'SetNull'})`])
-    if (!(m.container && l.name === m.container.link)) indexes.push(fk)
+    // A relator indexes both relata itself; a hand-written one is refused.
+    if (!(m.container && [m.container.link, m.container.user].includes(l.name))) indexes.push(fk)
   }
 
   if (m.lifecycle) {
@@ -200,11 +201,16 @@ function emitModel(m, backs, access) {
   const label = labelField(m)
   if (label) attrs.push(`@@label(${label})`)
   for (const fk of indexes) attrs.push(`@@index([${fk}])`)
-  // A person is a member once. A membership whose person is optional is an
-  // invitation waiting for a sign-up, and every one of those is its own row.
+  // A person is a member once, and the row IS the pair: `@@relator(…, once)`
+  // says so and gets the reverse index the switcher's *which containers am I
+  // in* needs. A relator refuses an optional relatum, and a membership whose
+  // person is optional is an invitation waiting for a sign-up, so that one
+  // keeps a unique that holds every pending row distinct.
   if (m.container) {
     const optional = !m.links.find(l => l.name === m.container.user)?.required
-    attrs.push(`@@unique([${m.container.link}Id, ${m.container.user}Id]${optional ? ', nullsDistinct: true' : ''})`)
+    attrs.push(optional
+      ? `@@unique([${m.container.link}Id, ${m.container.user}Id], nullsDistinct: true)`
+      : `@@relator([${m.container.link}Id, ${m.container.user}Id], once)`)
   }
   if (m.patterns.includes('audit')) attrs.push('@@log(audit)')
 
@@ -308,9 +314,14 @@ function accessFor(m, of, backs) {
       terms.update.push(`check(${a.via}, '${op}')`)
       terms.delete.push(`check(${a.via}, '${op}')`)
     }
+    // A member reads and changes the container; the gate says which rung
+    // renames it. Without the update term a membership's create would fall
+    // back to the container's read, and any member could add anyone.
     if (m.members) {
       const list = backs.find(b => b.source === m.members.model && b.link === m.members.link).name
-      terms.read.push(`${list}.some(${m.members.user}Id == auth().id)`)
+      const member = `${list}.some(${m.members.user}Id == auth().id)`
+      terms.read.push(member)
+      terms.update.push(member)
     }
     if (a.publicWhen) terms.read.push(...Object.entries(a.publicWhen).map(([k, v]) => `${k} == ${typeof v === 'string' ? `'${v}'` : v}`))
   }
@@ -318,7 +329,9 @@ function accessFor(m, of, backs) {
   const gate = []
   const policies = []
   for (const op of OPS) {
-    const system = a.system && op !== 'read'
+    // On a container, `system` is the onboarding that creates it and the
+    // teardown that deletes it; renaming it stays with its members.
+    const system = a.system && op !== 'read' && !(m.members && op === 'update')
     const open = pub.includes(op) && !(op === 'read' && a.publicWhen)
     let expr = null
     if (!system && !open) {

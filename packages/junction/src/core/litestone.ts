@@ -3979,7 +3979,7 @@ export function installQueryTelemetry(
 
 export function announceDataWrites(
   app: {
-    services: { list: () => string[]; get: (n: string) => unknown }
+    services: { list: () => string[]; get: (n: string) => unknown; version?: number }
     events?:  { emit: (event: string, data: unknown) => void }
     channels?: unknown
   },
@@ -3998,8 +3998,11 @@ export function announceDataWrites(
 
   const PAST: Record<string, string> = { create: 'created', update: 'updated', remove: 'removed' }
 
-  // model name → EVERY service over it, built on first use: services are
-  // registered during the start phases and this installer runs before them.
+  // model name → EVERY service over it, rebuilt whenever the registry's version
+  // moves. Services register during the start phases, after this installer, and
+  // a write can arrive before them — a seed, a boot plugin — so an index built
+  // on the first write and kept was empty for the life of the process, and every
+  // background write after it announced nothing (`FJS-1739`).
   //
   // A SET and not one name (`FJS-765`). Keyed to a single service, whichever
   // claimed a spelling last owned the model and every other service over it was
@@ -4009,11 +4012,13 @@ export function announceDataWrites(
   // subscribers held a stale row with nothing said. Which one won was
   // registration order, so it moved when a file was renamed.
   let index: Map<string, Set<string>> | null = null
+  let indexedAt: number | undefined
   const warned = new Set<string>()
 
   const servicesFor = (model: string): string[] => {
-    if (!index) {
+    if (!index || indexedAt !== app.services.version) {
       index = new Map()
+      indexedAt = app.services.version
       // ── Every spelling, not one ──────────────────────────────────────────
       //
       // This used to index a single key per service — `svc.model ?? singularize(name)`

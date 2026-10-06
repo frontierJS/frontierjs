@@ -47,8 +47,7 @@ export async function injectThemeScript(themeConfig, outDir) {
     // Re-running a build over an existing output directory must not stack two.
     if (html.includes('sierra-theme')) continue
 
-    // First element inside <head> — it has to run before any stylesheet.
-    const injected = html.replace('<head>', `<head>\n${script}`)
+    const injected = place(html, script)
     if (injected === html) continue
 
     await writeFile(path, injected, 'utf8')
@@ -61,4 +60,22 @@ export async function injectThemeScript(themeConfig, outDir) {
   // one page and "1 page(s)" reads like something was missed.
   const where = touched.length === 1 ? touched[0] : `${touched.length} pages`
   return `Theme flash prevention → ${where} (default: ${themeConfig.default ?? 'system'})`
+}
+
+/**
+ * Put the script where the parser reads it as head content, ahead of every
+ * stylesheet.
+ *
+ * `<head>` is optional in HTML and both apps in this repo leave it out, so
+ * anchoring on the literal tag alone injected nothing into either and every
+ * reader on a non-default theme saw the default first — with a build that
+ * reported nothing wrong. Without the tag, after the charset declaration keeps
+ * that within the first 1024 bytes where the parser looks for it.
+ */
+function place(html, script) {
+  for (const anchor of [/<head\b[^>]*>/i, /<meta\s+charset\b[^>]*>/i, /<html\b[^>]*>/i, /<!doctype\s+html\s*>/i]) {
+    const m = anchor.exec(html)
+    if (m) return html.slice(0, m.index + m[0].length) + '\n' + script + html.slice(m.index + m[0].length)
+  }
+  return script + '\n' + html
 }

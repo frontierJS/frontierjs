@@ -393,6 +393,24 @@ try {
     `the ${KINDS} notification kinds never rendered`)
   ok(`all ${KINDS} kinds render, stored merged over defaults`)
 
+  // The shell's notices — the seeded unreachable machines — take a right rail
+  // where the screen is wide enough and stack above the content where it is
+  // not. Measured, because both layouts render every element either way.
+  const railAt = async (width) => {
+    await send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false })
+    return until(`(() => {
+      const r = document.querySelector('.notice-rail')?.getBoundingClientRect()
+      const b = document.querySelector('.screen-body')?.getBoundingClientRect()
+      return r && b && r.width ? { rL: r.left, rT: r.top, rB: r.bottom, bR: b.right, bT: b.top } : null
+    })()`, v => v, `the notice rail never rendered at ${width}px`)
+  }
+  const wide = await railAt(1920)
+  check('at 1920px the notices sit in a right rail beside the content',
+    wide.rL >= wide.bR && Math.abs(wide.rT - wide.bT) < 2, JSON.stringify(wide))
+  const narrow = await railAt(1024)
+  check('at 1024px they stack above it', narrow.rB <= narrow.bT, JSON.stringify(narrow))
+  await send('Emulation.clearDeviceMetricsOverride')
+
   const kindsText = await text('#settings-notifications')
   // Two are seeded chosen and the rest have never been touched. A screen that
   // flattened the two states would show one identical row per kind.
@@ -435,6 +453,23 @@ try {
   await until(`document.getElementById('settings-notifications')?.textContent ?? ''`,
     t => t.includes(`3 of ${KINDS} chosen`), 'the choice did not survive a reload')
   ok('and it survives a reload')
+
+  // The theme is a class on <html>, and only there: one left on <body> would
+  // win by inheritance and the picker would change nothing on screen.
+  const rootClass = `document.documentElement.className`
+  check('the app opens on its own theme', /\btheme-basecamp\b/.test(await evaluate(rootClass)),
+    await evaluate(rootClass))
+  check('and the body carries no theme to shadow it',
+    !/\btheme-/.test(await evaluate(`document.body.className`)))
+  await click('#settings-theme input[value="theme-default"]')
+  await until(rootClass, c => /\btheme-default\b/.test(c) && !/\btheme-basecamp\b/.test(c),
+    'picking a theme never moved the class on <html>')
+  check('and the surface follows it', await evaluate(
+    `getComputedStyle(document.body).colorScheme`) !== 'dark')
+  await goto('/settings/')
+  await until(rootClass, c => /\btheme-default\b/.test(c), 'the theme did not survive a reload')
+  ok('picking a theme applies it, and it survives a reload')
+  await click('#settings-theme input[value="theme-basecamp"]')
 
   // ─── The audit trail ───────────────────────────────────────────────────
   // The one screen here whose job is to be COMPLETE, and the one shape a

@@ -1,0 +1,1 @@
+function Oe(n){if(!n||typeof n!=="object")return"";if("position"in n||"type"in n)return t(n.position);if("start"in n||"end"in n)return t(n);if("line"in n||"column"in n)return i(n);return""}function i(n){return r(n&&n.line)+":"+r(n&&n.column)}function t(n){return i(n&&n.start)+"-"+i(n&&n.end)}function r(n){return n&&typeof n==="number"?n:1}export{Oe};

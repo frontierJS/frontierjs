@@ -6,19 +6,20 @@ it may import is `@frontierjs/toolbelt`, which is substrate below the graph rath
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
-Run tests with **`bun run test`** — vitest, then the two gating **browser
+Run tests with **`bun run test`** — vitest, then the three gating **browser
 drives**, which need Chrome on PATH or `$FJS_CHROME`. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 
-`test:browser` is the two that gate, `test:browser:runtime` and
-`test:browser:vite` one each; `serve:runtime` / `serve:vite` start one and stay
+`test:browser` is the three, `test:browser:runtime`, `test:browser:vite` and
+`test:browser:repl` one each; `serve:runtime` / `serve:vite` start one and stay
 up, for looking at a fixture in a real browser.
 
-**`test:browser:repl` is manual and NEEDS THE NETWORK.** The REPL loads
-nineteen things from the internet, so it is in neither `test` nor CI: run it by
-hand when `example/` is touched. No network is a named skip that exits 0, and
-`FJS_REQUIRE_NETWORK=1` makes that skip a failure. `FJS-326` is the offline
-work.
+**The REPL drive is `repl/`, in `test` and offline.** Its third-party code is
+`example/vendor/` — committed bundles of acorn, the unified chain and CodeMirror,
+plus lz-string — and `index.html`'s importmap names them, so the page that ships
+is the page tested. `bun example/build-vendor.mjs` rewrites the directory when a
+devDependency moves; one `Bun.build` with splitting, because a second copy of
+`@codemirror/state` fails on an `instanceof` that no message explains.
 
 **`bun run bench` is in neither `test` nor CI.** Run it when a change touches
 `{#each}`, the flush or anything that writes the DOM: a rise in bytes or in DOM
@@ -64,7 +65,7 @@ test/browser/
   probes.js            — the in-page DOM half (waitVisible, matchedRules, …)
   runtime/             — the language in a real browser (server · page · fixtures · specs)
   vite/                — the plugin in a real dev server (app · specs)
-  repl/                — example/index.html itself. Manual: needs the network
+  repl/                — example/index.html itself, offline off example/vendor/
 
 bench/
   run.mjs              — bun run bench: bytes, DOM mutations, time, heap
@@ -344,8 +345,8 @@ drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 `probes.js`) and read by relative path because mesa is the leaf. The browser
 under the runner is `src/drive.js`, which is published: a change to it reaches
 every app's drive, so `test/drive.test.js` pins what an app asks of it and
-the runner never did — a kept `profile` read back after a relaunch. `runtime/` and
-`vite/` gate; `repl/` is manual and needs the network. What bites:
+the runner never did — a kept `profile` read back after a relaunch. All three
+gate. What bites:
 
 - **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`
   for that reason; without the exclusion it collects eleven files and fails

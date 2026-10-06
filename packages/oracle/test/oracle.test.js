@@ -80,18 +80,21 @@ describe('emit', () => {
   test('a membership delegates to the container\'s update rule where it has one', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
     expect(text).toContain("@@allow('create', check(company, 'update'))")
-    expect(text).toContain("@@allow('read',   ownerId == auth().id || memberships.some(userId == auth().id))")
+    expect(text).toContain("@@allow('read',   memberships.some(userId == auth().id))")
+    expect(text).toContain("@@allow('update', memberships.some(userId == auth().id))")
+    expect(text).toContain('@@relator([companyId, userId], once)')
   })
 
   // check(parent, 'update') against a parent held only by a gate compiles to
   // no restriction at all, which let any caller add themselves to any company.
   test('and to its read rule where it has none', () => {
-    const a = clone(hiring)
-    a.entities[0].links = []
-    a.entities[0].access = { members: 'Membership', system: true }
+    const a = { entities: [
+      { name: 'Account', rung: 'novel', why: 'probe', links: [{ name: 'holder', to: 'User', actor: 'subject', required: true }], access: { system: true } },
+      { name: 'Statement', rung: 'novel', why: 'probe', links: [{ name: 'account', to: 'Account', required: true }], access: { via: 'account' } },
+    ] }
     const text = emit(a, { scaffold: SCAFFOLD }).text
-    expect(text).not.toContain("check(company, 'update')")
-    expect(text).toContain("@@allow('create', check(company, 'read'))")
+    expect(text).not.toContain("check(account, 'update')")
+    expect(text).toContain("@@allow('update', check(account, 'read'))")
   })
 
   // A unique over an optional column is refused at parse: NULLs never compare
@@ -144,7 +147,7 @@ describe('emitted access, on a real client', () => {
       const sys = env.system
       const world = async (email) => {
         const user = await sys.user.create({ data: { email } })
-        const company = await sys.company.create({ data: { name: `${email} co`, ownerId: user.id } })
+        const company = await sys.company.create({ data: { name: `${email} co` } })
         await sys.membership.create({ data: { companyId: company.id, userId: user.id } })
         const job = await sys.job.create({ data: { title: 'Engineer', companyId: company.id, managerId: user.id } })
         const candidate = await sys.candidate.create({ data: { name: 'Ada', companyId: company.id } })
@@ -229,6 +232,7 @@ describe('checkAnswer refuses', () => {
     const r = checkAnswer(a)
     expect(r.ok).toBe(true)
     expect(r.findings.map(f => `${f.at}: ${f.message}`)).toEqual([
+      'Company: Only the application writes a Company.',
       'Job: Anyone, signed in or not, reads a Job where status is open — the careers page lists open jobs.',
       'Candidate: Anyone, signed in or not, creates a Candidate: an unauthenticated write — the careers form.',
     ])

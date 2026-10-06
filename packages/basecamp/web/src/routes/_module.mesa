@@ -263,8 +263,9 @@ siteName: Basecamp
   Every class here comes from @frontierjs/css and every control from
   @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
   (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
-  buttons, switcher, drawer and account menu are components. No <style> block,
-  no color, no utility classes (repo invariant 13) — which is also why the
+  buttons, switcher, drawer and account menu are components. The one <style>
+  block below is layout only — the notice rail, which the vocabulary has no
+  word for. No color, no utility classes (repo invariant 13) — which is also why the
   topbar still crowds below ~600px: there is no way to say "drop this below md"
   without one, and the package refused to ship the vocabulary (FJS-338).
 -->
@@ -433,14 +434,21 @@ siteName: Basecamp
   {/if}
 
   <main class="screen" id="screen" tabindex="-1">
-    <div class="container stack">
-      <!-- The condensed attention view rides above every screen. The full list,
-           with the fold and the counts, is the home screen's ActionQueue —
-           same notices, same rules, two presentations. -->
+    <div class="screen-grid">
+      <!-- The condensed attention view rides beside every screen — in the
+           right rail when there is room for one, above the content when there
+           is not. The full list, with the fold and the counts, is the home
+           screen's ActionQueue — same notices, same rules, two presentations.
+           First in source order either way, so a screen reader meets it
+           before the content wherever it is drawn. -->
       {#if session.user}
-        <NoticeBar notices={notices} max={2} />
+        <aside class="notice-rail">
+          <NoticeBar notices={notices} max={2} />
+        </aside>
       {/if}
-      <slot />
+      <div class="container stack screen-body">
+        <slot />
+      </div>
     </div>
   </main>
 </div>
@@ -482,3 +490,32 @@ siteName: Basecamp
 <!-- A destructive button confirms itself with `data-confirm="…"`. Without this
      mounted the attribute does nothing and the button acts on the first click. -->
 <ConfirmProvider />
+
+<style>
+  /* Below 1536px a rail would squeeze every table on every screen to
+     ~700px, so the notices stack above the content as one column. */
+  .screen-grid {
+    display: grid;
+    gap: var(--screen-pad);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* NoticeBar renders nothing once every notice is dismissed; an empty rail
+     would still hold a gap above the content, or a blank 20rem column. */
+  .notice-rail:not(:has(section)) { display: none; }
+
+  @media (min-width: 1536px) {
+    .screen-grid:has(> .notice-rail section) {
+      grid-template-columns: minmax(0, 1fr) 20rem;
+    }
+    .screen-body { grid-column: 1; grid-row: 1; }
+    .notice-rail {
+      grid-column: 2;
+      grid-row: 1;
+      align-self: start;
+      /* The document scrolls, not the screen, so the rail sticks under the
+         sticky topbar rather than scrolling away with a long page. */
+      position: sticky;
+      top: calc(var(--topbar-height) + var(--screen-pad));
+    }
+  }
+</style>

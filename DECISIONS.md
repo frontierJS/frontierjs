@@ -27,6 +27,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d606"></a>2026-10-06 · `FJS-D606` — Is a site's page folder `content/routes` or `content/pages` — `content/routes`, as the website has it: Sierra's `routesDir` word, and every Sierra surface's `src/routes`.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (`content/pages`, as ksite has it, and the word a markdown author uses).
+
+content/routes for now, matching every Sierra surface. If people who are not developers end up editing content/ by hand, revisit as a Sierra-wide rename to pages, never as a site-kit exception.
+
 ### <a id="fjs-d546"></a>2026-09-29 · `FJS-D546` — the whole access system is the WARDEN: a word for prose and never a package or an identifier, and `FJS-D29`'s noun rule reaches only what runs.
 
 **What it names.** Everything that decides whether a call may touch a row or a
@@ -11754,6 +11760,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d608"></a>2026-10-06 · `FJS-D608` — Which tooling gaps in `site-kit-parity.md` § 4 become framework owners — Wire every gap Sierra already owns (`defer-js`, `speculation`, `sierra/analytics`); fix the two filed as Sierra's (FJS-1539 head, FJS-1540 host function) in Sierra; start every gap with no owner (images, per-page JSON-LD, the lead fallback, animations) as site-kit code, and move one to Sierra when a consumer that is not a site-kit site needs it.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (give each of images, per-page JSON-LD and the static-host function a Sierra owner before site-kit ports it), **C** (all of it stays site-kit code, FJS-1539 and FJS-1540 included).
+
+The paper's recommendation, taken as written: *batteries vs. smallness*: site-kit is the battery and stays severable, and a Sierra owner is earned by a second consumer, as *paved road vs. the workaround* measures a road. FJS-1539 and 1540 are already Sierra's rows, so C would build a second owner beside a filed one (Invariant 4).
+
+### <a id="fjs-d607"></a>2026-10-06 · `FJS-D607` — Does the block library move on demand, or all at once — On demand: a block moves when a site's content names it, the stressor's rule.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (the whole library, before any client cuts over), **C** (on demand, ordered by a census of what live clients use. Grep every client's `content/` for the tags and `layout:` values it names, rank the blocks by how many sites name them, and port in that order. A block no client names is not ported).
+
+The owner's pick: a block moves when a site that is moving names it, the stressor's rule. No census of client repos is run before the work starts.
+
+### <a id="fjs-d605"></a>2026-10-06 · `FJS-D605` — How does `@kobami/ksite` add its blocks, theme and markdown dialect to a site-kit site — The site names its engine in `content/settings/site.js` (a package name, which is plain data, so FJS-1544 holds), and `site-kit dev|build` loads that package's blocks, layouts, stylesheets, remark plugins and post-build plugins.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (ksite ships its own bin that wraps `siteKit()`, and a client runs `ksite build site`), **C** (the client writes a config file that composes the two).
+
+The paper's recommendation, taken as written: one command and one shell for every site, and the site states its engine in the one file that is already its own. B gives each engine a second CLI to keep in step with site-kit's. C puts a non-content file back into the client, which is what Phase 4 measures as cost. The key's name, and the noun for what it names, go through `decision-rules` before code.
+
+### <a id="fjs-d604"></a>2026-10-06 · `FJS-D604` — Whose engine is site-kit — ksite's made generic, or a core sized to frontierjs.com — Ksite's engine made generic. Everything `fli ksite:update` overwrote (`src/`, `config/`, `functions/`, `public/theme/`) moves to site-kit, except what is the cleaning-company template: its blocks, the lead widget, its theme. `@kobami/ksite` shrinks to those.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (a core frontierjs.com needs: the shell, the build, settings, the head. Every block stays in `@kobami/ksite` until a second engine wants it), **C** (site-kit is ksite renamed: the whole engine moves and ksite is content only).
+
+The paper's recommendation, taken as written: frontierjs.com writes `.mesa` routes and uses one block, so B makes the site that needs the least the measure of what is generic, and leaves the markdown dialect, Section and collections in a client package where a second agency's site would have to fork them. Preventing that fork is the reason site-kit exists (its `CLAUDE.md`). C puts one industry's template into a framework package. The line A draws is a test, not a guess: *would a site that is not a cleaning company use this unchanged?*.
 
 ### <a id="fjs-d601"></a>2026-10-06 · `FJS-D601` — Where does the model call live — The catalog, the ladder's checks and the emitter to `.lite` are one module with no model in it, and whatever runs the model calls that module — a skill for a developer, the prompt-to-app builder for anyone else. `fli` never holds a key.
 

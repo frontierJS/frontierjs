@@ -30,6 +30,13 @@
 import { randomBytes, createHash, timingSafeEqual, X509Certificate } from 'node:crypto'
 import { OPENSSL_CERT_ARGS } from '@frontierjs/outpost/cert'
 
+/** What the install runs on a machine, held here so two machines provisioned a
+ *  week apart run the same thing. The Outpost is pinned to the version this
+ *  workspace carries (a test holds the two together); Docker and Caddy come
+ *  from signed apt repositories. */
+export const BUN_VERSION     = '1.4.2'
+export const OUTPOST_VERSION = '0.1.2'
+
 /** How long a machine has to enroll. A cloud-init run is seconds; fifteen
  *  minutes is room for a slow image pull and nothing like room for a leaked
  *  metadata blob to be useful tomorrow. */
@@ -172,11 +179,25 @@ esac
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -yqq curl ca-certificates openssl
+apt-get install -yqq curl ca-certificates openssl chrony
 
-# Docker, from the vendor's own script. The Outpost runs containers and has no
-# other way to.
-curl -fsSL https://get.docker.com | sh
+# Every signed command is refused past 300 seconds of clock skew, so this
+# machine's clock is part of whether it takes commands. chrony replaces
+# systemd-timesyncd where the image ships it (the packages conflict), so there
+# is one daemon and never two disciplining the same clock.
+systemctl enable --now chrony.service
+
+# Docker, from the vendor's signed apt repository: apt verifies every package
+# against the key, where a piped script is whatever the site returns today. The
+# Outpost runs containers and has no other way to.
+. /etc/os-release
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/$ID/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$ID $VERSION_CODENAME stable" \\
+  > /etc/apt/sources.list.d/docker.list
+apt-get update -qq
+apt-get install -yqq docker-ce docker-ce-cli containerd.io
 
 # Caddy, the machine's ingress (FJS-D564). The Outpost is the only thing that
 # configures it, through the admin API on localhost:2019, so it runs as the
@@ -195,8 +216,8 @@ apt-get install -yqq caddy
 systemctl disable --now caddy.service
 systemctl enable --now caddy-api.service
 
-# Bun, which the Outpost is written for.
-curl -fsSL https://bun.sh/install | bash
+# Bun, which the Outpost is written for, at the version Basecamp holds.
+curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
@@ -243,7 +264,7 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/basecamp/outpost.env
-ExecStart=$BUN_INSTALL/bin/bunx --bun @frontierjs/outpost
+ExecStart=$BUN_INSTALL/bin/bunx --bun @frontierjs/outpost@${OUTPOST_VERSION}
 Restart=always
 RestartSec=5
 

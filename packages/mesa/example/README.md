@@ -5,7 +5,7 @@ the left, see it compiled and **running** on the right. It is also Mesa's
 working documentation — examples grouped by language feature, and a test that
 fails if a documented language feature has no example.
 
-Two files, no build step:
+Two files you edit, and a committed `vendor/` of third-party bundles:
 
 | File | What it is |
 |---|---|
@@ -32,8 +32,9 @@ The REPL reaches two siblings:
 Everything else works from any server root. Those two degrade to a console
 warning and unstyled components — the warning names the fix.
 
-Two features need network (both from a CDN, both non-fatal): **share URLs**
-(`lz-string`) and utility classes in examples that use them (Tailwind Play).
+The page loads nothing from the network: `vendor/` holds the CodeMirror,
+acorn, unified and lz-string bundles, and `index.html`'s importmap names them.
+After a devDependency moves, `bun example/build-vendor.mjs` rewrites it.
 
 ## How it works
 

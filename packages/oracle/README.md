@@ -61,4 +61,5 @@ npm run dev                            # http://localhost:8070
 
 - **Behavior.** A pattern is cited and written as a comment beside its model. Turning `audit` into `@@log(audit)` is the only pattern that becomes a declaration today. Hooks, jobs and notifications are the next step (`fjs-prototypes/base44` Phase 4).
 - **The edit turn.** Oracle writes a first schema. A later prompt is resolved against the app's own seed by `fli intent` (`packages/cli/core/intent.js`), and the two have not been joined.
+- **Shapes.** The catalog names entities; the 4–8-column shapes that recur under them across twenty schemas (a grant, an interval, a weekday window, a decision stamp, a tree, a poller) are traits in `packages/litestone/references/`, and `emit` writes those columns by hand rather than spreading `@@trait(Interval)`. The review that found them is *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt); the ladder's fourth rung, *shape*, is not in `ENTITIES` yet.
 - **Satisfy `transition-methods`.** An emitted lifecycle is a `@@transitions` that no service drives yet, so `fli check` reports it until one does (`FJS-1778`).

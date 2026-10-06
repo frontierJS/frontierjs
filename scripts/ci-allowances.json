@@ -2,7 +2,6 @@
   "//": "Ratchets for scripts/ci.mjs. Every entry is a thing CI would otherwise fail on, kept green by NAME and by reason. Adding one is a hand edit and shows in a diff; removing one is automatic (`bun run ci -- --update`) because the improvement direction never needs a decision. Same shape and same purpose as scripts/typecheck-baselines.json — see CLAUDE.md Invariant 14.",
   "//exemptPackages": "Directories under packages/ (plus the two example apps) with no `test` script. Without this list a package with no tests is indistinguishable from a passing one, which is the failure mode CI is aimed at. Key is the repo-relative directory.",
   "exemptPackages": {
-    "packages/oracle": "A README and a runnable mockup/, nothing else. Reopened 2026-10-06 (FJS-D600): the exemption holds until the rebuild gives the package a package.json of its own.",
     "example": "A runnable app, not a package. Its six browser drives need `bun run api` + `bun run web` started by hand and sign in against a login rate limit (10 per 15 min), so they cannot run unattended. Covered by hand per docs/TESTING.md.",
     "packages/sierra/example": "Same — a runnable app whose drives need servers started by hand."
   },
@@ -30,7 +29,7 @@
   },
   "//nonMembers": "Directories holding a package.json that the `packages/*` glob cannot see, kept out of the workspace on purpose. Uninstalled means untested and unrunnable (FJS-026), so each one has to say why that is acceptable. A NEW nested package is a note, because the default answer is that it should be a member.",
   "nonMembers": {
-    "packages/oracle/mockup": "The entity/pattern recognizer, exported from a Claude artifact and made runnable under the same `mockup/` convention orion uses. Deliberately not a member: it is React, d3 and its own vite, and this repo's UI substrate is Mesa — installing it would put a second UI stack on the workspace's import paths for something CI has nothing to assert about. Run by hand from its own directory. The rebuild replaces it (FJS-D600)."
+    "packages/oracle/mockup": "The entity/pattern recognizer, exported from a Claude artifact and made runnable under the same `mockup/` convention orion uses. Deliberately not a member: it is React, d3 and its own vite, and this repo's UI substrate is Mesa — installing it would put a second UI stack on the workspace's import paths for something CI has nothing to assert about. Run by hand from its own directory. The module beside it (`packages/oracle/src`) is the rebuild, and the mockup stays as reference until its last screen idea is either ported to a caller or dropped."
   },
   "//knownTestFailures": "Packages whose own suite exits non-zero today. Listed so that a NEW failure is loud rather than lost in an already-red run. An entry whose suite now passes fails CI until it is removed — that is the ratchet, and `--update` removes it for you.",
   "knownTestFailures": {},

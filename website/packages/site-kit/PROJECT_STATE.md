@@ -18,5 +18,5 @@ marketing site depends on.
 
 ## Next
 
-Move the first generic piece out of ksite's `packages/ksite/` engine, so ksite
-depends on this package instead of only the website.
+`IDEAS/site-kit-plan.md` is the order of work. Its Phase 1 (re-prove the ksite
+split) needs no ruling; Phase 2 waits on its open questions.

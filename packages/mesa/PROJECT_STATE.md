@@ -8,11 +8,11 @@ defects are `../../ISSUES.md`; the package map and its traps are `CLAUDE.md`.
 ## How it is proven
 
 `bun run test` runs, in order: `test/spec-check.mjs` (VISION §4's claims list),
-vitest over `test/*.test.js`, then the two gating browser drives —
-`test/browser/runtime/` (the language in a real browser) and
-`test/browser/vite/` (the plugin in a real dev server). Both drives need Chrome on
-PATH or `$FJS_CHROME`. `test:browser:repl` opens `example/index.html` and is
-manual, because the REPL loads from CDNs (`FJS-326`).
+vitest over `test/*.test.js`, then the three gating browser drives —
+`test/browser/runtime/` (the language in a real browser),
+`test/browser/vite/` (the plugin in a real dev server) and
+`test/browser/repl/` (`example/index.html`, offline off `example/vendor/`). The
+drives need Chrome on PATH or `$FJS_CHROME`.
 
 Because SSR and hydration fail apart, a compiler or runtime change is also run
 through `example`: `verify` and `verify:site` (root `CLAUDE.md` § Which drive

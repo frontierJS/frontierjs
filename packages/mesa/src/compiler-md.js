@@ -188,12 +188,14 @@ function buildProcessor(remarkPlugins = [], rehypePlugins = []) {
   return p.use(rehypeStringify, { allowDangerousHtml: true })
 }
 
-async function markdownToHTML(src, { remarkPlugins, rehypePlugins } = {}) {
+async function markdownToHTML(src, { remarkPlugins, rehypePlugins, path } = {}) {
   const hasPlugins = (remarkPlugins?.length ?? 0) + (rehypePlugins?.length ?? 0) > 0
   const processor = hasPlugins
     ? buildProcessor(remarkPlugins, rehypePlugins)
     : _defaultProcessor
-  return String(await processor.process(src))
+  // A bare string leaves `file.path` undefined, and a plugin cannot key on the
+  // file it is compiling.
+  return String(await processor.process(path ? { value: src, path } : src))
 }
 
 // ─── Frontmatter → export declarations ───────────────────────────────────────
@@ -312,6 +314,8 @@ function wrapInLayout(html, frontmatter, layouts) {
  *   config.layouts {Record<string,string>} — layout name → file. With it, a
  *     `layout:` in the frontmatter wraps the body in that component, and a name
  *     it does not hold is a compile error. Without it, `layout:` wraps nothing.
+ *   config.remarkPlugins / config.rehypePlugins — unified plugins; each sees
+ *     `file.path` as `config.filename` (or `config.path`).
  * @returns {Promise<object>} ctx — same as compile(), plus:
  *   ctx.frontmatter  {object}       — parsed frontmatter values
  *   ctx.layout       {string|null}  — frontmatter.layout value
@@ -350,6 +354,7 @@ export async function compileMd(source, config = {}) {
   const rawHTML = await markdownToHTML(protectedMd, {
     remarkPlugins: config.remarkPlugins,
     rehypePlugins: config.rehypePlugins,
+    path: config.filename ?? config.path,
   })
 
   // 5. Restore

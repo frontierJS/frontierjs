@@ -364,7 +364,7 @@ title: Server
             Run this on the machine within {Math.round(enrollWindowMs / 60000)} minutes.
             It is shown once; issue another if you lose it.
           </p>
-          <pre class="code-block" id="enroll-command"><code>{enrollCommand}</code></pre>
+          <pre class="code" id="enroll-command"><code>{enrollCommand}</code></pre>
           <div class="cluster">
             <CopyButton text={enrollCommand} label="Copy command" variant="outlined" />
           </div>

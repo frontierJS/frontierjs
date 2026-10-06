@@ -15,6 +15,24 @@ export default {
   // web/ sits one level down from the package root (repo invariant 3) — do not
   // flatten it.
 
+  // The themes a person may pick in Settings. Sierra puts the class on <html>
+  // and emits a <head> script that applies the stored one before first paint;
+  // a class written on the body as well would be a descendant of it and win,
+  // so the picker would change nothing.
+  //
+  // `theme-basecamp` is the default rather than 'system': it is this app's own
+  // look, and dark, so an OS in light mode would otherwise open on a palette
+  // nobody chose.
+  theme: {
+    themes: [
+      'theme-basecamp', 'theme-default', 'theme-dark', 'theme-midnight',
+      'theme-forest', 'theme-sunset', 'theme-elite', 'theme-dracula',
+      'theme-twilight', 'theme-notebook', 'theme-press', 'theme-field',
+    ],
+    default: 'theme-basecamp',
+    key:     'basecamp_theme',
+  },
+
   junction: {
     // Same origin as the page while Vite (or the image's Caddy) proxies the API
     // paths to :8120. An API on its own origin, or a build a native shell

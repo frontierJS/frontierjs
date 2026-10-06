@@ -6245,6 +6245,16 @@ function validate(schema) {
       // per model PER TENANT — the tenancy desugar has already prepended the
       // column by now — and an exact-pair test refused the one right spelling.
       const tenantCol = schema.tenancy?.strategy === 'row' ? schema.tenancy.column : null
+
+      // Scoped through a parent, a declarer has no column to narrow a raw read
+      // by, so every one of the pool's reads is installation-wide: one key
+      // namespace across tenants, one slot pool, and a 409 naming a key another
+      // tenant declared (`FJS-1754`). An unscoped declarer is the installation's
+      // on purpose; this one says it is a tenant's.
+      if (tenantCol && !decl.fields.some(f => f.name === tenantCol)
+          && decl.attributes.some(a => a.kind === 'deny' && a.generated === 'tenancy' && a.expr?.type === 'not'))
+        errors.push(`${where} — '${ext.declaredBy}' is scoped through a parent and carries no '${tenantCol}' column, so every tenant would read one set of declarations and share one slot pool. Give it its own '${tenantCol}' column, or mark it @@tenant(none) for one set of declarations for the whole installation`)
+
       const hasKeyUnique = decl.attributes.some(a => {
         if ((a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') || !Array.isArray(a.fields)) return false
         const key = a.fields[0] === tenantCol ? a.fields.slice(1) : a.fields

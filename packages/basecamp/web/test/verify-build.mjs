@@ -91,6 +91,11 @@ check('…and a stylesheet <link> outside any comment',
   /<link[^>]+rel=["']?stylesheet/i.test(live), true)
 check('the body tag is not written inside a comment — the trap itself',
   /<!--[\s\S]*?<body[\s\S]*?-->/i.test(html), false)
+// index.html has no <head> tag, which HTML allows; an injector anchored on the
+// literal tag wrote nothing and every reader on a picked theme saw the default
+// first (FJS-1775).
+check('the theme script is in the page, ahead of the stylesheet',
+  live.indexOf('sierra-theme'), i => i > 0 && i < live.search(/<link[^>]+rel=["']?stylesheet/i))
 
 // ─── 2. The page ──────────────────────────────────────────────────────────
 children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore' }))

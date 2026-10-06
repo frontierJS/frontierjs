@@ -14,6 +14,16 @@ finished.
 
 ---
 
+# Handoff — 2026-10-06 (shapes consolidate, models do not)
+
+> **Started as "where did we leave Oracle" and ended with eight reference files one rung below the catalog Oracle was, that same morning, rebuilt on.** The through-line: the references folder's own rule — write a file only from a real instance — was blocked on *no instance in this tree*, and the eight `fjs-prototypes` schemas plus basecamp, example and the nine fixture corpora are now instances for every unwritten row.
+
+**What is recorded where.** The review is the artifact *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt): corpus, a shape-by-schema heatmap, ten shapes with every instance named and where they contradict, the fidelity/abstraction axis, and a before/after of Oracle. The eight files are `packages/litestone/references/` (`CHANGES.md` there has the two entries); `references.test.ts` now finds a trait-only file's noun on `schema.traits`. The four rulings the files leaned on are `IDEAS/owed-rulings.md` § Shapes, unfiled.
+
+**How it moved.** This session read Oracle as V2-deferred under `FJS-D14`; a parallel session the same morning lifted that (`FJS-D600`) and built the module (`FJS-D601`): `src/catalog.js` is the 32 entities with typed fields, `checkAnswer` grades a model's answer under thirteen rules, `emit` writes the graded plan onto the scaffold's `db/schema.lite`, no model inside. The two sessions did not see each other until the end. What this one adds is one rung below that catalog: reading nine prototype schemas side by side showed the reuse is not the entities (which share only a WORD across apps) but 4–8-column shapes — a bearer grant, an occupying interval, a weekday slot, a decision stamp, a tree, a poller, a delivery row — recurring byte-for-byte under six names each. Litestone already has the construct (`trait` + `@@trait`), so those are now `references/` files, and the join is obvious and not done: `emit` could spread `@@trait(Interval)` where an answer names a span, instead of emitting the pair by hand. The ladder's fourth rung, *shape*, between variant and novel, is the catalog entry that would carry it.
+
+**Left open, in order.** The house's own contradictions are in the report's table and none is filed: `User` drifted across nine scaffold copies while `Notification` held (is `package-model-drift` grading `User`?); `CustomField` is spelled three ways in-house with `example` as the one that should have been copied; `@frontierjs/notifications` fans out and records no `Delivery`; linear carries `rank` and `position` on one row and `canceled` against the house spelling. Oracle's catalog and `references/` are two origins for what a shape's columns are until `emit` reads the latter. Unwritten but named: `Run` from transit `SyncRun`, `Invitation` as Grant + email + role, `auth/db/grant.lite`, `junction/db/inbox.lite`. `fli done` was not run this session; only `test/references.test.ts` was.
+
 # Handoff — 2026-09-22 (a commitment is a transition at a time)
 
 > **The session started from one sentence in the ontology paper — *is a

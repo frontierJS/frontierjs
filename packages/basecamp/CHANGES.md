@@ -1,5 +1,25 @@
 # Changes — Basecamp
 
+## 2026-10-06 — the shell's notices move to a right rail
+
+The NoticeBar sat above every screen and pushed the page down by one alert per unreachable machine. From 1536px up it is a 20rem column to the right of the content, sticky under the topbar. Below that width it still stacks above the content, because a rail there squeezes every table to ~700px. The rail is first in source order either way, so a screen reader reaches it before the content. When every notice is dismissed it collapses and leaves no gap and no empty column (`:has()`). `_module.mesa` now has a `<style>` block for this, and it is layout only. `verify:screens` measures both widths; 240/240.
+
+## 2026-10-06 — the install puts chrony on every machine (`FJS-1763`)
+
+Both sides of the command port refuse a signed request past 300 seconds of skew, and `installScript()` left the clock to whatever the image shipped; an imported machine is whatever its owner made. The install now adds `chrony` to its first `apt-get install` and runs `systemctl enable --now chrony.service` before anything that needs a correct clock. On Debian and Ubuntu the package conflicts with `systemd-timesyncd`, so it replaces it rather than running beside it. `compute.test.ts` asserts the package and the enable line; red before, 593 pass after. Reading the offset back as the `time.synced` control is the posture design's (`IDEAS/server-posture.md`) and is not built.
+
+## 2026-10-06 — the install pipes no vendor script into a root shell (`FJS-1762`)
+
+`installScript()` took Docker from a signed apt repository, the shape Caddy already had, and Bun by `bash -s bun-v<version>`; the unit runs `@frontierjs/outpost@<version>`. `BUN_VERSION` and `OUTPOST_VERSION` are constants in `enrollment.ts`, and a test holds `OUTPOST_VERSION` to the workspace's `outpost/package.json` so a bump there fails here rather than pinning a version nobody published. Two machines provisioned apart now run the same Bun and Outpost; Docker is still whatever the repository's current `docker-ce` is, signed, and reporting the versions a machine runs is `server-posture.md` Q5. `compute.test.ts` asserts the script holds no `get.docker.com` and carries all three pins; red before the change, 592 pass after.
+
+## 2026-10-06 — the enrollment command scrolls in its own box
+
+The install command on an imported server's page was a `<pre class="code-block">`, a class `@frontierjs/css` does not name, so the unstyled block ran past the alert. It is now `.code`, which scrolls horizontally.
+
+## 2026-10-06 — the theme is picked in /settings/ (`FJS-1775`)
+
+`sierra.config.js` declares twelve themes with `theme-basecamp` the default, and the body no longer carries a theme class, which would have shadowed Sierra's on `<html>`. An Appearance card on /settings/ applies a pick at once; it is stored in this browser, not on the account. `verify:screens` and `verify:build` assert it.
+
 ## 2026-10-06 — orion's flows and runs reach an open socket, and a broadcast grades a member at their role (`FJS-1772`, `FJS-1771`)
 
 A connection joins orion's `flows` and `runs` channels, which name no workspace; junction grades their rows under the workspaces the connection is in. The `channels({ claims })` resolver now reads the membership row per frame (`FJS-D472`) and answers `memberRole` and `capabilities` beside `workspaceId`, so a member is graded at their role rather than VISITOR(1), and one removed mid-session stops receiving. `orion()` no longer takes `level`; orion asks the client (`FJS-1771`). `services.test.ts` opens two real sockets: the owner receives a flow drafted in their workspace and an admin of another does not; red with junction's fallback off and red with the resolver answering `workspaceId` alone. 590 pass.

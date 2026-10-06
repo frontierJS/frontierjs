@@ -355,11 +355,16 @@ export const ENTITIES = [
     rules: ['Unique email'], fields: [], links: [],
   },
   {
+    // The reference is packages/litestone/references/Organization.lite, read
+    // off nine instances. The shape is universal and the word is not: the app
+    // says Workspace, Account, Site or Team through its name and label, and
+    // the role enum is the product's. No owner link, because `role == owner`
+    // on the membership already answers it and a second answer drifts.
     name: 'Organization', category: 'identity_access',
-    desc: 'A multi-person container or tenant — a workspace, a company, an account. Its people are a membership entity linking it to User',
-    rules: ['Has at least one Owner', 'Settings cascade to members'],
-    fields: F('name text!', 'planTier text'),
-    links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
+    desc: 'A multi-person container or tenant — a workspace, a company, an account. Its people are a `members` entity linking it to User, one row per person (`@@relator(…, once)`), the role a column on that row. The owner is a role, not a link',
+    rules: ['Reached through its membership, never an owner link', 'Created by onboarding (`system`), renamed by an administrator', 'One level: a billing account over workspaces is a second pair under its own names, never a self-parent'],
+    fields: F('name text!', 'slug text'),
+    links: [],
   },
   {
     name: 'Role', category: 'identity_access',

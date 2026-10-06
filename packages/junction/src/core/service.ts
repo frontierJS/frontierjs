@@ -2810,6 +2810,14 @@ export class ServiceRegistry {
   // a plugin's boot() or ready() hook) so they never fall back to per-request
   // mergeHookMaps(). Also handles app.hooks() calls made after start().
   private _appHooks: HookMap | null = null
+  // Moves on every register(). A reader that indexes the registry keys its
+  // index on this rather than on when it first looked: a write before the
+  // start phases froze an empty model → service index for good (`FJS-1739`).
+  private _version = 0
+
+  get version(): number {
+    return this._version
+  }
 
   // True once app.start() (or a post-start app.hooks() call) has provided
   // the app-level hook map — i.e. compiled pipelines exist and must be
@@ -2835,6 +2843,7 @@ export class ServiceRegistry {
 
   register(service: Service, aliases: string[] = []): void {
     this._map.set(service.name, service)
+    this._version++
     for (const alias of aliases) {
       if (alias === service.name || this._map.has(alias)) continue
       this._aliases.set(alias, service.name)

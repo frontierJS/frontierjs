@@ -542,6 +542,48 @@ rulings, which a spec would *propose* rather than impose.
 
 ---
 
+## Measuring spec vs. glue
+
+*With AI writing the code, code is a liability and the specification is the
+asset. So how much of the tree encodes a spec decision, and how much is wiring?*
+On 2026-10-06 there were about 311k lines of non-test JS/TS under `packages/`.
+**This cannot be measured until the entries are written**, because without a
+spec to measure against, sorting the code is only a judgment about what the spec
+ought to be.
+
+Two buckets are too few. Sort the code into four:
+
+- **Spec semantics.** A second implementation of the entry would need this code.
+- **An unclaimed decision.** It carries a `DECISIONS.md` ruling or an Invariant
+  that no entry claims yet. This bucket is where new spec candidates turn up.
+- **Host adapter.** It is needed on this host and replaced on another: Bun,
+  Vite, SQLite, argv.
+- **Plumbing.** Duplication, workarounds for one host's quirks, and wiring that
+  exists only to connect the pieces. This bucket is the liability.
+
+The line between them blurs. Invariant 4's "one owner per translation" is a
+decision about the wiring itself.
+
+There are three instruments, strongest first:
+
+1. **Vector coverage.** Run an entry's conformance vectors with coverage on. The
+   lines the vectors reach are spec semantics, and every other line falls in one
+   of the other three buckets. This is the only true measurement. Its
+   prerequisite is criterion 3.
+2. **The second-implementation question, sampled.** For each sampled function,
+   ask whether a different framework implementing this entry would need it. Two
+   classifiers work independently, and their agreement rate shows whether the
+   buckets can be told apart at all.
+3. **The cheap proxy.** Count code that cites an `FJS-D` ruling or an Invariant,
+   or that takes or returns a JSON form. It is fast, and it undercounts.
+
+**Pilot on entry 14 (Directives).** One owner holds it (`toolbelt/directives` +
+`toolbelt/query`) and its semantics are sharp. Run instrument 1 on that entry,
+add a sample of about 50 functions under instrument 2, and do it before measuring
+the rest of the tree.
+
+---
+
 ## Questions for when FrontierJS settles
 
 - Where do vector files live: beside the owning package, or in one neutral

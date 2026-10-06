@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-06 — the theme script reaches a page with no `<head>` tag (`FJS-1775`)
+
+`injectThemeScript` anchored on the literal `<head>`, which HTML makes optional and both apps' `index.html` omit, so no build in the repo carried the no-flash script and none said so. It now anchors on `<head …>`, then `<meta charset>`, `<html>`, the doctype.
+
 ## 2026-10-05 — js-yaml dropped; frontmatter is `@frontierjs/toolbelt/frontmatter` (`FJS-D549`)
 
 The scanner's `parseFrontmatter` reads the toolbelt kit, which mesa's `.md` compiler reads too, so a route's `page.meta` and a module's `frontmatter` are one object (`FJS-1541`). Two meanings changed. A date is the string written rather than a `Date`, and anchors and aliases are refused, so the `FJS-821` expansion count is gone too. The alias bomb in `test/scanner-hostile-input.test.js` is refused at its first anchor, and the negative control there is now ksite's nested menu shape. The error reads `frontmatter line N: …`, with N counted from the top of the file.

@@ -13,17 +13,16 @@
   see it because it drives the dev server, where nothing is injected. The same
   trap was fixed in example/web/index.html two days earlier and is in CLAUDE.md.
 
-  `app` + a theme go on the body element. The theme is one class on any ancestor
-  — swap it for theme-dark / theme-forest / theme-midnight and everything below
-  follows, because it is all custom-property inheritance. No color is named here.
+  `app`, and NO theme class. Sierra puts the theme on the root element from
+  `theme:` in sierra.config.js, before first paint, and Settings switches it.
+  A theme class written here as well would be a descendant of that one and
+  would win, so the switcher would appear to do nothing.
 
-  theme-basecamp is this app's own: the palette of the original React UI
-  prototype, which carried it as an 18-key object read by 2,761
-  inline style objects. It lives in @frontierjs/css as a theme rather than here
-  as CSS, because a palette is tokens and tokens are the design system's job —
-  which is also what makes it one class to swap back.
+  theme-basecamp is this app's own and its default: the palette of the original
+  React UI prototype. It lives in @frontierjs/css as a theme rather than here
+  as CSS, because a palette is tokens and tokens are the design system's job.
 -->
-<body class="app theme-basecamp">
+<body class="app">
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

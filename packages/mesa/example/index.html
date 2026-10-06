@@ -4,29 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mesa REPL</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <script src="./vendor/lz-string.min.js"></script>
     <!-- @frontierjs/css — the design system @frontierjs/ui is written in.
          Reachable only when the server root is the monorepo root (npm run
          serve). It is FULLY layered — every rule sits inside @layer — so it
          cannot touch this page's own unlayered chrome, and a 404 here costs
          nothing but unstyled @ui components. -->
     <link rel="stylesheet" href="../../css/dist/frontier.css" />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      // Tailwind Play CDN — disable preflight so it doesn't conflict with REPL
-      // or component styles.
-      //
-      // This has to run AFTER the CDN script, not before it. Setting
-      // `window.tailwind.config` first looks like it should work and does
-      // nothing: the CDN assigns its own `window.tailwind` on load and the
-      // earlier object is discarded. Preflight was therefore live the whole
-      // time, and it is a global reset at specificity (0,0,1) injected after
-      // this page's <style> — so it won every tie, including
-      // `button,input,… { margin: 0; padding: 0 }` over the preview's own
-      // button styling, and it would beat any plain element rule a component
-      // declared for itself.
-      window.tailwind.config = { corePlugins: { preflight: false } }
-    </script>
     <style>
       /* ── Themes ──────────────────────────────────────────────────────────── */
 
@@ -1366,22 +1350,22 @@
     <script type="importmap">
       {
         "imports": {
-          "acorn": "https://esm.sh/acorn@8",
-          "unified": "https://esm.sh/unified@11",
-          "remark-parse": "https://esm.sh/remark-parse@11",
-          "remark-gfm": "https://esm.sh/remark-gfm@4",
-          "remark-rehype": "https://esm.sh/remark-rehype@11",
-          "rehype-slug": "https://esm.sh/rehype-slug@6",
-          "rehype-stringify": "https://esm.sh/rehype-stringify@10",
-          "@codemirror/state": "https://esm.sh/@codemirror/state@6",
-          "@codemirror/view": "https://esm.sh/@codemirror/view@6",
-          "@codemirror/language": "https://esm.sh/@codemirror/language@6",
-          "@codemirror/commands": "https://esm.sh/@codemirror/commands@6",
-          "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6",
-          "@codemirror/lang-html": "https://esm.sh/@codemirror/lang-html@6",
-          "@codemirror/autocomplete": "https://esm.sh/@codemirror/autocomplete@6",
-          "@lezer/highlight": "https://esm.sh/@lezer/highlight@1",
-          "@replit/codemirror-vim": "https://esm.sh/@replit/codemirror-vim@6"
+          "acorn": "./vendor/acorn.js",
+          "unified": "./vendor/unified.js",
+          "remark-parse": "./vendor/remark-parse.js",
+          "remark-gfm": "./vendor/remark-gfm.js",
+          "remark-rehype": "./vendor/remark-rehype.js",
+          "rehype-slug": "./vendor/rehype-slug.js",
+          "rehype-stringify": "./vendor/rehype-stringify.js",
+          "@codemirror/state": "./vendor/codemirror-state.js",
+          "@codemirror/view": "./vendor/codemirror-view.js",
+          "@codemirror/language": "./vendor/codemirror-language.js",
+          "@codemirror/commands": "./vendor/codemirror-commands.js",
+          "@codemirror/lang-javascript": "./vendor/codemirror-lang-javascript.js",
+          "@codemirror/lang-html": "./vendor/codemirror-lang-html.js",
+          "@codemirror/autocomplete": "./vendor/codemirror-autocomplete.js",
+          "@lezer/highlight": "./vendor/lezer-highlight.js",
+          "@replit/codemirror-vim": "./vendor/replit-codemirror-vim.js"
         }
       }
     </script>
@@ -1696,7 +1680,7 @@
         code = code.replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
         code += '\nreturn __component'
         // eslint-disable-next-line no-new-func
-        return new Function('$runtime', ...names, code)($rt, ...vals)
+        return new Function('$$runtime', ...names, code)($rt, ...vals)
       }
 
       // ─── Multi-file state ─────────────────────────────────────────────────────────

@@ -116,7 +116,7 @@ the objection is the first question for review.
 - **`filter-*` on icons** — dropped. An inline SVG drawn in `currentColor`
   takes a tone with no filter.
 
-## Open before building
+## Open questions
 
 1. **Positional roles** — does build-time emission of the named part answer
    `page-composition.md` § Risks? (above)

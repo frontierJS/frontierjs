@@ -636,6 +636,51 @@ describe('under tenancy { strategy row }', () => {
     const idx = issue.attributes.find((a: any) => a.kind === 'index' && a.generated === 'extensible')
     expect(idx.fields).toEqual(['workspaceId', 't1', 't2', 'n1'])
   })
+
+  // A declarer scoped THROUGH A PARENT carries no tenant column, so every raw
+  // read of it is installation-wide: one key namespace, one slot pool, and one
+  // tenant's values mirrored through another's declarations (`FJS-1754`).
+  // Refused at parse, naming the column it needs.
+  describe('a declaring model scoped through a parent', () => {
+    const VIA = (tag: string) => `
+      tenancy { strategy row  column workspaceId  claim workspaceId }
+      enum FieldKind { text number }
+      model Board {
+        id          Int    @id
+        workspaceId Int
+        @@unique([id])
+      }
+      model CustomField {
+        id      Int    @id
+        boardId Int
+        board   Board  @relation(fields: [boardId], references: [id])
+        model   String
+        key     String
+        type    FieldKind
+        slot    String?
+        ${tag}
+        @@unique([model, key])
+        @@unique([model, slot], nullsDistinct: true)
+      }
+      model Issue {
+        id          Int    @id
+        workspaceId Int
+        fields      Json   @default("{}")
+        @@extensible(fields, declaredBy: CustomField, max: { text: 2 })
+      }
+      database main { path ":memory:" }`
+
+    test('is refused, whether the parent is named or found', () => {
+      for (const tag of ['@@tenant(via: board)', '']) {
+        const { errors } = parse(VIA(tag))
+        expect(errors.join('\n')).toMatch(/CustomField.*scoped through a parent.*'workspaceId' column/s)
+      }
+    })
+
+    test('@@tenant(none) is still one set of declarations for the installation', () => {
+      expect(parse(VIA('@@tenant(none)')).errors).toEqual([])
+    })
+  })
 })
 
 // The slot columns are storage, not fields: `t1` is one tenant's Severity and

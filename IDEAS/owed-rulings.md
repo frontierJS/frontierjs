@@ -334,3 +334,35 @@ not here.
   - **B** — announce at the model level: litestone derives `db.$readDependents(accessor)`, the models whose read policy reaches this one, transitively, from the schema; the tap adds a count-only `changed` (gate mode, the frame bulk writes already send, `FJS-307`) on each dependent model's channels. Stores already re-read on `changed`, so lists heal under one frame per model; every reader of a dependent model re-reads, and `record(id)` heals only once `FJS-1740` is fixed. Fails closed: the over-read is a cost, never a leak.
   - **C** — leave it to the app: the service that writes a Share announces on `pages`/`blocks` itself. No code, but every app restates the policy graph by hand (a second origin), and the stressor's own `service` arm shows it still misses Blocks.
   - **Recommend B** — it derives from the one origin, reuses the frame and store behavior siblings already have, and its failure is an extra read rather than a revoked page left on screen; A can follow as a narrowing where a measurement shows the re-read costs more than the rows.
+
+- **FJS-D602 — When `outpost.service` is sandboxed, does the sandbox cover `/exec`'s recipe scripts too, or do they run outside it?** `FJS-1761`. `docker.exec` (`outpost/src/docker.js:391`) runs `sh -c <script>` as a child of the Outpost, so every recipe inherits the unit's mount namespace. The seed's own recipes (`db/seed.js:721`) are `apt-get update && apt-get upgrade` and `nginx -t && systemctl reload nginx`; under the row's `ProtectSystem=strict` with `ReadWritePaths` for `/etc/basecamp`, `/var/lib/outpost` and bun's cache, the first fails on a read-only `/usr` and `/var/lib/dpkg`, the second on `/etc` and `/run`. The recipe form says *there is no sandbox* (`web/src/routes/recipes/index.mesa:237`), which stops being true. Red test: `installScript()` holds none of `NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`, `ReadWritePaths` today; it can be written once this is answered, since the answer decides which lines it asserts.
+  - **A** — sandbox the unit as the row says, and have `exec` leave it: the command is run as `systemd-run --pipe --wait --collect -- sh -c …`, a transient unit with the manager's own (unsandboxed) environment. A flaw in `/static/publish` or any other route is bounded by the sandbox; `/exec` is root over the box by design and the screen's wording stays true. Adds one call shape to `docker.js`'s runner (the one place a command runs), and the sandbox is a seatbelt rather than a wall for anyone who can already reach `/exec`, since that route is root. Never run on a machine (`FJS-257`): `systemd-run` from inside the namespace is the thing to prove first.
+  - **B** — sandbox the whole unit, recipes included, and say so on the recipe screen: a recipe can write only the Outpost's own directories and run docker. The strongest unit by `systemd-analyze security`, but host-administration recipes (patching, `systemctl`) stop working, and `server-posture.md`'s patching phase would need its own door anyway.
+  - **C** — a weaker unit that keeps every recipe working: `NoNewPrivileges`, `PrivateTmp`, `ProtectKernelModules`, `ProtectControlGroups`, `RestrictSUIDSGID`, and no `ProtectSystem`. Nothing written by a route bug is confined, which is the row's named risk, so `outpost.sandbox` would grade a unit that still writes anywhere.
+  - **Recommend A** — it is the only one that narrows the routes a flaw would live in without taking away the thing `/exec` is for; B trades a feature for a number, and C leaves the row's risk standing.
+
+## Shapes — from the 2026-10-06 cross-schema review (not yet filed; `fli file --sev decision` each before building on it)
+
+Source: *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt) and `packages/litestone/references/` as of 2026-10-06. Each is a question a reference file answered provisionally in its own prose; the file says which way it leaned.
+
+- **The catalog word for the container people belong to.** Nine instances, four words (`Workspace`, `Account`, `Site`, `Organization`) and none of them Oracle's; `references/Organization.lite` takes `Organization` as the catalog word with the app's word as `@@label`.
+  - **A** — `Organization`, as written: matches Oracle, trigger.dev, documenso; no FrontierJS app uses it.
+  - **B** — `Workspace`: what basecamp, linear and notion say, and the word `tenancy { claim workspaceId }` already carries in two prototypes.
+  - **C** — no catalog word: the shape is `Member`'s relator and the container is always the app's noun.
+  - **Recommend A** — a catalog word that no app uses is the point: it names the shape without claiming the label, which is what `@@label` is for.
+
+- **Whether the polymorphic subject's spelling is settled.** `references/README.md` chose `subjectType`/`subjectId`; eleven copies of the notifications fragment now say `contextType`/`contextId`, and every new app votes that way by scaffold.
+  - **A** — settled as `subject*`; the fragment renames when a migration is cheap (pre-alpha: now).
+  - **B** — settled as `context*`; AuditEvent and the README move to it.
+  - **C** — leave both and have `fli check` grade only the enum-on-the-type-column half.
+  - **Recommend A, now** — the evolution policy says a rename is a rename; the only cost is one fragment and one drift baseline, and it stops growing by one app a week.
+
+- **Whether a trait may ship a `claim`.** `Grant` is unusable without `claim xId` + `@@allow(…, id == auth().xId)`, both the host's today because a trait cannot name the host's key.
+  - **A** — no; a trait is columns and model attributes, the claim is a schema-level fact, the README says so and `grant.lite` in auth would ship the claim beside the trait.
+  - **B** — yes, with a parameter: `@@trait(Grant, claim: bookingId)` expands the policy.
+  - **Recommend A** — B is a language feature for one trait; the auth fragment is the shape `user.lite` already has.
+
+- **Whether `Decision` is a trait or an attribute on the transition.** `references/Decision.lite` says it wants to be `approve: requested -> approved @stamps(decidedAt, decidedById)`.
+  - **A** — trait now, attribute later; a host that spreads the trait renames nothing when the attribute arrives.
+  - **B** — the attribute now, no trait: the stamp is owned by the edge that writes it, which is the one-owner invariant.
+  - **Recommend A** — B is right and is litestone work with a catalog entry, a hook, and `x-transitions` to carry it; the trait costs nothing while that waits.

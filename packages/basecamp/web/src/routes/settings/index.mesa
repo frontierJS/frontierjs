@@ -6,6 +6,9 @@ title: Your settings
   //
   // Four of its five tabs are real here and the fifth is honestly absent:
   //
+  //   Appearance     Sierra's theme, a class on <html> stored in this
+  //                  browser — not a User column, because it is a fact
+  //                  about the device, not the person.
   //   Profile        the caller's own User row, `users.get('me')`, edited by
   //                  User.mesa's default form. The address and the standing
   //                  come from `client.auth.me()`, the session, and are not
@@ -41,6 +44,7 @@ title: Your settings
   import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'
   import User, { users } from '../../resources/User.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'
+  import { theme, setTheme, themes } from '@frontierjs/sierra/theme'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -50,6 +54,7 @@ title: Your settings
   import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import RadioGroup from '@frontierjs/ui/components/forms/RadioGroup.mesa'
   import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
@@ -58,6 +63,9 @@ title: Your settings
   // picks it with `session.workspaceId`; watching `session.user` alone leaves it
   // showing the previous workspace's role after a switch.
   $: (session.user, session.workspaces, session.workspaceId, session.canMail)
+  $: theme.value
+
+  const themeChoices = themes().map(t => ({ value: t, label: t.replace('theme-', '') }))
 
   let me        = null
   let profile   = null
@@ -294,6 +302,16 @@ title: Your settings
         </span>
       </dd></div>
     </dl>
+  </Card>
+
+  <Card id="settings-appearance">
+    <h2 class="h5">Appearance</h2>
+    <!-- Applied on pick, like every other card here: there is no page-wide Save
+         for it to wait for. -->
+    <RadioGroup id="settings-theme" label="Theme" layout="inline"
+                hint="Stored in this browser, not on your account."
+                items={themeChoices} value={theme.value}
+                onchange={(v) => setTheme(v)} />
   </Card>
 
   <Card id="settings-password">

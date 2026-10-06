@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-06 — a write before the services register no longer silences every background write after it (`FJS-1739`)
+
+`announceDataWrites` built its model → service index on the first write the tap heard and kept it. A seed or boot-time write before `app.start()` registered the services froze an empty index, so every later `asSystem()`, job or cross-model hook write announced nothing for the life of the process. `ServiceRegistry` now has a `version` that moves on every `register()`, and the index rebuilds when it moves, so a service registered after the index exists is announced too. Two cases in `data-write-announcement.test.ts`, both red before; 2605 pass.
+
 ## 2026-10-06 — a row on a channel that names no tenant reaches the recipients whose tenant it is (`FJS-1772`)
 
 Under `strategy row` a fixed channel — orion's `flows` and `runs` — carries rows of every tenant, so the `channels({ claims })` resolver had no claim to answer and the tenancy deny refused every recipient. `gradeRecipients` now grades such a recipient again under each claim the same resolver answers for them on the other channels they are in, and admits them by the first that reads the row. The Data boundary decides the row's tenant, through a parent where the row has no column; the row's own tenant is never copied onto the recipient, which would pass the deny for everybody. A count (`gate` mode) is unchanged, since it names no tenant. Five cases in `channel-claims.test.ts`, three red with the fallback off; 2603 pass.

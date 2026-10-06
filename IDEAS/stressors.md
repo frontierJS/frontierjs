@@ -63,6 +63,7 @@ than started.
 | 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
 | 21 | **Transit** — the data layer as a product: intake, normalize, report to screen, PDF and email | foreign data typed by a `.lite` held in a row and built on the fly; a sync cursor across a conduit target; one template to three outputs; a scheduled query run at each recipient's standing | `data-layer-v1.md` · `analytics-and-warehouse.md` · `stored-templates.md` · #9 |
 | 22 | **Base44** — a prompt-to-app builder: chat in, a running app out, every later message an edit | a schema change on every turn against live rows, approved by the person and never the agent; a model writing `.lite` and `.mesa`, which no training set holds; generated server code one call from `asSystem()`; hundreds of apps on one host | `prompt-to-app.md` · `packages/oracle` · `intent-recognizer.md` · `sandboxes.md` · `agent-surface.md` · `on-page-editing.md` |
+| 23 | **Quo** (formerly OpenPhone) — a team phone: one number many people answer, texts and calls in one inbox, on Telnyx | a counterparty's webhook whose signature has no secret; a status moved by somebody else, out of order; a live call whose state the vendor holds; a WebSocket a VENDOR dials | `inbound-integrations.md` ([`FJS-D177`](../DECISIONS.md#fjs-d177)) · `conduit-connectors.md` row 5 · `compliance-from-the-seed.md` · #5 |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -905,6 +906,36 @@ lifted (`FJS-D600`).
 
 Build in `fjs-prototypes/`, under the rule #21 set: its fixes land in FJS and
 its code never does.
+
+### 23. Quo — the carrier is the other half of the conversation
+
+*Added 2026-10-06. Phase 0 done the same day in `fjs-prototypes/quo`, whose
+`PLAN.md` carries the run.*
+
+**What it is.** Quo's product (a shared business number, one inbox of texts and
+calls, contacts, automation) built on Telnyx's network. The team using this
+framework runs on Quo today, and Quo's own API automates around the inbox but
+cannot drive a live call. So the carrier is Telnyx, and the connector between
+the two is the instrument: `conduit-connectors.md` row 5 written as a
+`conduit-telnyx` that lives in the app (`FJS-D153`).
+
+**What it breaks first is receiving.** `FJS-D177` ruled that conduit owns a
+counterparty's webhook, and the mechanism is unbuilt. Every other stressor
+treats a webhook as an afterthought. Here nearly everything arrives as one: a
+text, a delivery receipt, every step of a call. Telnyx signs with **Ed25519 and
+a public key**, so the receiver holds no secret at all. Quo's legacy scheme
+signs a **re-serialized** body rather than the raw bytes. With Stripe, that is
+three dialects to grade the receiver record against before anyone builds it.
+
+**Then a state somebody else moves.** A receipt arrives out of order and must
+be dropped rather than refused, which `@@transitions` cannot say. A receipt can
+also beat the send's own response and must wait for its row to exist. A call is
+a state machine whose position the vendor carries back in `client_state`. And
+an AI voice agent needs the vendor's media stream: a WebSocket the carrier
+dials, which conduit's FJS-to-FJS socket and junction's browser `/ws` both say
+is not theirs.
+
+Built under the rule #21 set: its fixes land in FJS and its code never does.
 
 ## Not on this list, with reasons
 
