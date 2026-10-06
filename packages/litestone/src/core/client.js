@@ -2658,9 +2658,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Slots only: row tenancy leads the index with its tenant column, which is
     // an index prefix and not a slot anything can be allocated into.
     const kinds = new Map(model.fields.filter(f => f.extKind).map(f => [f.name, f.extKind]))
+    const ext   = model.attributes.find(a => a.kind === 'extensible')
     return {
-      order: index.fields.filter(s => kinds.has(s)),
-      kind:  Object.fromEntries(kinds),
+      order:  index.fields.filter(s => kinds.has(s)),
+      kind:   Object.fromEntries(kinds),
+      table:  modelToTableName(model, ctx.pluralize ?? false),
+      mirror: `${ext.column}Slots`,
     }
   }
 
@@ -2748,6 +2751,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // it. A full pool answers null, which is the ordinary end of a pool and
       // not a failure: the field still stores and still renders.
       slot = pool.order.find(s => pool.kind[s] === String(data.type) && !taken.has(s)) ?? null
+      // A free slot can still hold the values of the declaration that freed
+      // it: a delete leaves every row's mirror as it was, and only that row's
+      // next write rewrites it. Handed on as it stands, the new key filters
+      // on the old key's values (`FJS-1752`). The mirror is derived, so the
+      // rebuild is raw and announces nothing — the same footing as the read
+      // above.
+      if (slot) {
+        const path = `$.${slot}`
+        const sql  = `UPDATE "${pool.table}" SET "${pool.mirror}" = json_remove("${pool.mirror}", ?) ` +
+          `WHERE json_extract("${pool.mirror}", ?) IS NOT NULL`
+        if (_extTenantCol) writeDb.run(`${sql} AND "${_extTenantCol}" = ?`, path, path, extTenant(data))
+        else writeDb.run(sql, path, path)
+      }
     }
     data    = { ...data, slot }
     stamped = stamped ? new Set([...stamped, 'slot']) : new Set(['slot'])

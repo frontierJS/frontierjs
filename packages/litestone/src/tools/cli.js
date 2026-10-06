@@ -3671,7 +3671,10 @@ async function cmdStudio(cfg) {
           const { sql } = body
           if (!sql?.trim()) return json({ error: 'sql is required' }, 400)
           try {
-            const planRows = activeRawDb.prepare(`EXPLAIN QUERY PLAN ${sql.trim()}`).all()
+            // An EXPLAIN left unfinalized holds the connection's next read
+            // snapshot until GC, so Studio would show stale rows (`FJS-1753`).
+            const explain  = activeRawDb.prepare(`EXPLAIN QUERY PLAN ${sql.trim()}`)
+            const planRows = (() => { try { return explain.all() } finally { explain.finalize() } })()
 
             // Parse each plan row into a rated node. A temp sort can only be
             // explained against the whole plan and the table's real indexes,

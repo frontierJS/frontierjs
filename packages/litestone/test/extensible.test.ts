@@ -384,6 +384,25 @@ describe('the slot a declaration takes', () => {
     expect(hits.length).toBe(1)
     expect(hits[0].name).toBe('Ada')
   })
+
+  // A deleted declaration frees its slot, and every row it was written on still
+  // holds its value there until that row's next write. Handed on as it stood,
+  // the new key answered with the old one's values (`FJS-1752`).
+  test('a slot freed by a delete is handed on empty', async () => {
+    const c  = await client()
+    const db = c.asSystem()
+    const est = await db.customField.create({ data: { model: 'Customer', key: 'estimate', type: 'number' } })
+    await db.customer.create({ data: { name: 'Ada', fields: { estimate: 6 } } })
+    await db.customField.delete({ where: { id: est.id } })
+    const cost = await db.customField.create({ data: { model: 'Customer', key: 'cost', type: 'number' } })
+    expect(cost.slot).toBe('n1')
+    expect(await db.customer.count({ where: { fields: { cost: 6 } } })).toBe(0)
+    // The pair: a slot the payload STATES is a restore, so its values stay.
+    await db.customer.create({ data: { name: 'Bo', fields: { cost: 3 } } })
+    await db.customField.delete({ where: { id: cost.id } })
+    await db.customField.create({ data: { model: 'Customer', key: 'cost', type: 'number', slot: 'n1' } })
+    expect(await db.customer.count({ where: { fields: { cost: 3 } } })).toBe(1)
+  })
 })
 
 describe('the mirror, derived at the Data boundary', () => {
@@ -597,6 +616,19 @@ describe('under tenancy { strategy row }', () => {
     expect(await sys.sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: null }, { id: 2, t1: 'sev1' }])
     await expect(sys.issue.update({ where: { id: 2 }, data: { fields: { severity: 'sev2' } } }))
       .rejects.toThrow(/names none — state 'workspaceId'/)
+  })
+
+  // The pool is per workspace, so emptying a slot for one workspace's new key
+  // must leave every other workspace's value in that column where it is.
+  test('a freed slot is emptied for its own workspace only', async () => {
+    const { db, a, b } = await tenants()
+    const sa = await a.customField.create({ data: { model: 'Issue', key: 'old', type: 'text' } })
+    await b.customField.create({ data: { model: 'Issue', key: 'region', type: 'text' } })
+    await a.issue.create({ data: { id: 1, title: 'x', fields: { old: 'v' } } })
+    await b.issue.create({ data: { id: 2, title: 'y', fields: { region: 'v' } } })
+    await a.customField.delete({ where: { id: sa.id } })
+    await a.customField.create({ data: { model: 'Issue', key: 'fresh', type: 'text' } })
+    expect(await db.asSystem().sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: null }, { id: 2, t1: 'v' }])
   })
 
   test('the slot index leads with the tenant column', () => {

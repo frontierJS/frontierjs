@@ -114,7 +114,7 @@ Allocated by the framework rather than by the app, because the three things it t
 
 **A slot the payload states is honored rather than recomputed.** An import restoring declarations has to be able to say which slot each one held — re-deriving them would repoint live fields onto slots whose values were written for other keys, which does not self-heal the way the mirror does. Absent means allocate, the same rule Invariant 9 states for a patch.
 
-An `update` never re-allocates. Re-pointing a live field would leave every existing row's value in the old slot, so every query on it would match nothing — the failure the feature exists to prevent, reintroduced by an edit. Changing which slot a field uses is a delete and a re-declare, which is honest about what it costs: a rebuild.
+An `update` never re-allocates. Re-pointing a live field would leave every existing row's value in the old slot, so every query on it would match nothing — the failure the feature exists to prevent, reintroduced by an edit. Changing which slot a field uses is a delete and a re-declare, which is honest about what it costs: a rebuild. The allocation performs it — a slot is emptied in every row's mirror (the declaring tenant's, under row tenancy) at the moment it is handed to a new key, because a delete leaves each row's old value there until that row is next written, and the new key would otherwise filter on it.
 
 ## The declaring model is found by convention
 

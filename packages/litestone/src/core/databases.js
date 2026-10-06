@@ -32,9 +32,22 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   // and a prepared one is reused across commits, rollbacks and a failed
   // statement without complaint (measured, `FJS-1106`).
   const NO_CACHE = /^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO|PRAGMA|VACUUM|ATTACH|DETACH)/i
+  // bun leaves an EXPLAIN's VM active once it has run, by any of its four
+  // calls, and while it is active the connection's next read transaction never
+  // ends: every later read answers that one snapshot, and a cached EXPLAIN
+  // holds it for the life of the process (`FJS-1753`). So an EXPLAIN is
+  // prepared for one call and finalized after it. Leading comments are
+  // skipped because `db.sql` passes them through.
+  const SINGLE_USE = /^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)*EXPLAIN\b/i
   let closed = false
+  function singleUse(sql) {
+    const s = rawDb.prepare(sql)
+    const once = (f) => (...a) => { try { return f.apply(s, a) } finally { try { s.finalize?.() } catch {} } }
+    return { get: once(s.get), all: once(s.all), values: once(s.values), run: once(s.run) }
+  }
   function stmt(sql) {
     if (closed) throw new ClientClosedError(label)
+    if (SINGLE_USE.test(sql)) return singleUse(sql)
     let s = cache.get(sql)
     if (s) {
       // LRU: move to end on hit. Cheap — Map.delete + Map.set is O(1).
