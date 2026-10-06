@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-06 — the Fable audit's repro tests, under `test/audit-*`
+
+`audit-signature.test.js` and `audit-static.test.js` come from the Fable audit of 2026-10-05. The cases the listeners survived are plain tests. Six cases are still open and are `test.failing` naming their rows: `FJS-1833` nonce replay, `1834` one app served under another's hostname, `1856` URIError, `1857` `timeout_s: 0`, and `1858` unsigned `x-service-method`. The suite passes 129/129.
+
 ## 2026-10-05 — a release that fails puts the old container back (`FJS-1765`)
 
 `/deploy` ran `docker rm -f` before `docker run`, so a run docker refused (a port already allocated, exit 125) left the app with no container, and a start that never answered left the broken one serving. Now the live container is renamed `fjs-<app>_replaced` and stopped, the new one is run, and `/deploy` answers only once it is healthy: running, and answering `config.healthCheck` on the published port where one is named, polled 10 × 3s (`createDocker({ health })`). A refused run or an unhealthy start removes the new container and renames and starts the old one; the error says whether it came back answering. The route then goes back to the port the restored container published. A `_replaced` with no live container beside it is kept as the last good one. `/stop` removes it. Stop-then-start is kept because a SQLite volume takes one writer. `bun run test` 109/109 (six new). `verify:docker` 40/40 adds four against the real daemon and Caddy: with the release's port held, and with whoami listening on the wrong port, the previous container's id is serving again, over HTTPS, with no `_replaced` left behind.

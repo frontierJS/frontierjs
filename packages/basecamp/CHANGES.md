@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-06 — the Fable audit's gate-parity tests, under `test/audit-*`
+
+The Fable audit of 2026-10-05, run 2.2, checks five models against their `@@gate` over HTTP, WS, mcp and the two job callers. The broadcast and mcp `internalOnly()` findings it proved have since closed (`FJS-1771`/`1772`, `FJS-1817`), so those files are plain tests. The roster row is `test.failing` for `FJS-1862`, which waits on `FJS-D619`. A flake was reported in *secrets via mcp* and did not recur in 13 runs. The suite passes 647/647.
+
 ## 2026-10-06 — the Job forms stop restating that `status` is a machine (`FJS-1543`)
 
 The create and edit drawers in `web/src/routes/jobs/` passed `except={['status']}` so the form would not offer the `@@transitions` column as a select. Sierra's `formFieldList` now leaves a machine's column out of every generated form, so both call sites drop the restatement. The edit page's move buttons are unchanged.

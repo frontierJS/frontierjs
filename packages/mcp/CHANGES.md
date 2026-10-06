@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-06 — the Fable audit's repro tests, under `test/audit-*`
+
+`audit-raw-smuggle.test.ts` is plain: the `$raw` smuggle it proved (`FJS-1816`) closed with `FJS-D609`. `audit-withhold-tenant.test.ts` is `test.failing` for `FJS-1835`: `withholdProtected` does nothing under `tenancy: { strategy: 'database' }`. The suite passes 145/145.
+
 ## 2026-10-06 — a tool call is stamped `transport: 'mcp'` (`FJS-D609`, `FJS-1817`)
 
 `run` passed only the principal, so the call defaulted to `'internal'` and an *is this from inside* check — basecamp's `internalOnly()` — let a viewer finish a release and a developer forge a server event. With junction's in-process `$` refusal and Litestone's tag-only `$raw`, a smuggled `$raw` at any depth is refused rather than answered (`FJS-1816`).
