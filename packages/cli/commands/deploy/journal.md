@@ -39,8 +39,7 @@ flags:
 
 ```js
 const target         = resolveTarget(flag, $.git)
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is no target to read a journal from')

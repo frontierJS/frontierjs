@@ -79,7 +79,7 @@ const openTutor = ($, lesson, { ephemeral = [], base } = {}) => {
   // stream that has already ended and the lesson hangs after step 1.
   $.config.prompts = createPrompts({ yes: Boolean($.flag.yes) })
 
-  const recorder = T.makeRecorder({ workspace: ws.dir, lesson, $, ephemeral })
+  const recorder = T.makeRecorder({ workspace: ws.dir, lesson, context: $, ephemeral })
   if ($.flag.restart) recorder.restart()
   $.config.journal = recorder
 

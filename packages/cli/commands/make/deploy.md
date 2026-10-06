@@ -148,7 +148,8 @@ const makeDeployBlock = (appId, server, domain, healthPath) => {
 
   return `  deploy: {
 ${serverLine}
-    user: 'deploy',              // SSH user on the server
+    // user: 'deploy',           // absent: the bare server, so an alias in
+    //                           // ~/.ssh/config supplies User, Port and key
     path: '/apps/${appId}',      // deploy root on the server
     app_id: '${appId}',
     // transport: 'ssh',         // inferred from the server name; 'local' runs
@@ -174,22 +175,15 @@ ${serverLine}
 
       // The API on a domain of its own (api.your-app.com beside the web domain).
       // Unset, the web domain proxies /api/ and /ws and the page and the API are
-      // one origin. Set, setup writes a second server block and the web build is
-      // run with VITE_API_URL=https://<this domain>.
+      // one origin. Set, setup writes a second Caddy route and the web build is
+      // run with VITE_API_URL=https://<this domain>. Caddy fetches the
+      // certificate for each domain, so there is no ssl key.
       // domain: 'api.your-app.com',
-      // ssl: {
-      //   cert: '/etc/ssl/certs/${appId}-api.pem',
-      //   key:  '/etc/ssl/private/${appId}-api.key',
-      // },
     },
 
     web: {
 ${domainLine}
       keep_releases: 3,
-      // ssl: {
-      //   cert: '/etc/ssl/certs/${appId}.pem',
-      //   key:  '/etc/ssl/private/${appId}.key',
-      // },
     },
 
     db: {

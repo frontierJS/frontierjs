@@ -10,7 +10,7 @@
 // is serving*. `fli` runs on a laptop. So every write crosses ssh.
 //
 // What is actually on a deploy target was measured rather than assumed:
-// `deploy:setup` installs docker, nginx, git, **bun**, rsync and **sqlite3**,
+// `deploy:setup` installs docker, caddy, git, **bun**, rsync and **sqlite3**,
 // and `02-pull` leaves a git checkout with no `node_modules` — the build happens
 // inside Docker. So litestone is NOT there and cannot be imported there.
 //

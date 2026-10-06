@@ -13,10 +13,10 @@ const { pausedFile, pagePath, DEFAULT_PAGE } =
 
 const machine = machineFor($, host, serverPath)
 
-// The page first. nginx answers its own 503 when the file it was pointed at is
-// missing, which is a blank sentence to the person reading it — so a pause that
-// found no page puts the default one there before it puts the guard in force,
-// and never the other way round.
+// The page first. Caddy's file_server answers 404 when the page it was pointed
+// at is missing — a paused app reading as a missing one, and 03-verify refusing
+// the pause — so a pause that found no page puts the default one there before
+// it puts the guard in force, and never the other way round.
 const page = pagePath(serverPath)
 const hasPage = machine.capture(`[ -s ${page} ] && echo yes || echo no`).trim() === 'yes'
 if (!hasPage) {
@@ -26,7 +26,7 @@ cat > ${page} << 'FLIPAGEEOF'
 ${DEFAULT_PAGE}FLIPAGEEOF`)
 }
 
-// nginx stats this per request, so there is nothing to reload and no window in
+// Caddy stats this per request, so there is nothing to reload and no window in
 // which the guard is half applied.
 machine.run(`touch ${pausedFile(serverPath)}`)
 log.success(`Paused → ${pausedFile(serverPath)}`)

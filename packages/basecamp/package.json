@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun run api & bun run web & wait",
     "dev:outpost": "bun api/src/providers/outpost-dev.ts",
-    "api": "bun --watch api/index.ts",
+    "api": "LOCAL_SSH=${LOCAL_SSH:-1} bun --watch api/index.ts",
     "web": "vite -c web/config/vite.config.js",
     "stop": "for p in $(pgrep -f 'bun.*api/inde[x].ts|vite.*web/config/vite.confi[g].js|providers/outpost-de[v].ts'); do [ \"$(lsof -a -p $p -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')\" = \"$(pwd -P)\" ] && kill $p; done; true",
     "start": "bun api/index.ts",

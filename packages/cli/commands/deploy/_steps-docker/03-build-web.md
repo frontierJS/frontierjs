@@ -49,7 +49,7 @@ if (!/^[0-9a-fA-F]{7,64}$/.test(String(commit)))
 // Under `deploy.api.domain` the page and the API are two origins, and the only
 // way the bundle learns the second is at build time: `VITE_API_URL`, which the
 // web surface's sierra.config.js reads for junction.url. Taken from the same
-// declaration the vhost is written from, so the two cannot name different
+// declaration the route is written from, so the two cannot name different
 // hosts. Graded as a hostname before it reaches the target's shell.
 const { edgeNames, apiOrigin, EdgeError } =
   await import(new URL('file://' + global.fliRoot + '/core/edge.js'))

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-06 — a row on a channel that names no tenant reaches the recipients whose tenant it is (`FJS-1772`)
+
+Under `strategy row` a fixed channel — orion's `flows` and `runs` — carries rows of every tenant, so the `channels({ claims })` resolver had no claim to answer and the tenancy deny refused every recipient. `gradeRecipients` now grades such a recipient again under each claim the same resolver answers for them on the other channels they are in, and admits them by the first that reads the row. The Data boundary decides the row's tenant, through a parent where the row has no column; the row's own tenant is never copied onto the recipient, which would pass the deny for everybody. A count (`gate` mode) is unchanged, since it names no tenant. Five cases in `channel-claims.test.ts`, three red with the fallback off; 2603 pass.
+
 ## 2026-10-05 — the PUT-without-version test types its response body
 
 The reworded assertions below read `res.body.retryable` and `res.body.message`, and `request()` types `body` as `unknown` on purpose, so `bun test` passed while `bun run typecheck` failed with two `TS18046`. The test now casts `res.body` once to `{ retryable, message }`, the way the `src/testing` header shows. Junction typechecks clean again, against a ceiling of 0.

@@ -1,5 +1,41 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-05 — a tutor lesson re-run in a kept workspace replays its facts again (`FJS-1769`)
+
+`openTutor` handed `makeRecorder` its context under the key `$`, which it does not read, so the journal recorded no step's facts and a replayed step handed nothing on — every lesson's second step refused with *this step needs appDir* on a re-run. It passes `context: $`.
+
+## 2026-10-05 — `fli deploy`'s edge is Caddy, and the target is an ssh destination (`FJS-D598`)
+
+**Caddy replaces nginx.** `deploy:setup` installs Caddy as the `caddy-api` unit, the same one a fleet machine's enrollment installs. `_steps-setup/05-caddy` writes this app's routes into Outpost's `ingress` server through the admin API. It reads the whole config, merges with `applyEdge` and writes back with `If-Match`, retrying on a 412. A hostname another route holds is refused. Route ids are `fli-<app>` and `fli-<app>-api`.
+
+- **Certificates are Caddy's.** `06-ssl` is deleted, and a `deploy.<side>.ssl` key is refused by name.
+- **No reloads.** `08-release-web` and the web rollback are the symlink swap alone, with no `nginx -s reload`.
+- **The pause guard** is a `file` matcher that serves the page with `status_code: 503`. `deploy:pause`, `deploy:status` and setup find it by `@id` (`guardProbeScript`). `vhostHasGuard` is now `edgeHasGuard`. `nginxGuard`, `GUARD_MARKER` and `vhostPath` are gone.
+- **Per-app access logs** go to `/var/log/caddy/fli-<app>.access.log`, rolled by Caddy and excluded from its default log.
+- **Setup warns** when nginx or a Caddyfile-driven `caddy.service` is running, and stops neither.
+
+`pauseEdgeCycle` (CI `deploy` phase) now runs the step's own admin scripts inside a `caddy:2` container, beside a pre-existing Outpost route. It asserts:
+
+- a stale write is a 412
+- a hostname Outpost holds is refused
+- one-origin and two-origin paths reach the app unchanged
+- pause gives 503 on every name of the app and leaves the Outpost app at 200
+- each route writes its own log
+
+Removing `status_code: 503` makes it fail. `test/nginx-config.test.js` is gone; `test/edge.test.js` covers the routes, the merge and the admin read/write parsing.
+
+**`--server` and ssh aliases.** `deploy:` declares `--server` once, as a namespace default flag. It takes an alias from `~/.ssh/config` or `user@host`, and replaces every server and user in the deploy block. `deployConfFor` in `_module.md` is the one reader, and all thirteen commands go through it. `deploy:status`, `:rollback` and `:unlock` had their own copies of the resolution, and a missing `path` crashed them; they now use `resolveDeployConf`.
+
+`user` has no default any more. With none stated, ssh is handed the bare server, so the alias's User, Port and key apply. `deploy@` used to override them. Both resolvers return `host`. The scaffold's `your-server.com` is refused rather than dialed. A deploy block with no top-level server aborts instead of falling to the CapRover path. `make:deploy` writes `user` commented out.
+
+**Module default flags carry their type and description, and `--help` lists them.** `runtime.js` copied only `defaultValue` from a `_module.md` `defaults.flags` entry, and `printHelp` never read the module at all, so a namespace-wide flag had no type and no help line. `withModuleFlags` in `core/flags.js` (the leaf, so the help path still imports no runtime) merges the whole declaration; a command's own declaration wins field by field. Both `runtime.js` and `printHelp` call it. An empty-string default no longer prints as `[default: ]`.
+
+## 2026-10-05 — The rings page draws each package's icon
+
+A package card and a package page's title now start with `brand/assets/icons/<folder>.png`. A package with no file there gets a crate drawn in its ring's color. A capturing `error` listener swaps the crate in, so `repo-rings.js` still reads no files.
+
+The project's five cards and the pages they open also get icons. These are docs, invariants, decisions, issues and ideas. All 28 icons are cropped from the two sheets. Only a package added later falls back to the crate.
+
 ## 2026-10-05 — `docker-context.js` imports repaired
 
 The `context` → `$` rename in the zx removal (`1de3d5e4`) also rewrote the filename `docker-context.js` to `docker-$.js` in three places, so `deploy`'s `04-build-api` step died with `Cannot find module …/core/docker-$.js` right after the build check. `04-build-api.md` (comment and import) and `tutor/_module.md` name the file again. A scan of that commit for any other `context` replaced by `$` inside a path or word found no more.

@@ -6497,8 +6497,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // this boundary which version they read, and a stale one means their
           // view is wrong whether or not they were writing. Answering a no-op
           // success would confirm a stale screen.
+          //
+          // Read through the update policy, the WHERE a write would have used.
+          // The bare where answered any row the id named, so `data: {}` handed
+          // a caller the whole of a row their policy hides, read policy included.
           throwIfVersionMoved()
-          updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams), { mode: 'single', hydrateFrom: true })
+          updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${finalWhereSql}`).get(...finalWhereParams), { mode: 'single', hydrateFrom: true })
         }
         if (!updated) return null
 

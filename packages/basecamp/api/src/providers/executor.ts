@@ -24,6 +24,16 @@
 
 import type { BasecampApp } from '../basecamp.types.ts'
 
+/**
+ * How long a release's two long commands may take, read off the machine's own
+ * bounds: Outpost cuts a pull at 15 minutes and a build at 30, and `/deploy`
+ * then stops the old container and waits on the new one's health — and, when
+ * that fails, on the old one's once it is put back (`FJS-1765`). Sent at
+ * conduit's 10s default, a deploy that was still working read as a failed one.
+ */
+export const PULL_TIMEOUT_MS   = 15 * 60_000 + 30_000
+export const DEPLOY_TIMEOUT_MS = 32 * 60_000
+
 /** Set to '1' to allow the stub. Refused under NODE_ENV=production regardless. */
 const STUB_ENV = 'BASECAMP_STUB_OUTPOST'
 

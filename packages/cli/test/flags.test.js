@@ -5,7 +5,7 @@
 // print, the constraint text beside it, and the declarations it refuses.
 
 import { describe, test, expect } from 'bun:test'
-import { flagSpelling, flagConstraint, declarationProblem, valueProblem } from '../core/flags.js'
+import { flagSpelling, flagConstraint, declarationProblem, valueProblem, withModuleFlags } from '../core/flags.js'
 
 describe('flagSpelling', () => {
   test('a boolean that defaults on is written as the switch that turns it off', () => {
@@ -73,5 +73,32 @@ describe('valueProblem', () => {
     expect(valueProblem('e', { min: 5, max: 90 }, 91)).toMatch(/between 5 and 90 — got 91/)
     expect(valueProblem('e', { min: 5 }, 4)).toMatch(/at least 5/)
     expect(valueProblem('e', { max: 90 }, 91)).toMatch(/at most 90/)
+  })
+})
+
+describe('withModuleFlags', () => {
+  const mod = { meta: { defaults: { flags: {
+    server: { type: 'string', description: 'where', defaultValue: '' },
+    region: { type: 'string', defaultValue: '${FLI_TEST_REGION}' },
+  } } } }
+
+  // Copying only the default left a namespace-wide flag untyped and out of --help.
+  test('a command gets the module flag whole', () => {
+    expect(withModuleFlags({}, mod, {}).server).toEqual({ type: 'string', description: 'where', defaultValue: '' })
+  })
+
+  test('the command\'s own declaration wins field by field', () => {
+    const out = withModuleFlags({ server: { description: 'mine', defaultValue: 'x' } }, mod, {})
+    expect(out.server).toEqual({ type: 'string', description: 'mine', defaultValue: 'x' })
+  })
+
+  test('a ${VAR} default is read from the environment', () => {
+    expect(withModuleFlags({}, mod, { FLI_TEST_REGION: 'eu' }).region.defaultValue).toBe('eu')
+    expect(withModuleFlags({}, mod, {}).region.defaultValue).toBe('')
+  })
+
+  test('no module flags leaves the command\'s alone', () => {
+    const own = { a: { type: 'boolean' } }
+    expect(withModuleFlags(own, null)).toBe(own)
   })
 })

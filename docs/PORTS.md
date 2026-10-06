@@ -14,7 +14,7 @@
 | `packages/junction/example`  | 5 | reserved, no slot in use | — |
 | `packages/litestone/example` | 6 | reserved, no slot in use | — |
 | `packages/oracle/mockup`     | 7 | 8070 (`$PORT` overrides) · 8071 preview | — |
-| `packages/outpost`           | 8 | — | 8180 (7180 test) · **8181 the static origin** (7181 test) · 7182 stand-in Basecamp, 7183 the deployed app and 7184/7185/7186 Caddy's http, https and admin, all in `verify:docker` (a fleet machine's Caddy is 80/443/2019, `FJS-D564`) — the port an `inline` app answers on, a SECOND listener because a port is an origin and a pasted page is a stranger's script (`FJS-D345`); `OUTPOST_STATIC_PORT=0` turns it off |
+| `packages/outpost`           | 8 | — | 8180 (7180 test) · **8181 the static origin** (7181 test) · 7182 stand-in Basecamp, 7183 the deployed app and 7184/7185/7186 Caddy's http, https and admin, 7187 held to make a release's run fail, all in `verify:docker` (a fleet machine's Caddy is 80/443/2019, `FJS-D564`) — the port an `inline` app answers on, a SECOND listener because a port is an origin and a pasted page is a stranger's script (`FJS-D345`); `OUTPOST_STATIC_PORT=0` turns it off |
 | `website`                    | 9 | 8690 site dev · 8790 site served (7790 in its `verify`) | — |
 | global fli tooling           | —  | **8500–8509 reserved** · 8500 gui · 8501 `project:map --as=serve` · 8502 db studio · 8503 junction devtools · 8504 `fli proxy` (the FALLBACK — it wants 80) | — |
 

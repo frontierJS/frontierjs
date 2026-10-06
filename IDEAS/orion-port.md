@@ -548,6 +548,13 @@ all fixed — two in orion's model nodes, a missing channel, and three below ori
 (toolbelt's `make()`, `<Form>`, mesa's `{#each}`) — and `FJS-1167`, which
 question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed.
 
+*Done 2026-10-06, before basecamp has an automations screen:* basecamp joins
+every connection to `flows` and `runs`. A fixed channel names no workspace, so
+junction grades its rows under the claims the resolver verifies for that
+connection on its workspace channels, and the resolver reads the membership so a
+member stands at their role (`FJS-1772`). `orion({ level })`, which phase 6 names
+as the answer to `FJS-1161`, is gone (`FJS-1771`).
+
 ---
 
 ## Open questions

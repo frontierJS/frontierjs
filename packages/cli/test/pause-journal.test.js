@@ -11,7 +11,7 @@
 // calls the helper for real. Nothing is stubbed: the machine is `localhost`,
 // which is a transport rather than a simulation, the runner is the one that
 // ships, and the journal is a SQLite file in a temp directory. What it cannot
-// reach is nginx, which is `pauseEdgeCycle`'s half.
+// reach is Caddy, which is `pauseEdgeCycle`'s half.
 //
 // Every refusal is PAIRED with the same call one term away, and every refusal
 // is followed by a read of the journal asserting it wrote nothing.
@@ -53,7 +53,7 @@ const noLog = { info() {}, warn() {}, error() {}, success() {} }
 
 const pause = (kind, extra = {}) => helpers.openPauseJournal(context, {}, {
   kind, host: HOST, serverPath: dir, deployConf, target: ENV, stepsDir: '_steps-pause', log: noLog,
-  vhostHasGuard: true, filePresent: false, ...extra,
+  edgeHasGuard: true, filePresent: false, ...extra,
 })
 
 /** A journal with one succeeded deploy in it — what a target that has shipped once holds. */
@@ -137,9 +137,9 @@ describe('a pause through the journal', () => {
 // ─── refusing, and writing nothing for it ────────────────────────────────────
 
 describe('what a pause refuses, against a real journal', () => {
-  test('a vhost with no guard', async () => {
+  test('an edge with no guard', async () => {
     const j = await deployed()
-    const opened = await pause('pause', { vhostHasGuard: false })
+    const opened = await pause('pause', { edgeHasGuard: false })
     expect(opened.refused?.map(r => r.code)).toEqual(['no-guard'])
     expect(await kinds(j)).toEqual(['deploy'])
   })

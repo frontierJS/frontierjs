@@ -148,4 +148,11 @@ export const env = defineEnv({
   // is in `providers/compute/accounts.ts` on the transport, so it covers every
   // spending call including ones nobody has written yet.
   ALLOW_CLOUD_SPEND: {},
+
+  // `1` lets a Basecamp running on an operator's own machine list the Host
+  // aliases in their ~/.ssh/config (`core/local-ssh.ts`). Refused under
+  // `NODE_ENV=production` whatever it says: a deployed control plane would be
+  // listing its server's ssh config, and dialing with its agent. `bun run dev`
+  // sets it.
+  LOCAL_SSH: {},
 })

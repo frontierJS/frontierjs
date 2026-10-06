@@ -950,8 +950,8 @@ name when it declares none.
 
 ### `servers` · model `Server`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
-- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
+- **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `localSshHosts`, `localSshProbe`, `heartbeat`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
@@ -970,6 +970,8 @@ name when it declares none.
   - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `reconcile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `localSshHosts` — standing 5 or above — declared `gate: 5`
+  - `localSshProbe` — standing 5 or above — declared `gate: 5`
   - `heartbeat` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 

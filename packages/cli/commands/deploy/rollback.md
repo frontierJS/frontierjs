@@ -47,8 +47,7 @@ const doWeb  = both || flag.web
 const doApi  = both || flag.api
 
 // ─── Load config ──────────────────────────────────────────────────────────────
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
@@ -57,12 +56,15 @@ if (!deployConf?.server) {
   return
 }
 
-const targetConf = deployConf[target] ?? {}
-const server     = targetConf.server ?? deployConf.server
-const user       = targetConf.user   ?? deployConf.user ?? 'deploy'
-const path       = targetConf.path   ?? deployConf.path
+const resolved = resolveDeployConf(deployConf, target)
+if (!resolved) {
+  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
+  $.config.abort = true
+  return
+}
+const { server, user, path } = resolved
 const appId      = deployConf.app_id ?? path.split('/').pop()
-const host       = `${user}@${server}`
+const host       = resolved.host
 
 const scopeLabel = both ? 'web + API' : doWeb ? 'web only' : 'API only'
 log.info(`Rolling back ${appId} on ${target} → ${host} (${scopeLabel})`)

@@ -13,7 +13,7 @@ import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
 import { setVerbose } from './verbosity.js'
-import { flagSpelling, flagConstraint } from './flags.js'
+import { flagSpelling, flagConstraint, withModuleFlags } from './flags.js'
 import { APPROVED } from './effects.js'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
@@ -179,6 +179,7 @@ async function printNamespace(ns, commands, verbose = false) {
 
 // ─── printHelp() — pretty-print a command's metadata ─────────────────────────
 function printHelp(meta, filePath) {
+  meta = { ...meta, flags: withModuleFlags(meta.flags, getModule(meta.title?.split(':')[0])) }
   logger(`${meta.title}`, 'info')
   if (meta.description) {
     logger(`  ${meta.description}`, 'info')
@@ -216,7 +217,7 @@ function printHelp(meta, filePath) {
       const short = def.char ? `-${def.char}, ` : '    '
       const bound = flagConstraint(def)
       const type  = def.type ? chalk.dim(` (${[def.type, bound].filter(Boolean).join(' ')})`) : ''
-      const def_  = def.defaultValue !== undefined && typeof def.defaultValue !== 'boolean'
+      const def_  = def.defaultValue !== undefined && def.defaultValue !== '' && typeof def.defaultValue !== 'boolean'
         ? chalk.dim(` [default: ${def.defaultValue}]`) : ''
       logger(`    ${short}${flagSpelling(name, def).padEnd(20)} ${def.description ?? ''}${type}${def_}`, 'info')
     }

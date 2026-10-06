@@ -23,7 +23,7 @@ import {
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 import { createCaravan }     from '@frontierjs/caravan'
-import { orion }             from '@frontierjs/orion/plugin'
+import { orion, DEFAULT_SERVICE_NAMES } from '@frontierjs/orion/plugin'
 import { mcpPlugin }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
@@ -336,11 +336,9 @@ export async function buildBasecampApp(
 
   // ── Orion — a workspace's automations ─────────────────────────────────
   // AFTER Caravan: a run is one job, and its handler has to be registered
-  // before the queue starts. `level` is the same grade the Data boundary's gate
-  // uses, so an administrator acting on another member's flow is graded as the
-  // policies grade them (`FJS-D296`). `basecamp.page` is how a flow reaches a
+  // before the queue starts. `basecamp.page` is how a flow reaches a
   // NotificationChannel — through `core/delivery.ts`, not a copy of it.
-  app.configure(orion({ level: basecampGateLevel, plugins: [basecampNodes(app)] }))
+  app.configure(orion({ plugins: [basecampNodes(app)] }))
 
   // ── Mail ──────────────────────────────────────────────────────────────
   // AFTER conduit: the mailer sends through app.conduit, and junction checks
@@ -452,6 +450,11 @@ export async function buildBasecampApp(
 
       a.channel?.('authenticated').join(conn)
       a.channel?.(notificationChannelName(s.userId)).join(conn)
+      // Orion's flows and runs broadcast on one channel for every workspace.
+      // The resolver below answers no claim for it, and junction grades each
+      // row under the workspaces this connection is in (`FJS-1772`).
+      a.channel?.(DEFAULT_SERVICE_NAMES.flows).join(conn)
+      a.channel?.(DEFAULT_SERVICE_NAMES.runs).join(conn)
 
       // asSystem(): resolving who may hear what is not a request the caller
       // makes, and WorkspaceMember is not readable through the caller's own
@@ -474,16 +477,24 @@ export async function buildBasecampApp(
     // refused, on all eighteen live services, with only a once-per-service
     // warning that reads as *the model is genuinely private* (`FJS-749`).
     //
-    // Answering off the CHANNEL is the same statement `membershipClaim` makes
-    // and not a weaker one: the join above reads `WorkspaceMember` through
-    // `asSystem()` and puts a connection in `workspace:<id>` only where a
-    // membership row exists, so being in the channel IS the verified claim.
+    // The channel names the workspace, and the membership row is read again on
+    // every frame (`FJS-D472`), so this is the claim `membershipClaim` makes for
+    // a request: a member removed mid-session stops receiving on the socket
+    // they still hold, and `memberRole` reaches the grade — without it every
+    // member stood at VISITOR(1) here, below every model gated above it.
     // A person in two workspaces is one principal on one socket and holds a
     // different tenant in each, which is why this is per channel and cannot be
     // put on the connection.
-    claims: (channelName) => {
+    claims: async (channelName, conn) => {
       const workspaceId = workspaceIdFromChannel(channelName)
-      return workspaceId ? { workspaceId } : null
+      const userId      = (conn.user as { userId?: string } | null | undefined)?.userId
+      if (!workspaceId || !userId) return null
+      const member = await db.asSystem().workspaceMember.findFirst({
+        where:  { workspaceId, userId },
+        select: { role: true, capabilities: true },
+      })
+      if (!member) return null
+      return { workspaceId, memberRole: member.role, capabilities: member.capabilities ?? [] }
     },
   }))
 

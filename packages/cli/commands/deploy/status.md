@@ -21,8 +21,7 @@ flags:
 const target = resolveTarget(flag, $.git)
 
 // ─── Load config ──────────────────────────────────────────────────────────────
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
@@ -30,13 +29,16 @@ if (!deployConf?.server) {
   return
 }
 
-const targetConf = deployConf[target] ?? {}
-const server     = targetConf.server ?? deployConf.server
-const user       = targetConf.user   ?? deployConf.user ?? 'deploy'
-const path       = targetConf.path   ?? deployConf.path
+const resolved = resolveDeployConf(deployConf, target)
+if (!resolved) {
+  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
+  $.config.abort = true
+  return
+}
+const { server, user, path } = resolved
 const appId      = deployConf.app_id ?? path.split('/').pop()
 const apiPort    = deployConf.api?.port ?? 3000
-const host       = `${user}@${server}`
+const host       = resolved.host
 const container  = apiContainer(appId, deployConf)
 
 // ─── Is the machine reachable ─────────────────────────────────────────────────
@@ -89,11 +91,11 @@ try {
 // which is the only day this section matters.
 echo('\nPause')
 try {
-  const { driftVerdict, pausedFile, vhostPath, GUARD_MARKER } =
+  const { driftVerdict, pausedFile, guardProbeScript } =
     await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
   const filePresent = ask(`[ -f ${pausedFile(path)} ] && echo yes || echo no`).trim() === 'yes'
-  const hasGuard    = ask(`grep -qF '${GUARD_MARKER}' ${vhostPath(appId)} 2>/dev/null && echo yes || echo no`).trim() === 'yes'
+  const hasGuard    = ask(guardProbeScript(appId)).trim() === '200'
 
   let journalPaused = false, since = null, actor = null, behind = null
   if (deployConf.journal !== false) {
@@ -120,8 +122,8 @@ try {
     echo(`  ⚠ ${v.fix}`)
   }
   if (!hasGuard) {
-    echo(`  guard:      absent from ${vhostPath(appId)}`)
-    echo(`  ℹ  this target was set up before pause existed — fli deploy:setup rewrites the vhost`)
+    echo(`  guard:      Caddy holds no route for ${appId} with a pause guard`)
+    echo(`  ℹ  fli deploy:setup writes the routes`)
   }
   if (behind !== null)
     echo(`  journal:    format ${behind} — the next deploy migrates it`)

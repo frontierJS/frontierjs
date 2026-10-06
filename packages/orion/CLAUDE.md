@@ -195,20 +195,14 @@ the plan, module by module, and the rulings it rests on are
   HOST's Vite root, where `@` is the host's `src/`, so every import in `web/` is
   relative or a package name. The services are reached by their default names,
   so a host that renames one has screens that 404.
-- **Who is an administrator is the app's mapping, and the host passes it TWICE.**
-  Its `GatePlugin({ getLevel })` grades every read — `orion.lite`'s policies read
-  `auth().level` (`FJS-D296`) — and `orion({ level })` grades an administrator
-  acting on another person's flow through system, and a `data.code` save. The
-  `level` default is `sessionGateLevel`, which grades a bare `role` USER(4), so
-  an app grading roles its own way — `example`'s `shopGateLevel` — passes it to
-  both or reads and writes disagree about who an administrator is. **Junction is
-  no longer a third**: a declared method gate is graded by the same
-  `GatePlugin` mapping now, asked through `db.$levelOf` (`FJS-D308`), so a host
-  whose standing is a membership row is no longer refused at the API by a level
-  nothing in it wrote (`FJS-1161`). What is left here is the two paths that
-  reach NO client scoped to the caller — a system write and a compile-time
-  refusal — which is why `orion({ level })` survives and why collapsing it into
-  one option is a separate question.
+- **Who is an administrator is the app's mapping, stated once to its
+  `GatePlugin({ getLevel })` and asked everywhere else** (`FJS-D308`). The
+  policies read it as `auth().level` (`FJS-D296`), junction's method gate asks
+  `db.$levelOf`, and so do the two decisions here — an administrator acting on
+  another person's flow through system, and a `data.code` save — through
+  `callerGateLevel` on the caller's own client, BEFORE either lifts to system.
+  There is no `orion({ level })`: a second copy grades an administrator one way
+  at the boundary and another at the system write (`FJS-1771`).
 - **Every read is the caller's own client** (`FJS-D295`, `FJS-D296`). The owner
   and an administrator both arrive through the row policies, so a query, a
   broadcast and a protected column agree. A read in `services.ts` through

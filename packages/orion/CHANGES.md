@@ -1,5 +1,13 @@
 # Changes — @frontierjs/orion
 
+## 2026-10-06 — `DEFAULT_SERVICE_NAMES` is exported from `./plugin`
+
+`flows` and `runs` broadcast on a channel of their own name, and a host joins its connections to it by that name; basecamp now joins them through the constant rather than restating the strings (`FJS-1772`).
+
+## 2026-10-05 — who is an administrator is asked of the client, and `orion({ level })` is gone (`FJS-1771`)
+
+The services graded an administrator acting through system, and a `data.code` save, by `deps.level ?? sessionGateLevel` — a second copy of the app's mapping that `FJS-D308` rules the Data boundary owns. Both now ask `callerGateLevel(ctx.locals.db, "flow", user)`, the app's `GatePlugin` mapping through `db.$levelOf`, with `sessionGateLevel` only where the client cannot grade. The option, its argument in `example` and basecamp, and the suite's second statement are deleted. The suite's manager case now passes only through the gate, and goes red with the client withheld. 598 pass; `verify:automations` 72 pass.
+
 ## 2026-09-30 — `PROJECT_STATE.md` no longer calls orion private (`FJS-1369`)
 
 The status line said "private, unpublished". The `private` flag left `package.json` on purpose in 35ba5615, so it now says publishable and never released. It also names what the first release owes: delete orion's `HELD_BACK` entry in `website/site/src/data/packages.js` and write its page. `fli ws:publish` prints that as a `website-held-back` note.

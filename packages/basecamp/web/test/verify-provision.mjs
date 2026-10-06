@@ -43,7 +43,7 @@
 //   until each answers, asserts, and kills.
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, appendFileSync } from 'node:fs'
+import { mkdtempSync, appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -95,6 +95,13 @@ function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => proce
 // ─── A database of its own ───────────────────────────────────────────────
 const SCRATCH = mkdtempSync(join(tmpdir(), 'basecamp-provision-'))
 const DB      = join(SCRATCH, 'basecamp.db')
+// The operator's ssh config, as the API will find it: HOME is pointed here, so
+// the listing reads two aliases this drive wrote and never the machine's own.
+// 192.0.2.0/24 is TEST-NET-1 — nothing answers there, so the probe is a refusal.
+const SSH_HOME = join(SCRATCH, 'home')
+mkdirSync(join(SSH_HOME, '.ssh'), { recursive: true })
+writeFileSync(join(SSH_HOME, '.ssh', 'config'),
+  'Host desk\n  HostName 192.0.2.7\n  User ops\n  Port 2201\nHost named\n  HostName example.invalid\n')
 
 console.log('\nBasecamp — provisioning a machine\n')
 console.log(`  seeding ${DB}`)
@@ -165,6 +172,8 @@ const api = spawn('bun', ['api/index.ts'], {
     DIGITALOCEAN_URL: SINK,
     HETZNER_URL:      HZ_SINK,
     PORT:             String(API_PORT),
+    LOCAL_SSH:        '1',
+    HOME:             SSH_HOME,
   },
 })
 children.push(api)
@@ -871,6 +880,28 @@ try {
     /nothing is billed/i.test(await body()))
   check('and offers no account, region catalog or price',
     await evaluate(`!document.getElementById('account') && !document.getElementById('size')`))
+
+  // ─── …and, on an operator's own machine, their ssh aliases ─────────────
+  // LOCAL_SSH=1 and a HOME holding two aliases. The pick fills what ssh -G
+  // resolved; a HostName that is a NAME is left out of the address column,
+  // which feeds DNS records.
+  await until(`!!document.getElementById('sshAlias')`, v => v, 'the ssh alias picker never rendered')
+  check('the picker offers the aliases the config names, and nothing else',
+    JSON.stringify(await options('sshAlias')) === '["desk","named"]', JSON.stringify(await options('sshAlias')))
+  await fill({ sshAlias: 'desk' })
+  await until(`document.getElementById('sshUser')?.value`, v => v === 'ops', 'picking an alias filled no user')
+  check('picking one fills the address, user and port ssh resolved',
+    await evaluate(`[document.getElementById('ipAddress').value, document.getElementById('sshPort').value].join(' ')`) === '192.0.2.7 2201')
+  await until(`document.getElementById('ssh-aliases').textContent`, t => /unreachable/.test(t), 'the probe never answered', 15_000)
+  check('and says whether this laptop can reach it',
+    /unreachable/.test(await text('#ssh-aliases')))
+  check('with the command that would put Basecamp itself there',
+    /fli deploy:setup --server desk/.test(await text('#ssh-aliases')))
+  await fill({ sshAlias: 'named' })
+  await until(`document.getElementById('sshUser')?.value`, v => v !== 'ops', 'picking a second alias changed nothing')
+  check('a HostName that is a name is not written into the address',
+    await evaluate(`document.getElementById('ipAddress').value`) === '')
+  await fill({ sshUser: 'root', sshPort: '22' })
 
   await fill({ name: 'under-the-desk', ipAddress: '10.0.1.9', region: 'dc1' })
   await evaluate(`document.querySelector('form button[type=submit]').click()`)

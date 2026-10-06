@@ -61,8 +61,8 @@ import { vendorWorkspacePackages }                     from '../packages/cli/cor
 import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
-import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
-import { edgeVhost } from '../packages/cli/core/edge.js'
+import { DEFAULT_PAGE, guardProbeScript, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
+import { edgeRoutes, applyEdge, readConfigScript, parseConfigRead, writeConfigScript, parseConfigWrite, INGRESS_SERVER } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 import { fenceThisProcess }                            from '../packages/cli/core/bun-fence.js'
 import { measureSurface, measureDisk, measureDbGrowth, gatedMetrics, readBaseline, writeBaseline, ratchet, formatBench } from '../packages/cli/core/bench.js'
@@ -787,19 +787,19 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     log('  ✓ the journal on the machine records it as serving')
 
     // ── a pause this target cannot honor ──────────────────
-    // The scaffolded target has no nginx in front of it, so there is nothing
+    // The scaffolded target has no Caddy route in front of it, so there is nothing
     // that would read the guard file — and a pause that wrote one anyway would
     // report success while the app went on answering, which is the failure the
     // whole phase is about, one layer along.
     //
     // It is the accepting half that cannot be asked here (that is
-    // `pauseEdgeCycle`, which has an nginx and no app). What this can ask, and
+    // `pauseEdgeCycle`, which has a Caddy and no app). What this can ask, and
     // nothing else can, is the refusal against a REAL journal on a real machine:
-    // `openPauseJournal` opens it, reads what is serving, grades the vhost, and
+    // `openPauseJournal` opens it, reads what is serving, grades the edge, and
     // settles nothing.
     const p1 = inApp(['deploy:pause'])
     if (p1.status === 0)
-      return fail('deploy:pause succeeded against a target with no guard in its vhost', p1.output)
+      return fail('deploy:pause succeeded against a target with no guard at its edge', p1.output)
     if (!/no-guard/.test(p1.output))
       return fail('deploy:pause refused for some reason other than the missing guard', p1.output)
     if (!/deploy:setup/.test(p1.output))
@@ -808,7 +808,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     const j1b = inApp(['deploy:journal'])
     if (/pause/.test(j1b.output))
       return fail('a refused pause wrote a transition — it is graded before one is opened', j1b.output)
-    log('  ✓ a pause refuses a target whose vhost has no guard, and records nothing')
+    log('  ✓ a pause refuses a target whose edge has no guard, and records nothing')
 
     // ── 2 · deploy again, unchanged ───────────────────────
     // Not asserted as producing the same bytes, and that is a measurement rather
@@ -1363,25 +1363,24 @@ function indent(text) {
 }
 
 // ─── pauseEdgeCycle ──────────────────────────────────────
-// Phase 3b's other half: the guard `_steps-setup/05-nginx` writes, in front of a
-// real nginx.
+// Phase 3b's other half: the routes `_steps-setup/05-caddy` writes, in a real
+// Caddy, through the admin API, by the same scripts the step runs.
 //
-// **A config built from a template is a claim about nginx, and only nginx can
-// answer it.** Every assertion here passes against a file nginx refuses if it is
-// made against the text: `error_page 503 /some-uri` reads perfectly well and is
-// a redirection cycle; a guard placed after the http→https redirect reads
-// perfectly well and answers 301 to every plain-http caller of a paused app.
+// **A route built from JSON is a claim about Caddy, and only Caddy can answer
+// it.** Every assertion here passes against a route Caddy refuses or serves
+// differently if it is made against the object: `file_server` answers 200 for a
+// file it found unless told otherwise, and a config written over a stale read
+// would drop a route Outpost had just added.
 //
-// The guard half uses `core/pause.js`'s own `nginxGuard` inside hand-written
-// blocks, because the ordering claim needs a redirect on a port with no
-// certificate. The edge half loads `core/edge.js`'s output VERBATIM — the file
-// `deploy:setup` writes — in both shapes, one origin and two, against an
-// upstream that answers with the path it received (`FJS-1089`, `FJS-1100`).
+// The routes are `core/edge.js`'s output VERBATIM, in both shapes, one origin
+// and two, merged into a config that already holds a route of Outpost's —
+// against an upstream that answers with the path it received (`FJS-1089`,
+// `FJS-1100`). Automatic HTTPS is off, since no certificate can be had here, so
+// the http→https redirect — Caddy's own, ahead of every route — is not asked.
 //
-// No app and no deploy: the upstream is deliberately a port nothing is on, so
-// *serving* answers 502 through the proxy and *paused* answers 503. A guard
-// that refused everything would be indistinguishable from a working one
-// otherwise.
+// No app and no deploy. One app's API is a port nothing is on, so *serving*
+// answers 502 through the proxy and *paused* answers 503. A guard that refused
+// everything would be indistinguishable from a working one otherwise.
 //
 // Returns { findings, skipped } like its siblings.
 
@@ -1390,199 +1389,160 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
   const fail     = (message, output) => { findings.push({ message, output }); return { findings, skipped: null } }
 
   if (exec('docker', ['version', '--format', '{{.Server.Version}}'], { verbose: false }).status !== 0)
-    return { findings, skipped: 'no Docker daemon — the edge half needs a real nginx' }
+    return { findings, skipped: 'no Docker daemon — the edge half needs a real Caddy' }
 
   // ports.js: env 7 test · category 1 be · project 0. 7102 is the journal cycle.
-  // Two, because the ordering claim needs a vhost that redirects and the other
-  // assertions need one that does not — and one nginx serving both is the only
-  // arrangement where the difference is the config rather than the server.
-  const PORT  = 7103
-  const TLSPORT = 7104
-  for (const p of [PORT, TLSPORT])
-    if (!portFree(p))
-      return { findings: [], skipped: `port ${p} is already in use — something else is on this machine's test tier` }
+  const PORT = 7103
+  if (!portFree(PORT))
+    return { findings: [], skipped: `port ${PORT} is already in use — something else is on this machine's test tier` }
 
   const base = ciWorkBase(log)
   const work = workDir('fjs-pause-', base)
   const name = `fjspause${process.pid}`
 
-  // The path INSIDE the container, which is what the vhost is written for. The
-  // guard is an absolute path, so the two have to agree.
+  // The path INSIDE the container, which is what the routes are written for.
   const SERVER_PATH = '/srv/app'
   const srv  = join(work, 'srv', 'app')
-  const conf = join(work, 'confd')
 
-  const curl = (path, port = PORT) => exec('curl',
-    ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '10',
-     `http://127.0.0.1:${port}${path}`], { verbose: false }).output.trim()
-  const body = (path, port = PORT) => exec('curl',
-    ['-s', '--max-time', '10', `http://127.0.0.1:${port}${path}`], { verbose: false }).output
-  const headers = (path, port = PORT) => exec('curl',
-    ['-s', '-D-', '-o', '/dev/null', '--max-time', '10', `http://127.0.0.1:${port}${path}`], { verbose: false }).output
+  const curl = (host, path, extra = []) => exec('curl',
+    ['-s', ...extra, '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output
+  const code    = (host, path) => curl(host, path, ['-o', '/dev/null', '-w', '%{http_code}']).trim()
+  const headers = (host, path) => curl(host, path, ['-D-', '-o', '/dev/null'])
 
+  // The step's own scripts, run on the "target" — inside the container, which
+  // is where 127.0.0.1:2019 is Caddy's admin API.
+  const onTarget = (script) => exec('docker', ['exec', '-i', name, 'sh', '-s'], { verbose: false, input: script })
   const stop = () => exec('docker', ['rm', '-f', name], { verbose: false })
-  const at   = (host, path) => exec('curl',
-    ['-s', '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output
-  const code = (host, path) => exec('curl',
-    ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output.trim()
+
+  const UPSTREAM = 8080
+  const DEAD     = 9
+  const outpostRoute = {
+    '@id': 'fjs-blog', match: [{ host: ['blog.test'] }], terminal: true,
+    handle: [{ handler: 'static_response', body: 'outpost', status_code: 200 }],
+  }
 
   try {
     mkdirSync(join(srv, '.fli'),    { recursive: true })
     mkdirSync(join(srv, 'current'), { recursive: true })
-    mkdirSync(conf, { recursive: true })
     writeFileSync(join(srv, 'current', 'index.html'), '<h1>the app</h1>\n')
     writeFileSync(join(srv, '.fli', 'maintenance.html'), DEFAULT_PAGE)
-
-    // The generated file, both shapes, beside the hand blocks. They answer by
-    // Host, so the hand block on :80 stays the default for every other name.
-    // The upstream is this same nginx on :8080 saying which path reached it.
-    const UPSTREAM = 8080
-    const generated = (appId, web, api) => edgeVhost({
-      appId, serverPath: SERVER_PATH, apiPort: UPSTREAM,
-      web: { domain: web, sslCert: null, sslKey: null },
-      api: { domain: api, sslCert: null, sslKey: null },
-    })
-    writeFileSync(join(conf, 'upstream.conf'),
-      `server {\n  listen ${UPSTREAM};\n  location / {\n    return 200 "upstream:$request_uri";\n  }\n}\n`)
-    writeFileSync(join(conf, 'zz-one.conf'), generated('one', 'one.test', null))
-    writeFileSync(join(conf, 'zz-two.conf'), generated('two', 'app.test', 'api.test'))
-    // The control for the path assertion: the same file with the URI put back
-    // on proxy_pass, which is what the vhost carried before. Unless this one
-    // strips, the assertion below cannot tell a fix from a test that reads
-    // nothing.
-    writeFileSync(join(conf, 'zz-strip.conf'),
-      generated('strip', 'strip.test', null).replaceAll(`proxy_pass http://127.0.0.1:${UPSTREAM};`, `proxy_pass http://127.0.0.1:${UPSTREAM}/;`))
-
-    // Two vhosts on one nginx. The first is a target with no TLS configured; the
-    // second is one with it, which the real `05-nginx` writes as a rewrite-phase
-    // `return 301` — the same kind of directive as the guard, so which of them
-    // comes first decides what a paused app says to a plain-http caller.
-    const surface = () => `
-  root ${SERVER_PATH}/current;
-  index index.html;
-
-  location / {
-    try_files $uri /index.html;
-  }
-
-  location /api/ {
-    proxy_pass http://127.0.0.1:9/;
-  }
-}
-`
-    writeFileSync(join(conf, 'default.conf'), `server {
-  listen 80;
-  server_name _;
-
-${nginxGuard(SERVER_PATH)}
-${surface()}
-server {
-  listen 81;
-  server_name _;
-
-${nginxGuard(SERVER_PATH)}
-
-  if ($scheme = http) {
-    return 301 https://$host$request_uri;
-  }
-${surface()}`)
+    // The server Outpost would have made, with one of its routes already in it.
+    writeFileSync(join(work, 'caddy.json'), JSON.stringify({
+      apps: { http: { servers: {
+        [INGRESS_SERVER]: { listen: [':80'], automatic_https: { disable: true }, routes: [outpostRoute] },
+        upstream: { listen: [`:${UPSTREAM}`], routes: [{ handle: [{ handler: 'static_response', body: 'upstream:{http.request.uri}' }] }] },
+      } } },
+    }))
 
     stop()
     const up = exec('docker', ['run', '-d', '--name', name,
-                               '-p', `127.0.0.1:${PORT}:80`, '-p', `127.0.0.1:${TLSPORT}:81`,
-                               '-v', `${conf}:/etc/nginx/conf.d:ro`,
+                               '-p', `127.0.0.1:${PORT}:80`,
                                '-v', `${join(work, 'srv')}:/srv:rw`,
-                               'nginx:alpine'], { verbose })
-    if (up.status !== 0) return fail('could not start nginx over the generated guard', up.output)
+                               '-v', `${join(work, 'caddy.json')}:/etc/caddy/base.json:ro`,
+                               'caddy:2', 'caddy', 'run', '--config', '/etc/caddy/base.json'], { verbose })
+    if (up.status !== 0) return fail('could not start Caddy', up.output)
+    for (let i = 0; i < 40 && code('blog.test', '/') !== '200'; i++) exec('sleep', ['0.25'], { verbose: false })
+    if (code('blog.test', '/') !== '200') return fail('Caddy never answered for the Outpost route', exec('docker', ['logs', name], { verbose: false }).output)
 
-    // nginx starts on a config it refuses only to exit; ask it directly, so a
-    // redirection cycle is reported as what it is rather than as a dead port.
-    const t = exec('docker', ['exec', name, 'nginx', '-t'], { verbose: false })
-    if (t.status !== 0) return fail('nginx refuses the config the guard is in', t.output)
+    // ── write the routes the way 05-caddy does ────────────
+    const push = (appId, web, api, apiPort = UPSTREAM) => {
+      const routes = edgeRoutes({ appId, serverPath: SERVER_PATH, apiPort, web: { domain: web }, api: { domain: api } })
+      const read   = parseConfigRead(onTarget(readConfigScript()).output)
+      return { read, routes, result: parseConfigWrite(onTarget(writeConfigScript(applyEdge(read.config, { appId, routes }), read.etag)).output) }
+    }
+    for (const [appId, web, api, port] of [['one', 'one.test', null], ['two', 'app.test', 'api.test'], ['dead', 'dead.test', null, DEAD]]) {
+      const { result } = push(appId, web, api, port)
+      if (!result.ok) return fail(`Caddy refused the routes for ${appId}`, result.error ?? 'a 412 with nothing else writing')
+    }
+    if (code('blog.test', '/') !== '200')
+      return fail('writing the routes dropped the route Outpost had made', headers('blog.test', '/'))
+    if (onTarget(guardProbeScript('one')).output.trim() !== '200' || onTarget(guardProbeScript('nobody')).output.trim() === '200')
+      return fail('the guard probe does not tell an app with a guard from one without', '')
+    log('  ✓ the routes load beside Outpost\'s, and the guard is found by id')
 
-    for (let i = 0; i < 40 && curl('/') === '000'; i++) exec('sleep', ['0.25'], { verbose: false })
+    // ── the read is compared, not trusted ─────────────────
+    const stale = parseConfigRead(onTarget(readConfigScript()).output)
+    push('one', 'one.test', null)
+    const late = parseConfigWrite(onTarget(writeConfigScript(stale.config, stale.etag)).output)
+    if (!late.stale)
+      return fail(`a write over a read another write had moved was not refused — it answered ${JSON.stringify(late)}`, '')
+    try {
+      applyEdge(parseConfigRead(onTarget(readConfigScript()).output).config,
+        { appId: 'thief', routes: edgeRoutes({ appId: 'thief', serverPath: SERVER_PATH, apiPort: UPSTREAM, web: { domain: 'blog.test' }, api: {} }) })
+      return fail('a route claiming Outpost\'s hostname was merged', '')
+    } catch (e) {
+      if (!/already routed to fjs-blog/.test(e.message)) return fail('the claim was refused for the wrong reason', e.message)
+    }
+    log('  ✓ a stale write is a 412, and another route\'s hostname is refused')
 
     // ── serving ───────────────────────────────────────────
-    if (curl('/') !== '200')
-      return fail(`with no guard file the site answers ${curl('/')} and not 200`, headers('/'))
-    // The negative control for every 503 below. Nothing is on the upstream, so a
-    // guard that refused nothing still cannot make this 200 — and a guard that
-    // refused everything could not make it 502.
-    if (curl('/api/health') !== '502')
-      return fail(`with no guard file the dead upstream answers ${curl('/api/health')} and not 502`, headers('/api/health'))
+    if (code('one.test', '/') !== '200')
+      return fail(`with no guard file the site answers ${code('one.test', '/')} and not 200`, headers('one.test', '/'))
+    // The negative control for every 503 below.
+    if (code('dead.test', '/api/health') !== '502')
+      return fail(`with no guard file the dead upstream answers ${code('dead.test', '/api/health')} and not 502`, headers('dead.test', '/api/health'))
     log('  ✓ with no guard file the edge serves, and the proxy reaches for the upstream')
 
-    // ── the generated vhost, one origin ───────────────────
-    if (at('strip.test', '/api/orders') !== 'upstream:/orders')
-      return fail(`the control did not strip — a URI on proxy_pass answered ${JSON.stringify(at('strip.test', '/api/orders'))}, so the path row below proves nothing`, '')
-    if (at('one.test', '/api/orders?page=2') !== 'upstream:/api/orders?page=2')
-      return fail(`under one origin the app receives ${JSON.stringify(at('one.test', '/api/orders?page=2'))} for /api/orders?page=2 — its routes are registered under apiPrefix /api`, '')
-    if (at('one.test', '/ws') !== 'upstream:/ws')
-      return fail(`under one origin /ws reaches the app as ${JSON.stringify(at('one.test', '/ws'))}`, '')
-    if (!/the app/.test(at('one.test', '/orders/7')))
-      return fail('under one origin a deep URL is not the SPA', at('one.test', '/orders/7'))
+    // ── one origin ────────────────────────────────────────
+    if (curl('one.test', '/api/orders?page=2') !== 'upstream:/api/orders?page=2')
+      return fail(`under one origin the app receives ${JSON.stringify(curl('one.test', '/api/orders?page=2'))} for /api/orders?page=2 — its routes are registered under apiPrefix /api`, '')
+    if (curl('one.test', '/ws') !== 'upstream:/ws')
+      return fail(`under one origin /ws reaches the app as ${JSON.stringify(curl('one.test', '/ws'))}`, '')
+    if (!/the app/.test(curl('one.test', '/orders/7')))
+      return fail('under one origin a deep URL is not the SPA', curl('one.test', '/orders/7'))
     log('  ✓ one origin: the SPA, and /api/ and /ws reach the app with the path unchanged')
 
-    // ── the generated vhost, two origins ──────────────────
-    // Asked as a pair on one path: the web name must NOT proxy it and the API
-    // name must, or a block that proxied everything would pass either half.
-    if (!/the app/.test(at('app.test', '/api/orders')))
-      return fail(`under two origins the web name proxies /api/orders — it answered ${JSON.stringify(at('app.test', '/api/orders'))}`, '')
-    if (at('api.test', '/api/orders') !== 'upstream:/api/orders')
-      return fail(`under two origins the API name answers ${JSON.stringify(at('api.test', '/api/orders'))} for /api/orders`, '')
-    if (at('api.test', '/ws') !== 'upstream:/ws')
-      return fail(`under two origins /ws on the API name reaches ${JSON.stringify(at('api.test', '/ws'))}`, '')
+    // ── two origins ───────────────────────────────────────
+    if (!/the app/.test(curl('app.test', '/api/orders')))
+      return fail(`under two origins the web name proxies /api/orders — it answered ${JSON.stringify(curl('app.test', '/api/orders'))}`, '')
+    if (curl('api.test', '/api/orders') !== 'upstream:/api/orders')
+      return fail(`under two origins the API name answers ${JSON.stringify(curl('api.test', '/api/orders'))} for /api/orders`, '')
+    if (curl('api.test', '/ws') !== 'upstream:/ws')
+      return fail(`under two origins /ws on the API name reaches ${JSON.stringify(curl('api.test', '/ws'))}`, '')
     log('  ✓ two origins: the web name serves the SPA and proxies nothing, the API name proxies every path')
 
     // ── paused ────────────────────────────────────────────
     writeFileSync(join(srv, '.fli', 'paused'), '')
 
-    if (curl('/') !== '503')
-      return fail(`a paused app answers ${curl('/')} at the root and not 503`, headers('/'))
-    // A URL the SPA fallback would have served. `try_files` never runs.
-    if (curl('/orders/123') !== '503')
-      return fail(`a paused app answers ${curl('/orders/123')} on a deep URL and not 503`, headers('/orders/123'))
-    // The half nginx can do and the app cannot: 502 became 503, so the guard
-    // short-circuits before the proxy rather than beside it.
-    if (curl('/api/health') !== '503')
-      return fail(`a paused app answers ${curl('/api/health')} through the proxy and not 503`, headers('/api/health'))
+    if (code('one.test', '/') !== '503')
+      return fail(`a paused app answers ${code('one.test', '/')} at the root and not 503`, headers('one.test', '/'))
+    if (code('one.test', '/orders/123') !== '503')
+      return fail(`a paused app answers ${code('one.test', '/orders/123')} on a deep URL and not 503`, headers('one.test', '/orders/123'))
+    // 502 became 503, so the guard short-circuits before the proxy rather than beside it.
+    if (code('dead.test', '/api/health') !== '503')
+      return fail(`a paused app answers ${code('dead.test', '/api/health')} through the proxy and not 503`, headers('dead.test', '/api/health'))
     if (code('app.test', '/') !== '503' || code('api.test', '/api/orders') !== '503')
       return fail(`under two origins a paused app answers ${code('app.test', '/')} on the web name and ${code('api.test', '/api/orders')} on the API name, not 503 on both`, '')
-    log('  ✓ a paused app refuses the site, a deep URL and the API — on both names of a split app')
-
-    // ── the ordering, on the vhost that redirects ─────────
-    // The guard and the https redirect are both rewrite-phase returns and the
-    // first one wins. Asked as a PAIR, because a vhost that answered 503 whether
-    // or not it was paused would satisfy the paused half on its own.
-    if (curl('/', TLSPORT) !== '503')
-      return fail(`a paused app behind an https redirect answers ${curl('/', TLSPORT)} and not 503 — the guard is behind the redirect`,
-                  headers('/', TLSPORT))
-    rmSync(join(srv, '.fli', 'paused'))
-    if (curl('/', TLSPORT) !== '301')
-      return fail(`a SERVING app behind an https redirect answers ${curl('/', TLSPORT)} and not 301 — the guard refuses when nothing paused it`,
-                  headers('/', TLSPORT))
-    writeFileSync(join(srv, '.fli', 'paused'), '')
-    log('  ✓ paused wins over the https redirect, and lifting it gives the redirect back')
+    if (code('blog.test', '/') !== '200')
+      return fail('pausing an fli app paused the Outpost app beside it', headers('blog.test', '/'))
+    log('  ✓ a paused app refuses the site, a deep URL and the API — on both names of a split app, and nothing else on the machine')
 
     // ── what the refusal carries ──────────────────────────
-    const h = headers('/')
+    const h = headers('one.test', '/')
     if (!/^Retry-After:/mi.test(h))
       return fail('the refusal carries no Retry-After — a 503 without one takes the app out of a search index', h)
     if (!/^Cache-Control:\s*no-store/mi.test(h))
       return fail('the refusal is cacheable — a client can be stuck on it after the app is back', h)
-    if (!/Back shortly/.test(body('/')))
-      return fail('the refusal serves nginx\'s own page rather than the maintenance page', body('/').slice(0, 400))
+    if (!/Back shortly/.test(curl('one.test', '/')))
+      return fail('the refusal does not serve the maintenance page', curl('one.test', '/').slice(0, 400))
     log('  ✓ the refusal is a 503 carrying Retry-After, no-store, and the page the app owns')
 
     // ── unpaused ──────────────────────────────────────────
     rmSync(join(srv, '.fli', 'paused'))
-    if (curl('/') !== '200')
-      return fail(`after the guard file is gone the site answers ${curl('/')} and not 200`, headers('/'))
-    if (curl('/api/health') !== '502')
-      return fail(`after the guard file is gone the proxy answers ${curl('/api/health')} and not 502`, headers('/api/health'))
-    if (at('api.test', '/api/orders') !== 'upstream:/api/orders')
-      return fail(`after the guard file is gone the API name answers ${JSON.stringify(at('api.test', '/api/orders'))}`, '')
+    if (code('one.test', '/') !== '200')
+      return fail(`after the guard file is gone the site answers ${code('one.test', '/')} and not 200`, headers('one.test', '/'))
+    if (code('dead.test', '/api/health') !== '502')
+      return fail(`after the guard file is gone the proxy answers ${code('dead.test', '/api/health')} and not 502`, headers('dead.test', '/api/health'))
+    if (curl('api.test', '/api/orders') !== 'upstream:/api/orders')
+      return fail(`after the guard file is gone the API name answers ${JSON.stringify(curl('api.test', '/api/orders'))}`, '')
     log('  ✓ removing the file serves again, with no reload')
+
+    // ── per-app access logs ───────────────────────────────
+    const logs = exec('docker', ['exec', name, 'ls', '/var/log/caddy'], { verbose: false }).output.split('\n')
+    const want = ['fli-one.access.log', 'fli-two.access.log', 'fli-two-api.access.log']
+    if (!want.every(f => logs.includes(f)))
+      return fail(`the routes do not each write an access log of their own — found ${JSON.stringify(logs.filter(Boolean))}`, '')
+    log('  ✓ each app logs to a file of its own')
 
     return { findings, skipped: null }
   } finally {

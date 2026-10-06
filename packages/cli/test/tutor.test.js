@@ -322,12 +322,12 @@ describe('pointAtLocalServer', () => {
   // The block `fli make:deploy` REALLY writes, copied from
   // `commands/make/deploy.md`'s `makeDeployBlock` for appId `my-app`. A
   // hand-simplified fixture is what lets a rewrite pass here and miss on a real
-  // app — the web block alone has a commented-out `// },` inside it that a
-  // greedy match eats.
+  // app — a greedy match on the web block eats the db block after it.
   const CONF = `export default {
   deploy: {
     server: 'localhost',
-    user: 'deploy',              // SSH user on the server
+    // user: 'deploy',           // absent: the bare server, so an alias in
+    //                           // ~/.ssh/config supplies User, Port and key
     path: '/apps/my-app',      // deploy root on the server
     app_id: 'my-app',
 
@@ -343,10 +343,6 @@ describe('pointAtLocalServer', () => {
     web: {
       domain: 'ci.invalid',
       keep_releases: 3,
-      // ssl: {
-      //   cert: '/etc/ssl/certs/my-app.pem',
-      //   key:  '/etc/ssl/private/my-app.key',
-      // },
     },
 
     db: {

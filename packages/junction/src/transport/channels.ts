@@ -249,6 +249,10 @@ interface ClaimGroup { claims: Record<string, unknown> | null; conns: Connection
  * private team kept receiving its rows on the socket they already had while
  * the same row over HTTP answered 404 (`FJS-1316`). The request path reads its
  * claims per call, and this is that rule carried over to a broadcast.
+ *
+ * A channel that names no tenant is answered `null`, and its row is then graded
+ * under each claim this resolver answers for the recipient on their OTHER
+ * channels (`FJS-1772`) — so a package's fixed channel needs nothing here.
  */
 export type ChannelClaimsFn = (
   channelName: string,
@@ -447,6 +451,7 @@ export async function gradeRecipients(
   src:     GradingSource,
   mode:    'row' | 'gate' = 'row',
   claimsFor?: ChannelClaimsFn,
+  channelsOf?: (conn: Connection) => Iterable<string>,
 ): Promise<Cohort[] | null> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
 
@@ -535,6 +540,36 @@ export async function gradeRecipients(
     else group.byClaims.set(sig, { claims, conns: [...conns] })
   })
 
+  // ── a channel that names no tenant ────────────────────────────────────────
+  //
+  // A fixed channel — a package's `flows`, an app's `authenticated` — carries
+  // rows of every tenant, so its resolver has no claim to answer, and under
+  // `strategy row` a recipient graded with none is refused by the tenancy deny
+  // whoever they are. Such a recipient is graded again under each claim the
+  // SAME resolver verifies for them on the other channels they are in, and
+  // admitted by the first that reads the row: the Data boundary decides which
+  // tenant the row is, through a parent where it has no column of its own. The
+  // row's own tenant is never copied onto the recipient — that claim nobody
+  // verified would pass the deny for everybody.
+  //
+  // `gate` mode is left alone: a count names no row and so no tenant, and a
+  // claim from any workspace would admit a count of another's writes.
+  const elsewhere = new Map<unknown, Record<string, unknown>[]>()
+  if (mode === 'row' && claimsFor && channelsOf) {
+    for (const [key, group] of byPrincipal) {
+      const bare = group.byClaims.get('')
+      if (!bare) continue
+      const graded = new Set(byChannel.get(key)!.keys())
+      const names  = new Map<string, Connection>()
+      for (const conn of bare.conns) for (const name of channelsOf(conn))
+        if (!graded.has(name) && !names.has(name)) names.set(name, conn)
+      const held = await Promise.all([...names].map(([name, conn]) => resolveClaims(claimsFor, name, conn)))
+      const bySig = new Map<string, Record<string, unknown>>()
+      for (const c of held) if (c) bySig.set(JSON.stringify(c), c)
+      if (bySig.size) elsewhere.set(key, [...bySig.values()])
+    }
+  }
+
   // An update that narrows who may read a row is refused to the reader it took
   // the row from, and a refusal alone strands the row in their live store —
   // share arrived live and revoke never did (`FJS-1425`). So a refused reader
@@ -574,6 +609,11 @@ export async function gradeRecipients(
     let visible: unknown
     try { visible = await db.$readAs(accessor, payload, who) }
     catch { continue }                      // undecidable: refuse, never widen
+    if (!visible && !claims) for (const held of elsewhere.get(key) ?? []) {
+      try { visible = await db.$readAs(accessor, payload, { ...(base as object ?? {}), ...held }) }
+      catch { visible = null }
+      if (visible) break
+    }
     if (!visible) {                         // the gate or a policy said no
       if (removal) out.push({ conns, frame: removal })
       continue
@@ -683,6 +723,14 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
   }, 30_000)
   if (gcTimer.unref) gcTimer.unref()
 
+  // Which channels a connection is in — what a fixed channel's recipient is
+  // graded by when its own resolver answers no claim (`gradeRecipients`).
+  function channelsOf(conn: Connection): string[] {
+    const names: string[] = []
+    for (const ch of channels.values()) if (ch.connections.has(conn)) names.push(ch.name)
+    return names
+  }
+
   function getOrCreate(name: string): Channel {
     let ch = channels.get(name)
     if (!ch) { ch = new Channel(name); channels.set(name, ch) }
@@ -708,7 +756,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     ): Promise<void> {
       const ch = channels.get(channelId)
       if (!ch) return
-      const graded = await gradeRecipients([ch], event, payload, src, mode, claimsFor)
+      const graded = await gradeRecipients([ch], event, payload, src, mode, claimsFor, channelsOf)
       if (!graded) { ch.send(event, payload); return }
       for (const { conns, frame } of graded)
         for (const conn of conns)
@@ -923,7 +971,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
         db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
         accessor: svc?.model ?? (ctx as { service?: string }).service ?? '',
         label:    (ctx as { service?: string }).service,
-      }, 'row', claimsFor)
+      }, 'row', claimsFor, channelsOf)
       if (graded) {
         for (const { conns, frame } of graded)
           for (const conn of conns)

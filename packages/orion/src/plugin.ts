@@ -56,6 +56,9 @@ import { createOrionServices, type OrionServiceNames } from "./services"
 // are declared in `engine/` and reachable only from there, which the boundary
 // test forbids an app from importing.
 export type { PluginManifest, NodeTypeDescriptor, NodeCategory } from "./engine/plugins"
+// `flows` and `runs` broadcast on a channel of their own name, which a host
+// joins its connections to.
+export { DEFAULT_SERVICE_NAMES } from "./services"
 export type { INodeImplementation, NodeContext, NodeResult } from "./engine/executor"
 
 // ─── options ─────────────────────────────────────────────────────────────────
@@ -91,14 +94,6 @@ export interface OrionOptions {
    * `flowCredentials` — each renameable or `false`, or `false` for none.
    */
   services?: OrionServiceNames | false
-  /**
-   * How the services grade a caller's standing — who is an administrator, who
-   * may save a code node. Pass the app's own mapping, the one its Data boundary
-   * grades by (`createAuthPlugin`'s `services.level` is the same answer), or an
-   * app whose roles map to levels differently is graded two ways. Default:
-   * `sessionGateLevel`.
-   */
-  level?: (user: import("@frontierjs/junction").SessionContext) => number
 }
 
 // What a run acts as in a Junction app: the client its model nodes write
@@ -244,7 +239,7 @@ export function orion(options: OrionOptions = {}): Plugin {
       app.claim("orion", runner)
 
       if (options.services !== false) {
-        for (const svc of createOrionServices({ runner, names: options.services, level: options.level })) {
+        for (const svc of createOrionServices({ runner, names: options.services })) {
           if (app.services.has(svc.name)) {
             throw new Error(`[orion] service '${svc.name}' is already registered by this app. Rename orion's: orion({ services: { ${svc.name}: '…' } }), or false to leave it out.`)
           }

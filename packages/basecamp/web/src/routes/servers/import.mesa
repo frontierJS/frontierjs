@@ -18,12 +18,42 @@ title: Import a machine
   // intention — the machine itself learns nothing until an outpost on it
   // checks in.
 
-  let draft  = servers.make({ name: '', ipAddress: '', region: '', role: 'general' })
+  let draft  = servers.make({ name: '', ipAddress: '', region: '', role: 'general', sshUser: 'root', sshPort: 22 })
   let errors = []
   let failed = null
   let saving = false
 
-  $: (draft.name, draft.ipAddress, draft.region, draft.role)
+  $: (draft.name, draft.ipAddress, draft.region, draft.role, draft.sshUser, draft.sshPort)
+
+  // ─── the operator's own ssh aliases ───────────────────────────────────
+  // Offered only by a Basecamp running on the operator's machine with
+  // LOCAL_SSH=1 (api core/local-ssh.ts); anywhere else the call is a 404 and
+  // the panel never draws. null is "not offered", [] is "offered, none".
+  let sshHosts = null
+  let sshAlias = ''
+  let probe    = null
+
+  servers.service.invoke('localSshHosts', null)
+    .then((answer) => { sshHosts = answer.hosts ?? [] })
+    .catch(() => { sshHosts = null })
+
+  // An address column feeds DNS records (edge sync), so a HostName that is a
+  // name rather than an address is shown and never written into it.
+  const IP = /^(\d{1,3}\.){3}\d{1,3}$|^[0-9a-f:]+:[0-9a-f:]*$/i
+  $: picked = sshHosts?.find(h => h.alias === sshAlias) ?? null
+
+  async function pickAlias(alias) {
+    sshAlias = alias
+    probe    = null
+    const h  = sshHosts?.find(x => x.alias === alias)
+    if (!h) return
+    draft.name      = draft.name || alias
+    draft.ipAddress = IP.test(h.hostname) ? h.hostname : ''
+    draft.sshUser   = h.user ?? 'root'
+    draft.sshPort   = h.port
+    try { probe = await servers.service.invoke('localSshProbe', null, { alias }) }
+    catch (err) { probe = { reachable: false, said: err.message } }
+  }
 
   $: roles = servers.fields?.role?.enum ?? ['general']
 
@@ -66,6 +96,26 @@ title: Import a machine
       is contacted. To buy one instead, <a href="/servers/provision/">provision a machine</a>.
     </p>
 
+    {#if sshHosts && sshHosts.length}
+      <section class="stack" id="ssh-aliases">
+        <Select label="From your ssh config" name="sshAlias" id="sshAlias" placeholder="Pick an alias"
+                options={sshHosts.map(h => h.alias)} value={sshAlias}
+                onchange={(e) => pickAlias(e.target.value)}
+                hint="Read from ~/.ssh/config on the machine this Basecamp runs on. Shown in development only." />
+        {#if picked}
+          <p class="text-sm text-muted">
+            {picked.user ?? 'default user'}@{picked.hostname}:{picked.port}
+            {#if !IP.test(picked.hostname)} — a name, not an address, so the IP field is left for you{/if}
+            · {probe === null ? 'checking…' : probe.reachable ? 'reachable' : `unreachable: ${probe.said}`}
+          </p>
+          <p class="text-sm text-muted">
+            To put Basecamp itself on this machine instead, from <code>packages/basecamp</code>:
+            <code>fli deploy:setup --server {picked.alias}</code>, then <code>fli deploy --server {picked.alias}</code>.
+          </p>
+        {/if}
+      </section>
+    {/if}
+
     <Input label="Name" name="name" id="name" required
            value={draft.name} oninput={(e) => draft.name = e.target.value}
            hint="The slug is derived from this by the service, and must be unique in the workspace."
@@ -78,6 +128,14 @@ title: Import a machine
     <Input label="IP address" name="ipAddress" id="ipAddress" placeholder="10.0.1.10"
            value={draft.ipAddress} oninput={(e) => draft.ipAddress = e.target.value}
            error={problem('ipAddress')} />
+
+    <Input label="SSH user" name="sshUser" id="sshUser"
+           value={draft.sshUser} oninput={(e) => draft.sshUser = e.target.value}
+           error={problem('sshUser')} />
+
+    <Input label="SSH port" name="sshPort" id="sshPort" type="number"
+           value={draft.sshPort} oninput={(e) => draft.sshPort = e.target.value}
+           error={problem('sshPort')} />
 
     <Input label="Region" name="region" id="region" placeholder="nbg1"
            value={draft.region} oninput={(e) => draft.region = e.target.value}

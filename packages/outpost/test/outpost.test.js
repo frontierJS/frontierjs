@@ -40,6 +40,10 @@ function fakeRunner(answers = {}) {
   const calls = []
   const run = async (argv) => {
     calls.push(argv)
+    // The running query has its own key, `running`: a deploy waits on it, and
+    // a test canning `docker inspect` for port bindings would otherwise read as
+    // a container that never came up.
+    if (argv.includes('{{.State.Running}}')) return { exitCode: 0, stdout: 'true\n', stderr: '', ...answers.running }
     const key = argv.slice(0, 3).join(' ')
     const canned = Object.entries(answers).find(([prefix]) => key.startsWith(prefix))?.[1]
     return { exitCode: 0, stdout: '', stderr: '', ...(canned ?? {}) }
@@ -158,8 +162,117 @@ describe('what the machine is asked to do', () => {
     // with *pull access denied* having just built successfully (`FJS-919`).
     expect(argv.find(c => c.startsWith('docker run'))).toContain(DIGEST)
     expect(argv.find(c => c.startsWith('docker run'))).not.toContain(`acme-web@${DIGEST}`)
-    // The old container is removed first, or the name is taken.
-    expect(argv.some(c => c === 'docker rm -f fjs-app-1')).toBe(true)
+    // The old container is set aside under `_replaced` and stopped before the
+    // new one takes its name, and removed only once the new one is healthy.
+    const at = (c) => argv.indexOf(c)
+    expect(at('docker rename fjs-app-1 fjs-app-1_replaced')).toBeGreaterThan(-1)
+    expect(at('docker stop -t 10 fjs-app-1_replaced')).toBeGreaterThan(at('docker rename fjs-app-1 fjs-app-1_replaced'))
+    expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs-app-1_replaced'))
+    expect(argv.lastIndexOf('docker rm -f fjs-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
+    expect(argv).not.toContain('docker rm -f fjs-app-1')
+  })
+
+  describe('a release that fails puts the old container back (FJS-1765)', () => {
+    // Short, or every case here waits thirty seconds for a container the fake
+    // has already said is down.
+    const HEALTH = { attempts: 2, intervalMs: 0 }
+    const deployWith = (answers, { fetch, body = {} } = {}) => {
+      const fake   = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, ...answers })
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, fetch, health: HEALTH }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      const sent = send(server, 'POST', '/deploy', {
+        deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST, config: { port: 7300 }, ...body,
+      })
+      return { fake, sent, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+
+    test('docker refusing the run renames the old one back and starts it', async () => {
+      // Measured before the fix: `rm -f` then a `run` exiting 125, and nothing
+      // on the machine afterwards.
+      const { sent, argv } = deployWith({
+        'docker run': { exitCode: 125, stderr: 'Bind for 0.0.0.0:7300 failed: port is already allocated\n' },
+      })
+      const res = await sent
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('port is already allocated')
+      expect(error).toContain('the previous container is serving again')
+
+      const run = argv().findIndex(c => c.startsWith('docker run'))
+      expect(argv().slice(run + 1)).toEqual(expect.arrayContaining([
+        'docker rm -f fjs-app-1',
+        'docker rename fjs-app-1_replaced fjs-app-1',
+        'docker start fjs-app-1',
+      ]))
+      expect(argv().indexOf('docker start fjs-app-1')).toBeGreaterThan(argv().indexOf('docker rename fjs-app-1_replaced fjs-app-1'))
+    })
+
+    test('a start that never answers its health path is taken down, and the old one put back', async () => {
+      let calls = 0
+      // The new container answers 503 on every attempt; the restored one answers.
+      const fetch = async () => (++calls <= HEALTH.attempts ? { ok: false, status: 503 } : { ok: true, status: 200 })
+      const { sent, argv } = deployWith({
+        'docker run':     { stdout: 'container-new\n' },
+        'docker inspect': { stdout: '{"80/tcp":[{"HostIp":"","HostPort":"7300"}]}\n' },
+      }, { fetch, body: { config: { port: 7300, containerPort: 80, healthCheck: '/healthz' } } })
+      const res = await sent
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('started and is not healthy — http://127.0.0.1:7300/healthz answered 503')
+      expect(error).toContain('the previous container is serving again')
+      expect(argv()).toContain('docker rename fjs-app-1_replaced fjs-app-1')
+      // The handle is spent, not deleted: no `rm -f _replaced` after the run.
+      const run = argv().findIndex(c => c.startsWith('docker run'))
+      expect(argv().slice(run)).not.toContain('docker rm -f fjs-app-1_replaced')
+    })
+
+    test('a container that is not running after the start is the same failure', async () => {
+      const { sent, argv } = deployWith({ 'docker run': { stdout: 'c\n' }, running: { stdout: 'false\n' } })
+      const res = await sent
+      expect(res.status).toBe(500)
+      const { error } = await res.json()
+      expect(error).toContain('started and is not healthy — not running')
+      expect(error).toContain('the previous container is back and is not healthy either')
+      expect(argv()).toContain('docker start fjs-app-1')
+    })
+
+    test('a first deploy has nothing to put back, and says so', async () => {
+      const { sent, argv } = deployWith({
+        'docker container inspect': { exitCode: 1, stderr: 'Error: No such container\n' },
+        'docker run':               { exitCode: 125, stderr: 'invalid reference format\n' },
+      })
+      const res = await sent
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('there was no previous container to put back')
+      expect(argv().some(c => c.startsWith('docker rename') || c.startsWith('docker stop'))).toBe(false)
+    })
+
+    test('a _replaced with nothing live beside it is the last good one, and is kept', async () => {
+      // An Outpost that died between the rename and the run. Clearing the
+      // handle there would delete the only container that ever worked.
+      const fake = fakeRunner({
+        'docker image inspect': { stdout: DIGEST + '\n' },
+        'docker run':           { exitCode: 125, stderr: 'boom\n' },
+      })
+      const inner = fake.run
+      const run = async (argv) => argv[1] === 'container' && argv.at(-1) === 'fjs-app-1'
+        ? (fake.calls.push(argv), { exitCode: 1, stdout: '', stderr: 'Error: No such container\n' })
+        : inner(argv)
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run, health: HEALTH }), inspector: createInspector({ run }),
+        log: { warn() {}, error() {} },
+      })
+      const res = await send(server, 'POST', '/deploy', {
+        deployment_id: 'dep-9', app_id: 'app-1', image: 'acme-web', digest: DIGEST, config: {},
+      })
+      expect((await res.json()).error).toContain('the previous container is serving again')
+      const argv = fake.calls.map(c => c.join(' '))
+      const run_ = argv.findIndex(c => c.startsWith('docker run'))
+      expect(argv.slice(0, run_)).not.toContain('docker rm -f fjs-app-1_replaced')
+      expect(argv).toContain('docker rename fjs-app-1_replaced fjs-app-1')
+    })
   })
 
   test('and an image this machine does not hold is still addressed name@digest', async () => {
@@ -416,6 +529,28 @@ describe('the ingress — Caddy, through its admin API', () => {
     expect((await res.json()).error).toContain('cpuLimit')
     expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7300')
     expect(fake.calls).toEqual([])
+  })
+
+  test('a release put back after a failed start leaves the route dialing the restored port (FJS-1765)', async () => {
+    const caddy = fakeCaddy()
+    const { server } = serverWith(caddy)
+    await deploy(server, { hosts: ['shop.example.com'] })
+
+    // The old container published 7300 on loopback; the new one asks for 7301
+    // and docker refuses it.
+    const fake = fakeRunner({
+      'docker run':     { exitCode: 125, stderr: 'port is already allocated\n' },
+      'docker inspect': { stdout: '{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"7300"}]}\n' },
+    })
+    const failing = createOutpostServer(CONFIG, {
+      docker: createDocker({ run: fake.run, health: { attempts: 1, intervalMs: 0 } }), inspector: createInspector({ run: fake.run }),
+      ingress: createIngress({ fetch: caddy.fetch }),
+      log: { warn() {}, error() {} },
+    })
+    const res = await deploy(failing, { hosts: ['shop.example.com'], config: { port: 7301, containerPort: 80 } })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('the previous container is serving again')
+    expect(caddy.config.apps.http.servers.ingress.routes[0].handle[0].upstreams[0].dial).toBe('127.0.0.1:7300')
   })
 
   test('the ingress listens where the machine set https_port, not where outpost guesses', async () => {

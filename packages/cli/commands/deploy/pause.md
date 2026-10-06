@@ -19,8 +19,7 @@ steps: _steps-pause
 
 ```js
 const target         = resolveTarget(flag, $.git)
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is no journal to record a pause in')
@@ -46,7 +45,7 @@ $.config.serverPath = api.path
 $.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
 $.config.apiPort    = deployConf.api?.port ?? 3000
 $.config.healthPath = deployConf.api?.health ?? '/health'
-// The name the vhost is written for, which is what `03-verify` has to ask
+// The name the route is written for, which is what `03-verify` has to ask
 // through — a machine serving several apps answers the wrong one otherwise.
 $.config.edgeHost   = deployConf.web?.domain ?? null
 $.config.startTime  = Date.now()
@@ -56,8 +55,8 @@ log.info(`Pausing ${$.config.appId} on ${target}`)
 
 ## What a pause is
 
-The app keeps running. `fli deploy:pause` writes one file and nginx refuses every
-request for this vhost from the next one, with a 503 and a `Retry-After` — the
+The app keeps running. `fli deploy:pause` writes one file and Caddy refuses every
+request for this app's routes from the next one, with a 503 and a `Retry-After` — the
 status that keeps a paused app in a search index rather than out of it.
 
 It is a transition, not a flag. The journal records which Release was serving,
@@ -91,7 +90,7 @@ it finishes.
 Supported, and it is what the pause is for. `fli deploy` swaps the container and
 moves the web symlink; neither touches the guard file, so the app stays paused
 across a deploy and the health check still passes — it polls the API port
-directly and never goes through nginx.
+directly and never goes through Caddy.
 
 **The queue half survives a deploy only if the jobs database is on the volume.**
 A pause is a row in that file, and a file inside the container is replaced by an

@@ -689,7 +689,7 @@ export async function createTestEnv(opts = {}) {
     verifyRowPolicies: async ({ against = null, principal = null,
                                 ops = ['read', 'update', 'delete', 'create'] } = {}) => {
       const schema     = against ?? built.parsed.schema
-      const who        = withDeclaredCapabilities(principal ?? DEFAULT_POLICY_PRINCIPAL, schema)
+      const who        = withDeclaredCapabilities(principal ?? withPolicyClaims(DEFAULT_POLICY_PRINCIPAL, schema), schema)
       const policyMap  = buildPolicyMap(schema, buildRelationMap(schema))
       const access     = deriveAccess(schema)
       const sys        = built.db.asSystem()
@@ -1243,7 +1243,7 @@ export async function createTestEnv(opts = {}) {
      */
     verifyFieldProtection: async ({ against = null, principal = null } = {}) => {
       const schema     = against ?? built.parsed.schema
-      const who        = withDeclaredCapabilities(principal ?? DEFAULT_POLICY_PRINCIPAL, schema)
+      const who        = withDeclaredCapabilities(principal ?? withPolicyClaims(DEFAULT_POLICY_PRINCIPAL, schema), schema)
       const sys        = built.db.asSystem()
       const mismatches = []
       const before     = snapshot(built.db)
@@ -1534,6 +1534,23 @@ export async function createTestEnv(opts = {}) {
                   || thrown?.name === 'SoftDeletedUniqueError'
                   || /UNIQUE constraint failed/i.test(thrown?.message ?? '')))
             const got = thrown === null ? 'accepted' : (refused ? 'rejected' : 'error')
+
+            // A value its field allows can still be refused by a `@@check` or
+            // `@@arc` over the row the factory built around it — the factory
+            // knows field rules, not model ones, so `total = subtotal + tax`
+            // fails on every row it invents. The field's rule was never asked,
+            // and reading the refusal as a defect fails the mutate control on
+            // a schema nothing is wrong with. A record-level refusal names no
+            // field: every error's path is empty.
+            if (got === 'rejected' && expected === 'accepted' && thrown.model
+                && (thrown.errors ?? []).every(e => !e.path?.length)) {
+              mismatches.push({
+                model: model.name, field: c.field, rule: c.rule, value: c.value,
+                expect: 'accepted', got: 'uncheckable', thrown: thrown.message,
+                message: `${model.name}.${c.field} — ${c.rule}: not graded, a model-level check refused the row built around this value: ${thrown.message}`,
+              })
+              return
+            }
 
             // Refused — but by WHICH rule? Every case carries the message its
             // own rule raises, and until `FJS-351` nothing compared it, so a
@@ -1936,6 +1953,14 @@ export function generateFactory(schema, modelName, options = {}) {
   return function definition(seq, rng) {
     const out = {}
     for (const field of model.fields) {
+      // A required File left out is a row the client refuses, so every model
+      // carrying one could not be built at all. The value is a stored ref, not
+      // bytes: a JSON string is what FileStorage reads back and never uploads.
+      if (field.type.name === 'File' && !field.type.optional && !field.type.array) {
+        const mime = field.attributes.find(a => a.kind === 'accept')?.types?.[0] ?? 'application/octet-stream'
+        out[field.name] = JSON.stringify({ key: `${modelName}/${seq}/${field.name}`, provider: 'local', size: 0, mime })
+        continue
+      }
       if (_shouldSkipField(field, model)) continue
 
       const name  = field.name
@@ -2678,6 +2703,46 @@ const DEFAULT_POLICY_PRINCIPAL = {
 function withDeclaredCapabilities(who, schema) {
   if (who?.capabilities) return who
   return { ...who, capabilities: [...capabilityNames(schema)] }
+}
+
+/**
+ * The default principal, carrying a value for every claim a row policy compares
+ * a column against.
+ *
+ * A claim the principal lacks compiles to NULL, so no seeded row matches and the
+ * verifier reports *not visible* — inconclusive, never a kill. example's `Cart`
+ * reads on `id == auth().cartId`, so a `@guarded` dropped from it survived
+ * every run. The value is typed to the column, because a string never equals an
+ * Int key. Only the default is filled: a stated principal is a specific person.
+ */
+//
+// A deny comparing a claim to a LITERAL gets the literal. `@@deny` fires on
+// UNKNOWN, so example's `@@deny('create', auth().isStaff != true)` refused every
+// create and Flow's owner deny beside it could not be graded. Filled from denies
+// only: in an allow the same value would admit every row and leave a policy
+// with all its rows on one side.
+function withPolicyClaims(who, schema) {
+  const out = { ...who }
+  for (const model of schema.models) {
+    const walk = (node, deny) => {
+      if (!node || typeof node !== 'object') return
+      if (node.type === 'compare') {
+        for (const [a, f] of [[node.left, node.right], [node.right, node.left]]) {
+          if (a?.type !== 'auth' || !a.field) continue
+          if (a.field === 'level' || out[a.field] !== undefined) continue
+          if (f?.type === 'literal' && deny && f.value !== null) { out[a.field] = f.value; continue }
+          if (f?.type !== 'field') continue
+          const t = model.fields.find(x => x.name === f.name)?.type?.name
+          if (t === 'Int')    out[a.field] = 4242
+          if (t === 'String') out[a.field] = `policy-${a.field}`
+        }
+      }
+      for (const v of Object.values(node)) Array.isArray(v) ? v.forEach(n => walk(n, deny)) : walk(v, deny)
+    }
+    for (const a of model.attributes)
+      if (a.kind === 'allow' || a.kind === 'deny') walk(a.expr, a.kind === 'deny')
+  }
+  return out
 }
 
 // The `@@deny` half of a create policy, graded by payload.

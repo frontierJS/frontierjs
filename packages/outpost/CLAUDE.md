@@ -36,6 +36,13 @@ no ORM, no framework — see `README.md` for why it is not an FJS application.
 - **Nothing interpolates caller text into a shell string.** Every command is an
   argv array handed to the runner, so a volume name with a space in it is one
   argument. `/exec` is the deliberate exception and it is what it says it is.
+- **`/deploy` answers once the release is HEALTHY, and puts the old one back
+  when it is not** (`FJS-1765`). The live container waits as
+  `fjs-<app>_replaced`, stopped, because a SQLite volume takes one writer. A
+  `_replaced` with nothing live beside it is the last good container of an
+  unfinished swap, so `deploy` keeps it and only `/stop` removes it. The wait
+  is up to 30s, so a caller sending `/deploy` at a 10s timeout reads a working
+  release as a failed one.
 - **A failing command answers the machine's own words.** A generic 500 is how a
   deploy fails with nothing on screen but a red pill, which is the shape
   `FJS-257` was filed about.

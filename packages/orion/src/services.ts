@@ -23,7 +23,7 @@
  * because `/metrics` is junction's own route.
  */
 
-import { BadRequest, Conflict, Forbidden, NotFound, TooManyRequests, Unauthorized, createService, sessionGateLevel } from "@frontierjs/junction"
+import { BadRequest, Conflict, Forbidden, NotFound, TooManyRequests, Unauthorized, callerGateLevel, createService } from "@frontierjs/junction"
 import type { Service, ServiceContext, SessionContext } from "@frontierjs/junction"
 import { LEVELS, levelName, levelPasses } from "@frontierjs/toolbelt/gate"
 
@@ -52,11 +52,8 @@ export interface FlowFile {
 export function createOrionServices(deps: {
   runner: Runner
   names?: OrionServiceNames
-  /** The app's own role → level mapping, which is what its Data boundary grades by. Default: `sessionGateLevel`. */
-  level?: (user: SessionContext) => number
 }): Service[] {
   const { runner } = deps
-  const levelOf = deps.level ?? sessionGateLevel
   const names = { ...DEFAULT_SERVICE_NAMES, ...deps.names }
   const services: Service[] = []
 
@@ -74,6 +71,10 @@ export function createOrionServices(deps: {
   // one tenant's rows (`FJS-D294`).
   const systemOf = (ctx: ServiceContext): Client => clientOf(ctx).asSystem()
   const tenantOf = (ctx: ServiceContext) => ({ tenant: (ctx.locals.tenantId as string | undefined) ?? null })
+  // The app's own mapping, asked of the client its `GatePlugin` grades with
+  // (`FJS-D308`). A second copy passed in here graded an administrator one way
+  // at the Data boundary and another at the system write (`FJS-1771`).
+  const levelOf = (ctx: ServiceContext): number => callerGateLevel(clientOf(ctx), "flow", caller(ctx))
 
   // ─── who reads ─────────────────────────────────────────────────────────────
   //
@@ -97,7 +98,7 @@ export function createOrionServices(deps: {
   function writerFor(ctx: ServiceContext, flow: { id: string; ownerId: string }, what: string): Client {
     const user = caller(ctx)
     if (String(flow.ownerId) === String(user.userId)) return clientOf(ctx)
-    if (levelPasses(LEVELS.ADMINISTRATOR, levelOf(user))) return systemOf(ctx)
+    if (levelPasses(LEVELS.ADMINISTRATOR, levelOf(ctx))) return systemOf(ctx)
     throw new Forbidden(`Only the owner of flow '${flow.id}', or an administrator, may ${what}`)
   }
 
@@ -112,7 +113,7 @@ export function createOrionServices(deps: {
       throw new BadRequest(`The flow does not compile: ${compiled.errors.map(e => e.message).join("; ")}`, { errors: compiled.errors })
     }
     const nodes = Object.values((definition as Flow).nodes ?? {})
-    const level = levelOf(caller(ctx))
+    const level = levelOf(ctx)
     if (nodes.some(n => n.type === "data.code") && !levelPasses(LEVELS.SYSADMIN, level)) {
       throw new Forbidden(`A flow with a data.code node is saved by ${levelName(LEVELS.SYSADMIN)}(${LEVELS.SYSADMIN}) and above; the caller has level ${level}`)
     }

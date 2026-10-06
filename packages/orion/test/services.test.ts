@@ -41,9 +41,8 @@ const TOKEN = { user: "test-token-u-user", other: "test-token-u-other", admin: "
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "orion-services-"))
-  // One mapping for both halves, as `example` passes `shopGateLevel` to each:
-  // the gate grades the Data boundary and `auth().level`, orion's `level` an
-  // administrator acting through system (`FJS-D296`).
+  // The app's mapping is stated once, to the gate: it grades the Data boundary
+  // and `auth().level`, and orion asks the client for it (`FJS-D308`).
   env = await createTestEnv({
     schema: APP, encryptionKey: KEY, claims: [], listen: true,
     plugins: [new GatePlugin({ getLevel: appLevel })],
@@ -61,7 +60,7 @@ beforeAll(async () => {
       })
       built.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
       built.configure(channels())
-      built.configure(orion({ plugins: [suiteNodes()], level: appLevel }))
+      built.configure(orion({ plugins: [suiteNodes()] }))
       return built
     },
   })

@@ -40,7 +40,7 @@ Deploys via SSH. Environment resolved in order:
 2. Current git branch (`stage`/`staging` → stage, anything else → dev)
 3. Falls back to dev
 
-If `frontier.config.js` has a `deploy` block, uses Docker/SSH/nginx deployment.
+If `frontier.config.js` has a `deploy` block, uses Docker/SSH/Caddy deployment.
 Otherwise falls back to the legacy CapRover deploy.
 
 ```js
@@ -50,11 +50,18 @@ const branch    = $.git.branch()
 const branchStr = branch ? ` (branch: ${branch})` : ''
 
 // ─── Detect deploy mode ───────────────────────────────────────────────────────
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
+
+// A deploy block with no server is a refusal, never the CapRover path: the
+// placeholder lands here, and so does a block that names only per-target servers.
+if (deployConf && !deployConf.server) {
+  log.error(`deploy.server is not set. Set it, or pass --server <ssh alias>`)
+  $.config.abort = true
+  return
+}
 
 if (deployConf?.server) {
-  // ── Docker/SSH/nginx deploy (frontier.config.js present) ──────────────────
+  // ── Docker/SSH/Caddy deploy (frontier.config.js present) ──────────────────
 
   // --api and --web are additive filters, matching deploy:rollback, which has
   // had this split since before the deploy side could express it. Neither flag
@@ -89,7 +96,7 @@ if (deployConf?.server) {
   for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
   if (builder && api && (builder.host !== api.host || builder.path !== api.path))
     log.info(`  build on ${builder.host}, ship the image to ${api.host}`)
-  log.info(`Mode: Docker/SSH/nginx (frontier.config.js)${split ? ' — split across hosts' : ''}`)
+  log.info(`Mode: Docker/SSH/Caddy (frontier.config.js)${split ? ' — split across hosts' : ''}`)
 
   $.config.stepsDir   = '_steps-docker'
   $.config.api        = api

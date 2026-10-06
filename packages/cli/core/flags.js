@@ -80,3 +80,28 @@ export function valueProblem(name, def = {}, value, flags = {}) {
   }
   return null
 }
+
+// ─── a namespace's own flags ─────────────────────────────────────────────────
+
+/**
+ * A command's flags with its `_module.md`'s `defaults.flags` underneath.
+ *
+ * The whole declaration comes along — type and description, not only the
+ * default — or a namespace-wide flag is missing from every command's --help
+ * and a string flag parses as whatever the bare argv parser guesses. The
+ * command's own declaration wins field by field. `${VAR}` in a string default
+ * is read from the environment here.
+ */
+export function withModuleFlags(flags, mod, env = process.env) {
+  const own = mod?.meta?.defaults?.flags
+  if (!own) return flags
+  const out = { ...(flags ?? {}) }
+  for (const [name, { defaultValue, ...rest }] of Object.entries(own)) {
+    const merged = { ...rest, ...out[name] }
+    merged.defaultValue ??= typeof defaultValue === 'string'
+      ? defaultValue.replace(/\$\{([^}]+)\}/g, (_, k) => env[k] || '')
+      : defaultValue ?? ''
+    out[name] = merged
+  }
+  return out
+}

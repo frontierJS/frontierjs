@@ -1,5 +1,13 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-05 — an update naming no column answers through the update policy (`FJS-1767`)
+
+A patch with nothing to write reads the row back instead of issuing a statement, and that read used the caller's where alone, so `update({ where: { id }, data: {} })` returned a row the caller's update and read policies both exclude. It now reads through `finalWhereSql`, the WHERE a write would have used. `test/litestone.test.ts` § *an update naming no column answers through the update policy, not around it*.
+
+## 2026-10-05 — `verifyConstraints` stops reading a model-level refusal as a field verdict, and the factory fills a required `File` (`FJS-1768`)
+
+A boundary value its field allows, refused by a `@@check` or `@@arc` over the row the factory built around it, is `uncheckable` rather than a mismatch — the factory knows field rules and not model ones. `generateFactory` writes a stored-ref JSON string into a required `File` column it used to skip, so a model carrying one can be built. Together with `FJS-1767` this clears the 34 false verdicts that made `litestone mutate` refuse example at its control. The default principal of `verifyRowPolicies` and `verifyFieldProtection` now carries every claim a policy compares a column against (typed to the column) and, for a claim a `@@deny` compares to a literal, the literal — without them example's `Cart` hid its seeded row and its `isStaff` deny refused every Flow create, so three mutants survived ungraded.
+
 ## 2026-10-05 — the read connection keeps seeing commits after an EXPLAIN (`FJS-1753`)
 
 bun leaves an `EXPLAIN` statement's VM active once it has run, whichever of `all`/`get`/`values`/`run` ran it (measured on bare `bun:sqlite` 1.4.2), and while one is active the connection's next read transaction never ends. The statement cache kept the EXPLAIN for the life of the process, so the read straight after it took a snapshot that every later read answered: ORM and `sql`, system and principal, while each write landed on disk. The read right after the EXPLAIN is correct, which is why the stressor's minimal attempts, each checking once, all passed. `wrapDb` now prepares an EXPLAIN for one call and finalizes it after, comments ahead of it included; Studio's perf analyzer finalizes its own. `test/read-snapshot.test.ts` reads three commits back after four EXPLAIN spellings and a SELECT control. The notion stressor's canary is OK after every section.

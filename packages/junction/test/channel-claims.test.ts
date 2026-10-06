@@ -430,3 +430,65 @@ describe('a resolver that reads the database is asked on every frame', () => {
     expect(fine.rows()).toEqual([ROW_A])
   })
 })
+
+// ─── a channel that names no tenant ────────────────────────────────────────
+//
+// `FJS-1772`. A package's channel — orion's `flows` and `runs` — is one name for
+// every tenant, so the resolver answers no claim for it and the deny refused
+// every recipient. Graded instead under the claims the resolver verifies for
+// the recipient on their OTHER channels, and the row's own tenant never copied.
+
+describe('a fixed channel carries rows of every tenant', () => {
+  test('a member of the row’s workspace receives it on a channel that names none', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, ['flows'])
+
+    expect(member.rows()).toEqual([ROW_A])
+  })
+
+  test('and the control — a member of ANOTHER workspace on the same channel does not', async () => {
+    const manager  = createChannelManager(undefined, workspaceClaims)
+    const member   = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const stranger = subscriber(manager, ['flows', `workspace:${WS_B}`], { userId: 'u-2' })
+    const { db }   = tenantBoundary()
+
+    await publish(manager, db, ROW_A, ['flows'])
+
+    expect(member.rows()).toEqual([ROW_A])
+    expect(stranger.sent()).toEqual([])
+  })
+
+  test('a recipient in no workspace channel holds no claim, and is refused', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const loner   = subscriber(manager, ['flows'], { userId: 'u-3' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, ['flows'])
+
+    expect(loner.sent()).toEqual([])
+  })
+
+  test('a person in two workspaces is graded under the one the row belongs to', async () => {
+    const manager = createChannelManager(undefined, workspaceClaims)
+    const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, ['flows'])
+    await publish(manager, db, ROW_B, ['flows'])
+
+    expect(both.rows()).toEqual([ROW_A, ROW_B])
+  })
+
+  test('with no resolver there is nothing verified to borrow, and nothing changes', async () => {
+    const manager = createChannelManager()
+    const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
+    const { db }  = tenantBoundary()
+
+    await publish(manager, db, ROW_A, ['flows'])
+
+    expect(member.sent()).toEqual([])
+  })
+})

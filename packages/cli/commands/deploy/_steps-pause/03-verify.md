@@ -9,10 +9,10 @@ if ($.config.abort) return
 const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost } = $.config
 const machine = machineFor($, host, serverPath)
 
-// Asked from the target, through its own nginx, over the name the vhost is
-// written for. `--resolve` on both ports rather than a Host header: with TLS
-// configured the http side is a 301 and the name has to survive the redirect,
-// and SNI has to match or the handshake picks the wrong certificate.
+// Asked from the target, through its own Caddy, over the name the route is
+// written for. `--resolve` on both ports rather than a Host header: the http
+// side is Caddy's 301 and the name has to survive the redirect, and SNI has to
+// match or the handshake picks the wrong certificate.
 const name = edgeHost ?? 'localhost'
 const edge = machine.capture(`curl -s -o /dev/null -w '%{http_code}' -k -L --max-time 10 \
   --resolve ${name}:80:127.0.0.1 --resolve ${name}:443:127.0.0.1 \
@@ -23,7 +23,7 @@ if (pauseKind === 'pause') {
     // The write succeeded and the edge did not change its answer, which is the
     // one failure this command has: a file nothing reads is a pause nobody is in.
     log.error(`The edge answered ${edge} and not 503 — the pause is not in force`)
-    log.info(`  the guard is in ${name}'s vhost and the file is written, so something else is answering for this app`)
+    log.info(`  the guard is in ${name}'s route and the file is written, so something else is answering for this app`)
     $.config.abort = true
     throw new Error(`pause did not take: the edge answered ${edge}`)
   }

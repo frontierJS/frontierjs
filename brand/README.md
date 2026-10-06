@@ -19,6 +19,10 @@ brand palette, the faces, and the voice.
 `assets/` holds committed, shippable files (logo SVGs, favicons, social cards).
 A large design source goes beside them named `*.image-ref.*`, which the root
 `.gitignore` excludes. That is the same rule `example/db/brand-sheets/` follows.
+`assets/icons/<name>.png` are the package and project-section icons. They are
+cropped from `fjs-icons.image-ref.png` and `fjs-new-icons.image-ref.png`, and
+each file is named for a package folder or a section (`issues`, `decisions` …).
+The rings page draws a crate for a package with no file there.
 Those sheets and `example/site/public/brand/` are the example shop's brand,
 not this one.
 

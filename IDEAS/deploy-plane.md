@@ -321,6 +321,47 @@ reuse it rather than inventing a second one.
 
 ---
 
+## Ring 2 as built, held against ring 0
+
+Probed 2026-10-05. Ring 2 exists ahead of **b**: Basecamp's `deployment-run.job.ts`
+sends `/pull` → `/deploy` → `/health-check` to an Outpost (`verify:outpost` drives
+it against a real daemon), with `Deployment`/`DeploymentStep` as the record and
+`rollback` creating a new release from the target's snapshot. It does not have what
+makes `fli deploy` safe around **data**, and that matters more than the build
+question. `frontier-cloud.md` step 7 moves client apps off `fli deploy`, so each of
+these protections has to exist in the fleet before that move.
+
+| Safeguard | `fli deploy` (ring 0) | Fleet (ring 2) |
+| --- | --- | --- |
+| A copy before the swap | `05-backup`: `litestone backup` inside the OLD container, every declared database plus the logger directories, the last five kept | **None.** The new container's entrypoint migrates the data volume forward with nothing taken first |
+| The way back when the start fails | `swapContainer` renames the old one to `_replaced`, and `healthOrRestore` starts it again | **The same** (`FJS-1765`). `/deploy` renames the live container `_replaced` and stops it, waits for the new one to be healthy, and puts the old one back (and its route) when it is not |
+| A rollback across a migration | `deploy:revert` refuses past the pivot (`litestone release`), with `--past-pivot` as the override | **Unchecked.** `Deployment` records no schema hash or pivot, so `rollback` puts old code on a migrated volume |
+| A step that did nothing | Every step does its work or throws | **Validate only.** It is a command-less `/exec` that Outpost acknowledges as *needs no work*; a `database` app now runs the container steps (`FJS-1764`, closed) |
+| Continuous copies and restore | Litestream on the host, checked by `deploy:status`; `litestone restore [--verify]` | **None** for an app's `fjs-<app>-data` volume. Owed in `frontier-cloud.md` step 5 |
+
+**Basecamp's own backups belong in this table too.** `backup:run` copies `main` with
+`VACUUM INTO` and leaves out the `audit` database and `-jobs.db` (`FJS-1766`). It
+runs only when someone clicks: `BackupKind.scheduled` has nothing behind it. It
+writes to the disk the live database sits on, never prunes, and has no restore.
+Ring 0's upgrade of Basecamp is covered by `05-backup` today, so this gap shows up
+between upgrades.
+
+**What carries over and what does not.** The open question below (can the Outpost
+reuse `_steps-docker`?) now has an answer: it cannot, because the Outpost is plain
+Bun and depends on no framework package. So each safeguard comes across as a route
+whose argv the Outpost owns, the way `/pull` and `/deploy` already work:
+
+- **The pre-swap copy** is `fli`'s command, `docker exec fjs-<app> … litestone
+  backup`, run by a step before `Start container`. It only works for an app that
+  carries a schema. For an image that does not (PostgreSQL, Redis), the step must
+  write *no copy taken* into its output rather than go green.
+- **The put-back** is a rename instead of `rm -f`, followed by a restart of
+  `fjs-<app>-replaced` when the run or the health check fails. Stopping first and
+  then starting stays the order, for the SQLite reason `06-swap` gives.
+- **The pivot** comes from the build and is recorded on `Deployment` (`FJS-D599`).
+
+---
+
 ## Sequence
 
 | | | Effort | Note |
@@ -328,7 +369,7 @@ reuse it rather than inventing a second one.
 | **a** | **Digest, not tag** — build stamps a digest, `Deployment.builtImage` records it, `deploy:status` shows it, health and rollback address it | S | No new infrastructure; makes the current pipeline honest about what ran |
 | **b** | **Move the build off the target** — build on a `build`-role server or in CI, ship by `docker save`/registry/CAS, deploy becomes pull → swap → health | M | Requires **a**; retires the toolchain-on-prod requirement and the lock-held-during-build window |
 | **c** | **Ring 1 — Outpost install over SSH** — `pending → installing → ready`, `ServerEvent` trail, `RecipeRun` cardinality, SSH retained as the degrade path | M | Answers VISION's resident-process question by implementing what the schema already declares |
-| **d** | **Ring 2 — Outpost-driven `Deployment`** — the Outpost pulls a digest and runs the swap; the pivot classifier (2.3a) grades it first | L | Requires **b** and **c** |
+| **d** | **Ring 2 — Outpost-driven `Deployment`** — the Outpost pulls a digest and runs the swap; the pivot classifier (2.3a) grades it first | L | Requires **b** and **c**. Partly built ahead of both, and it owes the five safeguards in § Ring 2 as built |
 
 **a** is worth doing whether or not the rest happens, which is the test this file
 was written to apply.
@@ -357,7 +398,23 @@ was written to apply.
 - **How ring 0 and ring 2 stay one implementation.** Two deployers is how a framework
   ends up shipping two behaviors — the same argument `core/checks.js` settled for
   architecture rules. Whether the Outpost can literally reuse `_steps-docker` is the
-  question to answer before writing a second one.
+  question to answer before writing a second one. **It cannot** (§ Ring 2 as built):
+  the safeguards are restated as Outpost routes. The backup and the pivot keep one
+  owner each, litestone. The swap and put-back become two implementations, and
+  **nothing holds them together yet**. The candidate is one test that drives
+  `swapContainer` and `/deploy` against the same recorded docker and compares what
+  each did after a failed run and a failed health check.
+- ~~**Where does a fleet release get its pivot verdict?**~~ **Answered 2026-10-06 (`FJS-D599`): A — The build computes it, and the release records it on `Deployment` alongside `builtImage`.** Basecamp sees an image and no
+  source, so it cannot run `litestone release` itself.
+  - **A** — The build computes it, and the release records it on `Deployment`
+    alongside `builtImage`.
+  - **B** — The Outpost runs `litestone release` inside the new image before the swap.
+  - **C** — No verdict: every fleet rollback asks for a typed confirmation.
+  - **Recommend A** — it is where `mintRelease` already computes it for ring 0, so
+    there is one place that knows. B boots the image to read a fact the build already
+    had. With C, an operator mid-incident confirms the prompt every time. An image
+    whose build reported nothing is `unknown`, which counts as a contract, as in
+    ring 0.
 
 ---
 

@@ -28,8 +28,7 @@ rather than opening a second.
 ```js
 const target = resolveTarget(flag, $.git)
 
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
@@ -40,11 +39,14 @@ if (!deployConf?.server) {
 const { lockPath, parseLock, describeLock, releaseScript } =
   await import(new URL('file://' + global.fliRoot + '/core/lock.js'))
 
-const targetConf = deployConf[target] ?? {}
-const server = targetConf.server ?? deployConf.server
-const user   = targetConf.user   ?? deployConf.user ?? 'deploy'
-const path   = targetConf.path   ?? deployConf.path
-const host   = `${user}@${server}`
+const resolved = resolveDeployConf(deployConf, target)
+if (!resolved) {
+  log.error(`deploy.server or deploy.path is not set for target: ${target}`)
+  $.config.abort = true
+  return
+}
+const { server, user, path } = resolved
+const host   = resolved.host
 
 const machine  = machineFor($, host, path, deployConf.transport)
 const lockFile = lockPath(path)

@@ -1,6 +1,12 @@
 ---
 namespace: deploy
-description: Deploy FrontierJS apps to a server via SSH + Docker + nginx
+description: Deploy FrontierJS apps to a server via SSH + Docker + Caddy
+defaults:
+  flags:
+    server:
+      type: string
+      description: "An ssh destination for this run: an alias from ~/.ssh/config, or user@host. Replaces every configured server and user"
+      defaultValue: ''
 ---
 
 <script>
@@ -76,6 +82,53 @@ const resolveTarget = (flag, git) => {
   return 'dev'
 }
 
+// ─── deployConfFor ────────────────────────────────────────────────────────────
+// The deploy block as this run sees it: `frontier.config.js` § deploy, with
+// `--server` applied. Every deploy command reads the block through here, so the
+// override cannot reach one command and miss the next.
+//
+// `--server` is a WHOLE ssh destination — an alias, or `user@host` — and so it
+// replaces every server and user the block names, per target and per side. A
+// configured `user` left in place would be prefixed onto the alias, and
+// `deploy@myvps` overrides the `User` line of the alias it names.
+//
+// The scaffold's placeholder is refused here, because nothing else would: it is
+// a real domain, and `ssh your-server.com` is a connection to somebody's box.
+const PLACEHOLDER_SERVER = 'your-server.com'
+const ADDRESS_KEYS = ['server', 'user']
+
+const deployConfFor = async ($, flag, log) => {
+  const deployConf = (await loadFrontierConfig($.paths.root))?.deploy
+  if (!deployConf) return null
+  if (flag?.server) return withServer(deployConf, flag.server)
+  if (deployConf.server === PLACEHOLDER_SERVER) {
+    log?.error(`deploy.server is still the placeholder '${PLACEHOLDER_SERVER}'. Set it, or pass --server <ssh alias>`)
+    const { server, ...rest } = deployConf
+    return rest
+  }
+  return deployConf
+}
+
+const withServer = (deployConf, server) => {
+  const strip = (block) => {
+    if (!block || typeof block !== 'object') return block
+    const out = { ...block }
+    for (const k of ADDRESS_KEYS) delete out[k]
+    for (const side of ['api', 'web', 'builder'])
+      if (out[side] && typeof out[side] === 'object') out[side] = strip(out[side])
+    return out
+  }
+  const out = strip(deployConf)
+  for (const target of ['dev', 'stage', 'production']) if (out[target]) out[target] = strip(out[target])
+  return { ...out, server }
+}
+
+// ─── sshHost ──────────────────────────────────────────────────────────────────
+// What `ssh` is handed. With no user stated it is the bare server, so an alias in
+// ~/.ssh/config supplies User, Port, IdentityFile and ProxyJump; a stated user
+// is prefixed, and wins over the alias's own.
+const sshHost = (user, server) => user ? `${user}@${server}` : server
+
 // ─── resolveDeployConf ────────────────────────────────────────────────────────
 // Extracts the resolved server/user/path for a given target from the deploy
 // block, applying per-target overrides over the top-level values.
@@ -96,10 +149,10 @@ const resolveDeployConf = (deployConf, target) => {
   if (!deployConf?.server) return null
   const targetConf = deployConf[target] ?? {}
   const server = targetConf.server ?? deployConf.server
-  const user   = targetConf.user   ?? deployConf.user ?? 'deploy'
+  const user   = targetConf.user   ?? deployConf.user ?? null
   const path   = targetConf.path   ?? deployConf.path
   if (!server || !path) return null
-  return { server, user, path }
+  return { server, user, path, host: sshHost(user, server) }
 }
 
 // ─── resolveSide ──────────────────────────────────────────────────────────────
@@ -125,10 +178,10 @@ const resolveSide = (deployConf, target, side) => {
   const ts    = t[side] ?? {}
   const s     = deployConf[side] ?? {}
   const server = ts.server ?? s.server ?? t.server ?? deployConf.server
-  const user   = ts.user   ?? s.user   ?? t.user   ?? deployConf.user ?? 'deploy'
+  const user   = ts.user   ?? s.user   ?? t.user   ?? deployConf.user ?? null
   const path   = ts.path   ?? s.path   ?? t.path   ?? deployConf.path
   if (!server || !path) return null
-  return { server, user, path, host: `${user}@${server}` }
+  return { server, user, path, host: sshHost(user, server) }
 }
 
 // ─── litestreamStatus ─────────────────────────────────────────────────────────
@@ -881,7 +934,7 @@ const openPauseJournal = async ($, flag, opts) => {
   const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
 
   const { kind, host, serverPath, deployConf, target, stepsDir, log,
-          vhostHasGuard, filePresent } = opts
+          edgeHasGuard, filePresent } = opts
   const { pauseRefusals } = await core('pause.js')
   const app = deployConf.app_id ?? deployConf.appId
 
@@ -900,7 +953,7 @@ const openPauseJournal = async ($, flag, opts) => {
     // command rather than of the app.
     const held = state.serving ? await j.live({ kind: 'deploy', app, environment: target }) : null
     const refused = pauseRefusals({
-      want: kind, vhostHasGuard, journalOpen: !!state.serving,
+      want: kind, edgeHasGuard, journalOpen: !!state.serving,
       inFlight: held ? `${held.transition.id} is still open — fli deploy --resume finishes it` : null,
       journalPaused: state.paused, filePresent,
     })
@@ -969,8 +1022,18 @@ const openPauseJournal = async ($, flag, opts) => {
 ## Overview
 
 The `deploy:` commands deploy FrontierJS apps to a Linux server using SSH,
-Docker, and nginx. Configuration lives in `frontier.config.js` — no CapRover,
+Docker, and Caddy. Configuration lives in `frontier.config.js` — no CapRover,
 no external platform required.
+
+The server is named by `deploy.server`, or per run by `--server`, which takes an
+alias from `~/.ssh/config` or `user@host` and replaces every configured server
+and user. With no `user`, ssh is handed the bare name, so the alias's own User,
+Port and IdentityFile apply.
+
+Caddy is the edge, run as the `caddy-api` unit and configured through its admin
+API — the same front door a fleet machine has (`FJS-D564`), so the box that
+Basecamp is installed on can also be enrolled. Routes carry `@id`s starting
+`fli-`, and a hostname another route already names is refused.
 
 ```
 fli make:deploy         ← scaffold Dockerfile, deploy config, and health endpoint
@@ -1019,13 +1082,13 @@ fli deploy
 ## Prerequisites
 
 **On your machine:**
-- SSH access to the server (`ssh user@server` must work without a password prompt)
+- SSH access to the server (`ssh <server>` must work without a password prompt)
 - Docker (for `fli deploy:local`)
 - A `frontier.config.js` with a `deploy` block in your project root
 
 **On the server:**
 - Ubuntu 20.04+ (or any Debian-based Linux)
-- Docker, nginx, git, Bun
+- Docker, Caddy (the `caddy-api` unit), git, Bun — nothing else on 80/443
 
 Run `fli deploy:setup` to check and install what's missing.
 
@@ -1075,7 +1138,7 @@ The `deploy` block is the single source of truth for all deploy commands:
 export default {
   deploy: {
     server: 'myapp.com',
-    user:   'deploy',          // default: 'deploy'
+    user:   'deploy',          // absent: the bare server, so ~/.ssh/config's User applies
     path:   '/apps/myapp',
     app_id: 'myapp',           // default: last segment of path
 
@@ -1096,10 +1159,7 @@ export default {
     web: {
       domain:        'myapp.com',
       keep_releases: 3,        // default: 3
-      ssl: {
-        cert: '/etc/ssl/myapp.pem',
-        key:  '/etc/ssl/myapp.key',
-      },
+      // No ssl key: Caddy fetches the certificate for every domain it routes.
     },
 
     db: {
@@ -1132,11 +1192,11 @@ export default {
 web domain proxies `/api/` and `/ws` and the page and the API share an origin.
 
 ```
-    web: { domain: 'app.myapp.com', ssl: { cert: '/etc/ssl/app.pem', key: '/etc/ssl/app.key' } },
-    api: { domain: 'api.myapp.com', ssl: { cert: '/etc/ssl/api.pem', key: '/etc/ssl/api.key' }, port: 3000 },
+    web: { domain: 'app.myapp.com' },
+    api: { domain: 'api.myapp.com', port: 3000 },
 ```
 
-`fli deploy:setup` writes two server blocks, each with the pause guard, and `fli deploy`
+`fli deploy:setup` writes two Caddy routes, each with the pause guard, and `fli deploy`
 builds the web surface with `VITE_API_URL=https://api.myapp.com` — refusing when the bundle
 does not contain it, which is what a `sierra.config.js` that never reads the variable
 produces. Sign-in with a Bearer token works across the two names with the scaffold's CORS
@@ -1213,7 +1273,7 @@ the failure this is most likely to cause.
 05-backup      → hot backup of the database before any changes
 06-swap        → stop old container, start new (migrations run in entrypoint)
 07-health      → poll deploy.api.health — rolls back to previous container on failure
-08-release-web → atomic symlink swap, nginx reload
+08-release-web → atomic symlink swap; Caddy reads the root per request
 09-cleanup     → remove _replaced, prune images, release deploy lock
 ```
 

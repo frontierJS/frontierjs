@@ -389,7 +389,15 @@ h2 { font-family: var(--font-display, var(--font-primary)); font-weight: 700; fo
 .rg-card:hover .go { transform: translateX(2px); color: var(--c, var(--accent)) }
 .rg-card .ringtag { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--c) }
 .rg-card .ringtag::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--c) }
-.rg-card.pk .pkname { font-family: var(--font-mono); font-weight: 500; font-size: 1rem }
+.rg-card.pk .pkname { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-weight: 500; font-size: 1rem }
+.pkicon { flex: none; display: inline-flex; width: 26px; height: 26px }
+.pkicon.big { width: 1.1em; height: 1.1em }
+.pkicon img { width: 100%; height: 100% }
+.pkicon svg { display: none; width: 100%; height: 100%; fill: none; stroke: var(--c, var(--ink-mute)); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round }
+.rg-card .label.withicon { display: flex; align-items: center; gap: 10px }
+.pkicon.missing img { display: none }
+.pkicon.missing svg { display: block }
+h1.pkh { display: flex; align-items: center; gap: .35em }
 
 .path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 28px 0 0; padding: 14px 16px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px }
 .path .k { font-size: .8rem; color: var(--ink-mute); margin-right: 6px }
@@ -682,6 +690,9 @@ function client(D) {
   const md = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '').replace(/`/g, '')
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`
   const fileHref = (f, scheme) => D.base ? `${scheme}${encodeURI(`${D.base}/${f}`)}` : encodeURI(f)
+  // Anything the icon sheets have not drawn yet shows a crate, which the error
+  // listener at the bottom swaps in when its PNG does not load.
+  const icon = (id, big = '') => `<span class="pkicon${big}" aria-hidden="true"><img src="${fileHref(`brand/assets/icons/${id}.png`, 'file://')}" alt=""><svg viewBox="0 0 48 48"><path d="M6 14h36v26H6Z M6 22h36 M18 14v26 M30 14v26 M6 14 12 8h24l6 6"/></svg></span>`
   const fileLinks = f => `<span class="filelinks"><a href="${fileHref(f, 'vscode://file')}">Open ${esc(f)} in VS Code</a><a href="${fileHref(f, 'file://')}" target="_blank" rel="noopener">View the file</a></span>`
 
   // ---------- views ----------
@@ -944,11 +955,11 @@ function client(D) {
         <h1>How the work is run.</h1>
         <p class="lede">Ordered like the rings, center out: the files that answer the big questions first, then the rules, the rulings, what is broken, and what is not started yet.</p>
         <div class="cards">
-          ${card({ go: 'docs', tag: 'Ring 1', num: DOCS.length, label: 'Key documents', sub: 'Which file answers which question, in the order to open them.', c: 'var(--r-seed)' })}
-          ${card({ go: 'invariants', tag: 'Ring 2', num: D.invariants.length, label: 'Invariants & proof', sub: 'What may never break without a ruling, and what proves it still holds.', c: 'var(--accent)', meta: PROOF.filter(g => g.rows.length).map(g => `${g.rows.length} ${g.title.toLowerCase()}`) })}
-          ${card({ go: 'decisions', tag: 'Ring 3', num: D.decCount, label: 'Decisions', sub: 'What is settled. <code>DECISIONS.md</code>', c: 'var(--dec)', meta: [`${D.decisions.length} topics`] })}
-          ${card({ go: 'issues', tag: 'Ring 4', num: D.openCount, label: 'Open issues', sub: 'What is wrong right now. <code>ISSUES.md</code>', c: 'var(--s2)', meta: [...(D.severities[0] ? [`${D.issues.filter(i => i[2] === D.severities[0].key).length} ${D.severities[0].name.toLowerCase()}`] : []), `${D.closedCount} closed recently`] })}
-          ${card({ go: 'ideas', tag: 'Ring 5', num: D.ideas.count, label: 'Ideas', sub: 'What is not started. Never cited as behavior. <code>IDEAS/</code>', c: 'var(--r-tooling)', meta: D.ideas.byStatus.slice(0, 3).map(s => `${s.count} ${s.status}`) })}
+          ${card({ go: 'docs', ico: 'docs', tag: 'Ring 1', num: DOCS.length, label: 'Key documents', sub: 'Which file answers which question, in the order to open them.', c: 'var(--r-seed)' })}
+          ${card({ go: 'invariants', ico: 'invariants', tag: 'Ring 2', num: D.invariants.length, label: 'Invariants & proof', sub: 'What may never break without a ruling, and what proves it still holds.', c: 'var(--accent)', meta: PROOF.filter(g => g.rows.length).map(g => `${g.rows.length} ${g.title.toLowerCase()}`) })}
+          ${card({ go: 'decisions', ico: 'decisions', tag: 'Ring 3', num: D.decCount, label: 'Decisions', sub: 'What is settled. <code>DECISIONS.md</code>', c: 'var(--dec)', meta: [`${D.decisions.length} topics`] })}
+          ${card({ go: 'issues', ico: 'issues', tag: 'Ring 4', num: D.openCount, label: 'Open issues', sub: 'What is wrong right now. <code>ISSUES.md</code>', c: 'var(--s2)', meta: [...(D.severities[0] ? [`${D.issues.filter(i => i[2] === D.severities[0].key).length} ${D.severities[0].name.toLowerCase()}`] : []), `${D.closedCount} closed recently`] })}
+          ${card({ go: 'ideas', ico: 'ideas', tag: 'Ring 5', num: D.ideas.count, label: 'Ideas', sub: 'What is not started. Never cited as behavior. <code>IDEAS/</code>', c: 'var(--r-tooling)', meta: D.ideas.byStatus.slice(0, 3).map(s => `${s.count} ${s.status}`) })}
         </div>`
       }
     },
@@ -958,7 +969,7 @@ function client(D) {
         crumbs: [['The project', 'project'], ['Key documents']], ring: null, area: 'project',
         html: `
         <div class="eyebrow" style="--eye:var(--r-seed)">Key documents</div>
-        <h1>Which file answers which question.</h1>
+        <h1 class="pkh" style="--c:var(--r-seed)">${icon('docs', ' big')}Which file answers which question.</h1>
         <p class="lede">Each file at the root holds one kind of statement, quoted here in its own words. They are numbered in the order a newcomer should open them.</p>
         <div class="cards">${DOCS.map(docCard).join('')}</div>
         <div class="next"><button class="rg-btn" type="button" data-go="project">← The project</button><button class="rg-btn rg-primary" type="button" data-go="doc-${DOCS[0].id}">Start with ${esc(DOCS[0].file)} →</button></div>`
@@ -1007,7 +1018,7 @@ function client(D) {
         crumbs: [['The project', 'project'], ['Ideas']], ring: null, area: 'project',
         html: `
         <div class="eyebrow" style="--eye:var(--r-tooling)">Ideas</div>
-        <h1>${D.ideas.count} ideas, ranked into waves.</h1>
+        <h1 class="pkh" style="--c:var(--r-tooling)">${icon('ideas', ' big')}${D.ideas.count} ideas, ranked into waves.</h1>
         <p class="lede"><code>IDEAS/overview.md</code> ranks every proposal. Nothing here is behavior until its status says shipped.</p>
         ${fileLinks('IDEAS/overview.md')}
         <div class="cards">${W.map((w, i) => card({ go: `ideas-${i}`, num: w.rows.length, label: w.title, sub: esc(w.blurb), c: 'var(--r-tooling)', meta: [`${w.rows.filter(r => r[2] === 'shipped').length} shipped`] })).join('')}</div>`
@@ -1142,7 +1153,7 @@ function client(D) {
         crumbs: [['Packages', 'packages'], [r.name, ringHash(r)], [id]], ring: r,
         html: `
         <div class="eyebrow" style="--eye:${r.color}">Ring ${ri + 1} · ${r.name}</div>
-        <h1>${esc(p.name)}</h1>
+        <h1 class="pkh" style="--c:${r.color}">${icon(id, ' big')}${esc(p.name)}</h1>
         <div class="metarow">
           ${p.v ? `<span>v<b>${esc(p.v)}</b></span>` : '<span>unversioned</span>'}
           <span><b>${p.files}</b> files</span>
@@ -1197,7 +1208,7 @@ function client(D) {
           crumbs: [['The project', 'project'], ['Open issues']], ring: null,
           html: `
           <div class="eyebrow">Open issues</div>
-          <h1>${D.openCount} things are wrong. Most of them are small.</h1>
+          <h1 class="pkh" style="--c:var(--s2)">${icon('issues', ' big')}${D.openCount} things are wrong. Most of them are small.</h1>
           <p class="lede">Every defect, gap and open question lives in <code>ISSUES.md</code>. Start by severity, or by the package you are already reading.</p>
           <div class="cards">
             ${Object.entries(SEV).map(([k, s]) => card({ go: `issues-${k}`, num: D.issues.filter(i => i[2] === k).length, label: s.name, c: s.c, meta: [k] })).join('')}
@@ -1220,7 +1231,7 @@ function client(D) {
         crumbs: [['The project', 'project'], ['Invariants & proof']], ring: null,
         html: `
         <div class="eyebrow">Invariants &amp; proof</div>
-        <h1>Nineteen rules that hold everywhere.</h1>
+        <h1 class="pkh" style="--c:var(--accent)">${icon('invariants', ' big')}Nineteen rules that hold everywhere.</h1>
         <p class="lede">Break one only with a recorded decision. The cards are the machinery that proves the tree still holds them; the count on each rule is how many checks guard it, and a red zero means people are the only guard.</p>
         <div class="cards">${PROOF.map(g => card({ go: `invariants-${g.key}`, num: g.rows.length, label: g.title, sub: g.sub, c: 'var(--accent)' })).join('')}</div>
         <ul class="invs">${D.invariants.map(([n, t, b]) => `<li><span class="k">${n}</span><div><b>${md(t)}</b><span>${md(b)}</span></div><span class="ck${byInv[n] ? '' : ' zero'}">${byInv[n] ? plural(byInv[n], 'check') : '0 checks'}</span></li>`).join('')}</ul>`
@@ -1243,7 +1254,7 @@ function client(D) {
         crumbs: [['The project', 'project'], ['Decisions']], ring: null,
         html: `
         <div class="eyebrow">Decisions</div>
-        <h1>${D.decCount} settled arguments.</h1>
+        <h1 class="pkh" style="--c:var(--dec)">${icon('decisions', ' big')}${D.decCount} settled arguments.</h1>
         <p class="lede">Nobody reads <code>DECISIONS.md</code> front to back. Open the topic you are about to have an opinion on.</p>
         <div class="cards">${D.decisions.map((s, i) => card({ go: `decisions-${i}`, num: s.rows.length, label: s.title, sub: s.rows[0] ? esc(s.rows[0][2].replace(/[`*]/g, '').slice(0, 140)) + '…' : '', c: 'var(--dec)', meta: s.rows[0] ? [`latest ${s.rows[0][0]}`] : [] })).join('')}</div>`
       }
@@ -1344,12 +1355,12 @@ function client(D) {
     const s = SEV[r[2]]
     return `<li><span class="id">${esc(r[0])}</span><span class="sev" style="--c:${s.c}">${r[2] === 'decision' ? 'rule' : r[2]}</span><span class="t">${md(r[3])}${showPkg && r[1] ? `<span class="pkg">${esc(r[1])}</span>` : ''}</span></li>`
   }
-  function card({ go, num, label, sub, meta = [], c, tag }) {
+  function card({ go, num, label, sub, meta = [], c, tag, ico }) {
     return `<button type="button" class="rg-card" data-go="${go}" ${c ? `style="--c:${c}"` : ''}>
       <span class="go" aria-hidden="true">→</span>
       ${tag ? `<span class="ringtag">${tag}</span>` : ''}
       <span class="num">${num}</span>
-      <span class="label">${label}</span>
+      <span class="label${ico ? ' withicon' : ''}">${ico ? icon(ico) : ''}${label}</span>
       ${sub ? `<span class="sub">${sub}</span>` : ''}
       ${meta.length ? `<span class="meta">${meta.map(m => `<span>${esc(m)}</span>`).join('')}</span>` : ''}
     </button>`
@@ -1358,7 +1369,7 @@ function client(D) {
     const n = issuesFor(p.id).length
     return `<button type="button" class="rg-card pk" data-go="pkg-${p.id}" style="--c:${r.color}">
       <span class="go" aria-hidden="true">→</span>
-      <span class="pkname">${esc(p.id)}</span>
+      <span class="pkname">${icon(p.id)}${esc(p.id)}</span>
       <span class="sub">${md((p.what || p.desc || '').split(/(?<=[.;—])\s/)[0])}</span>
       <span class="meta"><span>${p.files} files</span><span>${n} open</span>${p.v ? `<span>v${esc(p.v)}</span>` : ''}</span>
     </button>`
@@ -1533,6 +1544,8 @@ function client(D) {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.door[data-go], .rg-card[data-go]')) { e.preventDefault(); e.target.click() }
   })
   window.addEventListener('hashchange', render)
+  // An image error does not bubble, so only a capturing listener hears it.
+  document.addEventListener('error', e => e.target.closest?.('.pkicon')?.classList.add('missing'), true)
   window.addEventListener('popstate', render)
   render()
 }

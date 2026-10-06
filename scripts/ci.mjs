@@ -1522,13 +1522,13 @@ function deploy() {
 
   // ── the edge ──────────────────────────────────────────────
   // Phase 3b. The cycle above proves serving state can be moved; this proves it
-  // can be SUSPENDED, which happens at nginx and nowhere the cycle above looks —
-  // that app answers on its own port with no vhost in front of it at all.
+  // can be SUSPENDED, which happens at Caddy and nowhere the cycle above looks —
+  // that app answers on its own port with no route in front of it at all.
   //
-  // Seconds rather than minutes: one `nginx:alpine` and no image build. It is
-  // here rather than in the cli suite because the claim is about nginx, and a
-  // test that asserted on the config text would pass against a file nginx
-  // refuses.
+  // Seconds rather than minutes: one `caddy:2` and no image build. It is here
+  // rather than in the cli suite because the claim is about Caddy, and a test
+  // that asserted on the route JSON would pass against a config Caddy serves
+  // differently.
   const e0 = Date.now()
   const edge = pauseEdgeCycle({ verbose })
 
@@ -1543,7 +1543,7 @@ function deploy() {
   for (const f of edge.findings) fail(`pause edge: ${f.message}`, f.output)
 
   if (!edge.findings.length)
-    ok('a paused app refuses at the edge and serves again, against a real nginx', Date.now() - e0)
+    ok('a paused app refuses at the edge and serves again, against a real Caddy', Date.now() - e0)
 
   // ── the queues ────────────────────────────────────────────
   // The other half of a pause (FJS-D262): the script the pause step sends,

@@ -526,10 +526,8 @@ app.configure(commitments({
 //
 // Orion: flows a person draws, run by Caravan as the flow's owner in the flow's
 // own shop (`FJS-D276`, `FJS-D294`). AFTER the queue, which it declares it
-// requires. Its screens mount at /automations/ in web/ by one file. `level` is
-// the same mapping the Data boundary grades by, so a shop's `admin` role is an
-// administrator to orion's services as well.
-app.configure(orion({ level: shopGateLevel }))
+// requires. Its screens mount at /automations/ in web/ by one file.
+app.configure(orion())
 
 // ─── Outbound ─────────────────────────────────────────────────────────────
 //

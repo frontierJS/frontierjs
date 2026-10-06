@@ -389,6 +389,54 @@ describe('the two transports answer the same app', () => {
       client.disconnect()
     }
   }, 30_000)
+
+  test('a flow reaches its own workspace’s open socket on orion’s shared channel, and no other workspace’s', async () => {
+    // `flows` is one channel for every workspace, so it names no tenant and
+    // the claims resolver answers nothing for it: every recipient was refused
+    // (`FJS-1772`). The stranger is an admin of ANOTHER workspace on the same
+    // channel, which is the refusal the acceptance is paired with.
+    const sys    = penv.system as any
+    const uniq   = () => Math.random().toString(36).slice(2, 8)
+    const acct   = await sys.account.create({ data: { slug: `s-${uniq()}`, displayName: 'Stranger' } })
+    const email  = `stranger-${uniq()}@x.co`
+    const user   = await penv.app.auth.createUser({ email, password: 'hunter2hunter2', name: 'Stranger' })
+    const theirs = user.id ?? user.userId
+    await sys.user.update({ where: { id: theirs }, data: { accountId: acct.id, status: 'active' } })
+    const wsp = await sys.workspace.create({ data: { accountId: acct.id, name: 'Elsewhere', slug: `sw-${uniq()}`, ownerId: theirs } })
+    await sys.workspaceMember.create({ data: { workspaceId: wsp.id, userId: theirs, role: 'admin',
+      capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
+    const strangerToken = (await penv.app.auth.login(email, 'hunter2hunter2')).token
+
+    const open = async (t: string) => {
+      const client = createJunctionClient({ url: penv.url })
+      client.setToken(t)
+      await new Promise<void>((res, rej) => {
+        const timer = setTimeout(() => rej(new Error('the socket never connected')), 8000)
+        client.once('connect', () => { clearTimeout(timer); res() })
+      })
+      const got: any[] = []
+      client.service('flows').on('created', (row: any) => got.push(row))
+      return { client, got }
+    }
+    const owner = await open(token), stranger = await open(strangerToken)
+    try {
+      const ownerWs = (await sys.workspaceMember.findFirst({ where: { userId: parityUser } })).workspaceId
+      const flows   = penv.as(session({ userId: parityUser, workspaceId: ownerWs })).service('flows')
+      // The joins run after `connect`, so a flow is drafted until one lands.
+      const deadline = Date.now() + 5000
+      while (!owner.got.length && Date.now() < deadline) {
+        await flows.create({ name: `Watched ${uniq()}` })
+        await new Promise(r => setTimeout(r, 200))
+      }
+      expect(owner.got.length).toBeGreaterThan(0)
+      expect(owner.got[0].ownerId).toBe(parityUser)
+      await new Promise(r => setTimeout(r, 300))
+      expect(stranger.got).toEqual([])
+    } finally {
+      owner.client.disconnect()
+      stranger.client.disconnect()
+    }
+  }, 30_000)
 })
 
 describe('?workspace_id= — the documented fallback, which had never worked', () => {
@@ -3158,4 +3206,24 @@ describe('removing a server that is not online', () => {
       expect(await sys.server.findFirst({ where: { id: server.id } })).toBeNull()
     })
   }
+})
+
+// ─── The local ssh listing ───────────────────────────────────────────────────
+// A development affordance on the servers service (`core/local-ssh.ts`). Off
+// unless LOCAL_SSH=1, which this process does not set, so the owner hears it
+// is not offered — and a developer is refused before that is even asked, by
+// the ADMINISTRATOR gate the method declares.
+
+describe('the local ssh listing', () => {
+  test('a developer is refused by the declared gate, before anything reads a config', async () => {
+    await expect(env.as(developer).service('servers').call('localSshHosts', undefined, {}))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an owner is told it is not offered here, rather than handed an empty list', async () => {
+    await expect(env.as(owner).service('servers').call('localSshHosts', undefined, {}))
+      .rejects.toThrow(/LOCAL_SSH=1/)
+    await expect(env.as(owner).service('servers').call('localSshProbe', undefined, { alias: 'box' }))
+      .rejects.toThrow(/LOCAL_SSH=1/)
+  })
 })

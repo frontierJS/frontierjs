@@ -75,9 +75,11 @@ export function createOutpostServer(config, {
     // that is down, then fails the release rather than leaving a container on
     // loopback that nothing can reach.
     //
-    // Every refusal comes before the old container goes, and Basecamp sends no
-    // `/stop` ahead of this for that reason (`FJS-1682`): a release refused here
-    // leaves the live app serving.
+    // Every refusal comes before the old container is touched, and Basecamp
+    // sends no `/stop` ahead of this for that reason (`FJS-1682`): a release
+    // refused here leaves the live app serving. A release docker refuses, or
+    // one that starts and does not answer, puts the old container back (`FJS-1765`) —
+    // so this answers once the release is healthy, not once it has started.
     'POST /deploy': async (body) => {
       const appId = body.app_id ?? body.deployment_id
       const hosts = hostsOf(body.hosts)
@@ -94,14 +96,28 @@ export function createOutpostServer(config, {
       if (hosts.length) await ingress.route({ appId, hosts, port })
       else await ingress.unroute({ appId })
 
-      const started = await docker.deploy({
-        appId,
-        image,
-        digest:   built.digest ?? body.digest,
-        config:   body.config ?? {},
-        port,
-        loopback: hosts.length > 0,
-      })
+      let started
+      try {
+        started = await docker.deploy({
+          appId,
+          image,
+          digest:   built.digest ?? body.digest,
+          config:   body.config ?? {},
+          port,
+          loopback: hosts.length > 0,
+        })
+      } catch (err) {
+        // The route already moved to the new port. A put-back container
+        // answers on the port IT published, so a route left dialing the new
+        // one sends the restored app's hostnames a 502.
+        if (err.restored && hosts.length) {
+          const live = await docker.published({ appId }).catch(() => null)
+          if (live?.port && live.port !== port)
+            await ingress.route({ appId, hosts, port: live.port })
+              .catch(e => log.error?.(`outpost: re-routing fjs-${appId} to the restored container failed — ${e.message}`))
+        }
+        throw err
+      }
       return { ...started, hosts, commit_sha: built.commitSha ?? null }
     },
 

@@ -202,10 +202,10 @@ describe('the release pipeline an inline app runs', () => {
     expect(await stepNames(release.id)).toEqual(['Validate', 'Upload files', 'Activate', 'Health check'])
   })
 
-  const aContainerApp = async (source: unknown) => {
+  const aContainerApp = async (source: unknown, type = 'container') => {
     const slug = `c-${uniq()}`
     const target: any = await apps().create({
-      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container', source,
+      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type, source,
     })
     await (env.system as any).appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
     return target
@@ -226,6 +226,24 @@ describe('the release pipeline an inline app runs', () => {
     // The build steps were a command-less /exec that reported success, and the
     // start step then pulled the app's NAME from Docker Hub.
     const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' })
+    await expect(deployments().create({ appId: target.id, workspaceId: ws.id }))
+      .rejects.toThrow(/names no image/)
+  })
+
+  // A database had a list of its own, three names the runner sent as
+  // command-less /exec calls: Outpost acknowledged each, started nothing, and
+  // the App was marked running (FJS-1764).
+  test('a database app is a container: it pulls and starts its image', async () => {
+    const target = await aContainerApp({ kind: 'image', image: 'postgres:16-alpine' }, 'database')
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
+
+    expect(await stepNames(release.id)).toEqual(
+      ['Validate', 'Pull image', 'Start container', 'Health check'])
+    expect(release.toImage).toBe('postgres:16-alpine')
+  })
+
+  test('a database app naming no image is refused, as a container is', async () => {
+    const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' }, 'database')
     await expect(deployments().create({ appId: target.id, workspaceId: ws.id }))
       .rejects.toThrow(/names no image/)
   })

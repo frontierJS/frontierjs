@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
-import { declarationProblem, valueProblem } from './flags.js'
+import { declarationProblem, valueProblem, withModuleFlags } from './flags.js'
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
 import { chalk as colorChalk } from './color.js'
@@ -189,17 +189,7 @@ export async function Command({ file, arg, flag, emit }) {
 
   // ── Module: merge defaults then check requires ───────────────────────────────
   if (mod) {
-    // Merge module-level flag defaults (env vars interpolated at parse time)
-    if (mod.meta?.defaults?.flags) {
-      for (const [flagName, flagDef] of Object.entries(mod.meta.defaults.flags)) {
-        if (!metadata.flags) metadata.flags = {}
-        if (!metadata.flags[flagName]) metadata.flags[flagName] = {}
-        const def = flagDef.defaultValue || ''
-        // Interpolate ${ENV_VAR} at parse time
-        const resolved = def.replace(/\$\{([^}]+)\}/g, (_, k) => process.env[k] || '')
-        metadata.flags[flagName].defaultValue ??= resolved
-      }
-    }
+    metadata.flags = withModuleFlags(metadata.flags, mod)
 
     // Check requires — block execution if any required env var is missing
     if (mod.meta?.requires?.length) {

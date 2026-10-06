@@ -22,9 +22,24 @@ if (machine.reach()) {
 }
 
 // ─── Dependency checks ────────────────────────────────────────────────────────
+// No single quote anywhere in an install line: 02-install-deps runs it as
+// sudo sh -c '<line>'.
+const CADDY_INSTALL = [
+  'apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg',
+  'curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg',
+  'curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list',
+  'apt-get update',
+  'apt-get install -y caddy',
+  'systemctl disable --now caddy.service',
+  'systemctl enable --now caddy-api.service',
+].join(' && ')
+
 const deps = [
   { name: 'docker',  check: 'docker --version',   install: 'curl -fsSL https://get.docker.com | sh' },
-  { name: 'nginx',   check: 'nginx -v',            install: 'apt-get install -y nginx' },
+  // The caddy-api unit and not caddy.service: the routes are written through the
+  // admin API, and only --resume brings them back after Caddy restarts. The same
+  // install a fleet machine gets (basecamp's providers/compute/enrollment.ts).
+  { name: 'caddy',   check: 'caddy version && systemctl is-active --quiet caddy-api', install: CADDY_INSTALL },
   { name: 'git',     check: 'git --version',       install: 'apt-get install -y git' },
   { name: 'bun',     check: 'bun --version',       install: 'curl -fsSL https://bun.sh/install | bash' },
   { name: 'rsync',   check: 'rsync --version',     install: 'apt-get install -y rsync' },
@@ -50,6 +65,16 @@ for (const dep of deps) {
 }
 
 $.config.missingDeps = missing
+
+// Caddy binds 80 and 443 and fails to start beside anything holding them. Not
+// stopped from here: whatever else that server serves goes down with it.
+const active = (unit) => {
+  try { machine.run(`systemctl is-active --quiet ${unit}`); return true } catch { return false }
+}
+if (active('nginx'))
+  log.warn('  nginx is running and holds 80/443 — Caddy cannot bind until it stops: sudo systemctl disable --now nginx')
+if (active('caddy'))
+  log.warn('  caddy.service is running from a Caddyfile — switching to caddy-api drops whatever that Caddyfile serves')
 
 if (missing.length === 0) {
   log.success('All dependencies present')

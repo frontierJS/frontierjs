@@ -54,8 +54,8 @@ export const serverOf = (host) => String(host ?? '').split('@').pop().trim()
 /**
  * Inferred transport, overridable.
  *
- * Inference is on the SERVER name because `host` is always `${user}@${server}`
- * (`resolveSide`), and the user half means nothing locally — there is no login.
+ * Inference is on the SERVER name because `host` is `${user}@${server}` or the
+ * bare server (`sshHost`), and the user half means nothing locally — there is no login.
  * `transport: 'ssh'` is the escape for somebody genuinely testing sshd on their
  * own box, which is a real thing to want and unreachable by any name-based rule.
  */

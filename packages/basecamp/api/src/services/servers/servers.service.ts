@@ -42,14 +42,17 @@
 
 import { createService, NotFound, BadRequest, Forbidden, normalizeOrderBy, seriesKey, isStale, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
+import { LEVELS }                from '@frontierjs/litestone'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, slugify } from '../../core/resource.ts'
 import { secretRef }             from '../../core/credentials.ts'
 import { recordHealth, SERVER_SERIES, SERVER_READINGS } from '../../core/server-metrics.ts'
 import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn, sizeRegions } from '../../providers/compute/index.ts'
 import { sendVia }               from '../../providers/compute/accounts.ts'
+import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, installCommand, ENROLL_WINDOW_MS } from '../../providers/compute/enrollment.ts'
 import { env }                   from '../../core/env.ts'
+import { localSshRefusal, listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
 
 /** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
  *  (outpost), backend. Named once: it reaches a machine twice, in the cloud-init
@@ -173,6 +176,13 @@ export function createServersService(app: BasecampApp) {
       // `destroy` is a person, with a typed confirmation; `destroyStep` is the
       // job. `reconcile` reads a cloud and writes nothing.
       'destroy', 'destroyStep', 'reconcile', 'issueEnrollment',
+      // The operator's own ~/.ssh/config, on a Basecamp running on their
+      // machine and nowhere else (`core/local-ssh.ts`). Reads, so a keyed
+      // retry runs them again rather than replaying a stale listing. At
+      // ADMINISTRATOR, the weight of enrolling a machine: the listing is the
+      // operator's own ssh config and the probe dials with their agent.
+      { method: 'localSshHosts', read: true, gate: LEVELS.ADMINISTRATOR },
+      { method: 'localSshProbe', read: true, gate: LEVELS.ADMINISTRATOR },
       { method: 'heartbeat', gate: 0 },
     ],
 
@@ -892,6 +902,30 @@ export function createServersService(app: BasecampApp) {
       }
     },
 
+    // ── localSshHosts — GET /servers  X-Service-Method: localSshHosts ──
+    //
+    // The Host aliases in the ssh config of the machine this API runs on, each
+    // resolved by `ssh -G` — what the import form prefills from. 404 rather
+    // than an empty list when it is not offered, so a screen can tell *no
+    // aliases* from *not here*.
+    async localSshHosts() {
+      const refused = localSshRefusal()
+      if (refused) throw new NotFound(`The local ssh listing is ${refused}`)
+      return { hosts: await listSshHosts() }
+    },
+
+    // ── localSshProbe — GET /servers  X-Service-Method: localSshProbe ──
+    //
+    // One key-only `ssh <alias> true`. The alias must be one the config names;
+    // anything else is answered unreachable before a process starts.
+    async localSshProbe() {
+      const refused = localSshRefusal()
+      if (refused) throw new NotFound(`The local ssh listing is ${refused}`)
+      const alias = ($.data as Record<string, unknown> | null)?.alias ?? $.query.alias
+      if (!alias) throw new BadRequest('alias is required — which Host in the ssh config to try')
+      return probeSshHost(String(alias))
+    },
+
     // ── heartbeat — POST /servers/:id  X-Service-Method: heartbeat ────
     // Called by the Basecamp outpost, which holds no session — it authenticates
     // ── metrics ───────────────────────────────────────────────────────
@@ -1088,7 +1122,8 @@ export function createServersService(app: BasecampApp) {
         if (known) await app.conduit?.deregister(target)
         app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
           server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
-      } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert)) {
+      } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
+                              || known?.policy?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
         await app.conduit.register({
           id:            target,
           kind:          'outpost',
@@ -1102,6 +1137,11 @@ export function createServersService(app: BasecampApp) {
           // material was written into the registry, where `GET /conduit-targets`
           // hands it back. Nothing had ever sent to an outpost, so neither showed.
           auth:          { type: 'hmac', ref: outboundRef },
+          // Conduit's 45s whole-call deadline caps every send's own timeout,
+          // so a deploy, a job's `timeout_s` and a cleanup sweep were all cut
+          // at 45s whatever they asked for. The longest command is the bound;
+          // each send still states its own.
+          policy:        { deadline_ms: DEPLOY_TIMEOUT_MS },
           registered_at: Date.now(),
           last_seen_at:  Date.now(),
         } as TargetDescriptor)

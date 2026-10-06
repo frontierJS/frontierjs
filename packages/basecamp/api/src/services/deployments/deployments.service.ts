@@ -55,8 +55,9 @@ function buildInitialSteps(target: { type: string; source?: unknown }): string[]
   // /pull at all and reports the build as done.
   if ((target.type === 'container' || target.type === 'function') && !imageOf(target.source))
     return ['Validate', 'Build image', 'Push image', 'Start container', 'Health check']
-  if (target.type === 'database')
-    return ['Validate', 'Run migrations', 'Verify connectivity']
+  // A database is a container too: a blueprint app carries an image source, and
+  // a list of its own reached Outpost as command-less /exec calls, acknowledged
+  // with nothing started and the App marked running (`FJS-1764`).
   return ['Validate', 'Pull image', 'Start container', 'Health check']
 }
 
@@ -64,8 +65,7 @@ function buildInitialSteps(target: { type: string; source?: unknown }): string[]
  * The step that replaces what is serving. A release that stopped at or before
  * it left the previous one answering, so the App's status stays what it was; a
  * release that fails after it has broken what is live (`FJS-1691`). A list
- * without one — a database release — has no such moment, and any failure is
- * the App's.
+ * without one has no such moment, and any failure is the App's.
  */
 const SWAP_STEPS = new Set(['Start container', 'Activate'])
 
@@ -157,7 +157,7 @@ export function createDeploymentsService(app: BasecampApp) {
       // command-less `/exec`, which acknowledges and does nothing, and the start
       // step then asks docker to pull the app's NAME from a public registry.
       // Two green steps and a pull-access error is the release that bought.
-      if ((target.type === 'container' || target.type === 'function')
+      if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
           && !isInline(target.source) && !imageOf(target.source) && !data.toImage)
         throw new BadRequest(
           `App '${target.name}' names no image, and nothing builds one yet — ` +

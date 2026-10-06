@@ -26,8 +26,7 @@ flags:
 ```js
 const target = resolveTarget(flag, $.git)
 
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
@@ -45,7 +44,7 @@ if (!resolved) {
 const { server, user, path } = resolved
 const appId     = deployConf.app_id ?? path.split('/').pop()
 const container = apiContainer(appId, deployConf)
-const host      = `${user}@${server}`
+const host      = resolved.host
 
 // Check the machine, then the container
 const machine = machineFor($, host, path, deployConf.transport)

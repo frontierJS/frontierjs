@@ -98,7 +98,7 @@ const warn = () => warned++
 
 // ─── Load frontier.config.js — everything else depends on this ────────────
 const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 renderHeader('Config')
 
@@ -132,7 +132,7 @@ if (!resolved) {
   fail()
 } else {
   renderCheck(`server + path resolve for target=${target}`, 'pass',
-    `${resolved.user}@${resolved.server}:${resolved.path}`)
+    `${resolved.host}:${resolved.path}`)
 }
 
 const appId = deployConf.app_id ?? deployConf.path?.split('/').pop()
@@ -383,7 +383,7 @@ if (isJunction) {
   renderCheck('@frontierjs/junction detected', 'pass',
     junctionDep ? 'in package.json' : 'imported in api source')
 
-  // /ws route check — the convention from the deploy:setup nginx template
+  // /ws route check — the path deploy:setup's Caddy route proxies
   // channels() is what registers /ws; the path is never written in app source.
   const hasWs = fileContains(apiSrcCandidates, /['"\`]\/ws['"\`]/)
     || fileContains(apiSrcCandidates, /channels\s*\(/)
@@ -391,12 +391,9 @@ if (isJunction) {
     renderCheck(`/ws route in api source`, 'pass')
   } else {
     renderCheck(`/ws route in api source`, 'warn',
-      `the generated nginx config proxies /ws to your API. If your route is elsewhere, update nginx.`)
+      `the Caddy route deploy:setup writes proxies /ws and /ws/* to your API, and nothing else outside /api/.`)
     warn()
   }
-
-  renderCheck('proxy_read_timeout reminder', 'info',
-    `nginx default is 60s — long-lived idle WebSockets get closed. Bump it in the /ws location block if needed.`)
 }
 
 // ─── Git state ────────────────────────────────────────────────────────────
@@ -456,9 +453,9 @@ if (flag.remote) {
     echo('')
     log.warn('Skipping remote checks — server config not resolved')
   } else {
-    renderHeader(`Server (${resolved.user}@${resolved.server})`)
+    renderHeader(`Server (${resolved.host})`)
 
-    const host = `${resolved.user}@${resolved.server}`
+    const host = resolved.host
     const path = resolved.path
 
     // Reachability — BatchMode, so a password prompt cannot hang the doctor.
@@ -482,7 +479,7 @@ if (flag.remote) {
       }
 
       // Required server tools — the same list deploy:setup checks
-      for (const tool of ['docker', 'nginx', 'git', 'bun', 'rsync']) {
+      for (const tool of ['docker', 'caddy', 'git', 'bun', 'rsync']) {
         const probe = ask(`command -v ${tool} > /dev/null 2>&1 && echo ok`)
         if (probe === 'ok') {
           renderCheck(`${tool} on server`, 'pass')

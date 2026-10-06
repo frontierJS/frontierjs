@@ -267,7 +267,7 @@ export function note(context, stepName, facts) {
 // rather than a simulation, so every command the pipeline sends reaches the
 // same shell it would reach over ssh.
 //
-// `web: false` because the web half wants nginx and a domain, which is a
+// `web: false` because the web half wants Caddy and a domain, which is a
 // different proof.
 //
 // One owner, two callers — this and `deployJournalCycle` in

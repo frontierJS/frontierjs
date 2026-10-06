@@ -50,12 +50,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN }
+    return { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, resolveSide, deployConfFor, sshHost, swapContainer, healthOrRestore, litestreamInstall, LITESTREAM_PIN, LITESTREAM_MIN } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -178,15 +178,17 @@ describe('resolveDeployConf', () => {
       { server: 'myapp.com', user: 'deploy', path: '/apps/myapp' },
       'dev'
     )
-    expect(conf).toEqual({ server: 'myapp.com', user: 'deploy', path: '/apps/myapp' })
+    expect(conf).toEqual({ server: 'myapp.com', user: 'deploy', path: '/apps/myapp', host: 'deploy@myapp.com' })
   })
 
-  test('defaults user to "deploy" when not specified', () => {
+  // An alias in ~/.ssh/config carries its own User; `deploy@myvps` would override it.
+  test('no user stated → the bare server, so ssh config supplies the user', () => {
     const conf = resolveDeployConf(
-      { server: 'myapp.com', path: '/apps/myapp' },
+      { server: 'myvps', path: '/apps/myapp' },
       'dev'
     )
-    expect(conf.user).toBe('deploy')
+    expect(conf.user).toBeNull()
+    expect(conf.host).toBe('myvps')
   })
 
   test('applies target-specific server override', () => {
@@ -229,7 +231,53 @@ describe('resolveDeployConf', () => {
       server: 'dev.myapp.com', user: 'dev', path: '/apps/dev',
       production: { server: 'prod.myapp.com', user: 'prod', path: '/apps/prod' }
     }, 'production')
-    expect(conf).toEqual({ server: 'prod.myapp.com', user: 'prod', path: '/apps/prod' })
+    expect(conf).toEqual({ server: 'prod.myapp.com', user: 'prod', path: '/apps/prod', host: 'prod@prod.myapp.com' })
+  })
+
+})
+
+// ─── deployConfFor — --server and the placeholder ─────────────────────────────
+
+describe('deployConfFor', () => {
+
+  const $ = { paths: { get root() { return TMP } } }
+
+  test('--server replaces every server and user, per target and per side', async () => {
+    writeConfig({ deploy: {
+      server: 'a.com', user: 'deploy', path: '/apps/x',
+      api: { server: 'api.a.com', user: 'ops', port: 3000 },
+      production: { server: 'prod.a.com', user: 'root', web: { server: 'w.a.com' } },
+    } })
+    const conf = await deployConfFor($, { server: 'myvps' })
+    for (const target of ['dev', 'production']) {
+      for (const side of ['api', 'web', 'builder']) {
+        const r = resolveSide(conf, target, side)
+        expect(r.host).toBe('myvps')
+        expect(r.path).toBe('/apps/x')
+      }
+    }
+    expect(conf.api.port).toBe(3000)
+  })
+
+  test('--server accepts user@host whole', async () => {
+    writeConfig({ deploy: { server: 'a.com', user: 'deploy', path: '/apps/x' } })
+    const conf = await deployConfFor($, { server: 'root@1.2.3.4' })
+    expect(resolveDeployConf(conf, 'dev').host).toBe('root@1.2.3.4')
+  })
+
+  test('the scaffold placeholder resolves to no server, and says why', async () => {
+    writeConfig({ deploy: { server: 'your-server.com', path: '/apps/x' } })
+    const errors = []
+    const conf = await deployConfFor($, {}, { error: (m) => errors.push(m) })
+    expect(conf.server).toBeUndefined()
+    expect(resolveDeployConf(conf, 'dev')).toBeNull()
+    expect(errors[0]).toContain('--server')
+  })
+
+  test('--server wins over the placeholder', async () => {
+    writeConfig({ deploy: { server: 'your-server.com', path: '/apps/x' } })
+    const conf = await deployConfFor($, { server: 'myvps' }, { error: () => { throw new Error('refused') } })
+    expect(resolveDeployConf(conf, 'dev').host).toBe('myvps')
   })
 
 })

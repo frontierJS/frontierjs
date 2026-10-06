@@ -7700,6 +7700,29 @@ describe('@@allow / @@deny row-level policies', () => {
     db.$close()
   })
 
+  test('an update naming no column answers through the update policy, not around it', async () => {
+    // A patch with nothing to write issues no statement and reads the row back.
+    // That read used the caller's where alone, so `data: {}` returned a row the
+    // update AND read policies both exclude — found by verifyRowPolicies on
+    // example's Invoice, where every column is @immutable or @system.
+    const db = await makeDb(`
+      model Post {
+        id      Int @id
+        ownerId Int
+        @@allow('read',   ownerId == auth().id)
+        @@allow('update', ownerId == auth().id)
+      }
+    `, 'policy-empty-update')
+    await db.asSystem().post.create({ data: { id: 1, ownerId: 99 } })
+    await db.asSystem().post.create({ data: { id: 2, ownerId: 1 } })
+    const as = db.$setAuth({ id: 1 })
+    expect(await as.post.findUnique({ where: { id: 1 } })).toBeNull()
+    expect(await as.post.update({ where: { id: 1 }, data: {} })).toBeNull()
+    // The control: the caller's own row still answers.
+    expect(await as.post.update({ where: { id: 2 }, data: {} })).toMatchObject({ id: 2, ownerId: 1 })
+    db.$close()
+  })
+
   test('no @@allow → no restriction', async () => {
     const db = await makeDb(`
       model Post { id Int @id; title String }

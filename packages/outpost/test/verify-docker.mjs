@@ -25,6 +25,10 @@
  *   HTTP on its port, with the env and the log cap the command asked for, and a
  *   second deploy REPLACING the first rather than adding beside it.
  *
+ *   `restore.*` — a release docker refuses (its port held) and one that starts
+ *   and never answers its health path both put the previous container back,
+ *   serving on its own port with the route dialing it (`FJS-1765`).
+ *
  *   `ingress.*` — the deploy names a hostname, so Caddy fronts it
  *   (`FJS-D564`): the app answers over HTTPS BY THAT NAME, plain HTTP
  *   redirects, the route survives Caddy restarting on its own, and the
@@ -68,6 +72,7 @@ const APP_PORT = 7183
 const CADDY_HTTP  = 7184
 const CADDY_HTTPS = 7185
 const CADDY_ADMIN = 7186
+const HELD     = 7187
 const CADDY    = 'fjs-verify-caddy'
 const CADDY_IMAGE = 'caddy:2'
 const HOST     = 'verify-docker.test'
@@ -91,7 +96,7 @@ const answers = (port, address = '127.0.0.1') => new Promise(done => {
   s.on('error',   () => done(false))
 })
 // A port that answers is not evidence the right process holds it.
-for (const p of [PORT, STATIC, SINK, APP_PORT, CADDY_HTTP, CADDY_HTTPS, CADDY_ADMIN])
+for (const p of [PORT, STATIC, SINK, APP_PORT, CADDY_HTTP, CADDY_HTTPS, CADDY_ADMIN, HELD])
   if (await answers(p)) fail(`port ${p} already answers — refusing to test whatever holds it`)
 for (const n of [NAME, CADDY])
   if (sh('docker', 'inspect', n).status === 0) fail(`a container named ${n} already exists`)
@@ -278,6 +283,37 @@ try {
   const routes = await admin('/config/apps/http/servers/ingress/routes').then(r => r.json(), () => null)
   t('ingress.redeployKeepsOneRoute', routes?.length === 1 && routes[0]['@id'] === NAME)
 
+  // ─── a release that fails puts the old one back (FJS-1765) ──────────────
+
+  const dial = async () => (await admin(`/id/${NAME}`).then(r => r.json(), () => null))?.handle?.[0]?.upstreams?.[0]?.dial
+  const putBack = async () => inspect('{{.Id}}') === second.body?.containerId
+    && inspect('{{.State.Running}}') === 'true'
+    && sh('docker', 'inspect', `${NAME}_replaced`).status !== 0
+    && /Name: fjs-drive/.test(await fetch(`http://127.0.0.1:${APP_PORT}/`).then(r => r.text(), () => ''))
+
+  // Docker's own refusal, after the old container has stopped: the port the
+  // release asks for is held by something else on the machine.
+  const squatter = Bun.serve({ hostname: '127.0.0.1', port: HELD, fetch: () => new Response('not the app') })
+  const refused  = await call('/deploy', {
+    app_id: APP, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
+    config: { port: HELD, containerPort: 80, env: { WHOAMI_NAME: 'fjs-drive' } },
+  })
+  squatter.stop(true)
+  if (refused.status !== 500) console.log(refused.body)
+  t('restore.whenDockerRefusesTheRun', refused.status === 500
+    && /previous container is serving again/.test(refused.body?.error ?? '') && await putBack())
+  t('restore.routeDialsTheRestoredPort', await dial() === `127.0.0.1:${APP_PORT}`)
+
+  // Started, and never answers: whoami listens on 81 inside, and 80 is mapped.
+  const sick = await call('/deploy', {
+    app_id: APP, image: IMAGE, digest: pulled.body?.digest, hosts: [HOST],
+    config: { port: APP_PORT, containerPort: 80, healthCheck: '/', env: { WHOAMI_NAME: 'fjs-drive', WHOAMI_PORT_NUMBER: '81' } },
+  })
+  if (sick.status !== 500) console.log(sick.body)
+  t('restore.whenTheStartIsNotHealthy', sick.status === 500
+    && /not healthy/.test(sick.body?.error ?? '') && /serving again/.test(sick.body?.error ?? '') && await putBack())
+  t('restore.answersOverHttpsAgain', await untilHttps())
+
   // ─── route, between releases ────────────────────────────────────────────
 
   const rerouted = await call('/route', { app_id: APP, hosts: [HOST, ALSO] })
@@ -330,6 +366,7 @@ try {
   outpost?.kill('SIGTERM')
   sink.stop(true)
   sh('docker', 'rm', '-f', NAME)
+  sh('docker', 'rm', '-f', `${NAME}_replaced`)
   sh('docker', 'rm', '-f', CADDY)
   if (!hadImage) sh('docker', 'rmi', IMAGE)
   if (!hadCaddy) sh('docker', 'rmi', CADDY_IMAGE)
@@ -348,6 +385,8 @@ const expected = [
   'ingress.portRefusesOffLoopback', 'ingress.survivesACaddyRestart',
   'health.saysRunning', 'logs.readTheContainer', 'exec.runsOnTheMachine',
   'deploy.replacesRatherThanAdds', 'ingress.redeployKeepsOneRoute',
+  'restore.whenDockerRefusesTheRun', 'restore.routeDialsTheRestoredPort',
+  'restore.whenTheStartIsNotHealthy', 'restore.answersOverHttpsAgain',
   'route.readsThePublishedPort', 'route.restartsNothing', 'route.answersTheNewName', 'route.emptyTakesTheRoute',
   'stop.removesTheContainer', 'stop.takesTheRoute', 'health.saysNotRunning', 'logs.sayNoSuchContainer',
   'route.unknownIs404',

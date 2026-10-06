@@ -13,8 +13,12 @@
 //
 // TWO FIELDS ARE NOT FILLED IN, and deliberately: `server` and `domain` are
 // facts about a deployment, and this repo has none. `fli deploy` refuses on the
-// placeholder rather than shipping somewhere nobody meant. Set them, or pass
-// them to `fli make:deploy --server --domain`.
+// placeholder rather than shipping somewhere nobody meant. Set them, or name the
+// box per run: `fli deploy:setup --server myvps` takes any alias in
+// ~/.ssh/config, or user@host.
+//
+// There is no `user` here, so `ssh` is handed the bare server and the alias's own
+// User, Port and IdentityFile apply. A `user` set here is prefixed, and wins.
 //
 // `bun run image` / `image:up` are the local path and do not read this file:
 // `deploy/build.mjs` drives compose directly. This is for the remote one.
@@ -22,7 +26,6 @@
 export default {
   deploy: {
     server: 'your-server.com',   // ← set this
-    user:   'deploy',            // SSH user on the server
     path:   '/apps/basecamp',    // deploy root on the server
     app_id: 'basecamp',
 

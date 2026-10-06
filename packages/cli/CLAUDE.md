@@ -390,17 +390,22 @@ core/
                 is the shape now and a migration is the shape at one format —
                 and it is held honest by an oracle that migrates a fixture and
                 compares it to a fresh database
-  edge.js       the nginx server blocks in front of a deployed app and the origin
-                its web build names for the API — one origin, or `deploy.api.domain`
-                as a second. The one reader of both domains, because a vhost and a
-                bundle that read them separately name two different hosts. The
-                file `deploy:setup` writes, loaded verbatim by `pauseEdgeCycle`
-  pause.js      taking an app down on purpose: the nginx guard, the file it
-                stats, the page, the drift verdict and the refusals. All pure.
-                The guard goes AHEAD of the https redirect (both are
-                rewrite-phase returns, first one wins) and sends 503 to a NAMED
-                location (a URI re-enters the rewrite phase and nginx refuses
-                the config for a redirection cycle). And the queue half
+  edge.js       the Caddy routes in front of a deployed app and the origin its
+                web build names for the API — one origin, or `deploy.api.domain`
+                as a second. The one reader of both domains, because a route and
+                a bundle that read them separately name two different hosts.
+                Routes join Outpost's `ingress` server (`FJS-D564`), merged into
+                Caddy's WHOLE config and written back with `If-Match`, so a write
+                Outpost made between the read and the write is a 412 and not a
+                route lost; a hostname another route holds is refused. Per-app
+                access logs, which Caddy rolls itself. Loaded verbatim by
+                `pauseEdgeCycle`
+  pause.js      taking an app down on purpose: the Caddy guard (the first
+                handler of every route, matched on the file it stats), the
+                page, the drift verdict and the refusals. All pure. The guard is
+                found by its `@id` through the admin API, never by the route's
+                shape. `file_server` answers 200 for a page it found unless told
+                `status_code: 503`. And the queue half
                 (`FJS-D262`): the script that runs Caravan's OWN bin inside the
                 serving container, and the verdict read off its JSON — it never
                 writes Caravan's tables and never names a jobs database path
@@ -825,7 +830,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `:status`, `:run`, `:unlock`) takes the other one, and every refusal in those
   four exited 0 until it was.
 - **A deploy target has bun and no `node_modules`, and that is what decides how
-  the journal is written.** `deploy:setup` installs docker, nginx, git, bun,
+  the journal is written.** `deploy:setup` installs docker, caddy, git, bun,
   rsync and sqlite3; `02-pull` leaves a git checkout and the build happens inside
   Docker, so litestone is not there and cannot be imported there. Hence the
   committed DDL and a runner whose only import is `bun:sqlite` — and hence
@@ -878,7 +883,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   target, so once the generation has moved a revert genuinely cannot restore the
   pair, only put old code onto today's config.
 - **A pause is a transition and the file is only the mechanism.** `deploy:pause`
-  writes `<path>/.fli/paused`; nginx stats it per request, so neither direction
+  writes `<path>/.fli/paused`; Caddy stats it per request, so neither direction
   needs a reload or sudo and the guard cannot be half applied. *Is it paused* is
   the KIND on the last succeeded transition and never a column. The container
   stays up on purpose — `06-swap` runs the migrations in its entrypoint, so a

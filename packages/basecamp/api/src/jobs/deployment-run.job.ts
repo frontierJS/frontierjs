@@ -11,7 +11,8 @@ import { $ } from '@frontierjs/junction'
 // Outpost protocol (Conduit → outpost:<server-id>). Every reply may carry a
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
-//   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }
+//   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }, once healthy;
+//                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts }                   → Caddy re-routed, no restart (sent by domain:dns)
 //   POST /health-check { app_id, digest }                  → { healthy }
@@ -37,7 +38,7 @@ import { $ } from '@frontierjs/junction'
 // A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
 
 import { defineJob }       from '@frontierjs/caravan'
-import { resolveExecutor, isExecutor } from '../providers/executor.ts'
+import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
@@ -276,7 +277,7 @@ function runner(app: BasecampApp) {
       reply.data?.stubbed ? String(reply.data.note ?? 'stub executor — nothing was issued') : undefined
 
     if (name.includes('pull')) {
-      const reply = await executor.call('/pull', { image, digest })
+      const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })
       if (reply.error) throw new Error(`Pull failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
@@ -305,7 +306,7 @@ function runner(app: BasecampApp) {
         },
         source:        ctx.config.source ?? service.source ?? {},
         hosts:         await routedHosts(app.db, deploy.appId),
-      })
+      }, { timeoutMs: DEPLOY_TIMEOUT_MS })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 

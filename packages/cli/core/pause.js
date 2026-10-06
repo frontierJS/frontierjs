@@ -14,18 +14,18 @@
 // would have to be told, which is configuration, which is a restart, which is a
 // deploy.
 //
-// So it is the edge. nginx serves the SPA from `current/` and proxies `/api/`,
+// So it is the edge. Caddy serves the SPA from `current/` and proxies `/api/`,
 // which makes it the one place that can answer for both surfaces at once. The
 // deploy's own health poll goes to `http://localhost:<apiPort>` directly
-// (`_module.md`, `healthOrRestore`) and never through nginx, so a paused app
+// (`_module.md`, `healthOrRestore`) and never through Caddy, so a paused app
 // still deploys, still migrates and still passes health — health reading 200
 // while the edge reads 503 is the correct pair of answers and not a
 // contradiction.
 //
 // ─── the file is the mechanism, the journal is the truth ─────────────────────
 //
-// nginx stats a file per request, so a pause is one write and an unpause is one
-// `rm`: no reload, no sudo, and no half-applied guard. What that buys is also
+// Caddy's `file` matcher stats a file per request, so a pause is one write and an
+// unpause is one `rm`: no reload, no sudo, and no half-applied guard. What that buys is also
 // what it costs — a file a person can touch by hand is the original complaint
 // one level along, so the two are compared rather than trusted. `driftVerdict`
 // is that comparison and `fli deploy:status` prints it, under the rule
@@ -35,62 +35,48 @@
 // command or touches a machine.
 
 /**
- * The marker the generated vhost carries.
+ * The guard's `@id` in Caddy's config, one per route.
  *
- * Detection is an exact grep for this line rather than a guess at the shape of
- * the guard, because the alternative to finding it is `sed` against a live nginx
+ * Whether the edge HAS a guard is asked of Caddy by this id rather than by the
+ * shape of the route, because the alternative to finding it is editing a live
  * config from inside a deploy.
  */
-export const GUARD_MARKER = '# fli:pause-guard'
+export const guardId = (appId, side = 'web') => side === 'api' ? `fli-${appId}-api-pause` : `fli-${appId}-pause`
 
-/**
- * The vhost `_steps-setup/05-nginx` writes.
- *
- * Named here rather than in the step, because `deploy:pause` greps it and
- * `deploy:status` reports on it — three places deriving one path is three
- * answers to where the guard lives.
- */
-export const vhostPath = (appId) => `/etc/nginx/sites-available/${appId}`
+/** Prints 200 when Caddy holds the guard, anything else when it does not. Run on the target. */
+export const guardProbeScript = (appId) =>
+  `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:2019/id/${guardId(appId)} 2>/dev/null || echo 000`
 
 /** fli's own state on a target. The journal is already here. */
 export const fliDir = (serverPath) => `${serverPath}/.fli`
 
-/** The file nginx stats. Its presence is the whole of whether the edge refuses. */
+/** The file Caddy stats. Its presence is the whole of whether the edge refuses. */
 export const pausedFile = (serverPath) => `${fliDir(serverPath)}/paused`
 
 /** The page a visitor gets. Written at setup, replaceable by the app. */
 export const pagePath = (serverPath) => `${fliDir(serverPath)}/maintenance.html`
 
 /**
- * The guard, for the `server` block `_steps-setup/05-nginx` writes.
+ * The guard: the first handler of every route `core/edge.js` writes.
  *
- * A NAMED location, which is the part that is not obvious: an `error_page`
- * pointing at a URI re-enters the rewrite phase, hits the same `if` and nginx
- * refuses the config with a redirection cycle. A named location is unreachable
- * by URI and `break` stops the rewrite there.
- *
- * The status stays 503 because `error_page` without `=` preserves it, and
+ * The status stays 503 because `file_server` is told to answer with it, and
  * `Retry-After` rides with it — a 503 without one is what takes a paused app out
  * of a search index, and no application should have to know that.
  *
- * It goes FIRST in the server block, ahead of the http→https redirect. Both are
- * rewrite-phase returns and the first one wins, so a guard placed after it
- * answers 301 to every plain-http caller of a paused app — the app looks up,
- * over a scheme somebody is really using. Paused wins over the redirect.
+ * The http→https redirect is Caddy's and comes before any route, so a plain-http
+ * caller of a paused app gets the 301 and then this 503 — never a 301 to an app
+ * that answers.
  */
-export const nginxGuard = (serverPath, { retryAfter = 120 } = {}) => `  ${GUARD_MARKER}
-  # fli deploy:pause writes the file and fli deploy:unpause removes it.
-  # Tested per request, so neither needs a reload and neither needs sudo.
-  if (-f ${pausedFile(serverPath)}) {
-    return 503;
-  }
-  error_page 503 @fli_paused;
-  location @fli_paused {
-    root ${fliDir(serverPath)};
-    rewrite ^ /maintenance.html break;
-    add_header Retry-After ${retryAfter} always;
-    add_header Cache-Control "no-store" always;
-  }`
+export const caddyGuard = (serverPath, id, { retryAfter = 120 } = {}) => ({
+  '@id':  id,
+  match:  [{ file: { root: fliDir(serverPath), try_files: ['/paused'] } }],
+  handle: [
+    { handler: 'headers', response: { set: { 'Retry-After': [String(retryAfter)], 'Cache-Control': ['no-store'] } } },
+    { handler: 'rewrite', uri: '/maintenance.html' },
+    { handler: 'file_server', root: fliDir(serverPath), status_code: 503 },
+  ],
+  terminal: true,
+})
 
 /**
  * The default page.
@@ -154,7 +140,7 @@ export function driftVerdict({ journalPaused = false, filePresent = false } = {}
 
 /** Each names its own way out, in the order a person should read them. */
 export const REFUSALS = {
-  'no-guard':    'this target\'s vhost was written before pause existed and carries no guard',
+  'no-guard':    'this target\'s edge carries no pause guard — its routes were never written by deploy:setup',
   'no-journal':  'nothing has been recorded for this target, so a pause would not be either',
   'in-flight':   'a transition is still open',
   'already':     'it is already in that state — running it twice is almost always two people',
@@ -175,14 +161,14 @@ export const REFUSALS = {
  * recorded. So *already* means the two agree AND they agree with what was asked.
  */
 export function pauseRefusals({
-  want, vhostHasGuard, journalOpen = true, inFlight = null,
+  want, edgeHasGuard, journalOpen = true, inFlight = null,
   journalPaused = null, filePresent = null,
 } = {}) {
   const out = []
   const add = (code, extra) => out.push({ code, reason: REFUSALS[code], ...extra })
 
-  if (want === 'pause' && !vhostHasGuard)
-    add('no-guard', { fix: 'fli deploy:setup rewrites the vhost and asks before it does; nothing here edits a live nginx config behind you' })
+  if (want === 'pause' && !edgeHasGuard)
+    add('no-guard', { fix: 'fli deploy:setup writes the routes and asks before it does; nothing here edits a live Caddy config behind you' })
   if (!journalOpen)
     add('no-journal', { fix: 'deploy once through the journal first' })
   if (inFlight)

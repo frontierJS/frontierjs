@@ -22,14 +22,13 @@ steps: _steps-setup
 ---
 
 Checks the target server for all requirements and walks through
-installing what's missing. Writes nginx config and creates the
+installing what's missing. Writes this app's Caddy routes and creates the
 directory structure needed for fli deploy.
 
 ```js
 const target = resolveTarget(flag, $.git)
 
-const frontierConfig = await loadFrontierConfig($.paths.root)
-const deployConf     = frontierConfig?.deploy
+const deployConf     = await deployConfFor($, flag, log)
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
@@ -58,7 +57,7 @@ catch (e) {
   return
 }
 
-const host = `${user}@${server}`
+const host = resolved.host
 
 log.info(`Setting up ${host} for ${appId} (${target})`)
 

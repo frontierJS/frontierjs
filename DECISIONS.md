@@ -11755,6 +11755,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d599"></a>2026-10-06 · `FJS-D599` — Where does a fleet release get its pivot verdict — The build computes it, and the release records it on `Deployment` alongside `builtImage`.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (The Outpost runs `litestone release` inside the new image before the swap), **C** (No verdict: every fleet rollback asks for a typed confirmation).
+
+The paper's recommendation, taken as written: it is where `mintRelease` already computes it for ring 0, so there is one place that knows. B boots the image to read a fact the build already had. With C, an operator mid-incident confirms the prompt every time. An image whose build reported nothing is `unknown`, which counts as a contract, as in ring 0.
+
 ### <a id="fjs-d595"></a>2026-10-06 · `FJS-D595` — What replaces zx's `question()` — `tty.line(prompt, { default })` beside `tty.keys()`, with the same rules: `--yes` answers the default, no terminal refuses by name, the web runner gets an event.
 
 Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (keep `question` as a name destructured from `$`).
@@ -11788,6 +11794,16 @@ No adjudication beyond § IV *preservation vs. evolution*: nobody reads a commit
 Asked in `FJS-1614`, the push that follows a machine leaving `online`. **Keep** was picked over **delete the record**. Deleting turns *the machine is down* into *the name does not exist*, which resolvers cache as a negative answer, so the hostname stays dark after the machine returns, until a push runs and the negative TTL lapses. Keeping costs nothing, since traffic to a dead machine fails either way, and the hostname answers again the moment the machine does. This is Route 53's rule: when every health-checked record fails, it answers them all rather than none.
 
 No adjudication in tension: keeping dominates. A record naming a dead machine is already the outage, and an absent record is the outage plus a slower recovery. **§ V's ninth question**: *an App with no online machine is red on `/dns/` and its record is still there.* `edge.test.ts` asserts both: the push refuses as not-yet and writes nothing, and `records` answers the App in `stale` with `down: true`. **Enforced.** Where it lives: `push` and `records` in `packages/basecamp/api/src/services/edge/edge.service.ts`.
+
+### <a id="fjs-d598"></a>2026-10-05 · `FJS-D598` — `fli deploy`'s edge is Caddy, the same host service a fleet machine runs (`FJS-D564`), with routes written into Outpost's `ingress` server through the admin API. nginx is gone from ring 0. The deploy target is an ssh destination, and an alias in `~/.ssh/config` is a whole one.
+
+Asked by the owner while planning how to put Basecamp on a remote server from a laptop: keep `_steps-setup/05-nginx`, or swap it for Caddy to match the fleet. **Caddy all the way** was picked. **The reason is a collision, not tidiness.** Ring 0 put nginx on :80/:443, and enrollment puts Caddy there. So the box Basecamp is installed on could never also be enrolled as a fleet machine.
+
+**What it is.** `deploy:setup` installs Caddy as the `caddy-api` unit (`--resume`, no Caddyfile), with the install line `enrollment.ts` uses. `05-caddy` reads Caddy's whole config and merges this app's routes in (`core/edge.js` § `applyEdge`). It writes the result back with `If-Match`, so a write Outpost made in between is a 412 and a re-read, not a lost route. Route ids start `fli-` and never meet Outpost's `fjs-`. A hostname another route names is refused, as `ingress.js` already refuses one. Certificates are Caddy's, so `deploy.<side>.ssl` is refused by name and `06-ssl` is deleted. A web release is the symlink swap alone, because Caddy reads the root per request. The pause guard is the first handler of every route: a `file` matcher on `.fli/paused`, serving the page with `status_code: 503`, and found by its `@id`. Each route writes its own access log, which Caddy rolls. Because the redirect is Caddy's own and precedes every route, a plain-http caller of a paused app gets a 301 and then the 503.
+
+**The second half, the same day.** `--server` is a namespace-wide flag on `deploy:`. It takes an alias or `user@host` and replaces every server and user the block names, per target and per side (`_module.md` § `deployConfFor`, the one reader). `user` has no default. With none stated, ssh is handed the bare name, so the alias's User, Port, IdentityFile and ProxyJump apply. Before this, `deploy@` was prefixed and silently overrode the alias's User. The scaffold's `your-server.com` is refused, because it is a real domain.
+
+**Adjudication**: *preservation vs. evolution*. nginx goes, with no alias and no flag to keep it. **§ V's ninth question**: *fli's routes load in a real Caddy beside Outpost's, a stale write is refused, and a paused app answers 503 while the Outpost app beside it answers 200* — `pauseEdgeCycle` in CI's `deploy` phase. Measured: dropping `status_code` reds it at *a paused app answers 200*. **Not enforced**: the two copies of the Caddy install line (`01-check-deps.md`, `providers/compute/enrollment.ts`) agree only by a pointer comment. **Late**: the nine were answered after the code was written, and say so.
 
 ### <a id="fjs-d565"></a>2026-09-30 · `FJS-D565` — Once Caddy fronts a machine, a container's published port binds to `127.0.0.1`. That change goes in with the first route push and not before it.
 

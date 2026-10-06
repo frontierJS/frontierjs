@@ -109,6 +109,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           when a release is made and a secret read only when it is sent
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
+          core/local-ssh.ts is the operator's own ~/.ssh/config, read on THEIR
+          laptop for the import form (`servers.localSshHosts`/`localSshProbe`).
+          Off unless LOCAL_SSH=1 (`bun run api` sets it) and refused under
+          NODE_ENV=production whatever it says; ssh is always handed `-F` with
+          the file that was listed, because ssh finds ~ through passwd and Bun
+          through $HOME
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan (`jobsDir`), and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —

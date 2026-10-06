@@ -182,7 +182,9 @@ curl -fsSL https://get.docker.com | sh
 # configures it, through the admin API on localhost:2019, so it runs as the
 # package's caddy-api unit: no Caddyfile, and --resume, which reloads the
 # config the admin API last saved. That is what puts every route back after
-# Caddy restarts on its own; the Outpost keeps no copy to replay.
+# Caddy restarts on its own; the Outpost keeps no copy to replay. fli deploy
+# installs the same unit on the box Basecamp itself runs on (cli
+# commands/deploy/_steps-setup/01-check-deps.md), so a change here goes there.
 apt-get install -yqq debian-keyring debian-archive-keyring apt-transport-https gnupg
 curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \\
   | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg

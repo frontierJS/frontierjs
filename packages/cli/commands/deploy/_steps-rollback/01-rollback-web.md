@@ -34,7 +34,7 @@ const currName = current.split('/').pop()
 
 log.info(`Rolling web back: ${currName} → ${prevName}`)
 
-machine.run(`ln -sfn ${previous} ${serverPath}/current && nginx -s reload`, { dry: flag.dry })
+machine.run(`ln -sfn ${previous} ${serverPath}/current`, { dry: flag.dry })
 
 $.config.webRolledBack = true
 log.success(`Web rolled back → releases/${prevName}`)

@@ -79,7 +79,14 @@ function logArgs(logs) {
   ]
 }
 
-export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps' } = {}) {
+/** How long `deploy` waits for a new container before putting the old one back.
+ *  Basecamp's own health step polls the same ten times three seconds, and its
+ *  `/deploy` send is given the room for it. */
+const HEALTH = { attempts: 10, intervalMs: 3_000 }
+
+export function createDocker({
+  run = spawnRun, fetch: fetchFn = globalThis.fetch, workDir = '/var/lib/outpost/apps', health = HEALTH,
+} = {}) {
 
   /** Run a docker command, or throw with what the machine actually said. A
    *  route turns that into an error the caller reads; swallowing it here is
@@ -121,6 +128,107 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
     return isDigest(id) ? id : null
   }
 
+  /**
+   * Where the running container answers on this machine: its published port
+   * and whether that port is bound to loopback, read off the daemon. `null`
+   * when there is no container. A route pushed between releases dials this,
+   * because the port the last release published is the one that is live, and
+   * the app row's port may have been edited since.
+   */
+  async function published({ appId }) {
+    const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', `fjs-${appId}`])
+    if (result.exitCode !== 0) {
+      if (/No such (object|container)/i.test(result.stderr ?? '')) return null
+      throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
+    }
+    let bindings = null
+    try { bindings = JSON.parse(result.stdout) } catch {}
+    // `deploy` publishes one port at most, so the first binding is the app's.
+    const first = Object.values(bindings ?? {}).flat()[0]
+    if (!first?.HostPort) return { port: null, loopback: false }
+    return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
+  }
+
+  /** Running, and — where the app names a path — answering it on the port
+   *  this machine published. A process that is up and serving 502s is the
+   *  release a running-only check calls healthy. `State.Running` is asked of
+   *  the daemon rather than inferred from the fact that `docker run` returned. */
+  async function healthCheck({ appId, port, path }) {
+    const name = `fjs-${appId}`
+    const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
+    if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
+    if (path == null) return { healthy: true }
+    if (!port || !/^\/[^ ]*$/.test(String(path)))
+      return { healthy: false, reason: `a health path needs a published port and a path beginning with '/' — got port ${port}, path '${path}'` }
+    const url = `http://127.0.0.1:${port}${path}`
+    try {
+      const res = await fetchFn(url, { signal: AbortSignal.timeout(3_000) })
+      return res.ok ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
+    } catch (err) {
+      return { healthy: false, reason: `${url} did not answer: ${err.message}` }
+    }
+  }
+
+  async function untilHealthy(target) {
+    let last
+    for (let i = 0; i < health.attempts; i++) {
+      if (i) await Bun.sleep(health.intervalMs)
+      last = await healthCheck(target)
+      if (last.healthy) break
+    }
+    return last
+  }
+
+  // ─── the swap ────────────────────────────────────────────────────────────────
+  // The live container is renamed `_replaced` and stopped rather than removed,
+  // so a release that fails to start or to answer has something to go back to
+  // (`FJS-1765`) — the same handle `fli deploy`'s `swapContainer` keeps.
+  // Stopped BEFORE the new one starts: a SQLite volume takes one writer, and
+  // the new entrypoint opens it to migrate.
+
+  const exists = async (name) =>
+    (await run(['docker', 'container', 'inspect', '--format', '{{.Id}}', name])).exitCode === 0
+
+  /** Set the live container aside. Answers whether there is one to go back to.
+   *  A `_replaced` with nothing live beside it is the last good container of a
+   *  swap this process did not finish, so it is kept rather than cleared. */
+  async function setAside(name, replaced) {
+    if (await exists(name)) {
+      await run(['docker', 'rm', '-f', replaced])
+      await docker(['rename', name, replaced])
+    } else if (!await exists(replaced)) {
+      return false
+    }
+    try {
+      await docker(['stop', '-t', '10', replaced])
+    } catch (err) {
+      await run(['docker', 'rename', replaced, name])
+      throw err
+    }
+    return true
+  }
+
+  /** Take the failed container away and start the set-aside one again. Answers
+   *  the error `/deploy` throws: `restored` says whether the old container is
+   *  back, which is what tells the route to follow it to its own port. */
+  async function putBack({ appId, name, replaced, held, path, why }) {
+    const fail = (said, restored) => Object.assign(new Error(`the new container ${why}; ${said}`), { restored })
+    await run(['docker', 'rm', '-f', name])
+    if (!held) return fail('there was no previous container to put back', false)
+    try {
+      await docker(['rename', replaced, name])
+      await docker(['start', name])
+    } catch (err) {
+      return fail(`putting the previous container back failed too: ${err.message}`, false)
+    }
+    // `docker start` returns while the app is still booting, so the old release
+    // is back when it ANSWERS — saying so sooner is what a slow machine makes a lie.
+    const back = await untilHealthy({ appId, port: (await published({ appId }).catch(() => null))?.port, path })
+    return back.healthy
+      ? fail('the previous container is serving again', true)
+      : fail(`the previous container is back and is not healthy either — ${back.reason}`, true)
+  }
+
   return {
     digestOf,
 
@@ -158,16 +266,16 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
     },
 
     /**
-     * Start the new container. The old one is stopped and removed first and the
-     * new one is named the same way, because a machine that accumulates
-     * `app-1`, `app-2` is one nothing can address by name afterwards.
+     * Start the new container, and answer only once it is healthy. It takes
+     * the old one's name, because a machine that accumulates `app-1`, `app-2`
+     * is one nothing can address by name afterwards; the old one waits as
+     * `_replaced` until then, and comes back if the new one does not start or
+     * does not answer.
      */
     async deploy({ appId, image, digest, config = {}, port, loopback = false }) {
-      const name = `fjs-${appId}`
+      const name     = `fjs-${appId}`
+      const replaced = `${name}_replaced`
       checkRunConfig(config)
-      // Best-effort: a first deploy has nothing to remove, and `docker rm` on a
-      // name that does not exist is an error rather than a no-op.
-      await run(['docker', 'rm', '-f', name]).catch(() => {})
 
       const argv = ['run', '-d', '--name', name, '--restart', 'unless-stopped']
       // Docker's default json-file driver caps nothing, so an app that logs per
@@ -188,11 +296,11 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
       // certificate. An app with no hostname keeps it, or nothing reaches it.
       if (port) argv.push('-p', `${loopback ? '127.0.0.1:' : ''}${port}:${config.containerPort ?? port}`)
       // The data a container keeps, on a NAMED volume that outlives it. Every
-      // deploy removes the container first, so a database started without one
+      // release replaces the container, so a database started without one
       // comes back empty after its next release. Named for the app, so the
       // next container is handed the same one; a path docker would read as
       // anything but a mount point was refused above, before the old container
-      // went.
+      // was touched.
       if (config.volumePath != null) argv.push('-v', `${name}-data:${config.volumePath}`)
       if (config.cpuLimit   != null) argv.push('--cpus', String(config.cpuLimit))
       if (config.memLimitMb != null) argv.push('--memory', `${config.memLimitMb}m`)
@@ -200,7 +308,22 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
       // builds share it. This is the half `Deployment.builtImage` records.
       argv.push(await reference(image, digest))
 
-      const containerId = await docker(argv)
+      const held = await setAside(name, replaced)
+      const path = config.healthCheck ?? null
+      let containerId
+      try {
+        containerId = await docker(argv)
+      } catch (err) {
+        // A port another process holds, a bad env value, an image the daemon
+        // cannot resolve — docker's own refusals, which come after the old
+        // container has stopped.
+        throw await putBack({ appId, name, replaced, held, path, why: `did not start — ${err.message}` })
+      }
+      const fresh = await untilHealthy({ appId, port, path })
+      if (!fresh.healthy)
+        throw await putBack({ appId, name, replaced, held, path, why: `started and is not healthy — ${fresh.reason}` })
+
+      if (held) await run(['docker', 'rm', '-f', replaced])
       return { containerId, digest: digest ?? await digestOf(image) }
     },
 
@@ -251,52 +374,17 @@ export function createDocker({ run = spawnRun, fetch: fetchFn = globalThis.fetch
     async stop({ appId }) {
       const name = `fjs-${appId}`
       const result = await run(['docker', 'rm', '-f', name])
+      // A `_replaced` left by a swap that never finished goes too: kept, the
+      // app's next release would bring it back as the last good container of
+      // an app somebody removed, and it holds the data volume in the meantime.
+      await run(['docker', 'rm', '-f', `${name}_replaced`])
       // Not an error: a first deploy has no previous container, and Basecamp
       // treats this step as non-fatal for exactly that reason.
       return { stopped: result.exitCode === 0 }
     },
 
-    /**
-     * Where the running container answers on this machine: its published port
-     * and whether that port is bound to loopback, read off the daemon. `null`
-     * when there is no container. A route pushed between releases dials this,
-     * because the port the last release published is the one that is live, and
-     * the app row's port may have been edited since.
-     */
-    async published({ appId }) {
-      const result = await run(['docker', 'inspect', '--format', '{{json .HostConfig.PortBindings}}', `fjs-${appId}`])
-      if (result.exitCode !== 0) {
-        if (/No such (object|container)/i.test(result.stderr ?? '')) return null
-        throw new Error(result.stderr?.trim() || `docker inspect exited ${result.exitCode}`)
-      }
-      let bindings = null
-      try { bindings = JSON.parse(result.stdout) } catch {}
-      // `deploy` publishes one port at most, so the first binding is the app's.
-      const first = Object.values(bindings ?? {}).flat()[0]
-      if (!first?.HostPort) return { port: null, loopback: false }
-      return { port: Number(first.HostPort), loopback: first.HostIp === '127.0.0.1' }
-    },
-
-    /** Is the container up? `State.Running`, asked of the daemon rather than
-     *  inferred from the fact that `docker run` returned. */
-    /** Running, and — where the app names a path — answering it on the port
-     *  this machine published. A process that is up and serving 502s is the
-     *  release a running-only check calls healthy. */
-    async healthCheck({ appId, port, path }) {
-      const name = `fjs-${appId}`
-      const result = await run(['docker', 'inspect', '--format', '{{.State.Running}}', name])
-      if (!(result.exitCode === 0 && result.stdout.trim() === 'true')) return { healthy: false, reason: 'not running' }
-      if (path == null) return { healthy: true }
-      if (!port || !/^\/[^ ]*$/.test(String(path)))
-        return { healthy: false, reason: `a health path needs a published port and a path beginning with '/' — got port ${port}, path '${path}'` }
-      const url = `http://127.0.0.1:${port}${path}`
-      try {
-        const res = await fetchFn(url, { signal: AbortSignal.timeout(3_000) })
-        return res.ok ? { healthy: true } : { healthy: false, reason: `${url} answered ${res.status}` }
-      } catch (err) {
-        return { healthy: false, reason: `${url} did not answer: ${err.message}` }
-      }
-    },
+    published,
+    healthCheck,
 
     /** An operator's script, run as this process's user. There is no sandbox
      *  and Basecamp says so on the screen that submits one. */

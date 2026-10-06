@@ -1,5 +1,39 @@
 # Changes — Basecamp
 
+## 2026-10-06 — orion's flows and runs reach an open socket, and a broadcast grades a member at their role (`FJS-1772`, `FJS-1771`)
+
+A connection joins orion's `flows` and `runs` channels, which name no workspace; junction grades their rows under the workspaces the connection is in. The `channels({ claims })` resolver now reads the membership row per frame (`FJS-D472`) and answers `memberRole` and `capabilities` beside `workspaceId`, so a member is graded at their role rather than VISITOR(1), and one removed mid-session stops receiving. `orion()` no longer takes `level`; orion asks the client (`FJS-1771`). `services.test.ts` opens two real sockets: the owner receives a flow drafted in their workspace and an admin of another does not; red with junction's fallback off and red with the resolver answering `workspaceId` alone. 590 pass.
+
+## 2026-10-05 — Outpost sends get the time their command takes (`FJS-1770`, `FJS-1765`)
+
+`/deploy` and `/pull` were sent at conduit's 10s default, so a pull or a build over 10s read as a failed release while the machine went on working. Every other outpost send was capped by the 45s whole-call deadline whatever `timeout_ms` it stated: a job's `timeout_s`, a recipe's, the cleanup sweep's 300s. The outpost target now registers with `policy.deadline_ms` = `DEPLOY_TIMEOUT_MS` (`providers/executor.ts`), and a target registered without it is registered again on the next heartbeat. `/deploy` sends `DEPLOY_TIMEOUT_MS` and `/pull` sends `PULL_TIMEOUT_MS`. Outpost's `/deploy` now waits for the release to be healthy and puts the previous container back when it is not (`FJS-1765`), so that wait has to fit too. The Health step stays and passes on its first poll after a good deploy. `bun run test` 589/589, `verify:outpost` 33/33.
+
+## 2026-10-05 — a database release pulls and starts its image (`FJS-1764`)
+
+An App of type `database` had a step list of its own: Validate, Run migrations, Verify connectivity. The runner sent all three to Outpost as `/exec` calls with no command, Outpost acknowledged each one, nothing started, and the App was marked running. A blueprint App carries an image source, so a database is a container. `buildInitialSteps` now gives it the container list (Validate, Pull image, Start container, Health check), and `deployments.create` refuses a database App that names no image, as it already did a container. Two tests in `api/test/inline-app.test.ts`; the suite is 589/589.
+
+## 2026-10-05 — the import form offers the operator's ssh aliases, in development
+
+On a Basecamp running on the operator's own machine, `/servers/import/` offers a picker of the `Host` aliases in `~/.ssh/config`. Picking one fills the address, SSH user and port from `ssh -G`, probes the alias with one key-only `ssh <alias> true`, and shows the `fli deploy:setup --server <alias>` line that would install Basecamp itself there. A HostName that is a name rather than an address stays out of `ipAddress`, because that column feeds DNS records. The form also gains SSH user and port fields.
+
+The two methods are `servers.localSshHosts` and `servers.localSshProbe` (`core/local-ssh.ts`):
+
+- **Access.** Declared at ADMINISTRATOR and `read: true`.
+- **Off unless `LOCAL_SSH=1`**, which `bun run api` now sets by default. They answer 404 without it, so a screen can tell "not here" from "no aliases". `NODE_ENV=production` refuses them whatever the flag says, because `NODE_ENV` defaults to development and a deployed control plane would otherwise list its server's config.
+- **Only listed aliases reach ssh.** An alias must be one the config names before a process starts, and it is passed as one argv element.
+- **`-F` always.** ssh finds `~` through the passwd entry and Bun through `$HOME`, so without `-F` the two could read different files. The drive found that.
+- **No key is held** and no session is kept (`FJS-D241`).
+
+Proven in three places:
+
+- `api/test/local-ssh.test.ts` covers the parse, `Include`, and the real `ssh -G` against a temp config.
+- `services.test.ts` covers the developer refusal and the 404 when the flag is off.
+- `verify:provision` gives its API a temp `HOME` with two aliases and drives the picker in Chrome (75/75).
+
+## 2026-10-05 — `frontier.config.js` names no ssh user
+
+The deploy block drops `user: 'deploy'`, so `fli deploy:setup --server <alias>` (or a `server` set to an alias) uses the alias's own User, Port and key from `~/.ssh/config`. The header says how. Ring 0 now installs Caddy rather than nginx (`FJS-D598`), so the box Basecamp runs on can also be enrolled. `enrollment.ts` points at the cli step that installs the same Caddy unit.
+
 ## 2026-10-05 — the screens drive waits for the rename to finish before it renames back (`FJS-1736`)
 
 The workspace screen disables Save while the call is in flight as well as when nothing changed, and the drive's *settled* wait read only `disabled`, so it passed mid-save. The name typed back then landed while `busy` was still set, the click hit a disabled button and was dropped, and nothing ever disabled Save again (`last value undefined`). The wait now needs the *Workspace saved* toast, which is raised after the reload just before `busy` clears; the typed-back name must enable Save before it is pressed, and the final wait reads the saved name back off the screen. The defect was in the drive, not the screen. `verify:screens` 234/234.

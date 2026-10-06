@@ -6,7 +6,7 @@ description: Final setup health report and next steps
 ```js
 if ($.config.abort) return
 
-const { host, serverPath, appId, edge, nginxWritten, deployConf } = $.config
+const { host, serverPath, appId, edge, edgeWritten } = $.config
 
 log.success(`\nSetup complete for ${appId}`)
 echo('')
@@ -21,19 +21,15 @@ const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh ${hos
 echo(`1. Populate production env vars on the server:`)
 echo(`   ${there(`nano ${serverPath}/.env.production`)}`)
 echo('')
-echo(`2. Make sure your SSL certs are in place (if using HTTPS)`)
+echo(`2. Point DNS for each domain at this server — Caddy fetches the certificate`)
+echo(`   on the first request, and cannot before the name resolves here`)
 echo('')
 
-if (nginxWritten) {
-  echo(`3. Reload nginx to activate the config:`)
-  echo(`   ${there('sudo nginx -s reload')}`)
+if (!edgeWritten) {
+  echo(`3. Write the routes: fli deploy:setup again, and answer y at step 5`)
   echo('')
-  echo(`4. Run your first deploy:`)
-} else {
-  echo(`3. Copy and install the nginx config shown in step 5 above`)
-  echo('')
-  echo(`4. Run your first deploy:`)
 }
+echo(`${edgeWritten ? 3 : 4}. Run your first deploy:`)
 
 echo(`   fli deploy${$.config.target !== 'dev' ? ` --${$.config.target}` : ''}`)
 echo('')
