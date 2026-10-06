@@ -25,21 +25,21 @@ membership is a decision about your app — which is why the next step takes tha
 file back out and shows you what its absence looks like.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir', 'userToken'], { from: '03-account' })) return
+if (!needs($, ['appDir', 'userToken'], { from: '03-account' })) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
 // Read the wiring back off the app before asserting anything about it, so a
 // frame arriving is attributable to this file rather than to something else.
-const channelsTs = join(context.config.appDir, 'api', 'src', 'core', 'channels.ts')
+const channelsTs = join($.config.appDir, 'api', 'src', 'core', 'channels.ts')
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   channelsTs,
   needle: 'joinChannels',
   name:   'the app decides who listens, in one file',
@@ -48,21 +48,21 @@ if (!await must(context, probe.fileContains({
   reproduce: `ls ${channelsTs}`,
 })) return
 
-const watcher = await openSocket(context, { token: context.config.userToken, channels: ['notes'] })
+const watcher = await openSocket($, { token: $.config.userToken, channels: ['notes'] })
 
-if (!await must(context, {
+if (!await must($, {
   ok:    watcher.ok,
   name:  'a socket is connected',
   asked: 'the connected frame',
   got:   watcher.ok ? 'it arrived' : 'the socket never connected',
 }, {
   likely:    'the app does not configure channels() — look in api/src/app.ts',
-  reproduce: `grep -n 'channels()' ${join(context.config.appDir, 'api', 'src', 'app.ts')}`,
+  reproduce: `grep -n 'channels()' ${join($.config.appDir, 'api', 'src', 'app.ts')}`,
 })) return
 
 const title = `heard-${Date.now().toString(36)}`
-const made  = await createNote(context, title)
-if (!await must(context, made, { likely: 'the write was refused — the body is above' })) {
+const made  = await createNote($, title)
+if (!await must($, made, { likely: 'the write was refused — the body is above' })) {
   watcher.ws.close()
   return
 }
@@ -73,19 +73,19 @@ await new Promise((r) => setTimeout(r, 700))
 const heard = watcher.events('notes ')
 watcher.ws.close()
 
-if (!await must(context, {
+if (!await must($, {
   ok:    heard.some(f => f.data?.title === title),
   name:  'the socket is told, without asking',
   asked: `a frame carrying ${title}`,
   got:   heard.length ? `${heard.length} frame(s): ${heard.map(f => f.event).join(', ')}` : 'no frames at all',
 }, {
   likely:    'the connection joins nothing, or the channel name does not match the service',
-  reproduce: `grep -n channel ${join(context.config.appDir, 'api', 'src', 'services', 'notes.service.ts')}`,
+  reproduce: `grep -n channel ${join($.config.appDir, 'api', 'src', 'services', 'notes.service.ts')}`,
 })) return
 
 log.info('')
 log.info(`  heard   ${heard.map(f => f.event).join(', ')}`)
 log.info('')
 
-remember(context, '04-arrives', { heardTitle: title })
+remember($, '04-arrives', { heardTitle: title })
 ```

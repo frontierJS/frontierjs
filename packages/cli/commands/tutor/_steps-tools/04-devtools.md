@@ -28,13 +28,13 @@ anonymous and refused — because a console that reported everything as fine and
 a console that reported everything as broken look the same from one call.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app      = context.config.appDir
+const app      = $.config.appDir
 const configJs = join(app, 'api', 'config', 'junction.config.js')
 const appTs    = join(app, 'api', 'src', 'app.ts')
 const src      = readFileSync(configJs, 'utf8')
@@ -47,32 +47,32 @@ if (!/\bdevtools\s*:/.test(src) && !readFileSync(appTs, 'utf8').includes('devtoo
   // console's own default: a lesson that baked a number in would leave every
   // later lesson's app binding that number too, and a person reading the
   // config afterwards would find a port where the documented line has none.
-  const entry = context.config.devtoolsPort === 8503
+  const entry = $.config.devtoolsPort === 8503
     ? 'devtools: true,'
-    : `devtools: { port: ${context.config.devtoolsPort} },`
+    : `devtools: { port: ${$.config.devtoolsPort} },`
 
   const wired = src.replace(/^([ \t]*)plugins:\s*\{[ \t]*\n/m, (m, indent) => `${m}${indent}  ${entry}\n`)
 
   if (wired === src) {
     log.error('could not find the plugins: block in api/config/junction.config.js — add it by hand:')
     log.info('  plugins: { devtools: true }')
-    context.config.abort = true
+    $.config.abort = true
     return
   }
   writeFileSync(configJs, wired, 'utf8')
-  context.config.__devtoolsAdded = true
+  $.config.__devtoolsAdded = true
   log.info('added devtools to plugins: in api/config/junction.config.js')
 }
 
 // The app reads its plugin list once, at boot.
-await restartApi(context)
+await restartApi($)
 
-if (!await must(context, await probe.httpStatus({
-  url:     `http://127.0.0.1:${context.config.devtoolsPort}/api/state`,
+if (!await must($, await probe.httpStatus({
+  url:     `http://127.0.0.1:${$.config.devtoolsPort}/api/state`,
   retries: 20,
   name:    'the console is listening',
 }), {
-  likely:    `something already holds ${context.config.devtoolsPort}, or the app did not restart — see .tutor/api.log`,
+  likely:    `something already holds ${$.config.devtoolsPort}, or the app did not restart — see .tutor/api.log`,
   reproduce: `cd ${app} && bun run start`,
 })) return
 
@@ -82,20 +82,20 @@ if (!await must(context, await probe.httpStatus({
 // being a pair the moment somebody edits the schema this lesson is looking at.
 // A caller who holds USER may read, and nobody anonymous may create, in every
 // state this tutorial leaves the app in.
-if (!context.config.userToken) {
+if (!$.config.userToken) {
   const who = `tools-${Date.now()}@frontier.invalid`
-  const reg = await registerAccount(context, { email: who, password: 'correct horse battery', name: 'Ada' })
-  if (!await must(context, reg, { likely: 'the API is up but /auth/register is not answering' })) return
-  context.config.userToken = reg.json.token
+  const reg = await registerAccount($, { email: who, password: 'correct horse battery', name: 'Ada' })
+  if (!await must($, reg, { likely: 'the API is up but /auth/register is not answering' })) return
+  $.config.userToken = reg.json.token
 }
 
 await probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
-  headers: asCaller(context.config.userToken),
+  url:     apiUrl($, '/notes'),
+  headers: asCaller($.config.userToken),
   name:    'a read this caller may make',
 })
 await probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+  url:     apiUrl($, '/notes'),
   method:  'POST',
   headers: { 'content-type': 'application/json' },
   body:    JSON.stringify({ title: 'refused', body: 'no session', done: false }),
@@ -105,8 +105,8 @@ await probe.httpStatus({
 
 const feed = (j) => j.requests ?? []
 
-if (!await must(context, await probe.httpJson({
-  url:      `http://127.0.0.1:${context.config.devtoolsPort}/api/state`,
+if (!await must($, await probe.httpJson({
+  url:      `http://127.0.0.1:${$.config.devtoolsPort}/api/state`,
   expect:   (j) => feed(j).some((r) => r.service === 'notes' && r.method === 'find' && r.status === 'ok'),
   describe: 'the read is in the feed, as ok',
   name:     'the call that was allowed',
@@ -118,8 +118,8 @@ if (!await must(context, await probe.httpJson({
 // The half that matters, and the half that was broken until it was asked for:
 // a refusal thrown by an AROUND hook — which is what the gate is — never
 // touched ctx.error, so every 401 an app made arrived here as `ok`.
-if (!await must(context, await probe.httpJson({
-  url:      `http://127.0.0.1:${context.config.devtoolsPort}/api/state`,
+if (!await must($, await probe.httpJson({
+  url:      `http://127.0.0.1:${$.config.devtoolsPort}/api/state`,
   expect:   (j) => feed(j).some((r) => r.service === 'notes' && r.method === 'create' && r.status === 'error' && r.errorCode === 401),
   describe: 'the refusal is in the feed, as an error, with its status',
   name:     'the call that was refused',
@@ -129,8 +129,8 @@ if (!await must(context, await probe.httpJson({
 })) return
 
 log.info('')
-log.info(`  the console is at http://localhost:${context.config.devtoolsPort} — the feed has both calls in it`)
+log.info(`  the console is at http://localhost:${$.config.devtoolsPort} — the feed has both calls in it`)
 log.info('')
 
-remember(context, '04-devtools', {})
+remember($, '04-devtools', {})
 ```

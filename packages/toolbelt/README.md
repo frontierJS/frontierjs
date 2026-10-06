@@ -288,6 +288,28 @@ and absent stays absent — *nothing was asked* is not *the defaults*.
 
 ---
 
+## `frontmatter` — what a `---` block means
+
+```js
+import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+
+parseFrontmatter('---\ntitle: About\nitems:\n- name: Home\n  link: /\n---\nBody')
+// → { frontmatter: { title: 'About', items: [{ name: 'Home', link: '/' }] }, body: 'Body' }
+```
+
+Sierra's route table and mesa's `.md` compiler both read it, so a page's `page.meta` and its module's `frontmatter` are the same object. It reads a declared subset of YAML (`FJS-D549`):
+
+| Reads | Refuses, naming the line |
+| --- | --- |
+| block maps and lists, nested up to 100 deep, including a list at its key's own column | anchors `&`, aliases `*`, tags `!`, merge keys `<<` |
+| `\|` and `>` blocks, with `-`/`+` and an indent digit | complex keys `?`, directives `%`, a `...` line |
+| flow `[ ]` and `{ }`, over several lines | a tab in the indentation |
+| `'single'` and `"double"` quotes with YAML's escapes | anything YAML itself refuses, such as an unquoted `: ` in a value or a duplicate key |
+
+Scalars resolve by YAML 1.2's core schema: `2024-01-05`, `yes` and `on` stay strings. A refusal throws an `Error` whose message starts `line N:` and whose `.line` is N, counted from the top of the file. `parseFrontmatterBlock(text)` reads the text between the fences. `splitFrontmatter(source)` answers `{ block, body }` without reading the block, so a caller that reports a refusal can still show the body.
+
+---
+
 ## `glow` — source code to highlighted HTML
 
 ```js

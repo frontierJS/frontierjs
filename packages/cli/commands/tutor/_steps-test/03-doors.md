@@ -36,13 +36,13 @@ Every refusal below is paired with an otherwise identical call that is allowed.
 A check that refused everybody would look exactly the same from the refused side.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const file = join(app, 'api', 'test', 'doors.test.ts')
 
 // The level Note READS at, taken from the schema rather than written down here.
@@ -50,7 +50,7 @@ const file = join(app, 'api', 'test', 'doors.test.ts')
 // raises the gate — which `tutor:access` does, three lessons on — and a test
 // that has to be edited when the declaration moves is the thing this whole
 // lesson is arguing against.
-const gate = readFileSync(schemaFile(context), 'utf8')
+const gate = readFileSync(schemaFile($), 'utf8')
   .match(/model Note \{[\s\S]*?@@gate\("(\d)/)
 const readsAt = gate ? Number(gate[1]) : 0
 
@@ -121,7 +121,7 @@ writeFileSync(file, [
   '',
 ].join('\n'), 'utf8')
 
-if (!await must(context, probe.command({
+if (!await must($, probe.command({
   bin:      'bun',
   args:     ['test', 'api/test/doors.test.ts'],
   cwd:      app,
@@ -139,5 +139,5 @@ log.info('  atLevel    the grid, with no app in the way')
 log.info(`  the level  read out of the schema — Note reads at ${readsAt} in this app`)
 log.info('')
 
-remember(context, '03-doors', { doorsFile: file })
+remember($, '03-doors', { doorsFile: file })
 ```

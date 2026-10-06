@@ -46,7 +46,7 @@ and applies the `@frontierjs` scope to its name if it isn't already scoped.
 After adding, run `bun install` at the workspace root to wire everything up.
 
 ```js
-const wsRoot = await context.wsRoot()
+const wsRoot = await $.wsRoot()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 const srcPath  = resolve(arg.path)
 const pkgName  = basename(srcPath)

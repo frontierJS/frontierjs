@@ -10,18 +10,18 @@ runOnAbort: true
 // a `failed` transition rather than a `running` one, or the next run reads it as
 // a crash worth resuming and offers to redo a revert nobody completed.
 const settle = async (status) => {
-  if (!context.config.journal || !context.config.transitionId) return
-  try { await context.config.journal.settle(status) }
+  if (!$.config.journal || !$.config.transitionId) return
+  try { await $.config.journal.settle(status) }
   catch (err) { log.warn(`Journal: could not settle the revert — ${err.message}`) }
 }
 
 const dropLocks = async () => {
-  if (!context.config.lockAcquired) return
-  await releaseLocks(context, context.config.hosts ?? [])
-  context.config.lockAcquired = false
+  if (!$.config.lockAcquired) return
+  await releaseLocks($, $.config.hosts ?? [])
+  $.config.lockAcquired = false
 }
 
-if (context.config.abort) {
+if ($.config.abort) {
   await settle('failed')
   await dropLocks()
   return
@@ -32,10 +32,10 @@ await settle('succeeded')
 // ─── Remove the container this revert replaced ────────────────────────────────
 // It is the release that WAS serving. Keeping it would leave a `_replaced` handle
 // that the next revert's health step could restore by accident.
-const { host, replaced } = context.config
+const { host, replaced } = $.config
 if (replaced) {
   try {
-    machineFor(context, host).run(`if docker inspect ${replaced} > /dev/null 2>&1; then
+    machineFor($, host).run(`if docker inspect ${replaced} > /dev/null 2>&1; then
   docker stop ${replaced} || true
   docker rm   ${replaced}
 fi`)
@@ -44,7 +44,7 @@ fi`)
 
 await dropLocks()
 
-const elapsed = ((Date.now() - context.config.startTime) / 1000).toFixed(1)
-log.success(`Reverted ${context.config.appId} to ${context.config.revertTo?.id} in ${elapsed}s`)
+const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
+log.success(`Reverted ${$.config.appId} to ${$.config.revertTo?.id} in ${elapsed}s`)
 log.info(`  fli deploy:journal --steps   shows what this wrote`)
 ```

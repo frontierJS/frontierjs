@@ -54,19 +54,19 @@ database and a line in the outbox — and that the row's `type` is `NoteAdded`,
 which appears nowhere in the file that produced it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app     = context.config.appDir
+const app     = $.config.appDir
 const dir     = join(app, 'api', 'src', 'notifications')
 const service = join(app, 'api', 'src', 'services', 'notes.service.ts')
-const outbox  = context.config.outbox ?? join(app, 'db', 'outbox.jsonl')
+const outbox  = $.config.outbox ?? join(app, 'db', 'outbox.jsonl')
 
-context.config.outbox   = outbox
-context.config.notifDir = dir
+$.config.outbox   = outbox
+$.config.notifDir = dir
 
 mkdirSync(dir, { recursive: true })
 writeFileSync(join(dir, 'NoteAdded.notification.ts'), [
@@ -101,7 +101,7 @@ let src = readFileSync(service, 'utf8')
 if (!src.includes('notify(')) {
   const ANCHOR = "    channel: 'notes',"
   if (!src.includes(ANCHOR)) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'the notes service has the place this step edits',
       asked: "the scaffold's own notes.service.ts",
@@ -145,27 +145,27 @@ if (!src.includes('notify(')) {
   writeFileSync(service, src, 'utf8')
 }
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely:    'the API did not come back — the last of its output is below',
-  reproduce: `cd ${app} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${app} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
 const email      = `notify-${Date.now().toString(36)}@example.test`
-const registered = await registerAccount(context, {
+const registered = await registerAccount($, {
   email,
   password: 'correct-horse-battery-staple',
   name:     'Ada',
 })
-if (!await must(context, registered, { likely: 'auth is not installed in this app' })) return
-context.config.userToken = registered.json.token
-context.config.userId    = registered.json.user?.userId
-context.config.userEmail = email
+if (!await must($, registered, { likely: 'auth is not installed in this app' })) return
+$.config.userToken = registered.json.token
+$.config.userId    = registered.json.user?.userId
+$.config.userEmail = email
 
 const title = `notified-${Date.now().toString(36)}`
-const made  = await createNote(context, title)
-if (!await must(context, made, {
+const made  = await createNote($, title)
+if (!await must($, made, {
   likely: 'the write was refused — the body is above',
   detail: serverLog(api),
 })) return
@@ -175,7 +175,7 @@ const db = join(app, 'db', 'app.db')
 // The type is the assertion, not the row count: NoteAdded is stated nowhere in
 // the file that produced it, so a row carrying it is the file name having
 // travelled all the way into the database.
-if (!await must(context, probe.eventually(() => probe.sqliteRow({
+if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
   sql:    'select type, contextType, contextId, userId from notification order by id desc limit 1',
   expect: (rows) => rows[0]?.type === 'NoteAdded' && rows[0]?.contextType === 'Note',
@@ -189,7 +189,7 @@ if (!await must(context, probe.eventually(() => probe.sqliteRow({
 // The same send, the other transport. A body rather than a subject, because the
 // builder's lines are rendered at the boundary — a mailer that received a
 // subject and no body is a thing that has happened here.
-if (!await must(context, probe.eventually(() => probe.fileContains({
+if (!await must($, probe.eventually(() => probe.fileContains({
   path:   outbox,
   needle: new RegExp(`"to":"${email}"[\\s\\S]*is on your list`),
   name:   'and the email transport rendered a body to the outbox',
@@ -199,11 +199,11 @@ if (!await must(context, probe.eventually(() => probe.fileContains({
   reproduce: `cat ${outbox}`,
 })) return
 
-remember(context, '04-send', {
+remember($, '04-send', {
   outbox,
   notifDir:  dir,
-  userToken: context.config.userToken,
+  userToken: $.config.userToken,
   userEmail: email,
-  userId:    context.config.userId,
+  userId:    $.config.userId,
 })
 ```

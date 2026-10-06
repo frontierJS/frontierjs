@@ -7,19 +7,19 @@ runOnAbort: true
 ```js
 // The reader `narrate` asks its questions through. Held open it keeps the event
 // loop alive and the lesson never exits.
-context.config.prompts?.close()
+$.config.prompts?.close()
 
-stopServers(context)
+stopServers($)
 
-const ws  = context.config.ws
-const app = context.config.appDir
+const ws  = $.config.ws
+const app = $.config.appDir
 
-if (context.config.abort) {
+if ($.config.abort) {
   if (app) log.info(`the app is still at ${app} — the job file and the wiring are where the lesson left them`)
   return
 }
 
-context.config.journal.settle('succeeded')
+$.config.journal.settle('succeeded')
 
 log.success('Lesson 6 done — a response that did not wait, and a row that says what happened')
 log.info('')
@@ -31,7 +31,7 @@ log.info('')
 log.info('  fli tutor:notify                  next — telling somebody something')
 log.info('')
 
-if (ws.kind === 'temp' && !context.flag.keep) {
+if (ws.kind === 'temp' && !$.flag.keep) {
   T.sweepWorkspace(ws, { keep: false })
   log.info('  (the temporary workspace was removed — pass --keep to hold on to it)')
 }

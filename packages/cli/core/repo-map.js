@@ -41,7 +41,7 @@ import { findSnapshots }        from './snapshots.js'
 // The tree readers both this and `core/runnables.js` use. One answer to *where
 // could an app be*, *what is a drive* and *what is a command*: two would drift,
 // and the one that drifted would be the one nobody reads the output of.
-import { SKIP, safeRead, isDir, readJson, appDirs, driveRows, readCommands, runnables } from './runnables.js'
+import { SKIP, safeRead, isDir, readJson, appDirs, driveRows, readCommands, runnables, workspaceDeps } from './runnables.js'
 import { readProofs, resolveRun } from './proofs.js'
 // The one owner of *what does a register record look like*. This module used
 // to carry a regex per register, and a row it failed to match rendered a
@@ -283,6 +283,7 @@ function packages(root) {
   if (!existsSync(dir)) return []
 
   const names = safeRead(dir).filter(n => !SKIP.has(n) && !n.startsWith('.') && isDir(join(dir, n)))
+  const graph = workspaceDeps(root)
   const members = []
 
   for (const folder of names) {
@@ -296,8 +297,7 @@ function packages(root) {
       desc:    pkg.description ?? null,
       test:    pkg.scripts?.test ?? null,
       manager: existsSync(join(dir, folder, 'package-lock.json')) ? 'npm' : 'bun',
-      deps:    [],   // filled below, once every member name is known
-      raw:     pkg,
+      deps:    graph.get(folder)?.deps ?? [],
     })
   }
 
@@ -312,15 +312,6 @@ function packages(root) {
     if (counts) m.files = counts.get(m.folder) ?? 0
     // Absent is 0 — the file's own rule, and the reason it is keyed by folder.
     m.baseline = ceilings[m.folder] ?? 0
-  }
-
-  const known = new Set(members.filter(m => m.name).map(m => m.name))
-
-  for (const m of members) {
-    if (!m.raw) continue
-    const all = { ...m.raw.dependencies, ...m.raw.peerDependencies }
-    m.deps = Object.keys(all).filter(d => known.has(d)).sort()
-    delete m.raw
   }
 
   // The other direction, which no file states: who breaks if this one moves.

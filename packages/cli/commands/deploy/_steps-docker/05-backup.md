@@ -2,14 +2,14 @@
 title: 05-backup
 description: Hot backup of every declared database, taken inside the running container
 optional: true
-skip: "!context.config.doApi || context.config.deployConf.db?.backup === false"
+skip: "!$.config.doApi || $.config.deployConf.db?.backup === false"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { appId, deployConf } = context.config
-const { host, path: serverPath } = context.config.api
+const { appId, deployConf } = $.config
+const { host, path: serverPath } = $.config.api
 const dbPath    = deployConf.db?.path    ?? `${serverPath}/db`
 const backupDir = deployConf.db?.backups ?? `${dbPath}/backups`
 const container = apiContainer(appId, deployConf)
@@ -35,7 +35,7 @@ const destHost  = `${backupDir}/pre-deploy-${timestamp}`
 const destInner = `${CONTAINER_DB_DIR}/backups/pre-deploy-${timestamp}`
 
 // ─── First deploy has nothing to back up ─────────────────────────────────────
-const machine = machineFor(context, host)
+const machine = machineFor($, host)
 
 let running = false
 try {
@@ -84,9 +84,9 @@ machine.run(`ls -1dt ${backupDir}/pre-deploy-* 2>/dev/null |
   tail -n +${keepBackups + 1} |
   xargs rm -rf --`)
 
-context.config.backupDir = destHost
+$.config.backupDir = destHost
 log.success(`Backup complete → ${destHost}`)
-if (context.config.litestreamRunning) {
+if ($.config.litestreamRunning) {
   log.info('  Litestream is also replicating continuously to your remote replica')
 }
 ```

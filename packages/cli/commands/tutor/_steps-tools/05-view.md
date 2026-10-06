@@ -36,20 +36,20 @@ quietly stops being served is a diff on a branch rather than a 405 in
 production. It is written below, and then the viewer is asked what it can see.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const snap = join(app, 'surface.snapshot.md')
 
 // The app's OWN junction, out of its node_modules — never a global one, and
 // never `bunx`, which would reach the network for a package that is installed
 // here. Run from the app root: bun reads .env from the working directory, and
 // the app refuses to build without ENCRYPTION_KEY.
-if (!await must(context, probe.command({
+if (!await must($, probe.command({
   bin:      join(app, 'node_modules', '.bin', 'junction'),
   args:     ['surface', '--app', 'api/src/app.ts'],
   cwd:      app,
@@ -61,7 +61,7 @@ if (!await must(context, probe.command({
   reproduce: `cd ${app} && bunx junction surface --app api/src/app.ts`,
 })) return
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   snap,
   needle: /\bnotes\b/,
   name:   'the snapshot names the notes service',
@@ -69,25 +69,25 @@ if (!await must(context, probe.fileContains({
   likely: 'the app built but registered no services — check api/src/services exists',
 })) return
 
-await ensureApi(context)
+await ensureApi($)
 
-const view = await startServer(context, {
+const view = await startServer($, {
   name: 'pmap',
-  argv: fliArgv('project:map', '--as=serve', '--port', String(context.config.viewPort), '--no-open'),
+  argv: fliArgv('project:map', '--as=serve', '--port', String($.config.viewPort), '--no-open'),
   cwd:  app,
-  port: context.config.viewPort,
+  port: $.config.viewPort,
   path: '/',
 })
-if (!await must(context, view.up, {
-  likely:    `something already holds ${context.config.viewPort}`,
-  reproduce: `cd ${app} && fli project:map --as=serve --port ${context.config.viewPort}`,
+if (!await must($, view.up, {
+  likely:    `something already holds ${$.config.viewPort}`,
+  reproduce: `cd ${app} && fli project:map --as=serve --port ${$.config.viewPort}`,
 })) return
 
-const at = (path) => `http://127.0.0.1:${context.config.viewPort}${path}`
+const at = (path) => `http://127.0.0.1:${$.config.viewPort}${path}`
 
 // The chain, end to end: a model in the seed, the service that answers for it,
 // and the resource a screen reaches it through.
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/data'),
   expect:   (j) => (j.resources ?? []).some((r) => r.model === 'Note' && r.service === 'notes'),
   describe: 'Note is drawn, with the service that answers for it',
@@ -98,7 +98,7 @@ if (!await must(context, await probe.httpJson({
 
 // The environment panel. Not decorative: a required variable that is not set is
 // an app that boots, serves, and fails at the first write.
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/data'),
   expect:   (j) => (j.env?.vars ?? []).every((v) => !v.required || v.status === 'set'),
   describe: 'every required variable is set',
@@ -108,8 +108,8 @@ if (!await must(context, await probe.httpJson({
 })) return
 
 log.info('')
-log.info(`  the viewer is at http://localhost:${context.config.viewPort} — refresh it to regenerate from the files`)
+log.info(`  the viewer is at http://localhost:${$.config.viewPort} — refresh it to regenerate from the files`)
 log.info('')
 
-remember(context, '05-view', { snapshot: snap })
+remember($, '05-view', { snapshot: snap })
 ```

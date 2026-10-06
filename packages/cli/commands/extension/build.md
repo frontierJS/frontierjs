@@ -26,7 +26,7 @@ Load the result unpacked — `extension/test/README.md` says how, and what to
 check by hand once it is loaded.
 
 ```js
-const cliArgs = [`--root=${context.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
+const cliArgs = [`--root=${$.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
 if (flag.verbose) cliArgs.push('--verbose')
-context.exec({ command: `bunx jetty-build-ext ${cliArgs.join(' ')}`, dry: flag.dry })
+$.exec({ command: `bunx jetty-build-ext ${cliArgs.join(' ')}`, dry: flag.dry })
 ```

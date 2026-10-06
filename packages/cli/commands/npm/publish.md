@@ -37,7 +37,7 @@ const getPkg = (root) => {
 </script>
 
 ```js
-const root = context.paths.root
+const root = $.paths.root
 const pkg  = getPkg(root)
 
 if (!pkg.name || !pkg.version) {
@@ -61,6 +61,6 @@ if (flag.dry) {
   return
 }
 
-context.exec({ command: cmd })
+$.exec({ command: cmd })
 log.success(`Published ${pkg.name}@${pkg.version} → ${flag.tag}`)
 ```

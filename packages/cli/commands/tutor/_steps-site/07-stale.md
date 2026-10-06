@@ -26,49 +26,49 @@ storefront built ahead of time, with prices that correct themselves and a basket
 a stranger can buy from.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
-if (!needs(context, ['appDir', 'siteDir', 'titles'], { from: '05-build' })) return
+if (!needs($, ['appDir', 'siteDir', 'titles'], { from: '05-build' })) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
-const page = join(context.config.siteDir, 'dist', 'notes', 'index.html')
-const was  = context.config.titles[0]
+const page = join($.config.siteDir, 'dist', 'notes', 'index.html')
+const was  = $.config.titles[0]
 const now  = `${was} — edited after the build`
 
 // The gate went up in step 6, so this read needs the session that wrote them.
 const found = await probe.httpJson({
-  url:      apiUrl(context, `/notes?title=${encodeURIComponent(was)}`),
-  headers:  { authorization: `Bearer ${context.config.userToken}` },
+  url:      apiUrl($, `/notes?title=${encodeURIComponent(was)}`),
+  headers:  { authorization: `Bearer ${$.config.userToken}` },
   expect:   (j) => Array.isArray(j.data) && j.data.length > 0,
   describe: 'the note this lesson baked',
   name:     'the row is still there to change',
 })
-if (!await must(context, found, {
+if (!await must($, found, {
   likely: 'the notes were written under a different account, or the gate refuses this one',
 })) return
 
 const id      = found.json.data[0].id
 const patched = await probe.httpJson({
-  url:      apiUrl(context, `/notes/${id}`),
+  url:      apiUrl($, `/notes/${id}`),
   method:   'PATCH',
-  headers:  { 'content-type': 'application/json', authorization: `Bearer ${context.config.userToken}` },
+  headers:  { 'content-type': 'application/json', authorization: `Bearer ${$.config.userToken}` },
   body:     JSON.stringify({ title: now }),
   expect:   (j) => j.title === now,
   describe: 'the new title',
   name:     'the note is changed',
 })
-if (!await must(context, patched, { likely: 'the patch was refused — the body is above' })) return
+if (!await must($, patched, { likely: 'the patch was refused — the body is above' })) return
 
-if (!await must(context, probe.fileContains({ path: page, needle: was, name: 'the published file still says the old title' }), {
+if (!await must($, probe.fileContains({ path: page, needle: was, name: 'the published file still says the old title' }), {
   likely: 'something rebuilt the site between the two — which would make this step pass for the wrong reason',
 })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    !readFileSync(page, 'utf8').includes(now),
   name:  'and does not know about the new one',
   asked: 'the new title absent from the file',

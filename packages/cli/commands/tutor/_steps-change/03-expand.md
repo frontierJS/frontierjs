@@ -24,16 +24,16 @@ anything that is not expand or unchanged, so a change that cannot be undone
 cannot arrive unnoticed.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir', 'baseline'], { from: '02-baseline' })) return
+if (!needs($, ['appDir', 'baseline'], { from: '02-baseline' })) return
 
-const app  = context.config.appDir
-const edit = addNoteField(context, '  priority  Int?')
+const app  = $.config.appDir
+const edit = addNoteField($, '  priority  Int?')
 
-if (!await must(context, {
+if (!await must($, {
   ok:    edit.ok,
   name:  'Note gains an optional priority',
   asked: 'the column added to the model',
@@ -42,9 +42,9 @@ if (!await must(context, {
   likely: 'the seed has no `model Note {` block to add to',
 })) return
 
-const r = fliJson(context, ['release:check', '--from', 'db/before.lite', '--json'], app)
+const r = fliJson($, ['release:check', '--from', 'db/before.lite', '--json'], app)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    r.json?.verdict === 'expand',
   name:  'the verdict is expand — this deploy can be taken back',
   asked: 'verdict: expand',
@@ -55,9 +55,9 @@ if (!await must(context, {
 })) return
 
 // The gate a branch actually puts in CI, run as a branch would run it.
-const strict = fliJson(context, ['release:check', '--from', 'db/before.lite', '--strict', '--json'], app)
+const strict = fliJson($, ['release:check', '--from', 'db/before.lite', '--strict', '--json'], app)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    strict.code === 0,
   name:  'and --strict lets it through',
   asked: 'exit 0',

@@ -104,7 +104,8 @@ const writeToEnv = (envPath, name, value, dry, log) => {
 
 // ─── Clipboard ────────────────────────────────────────────────────────────────
 
-const copyToClipboard = (value) => {
+// `log` is a parameter: this is module scope, which sees nothing run() destructures.
+const copyToClipboard = (value, log) => {
   // Detect platform clipboard command
   const cmds = {
     darwin: 'pbcopy',
@@ -189,9 +190,9 @@ if (flag.env) {
   // string both mean "use projectRoot/.env"
   let envPath
   if (flag.env === true || flag.env === 'true' || flag.env === '') {
-    envPath = resolve(context.paths.root, '.env')
+    envPath = resolve($.paths.root, '.env')
   } else {
-    envPath = resolve(context.paths.root, flag.env)
+    envPath = resolve($.paths.root, flag.env)
   }
 
   writeToEnv(envPath, varName, key, flag.dry, log)
@@ -202,7 +203,7 @@ if (flag.copy) {
   if (flag.dry) {
     log.dry('Would copy key to clipboard')
   } else {
-    const ok = copyToClipboard(key)
+    const ok = copyToClipboard(key, log)
     if (ok) log.success('Copied to clipboard')
   }
 }

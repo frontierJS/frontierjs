@@ -4,9 +4,9 @@ skip: "flag.dry"
 ---
 
 ```js
-const { env, branch, buildOutput } = context.config
+const { env, branch, buildOutput } = $.config
 log.info(`Pushing ${buildOutput} → ${env}`)
-context.exec({
+$.exec({
   command: `echo "PUSH: ${buildOutput} to ${env}"`,
   dry: flag.dry
 })

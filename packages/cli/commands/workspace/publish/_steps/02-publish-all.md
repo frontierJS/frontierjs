@@ -8,7 +8,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, tag, otp, tolerate, interactive, prompts } = context.config
+const { released, tag, otp, tolerate, interactive, prompts } = $.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
 const published = []
@@ -66,7 +66,7 @@ for (const { name, dir, newVersion } of released) {
   }
 }
 
-context.config.published = published
+$.config.published = published
 
 if (skipped.length) {
   log.warn(`  ${skipped.length} skipped: ${skipped.join(', ')}`)

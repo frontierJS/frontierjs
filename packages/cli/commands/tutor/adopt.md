@@ -40,11 +40,11 @@ flags:
 
 
 ```js
-openTutor(context, 'tutor:adopt', { ephemeral: ['06-finish'] })
+openTutor($, 'tutor:adopt', { ephemeral: ['06-finish'] })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.vars.apiPort   = context.config.apiPort
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.vars.apiPort   = $.config.apiPort
 ```
 
 ## Lesson 13 — the database you already have

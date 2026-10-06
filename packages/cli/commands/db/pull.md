@@ -7,10 +7,10 @@ examples:
 ---
 
 ```js
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 log.info('Introspecting database...')
-context.exec({ command: `${litestone(context)} introspect --schema ${schema}` })
+$.exec({ command: `${litestone($)} introspect --schema ${schema}` })
 log.success('schema.lite updated')
 log.warn('Review the generated schema — introspection cannot recover @@gate, @@allow, @secret, or policy rules')
 ```

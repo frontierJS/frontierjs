@@ -15,21 +15,21 @@ makes every one of them a lie. If something already holds one, pass
 `--api-port` or `--web-port` and the lesson will say the numbers you chose.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
 for (const bin of ['bun', 'git']) {
-  if (!await must(context, probe.commandExists({ bin }), {
+  if (!await must($, probe.commandExists({ bin }), {
     likely: `${bin} is not installed, or not on the PATH this shell has`,
   })) return
 }
 
 for (const [port, what] of [
-  [context.config.apiPort, 'the API'],
-  [context.config.webPort, 'the web app'],
+  [$.config.apiPort, 'the API'],
+  [$.config.webPort, 'the web app'],
 ]) {
-  if (!await must(context, probe.portFree({ port, name: `port ${port} is free for ${what}` }), {
+  if (!await must($, probe.portFree({ port, name: `port ${port} is free for ${what}` }), {
     likely:    `something is already listening on ${port} — another app, or an earlier run of this lesson`,
     reproduce: `fli ports:status`,
   })) return

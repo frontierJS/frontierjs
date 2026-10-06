@@ -14,8 +14,8 @@ flags:
 ---
 
 ```js
-const env    = context.env
-const dbPath = context.paths.db
+const env    = $.env
+const dbPath = $.paths.db
 if (!dbPath) { log.error('DB path not configured'); return }
 
 const server     = flag.dev ? env.DEV_SERVER     : env.PROD_SERVER
@@ -27,7 +27,7 @@ if (!server) {
 }
 
 log.info(`Downloading production.db from ${server}...`)
-context.exec({
+$.exec({
   command: `scp ${server}:${serverPath}/db/production.db* ${dbPath}/backups/.`,
   dry: flag.dry
 })

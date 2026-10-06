@@ -1,13 +1,13 @@
 ---
 title: 04c-journal
 description: Open the deploy journal on the target and record this transition
-skip: "context.flag.dry || context.config.deployConf.journal === false"
+skip: "$.flag.dry || $.config.deployConf.journal === false"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, path: serverPath } = context.config.api ?? context.config.web
+const { host, path: serverPath } = $.config.api ?? $.config.web
 
 // ─── Why here, and it moved ──────────────────────────────────────────────────
 // After the lock, so two deploys cannot open the same transition — and after the
@@ -26,15 +26,15 @@ const { host, path: serverPath } = context.config.api ?? context.config.web
 // The journal is on the TARGET because it records what happened on that host —
 // two operators deploying from two laptops must not hold two answers to what is
 // serving.
-const opened = await openDeployJournal(context, context.flag, {
-  target:     context.config.target,
-  deployConf: context.config.deployConf,
-  doApi:      context.config.doApi,
-  doWeb:      context.config.doWeb,
+const opened = await openDeployJournal($, $.flag, {
+  target:     $.config.target,
+  deployConf: $.config.deployConf,
+  doApi:      $.config.doApi,
+  doWeb:      $.config.doWeb,
   // The bytes step 04 produced. Under build-on-target this is an image ID, true
   // on this host and nowhere else — `core/image.js` keeps the two apart and
   // `describeIdentity` says which one it has.
-  digest:     context.config.imageIdentity?.digest ?? context.config.imageAddress ?? null,
+  digest:     $.config.imageIdentity?.digest ?? $.config.imageAddress ?? null,
   host, serverPath, log,
 })
 
@@ -42,16 +42,16 @@ if (opened.error) {
   log.error(opened.error)
   log.info('')
   log.info('  Set deploy.journal = false in frontier.config.js to deploy without one.')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 // The step runner calls this around every step from here on — that is what turns
 // the existing `_steps-docker` list into journal rows without eleven step files
 // each learning to write one.
-context.config.journal      = opened.recorder
-context.config.transitionId = opened.transition.id
-context.config.releaseId    = opened.release.id
+$.config.journal      = opened.recorder
+$.config.transitionId = opened.transition.id
+$.config.releaseId    = opened.release.id
 
 log.success(`Journal opened → ${opened.release.app} · ${opened.release.environment}`)
 log.info(`  release     ${opened.release.id}`)

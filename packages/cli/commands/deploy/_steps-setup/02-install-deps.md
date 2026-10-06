@@ -1,19 +1,19 @@
 ---
 title: 02-install-deps
 description: Offer to install any missing dependencies
-skip: "context.config.missingDeps?.length === 0"
+skip: "$.config.missingDeps?.length === 0"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, missingDeps } = context.config
-const machine = machineFor(context, host, context.config.serverPath)
+const { host, missingDeps } = $.config
+const machine = machineFor($, host, $.config.serverPath)
 
 log.info(`${missingDeps.length} missing dependenc${missingDeps.length === 1 ? 'y' : 'ies'} — reviewing...`)
 
 for (const dep of missingDeps) {
-  const answer = await question(`Install ${dep.name} on ${host}? (y/N) `)
+  const answer = await tty.line(`Install ${dep.name} on ${host}? (y/N) `)
 
   if (answer.trim().toLowerCase() !== 'y') {
     log.warn(`Skipped ${dep.name} — you will need to install it manually before deploying`)

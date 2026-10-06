@@ -22,7 +22,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const env = context.env
+const env = $.env
 let server, serverPath
 
 if (flag.production) {
@@ -43,7 +43,7 @@ if (!server) {
 
 log.info(`Deploying API to ${server}...`)
 const before = Date.now()
-context.exec({
+$.exec({
   command: `ssh ${server} "npm run deploy:api --prefix='${serverPath}'"`,
   dry: flag.dry
 })

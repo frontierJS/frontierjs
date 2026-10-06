@@ -47,13 +47,13 @@ the work done synchronously in the request — which is the thing you were tryin
 not to do.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app     = context.config.appDir
+const app     = $.config.appDir
 const jobsDir = join(app, 'api', 'src', 'jobs')
 const service = join(app, 'api', 'src', 'services', 'notes.service.ts')
 
@@ -86,7 +86,7 @@ let src = readFileSync(service, 'utf8')
 if (!src.includes('finish-note')) {
   const ANCHOR = "    channel: 'notes',"
   if (!src.includes(ANCHOR)) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'the notes service has the place this step edits',
       asked: "the scaffold's own notes.service.ts",
@@ -125,35 +125,35 @@ if (!src.includes('finish-note')) {
   writeFileSync(service, src, 'utf8')
 }
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   service,
   needle: 'jobs.dispatch(finishNote',
   name:   'creating a note queues the job',
 }), { likely: 'the edit missed its anchor' })) return
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely:    'the API did not come back — the last of its output is below',
-  reproduce: `cd ${app} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${app} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
-const registered = await registerAccount(context, {
+const registered = await registerAccount($, {
   email:    `jobs-${Date.now().toString(36)}@example.test`,
   password: 'correct-horse-battery-staple',
   name:     'Ada',
 })
-if (!await must(context, registered, { likely: 'auth is not installed in this app' })) return
-context.config.userToken = registered.json.token
+if (!await must($, registered, { likely: 'auth is not installed in this app' })) return
+$.config.userToken = registered.json.token
 
 const title = `queued-${Date.now().toString(36)}`
-const made  = await createNote(context, title)
-if (!await must(context, made, { likely: 'the write was refused — the body is above' })) return
+const made  = await createNote($, title)
+if (!await must($, made, { likely: 'the write was refused — the body is above' })) return
 
 // The order is the assertion. Read from the RESPONSE, not from a second
 // request: a re-read races the job and would make this flaky in the direction
 // that hides the bug.
-if (!await must(context, {
+if (!await must($, {
   ok:    made.json.done === false,
   name:  'the response came back before the work was done',
   asked: 'done: false in the created row',
@@ -166,7 +166,7 @@ const db = join(app, 'db', 'app.db')
 
 // `eventually`, because the row is written by a SEPARATE process and the wait
 // is a property of this question rather than of the probe.
-if (!await must(context, probe.eventually(() => probe.sqliteRow({
+if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
   sql:    'select done from note where id = ?',
   params: [String(made.json.id)],
@@ -178,5 +178,5 @@ if (!await must(context, probe.eventually(() => probe.sqliteRow({
   detail:    serverLog(api),
 })) return
 
-remember(context, '04-job', { jobNoteId: made.json.id, jobNoteTitle: title })
+remember($, '04-job', { jobNoteId: made.json.id, jobNoteTitle: title })
 ```

@@ -64,20 +64,20 @@ tag it finds to module scope, and everything down to the last closing tag in the
 file goes with it. A sample carrying one is executed as JavaScript.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 9
+$.config.__step = 9
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-const up = await ensureWeb(context)
-if (!await must(context, up, {
+const up = await ensureWeb($)
+if (!await must($, up, {
   likely:    'vite is not running and would not start — the last of its output is below',
-  reproduce: `cd ${context.config.appDir} && bun run dev:web`,
-  detail:    serverLog(context.config.__servers?.web ?? {}),
+  reproduce: `cd ${$.config.appDir} && bun run dev:web`,
+  detail:    serverLog($.config.__servers?.web ?? {}),
 })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const dir  = join(app, 'web', 'src', 'components')
 const comp = join(dir, 'Tally.mesa')
 const home = join(app, 'web', 'src', 'routes', 'index.mesa')
@@ -107,7 +107,7 @@ let src = readFileSync(home, 'utf8')
 
 if (!src.includes('Tally')) {
   if (!src.includes(IMPORT) || !src.includes(MOUNT)) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'the home page carries the two lines this step edits',
       asked: "the scaffold's own index.mesa",
@@ -124,11 +124,11 @@ if (!src.includes('Tally')) {
   writeFileSync(home, src, 'utf8')
 }
 
-if (!await must(context, probe.fileExists({ path: comp, name: 'web/src/components/Tally.mesa' }), {
+if (!await must($, probe.fileExists({ path: comp, name: 'web/src/components/Tally.mesa' }), {
   likely: 'the component could not be written — check the permissions on the app directory',
 })) return
 
-if (!await must(context, probe.fileContains({ path: home, needle: TAG, name: 'the home page renders it' }), {
+if (!await must($, probe.fileContains({ path: home, needle: TAG, name: 'the home page renders it' }), {
   likely: 'the edit missed — the import went in and the tag did not',
 })) return
 
@@ -144,20 +144,20 @@ if (!await must(context, probe.fileContains({ path: home, needle: TAG, name: 'th
 // A file that does not compile answers 500 with the compiler's own sentence in
 // the body, which is why the probe reports a status separately from a missing
 // needle.
-if (!await must(context, probe.httpText({
-  url:      `http://127.0.0.1:${context.config.webPort}/src/components/Tally.mesa?import`,
+if (!await must($, probe.httpText({
+  url:      `http://127.0.0.1:${$.config.webPort}/src/components/Tally.mesa?import`,
   needle:   '$$runtime',
   describe: 'the dev server compiled it',
   name:     'Tally.mesa reaches the browser as JavaScript',
   retries:  6,
 }), {
   likely:    'the component did not compile — the dev server answered with the reason',
-  reproduce: `curl -s 'http://127.0.0.1:${context.config.webPort}/src/components/Tally.mesa?import' | head -20`,
+  reproduce: `curl -s 'http://127.0.0.1:${$.config.webPort}/src/components/Tally.mesa?import' | head -20`,
 })) return
 
 log.info('')
-log.info(`  open http://127.0.0.1:${context.config.webPort} and press it`)
+log.info(`  open http://127.0.0.1:${$.config.webPort} and press it`)
 log.info('')
 
-remember(context, '09-mesa', { component: 'Tally' })
+remember($, '09-mesa', { component: 'Tally' })
 ```

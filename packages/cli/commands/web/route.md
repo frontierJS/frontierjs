@@ -188,8 +188,8 @@ const editor  = process.env.EDITOR || 'vi'
 
 const raw  = arg.path.replace(/\.(mesa|md)$/, '').replace(/^\/+|\/+$/g, '')
 const file = flag.layout
-  ? resolve(context.paths.webPages, raw, '_module.mesa')
-  : resolve(context.paths.webPages, raw + '.mesa')
+  ? resolve($.paths.webPages, raw, '_module.mesa')
+  : resolve($.paths.webPages, raw + '.mesa')
 
 const display = toLabel(basename(raw).replace(/^\[\.\.\./, '').replace(/^\[/, '').replace(/\]$/, ''))
 
@@ -229,7 +229,7 @@ if (flag.dry) {
 
 if (flag.component) {
   const cname    = flag.component.replace(/\.mesa$/, '')
-  const compPath = resolve(context.paths.webComponents, cname + '.mesa')
+  const compPath = resolve($.paths.webComponents, cname + '.mesa')
 
   if (flag.dry) {
     log.dry(`Would create component: ${compPath}`)
@@ -253,7 +253,7 @@ if (!flag.layout) {
 
 // The route imports the resource whether or not it exists; say so rather than
 // letting the dev server be the one to mention it.
-if (flag.resource && !existsSync(resolve(context.paths.webResources, `${model}.mesa`))) {
+if (flag.resource && !existsSync(resolve($.paths.webResources, `${model}.mesa`))) {
   echo('')
   log.warn(`The page imports resources/${model}.mesa, which does not exist yet:`)
   echo(`    fli make:resource ${model}`)
@@ -264,6 +264,6 @@ echo('  Sierra rescans src/routes on the next build — restart the dev server i
 echo('')
 
 if (flag.open && created.length && !flag.dry) {
-  for (const f of created) context.exec({ command: `${editor} "${f}"` })
+  for (const f of created) $.exec({ command: `${editor} "${f}"` })
 }
 ```

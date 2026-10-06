@@ -19,9 +19,9 @@ flags:
 
 ```js
 const config = flag.production ? '.caprover.config.yml' : '.caprover.dev.config.yml'
-const appName = flag.app || context.env.CAPROVER_APP_NAME || ''
+const appName = flag.app || $.env.CAPROVER_APP_NAME || ''
 if (!appName) { log.error('Provide --app or set $CAPROVER_APP_NAME in .env'); return }
-context.exec({
+$.exec({
   command: `caprover api --configFile ${config} --path /user/apps/appDefinitions/${appName} --method POST --data '{"forceSsl":true}'`,
   dry: flag.dry
 })

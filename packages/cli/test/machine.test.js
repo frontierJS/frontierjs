@@ -27,7 +27,7 @@ import {
   shipCommand, sameMachine,
 } from '../core/machine.js'
 
-// A real `context.exec`: the same execSync call the runtime makes.
+// A real `$.exec`: the same execSync call the runtime makes.
 const realExec = ({ command, ...opts }) => execSync(command, { stdio: 'inherit', ...opts })
 
 // ─── which transport ─────────────────────────────────────────────────────────
@@ -381,10 +381,9 @@ exit 1`
 // is the parent's, so `sh -s` reads EOF and exits 0 having run nothing — and
 // honors it on bun. Every script this module sends travels on stdin, so under
 // node every `machine.run` in the deploy pipeline was a silent no-op that
-// reported success (`FJS-738`). `fli`'s shebang is `#!/usr/bin/env node`.
-//
-// The suite runs under bun, where the bug does not reproduce, which is why the
-// SHAPE is asserted first: whatever else changes, stdin must be piped.
+// reported success (`FJS-738`). `fli` runs under bun now (`FJS-D593`), where
+// the bug does not reproduce, which is why the SHAPE is asserted first:
+// whatever else changes, stdin must be piped.
 
 describe('a script sent to a machine', () => {
 

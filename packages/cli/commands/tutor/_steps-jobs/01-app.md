@@ -21,11 +21,11 @@ two lines rather than a template, because where a queue's database lives and
 which directory holds the jobs are decisions an app makes once.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
-const dir = appDir(context)
+const dir = appDir($)
 
 const pkgJson = join(dir, 'package.json')
 const hasCaravan = (() => {
@@ -48,37 +48,37 @@ if (!built) {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --with caravan --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --with caravan --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
-  context.exec({
-    command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  $.exec({
+    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
-  context.exec({ command: `${context.fli} db:push`, cwd: dir })
+  $.exec({ command: `${$.fli} db:push`, cwd: dir })
 } else {
   log.info(`reusing the app at ${dir}`)
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   pkgJson,
   needle: '@frontierjs/caravan',
   name:   'the app depends on @frontierjs/caravan',
 }), {
   likely:    'the scaffold did not finish — its output is above',
-  reproduce: `cd ${context.config.ws.dir} && fli new ${context.config.app} --yes --auth --with caravan`,
+  reproduce: `cd ${$.config.ws.dir} && fli new ${$.config.app} --yes --auth --with caravan`,
 })) return
 
-if (!await must(context, probe.fileContains({
-  path:   schemaFile(context),
+if (!await must($, probe.fileContains({
+  path:   schemaFile($),
   needle: /^model Note \{/m,
   name:   'the app has a Note model to work on',
 }), {
   likely: 'fli scaffold stopped part way — its output is above',
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

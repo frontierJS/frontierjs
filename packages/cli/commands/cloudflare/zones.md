@@ -20,7 +20,7 @@ flags:
 Lists all zones in your account with their status, plan, and nameservers.
 
 ```js
-const zones = await cfApi(context, 'GET', '/zones?per_page=50&status=active')
+const zones = await cfApi($, 'GET', '/zones?per_page=50&status=active')
 
 if (flag.json) { echo(JSON.stringify(zones, null, 2)); return }
 

@@ -47,7 +47,7 @@ workspace each package is committed in its own repo.
 Use `--no-commit` to only write the version files.
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!all.length) {
@@ -74,7 +74,7 @@ if (!flag.private) {
 
 if (flag.affected) {
   const before = packages.length
-  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
+  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).affected)
   log.info(`--affected: ${packages.length} of ${before} package(s) have changes since their own tag`)
 }
 
@@ -103,7 +103,7 @@ if (!flag.commit) {
   return
 }
 
-const repo     = context.wsRepo(all)
+const repo     = $.wsRepo(all)
 const released = planned.map(({ pkg, newVersion }) => ({ name: pkg.name, newVersion }))
 
 if (repo) {

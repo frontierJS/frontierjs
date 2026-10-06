@@ -24,13 +24,13 @@ Requires a `captain-definition` file in the web directory and a configured
 `.caprover.yml`. Environment is resolved from flags, then falls back to dev.
 
 ```js
-const env = context.env
+const env = $.env
 let server, serverPath
 
 if (flag.production) {
   server     = env.PROD_SERVER
   serverPath = env.PROD_SERVER_PATH
-} else if (flag.stage || context.git.branch() === 'stage') {
+} else if (flag.stage || $.git.branch() === 'stage') {
   server     = env.STAGE_SERVER
   serverPath = env.STAGE_SERVER_PATH
 } else {
@@ -45,7 +45,7 @@ if (!server) {
 
 log.info(`Deploying web to ${server}...`)
 const before = Date.now()
-context.exec({
+$.exec({
   command: `ssh ${server} "npm run deploy:web --prefix='${serverPath}'"`,
   dry: flag.dry
 })

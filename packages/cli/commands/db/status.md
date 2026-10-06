@@ -7,10 +7,10 @@ examples:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
-const ls = litestone(context)
+const { schema } = resolveDb($, flag)
+const ls = litestone($)
 
-context.exec({ command: `${ls} migrate status --schema ${schema}` })
+$.exec({ command: `${ls} migrate status --schema ${schema}` })
 ```

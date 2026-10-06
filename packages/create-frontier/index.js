@@ -131,11 +131,14 @@ if (!name && !isHere) {
 }
 
 // ─── run it ───────────────────────────────────────────────────────────────────
-// process.execPath rather than a `fli` on PATH: a globally installed fli of a
+// The resolved bin rather than a `fli` on PATH: a globally installed fli of a
 // different vintage is exactly what this command exists to make unnecessary.
+// Under `bun`, not process.execPath: this file is reached through `npm create`,
+// so the parent is node, and fli runs under bun (`FJS-D593`). The check above
+// already said bun is here.
 
 const args = ['new', ...(given ? [] : name ? [name] : []), ...argv, '--project', process.cwd()]
 
-const child = spawn(process.execPath, [fliBin, ...args], { stdio: 'inherit' })
+const child = spawn('bun', [fliBin, ...args], { stdio: 'inherit' })
 child.on('exit',  (code, signal) => process.exit(signal ? 1 : code ?? 1))
 child.on('error', (err) => die(`could not run the scaffold: ${err.message}`))

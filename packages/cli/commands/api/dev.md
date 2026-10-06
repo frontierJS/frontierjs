@@ -15,5 +15,5 @@ flags:
 
 ```js
 const env = flag.test ? 'NODE_ENV=test ' : ''
-context.exec({ command: `cd ${context.paths.api} && ${env}npm run dev`, dry: flag.dry })
+$.exec({ command: `cd ${$.paths.api} && ${env}npm run dev`, dry: flag.dry })
 ```

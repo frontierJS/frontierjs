@@ -52,13 +52,13 @@ What comes out is `site/dist/notes/index.html` with the three titles already in
 it — no request, no loading state, no server. That is the whole trade.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'titles'], { from: '03-rows' })) return
+if (!needs($, ['appDir', 'titles'], { from: '03-rows' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const site = join(app, 'site')
 const dir  = join(site, 'src', 'routes', 'notes')
 
@@ -110,9 +110,9 @@ writeFileSync(join(dir, 'index.meta.js'), [
 ].join('\n'), 'utf8')
 
 try {
-  context.exec({ command: `${context.fli} site:build`, cwd: app })
+  $.exec({ command: `${$.fli} site:build`, cwd: app })
 } catch (err) {
-  await must(context, {
+  await must($, {
     ok:    false,
     name:  'the site built',
     asked: 'one HTML file per route',
@@ -127,7 +127,7 @@ try {
 
 const page = join(site, 'dist', 'notes', 'index.html')
 
-if (!await must(context, probe.fileExists({ path: page, name: 'site/dist/notes/index.html' }), {
+if (!await must($, probe.fileExists({ path: page, name: 'site/dist/notes/index.html' }), {
   likely:    'the route did not declare render: static, so nothing was prerendered',
   reproduce: `ls -R ${join(site, 'dist')}`,
 })) return
@@ -135,8 +135,8 @@ if (!await must(context, probe.fileExists({ path: page, name: 'site/dist/notes/i
 // The titles, in the FILE. A page that fetched them at runtime would look
 // identical in a browser and would be empty here, which is the difference this
 // whole surface is about.
-for (const title of context.config.titles) {
-  if (!await must(context, probe.fileContains({ path: page, needle: title, name: `the file already says "${title}"` }), {
+for (const title of $.config.titles) {
+  if (!await must($, probe.fileContains({ path: page, needle: title, name: `the file already says "${title}"` }), {
     likely: 'load() ran and returned nothing — the rows may have been written to another database',
   })) return
 }

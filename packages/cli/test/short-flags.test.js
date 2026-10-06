@@ -1,24 +1,20 @@
 import { describe, test, expect } from 'bun:test'
-import minimist from 'minimist'
-import { BOOL_ARGV, dropUntypedBooleans, getConfig } from '../core/runtime.js'
+import { BOOL_ARGV, parseArgv } from '../core/argv.js'
+import { getConfig } from '../core/runtime.js'
 
-// `-d` is `--dry`, and for its whole life it was silently the opposite: minimist
-// defaults every name in its `boolean:` list, so `-d` arrived as
+// `-d` is `--dry`, and for its whole life it was silently the opposite: the
+// parser defaulted every boolean to false, so `-d` arrived as
 // `{ d: true, dry: false }` and getConfig read that `false` as "the long name
 // was given" and dropped the short one. `fli db:import -d` ran the real import.
 //
 // The pair is what makes the assertion: the same argv through the real parse and
 // the real promotion, ending at the value a command body reads as `flag.dry`.
 
-const parse = (args) =>
-  dropUntypedBooleans(
-    (({ _, ...flag }) => flag)(minimist(args, { boolean: BOOL_ARGV })),
-    args
-  )
+const parse = (args) => (({ _, ...flag }) => flag)(parseArgv(args, { bools: BOOL_ARGV }))
 
 const resolve = (args, flags = {}) => getConfig({ title: 't', args: [], flags }, [], parse(args))
 
-describe('short boolean flags survive minimist defaulting', () => {
+describe('short boolean flags are not shadowed by a defaulted long name', () => {
   test('-d is dry', () => {
     expect(resolve(['db:import', '-d']).flag.dry).toBe(true)
   })

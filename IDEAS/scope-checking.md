@@ -1,12 +1,12 @@
 ---
 id: scope-checking
-status: proposed
+status: shipped
 dated: 2026-09-03
 ---
 
 # Proposal — resolving identifiers over a compiled command unit
 
-**Prototyped and measured; not built.** Prompted by
+**Shipped 2026-10-06** as `packages/cli/core/scope.js` and the `command-resolves` rule, with the PROJECT's TypeScript as the parser rather than a new dependency — the third option below, one package over; `test/scope.test.js` holds this tree at zero. The rest of this file is the argument as it was made. Prompted by
 [`FJS-726`](../ISSUES_ARCHIVE.md#fjs-726), and by the four defects the prototype found
 on a tree that was otherwise green.
 

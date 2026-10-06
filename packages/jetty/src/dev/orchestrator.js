@@ -4,7 +4,7 @@
 //   1. Read jetty.config.js → validate dev.port (FJS scheme)
 //   2. Initial build (debug-mode, dev plugin injected)
 //   3. Start dev WS server on dev.port
-//   4. Watch src/, config/, public/ via chokidar
+//   4. Watch src/, config/, public/ (watch.js)
 //   5. On change: classify → rebuild affected target → broadcast event
 //   6. Optionally launch browser(s) via web-ext (deferred — Phase 5 ships
 //      WS + classifier; web-ext launch wired but optional)
@@ -28,15 +28,12 @@ import { classifyChange } from './classifier.js'
 import { DevServer }      from './server.js'
 import { assertExtDevPort } from './fjs-ports.js'
 import { startBrowsers }  from './browser-launcher.js'
-import { loadPeer }       from '../peer.js'
+import { watchTree }      from './watch.js'
 
 const WATCH_DIRS = ['src', 'config', 'public']
 
 export async function startDev({ root, browser = 'chrome', verbose = false, launch = false, startUrl } = {}) {
   const log = (...args) => console.log('[jetty:dev]', ...args)
-  // Before the initial build, so a missing watcher fails in a second, not after it.
-  const { default: chokidar } = await loadPeer('chokidar', 'dev server')
-
   // Normalize browser arg to array. Accept 'chrome', 'firefox', 'both', or array.
   const browsers = Array.isArray(browser)
     ? browser
@@ -80,22 +77,6 @@ export async function startDev({ root, browser = 'chrome', verbose = false, laun
     .map((d) => resolve(root, d))
     .filter((p) => existsSync(p))
 
-  const watcher = chokidar.watch(watchPaths, {
-    ignoreInitial: true,
-    ignored: [
-      /(^|[/\\])\.\.?$/,             // dot-files
-      /node_modules/,
-      /\.jetty-cache/,
-      /\bdist\b/,
-      /\.git\//,
-    ],
-    awaitWriteFinish: {
-      // Avoid firing twice on save in editors that write atomically
-      stabilityThreshold: 60,
-      pollInterval: 20,
-    },
-  })
-
   let rebuildPromise = Promise.resolve()
   let rebuildQueued  = false
 
@@ -137,9 +118,10 @@ export async function startDev({ root, browser = 'chrome', verbose = false, laun
     })
   }
 
-  watcher.on('add',    onChange)
-  watcher.on('change', onChange)
-  watcher.on('unlink', onChange)
+  const watcher = watchTree(watchPaths, {
+    onChange,
+    onError: (e) => console.error('[jetty:dev] watcher:', e.message),
+  })
 
   log(`watching: ${watchPaths.map((p) => p.replace(root + '/', '')).join(', ')}`)
 

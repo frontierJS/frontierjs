@@ -1,6 +1,6 @@
 // peer.js — load a tool jetty runs but does not install.
 //
-// vite, chokidar and ws are optional peers: the extension a user installs is
+// vite and ws are optional peers: the extension a user installs is
 // bundled output and never needs them, so they are the APP's devDependencies,
 // which `fli new --extension` and `fli make:extension` write. Without this the
 // first sign of a missing one is "Cannot find package 'ws'" from inside jetty,

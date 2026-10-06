@@ -59,7 +59,7 @@ pointing to another package in the same workspace.
 After running, do `bun install` at the workspace root.
 
 ```js
-const wsRoot = await context.wsRoot()
+const wsRoot = await $.wsRoot()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 const fromEntry = findPkg(wsRoot, arg.from)

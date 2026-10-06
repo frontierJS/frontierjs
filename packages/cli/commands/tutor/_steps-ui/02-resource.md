@@ -36,16 +36,16 @@ and each half is off with an explicit `false`:
 | `validate` | check against the schema before the request, rather than round-tripping to be told the same thing. The server validates regardless |
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const file = join(app, 'web', 'src', 'resources', 'Note.mesa')
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   file,
   needle: /createResource\('notes'/,
   name:   'the resource names its service',
@@ -53,7 +53,7 @@ if (!await must(context, probe.fileContains({
   likely: 'this file is written by fli scaffold — a hand-written one may name it differently',
 })) return
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   file,
   needle: /<Form\s+resource=\{notes\}/,
   name:   'the form is <Form resource={notes}> and names no field',
@@ -67,7 +67,7 @@ if (!await must(context, probe.fileContains({
 const text = readFileSync(file, 'utf8')
 const named = ['title', 'body', 'done'].filter((f) => new RegExp(`name=["']${f}|field=["']${f}`).test(text))
 
-if (!await must(context, named.length === 0
+if (!await must($, named.length === 0
   ? { ok: true,  name: 'no column of the model is named in the file', asked: 'no field names', got: 'none' }
   : { ok: false, name: 'no column of the model is named in the file', asked: 'no field names', got: named.join(', ') }, {
   likely: 'a resource that names a column has to be edited when that column moves — which is the thing this design removes',
@@ -77,5 +77,5 @@ log.info('')
 log.info(`  ${file}`)
 log.info('')
 
-remember(context, '02-resource', { resourceFile: file })
+remember($, '02-resource', { resourceFile: file })
 ```

@@ -28,10 +28,10 @@ const CONTAINER_DB_DIR = '/db'
 //
 // `deploy.transport` is the escape hatch and is read here rather than in the
 // module, so the whole pipeline agrees about one machine per host.
-const machineFor = (context, host, path = null, transport = null) => createMachine({
+const machineFor = ($, host, path = null, transport = null) => createMachine({
   host, path,
-  exec:      context.exec,
-  transport: transport ?? context.config?.deployConf?.transport ?? null,
+  exec:      $.exec,
+  transport: transport ?? $.config?.deployConf?.transport ?? null,
 })
 
 // ─── vendorApp ────────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ const vendorApp = (root, log) => {
 // Priority: --production > --stage > branch name > dev
 //
 // Usage in any deploy command:
-//   const target = resolveTarget(flag, context.git)
+//   const target = resolveTarget(flag, $.git)
 const resolveTarget = (flag, git) => {
   if (flag.production) return 'production'
   const branch = git?.branch?.() ?? ''
@@ -81,17 +81,17 @@ const resolveTarget = (flag, git) => {
 // block, applying per-target overrides over the top-level values.
 //
 // Returns null if the required fields are missing — callers should check and
-// set context.config.abort = true before returning.
+// set $.config.abort = true before returning.
 //
 // `abort` is a REFUSAL and fails the command: the runtime exits non-zero on it
 // even when nothing threw, which is what stops a refusal reading as success
 // (`FJS-589`). A deliberate early exit that SUCCEEDED — `--plan` prints a plan
-// and stops — sets `context.config.stop` instead. Both skip every later step;
+// and stops — sets `$.config.stop` instead. Both skip every later step;
 // they differ only in the outcome, and `abort` is the fail-closed default.
 //
 // Usage:
 //   const conf = resolveDeployConf(deployConf, target)
-//   if (!conf) { log.error('...'); context.config.abort = true; return }
+//   if (!conf) { log.error('...'); $.config.abort = true; return }
 const resolveDeployConf = (deployConf, target) => {
   if (!deployConf?.server) return null
   const targetConf = deployConf[target] ?? {}
@@ -234,7 +234,7 @@ const distinctHosts = (sides) => {
 //
 // It mints rather than being handed a Release, so `--plan` needs no separate
 // `release:mint` run and cannot disagree with one.
-const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, digest = null }) => {
+const deployPlan = async ($, flag, { target, deployConf, doApi, doWeb, digest = null }) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
 
@@ -249,16 +249,16 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
     return { error: e.message }
   }
 
-  const schema = schemaSurfaceHash(context.paths.db)
+  const schema = schemaSurfaceHash($.paths.db)
 
   // The pivot is litestone's answer, asked rather than re-derived — the same
   // walk `fli release:check` prints. No baseline answers unknown, which counts
   // as a contract.
   let pivot = 'unknown', findings = []
   if (!schema.missing) {
-    const out = context.exec({
-      command: `${context.bin('litestone')} release --schema ${context.paths.db}/schema.lite --json`,
-      cwd:     context.paths.root,
+    const out = $.exec({
+      command: `${$.bin('litestone')} release --schema ${$.paths.db}/schema.lite --json`,
+      cwd:     $.paths.root,
       stdio:   'pipe', allowFailure: true,
     })
     try {
@@ -282,7 +282,7 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
     schemaHash:    schema.hash,
     pivot,
     pivotFindings: findings,
-    createdBy:     context.git.user?.() ?? null,
+    createdBy:     $.git.user?.() ?? null,
   })
 
   // The steps, off disk. `skip:` is evaluated against the same shape the runner
@@ -295,12 +295,12 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
   })
 
   // The context a skip predicate is evaluated against has to be the SHAPE the
-  // runner passes — `(config.flag, config)` — so `context.flag.dry` and
-  // `context.config.doApi` both resolve. Without `flag` here, `04c-journal`'s
+  // runner passes — `(config.flag, config)` — so `$.flag.dry` and
+  // `$.config.doApi` both resolve. Without `flag` here, `04c-journal`'s
   // predicate threw and the plan could not grade the journal step itself.
   const steps = planSteps(metas, {
     flag,
-    context: { flag, config: { doApi, doWeb, deployConf, target } },
+    $: { flag, config: { doApi, doWeb, deployConf, target } },
   })
 
   const plan = planTransition({ release, steps, actor: release.createdBy })
@@ -325,20 +325,20 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
 // is blocked by a run that never happened.
 const lockCore = () => import(new URL('file://' + global.fliRoot + '/core/lock.js'))
 
-const releaseLocks = async (context, hosts = []) => {
+const releaseLocks = async ($, hosts = []) => {
   const { lockPath, releaseScript } = await lockCore()
   for (const h of hosts) {
-    try { machineFor(context, h.host, h.path).run(releaseScript(lockPath(h.path))) } catch {}
+    try { machineFor($, h.host, h.path).run(releaseScript(lockPath(h.path))) } catch {}
   }
 }
 
-const acquireLock = async (context, { hosts, target, takeover = false }) => {
+const acquireLock = async ($, { hosts, target, takeover = false }) => {
   const { lockPath, acquireScript, parseLock } = await lockCore()
   const { randomUUID } = await import('crypto')
 
-  const run = context.config.lockRun ??= {
+  const run = $.config.lockRun ??= {
     run:     randomUUID().slice(0, 8),
-    actor:   context.config.deployConf?.actor ?? process.env.USER ?? 'unknown',
+    actor:   $.config.deployConf?.actor ?? process.env.USER ?? 'unknown',
     target,
     started: new Date().toISOString(),
   }
@@ -346,11 +346,11 @@ const acquireLock = async (context, { hosts, target, takeover = false }) => {
   const locked = []
   for (const h of hosts) {
     const lockFile = lockPath(h.path)
-    const machine  = machineFor(context, h.host, h.path)
+    const machine  = machineFor($, h.host, h.path)
     try {
       const out = machine.capture(acquireScript(lockFile, run, { takeover }))
       const took = /^TOOK: (.*)$/m.exec(out)
-      if (took) context.config.lockTookOver = took[1].replace(/;+$/, '').replace(/;/g, ' · ')
+      if (took) $.config.lockTookOver = took[1].replace(/;+$/, '').replace(/;/g, ' · ')
       locked.push(h)
     } catch (err) {
       // The refusal carries the lock's own body on STDOUT — reading the file a
@@ -358,14 +358,14 @@ const acquireLock = async (context, { hosts, target, takeover = false }) => {
       // on between them. `attribute` folds stderr into the message and leaves
       // stdout where it is, which is where the script wrote this.
       const body = /HELD\n([\s\S]*)/.exec(String(err?.stdout ?? ''))
-      await releaseLocks(context, locked)
+      await releaseLocks($, locked)
       return { ok: false, host: h.host, lockFile, held: parseLock(body?.[1] ?? '') }
     }
   }
-  context.config.lockHosts  = hosts
+  $.config.lockHosts  = hosts
   // The step runner's one reader. Installed here rather than by the step, so a
   // run that never took a lock never refreshes one.
-  context.config.beforeStep = (step) => refreshLock(context, step)
+  $.config.beforeStep = (step) => refreshLock($, step)
   return { ok: true }
 }
 
@@ -385,9 +385,9 @@ const acquireLock = async (context, { hosts, target, takeover = false }) => {
 // into it. What it buys is that a duration means something beside a step name —
 // four minutes in `04-build-api` reads differently from four minutes in
 // `06-swap`.
-const refreshLock = async (context, step) => {
-  const run   = context.config.lockRun
-  const hosts = context.config.lockHosts
+const refreshLock = async ($, step) => {
+  const run   = $.config.lockRun
+  const hosts = $.config.lockHosts
   if (!run || !hosts?.length) return
 
   const { lockPath, refreshScript } = await lockCore()
@@ -395,10 +395,10 @@ const refreshLock = async (context, step) => {
 
   for (const h of hosts) {
     try {
-      const out = machineFor(context, h.host, h.path).capture(refreshScript(lockPath(h.path), fields))
-      if (/stolen/.test(out) && !context.config.lockStolen) {
-        context.config.lockStolen = true
-        context.log?.warn?.(`  The deploy lock on ${h.host} is now held by another run — this one no longer owns it.`)
+      const out = machineFor($, h.host, h.path).capture(refreshScript(lockPath(h.path), fields))
+      if (/stolen/.test(out) && !$.config.lockStolen) {
+        $.config.lockStolen = true
+        $.log?.warn?.(`  The deploy lock on ${h.host} is now held by another run — this one no longer owns it.`)
       }
     } catch {}
   }
@@ -446,14 +446,14 @@ const lockRefusal = async (lock, { verb = 'deploy' } = {}) => {
 // a tidy-up: only one writer at a time, and the new container's entrypoint opens
 // the database to migrate. That costs a 3–10s gap and it is the correct trade.
 // Litestream is unaffected — it checkpoints the WAL when `_replaced` stops.
-// `deployConf` is an OPTION rather than a read off `context.config`, like every
+// `deployConf` is an OPTION rather than a read off `$.config`, like every
 // other value here — and it was neither for as long as this function existed:
 // `dockerLogArgs(deployConf)` below named a variable in no scope it can see, so
 // every real deploy threw `ReferenceError: deployConf is not defined` while
 // building the `docker run` line. By then the running container had been renamed
 // to `_replaced` and stopped, and the new one was never started (`FJS-726`).
-const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, build, deployConf, log }) => {
-  const machine  = machineFor(context, host)
+const swapContainer = ($, { host, container, image, apiPort, dbPath, envFile, build, deployConf, log }) => {
+  const machine  = machineFor($, host)
   const replaced = `${container}_replaced`
 
   log.info('Renaming current container to _replaced...')
@@ -538,8 +538,8 @@ const showContainerTail = (machine, container, log, lines = 40) => {
 // Answers `{ healthy, restored }` and throws nothing — the caller decides what a
 // failure means, because for a deploy it is a rollback and for a revert it is a
 // revert that could not land.
-const healthOrRestore = (context, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
-  const machine = machineFor(context, host)
+const healthOrRestore = ($, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
+  const machine = machineFor($, host)
   log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
 
   // Every `$` and every nested quote below is the TARGET's — the script is piped
@@ -625,7 +625,7 @@ fi`
 // `bun` is what the far side needs and `deploy:setup` installs it. `bun:sqlite`
 // is built in, so there is nothing to resolve on a checkout that has no
 // node_modules — which a deploy target does not, since the build is in Docker.
-const connectJournal = async (context, { host, serverPath, deployConf }) => {
+const connectJournal = async ($, { host, serverPath, deployConf }) => {
   const { journalClient } = await import(new URL('file://' + global.fliRoot + '/core/journal.js'))
   const { readFileSync }  = await import('fs')
 
@@ -633,7 +633,7 @@ const connectJournal = async (context, { host, serverPath, deployConf }) => {
   const runnerRemote = `${serverPath}/.fli/journal-runner.mjs`
   const dbRemote     = deployConf?.journal?.path ?? `${serverPath}/.fli/deploy.db`
 
-  const machine = machineFor(context, host, serverPath)
+  const machine = machineFor($, host, serverPath)
   machine.run(`mkdir -p ${serverPath}/.fli`)
   machine.send(runnerLocal, runnerRemote)
 
@@ -656,13 +656,13 @@ const connectJournal = async (context, { host, serverPath, deployConf }) => {
 // the note is simply lost — which is exactly what a revert reads to find a
 // startable image. The bag is drained by whichever reader gets there: the
 // journal's open, for the steps that already ran, and `afterStep` for the rest.
-const noteForJournal = (context, step, value) => {
-  context.config.journalNotes ??= {}
-  context.config.journalNotes[step] = typeof value === 'string' ? value : JSON.stringify(value)
+const noteForJournal = ($, step, value) => {
+  $.config.journalNotes ??= {}
+  $.config.journalNotes[step] = typeof value === 'string' ? value : JSON.stringify(value)
 }
 
-const takeNote = (context, step) => {
-  const bag = context.config.journalNotes
+const takeNote = ($, step) => {
+  const bag = $.config.journalNotes
   if (!bag || !(step in bag)) return null
   const v = bag[step]
   delete bag[step]
@@ -673,7 +673,7 @@ const takeNote = (context, step) => {
 // Put a replayed step's recorded output back onto the run.
 //
 // A resume skips steps that already succeeded, so their side effects on
-// `context.config` never happen — and one of those side effects is load-bearing:
+// `$.config` never happen — and one of those side effects is load-bearing:
 // `04-build-api` records which bytes it built and `06-swap` starts them. A
 // resumed deploy therefore ran `docker run … undefined`.
 //
@@ -681,14 +681,14 @@ const takeNote = (context, step) => {
 // wrote is prose and restores nothing rather than being scraped — running the
 // wrong bytes is worse than refusing, and `06-swap` falls back to the tag, which
 // it already says out loud.
-const restoreStepNote = (context, output) => {
+const restoreStepNote = ($, output) => {
   if (!output) return
   let note
   try { note = JSON.parse(output) } catch { return }
   if (!note || typeof note !== 'object') return
   if (note.image) {
-    context.config.imageAddress  = note.image
-    context.config.imageIdentity = note.scope ? { scope: note.scope } : null
+    $.config.imageAddress  = note.image
+    $.config.imageIdentity = note.scope ? { scope: note.scope } : null
   }
 }
 
@@ -706,17 +706,17 @@ const restoreStepNote = (context, output) => {
 // another host, and a precondition that moved between planning and running, both
 // stop the deploy by name — the two answers were produced by two intents and
 // picking one is a guess about which person was right.
-const openDeployJournal = async (context, flag, opts) => {
+const openDeployJournal = async ($, flag, opts) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { JournalError, preconditionVerdict, formatDrift, resumeDecision } = await core('journal.js')
   const { planTransition } = await core('plan.js')
   const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
 
   const { host, serverPath, log } = opts
-  const plan = await deployPlan(context, flag, opts)
+  const plan = await deployPlan($, flag, opts)
   if (plan.error) return { error: plan.error }
 
-  const j = await connectJournal(context, opts)
+  const j = await connectJournal($, opts)
 
   try {
     await j.open({ app: plan.release.app, host })
@@ -796,7 +796,7 @@ const openDeployJournal = async (context, flag, opts) => {
       // served (`FJS-937`).
       if (byName.get(st.name)?.status !== 'pending') {
         const d = resumeDecision(byName.get(st.name))
-        if (d.action === 'skip') { takeNote(context, st.name); restoreStepNote(context, d.output) }
+        if (d.action === 'skip') { takeNote($, st.name); restoreStepNote($, d.output) }
         continue
       }
       // Their notes too — `04-build-api` records which bytes it built, and that
@@ -804,7 +804,7 @@ const openDeployJournal = async (context, flag, opts) => {
       await j.finish({
         id:     idFor(st.name),
         status: st.status === 'skipped' ? 'skipped' : 'succeeded',
-        output: takeNote(context, st.name),
+        output: takeNote($, st.name),
       })
     }
 
@@ -826,12 +826,12 @@ const openDeployJournal = async (context, flag, opts) => {
         async beforeStep(name) {
           const d = resumeDecision(byName.get(name))
           if (d.action === 'skip') {
-            // A replayed step's own contribution to `context.config` never
+            // A replayed step's own contribution to `$.config` never
             // happens, so what it RECORDED has to be put back. The one such
             // contribution is the image `04-build-api` built, which `06-swap`
             // starts — without this a resumed deploy ran `docker run … undefined`
             // and died, which is the resume failing in the one case it is for.
-            restoreStepNote(context, d.output)
+            restoreStepNote($, d.output)
             return { run: false, note: d.note }
           }
           await j.claim({ id: idFor(name) })
@@ -841,7 +841,7 @@ const openDeployJournal = async (context, flag, opts) => {
           // A step may leave one line for the journal, keyed by its own name.
           // Read here rather than passed through the runner, which knows nothing
           // about deploys.
-          await j.finish({ id: idFor(name), status, durationMs, output: output ?? takeNote(context, name) })
+          await j.finish({ id: idFor(name), status, durationMs, output: output ?? takeNote($, name) })
         },
         // Called by 09-cleanup on both paths. A deploy that aborted must leave a
         // `failed` transition and not a `running` one, or the next run reads it
@@ -872,7 +872,7 @@ const openDeployJournal = async (context, flag, opts) => {
 // history behind it cannot name a Release, and a transition with no Release is
 // not a thing this schema can hold — which is the honest answer: an app that has
 // never deployed through the journal has nothing to pause.
-const openPauseJournal = async (context, flag, opts) => {
+const openPauseJournal = async ($, flag, opts) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
   const { JournalError, resumeDecision } = await core('journal.js')
@@ -885,7 +885,7 @@ const openPauseJournal = async (context, flag, opts) => {
   const { pauseRefusals } = await core('pause.js')
   const app = deployConf.app_id ?? deployConf.appId
 
-  const j = await connectJournal(context, opts)
+  const j = await connectJournal($, opts)
 
   try {
     const opened = await j.open({ app, host })
@@ -917,7 +917,7 @@ const openPauseJournal = async (context, flag, opts) => {
       const fm = extractFrontmatter(readFileSync(`${dir}/${f}`, 'utf8')) ?? {}
       return { name: stepNameOf(f), title: fm.title, skip: fm.skip, runOnAbort: fm.runOnAbort }
     })
-    const steps = planSteps(metas, { flag, context: context.config })
+    const steps = planSteps(metas, { flag, $: $.config })
 
     const intent = {
       kind, app, environment: target,
@@ -932,7 +932,7 @@ const openPauseJournal = async (context, flag, opts) => {
       generation:    intent.generation,
       attempt,
       crossesPivot:  false,
-      actor:         context.git.user?.() ?? null,
+      actor:         $.git.user?.() ?? null,
     })
 
     const begun = await j.begin({ release: null, configuration: null, transition: real.transition, steps: real.steps })

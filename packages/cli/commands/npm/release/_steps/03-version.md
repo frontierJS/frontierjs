@@ -13,19 +13,19 @@ const getVer = (root) => {
 </script>
 
 ```js
-const { root, bump, preid } = context.config
+const { root, bump, preid } = $.config
 const before  = getVer(root)
 const preidFlag = preid ? `--preid=${preid}` : ''
 const cmd     = `npm version ${bump} ${preidFlag} --prefix ${root}`.trim().replace(/\s+/g, ' ')
 
 if (flag.dry) {
   log.dry(`Would bump: ${before} → (${bump})`)
-  context.config.newVersion = `${before}-${bump}-preview`
+  $.config.newVersion = `${before}-${bump}-preview`
   return
 }
 
-context.exec({ command: cmd })
+$.exec({ command: cmd })
 const after = getVer(root)
-context.config.newVersion = after
+$.config.newVersion = after
 log.success(`${before} → ${after}`)
 ```

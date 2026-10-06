@@ -249,7 +249,7 @@ it out of all layouts.
 
 ### Frontmatter
 
-Frontmatter is YAML at the top of a `.mesa`/`.md` file. It is merged in this order, with
+Frontmatter is a block at the top of a `.mesa`/`.md` file, written in the YAML subset that [`@frontierjs/toolbelt/frontmatter`](../toolbelt/README.md#frontmatter--what-a----block-means) reads: no anchors, aliases or tags, and a date stays a string. It is merged in this order, with
 the rightmost winning:
 
 ```

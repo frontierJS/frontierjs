@@ -21,14 +21,14 @@ flags:
 ---
 
 ```js
-const root = context.paths.root
+const root = $.paths.root
 
 if (flag.unlink) {
   const cmd = arg.package
     ? `npm unlink ${arg.package} --prefix ${root}`
     : `npm unlink --prefix ${root}`
   log.info(`Unlinking ${arg.package || 'current package'}`)
-  context.exec({ command: cmd, dry: flag.dry })
+  $.exec({ command: cmd, dry: flag.dry })
   return
 }
 
@@ -37,6 +37,6 @@ const cmd = arg.package
   : `npm link --prefix ${root}`
 
 log.info(arg.package ? `Linking ${arg.package} into current project` : 'Linking current package globally')
-context.exec({ command: cmd, dry: flag.dry })
+$.exec({ command: cmd, dry: flag.dry })
 if (!flag.dry) log.success('Linked')
 ```

@@ -18,16 +18,16 @@ Then the list page, because a create that works and a list that does not show
 it is the failure a person actually reports.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
-const page = context.config.__page ?? await openPage(context, '/')
+const app  = $.config.appDir
+const page = $.config.__page ?? await openPage($, '/')
 
-if (!await must(context, await ensureCaller(context, page), {
+if (!await must($, await ensureCaller($, page), {
   likely: 'the API is up but registering or signing in did not work — step 3 diagnoses that',
 })) return
 
@@ -35,8 +35,8 @@ if (!await must(context, await ensureCaller(context, page), {
 // the database cannot be a row an earlier run left.
 const title = `typed in a browser ${Date.now()}`
 
-await page.goto(`http://127.0.0.1:${context.config.webPort}/notes/create/`)
-if (!await must(context, await probe.pageEval({
+await page.goto(`http://127.0.0.1:${$.config.webPort}/notes/create/`)
+if (!await must($, await probe.pageEval({
   page, ask: `!!document.querySelector('input[name=title]')`, name: 'the create form is up',
 }), { likely: 'step 3 is where a form that does not render is diagnosed' })) return
 
@@ -55,7 +55,7 @@ await page.eval(`document.querySelector('button[type=submit]').click()`)
 // A save navigates to the record it made. Waiting for THAT rather than for a
 // duration is what makes this assertion about the save rather than about how
 // fast the machine is.
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `location.pathname`,
   expect:   (p) => /^\/notes\/[^/]+\/$/.test(p) && p !== '/notes/create/',
@@ -75,7 +75,7 @@ if (!await must(context, await probe.pageEval({
 // Asked as the input VALUES rather than as the visible text: innerText does not
 // carry them, so a form drawn over a null record satisfies any assertion about
 // what the page SAYS, which is the bug wearing the fix's face.
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `JSON.stringify([...document.querySelectorAll('form input, form textarea')].map(e => e.value))`,
   expect:   (v) => JSON.parse(v).includes(title),
@@ -91,15 +91,15 @@ if (!await must(context, await probe.pageEval({
 // on this column, and after that a plain caller's `true` is accepted and
 // dropped — deliberately, and in silence, which is the thing that lesson is
 // about. So the column is asked about only where this caller may write it.
-const guarded = /done .*@allow\('write'/.test(readFileSync(schemaFile(context), 'utf8'))
+const guarded = /done .*@allow\('write'/.test(readFileSync(schemaFile($), 'utf8'))
 if (guarded)
   log.info('  (done carries a field policy in this workspace, so it is not part of what follows)')
 
 // The row, asked of the API rather than of the page. `?title=` is a filter the
 // Data boundary parses; a title nothing else wrote is the whole key.
-if (!await must(context, await probe.httpJson({
-  url:      apiUrl(context, `/notes?title=${encodeURIComponent(title)}`),
-  headers:  asCaller(context.config.userToken),
+if (!await must($, await probe.httpJson({
+  url:      apiUrl($, `/notes?title=${encodeURIComponent(title)}`),
+  headers:  asCaller($.config.userToken),
   expect:   (j) => j.total === 1
                 && j.data[0].body === 'and read back out of the database'
                 && (guarded || j.data[0].done === true),
@@ -113,8 +113,8 @@ if (!await must(context, await probe.httpJson({
 })) return
 
 // The list, because a create nobody can see is the failure that gets reported.
-await page.goto(`http://127.0.0.1:${context.config.webPort}/notes/`)
-if (!await must(context, await probe.pageEval({
+await page.goto(`http://127.0.0.1:${$.config.webPort}/notes/`)
+if (!await must($, await probe.pageEval({
   page,
   ask:      `document.body.innerText.includes(${JSON.stringify(title)})`,
   describe: 'the new note is on the list page',
@@ -138,7 +138,7 @@ if (!await must(context, await probe.pageEval({
 const filterBox = `[...document.querySelectorAll('input')]
   .find(e => /title/i.test(e.getAttribute('aria-label') || ''))`
 
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page, ask: `!!(${filterBox})`, describe: 'a filter control for the title column',
   name: 'the bar offered a filter', retries: 12,
 }), {
@@ -154,7 +154,7 @@ await page.eval(`(() => {
   return el.value
 })()`)
 
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `location.search`,
   expect:   (v) => /title/.test(v ?? '') && !/\?.*\?/.test(v ?? ''),
@@ -180,7 +180,7 @@ await page.eval(`(() => {
   return el.value
 })()`)
 
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `new URLSearchParams(location.search).get('title[contains]')`,
   expect:   (v) => v === wider,
@@ -194,7 +194,7 @@ if (!await must(context, await probe.pageEval({
 // The narrowing, which is the only thing that proves the page ASKED again. Not
 // asserted over HTTP: a signed-in app holds a socket, so the read rides a WS
 // frame and the network panel shows nothing.
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `JSON.stringify([...document.querySelectorAll('tbody tr')].map(r => r.innerText))`,
   expect:   (v) => { const rows = JSON.parse(v); return rows.length > 0 && rows.every(r => r.includes(title)) },
@@ -205,11 +205,11 @@ if (!await must(context, await probe.pageEval({
   likely: 'the URL moved and the list did not — the router does not remount for a query change, so the page has to watch page.query',
 })) return
 
-if (!await must(context, probe.pageClean({ page }), {})) return
+if (!await must($, probe.pageClean({ page }), {})) return
 
 log.info('')
 log.info(`  "${title}" — typed in a browser, read back out of db/app.db`)
 log.info('')
 
-remember(context, '05-write', { title })
+remember($, '05-write', { title })
 ```

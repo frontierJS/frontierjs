@@ -23,9 +23,9 @@ here, not a migration.
 const q     = (a) => "'" + a.split("'").join("'\\''") + "'"
 const extra = process.argv.slice(3).map(q).join(' ')
 
-context.exec({
-  command: `${context.fli} ws:atlas --open --live${extra ? ' ' + extra : ''}`,
-  cwd:     context.paths.root,
+$.exec({
+  command: `${$.fli} ws:atlas --open --live${extra ? ' ' + extra : ''}`,
+  cwd:     $.paths.root,
   dry:     flag.dry,
 })
 ```

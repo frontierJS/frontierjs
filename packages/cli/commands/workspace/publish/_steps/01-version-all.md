@@ -10,7 +10,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { planned, repo, wsRoot, releaseTag, releaseSubject } = context.config
+const { planned, repo, wsRoot, releaseTag, releaseSubject } = $.config
 if (!planned?.length) { log.info('No packages to version'); return }
 
 for (const { dir, pkg, newVersion } of planned) {
@@ -35,7 +35,7 @@ if (!flag.dry) {
   }
 }
 
-context.config.released = planned.map(({ dir, path, pkg, newVersion }) =>
+$.config.released = planned.map(({ dir, path, pkg, newVersion }) =>
   ({ dir, path, name: pkg.name, newVersion }))
 
 if (flag.dry) {
@@ -83,7 +83,7 @@ if (repo) {
   if (alreadyEdited.size)   log.warn(`  left alone, already edited: ${[...alreadyEdited].join(', ')}`)
 }
 
-const released = context.config.released
+const released = $.config.released
 
 if (repo) {
   // One repo, one commit. Staging is per manifest — an unrelated edit sitting

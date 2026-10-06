@@ -35,13 +35,13 @@ The wiring is put back before the step ends, so the rest of the lesson runs
 against a working app.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'userToken'], { from: '03-account' })) return
+if (!needs($, ['appDir', 'userToken'], { from: '03-account' })) return
 
-const appTs  = join(context.config.appDir, 'api', 'src', 'app.ts')
+const appTs  = join($.config.appDir, 'api', 'src', 'app.ts')
 const before = readFileSync(appTs, 'utf8')
 
 const JOINED = /app\.configure\(channels\(\(a\) => \{[\s\S]*?\}\)\)/
@@ -49,7 +49,7 @@ const JOINED = /app\.configure\(channels\(\(a\) => \{[\s\S]*?\}\)\)/
 // The edit refuses rather than writing the file back unchanged: an anchor that
 // silently missed would leave this step asserting silence about an app it did
 // not change, which is the one failure this lesson cannot afford to fake.
-if (!await must(context, {
+if (!await must($, {
   ok:    JOINED.test(before),
   name:  'api/src/app.ts has the wiring this step removes',
   asked: 'app.configure(channels((a) => …))',
@@ -66,23 +66,23 @@ writeFileSync(appTs, before.replace(JOINED, 'app.configure(channels())'), 'utf8'
 // behind teaches the next step's failure instead of its own.
 const restore = async () => {
   writeFileSync(appTs, before, 'utf8')
-  await restartApi(context)
+  await restartApi($)
 }
 
-const off = await restartApi(context)
+const off = await restartApi($)
 if (!off.up.ok) {
   await restore()
-  await must(context, off.up, {
+  await must($, off.up, {
     likely: 'the API did not come back after the edit — the last of its output is below',
     detail: serverLog(off),
   })
   return
 }
 
-const watcher = await openSocket(context, { token: context.config.userToken, channels: ['notes'] })
+const watcher = await openSocket($, { token: $.config.userToken, channels: ['notes'] })
 if (!watcher.ok) {
   await restore()
-  await must(context, {
+  await must($, {
     ok:    false,
     name:  'a socket is connected',
     asked: 'the connected frame',
@@ -92,11 +92,11 @@ if (!watcher.ok) {
 }
 
 const title = `silent-${Date.now().toString(36)}`
-const made  = await createNote(context, title)
+const made  = await createNote($, title)
 if (!made.ok) {
   watcher.ws.close()
   await restore()
-  await must(context, made, { likely: 'the write was refused — the body is above' })
+  await must($, made, { likely: 'the write was refused — the body is above' })
   return
 }
 
@@ -109,7 +109,7 @@ await restore()
 // The pair. Step 4 asserted the frame arriving; this asserts the same publish,
 // from the same caller, on the same channel, reaching nobody. One callback is
 // the whole difference between them.
-if (!await must(context, {
+if (!await must($, {
   ok:    heard.length === 0,
   name:  'the write announced, and nobody was listening',
   asked: 'no frames, because no connection has joined the channel',
@@ -118,7 +118,7 @@ if (!await must(context, {
   likely: 'something else in this app joins the notes channel — grep for app.channel(',
 })) return
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   appTs,
   needle: 'joinChannels',
   name:   'the wiring is back',
@@ -131,5 +131,5 @@ log.info('  the row was written, the publish went out, and it reached nobody')
 log.info('  app.ts is back as it was')
 log.info('')
 
-remember(context, '05-silence', { silentTitle: title })
+remember($, '05-silence', { silentTitle: title })
 ```

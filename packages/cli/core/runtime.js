@@ -1,5 +1,3 @@
-import 'zx/globals'
-import { chalk } from 'zx'
 import { execSync, spawn } from 'child_process'
 import { pathToFileURL } from 'url'
 import { compileCliWithMap, extractFrontmatter } from './compiler.js'
@@ -13,32 +11,17 @@ import { printPlanFromFile } from './prose.js'
 import { declarationProblem, valueProblem } from './flags.js'
 import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
 import { createTty, settleTtys, ttyAside } from './tty.js'
-import { colorEnabled } from './color.js'
+import { chalk as colorChalk } from './color.js'
+import { commandContext } from './shell.js'
 import { binCommand, SNAPSHOT_BINS } from './snapshots.js'
 
 const env = process.env
 
-// ─── A command body's chalk follows fli's color rule ─────────────────────────
-// zx's chalk is a Proxy whose `get` answers `store[key] || default[key]`, so a
-// level of 0 reads back undefined, and `hex`, `rgb` and the `bg` forms style
-// anyway: every pipe got escape codes from `chalk.hex`. It also colors a terminal
-// with NO_COLOR set. With color off by color.js's rule, the global is a chalk
-// that styles nothing. zx/globals assigns the global once, when first imported,
-// which is why it is imported above rather than left to the first shim.
-const FACTORIES = new Set(['hex', 'rgb', 'ansi256', 'bgHex', 'bgRgb', 'bgAnsi256'])
-const plainChalk = new Proxy(function () {}, {
-  get: (_, key) => key === 'level' ? 0
-    : typeof key !== 'string' || key === 'then' ? undefined
-      : FACTORIES.has(key) ? () => plainChalk : plainChalk,
-  apply: (_, __, args) => args.join(' '),
-})
-if (!(colorEnabled && chalk.level)) globalThis.chalk = plainChalk
-
 // ─── Temp file registry — guaranteed cleanup on exit ─────────────────────────
 // Compiled command bodies are written as .mjs shims so we can `import()` them
-// (Node ESM loaders only resolve real files, not in-memory strings). Where they
-// may live is `fliTmpRoot()`'s decision, not this file's — the shim has to
-// resolve 'zx/globals', and under a global install fliRoot is not writable.
+// (an ESM loader resolves real files, not in-memory strings). Where they may
+// live is `fliTmpRoot()`'s decision, not this file's — under a global install
+// fliRoot is not writable.
 //
 // Session dirs are PID-keyed so concurrent fli processes don't step on each
 // other, a single rmSync at exit handles the whole session, and a startup sweep
@@ -324,14 +307,21 @@ export async function Command({ file, arg, flag, emit }) {
   // the functions Command() returns, whichever way the body ends.
   config.tty = createTty({ yes: config.flag.yes === true, emit })
 
-  // echo: injected into context so the compiled run() can shadow the ZX global.
-  // This avoids patching globalThis.echo, making concurrent web requests safe.
+  // echo: a command's output line. The web runner's is an SSE event, the
+  // terminal's is console.log — which the tty footer and bin/fli.js's pipe
+  // fix both patch, so going through it is what keeps a line above a footer.
+  // On the context rather than a global, which is what makes two concurrent
+  // web runs safe.
   config.echo = emit
     ? (...args) => {
         const text = args.map(a => typeof a === 'string' ? a : String(a)).join(' ') + '\n'
         emit({ type: 'output', text })
       }
-    : undefined  // CLI: compiled run() falls back to the ZX global echo
+    : (...args) => console.log(...args)
+  config.chalk = colorChalk
+  // The web runner's event sink, or null on a terminal — what `$`…`` reads to
+  // know its output has nowhere to inherit.
+  config.emit = emit ?? null
 
   // ─── context.exec — synchronous shell execution ────────────────────────────
   // Use for short-lived commands where output is not needed live (git, rsync,
@@ -345,10 +335,7 @@ export async function Command({ file, arg, flag, emit }) {
   // interesting part. A deploy step runs `ssh host sh -s` and pipes the real
   // script to it, so printing the command shows every step as the same line.
   config.exec = ({ command, dry, describe, allowFailure, ...opts }) => {
-    if (dry ?? config.flag.dry) {
-      const msg = describe ?? command
-      return emit ? emit({ type: 'log', level: 'dry', text: msg }) : logger(msg, 'dry')
-    }
+    if (dry ?? config.flag.dry) return config.log.dry(describe ?? command)
     refuseUnknownExecOptions(opts)
     try {
       return execSync(command, { stdio: 'inherit', ...opts })
@@ -382,12 +369,7 @@ export async function Command({ file, arg, flag, emit }) {
   // Usage:  await context.stream({ command: `ssh ${host} "docker logs -f ${c}"` })
   // Returns a Promise that resolves on exit code 0, rejects on non-zero.
   config.stream = ({ command, dry, ...opts } = {}) => {
-    if (dry ?? config.flag.dry) {
-      const msg = command
-      if (emit) return emit({ type: 'log', level: 'dry', text: msg })
-      logger(msg, 'dry')
-      return Promise.resolve()
-    }
+    if (dry ?? config.flag.dry) return Promise.resolve(config.log.dry(command))
 
     return new Promise((resolve, reject) => {
       // CLI: inherit gives live output with no buffering.
@@ -660,7 +642,7 @@ export async function Command({ file, arg, flag, emit }) {
         // Evaluate skip predicate if defined
         if (stepMeta.skip) {
           try {
-            const shouldSkip = new Function('flag', 'context', `return ${stepMeta.skip}`)(config.flag, config)
+            const shouldSkip = new Function('flag', '$', `return ${stepMeta.skip}`)(config.flag, config)
             if (shouldSkip) {
               config.log.info(`  [${stepNum}/${totalSteps}] ${stepName} — skipped`)
               await config.config?.journal?.afterStep?.(stepName, stepNum, { status: 'skipped' })
@@ -737,7 +719,9 @@ export async function Command({ file, arg, flag, emit }) {
           // own prose silently rendered the orchestrator's and reported success
           // — the wrong answer rather than a missing feature, and the reason a
           // step's prose could not be its narration (`FJS-725`).
-          const stepContext = {
+          // Its own `$`: the shell tag has to be a function, and a spread
+          // copies fields, not callability.
+          const stepContext = commandContext({
             ...config,
             config:   config.config,  // shared mutable state
             arg:      {},
@@ -748,7 +732,7 @@ export async function Command({ file, arg, flag, emit }) {
               ...config.arg,
               ...config.flag,
             }),
-          }
+          })
           stepContext.run  = stepRun.bind(stepContext)
           stepContext.echo = config.echo
 
@@ -903,10 +887,6 @@ export async function Command({ file, arg, flag, emit }) {
     return runSteps
   }
 
-  // echo is set on config above — compiled run() shadows the ZX global
-  // via `if (context.echo !== undefined) { var echo = context.echo }`.
-  // No globalThis patching — concurrent web requests are safe.
-  //
   // A command with no steps refuses the same way one with steps does — half
   // the deploy commands are this shape (`deploy:logs`, `:status`, `:run`,
   // `:unlock`), and every one of their refusals exited 0 (`FJS-589`).
@@ -944,32 +924,6 @@ function assertNotRefused(config, refusedBy) {
   err.quiet   = true
   err.refusal = true
   throw err
-}
-
-// ─── argv booleans ────────────────────────────────────────────────────────────
-// The names minimist must not read a value into: without the list,
-// `fli x --dry foo` parses as `{ dry: 'foo' }`. The cost is that minimist then
-// DEFAULTS every one of them to false whether or not it was typed.
-export const BOOL_ARGV = ['help', 'h', 'dry', 'd', 'verbose']
-
-// Undo that defaulting. `-d` arrives as `{ d: true, dry: false }`, and
-// getConfig's short-flag promotion reads a DEFINED `dry` as "the long name was
-// given" and drops the short one — so `fli db:import -d` ran the real import
-// against production. Only names actually on the command line survive.
-export function dropUntypedBooleans(flag, args) {
-  const typed = new Set(
-    args
-      .filter(a => a.startsWith('-') && a !== '-' && a !== '--')
-      .flatMap(a => {
-        const name = a.replace(/^--?/, '').split('=')[0]
-        // `-dt` is two short flags; `--dry` is one long one.
-        return a.startsWith('--') ? [name] : name.split('')
-      })
-  )
-  for (const name of BOOL_ARGV) {
-    if (flag[name] === false && !typed.has(name)) delete flag[name]
-  }
-  return flag
 }
 
 // ─── Default flags ────────────────────────────────────────────────────────────
@@ -1102,7 +1056,6 @@ export function getConfig(metadata, rawArg, flag) {
       }
       delete flag[key]
       // Only promote short char if the full-name flag isn't already explicitly set
-      // and the value is truthy (minimist sets unpasssed short booleans to false)
       if (flag[found[0]] === undefined) {
         key = found[0]
         flag[key] = value
@@ -1166,7 +1119,7 @@ export function getConfig(metadata, rawArg, flag) {
     if (setValue !== undefined) flag[key] = setValue
   })
 
-  return { ...meta, flag, arg }
+  return commandContext({ ...meta, flag, arg })
 }
 
 // ─── Git utilities ────────────────────────────────────────────────────────────

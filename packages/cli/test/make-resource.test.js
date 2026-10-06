@@ -49,7 +49,7 @@ beforeAll(async () => {
     file: CMD,
     arg:  ['Lead'],          // positionals, in order — getConfig maps them to names
     flag: {},
-    emit: (e) => events.push(e),   // structured events — keeps ZX's echo global out
+    emit: (e) => events.push(e),   // structured events, read back below
   })
   await run()
 

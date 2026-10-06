@@ -4,6 +4,6 @@ runOnAbort: true
 ---
 
 ```js
-context.config.ran.push('03')
+$.config.ran.push('03')
 log.info('CLEANUP RAN')
 ```

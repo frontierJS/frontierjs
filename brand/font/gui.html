@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FrontierJS Font Builder</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --paper: #dcc496; --ink: #2d231e; --panel: #f4ede0; --line: #c9b78f; --accent: #8a4b2a; }
+  * { box-sizing: border-box }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--panel); display: grid; grid-template-columns: 300px 1fr; min-height: 100vh }
+  aside { padding: 16px; border-right: 1px solid var(--line); background: #efe6d3; overflow-y: auto }
+  main { padding: 24px; background: var(--paper); overflow: auto }
+  h1 { font-size: 15px; margin: 0 0 12px; letter-spacing: .08em; text-transform: uppercase }
+  h2 { font-size: 11px; margin: 18px 0 6px; letter-spacing: .12em; text-transform: uppercase; color: #6b5a44 }
+  label.knob { display: grid; grid-template-columns: 52px 1fr 48px; gap: 8px; align-items: center; margin: 6px 0; font-size: 12px }
+  label.knob span.v { text-align: right; font-variant-numeric: tabular-nums }
+  input[type=range] { width: 100% }
+  input[type=text], input[type=number] { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font: inherit; background: #fff }
+  button { padding: 7px 12px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 4px; cursor: pointer; font: inherit }
+  button.alt { background: transparent; color: var(--accent) }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap }
+  #status { font-size: 12px; color: #6b5a44; min-height: 1.4em; margin-top: 8px; white-space: pre-wrap }
+  #status.err { color: #a12; }
+  .specimen { font-family: 'Preview', serif; color: var(--ink); line-height: 1.1; margin: 0 0 24px; overflow-wrap: anywhere }
+  .specimen.big { font-size: 160px; letter-spacing: var(--track, 0) }
+  .specimen.mid { font-size: 56px }
+  .specimen.small { font-size: 28px }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 72px); gap: 6px }
+  .grid div { font-family: 'Preview', serif; font-size: 44px; text-align: center; border: 1px solid rgba(0,0,0,.08); border-radius: 4px; padding: 10px 0 2px; background: rgba(255,255,255,.18) }
+  .grid div small { display: block; font: 10px system-ui; opacity: .5 }
+  .checks { font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap }
+  @media (max-width: 760px) { body { grid-template-columns: 1fr } aside { border-right: 0; border-bottom: 1px solid var(--line) } .specimen.big { font-size: 72px } }
+</style>
+</head>
+<body>
+<aside>
+  <h1>FrontierJS font</h1>
+  <h2>Weight</h2>
+  <div id="knobs"></div>
+  <h2>Wear</h2>
+  <label class="checks"><input type="checkbox" id="WORN"> worn</label>
+  <div id="wear"></div>
+  <h2>Preview</h2>
+  <input type="text" id="text" value="FRONTIERJS">
+  <label class="knob" style="margin-top:8px"><span>track</span><input type="range" id="track" min="-0.08" max="0.2" step="0.005" value="0"><span class="v" id="trackv">0</span></label>
+  <label class="checks" style="margin-top:8px"><input type="checkbox" id="KERN" checked> kern (adds ~1.3s)</label>
+  <div class="row">
+    <button id="rebuild">Rebuild</button>
+    <button class="alt" id="reset">Reset</button>
+  </div>
+  <div class="row">
+    <a id="dl-ttf" download><button class="alt">.ttf</button></a>
+    <a id="dl-woff2" download><button class="alt">.woff2</button></a>
+  </div>
+  <div id="status"></div>
+  <h2>Env for the CLI</h2>
+  <code id="env" style="font-size:11px; display:block; white-space:pre-wrap"></code>
+</aside>
+<main>
+  <p class="specimen big" id="big">FRONTIERJS</p>
+  <p class="specimen mid">The Last Framework — Let's Get Our Hands Dirty.</p>
+  <p class="specimen small">ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 .,:;!?'"-_/\()[]+=&lt;&gt;*#$%&amp;@</p>
+  <div class="grid" id="grid"></div>
+</main>
+<script>
+const KNOBS = [
+  ['S',   'stem',     100, 260, 1,   175],
+  ['HL',  'bar',      20,  120, 1,   105],
+  ['ST',  'serif',    10,  110, 1,   62],
+  ['EXT', 'reach',    10,  120, 1,   55],
+  ['COND','width',    0.5, 1.2, 0.01,0.78],
+  ['EMB', 'embolden', 0,   40,  1,   16],
+  ['SB',  'bearing',  0,   80,  1,   20],
+  ['CH',  'cap',      500, 800, 10,  700],
+]
+const WEAR = [
+  ['WEAR', 'amount', 0, 3, 0.1, 1],
+  ['GRIT', 'size',   0.3, 3, 0.1, 1],
+  ['SEED', 'seed',   0, 99, 1, 0],
+]
+function slider(host, [k, name, min, max, step, def]) {
+  const l = document.createElement('label'); l.className = 'knob'
+  l.innerHTML = `<span>${name}</span><input type="range" id="${k}" min="${min}" max="${max}" step="${step}" value="${def}" data-def="${def}"><span class="v" id="${k}v">${def}</span>`
+  host.appendChild(l)
+  l.querySelector('input').addEventListener('input', e => { document.getElementById(k + 'v').textContent = e.target.value; schedule() })
+}
+KNOBS.forEach(k => slider(document.getElementById('knobs'), k))
+WEAR.forEach(k => slider(document.getElementById('wear'), k))
+
+const params = () => {
+  const p = {}
+  for (const [k] of [...KNOBS, ...WEAR]) p[k] = +document.getElementById(k).value
+  p.WORN = document.getElementById('WORN').checked ? 1 : 0
+  p.KERN = document.getElementById('KERN').checked
+  return p
+}
+let timer, inflight = false, queued = false
+function schedule() { clearTimeout(timer); timer = setTimeout(build, 350) }
+async function build() {
+  if (inflight) { queued = true; return }
+  inflight = true
+  const p = params(), status = document.getElementById('status')
+  status.className = ''; status.textContent = 'building…'
+  document.getElementById('env').textContent = Object.entries(p).filter(([k]) => k !== 'KERN').map(([k, v]) => `${k}=${v}`).join(' ') + ' python3 build_serif.py'
+  try {
+    const r = await fetch('/build', { method: 'POST', body: JSON.stringify(p) })
+    const j = await r.json()
+    if (j.error) { status.className = 'err'; status.textContent = j.error; return }
+    const bytes = Uint8Array.from(atob(j.woff2), c => c.charCodeAt(0))
+    const face = new FontFace('Preview', bytes.buffer)
+    await face.load()
+    for (const f of document.fonts) if (f.family === 'Preview') document.fonts.delete(f)
+    document.fonts.add(face)
+    document.getElementById('dl-ttf').href = `/out/${j.slug}.ttf`
+    document.getElementById('dl-woff2').href = `/out/${j.slug}.woff2`
+    status.textContent = `${j.family} · ${j.ms} ms`
+  } catch (e) { status.className = 'err'; status.textContent = String(e) }
+  finally { inflight = false; if (queued) { queued = false; build() } }
+}
+document.getElementById('WORN').addEventListener('change', schedule)
+document.getElementById('KERN').addEventListener('change', schedule)
+document.getElementById('rebuild').addEventListener('click', build)
+document.getElementById('reset').addEventListener('click', () => {
+  for (const [k] of [...KNOBS, ...WEAR]) { const i = document.getElementById(k); i.value = i.dataset.def; document.getElementById(k + 'v').textContent = i.value }
+  document.getElementById('WORN').checked = false; build()
+})
+document.getElementById('text').addEventListener('input', e => document.getElementById('big').textContent = e.target.value)
+document.getElementById('track').addEventListener('input', e => {
+  document.getElementById('trackv').textContent = e.target.value
+  document.getElementById('big').style.setProperty('--track', e.target.value + 'em')
+})
+const grid = document.getElementById('grid')
+for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:;!?\'"-_/\\()[]+=<>*#$%&@') {
+  const d = document.createElement('div'); d.textContent = c
+  const s = document.createElement('small'); s.textContent = c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0'); d.appendChild(s); grid.appendChild(d)
+}
+build()
+</script>
+</body>
+</html>

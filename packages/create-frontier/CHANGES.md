@@ -1,5 +1,9 @@
 # create-frontier — changes
 
+## 2026-10-06 — the scaffold runs under bun
+
+`fli` runs under bun (`FJS-D593`), and this entry is reached through `npm create`, so the parent is node: the resolved `fli` bin is now spawned with `bun`, which the up-front check already requires, rather than `process.execPath`. The entry's own shebang stays node.
+
 ## 0.1.0 — first release
 
 `npm create frontier@latest my-app`. Answers `IDEAS/overview.md` 1.2: there was

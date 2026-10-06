@@ -40,7 +40,7 @@ const hasScript = (pkg, name) => !!pkg.scripts?.[name]
 </script>
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 let packages = all
 
@@ -64,7 +64,7 @@ if (flag.filter) {
 // Apply --affected filter
 if (flag.affected) {
   const before = packages.length
-  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
+  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).affected)
   const skippedAffected = before - packages.length
   if (skippedAffected) log.info(`--affected: skipping ${skippedAffected} unchanged package(s)`)
   if (!packages.length) {

@@ -44,7 +44,7 @@ register it with `fli ws:add`.
 - `git` installed and on PATH
 
 ```js
-const token = context.env.GITHUB_TOKEN
+const token = $.env.GITHUB_TOKEN
 if (!token) {
   log.error('GITHUB_TOKEN is not set')
   log.info('Add it with:  fli eset GITHUB_TOKEN <your-token> --global')
@@ -55,7 +55,7 @@ if (!token) {
 // Resolve owner/repo — bare name uses $GITHUB_DEFAULT_ORG
 let repoArg = arg.repo
 if (!repoArg.includes('/')) {
-  const defaultOrg = context.env.GITHUB_DEFAULT_ORG
+  const defaultOrg = $.env.GITHUB_DEFAULT_ORG
   if (!defaultOrg) {
     log.error(`No org in "${repoArg}" and GITHUB_DEFAULT_ORG is not set`)
     log.info('Use owner/repo format or set GITHUB_DEFAULT_ORG in your .env')
@@ -87,7 +87,7 @@ let destDir
 
 if (flag.ws) {
   // --ws: clone into workspace packages/
-  const wsRoot = await context.wsRoot()
+  const wsRoot = await $.wsRoot()
   if (!wsRoot) { log.error('No workspace path provided'); return }
   destDir = resolve(wsRoot, 'packages', repoName)
 } else if (flag.dir) {
@@ -95,11 +95,11 @@ if (flag.ws) {
 } else {
   // Ask: cwd or custom path?
   const cwd = process.cwd()
-  const answer = await question(`Clone into current dir (${cwd})? [Y/n]: `)
+  const answer = await tty.line(`Clone into current dir (${cwd})? [Y/n]: `)
   if (!answer.trim() || answer.trim().toLowerCase() === 'y') {
     destDir = resolve(cwd, repoName)
   } else {
-    const customDir = await question('Enter path: ')
+    const customDir = await tty.line('Enter path: ')
     destDir = resolve(customDir.trim().replace(/^~/, process.env.HOME || ''), repoName)
   }
 }
@@ -138,7 +138,7 @@ try {
   if (flag.ws) {
     // Run ws:add to register it in the workspace
     log.info('Registering in workspace...')
-    execSync(`node "${context.env.FLI_ROOT || ''}/bin/fli.js" ws:add "${destDir}"`, { stdio: 'inherit' })
+    execSync(`${$.fli} ws:add "${destDir}"`, { stdio: 'inherit' })
   }
 
   echo('')

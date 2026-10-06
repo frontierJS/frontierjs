@@ -198,10 +198,10 @@ export function createMachine({ host, exec, transport = null, path = null }) {
   // HONORS it on bun. The script travels on stdin, so under node every
   // `machine.run` in the pipeline was a silent no-op that reported success: the
   // mkdir that creates `.fli`, the swap, the lock release, all of it. `fli`'s
-  // shebang is `#!/usr/bin/env node`, so that is what a global install does; CI
-  // never saw it because the deploy phase invokes `bun <fli>` explicitly
-  // (`FJS-738`). Piping stdin alone delivers the script on both runtimes and
-  // keeps the operator's view of stdout and stderr.
+  // shebang was node then, so that is what a global install did; CI never saw
+  // it because the deploy phase invokes `bun <fli>` explicitly (`FJS-738`).
+  // Piping stdin alone delivers the script on both runtimes and keeps the
+  // operator's view of stdout and stderr.
   const call = (script, { cwd = null, stdio = ['pipe', 'inherit', 'inherit'], ...opts } = {}) => {
     const body = withCwd(script, cwd)
     return exec({

@@ -62,11 +62,13 @@ flags:
 ---
 
 <script>
-import TurndownService from 'turndown'
-import { parseHTML } from 'linkedom'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { dirname, resolve as resolvePath } from 'path'
 import { pathToFileURL } from 'url'
+
+const { loadPeer } = await import(resolvePath(global.fliRoot, 'core/peer.js'))
+const { default: TurndownService } = await loadPeer('turndown', 'ksite:fetch')
+const { parseHTML } = await loadPeer('linkedom', 'ksite:fetch')
 
 // One Turndown instance reused for the whole run
 const turndown = new TurndownService({
@@ -280,7 +282,7 @@ const fetchWithRetry = async (url, { timeout, retry, userAgent } = {}) => {
   } catch (err) {
     const transient = /HTTP 5\d\d|aborted|ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(err.message)
     if (retry && transient) {
-      await sleep(2000)
+      await Bun.sleep(2000)
       return await attempt()
     }
     throw err
@@ -546,8 +548,8 @@ if (mode === 'error') {
 }
 
 // Output destination for content + downloaded media
-const contentRoot = context.paths.siteContent
-const mediaRoot   = context.paths.siteMedia
+const contentRoot = $.paths.siteContent
+const mediaRoot   = $.paths.siteMedia
 const destRoot    = `${contentRoot}/${dest}${prefix ? '/' + prefix.replace(/^\/+|\/+$/g, '') : ''}`
 log.info(`writing to: ${destRoot}/`)
 
@@ -631,15 +633,15 @@ for (let i = 0; i < urls.length; i++) {
       log.success(`wrote ${filePath}`)
 
       if (flag.open) {
-        const opener = context.env.OPEN_COMMAND ?? 'vi'
-        context.exec({ command: `${opener} ${filePath}` })
+        const opener = $.env.OPEN_COMMAND ?? 'vi'
+        $.exec({ command: `${opener} ${filePath}` })
       }
     }
   } catch (err) {
     log.warn(`skip ${url}: ${err.message}`)
   }
 
-  if (i < urls.length - 1) await sleep(flag.delay ?? 1000)
+  if (i < urls.length - 1) await Bun.sleep(flag.delay ?? 1000)
 }
 
 log.success(`done — ${urls.length} url(s) processed`)

@@ -41,19 +41,19 @@ const { configurationSet, schemaSurfaceHash, mintRelease, formatRelease, Configu
 // ─── target ──────────────────────────────────────────────────────────────────
 // The same resolution `fli deploy` uses, so a Release is minted for the
 // environment it would be deployed to and not for a different one.
-const branch = context.git.branch?.() ?? ''
+const branch = $.git.branch?.() ?? ''
 const target = flag.production ? 'production'
              : flag.stage      ? 'stage'
              : /^(stage|staging)$/.test(branch) ? 'stage'
              : 'dev'
 
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf) {
   log.error('No deploy block in frontier.config.js — there is no Environment to mint against')
   log.info('Run `fli make:deploy` to write one')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -64,11 +64,11 @@ try {
 } catch (e) {
   if (!(e instanceof ConfigurationError)) throw e
   log.error(e.message)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-const schema = schemaSurfaceHash(context.paths.db)
+const schema = schemaSurfaceHash($.paths.db)
 if (schema.missing) {
   // Not fatal: an app may legitimately have no schema. It is stated because a
   // Release with no data boundary in its id is a weaker claim than one with,
@@ -88,8 +88,8 @@ if (!schema.missing) {
   //
   // `--json` alone: it emits the VERDICT and writes nothing. Adding `--stdout`
   // prints the surface instead, which parses as JSON and is the wrong document.
-  const out = context.exec({
-    command: `${litestone(context)} release --schema ${context.paths.db}/schema.lite --json`,
+  const out = $.exec({
+    command: `${litestone($)} release --schema ${$.paths.db}/schema.lite --json`,
     stdio:   'pipe',
   })
   try {
@@ -110,7 +110,7 @@ const release = mintRelease({
   schemaHash:    schema.hash,
   pivot,
   pivotFindings: findings,
-  createdBy:     context.git.user?.() ?? null,
+  createdBy:     $.git.user?.() ?? null,
 })
 
 if (flag.json) {

@@ -23,7 +23,7 @@ Every member of the workspace and the version in its `package.json`.
 That is the LOCAL version — `fli ws:npm` is the one that asks the registry.
 
 ```js
-const { wsRoot, packages } = await context.wsPackages()
+const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {
@@ -49,7 +49,7 @@ echo(`\nWorkspace: ${wsRoot}`)
 echo(`Packages:  ${packages.length}\n`)
 
 for (const { pkg, folder, dir } of packages) {
-  const branch = context.git.branch(dir)
+  const branch = $.git.branch(dir)
   const branchStr = branch ? ` (${branch})` : ''
   const privStr = pkg.private ? '  [private]' : ''
   echo(`  ${pkg.name}@${pkg.version}${branchStr}${privStr}`)

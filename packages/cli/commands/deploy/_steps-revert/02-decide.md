@@ -4,15 +4,15 @@ description: Read the journal, choose the release to restore, and refuse by name
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, deployConf, target, appId } = context.config
+const { host, serverPath, deployConf, target, appId } = $.config
 
 const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
 const { chooseTarget, transitionsSince, imageFromSteps, revertRefusals, blocking, formatRevertPlan, REFUSALS } =
   await core('revert.js')
 
-const j = await connectJournal(context, { host, serverPath, deployConf })
+const j = await connectJournal($, { host, serverPath, deployConf })
 
 const history = await j.history({ app: appId, environment: target, limit: 50 })
 const chosen  = chooseTarget(history, { to: flag.to || null })
@@ -25,7 +25,7 @@ if (chosen.reason === 'no-journal') {
   log.info('')
   log.info('  `fli deploy:rollback` puts the previous image back with no journal.')
   log.info('  It restores the code and cannot tell you what else moved.')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -58,7 +58,7 @@ if (targetRelease) {
 // cannot say what is running. Docker can, and that is the fact the `same-bytes`
 // refusal is about: not what was meant, what is up. An unreadable answer decides
 // nothing rather than deciding *the same*.
-const running = machineFor(context, host, serverPath)
+const running = machineFor($, host, serverPath)
   .capture(`docker inspect ${apiContainer(appId, deployConf)} --format '{{.Image}}' 2>/dev/null || echo ''`)
 const servingImage = running ? { image: running } : null
 
@@ -70,7 +70,7 @@ const refusals = revertRefusals({
   image,
   servingImage,
   inFlight:   chosen.inFlight,
-  force:      context.config.force,
+  force:      $.config.force,
 })
 
 console.log()
@@ -83,7 +83,7 @@ console.log()
 const stopping = blocking(refusals)
 if (stopping.length) {
   log.error(`Refusing: ${stopping.map(r => r.kind).join(', ')}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -91,7 +91,7 @@ if (flag.plan) {
   log.info('--plan: nothing was written or run.')
   // `stop`, not `abort`: the six refusals above this line fail the command,
   // and asking for a plan is not one of them (`FJS-589`).
-  context.config.stop = true
+  $.config.stop = true
   return
 }
 
@@ -121,11 +121,11 @@ const { attempt } = await j.attempt(intent)
 const planned = planTransition({
   kind: 'revert',
   release: { ...targetRelease, app: appId, environment: target },
-  steps: planSteps(metas, { flag, context: { config: context.config } }),
+  steps: planSteps(metas, { flag, $: { config: $.config } }),
   fromReleaseId: intent.fromReleaseId,
   generation:    intent.generation,
   attempt,
-  actor: context.git.user?.() ?? null,
+  actor: $.git.user?.() ?? null,
 })
 
 // `crossesPivot` on a REVERT means the operator forced their way past one — the
@@ -141,7 +141,7 @@ const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
 for (const name of ['01-preflight', '02-decide'])
   await j.finish({ id: occurrenceKey('revert', planned.transition.id, name), status: 'succeeded' })
 
-context.config.journal = {
+$.config.journal = {
   async beforeStep(name) {
     await j.claim({ id: occurrenceKey('revert', planned.transition.id, name) })
     return { run: true }
@@ -152,17 +152,17 @@ context.config.journal = {
     // keyed bag the deploy side drains.
     await j.finish({
       id: occurrenceKey('revert', planned.transition.id, name),
-      status, durationMs, output: output ?? takeNote(context, name),
+      status, durationMs, output: output ?? takeNote($, name),
     })
   },
   async settle(status) { await j.settle({ id: planned.transition.id, status }) },
 }
 
-context.config.transitionId  = planned.transition.id
-context.config.journalClient = j
-context.config.revertTo      = targetRelease
-context.config.revertImage   = image.image
-context.config.revertFrom    = chosen.serving
+$.config.transitionId  = planned.transition.id
+$.config.journalClient = j
+$.config.revertTo      = targetRelease
+$.config.revertImage   = image.image
+$.config.revertFrom    = chosen.serving
 
 log.success(`Revert transition opened → ${planned.transition.id}`)
 ```

@@ -29,25 +29,25 @@ The route files are Mesa. `web/src/routes/notes/index.mesa` is the URL
 step with it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-context.exec({
-  command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
-  cwd:     context.config.appDir,
+$.exec({
+  command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  cwd:     $.config.appDir,
 })
 
-const app = context.config.appDir
+const app = $.config.appDir
 for (const [path, what] of [
   ['api/src/services/notes.service.ts', 'the service'],
   ['web/src/resources/Note.mesa',       'the Resource'],
   ['web/src/routes/notes/index.mesa',   'the list route'],
   ['web/src/routes/notes/create.mesa',  'the create route'],
 ]) {
-  if (!await must(context, probe.fileExists({ path: join(app, path), name: `${path} — ${what}` }), {
+  if (!await must($, probe.fileExists({ path: join(app, path), name: `${path} — ${what}` }), {
     likely:    'fli scaffold stopped part way — its output is above',
     reproduce: `cd ${app} && fli scaffold Note --fields "title:string body:text done:boolean"`,
   })) return
@@ -55,15 +55,15 @@ for (const [path, what] of [
 
 const schema = join(app, 'db', 'schema.lite')
 
-if (!await must(context, probe.fileContains({ path: schema, needle: /^model Note \{/m, name: 'the seed declares model Note' }), {
+if (!await must($, probe.fileContains({ path: schema, needle: /^model Note \{/m, name: 'the seed declares model Note' }), {
   likely: '--skip-schema was passed, or the stanza went to another file',
 })) return
 
 // The gate is the point of the step, so it is asserted rather than described.
-if (!await must(context, probe.fileContains({ path: schema, needle: /@@gate\("0\.4\.4\.6"\)/, name: 'Note reads at 0 and writes at 4' }), {
+if (!await must($, probe.fileContains({ path: schema, needle: /@@gate\("0\.4\.4\.6"\)/, name: 'Note reads at 0 and writes at 4' }), {
   likely:    'the scaffold template changed its default gate — the lesson text below it is now wrong',
   reproduce: `grep -A 14 '^model Note' ${schema}`,
 })) return
 
-remember(context, '06-model', { model: 'Note', service: 'notes' })
+remember($, '06-model', { model: 'Note', service: 'notes' })
 ```

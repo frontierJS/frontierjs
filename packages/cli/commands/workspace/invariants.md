@@ -35,7 +35,7 @@ const { invariantCoverage, renderInvariants } =
   await import(resolve(global.fliRoot, 'core/invariants.js'))
 const { RULES } = await import(resolve(global.fliRoot, 'core/checks.js'))
 
-const root = await context.wsRoot()
+const root = await $.wsRoot()
 if (!root) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 const rows = invariantCoverage({ root, rules: RULES })

@@ -1,10 +1,17 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
-// ─── Node version check ───────────────────────────────────────────────────────
-const [major, minor] = process.versions.node.split('.').map(Number)
-if (major < 20 || (major === 20 && minor < 6)) {
-  console.error(`FLI requires Node.js 20.6 or later. You have ${process.version}.`)
-  console.error('Download the latest Node.js at https://nodejs.org')
+// ─── Runtime check ────────────────────────────────────────────────────────────
+// fli runs under bun (`FJS-D593`): a command body's shell is `Bun.$`, and an
+// app's API cannot run anywhere else either. A node-run fli would get as far as
+// the first command and die inside it, which names nothing.
+if (!process.versions.bun) {
+  console.error('fli runs under Bun 1.4 or later — install it at https://bun.sh')
+  process.exit(1)
+}
+const [major, minor] = process.versions.bun.split('.').map(Number)
+if (major < 1 || (major === 1 && minor < 4)) {
+  console.error(`fli requires Bun 1.4 or later. You have ${process.versions.bun}.`)
+  console.error('Upgrade with: bun upgrade')
   process.exit(1)
 }
 

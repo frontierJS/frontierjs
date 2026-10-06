@@ -4,7 +4,7 @@ description: Install dependencies (or add new ones)
 alias: ni
 examples:
   - fli ni
-  - fli ni zx dotenv
+  - fli ni linkedom turndown
   - fli ni lodash --save-dev
   - fli ni --frozen
   - fli ni --dry
@@ -31,10 +31,10 @@ flags:
 ---
 
 ```js
-const root = context.paths.root
+const root = $.paths.root
 
 if (flag.frozen) {
-  context.exec({ command: `npm ci --prefix ${root}`, dry: flag.dry })
+  $.exec({ command: `npm ci --prefix ${root}`, dry: flag.dry })
   return
 }
 
@@ -45,5 +45,5 @@ if (flag.dev)    parts.push('--save-dev')
 if (flag.global) parts.push('--global')
 if (!flag.global) parts.push(`--prefix ${root}`)
 
-context.exec({ command: parts.join(' '), dry: flag.dry })
+$.exec({ command: parts.join(' '), dry: flag.dry })
 ```

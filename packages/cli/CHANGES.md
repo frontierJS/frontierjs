@@ -1,5 +1,35 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-05 — `fli next` ranks by reach
+
+A fourth tiebreak under severity: how many workspace packages depend on the row's package, counted through any package between, read from the manifests. +1 for every 3 dependents, capped at +3, which is below one citation (+4), so reach orders rows within a tie and never moves a row past one. Today toolbelt reaches 18, litestone 11, junction 10, mesa 8 and css 5. The largest tie in the register (S3 with no other term) went from 104 rows to 55. The manifest reader is `workspaceDeps(root)` in `core/runnables.js`, and `repo-map.js`'s `packages()` now takes its deps from it instead of reading them a second way. Tests: `test/next.test.js` checks a pair that counts reach through a package in between, and that the widest reach still loses to one citation. Docs: `register/next.md` § How a row is scored, `CLAUDE.md` layout.
+
+## 2026-10-06 — zx is gone; `$` is the command in progress
+
+`fli` runs under bun (`FJS-D593`): the three shebangs flipped, `bin/fli.js` refuses a node run by name, and `create-frontier` spawns `bun` rather than `process.execPath`. A compiled command's body is `run($)` — `$` is the context, callable as the shell tag — and the head imports `path` and `fs` and nothing else (`FJS-D594`); `flags, args, flag, arg, log, tty, echo, chalk, answers` are destructured from `$`. `core/shell.js` owns both: `commandContext()` builds the callable, and `` $`…` `` is `Bun.$` under fli's rules — captures unless `--verbose`, runs nothing under `--dry` through `log.dry` (the one dry owner, which `$.exec` and `$.stream` now call too), throws with the command named, `.lines()` an array. `tty.line(prompt, { default })` replaces zx's `question()` (`FJS-D595`, closes `FJS-1406`): raw mode is handed back for the line and taken again after, `--yes` answers the default, no terminal refuses by name. `core/color.js` is the one chalk; the seven chained sites are nested calls; `plainChalk` and the `globalThis.echo` shadow are gone, `echo` is on `$` in both modes. The `node_modules` symlink `fliTmpRoot()` kept for one bare import is gone with it (`FJS-166` stays closed by `test/project-root.test.js`'s bare-specifier assertion). Every `context.` in every command, step, fixture, generator and doc is `$.`; `sleep` is `Bun.sleep`; `make:factory --open` lends the screen through `tty.aside` + `$.stream`.
+
+**`core/scope.js` + `command-resolves`** — the free-identifier check `IDEAS/scope-checking.md` costed: real lexical scopes over the unit the runtime loads, with the project's own TypeScript as the parser (no new dependency; no parser is a skip that says so). Its first sweep found 15 live `ReferenceError`s on a green tree — `log`/`echo`/`tty` reached from `<script>` helpers in `crypto:keygen`, `deploy:doctor`, `fli:validate`, `ksite:update` and the cli's own `hello:greet`, and a missing `randomBytes` import in `project/_module.md` — all fixed. `test/scope.test.js` holds this package's commands and `cli/src/routes` at zero.
+
+**Measured, the four things no suite covers.** A running command (`fli hello:exec /tmp --dry`) is 51ms wall, average of 10, where `PROJECT_STATE.md` had recorded ~206ms for a running command with zx's ~110ms import in it; `fli list` is 42ms. `bun pm pack` + `npm i -g` into a prefix then made read-only runs `fli list` and `fli fli:doctor` with the session under `/tmp/fli-<digest>/` and no symlink. Two concurrent `POST /api/run` streams of a command that echoes three times with pauses each carry only their own lines. `fli make:factory Product --open` under a pty runs `$EDITOR` through `tty.aside` and returns.
+
+Tests: `shell.test.js`, `scope.test.js` (new, in the `test` script), `tty.test.js` § line, `checks.test.js` § command-resolves; `stack.test.js` is bun-only now. Docs: README § The context, `CLAUDE.md` (three hazard lines), `PROJECT_STATE.md`, `IDEAS/bun-natives.md`'s *fli is node* premise reopened.
+
+## 2026-10-05 — minimist dropped; `core/argv.js` reads the command line
+
+`parseArgv(args, { bools })` replaces minimist and keeps all of its readings fli relies on. That includes numbers coerced by how they look, `--no-x`, clustered short flags with a value on the last one, `-p8080`, a repeated flag read as an array, and `--` ending the flags. Forty argv shapes were compared against minimist plus `dropUntypedBooleans`, with no difference. The one change is that an untyped boolean is ABSENT rather than defaulted to `false`, so `dropUntypedBooleans`, which only existed to undo minimist's defaulting, is gone. `BOOL_ARGV` moved to `argv.js`. Tests: `test/argv.test.js` (new, in the `test` script), with `short-flags` and `verbosity` moved onto the new parser.
+
+## 2026-10-05 — an extension app no longer installs chokidar; vite `^8.3.2`
+
+`extensionDevDeps()` follows jetty's peer ranges. jetty's dev server watches with `fs.watch`, so chokidar left the list, and vite moved to `^8.3.2` with jetty. `test/app-config.test.js` holds the two lists equal.
+
+## 2026-10-05 — linkedom and turndown are optional peers
+
+Only `ksite:fetch` uses them, yet every install of fli pulled both. They are now optional `peerDependencies` (and `devDependencies`, for the workspace). `core/peer.js` `loadPeer(name, forWhat)` loads one, asking the app first: a command shim resolves from fliRoot, and under bun's isolated linker a package the app added never appears on that path. When the peer is missing, the error names the command and the `bun add -d` line, rather than "Cannot find package" from inside fli.
+
+## 2026-10-05 — stray `package-lock.json` deleted
+
+An npm lockfile left over in a Bun workspace. `bun.lock` at the root is the only lockfile, and this one still pinned `css-what ^6` and `css-select ^5`, versions nothing here resolves.
+
 ## 2026-10-05 — the rings page opens the files it summarizes
 
 Each key document's page, the specifications view and the ideas page now carry two links: *Open in VS Code* (`vscode://file/…`) and *View the file* (`file://…`). On the key documents list, the file name on each card is the editor link. The card became a `div` with `role="link"` so it can hold a real anchor. A click on an anchor skips the page's router, and Enter on a focused card works the way it does on a door. `renderRings(model, { root })` builds absolute links because `--out` can write the page anywhere; `ws:atlas` passes the workspace root. Without a root the links are relative to the page. Test: absolute with a root, encoded, relative without one.

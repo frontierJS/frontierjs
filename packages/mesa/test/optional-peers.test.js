@@ -1,5 +1,5 @@
 /**
- * happy-dom and the unified/remark/rehype stack are OPTIONAL peers: a
+ * happy-dom, css-tree and the unified/remark/rehype stack are OPTIONAL peers: a
  * client-only app installs mesa without them. That holds only while nothing a
  * client build reaches imports one STATICALLY — a single top-level `import`
  * from the compiler or the runtime and every such app fails on install of a
@@ -58,7 +58,7 @@ function reachedPackages(entry) {
 describe('optional peers', () => {
   it('names the server-half packages as optional peers', () => {
     expect(OPTIONAL).toEqual(expect.arrayContaining([
-      'happy-dom', 'unified', 'remark-parse', 'remark-gfm', 'remark-rehype', 'rehype-slug', 'rehype-stringify',
+      'happy-dom', 'css-tree', 'unified', 'remark-parse', 'remark-gfm', 'remark-rehype', 'rehype-slug', 'rehype-stringify',
     ]))
     for (const name of OPTIONAL) expect(pkg.dependencies?.[name]).toBeUndefined()
   })

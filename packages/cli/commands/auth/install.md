@@ -234,11 +234,11 @@ package by name and a `bun update` reaches them. `--db` becomes `into <db>` on
 that import line.
 
 ```js
-const schemaPath  = resolve(context.paths.db,  'schema.lite')
-const authLitePath = resolve(context.paths.db, 'auth.lite')
-const authTsPath  = resolve(context.paths.api, 'src/auth.ts')
-const envPath     = resolve(context.paths.root, '.env')
-const envExPath   = resolve(context.paths.root, '.env.example')
+const schemaPath  = resolve($.paths.db,  'schema.lite')
+const authLitePath = resolve($.paths.db, 'auth.lite')
+const authTsPath  = resolve($.paths.api, 'src/auth.ts')
+const envPath     = resolve($.paths.root, '.env')
+const envExPath   = resolve($.paths.root, '.env.example')
 const editor      = process.env.EDITOR || 'vi'
 
 // ─── 1. Preflight checks ──────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ echo('')
 // dependency nobody installed fails here in exactly the same way, and this is
 // about to read files out of the package.
 
-let userLite = resolveFromApp(context.paths.root, `${AUTH_PKG}/user.lite`)
+let userLite = resolveFromApp($.paths.root, `${AUTH_PKG}/user.lite`)
 
 if (!userLite) {
   // WHICH auth, and it is the app's existing answer rather than a fresh one.
@@ -318,7 +318,7 @@ if (!userLite) {
   // already there; what is missing is node_modules, and `install` is the verb
   // for that.
   const deps = (() => {
-    try { return JSON.parse(readFileSync(resolve(context.paths.root, 'package.json'), 'utf8')).dependencies ?? {} }
+    try { return JSON.parse(readFileSync(resolve($.paths.root, 'package.json'), 'utf8')).dependencies ?? {} }
     catch { return {} }
   })()
 
@@ -330,18 +330,18 @@ if (!userLite) {
     log.dry(`Would run: ${command}`)
   } else {
     log.info(declared ? `${AUTH_PKG} is already declared — installing...` : `Installing ${AUTH_PKG}...`)
-    context.exec({ command: `cd ${context.paths.root} && ${command}` })
-    userLite = resolveFromApp(context.paths.root, `${AUTH_PKG}/user.lite`)
+    $.exec({ command: `cd ${$.paths.root} && ${command}` })
+    userLite = resolveFromApp($.paths.root, `${AUTH_PKG}/user.lite`)
   }
 }
 
 // `schema.lite` is only resolved to check it is reachable — the schema imports it
 // by name and nothing copies it. `user.lite` IS read, because User is appended as
 // text for the app to own and edit.
-const machineryLite = userLite ? resolveFromApp(context.paths.root, `${AUTH_PKG}/schema.lite`) : null
+const machineryLite = userLite ? resolveFromApp($.paths.root, `${AUTH_PKG}/schema.lite`) : null
 
 if (!flag.dry && !(userLite && machineryLite)) {
-  log.error(`Could not resolve ${AUTH_PKG}'s schema files from ${context.paths.root}`)
+  log.error(`Could not resolve ${AUTH_PKG}'s schema files from ${$.paths.root}`)
   log.info(`Install it first: bun add ${AUTH_PKG}`)
   log.info(`A version older than 1.0.2 does not ship them — it kept the schema in TypeScript.`)
   return
@@ -378,7 +378,7 @@ const hasKey = (name) => existsSync(envPath) &&
 // `.env` is this machine's; `.env.example` is the one that is committed, so a key
 // written only to the first is a key the next clone has no name for. Declared with
 // no value — the example file is the list of what must be set, never the values.
-const examplePath = resolve(context.paths.root, '.env.example')
+const examplePath = resolve($.paths.root, '.env.example')
 
 function declareInExample(name) {
   if (flag.dry || !existsSync(examplePath)) return
@@ -395,7 +395,7 @@ if (encKeyExists) {
 } else if (flag.dry) {
   log.dry('Would generate ENCRYPTION_KEY (64 hex chars) → .env')
 } else {
-  context.exec({ command: `cd ${context.paths.root} && ${context.fli} keygen aes --name ENCRYPTION_KEY --env --format hex` })
+  $.exec({ command: `cd ${$.paths.root} && ${$.fli} keygen aes --name ENCRYPTION_KEY --env --format hex` })
   declareInExample('ENCRYPTION_KEY')
 }
 
@@ -437,7 +437,7 @@ if (!flag.dry && existsSync(envPath)) {
 // failure — it is a step that cannot have happened yet. Said rather than
 // swallowed: the schema is written either way, and the row it would have
 // created is one `bun install` away.
-const litestoneBin = resolve(context.paths.root, 'node_modules', '.bin', 'litestone')
+const litestoneBin = resolve($.paths.root, 'node_modules', '.bin', 'litestone')
 
 if (flag.dry) {
   log.dry('Would run: fli db:push')
@@ -446,8 +446,8 @@ if (flag.dry) {
   log.info('  Run `bun install`, then `fli db:push`. The schema itself is already written.')
 } else {
   log.info('Pushing schema to database...')
-  context.exec({
-    command: `cd ${context.paths.root} && bun run litestone db push --schema db/schema.lite`,
+  $.exec({
+    command: `cd ${$.paths.root} && bun run litestone db push --schema db/schema.lite`,
     env:     childEnv,
   })
   log.success('Schema pushed')
@@ -472,7 +472,7 @@ if (!flag.dry && existsSync(envExPath)) {
 // `api/src/server.ts`, which does not exist in that app, and told the reader to
 // call `createApp({ auth })` again when app.ts already does.
 
-const coreAuthPath = resolve(context.paths.api, 'src/core/auth.ts')
+const coreAuthPath = resolve($.paths.api, 'src/core/auth.ts')
 const alreadyWired = existsSync(coreAuthPath)
 
 if (alreadyWired) {
@@ -482,7 +482,7 @@ if (alreadyWired) {
 } else if (flag.dry) {
   log.dry(`Would create ${authTsPath}`)
 } else {
-  const srcDir = resolve(context.paths.api, 'src')
+  const srcDir = resolve($.paths.api, 'src')
   mkdirSync(srcDir, { recursive: true })
   writeFileSync(authTsPath, authScaffold(flag.db), 'utf8')
   log.success(`Created api/src/auth.ts`)
@@ -511,6 +511,6 @@ echo('')
 // ─── 9. Open auth.ts if requested ─────────────────────────────────────────────
 
 if (flag.open && !flag.dry && existsSync(authTsPath)) {
-  context.exec({ command: `${editor} "${authTsPath}"` })
+  $.exec({ command: `${editor} "${authTsPath}"` })
 }
 ```

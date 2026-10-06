@@ -26,7 +26,7 @@ Routing:
 - Returns the site's `404.html` on miss if present, otherwise plain text 404
 
 ```js
-const sitePath = path.resolve(context.paths.site, 'dist/client')
+const sitePath = path.resolve($.paths.site, 'dist/client')
 const port     = flag.port
 
 if (!fs.existsSync(sitePath)) {
@@ -40,20 +40,12 @@ if (flag.dry) {
   return
 }
 
-// Sidecar Bun script lives beside this command. It runs `Bun.serve` so the
-// command works whether FLI itself is running under Node or Bun.
+// The server is a sidecar script beside this command, run by the bun that is
+// running fli, so a second bun on PATH is never the one serving.
 const sidecar = path.join(global.fliRoot, 'commands/ksite/serve.bun.js')
 
-// Quick sanity check — give a useful error if `bun` isn't on PATH.
-try {
-  await $`command -v bun`.quiet()
-} catch {
-  log.error('bun is not on PATH — install Bun from https://bun.sh to use this command')
-  return
-}
-
-context.exec({
-  command: `bun run "${sidecar}" "${sitePath}" ${port}`,
+$.exec({
+  command: `${JSON.stringify(process.execPath)} run "${sidecar}" "${sitePath}" ${port}`,
   stdio:   'inherit',
 })
 ```

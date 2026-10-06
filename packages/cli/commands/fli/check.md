@@ -66,7 +66,7 @@ if (flag.list) {
   return
 }
 
-const root = context.paths.root
+const root = $.paths.root
 const only = flag.only ? flag.only.split(',').map(s => s.trim()).filter(Boolean) : null
 
 // The baseline file is read first because it also carries the app's named

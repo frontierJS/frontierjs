@@ -58,15 +58,15 @@ The `@@check` is there because `fli check` asks for it by name. `contextType`
 says what `contextId` points at, and a pair like that has no foreign key by
 design — so nothing refuses a value naming nothing, not a migration and not
 `asSystem()`. The one column that CAN be constrained is, and this app has one
-kind of context. An app whose set genuinely grows with every model baselines
+kind of $. An app whose set genuinely grows with every model baselines
 that rule instead, which is the other half of the same answer.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
-const dir = appDir(context)
+const dir = appDir($)
 
 const pkgJson = join(dir, 'package.json')
 const hasPkg  = (() => {
@@ -89,26 +89,26 @@ if (!built) {
     rmSync(dir, { recursive: true, force: true })
   }
 
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --with notifications --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --with notifications --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
-  context.exec({
-    command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  $.exec({
+    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
 // The model arrives with the scaffold — `fli new --with notifications` runs
 // `fli notifications:install`, which appends the file the package ships. What
 // this step adds is the one line the package cannot write for an app: which
 // models contextType may name. `fli check`'s `polymorphic-subject` asks for it
 // by name, and the answer is the app's because the set is.
-const schema = schemaFile(context)
+const schema = schemaFile($)
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   schema,
   needle: /^model Notification \{/m,
   name:   'the scaffold installed the model the package needs',
@@ -127,21 +127,21 @@ if (!/@@check\("contextType/.test(text)) {
   ), 'utf8')
 }
 
-pushSchema(context)
+pushSchema($)
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   pkgJson,
   needle: '@frontierjs/notifications',
   name:   'the app depends on @frontierjs/notifications',
 }), {
   likely:    'the scaffold did not finish — its output is above',
-  reproduce: `cd ${context.config.ws.dir} && fli new ${context.config.app} --yes --auth --with notifications`,
+  reproduce: `cd ${$.config.ws.dir} && fli new ${$.config.app} --yes --auth --with notifications`,
 })) return
 
 // Asked of the DATABASE rather than of the schema file: a model that parses and
 // a table that exists are two different facts, and only the second one can be
 // written to.
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db:     join(dir, 'db', 'app.db'),
   sql:    "select name from sqlite_master where type = 'table' and name = 'notification'",
   expect: (rows) => rows.length === 1,
@@ -151,5 +151,5 @@ if (!await must(context, probe.sqliteRow({
   reproduce: `cd ${dir} && fli db:push`,
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

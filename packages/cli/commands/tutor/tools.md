@@ -58,24 +58,24 @@ flags:
 // Every step here starts something and `07-finish` stops it, and a running
 // process is the one thing a journal cannot hold: replayed into a no-op, the
 // tools are recorded as started and nothing is listening.
-openTutor(context, 'tutor:tools', {
+openTutor($, 'tutor:tools', {
   ephemeral: ['02-gui', '03-studio', '04-devtools', '05-view', '06-finish'],
 })
 
-context.config.source       = flag.source || defaultSource()
-context.config.apiPort      = flag['api-port']
-context.config.guiPort      = flag['gui-port']
-context.config.viewPort     = flag['view-port']
-context.config.studioPort   = flag['studio-port']
-context.config.devtoolsPort = flag['devtools-port']
+$.config.source       = flag.source || defaultSource()
+$.config.apiPort      = flag['api-port']
+$.config.guiPort      = flag['gui-port']
+$.config.viewPort     = flag['view-port']
+$.config.studioPort   = flag['studio-port']
+$.config.devtoolsPort = flag['devtools-port']
 
 // Every URL this lesson prints comes from these, so a port that moved cannot
 // make a printed URL a lie.
-context.vars.apiPort      = context.config.apiPort
-context.vars.guiPort      = context.config.guiPort
-context.vars.viewPort     = context.config.viewPort
-context.vars.studioPort   = context.config.studioPort
-context.vars.devtoolsPort = context.config.devtoolsPort
+$.vars.apiPort      = $.config.apiPort
+$.vars.guiPort      = $.config.guiPort
+$.vars.viewPort     = $.config.viewPort
+$.vars.studioPort   = $.config.studioPort
+$.vars.devtoolsPort = $.config.devtoolsPort
 ```
 
 ## Lesson 3 — the workbench

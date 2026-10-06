@@ -1,10 +1,10 @@
 ---
 title: dispatch:demo
-description: Fixture — orchestrator redirects to _steps-alt via context.config.stepsDir
+description: Fixture — orchestrator redirects to _steps-alt via $.config.stepsDir
 ---
 
 ```js
-context.config.stepsDir = '_steps-alt'
-context.config.mode = 'alt'
+$.config.stepsDir = '_steps-alt'
+$.config.mode = 'alt'
 log.info('Dispatched to _steps-alt')
 ```

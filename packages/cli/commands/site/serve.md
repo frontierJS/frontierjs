@@ -22,9 +22,9 @@ A hand-rolled file server in a test harness forgets all three, and then the
 harness proves the site works under rules nothing in production applies.
 
 ```js
-context.exec({
-  command: `${context.bin('sierra', context.paths.site)} site --serve --port ${flag.port || 8700}`,
-  cwd:     context.paths.site,
+$.exec({
+  command: `${$.bin('sierra', $.paths.site)} site --serve --port ${flag.port || 8700}`,
+  cwd:     $.paths.site,
   dry:     flag.dry,
 })
 ```

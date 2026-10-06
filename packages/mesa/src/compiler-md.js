@@ -15,6 +15,7 @@
  */
 
 import { glow }        from '@frontierjs/toolbelt/glow'
+import { parseFrontmatter, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { compile }     from './compiler.js'
 import { missingPeer } from './optional-peer.js'
 
@@ -29,103 +30,6 @@ const [{ unified }, { default: remarkParse }, { default: remarkGfm }, { default:
   import('rehype-slug').catch(missingPeer('rehype-slug', MD, MD_PEERS)),
   import('rehype-stringify').catch(missingPeer('rehype-stringify', MD, MD_PEERS)),
 ])
-
-// ─── Frontmatter ──────────────────────────────────────────────────────────────
-
-/**
- * Parse YAML-ish frontmatter from a .md source string.
- * Handles: strings, numbers, booleans, null, inline arrays, multi-line arrays.
- *
- * Inline array:   tags: [a, b, c]
- * Quoted inline:  tags: ["tag one", "tag two"]
- * Multi-line:     tags:
- *                   - alpha
- *                   - beta
- *
- * @param {string} src
- * @returns {{ frontmatter: object, body: string }}
- */
-export function parseFrontmatter(src) {
-  const match = src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
-  if (!match) return { frontmatter: {}, body: src }
-
-  const body  = src.slice(match[0].length)
-  const fm    = {}
-  const lines = match[1].split('\n')
-  let i = 0
-
-  while (i < lines.length) {
-    const line  = lines[i]
-    const colon = line.indexOf(':')
-    if (colon === -1) { i++; continue }
-
-    const key = line.slice(0, colon).trim()
-    const raw = line.slice(colon + 1).trim()
-    if (!key) { i++; continue }
-
-    // Multi-line array — key with no value, followed by `  - item` lines
-    if (raw === '') {
-      const items = []
-      let j = i + 1
-      while (j < lines.length && /^\s+-\s+/.test(lines[j])) {
-        items.push(parseScalar(lines[j].replace(/^\s+-\s+/, '').trim()))
-        j++
-      }
-      if (items.length > 0) {
-        fm[key] = items
-        i = j
-        continue
-      }
-      // No list items — treat as null
-      fm[key] = null
-      i++
-      continue
-    }
-
-    fm[key] = parseScalar(raw)
-    i++
-  }
-
-  return { frontmatter: fm, body }
-}
-
-/**
- * Parse a single scalar YAML value from a raw string.
- * Handles: booleans, null, numbers, quoted strings, inline arrays, plain strings.
- */
-function parseScalar(raw) {
-  if (raw === 'true')  return true
-  if (raw === 'false') return false
-  if (raw === 'null' || raw === '~' || raw === '') return null
-  if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw)
-
-  // Inline array: [a, b, c] or ["x", 'y', 1, true]
-  if (raw.startsWith('[') && raw.endsWith(']')) {
-    const inner = raw.slice(1, -1).trim()
-    if (inner === '') return []
-    // Split on commas not inside quotes
-    const items = []
-    let current = ''
-    let inQuote = null
-    for (const ch of inner) {
-      if ((ch === '"' || ch === "'") && !inQuote) { inQuote = ch; continue }
-      if (ch === inQuote) { inQuote = null; continue }
-      if (ch === ',' && !inQuote) {
-        items.push(parseScalar(current.trim()))
-        current = ''
-      } else {
-        current += ch
-      }
-    }
-    if (current.trim()) items.push(parseScalar(current.trim()))
-    return items
-  }
-
-  // Quoted string
-  if (/^['"]/.test(raw)) return raw.replace(/^['"]|['"]$/g, '')
-
-  return raw
-}
 
 // ─── Script block ─────────────────────────────────────────────────────────────
 
@@ -414,8 +318,17 @@ function wrapInLayout(html, frontmatter, layouts) {
  *   ctx.markdownHTML {string}       — raw HTML from the Markdown step
  */
 export async function compileMd(source, config = {}) {
-  // 1. Frontmatter
-  const { frontmatter, body: afterFm } = parseFrontmatter(source)
+  // 1. Frontmatter — toolbelt's reading, which is sierra's too, so the route's
+  //    `page.meta` and this module's `frontmatter` are one object (FJS-1541).
+  //    A refused block compiles as `{}` and says so, as sierra does (FJS-509).
+  let frontmatter, afterFm, frontmatterError = null
+  try {
+    ({ frontmatter, body: afterFm } = parseFrontmatter(source))
+  } catch (err) {
+    frontmatter = {}
+    afterFm = splitFrontmatter(source).body
+    frontmatterError = `frontmatter ${err.message}`
+  }
 
   // 2. Script block
   const { script: scriptBlock, body: mdBody, errors: scriptErrors } = extractScript(afterFm)
@@ -504,6 +417,7 @@ export async function compileMd(source, config = {}) {
   ctx.layout       = frontmatter.layout ?? null
   ctx.markdownHTML = safeHtml
 
+  if (frontmatterError) scriptErrors.unshift(frontmatterError)
   if (layoutError) scriptErrors.push(layoutError)
   if (scriptErrors.length) {
     ctx.analysis ??= {}

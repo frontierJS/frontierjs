@@ -51,8 +51,8 @@ const opts = [
   flag.out    ? `--out ${flag.out}` : '',
 ].filter(Boolean).join(' ')
 
-context.exec({
-  command: `${litestone(context)} access --schema ${schemaPath(context)} ${opts}`,
+$.exec({
+  command: `${litestone($)} access --schema ${schemaPath($)} ${opts}`,
 })
 ```
 

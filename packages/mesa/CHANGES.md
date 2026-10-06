@@ -1,5 +1,25 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-06 — astring is gone; rewrites splice the source (`FJS-1760`)
+
+The keyed-each key rewrite (`replaceKeyword`) and the `$.context` / `$.inspect` / `$.mounted` door rewrite edited a few nodes and re-printed the whole tree through astring, which reflowed the author's spacing and comments and was the dependency's only use. Both now splice the new text over acorn's `start`/`end` for the edited node (`spliceEdits`), so everything around the edit is byte-for-byte what the author wrote, and acorn is mesa's only runtime dependency. The door rewrite keeps its edit list, and `unspliceOffset` maps an analysis error's offset back onto the original script, so a component using the door now gets a `File.mesa:line:column` where the reprint had dropped it.
+
+On the way, two keyed-each misreads: the rewriter skipped every `property`, so a computed key `(item[i])` kept a free `i`, and a shorthand `{a}` was renamed as a key rather than expanded; it now emits `$$item[$index]` and `{a: $$item}`. Proof: `test/splice-rewrite.test.js`, mesa's suite and both browser drives. The REPL's import map and `README` lose the astring line.
+
+## 2026-10-05 — css-tree is an optional peer
+
+Only `css-inliner.js` parses CSS, and it already needed happy-dom, so css-tree joins it as an optional peer, mirrored in `devDependencies`. It loads through `await import()` with `missingPeer`, and both inliner peers are named as one install line (`bun add happy-dom css-tree`). `render-component` reaches the inliner, so it needs both; `render` alone still needs only happy-dom. mesa's runtime dependencies were then acorn and astring; astring left the next day (`FJS-1760`).
+
+Proof: a packed mesa installed alone pulled acorn, astring and toolbelt and nothing else. The compiler ran, and the inliner failed with the named error under bun and node: first naming happy-dom, then css-tree once happy-dom was added. With both peers installed it inlined `color:red`. `test/optional-peers.test.js` lists css-tree among the peers no client entry may reach.
+
+## 2026-10-05 — `.md` frontmatter is read by `@frontierjs/toolbelt/frontmatter`; `parseFrontmatter` leaves `compiler-md` (`FJS-1541`)
+
+`compileMd` reads frontmatter with the toolbelt kit, as sierra's scanner does. mesa's own reader flattened a list of maps into the top level, read a list at its key's column as `null`, and read a `|` block as the string `"|"`, all without an error. A block the kit refuses compiles with `frontmatter = {}` and goes into `ctx.analysis.errors` as `frontmatter line N: …`. `@frontierjs/mesa/compiler-md` no longer exports `parseFrontmatter`; import it from `@frontierjs/toolbelt/frontmatter`. Proof: `test/md-frontmatter-export.test.js` § *reads the frontmatter sierra reads*.
+
+## 2026-10-05 — css-select and css-what dropped
+
+Both were `dependencies` and nothing in mesa imports either; `css-inliner.js` matches selectors through happy-dom and parses CSS with css-tree. Removed from `package.json`.
+
 ## 2026-10-05 — happy-dom and the markdown stack are optional peers
 
 **A client-only app installs mesa without happy-dom or unified, remark-parse, remark-gfm, remark-rehype, rehype-slug and rehype-stringify.** They are optional `peerDependencies` (mirrored in `devDependencies` for this suite), so a packed install of mesa alone is 16 packages and 7.4 MB. `render.js`, `css-inliner.js` and `compiler-md.js` reach them through a top-level `await import()`, so `initRenderer()` and `inlineCSS()` stay synchronous and no caller or doc example changed. A missing peer fails at import with `missingPeer` (`src/optional-peer.js`), which names the feature and the install line, and for `.md` names all six packages at once. It matches on the package name, because Node and Bun both report a package missing deeper in the chain with the same `ERR_MODULE_NOT_FOUND`.

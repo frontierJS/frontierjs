@@ -2405,7 +2405,8 @@ resolving a component *name* to a module to import — which is what the
 
 ```js
 import { compile, compileSource, compileFile } from '@frontierjs/mesa'
-import { compileMd, parseFrontmatter } from '@frontierjs/mesa/compiler-md'
+import { compileMd } from '@frontierjs/mesa/compiler-md'
+import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 
 // Explicit .mesa compilation (unchanged)
 const ctx = await compile(source, config)

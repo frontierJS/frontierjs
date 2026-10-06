@@ -24,8 +24,8 @@ jetty's own indirection are invisible to it. `permissions.audit: 'strict'` in
 `config/jetty.config.js` turns the report into a failed build.
 
 ```js
-context.exec({
-  command: `bunx jetty-audit --root=${context.paths.extension} --browser=${flag.browser || 'chrome'}`,
+$.exec({
+  command: `bunx jetty-audit --root=${$.paths.extension} --browser=${flag.browser || 'chrome'}`,
   dry: flag.dry,
 })
 ```

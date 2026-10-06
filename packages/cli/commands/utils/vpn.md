@@ -27,7 +27,7 @@ import { resolve } from 'path'
 
 ```js
 if (flag.status) {
-  context.exec({ command: 'sudo wg show', dry: flag.dry })
+  $.exec({ command: 'sudo wg show', dry: flag.dry })
   return
 }
 
@@ -42,5 +42,5 @@ const cmd = flag.kill
   ? `sudo wg-quick down ${iface}`
   : `sudo wg-quick up ${iface}`
 
-context.exec({ command: cmd, dry: flag.dry })
+$.exec({ command: cmd, dry: flag.dry })
 ```

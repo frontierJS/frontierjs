@@ -311,7 +311,7 @@ describe('dockerfileScripts', () => {
 // so reading either one reads correctly; and `deployJournalCycle` is the only
 // thing in the repo that runs `fli deploy` at all.
 //
-// The machine is driven through an injected `context.exec`, which is what
+// The machine is driven through an injected `$.exec`, which is what
 // `createMachine` takes — no daemon, no host.
 
 describe('swapContainer', () => {

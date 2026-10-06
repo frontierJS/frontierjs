@@ -27,22 +27,22 @@ flags:
 ---
 
 <script>
-const accountId = (context) => context.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
+const accountId = ($) => $.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
 </script>
 
 Lists all Workers scripts in your account. Use `--status <name>` to see
 bindings, cron triggers, and routes for a specific worker.
 
 ```js
-const acct = accountId(context)
+const acct = accountId($)
 if (!acct) { log.error('No account ID — set CLOUDFLARE_ACCOUNT_ID or use --account'); return }
 
 // ── STATUS ────────────────────────────────────────────────────────────────────
 if (flag.status) {
   const [worker, bindings, schedules] = await Promise.all([
-    cfApi(context, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}`).catch(() => null),
-    cfApi(context, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/bindings`).catch(() => []),
-    cfApi(context, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/schedules`).catch(() => ({ schedules: [] })),
+    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}`).catch(() => null),
+    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/bindings`).catch(() => []),
+    cfApi($, 'GET', `/accounts/${acct}/workers/scripts/${flag.status}/schedules`).catch(() => ({ schedules: [] })),
   ])
 
   echo('')
@@ -64,7 +64,7 @@ if (flag.status) {
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
-const workers = await cfApi(context, 'GET', `/accounts/${acct}/workers/scripts`)
+const workers = await cfApi($, 'GET', `/accounts/${acct}/workers/scripts`)
 if (flag.json) { echo(JSON.stringify(workers, null, 2)); return }
 
 echo('')

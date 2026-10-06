@@ -32,8 +32,8 @@ const opts = [
   flag.out    ? `--out ${flag.out}` : '',
 ].filter(Boolean).join(' ')
 
-context.exec({
-  command: `${litestone(context)} ddl --schema ${schemaPath(context)} ${opts}`,
+$.exec({
+  command: `${litestone($)} ddl --schema ${schemaPath($)} ${opts}`,
 })
 ```
 

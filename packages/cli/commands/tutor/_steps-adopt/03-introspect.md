@@ -40,13 +40,13 @@ be and reported where it cannot. A converter that prints only its output has
 quietly decided what to lose.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir', 'legacyDb'], { from: { appDir: '01-app', legacyDb: '02-database' } })) return
+if (!needs($, ['appDir', 'legacyDb'], { from: { appDir: '01-app', legacyDb: '02-database' } })) return
 
-const app    = context.config.appDir
+const app    = $.config.appDir
 const schema = join(app, 'imported.lite')
 const report = join(app, 'gaps.json')
 
@@ -55,14 +55,14 @@ const report = join(app, 'gaps.json')
 // registry and reads the database with a different build of the tool.
 const run = probe.command({
   bin:  join(app, 'node_modules', '.bin', 'litestone'),
-  args: ['introspect', context.config.legacyDb, '--no-camel', '--out', 'imported.lite', '--report', 'gaps.json'],
+  args: ['introspect', $.config.legacyDb, '--no-camel', '--out', 'imported.lite', '--report', 'gaps.json'],
   cwd:  app,
   name: 'the database is read into a schema',
 })
 
-if (!await must(context, run, {
+if (!await must($, run, {
   likely:    'litestone could not read that file — its output is above',
-  reproduce: `cd ${app} && bunx litestone introspect ${context.config.legacyDb} --no-camel`,
+  reproduce: `cd ${app} && bunx litestone introspect ${$.config.legacyDb} --no-camel`,
 })) return
 
 for (const [needle, what] of [
@@ -72,7 +72,7 @@ for (const [needle, what] of [
   [/@relation\(/,             'the foreign key became a relation'],
   [/email\s+String\s+@unique/, 'the column UNIQUE was carried'],
 ]) {
-  if (!await must(context, probe.fileContains({ path: schema, needle, name: what }), {
+  if (!await must($, probe.fileContains({ path: schema, needle, name: what }), {
     likely:    'this litestone reads the database differently — the schema it wrote is above',
     reproduce: `cat ${schema}`,
   })) return
@@ -85,7 +85,7 @@ const gaps = (() => {
   try { return JSON.parse(readFileSync(report, 'utf8')) } catch { return null }
 })()
 
-if (!await must(context, {
+if (!await must($, {
   ok:    Array.isArray(gaps) && gaps.some(g => g.kind === 'application-attributes' && g.tier === 'noted'),
   name:  'the access rules are a NOTE, not a failure',
   asked: 'a noted application-attributes in gaps.json',
@@ -102,14 +102,14 @@ if (!await must(context, {
 // to say so would also exit 0, and would name a column that is not there.
 const camel = probe.command({
   bin:      join(app, 'node_modules', '.bin', 'litestone'),
-  args:     ['introspect', context.config.legacyDb, '--strict', '--stdout'],
+  args:     ['introspect', $.config.legacyDb, '--strict', '--stdout'],
   cwd:      app,
   needle:   /fullName\s+String\?\s+@map\("full_name"\)/,
   describe: 'exit 0, and the rename recorded as @map',
   name:     'the default reading renames and says so',
 })
 
-if (!await must(context, camel, {
+if (!await must($, camel, {
   likely: 'a camelCased column with no @map beside it is a schema that cannot read its own source',
 })) return
 
@@ -117,5 +117,5 @@ log.info('')
 for (const g of gaps) log.info(`  ${g.tier.padEnd(8)} ${g.kind}${g.model ? `  ${g.model}` : ''}`)
 log.info('')
 
-remember(context, '03-introspect', { imported: schema })
+remember($, '03-introspect', { imported: schema })
 ```

@@ -164,7 +164,7 @@ Supported sources:
 By default, remote values win on conflicts and local-only keys are preserved (`--merge`).
 
 ```js
-const destPath = resolve(context.paths.root, flag.to)
+const destPath = resolve($.paths.root, flag.to)
 
 // ─── Fetch remote content ─────────────────────────────────────────────────────
 log.info(`Pulling env from: ${flag.from}`)
@@ -178,12 +178,12 @@ try {
     if (!flag['gist-id']) { log.error('--gist-id is required for gist source'); return }
     remoteContent = await pullFromGist(flag['gist-id'])
   } else if (flag.from === 'ssh') {
-    remoteContent = pullFromSsh(context.env, flag.server, flag.path)
+    remoteContent = pullFromSsh($.env, flag.server, flag.path)
   } else if (flag.from === 'caprover') {
-    remoteContent = await pullFromCaprover(context.env, flag.app)
+    remoteContent = await pullFromCaprover($.env, flag.app)
   } else if (flag.from === 'file') {
     if (!flag.path) { log.error('--path is required for file source'); return }
-    const srcPath = resolve(context.paths.root, flag.path)
+    const srcPath = resolve($.paths.root, flag.path)
     if (!existsSync(srcPath)) { log.error(`File not found: ${srcPath}`); return }
     remoteContent = readFileSync(srcPath, 'utf8')
   } else {

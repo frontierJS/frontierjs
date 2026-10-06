@@ -27,34 +27,34 @@ finding is marked `narrows` — the same word `fli test:access --from` uses when
 it reports what a branch did to who may do what.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'baseline'], { from: '02-baseline' })) return
+if (!needs($, ['appDir', 'baseline'], { from: '02-baseline' })) return
 
-const app = context.config.appDir
+const app = $.config.appDir
 
-const back = addNoteField(context, '  priority  Int?')
-if (!await must(context, {
+const back = addNoteField($, '  priority  Int?')
+if (!await must($, {
   ok:    back.ok,
   name:  'priority goes back to optional',
   asked: 'the column optional again',
   got:   back.ok ? 'it is' : back.why,
 }, { likely: 'the seed has no `model Note {` block to change' })) return
 
-const raised = editSchema(context, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
-if (!await must(context, {
+const raised = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+if (!await must($, {
   ok:    raised.ok,
   name:  'reads on Note now need a signed-in caller',
   asked: 'the gate raised from 0 to 4',
   got:   raised.ok ? (raised.already ? 'it was already raised' : 'it was raised') : raised.why,
 }, { likely: 'the scaffold wrote a different gate — raise the first number by hand' })) return
 
-const r = fliJson(context, ['release:check', '--from', 'db/before.lite', '--json'], app)
+const r = fliJson($, ['release:check', '--from', 'db/before.lite', '--json'], app)
 const f = (r.json?.findings ?? []).find(x => x.access)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    r.json?.verdict === 'contract',
   name:  'a gate raise is a contract, with no column touched',
   asked: 'verdict: contract',
@@ -64,7 +64,7 @@ if (!await must(context, {
   reproduce: `cd ${app} && fli release:check --from db/before.lite`,
 })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    f?.access === 'narrows',
   name:  'and the finding says which direction it moved',
   asked: 'access: narrows',
@@ -90,9 +90,9 @@ log.info('')
 // that has nothing to do with this one.
 log.info('applying it — the verdict on what is left is expand, and a schema the')
 log.info('database has not caught up with is a 500 on the next write')
-pushSchema(context)
+pushSchema($)
 
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db:     join(app, 'db', 'app.db'),
   sql:    "select name from pragma_table_info('note') where name = 'priority'",
   expect: (rows) => rows.length === 1,

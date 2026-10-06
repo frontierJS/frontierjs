@@ -27,13 +27,13 @@ The queue is its own SQLite file rather than a table in the app's database. That
 is what makes a job survive a crash of the thing that queued it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const appTs = join(context.config.appDir, 'api', 'src', 'app.ts')
+const appTs = join($.config.appDir, 'api', 'src', 'app.ts')
 let   src   = readFileSync(appTs, 'utf8')
 
 if (!src.includes('createCaravan')) {
@@ -46,7 +46,7 @@ if (!src.includes('createCaravan')) {
   const imports   = [...src.matchAll(/^import .*$/gm)]
 
   if (!CONFIGURE || imports.length === 0) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',
       asked: "the scaffold's own app.ts",
@@ -77,30 +77,30 @@ if (!src.includes('createCaravan')) {
   writeFileSync(appTs, src, 'utf8')
 }
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   appTs,
   needle: 'createCaravan(',
   name:   'app.ts configures the queue',
 }), { likely: 'the edit missed its anchor' })) return
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely:    'the API did not come back — the last of its output is below',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
 // Asked of the running app rather than of the file: the edit above proves the
 // text is there and this proves the plugin registered, which is the half a
 // missing dependency or a bad import would fail at.
-if (!await must(context, probe.httpJson({
-  url:      apiUrl(context, '/manifest'),
+if (!await must($, probe.httpJson({
+  url:      apiUrl($, '/manifest'),
   expect:   (j) => Array.isArray(j.plugins) && j.plugins.some(p => String(p).includes('caravan')),
   describe: 'caravan among the running app plugins',
   name:     'the app really has a queue',
 }), {
   likely:    'the plugin threw on register — the last of the API output is below',
   detail:    serverLog(api),
-  reproduce: `curl -s http://127.0.0.1:${context.config.apiPort}/api/manifest`,
+  reproduce: `curl -s http://127.0.0.1:${$.config.apiPort}/api/manifest`,
 })) return
 ```

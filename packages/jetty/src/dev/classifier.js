@@ -1,6 +1,6 @@
 // classifier.js — file path → dev WS event.
 //
-// Runs server-side when chokidar reports a change. Returns a structured
+// Runs server-side when the watcher reports a change. Returns a structured
 // event the WS server broadcasts to connected clients. Clients react per
 // event.kind:
 //
@@ -31,7 +31,7 @@
 import { posix, sep } from 'node:path'
 
 export function classifyChange({ relPath, found }) {
-  // Normalize separators — chokidar may give backslashes on Windows.
+  // Normalize separators — Windows paths arrive with backslashes.
   const p = relPath.split(sep).join('/')
 
   // 1. Config

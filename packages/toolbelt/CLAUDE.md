@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
+**One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/inflect`,
 `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
 `/query`, `/redact`, `/search`, `/signature`, `/sse`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -99,6 +99,13 @@ src/query/           what a query STRING means — types, structure, and the way
                      readers — junction's transport, junction's client writing
                      one, sierra's router. Ships a `.d.ts`, because junction's
                      browser client reaches it
+src/frontmatter/     what a `---` block MEANS — a declared YAML subset
+                     (`FJS-D549`): block maps and lists, `|`/`>`, flow, quotes,
+                     YAML 1.2 core scalars (a date stays a string). Anchors,
+                     aliases, tags and merge keys are REFUSED by name, which is
+                     what retired sierra's `FJS-821` expansion bound. Read by
+                     sierra's scanner and mesa's `.md` compiler — two readers
+                     answered two objects for one ksite menu (`FJS-1541`)
 src/history/         `occurrenceKey` — the one definition of *this unit of work
                      already happened*
 src/match/           does this record still belong in that query's results.
@@ -204,6 +211,8 @@ test/fixtures/       guide-samples.json — 137 real samples from the css guide
                      datetime-oracle.json — Temporal's answers around every
                      transition in twelve zones; datetime-oracle.mjs regenerates
                      it from a polyfill installed OUTSIDE this package
+                     frontmatter-oracle.mjs — the kit against js-yaml's core
+                     schema over real files; js-yaml installed OUTSIDE too
 ```
 
 **`@frontierjs/utils` and `packages/datetime-kit/` are gone** — both folded in
@@ -576,4 +585,5 @@ license.
 | `geo` | `packages/toolbelt`: `bun run test` — the spec compares `boundingBox`+`distance` against a BRUTE-FORCE scan at the equator, at a pole and across ±180, which is the only assertion that can see a prefilter dropping a row. Then `packages/litestone`: `bun test test/point.test.ts`, whose own gate is the same comparison in SQL: the two halves of a live list call `isNear` and the same haversine, so a change here moves the server's answer too |
 | `match` | `packages/toolbelt`: `bun run test`, then `packages/sierra`: `bun run test` (the live store that reads it) and `packages/jetty`: `bun run test` (the other one, which may not import sierra). A `near` change is graded against litestone as well — `false` here REMOVES a row from a live list, so the two halves have to agree about a row on the circle's edge |
 | `sse` | `packages/toolbelt`: `bun run test` — the spec reads every frame at every chunk boundary. Then `packages/sierra`: `bun run test event-stream`, which reads a REAL junction `ctx.sse()` stream through `readEvents` and asserts leaving the loop fires the server's `onDisconnect` |
+| `frontmatter` | `packages/toolbelt`: `bun run test frontmatter`, then `packages/sierra`: `bun run test -- scanner` (the route table) and `packages/mesa`: `npx vitest run md-` (the `.md` module). A change to what the subset ADMITS is graded by `test/fixtures/frontmatter-oracle.mjs` — js-yaml's core schema over every real block under the roots it is given (this repo, `fjs-prototypes`, `~/code/KOBAMI/SITES`); the spec's rows are the cases somebody thought of |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

@@ -11,8 +11,8 @@ flags:
 ---
 
 ```js
-const target      = resolveTarget(flag, context.git)
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const target      = resolveTarget(flag, $.git)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf  = frontierConfig?.deploy
 
 if (deployConf) {
@@ -20,19 +20,19 @@ if (deployConf) {
   const resolved = resolveDeployConf(deployConf, target)
   if (!resolved) {
     log.error('Missing server or path')
-    context.config.abort = true
+    $.config.abort = true
     return
   }
-  context.config.stepsDir = '_steps-docker'
-  context.config.mode     = 'docker'
-  context.config.target   = target
-  context.config.server   = resolved.server
-  context.config.user     = resolved.user
-  context.config.path     = resolved.path
+  $.config.stepsDir = '_steps-docker'
+  $.config.mode     = 'docker'
+  $.config.target   = target
+  $.config.server   = resolved.server
+  $.config.user     = resolved.user
+  $.config.path     = resolved.path
 } else {
   // No deploy block → legacy mode (no frontier.config.js or empty config)
-  context.config.stepsDir = '_steps'
-  context.config.mode     = 'legacy'
-  context.config.target   = target
+  $.config.stepsDir = '_steps'
+  $.config.mode     = 'legacy'
+  $.config.target   = target
 }
 ```

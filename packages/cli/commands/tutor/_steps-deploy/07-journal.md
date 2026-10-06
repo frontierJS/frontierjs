@@ -20,22 +20,22 @@ image*; it is *restore the pair the journal recorded* — a Release and the
 environment generation it ran with.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
-if (!needs(context, ['appDir'], { from: '02-app' })) return
+if (!needs($, ['appDir'], { from: '02-app' })) return
 
-const out = sh('bun', [join(global.fliRoot, 'bin', 'fli.js'), 'deploy:journal'], { cwd: context.config.appDir })
+const out = sh('bun', [join(global.fliRoot, 'bin', 'fli.js'), 'deploy:journal'], { cwd: $.config.appDir })
 log.info(out.stdout)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    /succeeded/.test(out.stdout) && /serving/.test(out.stdout),
   name:  'the journal on the machine records a serving transition',
   asked: 'a transition that succeeded, and a release marked serving',
   got:   out.code === 0 ? 'the journal has neither' : (out.stderr || `deploy:journal exited ${out.code}`),
 }, {
   likely:    'the deploy swapped the container without opening a journal',
-  reproduce: `cd ${context.config.appDir} && fli deploy:journal --steps`,
+  reproduce: `cd ${$.config.appDir} && fli deploy:journal --steps`,
 })) return
 ```

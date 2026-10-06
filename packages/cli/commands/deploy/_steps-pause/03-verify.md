@@ -4,10 +4,10 @@ description: Ask the edge what it now answers, rather than trusting the write
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost } = context.config
-const machine = machineFor(context, host, serverPath)
+const { host, serverPath, apiPort, healthPath, pauseKind, edgeHost } = $.config
+const machine = machineFor($, host, serverPath)
 
 // Asked from the target, through its own nginx, over the name the vhost is
 // written for. `--resolve` on both ports rather than a Host header: with TLS
@@ -24,7 +24,7 @@ if (pauseKind === 'pause') {
     // one failure this command has: a file nothing reads is a pause nobody is in.
     log.error(`The edge answered ${edge} and not 503 — the pause is not in force`)
     log.info(`  the guard is in ${name}'s vhost and the file is written, so something else is answering for this app`)
-    context.config.abort = true
+    $.config.abort = true
     throw new Error(`pause did not take: the edge answered ${edge}`)
   }
   log.success(`The edge answers 503 → ${name}`)
@@ -33,7 +33,7 @@ if (pauseKind === 'pause') {
 
 if (edge === '503') {
   log.error('The edge is still answering 503 — something other than this guard is refusing')
-  context.config.abort = true
+  $.config.abort = true
   throw new Error('unpause did not take: the edge still answers 503')
 }
 log.success(`The edge answers ${edge} → ${name}`)

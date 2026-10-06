@@ -11,13 +11,16 @@ render: static
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The story</p>
-    <h1>A you can hold in your head.</h1>
+    <h1>A system you can hold in your head.</h1>
     <p class="lede">
       Data, screens, access, email, background jobs, servers, monitoring, tests,
       deploys, backups. Each one usually brings its own tool, its own config file
       and a few words of its own. FrontierJS gives each one a home, and keeps
       the vocabulary small enough to carry.
     </p>
+    <blockquote class="epigraph">
+      <p>Information systems design is the art of compressing reality into ones and zeros: balancing fidelity to truth against the power of abstraction. Part science, part judgment.</p>
+    </blockquote>
   </div>
 </section>
 
@@ -203,6 +206,8 @@ render: static
   .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
   h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
   .lede { font-size: 1.12rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+  .epigraph { margin: 1.6rem 0 0; padding: .2rem 0 .2rem 1rem; border-left: 2px solid var(--color-primary); max-width: 56ch; }
+  .epigraph p { margin: 0; font-size: 1rem; font-style: italic; line-height: 1.6; color: var(--ink); }
 
   .chapters { padding: 1rem 0 5rem; }
   .arc { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }

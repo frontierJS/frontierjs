@@ -1,14 +1,14 @@
 ---
 title: 04-build-api
 description: Build Docker image on the server
-skip: "!context.config.doApi"
+skip: "!$.config.doApi"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { imageTag, deployConf } = context.config
-const { host, path: serverPath } = context.config.api
+const { imageTag, deployConf } = $.config
+const { host, path: serverPath } = $.config.api
 
 // Where the image is BUILT. Defaults to the api target, so an app that declares
 // no `deploy.builder` behaves exactly as it did; declaring one builds there once
@@ -16,19 +16,19 @@ const { host, path: serverPath } = context.config.api
 // (`IDEAS/deploy-plane.md` §2.3f). The record's own warning is why it is a
 // declared machine rather than *this laptop*: building locally by default trades
 // server drift for developer-machine drift, which is worse.
-const builder     = context.config.builder ?? context.config.api
+const builder     = $.config.builder ?? $.config.api
 const dockerfile  = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
-const machine     = machineFor(context, builder.host, builder.path)
-const target      = machineFor(context, host, serverPath)
+const machine     = machineFor($, builder.host, builder.path)
+const target      = machineFor($, host, serverPath)
 const buildPath   = builder.path
 
 // ─── Can docker READ this context? ───────────────────────────────────────────
 // Asked before the vendor and the upload, because a context docker cannot see
 // fails at the build with a sentence about a missing file that is plainly there
 // (`FJS-748`) — and everything between here and that build is wasted work.
-// `core/docker-context.js` carries the measurement and the reasons.
+// `core/docker-$.js` carries the measurement and the reasons.
 const { contextProbe, parseProbe, contextRefusal } =
-  await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
+  await import(new URL('file://' + global.fliRoot + '/core/docker-$.js'))
 
 let probeOut = null
 try { probeOut = machine.capture(contextProbe(dockerfile), { cwd: buildPath }) } catch {}
@@ -39,7 +39,7 @@ if (probeOut !== null) {
   })
   if (refusal) {
     for (const [level, line] of refusal) log[level](line)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -50,11 +50,11 @@ if (probeOut !== null) {
 // fail on the COPY. It has to be written HERE for a second reason: an app
 // depending on the framework by `link:`/`workspace:` is packed out of a
 // workspace that exists on this machine and nowhere on the server (FJS-241).
-log.info('Vendoring dependencies into the build context...')
-vendorApp(context.paths.root, log)
+log.info('Vendoring dependencies into the build $...')
+vendorApp($.paths.root, log)
 
-log.info(`Uploading build context → ${builder.host}:${buildPath}/${GENERATED_DIR}`)
-machine.sync(`${context.paths.root}/${GENERATED_DIR}`, `${buildPath}/${GENERATED_DIR}`)
+log.info(`Uploading build $ → ${builder.host}:${buildPath}/${GENERATED_DIR}`)
+machine.sync(`${$.paths.root}/${GENERATED_DIR}`, `${buildPath}/${GENERATED_DIR}`)
 
 log.info(`Building image ${imageTag} on ${machine.describe()}...`)
 machine.run(`docker build -t ${imageTag} -f ${dockerfile} .`, { cwd: buildPath })
@@ -83,8 +83,8 @@ try {
   identity = null
 }
 
-context.config.imageIdentity = identity
-context.config.imageAddress  = addressOf(identity, imageTag).address
+$.config.imageIdentity = identity
+$.config.imageAddress  = addressOf(identity, imageTag).address
 
 // The journal's record of WHICH BYTES this deploy built. It is BOTH now: a term
 // of the Release id, because `04c-journal` opens the transition after this step
@@ -101,11 +101,11 @@ context.config.imageAddress  = addressOf(identity, imageTag).address
 //
 // The image is addressed by ID rather than tag: a tag on the builder is a name
 // the target has never heard, and after a load the ID is what both ends agree on.
-const shipped = machine.shipTo(target, context.config.imageAddress ?? imageTag)
+const shipped = machine.shipTo(target, $.config.imageAddress ?? imageTag)
 if (shipped) log.success(`Image shipped → ${target.describe()}`)
 
-noteForJournal(context, '04-build-api', {
-  image: context.config.imageAddress ?? imageTag,
+noteForJournal($, '04-build-api', {
+  image: $.config.imageAddress ?? imageTag,
   tag:   imageTag,
   scope: identity?.scope ?? null,
   built: shipped ? machine.describe() : null,

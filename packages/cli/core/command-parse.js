@@ -12,9 +12,10 @@
 // sweep that compiled without it passed commands that could not load
 // (`FJS-167`, `FJS-269`).
 //
-// The parser is `node --check`. fli runs on node and so does CI's `structure`
-// phase, and V8 is the parser that will load the file; `vm.SourceTextModule`
-// parses in-process and reports no line, so it cannot say where.
+// The parser is `node --check`: bun loads the command (`FJS-D593`) but has no
+// syntax-only check, and a shim imports nothing a node parser cannot read.
+// `vm.SourceTextModule` parses in-process and reports no line, so it cannot say
+// where.
 //
 // A parse is not a run: a free identifier (`join` with no import) parses clean
 // and throws on the first call. That half is still the command's to prove.
@@ -23,7 +24,8 @@ import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync, existsSy
 import { join, dirname, basename } from 'path'
 import { tmpdir } from 'os'
 import { spawnSync } from 'child_process'
-import { compileCliWithMap, extractFrontmatter } from './compiler.js'
+import { compileCliWithMap, extractFrontmatter, SHIM_GLOBALS } from './compiler.js'
+import { scopeProblems } from './scope.js'
 import { loadModuleFile, moduleNamespace } from './registry.js'
 
 const STEPS_DIR = /^_steps/
@@ -141,3 +143,31 @@ function parseOne({ file, template, module }, shim, node) {
 }
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// ─── resolving ────────────────────────────────────────────────────────────────
+
+/**
+ * The other half of a parse: `{ checked, problems }` over the same units, each
+ * problem a free identifier or a name declared twice, at the `.md` line it was
+ * written. `ts` is the project's TypeScript (`typeScriptIn`); the caller
+ * decides what no parser means.
+ */
+export function resolveCommands(routesDir, ts) {
+  const entries  = commandFiles(routesDir)
+  const problems = new Map()
+  for (const { file, template, module } of entries) {
+    const { code, locate } = compileCliWithMap(template, module?.script || '', file)
+    const { free, duplicates } = scopeProblems(ts, code, { globals: SHIM_GLOBALS })
+    const report = (line, message) => {
+      const at    = locate(line)
+      const where = at?.in === 'module'
+        ? { file: module.filePath, line: module.scriptLine == null ? null : module.scriptLine + at.line - 1 }
+        : { file, line: at?.line ?? null }
+      problems.set(`${where.file}:${where.line}:${message}`, { ...where, message })
+    }
+    for (const { name, line } of free) report(line, `\`${name}\` is not defined — not declared, not imported, and not one of ${SHIM_GLOBALS.join(', ')}`)
+    for (const { name, line } of duplicates) report(line, `\`${name}\` is declared twice in one scope, so the command never loads` +
+      (module ? ` — \`${basename(dirname(module.filePath))}/_module.md\` shares this command's scope` : ''))
+  }
+  return { checked: entries.length, problems: [...problems.values()] }
+}

@@ -38,7 +38,7 @@ flags:
 const { fileIssue }        = await import(resolve(global.fliRoot, 'core/file.js'))
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
 
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 const out = fileIssue({ root, severity: flag.sev, area: flag.area, title: flag.title, detail: flag.detail, blocks: flag.blocks })
 

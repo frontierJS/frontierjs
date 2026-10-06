@@ -33,13 +33,13 @@ Lists pull requests for a repo. Without `--repo` it reads the `origin`
 remote from the current git directory and uses that.
 
 ```js
-const token = context.env.GITHUB_TOKEN
+const token = $.env.GITHUB_TOKEN
 
 // ── Resolve repo ─────────────────────────────────────────────────────────────
 let repoArg = flag.repo
 if (!repoArg) {
   // Parse from git remote: https://github.com/owner/repo.git or git@github.com:owner/repo.git
-  const remote = context.git.remote()
+  const remote = $.git.remote()
   if (!remote) {
     log.error('No git remote found and --repo not specified')
     log.info('Run from inside a git repo or pass --repo owner/repo')

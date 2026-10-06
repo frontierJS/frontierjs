@@ -4,9 +4,9 @@ description: Final setup health report and next steps
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, appId, edge, nginxWritten, deployConf } = context.config
+const { host, serverPath, appId, edge, nginxWritten, deployConf } = $.config
 
 log.success(`\nSetup complete for ${appId}`)
 echo('')
@@ -16,7 +16,7 @@ echo('─── Next steps ─────────────────�
 echo('')
 // The instructions name the machine they would run on — on a local target an
 // `ssh` line is advice that fails when taken.
-const there = (cmd) => (machineFor(context, host, serverPath).local ? cmd : `ssh ${host} "${cmd}"`)
+const there = (cmd) => (machineFor($, host, serverPath).local ? cmd : `ssh ${host} "${cmd}"`)
 
 echo(`1. Populate production env vars on the server:`)
 echo(`   ${there(`nano ${serverPath}/.env.production`)}`)
@@ -35,7 +35,7 @@ if (nginxWritten) {
   echo(`4. Run your first deploy:`)
 }
 
-echo(`   fli deploy${context.config.target !== 'dev' ? ` --${context.config.target}` : ''}`)
+echo(`   fli deploy${$.config.target !== 'dev' ? ` --${$.config.target}` : ''}`)
 echo('')
 
 if (edge.web.domain) {

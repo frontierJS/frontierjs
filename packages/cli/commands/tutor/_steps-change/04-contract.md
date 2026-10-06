@@ -38,26 +38,26 @@ finding says so rather than pretending. What it does carry is the model and the
 field, so `fli` can look for a `defineBackfill` naming that pair.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir', 'baseline'], { from: '02-baseline' })) return
+if (!needs($, ['appDir', 'baseline'], { from: '02-baseline' })) return
 
-const app  = context.config.appDir
-const edit = addNoteField(context, '  priority  Int')
+const app  = $.config.appDir
+const edit = addNoteField($, '  priority  Int')
 
-if (!await must(context, {
+if (!await must($, {
   ok:    edit.ok,
   name:  'priority is now required',
   asked: 'the column declared without ?',
   got:   edit.ok ? 'it is' : edit.why,
 }, { likely: 'the seed has no `model Note {` block to change' })) return
 
-const r = fliJson(context, ['release:check', '--from', 'db/before.lite', '--json'], app)
+const r = fliJson($, ['release:check', '--from', 'db/before.lite', '--json'], app)
 const f = (r.json?.findings ?? []).find(x => x.subject === 'Note.priority')
 
-if (!await must(context, {
+if (!await must($, {
   ok:    r.json?.verdict === 'contract',
   name:  'the verdict is contract — this deploy is the pivot',
   asked: 'verdict: contract',
@@ -69,7 +69,7 @@ if (!await must(context, {
 
 // The verdict alone is a grade. What makes it usable is the plan under it, and
 // the machine-readable half a later command can act on.
-if (!await must(context, {
+if (!await must($, {
   ok:    Array.isArray(f?.split) && f.split.length === 3,
   name:  'and it hands back the three-deploy split',
   asked: 'expand → backfill → contract',
@@ -78,7 +78,7 @@ if (!await must(context, {
   likely: 'the finding was raised by a different rule — the JSON is above',
 })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    f?.needsBackfill?.model === 'Note' && f?.needsBackfill?.field === 'priority',
   name:  'naming the column that has to be filled first',
   asked: 'needsBackfill: Note.priority',
@@ -87,9 +87,9 @@ if (!await must(context, {
   likely: 'the middle step was described in prose and not in the payload',
 })) return
 
-const strict = fliJson(context, ['release:check', '--from', 'db/before.lite', '--strict', '--json'], app)
+const strict = fliJson($, ['release:check', '--from', 'db/before.lite', '--strict', '--json'], app)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    strict.code !== 0,
   name:  '--strict refuses it',
   asked: 'a non-zero exit',

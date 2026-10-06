@@ -30,22 +30,6 @@ const FAIL = '\x1b[31m✗\x1b[0m' // red
 const WARN = '\x1b[33m⚠\x1b[0m' // yellow
 const INFO = '\x1b[2m·\x1b[0m'   // dim
 
-// One row of the checklist. `name` is the human-readable label, `status` is
-// 'pass' | 'fail' | 'warn' | 'info', `hint` is a one-line "fix:" message
-// shown in dim text below the row when present.
-const renderCheck = (name, status, hint) => {
-  const sigil = status === 'pass' ? PASS
-              : status === 'fail' ? FAIL
-              : status === 'warn' ? WARN
-              : INFO
-  echo(`  ${sigil}  ${name}`)
-  if (hint) echo(`     \x1b[2m${hint}\x1b[0m`)
-}
-
-const renderHeader = (text) => {
-  echo('')
-  echo(`\x1b[1m${text}\x1b[0m`)
-}
 
 // Heuristic file content search. Used to detect /health route, junction
 // imports, db:migrate script, etc. Returns true on first match across files.
@@ -81,10 +65,29 @@ dependency, and a reminder about the `proxy_read_timeout` quirk with
 long-lived WebSocket connections.
 
 ```js
-const target = resolveTarget(flag, context.git)
+// The two printers live in the body rather than the <script> above: module
+// scope sees nothing run() destructures, and echo is one of those.
+// One row of the checklist. `name` is the human-readable label, `status` is
+// 'pass' | 'fail' | 'warn' | 'info', `hint` is a one-line "fix:" message
+// shown in dim text below the row when present.
+const renderCheck = (name, status, hint) => {
+  const sigil = status === 'pass' ? PASS
+              : status === 'fail' ? FAIL
+              : status === 'warn' ? WARN
+              : INFO
+  echo(`  ${sigil}  ${name}`)
+  if (hint) echo(`     \x1b[2m${hint}\x1b[0m`)
+}
+
+const renderHeader = (text) => {
+  echo('')
+  echo(`\x1b[1m${text}\x1b[0m`)
+}
+
+const target = resolveTarget(flag, $.git)
 
 // ─── Header ───────────────────────────────────────────────────────────────
-const projectName = basename(context.paths.root)
+const projectName = basename($.paths.root)
 echo(`\n\x1b[1m${projectName}\x1b[0m  ·  target: \x1b[1m${target}\x1b[0m\n`)
 
 // Track failures + warnings for the final summary
@@ -94,7 +97,7 @@ const fail = () => failed++
 const warn = () => warned++
 
 // ─── Load frontier.config.js — everything else depends on this ────────────
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 renderHeader('Config')
@@ -103,9 +106,9 @@ if (!frontierConfig) {
   renderCheck('frontier.config.js', 'fail', 'fix: fli make:deploy')
   fail()
   echo('')
-  log.error(`No frontier.config.js found in ${context.paths.root}`)
+  log.error(`No frontier.config.js found in ${$.paths.root}`)
   log.info(`Run \x1b[1mfli make:deploy\x1b[0m to scaffold one.`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 renderCheck('frontier.config.js exists', 'pass')
@@ -116,7 +119,7 @@ if (!deployConf) {
   echo('')
   log.error('frontier.config.js has no deploy block')
   log.info(`Run \x1b[1mfli make:deploy\x1b[0m to add one.`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 renderCheck('deploy block defined', 'pass')
@@ -144,7 +147,7 @@ if (appId) {
 renderHeader('API container')
 
 const dockerfile = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
-const dockerfilePath = resolvePath(context.paths.root, dockerfile)
+const dockerfilePath = resolvePath($.paths.root, dockerfile)
 if (existsSync(dockerfilePath)) {
   renderCheck(`Dockerfile at ${dockerfile}`, 'pass')
 } else {
@@ -169,7 +172,7 @@ if (existsSync(dockerfilePath)) {
 // A hand-written Dockerfile is the normal case for an app past its first week,
 // and a check that only understands the generated one is a check that gets
 // turned off.
-const rootPkgPath = resolvePath(context.paths.root, 'package.json')
+const rootPkgPath = resolvePath($.paths.root, 'package.json')
 const rootPkg     = readJson(rootPkgPath)
 
 const dockerfileForScripts = existsSync(dockerfilePath) ? readFileSync(dockerfilePath, 'utf8') : ''
@@ -220,7 +223,7 @@ if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
 if (dockerfileSrc) {
   const bc = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
   const findings = bc.inspectBuild(bc.gatherLocal({
-    root: context.paths.root, fs: await import('fs'), dockerfile,
+    root: $.paths.root, fs: await import('fs'), dockerfile,
   }))
 
   if (!findings.length) {
@@ -254,10 +257,10 @@ if (dockerfileSrc) {
 // replay db/migrations/ into memory, diff against db/schema.lite. No database,
 // no container, no network (FJS-D123 section 6). Same command, so there is one
 // implementation of the rule and not two.
-if (existsSync(resolvePath(context.paths.root, 'db/schema.lite'))) {
-  const probe = context.exec({
-    command: `${context.bin('litestone')} migrate check --schema db/schema.lite`,
-    cwd: context.paths.root, stdio: 'pipe', allowFailure: true,
+if (existsSync(resolvePath($.paths.root, 'db/schema.lite'))) {
+  const probe = $.exec({
+    command: `${$.bin('litestone')} migrate check --schema db/schema.lite`,
+    cwd: $.paths.root, stdio: 'pipe', allowFailure: true,
   })
   // `status` is the exit code — what `execSync` puts on the error it throws,
   // which `allowFailure` hands back instead of throwing. `exitCode` and `code`
@@ -314,12 +317,12 @@ if (dockerfileSrc && linked.length && !installsGenerated) {
 // `api/src/server.*` was in this list and has never been written by any
 // scaffold, which is what a hedge costs: it reads as a layout somebody supports.
 const apiSrcCandidates = [
-  resolvePath(context.paths.root, 'api/src/app.ts'),
-  resolvePath(context.paths.root, 'api/src/app.js'),
-  resolvePath(context.paths.root, 'api/index.ts'),
-  resolvePath(context.paths.root, 'api/index.js'),
-  resolvePath(context.paths.root, 'api/src/index.ts'),
-  resolvePath(context.paths.root, 'api/src/index.js'),
+  resolvePath($.paths.root, 'api/src/app.ts'),
+  resolvePath($.paths.root, 'api/src/app.js'),
+  resolvePath($.paths.root, 'api/index.ts'),
+  resolvePath($.paths.root, 'api/index.js'),
+  resolvePath($.paths.root, 'api/src/index.ts'),
+  resolvePath($.paths.root, 'api/src/index.js'),
 ]
 
 // ─── /health route — required for auto-rollback ───────────────────────────
@@ -331,7 +334,7 @@ const { declaresHealth } =
   await import(new URL('file://' + global.fliRoot + '/core/health-target.js'))
 
 const healthPath = deployConf.api?.health ?? '/health'
-const health     = declaresHealth(context.paths.root, healthPath)
+const health     = declaresHealth($.paths.root, healthPath)
 
 if (health.clash) {
   // Junction refuses a plugin configured by hand AND declared in config at
@@ -353,8 +356,8 @@ if (health.clash) {
 renderHeader('Environment')
 
 const envCheckOn = deployConf.api?.envCheck === true || deployConf.api?.env_check === true
-const envExample = resolvePath(context.paths.root, '.env.example')
-const envKeys    = resolvePath(context.paths.root, '.env.keys')
+const envExample = resolvePath($.paths.root, '.env.example')
+const envKeys    = resolvePath($.paths.root, '.env.keys')
 const refExists  = existsSync(envExample) || existsSync(envKeys)
 
 if (envCheckOn) {
@@ -399,7 +402,7 @@ if (isJunction) {
 // ─── Git state ────────────────────────────────────────────────────────────
 renderHeader('Source control')
 
-const branch = context.git.branch()
+const branch = $.git.branch()
 if (branch) {
   renderCheck(`branch: ${branch}`, 'pass')
 } else {
@@ -408,8 +411,8 @@ if (branch) {
   fail()
 }
 
-if (context.git.isDirty()) {
-  const dirty = context.git.status()
+if ($.git.isDirty()) {
+  const dirty = $.git.status()
   renderCheck(`uncommitted changes`, 'warn',
     `${dirty.length} file(s) — these won't be deployed since the server pulls from origin`)
   warn()
@@ -423,8 +426,8 @@ if (branch) {
   let unpushed = null
   let upstreamOk = true
   try {
-    const out = context.exec({
-      command: `git -C "${context.paths.root}" rev-list --count @{u}..HEAD`,
+    const out = $.exec({
+      command: `git -C "${$.paths.root}" rev-list --count @{u}..HEAD`,
       stdio:   'pipe',
     })
     unpushed = parseInt((out?.toString?.('utf8') ?? out ?? '0').trim()) || 0
@@ -459,7 +462,7 @@ if (flag.remote) {
     const path = resolved.path
 
     // Reachability — BatchMode, so a password prompt cannot hang the doctor.
-    const machine = machineFor(context, host, path, deployConf.transport)
+    const machine = machineFor($, host, path, deployConf.transport)
     const reachable = machine.reach()
 
     if (reachable) {
@@ -621,6 +624,6 @@ echo('')
 
 // Nothing here short-circuits a step folder: doctor declares no `steps:` and is
 // not `index.md`, so none is ever discovered for it. This used to set
-// `context.config.abort` against a pipeline it cannot reach, which would now
+// `$.config.abort` against a pipeline it cannot reach, which would now
 // fail the command for having run (`FJS-589`).
 ```

@@ -15,14 +15,14 @@ never writes it: what a deploy checks is that the keys the app declares are
 **bound here**, and what binds them is you.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'serverDir', 'deployEnv'], { from: { appDir: '02-app', serverDir: '03-target', deployEnv: '02-app' } })) return
+if (!needs($, ['appDir', 'serverDir', 'deployEnv'], { from: { appDir: '02-app', serverDir: '03-target', deployEnv: '02-app' } })) return
 
-const app = context.config.appDir
-const srv = context.config.serverDir
+const app = $.config.appDir
+const srv = $.config.serverDir
 
 if (!existsSync(join(app, '.git'))) {
   git(app, ['init', '-q', '.'])
@@ -33,7 +33,7 @@ git(app, ['commit', '-qm', 'the app, as the tutorial built it'])
 if (existsSync(srv)) rmSync(srv, { recursive: true, force: true })
 const cloned = sh('git', ['clone', '-q', app, srv])
 
-if (!await must(context, {
+if (!await must($, {
   ok:    cloned.code === 0 && existsSync(join(srv, 'package.json')),
   name:  'the machine has a checkout of the app',
   asked: `a clone at ${srv}`,
@@ -45,14 +45,14 @@ if (!await must(context, {
 mkdirSync(join(srv, 'db'), { recursive: true })
 // The container's environment, not the app's — `02-app` writes it beside the
 // workspace so a course does not lose its own `.env` to a deploy.
-copyFileSync(context.config.deployEnv, join(srv, '.env.production'))
+copyFileSync($.config.deployEnv, join(srv, '.env.production'))
 // PORT is the container's own, inside it; APP_URL is what the app tells the
 // world it is. The deploy's env check compares the keys here against
 // .env.example, so a missing one stops the deploy before it builds anything.
-appendFileSync(join(srv, '.env.production'), `PORT=3000\nAPP_URL=http://127.0.0.1:${context.config.port}\n`)
+appendFileSync(join(srv, '.env.production'), `PORT=3000\nAPP_URL=http://127.0.0.1:${$.config.port}\n`)
 
 for (const key of ['ENCRYPTION_KEY', 'DATABASE_URL', 'PORT', 'APP_URL']) {
-  if (!await must(context, probe.fileContains({
+  if (!await must($, probe.fileContains({
     path:   join(srv, '.env.production'),
     needle: new RegExp(`^${key}=.+`, 'm'),
     name:   `.env.production binds ${key}`,

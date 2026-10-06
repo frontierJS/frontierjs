@@ -32,8 +32,17 @@ core/
   effects.js    `effects` and `confirm: human` — graded where flags are, and
                 enforced in `Command()` before the body runs. `fli gui` runs a
                 command in process, so a run with `emit` is never a terminal
-  tty.js        `context.tty` — single-key prompts, a footer line, the screen
-                lent to an editor, onExit. It patches stdout and stderr while it
+  shell.js      `$` — the callable context `commandContext()` builds, and the
+                shell behind the tag: `Bun.$` under fli's rules (captures unless
+                `--verbose`, runs nothing under `--dry` through `log.dry`, throws
+                with the command named). One object: steps get their own
+                callable copy because a spread copies fields and not calls
+  scope.js      the names a compiled command uses and binds nowhere, and a name
+                declared twice in one scope — real lexical scopes over the unit
+                the runtime loads, with the PROJECT's TypeScript as the parser.
+                `command-resolves` and `test/scope.test.js` both read it
+  tty.js        `$.tty` — single-key prompts, a typed line, a footer line, the
+                screen lent to an editor, onExit. It patches stdout and stderr while it
                 holds the terminal, and the runtime's SIGINT/SIGTERM handlers
                 await `settleTtys()` before exiting. The terminal is put back
                 on every path; onExit runs on every one but a bare `process.exit`
@@ -166,7 +175,8 @@ core/
                 rulings holding every term, answered as id, title and file:line
                 and never the body; title hits and open rows first
   next.js       the open register ranked — severity, then citations, `blocked by`
-                edges and code touched recently, every term printed with its
+                edges, code touched recently and REACH (packages depending on the
+                row's, via `workspaceDeps` in runnables.js), every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it. A
                 `by hand` segment stays ranked as `byHand`; `fix:loop` skips it.
                 Proposals are not ranked; nothing measurable separates them
@@ -412,6 +422,11 @@ core/
                 `deploy:doctor` both ask, and asking separately is how they came
                 to disagree with an app that worked. It also answers the CLASH,
                 which `start()` refuses by name
+  argv.js       the command line into `{ _, ...flags }`, read before the command
+                is known, so a value's type is how it LOOKS and getConfig
+                coerces toward the declaration after. `BOOL_ARGV` never takes a
+                value, and a boolean not typed is ABSENT — a defaulted `false`
+                beside `-d` is how `db:import -d` once ran for real
   verbosity.js  one bit — did the caller type `--verbose`. A leaf with no
                 imports, read on the startup path, set in `bootstrap.js` before
                 anything logs. Not `--debug`, which asks for stack traces
@@ -490,6 +505,8 @@ core/
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries
+  peer.js       loadPeer — linkedom and turndown are optional peers, only for
+                `ksite:fetch`; asks the app first, then fli's own install
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — `fli list` prints them all (ksite is
            NOT FrontierJS — a separate static-site toolchain that used to hold
@@ -516,13 +533,10 @@ test/     one file per module under core/, plus the deploy pipeline's own
 
 ## What bites here
 
-- **Assigning `process.env.X` does not reach a child.** The shipped shebang is
-  node, but `fli` re-invokes itself with `process.execPath`, so it runs under
-  whichever runtime started the parent — bun for every test and CI invocation
-  here. Bun's `child_process` hands a child the environment the process
-  STARTED with, where node passes the mutation on, so the bug bites exactly
-  where this repo's own scripts run it. So the assignment compiles, reads as a
-  fix and does nothing — measured with
+- **Assigning `process.env.X` does not reach a child.** `fli` runs under bun
+  (`FJS-D593`), and bun's `child_process` hands a child the environment the
+  process STARTED with, where node passes the mutation on. So the assignment
+  compiles, reads as a fix and does nothing — measured with
   `bun -e "process.env.FOO='x'; execSync('printenv FOO')"`, which prints nothing.
   Pass `env:` on the `context.exec` call instead. This is what made `fli new
   --auth` unable to finish (`FJS-343`), and the assignment that failed had been
@@ -563,9 +577,9 @@ test/     one file per module under core/, plus the deploy pipeline's own
   catches a name declared twice, not one declared nowhere. Run the command.
 - **`commands/auth/install.md` reads `@frontierjs/auth`'s schema; it no longer
   carries a copy of it.** The copy drifted three times, and two walls had kept it
-  there: `fli` is global, so the package is not beside it — and **`fli` runs on
-  node** while `packages/auth/schema.ts` is TypeScript, so even resolved it could
-  not be imported. Auth ships `db/user.lite` and `db/auth.lite`, this installs the
+  there: `fli` is global, so the package is not beside it, and
+  `packages/auth/schema.ts` is a module of auth's own build rather than a file to
+  read. Auth ships `db/user.lite` and `db/auth.lite`, this installs the
   package if the app lacks it and then reads those bytes, resolving the subpaths
   through auth's own `exports` (`createRequire().resolve` from the app's
   `package.json`) rather than guessing at a path inside it. `User` is appended to
@@ -582,12 +596,19 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **A fenced block in a `_module.md` renders as an empty heading.** Module prose
   has every ``` block stripped, because in a command file a fence IS the body.
   Namespace overviews are written as plain lists.
-- **Nothing on the read-only path may import zx.** zx is ~85ms of what was a
-  ~200ms invocation, and `fli list`, `help`, `?` and completion wanted one thing
-  from it — chalk, which is now `core/color.js`. The same rule is why
-  `bootstrap.js` imports `runtime.js` at the call site rather than at the top: a
-  static import pulls zx back in for every `fli list`. A command body is
-  unaffected, since its compiled shim imports `zx/globals` itself.
+- **The read-only path imports no command runtime.** `fli list`, `help`, `?`
+  and completion take color from `core/color.js` and reach `runtime.js` only at
+  the call site that runs a command, never at the top of `bootstrap.js` — a
+  static import there is paid by every `fli list`.
+- **A command body's `$` is Bun's shell, and Bun's shell is not bash.** No
+  heredoc and no `for`/`while` — both exit 1 — so a body that needs them spells
+  `` $`bash -c ${script}` `` with the script as ONE interpolation. `` $`…` ``
+  captures by default and `.stdout` is a Buffer: read `.text()`. `--dry` runs
+  nothing and logs the command, the same rule `$.exec` has.
+- **A `<script>` block sees `$` only as a parameter.** The compiled head
+  imports `path` and `fs` and hands `$` to `run()`; a helper above `run()` that
+  reaches for `log`, `echo`, `tty` or `flag` is a `ReferenceError` at its first
+  call, in whichever branch nothing has run. `command-resolves` names the line.
 - **`module.register()` costs 56ms because it starts a hooks thread**, and the
   `.md` loader hook is not what runs a command — the runtime compiles WITH the
   namespace module script (which a hooks thread cannot see) and imports the
@@ -595,13 +616,13 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **The edges are aspirational.** Several documented commands do not do what the
   prose says, and three packages' docs advertise `fli` commands that do not
   exist. Verify a command by running it before citing it.
-- **A compiled command is a real file, so where it may be written is a
-  constraint, not a detail.** The shim imports `zx/globals` by bare specifier and
-  Node resolves that from the importing file's own directory — which is why the
-  location is `fliTmpRoot()`'s decision in `core/utils.js` and nobody else's, and
-  why the read-only fallback symlinks `node_modules` beside the shim. The
-  workspace copy is always writable, so nothing here can see the install shape
-  that is not (`FJS-166`).
+- **A compiled command is a real file, and `fliTmpRoot()` in `core/utils.js`
+  is the one decision about where.** A global install under a root-owned prefix
+  cannot write beside itself, so the session falls back to the OS temp dir
+  (`FJS-166`). A shim imports two node builtins and nothing by a bare specifier,
+  which is what lets the fallback be a bare directory;
+  `test/project-root.test.js` holds that. The workspace copy is always writable,
+  so nothing here can see the install shape that is not.
 - `core/ports.js` is the scheme itself — the formula, the category map, the
   `PROJECTS` registry, and the dev slots `fli dev` gives every app the registry
   does not name (§ Dev slots). `packages/jetty/src/dev/fjs-ports.js` owns only the
@@ -902,14 +923,14 @@ test/     one file per module under core/, plus the deploy pipeline's own
   when the child exits non-zero, and `--verbose` inherits stdio and travels to
   the child.
 - **A `<script>` block in a `_module.md` is MODULE scope and does not see `log`,
-  `flag`, `echo` or `arg`.** The compiler puts it above `run()`, where those are
-  destructured from `context`, so `log` there resolves to zx's global — a
-  FUNCTION with no `.info`, so the failure is `log.info is not a function` at the
-  first call rather than anything naming scope. The command body is inside
+  `flag`, `echo`, `tty` or `arg`.** The compiler puts it above `run()`, where
+  those are destructured from `$`, so `log` there is `log is not defined` at the
+  first call — in whichever branch nothing has run. The command body is inside
   `run()` and sees the real one, which is why code can work in a command and
   break the moment it is lifted into the namespace helpers. Every helper here
   takes what it needs as a parameter; `deploy/_module.md` already did, on all 18
-  of its `log.*` calls, which is what makes it the pattern.
+  of its `log.*` calls, which is what makes it the pattern, and
+  `test/scope.test.js` sweeps every shipped command for the class.
 - **`project:map` reads the API surface; it never scans for
   it.** What a service answers is decided at CONSTRUCTION — `collectCustomMethods`,
   read back through `svc.describe()` — so a regex over `*.service.ts` cannot
@@ -925,9 +946,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **`app:atlas` renders a model junction computes; it reads no app itself.** One
   spawn of `junction atlas`, which boots the app once and prints
   `describeAppModel` as JSON. It cannot import that model — this package declares
-  no junction dependency and cannot gain one, since junction is Bun-only and
-  `fli` runs under node, and a junction living here would be a DIFFERENT junction
-  than the one that built the app. Spawning the four snapshot tools instead would
+  no junction dependency and cannot gain one: a junction living here would be a
+  DIFFERENT junction than the one that built the app. Spawning the four snapshot tools instead would
   mean four boots and four rendered pages to re-parse, which recovers a
   cross-register column by matching names.
   **The entry is never probed.** `core/app-entry.js` reads it off the committed
@@ -1275,20 +1295,22 @@ test/     one file per module under core/, plus the deploy pipeline's own
   before writing it: of three proposed from one catalog, two had been fixed after
   the paragraph was written and the third was ruled against (`CHANGES.md`).
 
-## The context in this package
+## The context in this package — `$`
 
-**One, per command invocation** (`FJS-D03`). `context` is what a compiled `.md`
-command body is handed.
+**One, per command invocation** (`FJS-D03`). `$` is what a compiled `.md`
+command body is handed: the command in progress, callable as the shell
+(`FJS-D593`, `FJS-D594`).
 
 | | |
 | --- | --- |
-| Created per | **one `fli` invocation** |
-| Carries | the resolved project (`context.paths`, `wsRoot()`, `wsRepo()`), git access (`context.git`), execution (`context.exec`, `context.stream`), and config |
+| Created per | **one `fli` invocation**; a step gets its own callable copy over the same `$.config` |
+| Carries | the resolved project (`$.paths`, `wsRoot()`, `wsRepo()`), git access (`$.git`), execution (`$.exec`, `$.stream`, `` $`…` ``), output (`echo`, `log`, `chalk`, `tty`), and config |
 | Is NOT | a request. Nothing here is on behalf of a remote caller, so there is no principal, no `auth`, no `query` |
 
-The name is shared with the API realm's request context and the concept is not:
-this is *the invocation's environment*, which is why the fields are capabilities
-rather than inputs.
+The spelling is shared with Junction's `$` (the call in progress) and Mesa's
+(the component runtime) and the concept is the same one — *the thing in
+progress* — in each realm's own terms. It is a parameter, never an ambient:
+one function, one argument, so two concurrent web runs cannot see each other.
 
 ---
 

@@ -46,7 +46,7 @@ const { readAppAtlas } =
 // because `project:map` folds the same model into its page and two spawns of
 // one command is how the two come to disagree about which app they described.
 
-const { model, entry, error } = readAppAtlas(context.paths.root)
+const { model, entry, error } = readAppAtlas($.paths.root)
 if (error) {
   log.error(error)
   return
@@ -91,7 +91,7 @@ if (flag.ungraded) {
 }
 
 echo('')
-echo(`  App atlas — ${context.paths.root}`)
+echo(`  App atlas — ${$.paths.root}`)
 echo(`  read off ${entry.args.join(' ')} under ${entry.dir}`)
 
 // ── reached by a caller ──

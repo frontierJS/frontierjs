@@ -37,9 +37,9 @@ flags:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 // Quoted because the command runs through a shell, and an expression is the
 // one value here certain to hold a space, a quote or a `$`.
@@ -56,8 +56,8 @@ const opts = [
 // The child always says why it stopped — a refusal, or the throw an `-e` line
 // raised — so the exit code is passed on and the runner's own `Command failed`
 // line, which would print the whole argv under it, is not.
-await context.stream({
-  command: `${litestone(context)} repl --schema ${schema} ${opts}`,
+await $.stream({
+  command: `${litestone($)} repl --schema ${schema} ${opts}`,
 }).catch(() => { process.exitCode = 1 })
 ```
 

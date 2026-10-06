@@ -43,6 +43,27 @@ export function isDir(path)   { try { return statSync(path).isDirectory() } catc
 export function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 export function read(path)     { try { return readFileSync(path, 'utf8') } catch { return null } }
 
+/**
+ * `packages/*` members by folder, each with the siblings it depends on — a
+ * dependency or a peer, named by package name. A folder with no manifest is
+ * not a member and is absent.
+ */
+export function workspaceDeps(root) {
+  const dir     = join(root, 'packages')
+  const members = new Map()
+  for (const folder of safeRead(dir)) {
+    if (SKIP.has(folder) || folder.startsWith('.') || !isDir(join(dir, folder))) continue
+    const pkg = readJson(join(dir, folder, 'package.json'))
+    if (pkg) members.set(folder, { name: pkg.name ?? folder, all: { ...pkg.dependencies, ...pkg.peerDependencies } })
+  }
+  const known = new Set([...members.values()].map(m => m.name))
+  for (const m of members.values()) {
+    m.deps = Object.keys(m.all).filter(d => known.has(d)).sort()
+    delete m.all
+  }
+  return members
+}
+
 /** Every directory that could hold an app: the root, its children, and packages/*. */
 export function appDirs(root) {
   const dirs = [root]

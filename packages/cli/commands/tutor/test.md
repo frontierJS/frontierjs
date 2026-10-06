@@ -36,9 +36,9 @@ flags:
 
 
 ```js
-openTutor(context, 'tutor:test', { ephemeral: ['06-finish'] })
+openTutor($, 'tutor:test', { ephemeral: ['06-finish'] })
 
-context.config.source = flag.source || defaultSource()
+$.config.source = flag.source || defaultSource()
 ```
 
 ## Lesson 11 — knowing it is right

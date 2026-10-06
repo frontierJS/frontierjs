@@ -59,7 +59,8 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
 import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
-import { parseCommands }                       from './command-parse.js'
+import { parseCommands, resolveCommands }      from './command-parse.js'
+import { typeScriptIn }                        from './scope.js'
 import { readConfig }                          from './config.js'
 
 export const RULES = [
@@ -147,6 +148,8 @@ export const RULES = [
     title: 'a jsonl/logger database the deploy can point at the volume' },
   { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
     title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
+  { id: 'command-resolves',     scope: 'app',  severity: 'error', invariant: 15,
+    title: 'every name a project command uses is declared, imported, or one the shim injects' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
     title: 'a styled value names a token the stylesheets define' },
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
@@ -872,6 +875,21 @@ const CHECKS = {
     const dir = join(root, routesDir)
     if (!existsSync(dir)) return { skipped: `no ${routesDir}/` }
     const { checked, problems } = parseCommands(dir)
+    if (!checked) return { skipped: `no command files under ${routesDir}/` }
+    return { findings: problems }
+  },
+
+  // A parse is not a run: a free identifier parses clean and throws on the
+  // first call, in whichever branch nothing has run (FJS-730). Graded over the
+  // unit the runtime loads, module script included, with the project's own
+  // TypeScript as the parser; no parser is a skip that says so.
+  'command-resolves': ({ root }) => {
+    const { routesDir } = readConfig(root)
+    const dir = join(root, routesDir)
+    if (!existsSync(dir)) return { skipped: `no ${routesDir}/` }
+    const ts = typeScriptIn(root)
+    if (!ts) return { skipped: 'no typescript in node_modules — the parser this rule reads with' }
+    const { checked, problems } = resolveCommands(dir, ts)
     if (!checked) return { skipped: `no command files under ${routesDir}/` }
     return { findings: problems }
   },

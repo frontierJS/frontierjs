@@ -44,7 +44,7 @@ const modules = requiringModules({ commands: uniqueCommands(buildRegistry()), ge
   .filter(m => flag.namespace ? m.ns === flag.namespace : true)
 
 const report = diagnose({
-  root:    context.paths.root,
+  root:    $.paths.root,
   fliRoot: global.fliRoot,
   modules,
   home:    homedir(),
@@ -96,6 +96,6 @@ echo('')
 
 if (flag.fix) {
   log.info('Opening global env file\u2026')
-  context.exec({ command: `${process.env.EDITOR || 'vi'} "${resolve(homedir(), '.config', 'fli', '.env')}"` })
+  $.exec({ command: `${process.env.EDITOR || 'vi'} "${resolve(homedir(), '.config', 'fli', '.env')}"` })
 }
 ```

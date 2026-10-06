@@ -27,12 +27,12 @@ flags:
 
 
 ```js
-const branch = context.git.branch()
+const branch = $.git.branch()
 const parts  = ['git push']
 if (flag['set-upstream']) parts.push(`--set-upstream origin ${branch}`)
 if (flag.force)           parts.push('--force')
 
 log.info(`Pushing ${branch}...`)
-context.exec({ command: parts.join(' '), dry: flag.dry })
-if (flag.tags) context.exec({ command: 'git push --tags', dry: flag.dry })
+$.exec({ command: parts.join(' '), dry: flag.dry })
+if (flag.tags) $.exec({ command: 'git push --tags', dry: flag.dry })
 ```

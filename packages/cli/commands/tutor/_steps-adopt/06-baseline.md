@@ -47,14 +47,14 @@ debt is a thing you are allowed to do and it is not a thing that should happen
 because somebody typed the convenient flag.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app      = context.config.appDir
-const schema   = schemaFile(context)
+const app      = $.config.appDir
+const schema   = schemaFile($)
 const baseline = join(app, 'check-baseline.json')
 
 // Run and READ, rather than assert: every question below is about the exit code
@@ -68,7 +68,7 @@ const baselineSays = () => (readFileSync(baseline, 'utf8').match(/"polymorphic-s
 
 // ─── the finding ──────────────────────────────────────────────────────────
 const found = check()
-if (!await must(context, {
+if (!await must($, {
   ok:    /polymorphic-subject/.test(found.out),
   name:  'the adopted schema carries one finding, and it names the pair',
   asked: 'polymorphic-subject, about ActivityLog.subject_type',
@@ -83,7 +83,7 @@ if (!await must(context, {
 if (existsSync(baseline)) rmSync(baseline)
 check(['--adopt'])
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   baseline,
   needle: /"polymorphic-subject":\s*1/,
   name:   'the debt is written down, by rule and by number',
@@ -95,7 +95,7 @@ if (!await must(context, probe.fileContains({
 // A baseline that SILENCED the finding would be the wrong mechanism: what is
 // being asserted is that it still prints, and only the verdict moved.
 const within = check()
-if (!await must(context, {
+if (!await must($, {
   ok:    within.ok && /polymorphic-subject/.test(within.out),
   name:  'the app passes now — and still says what it is carrying',
   asked: 'exit 0, with the finding printed',
@@ -123,7 +123,7 @@ appendFileSync(schema, [
 ].join('\n'), 'utf8')
 
 const risen = check()
-if (!await must(context, {
+if (!await must($, {
   ok:    !risen.ok && /baseline is 1/.test(risen.out),
   name:  'a second one fails the check, naming the number it was allowed',
   asked: 'a non-zero exit, and "2 finding(s), baseline is 1"',
@@ -136,7 +136,7 @@ if (!await must(context, {
 // The pair that makes the two verbs mean something: --update is offered the
 // same rise and refuses it, leaving the file where it was.
 const refused = check(['--update'])
-if (!await must(context, {
+if (!await must($, {
   ok:    !refused.ok && baselineSays() === '1',
   name:  'and --update will not raise it, because raising is a different decision',
   asked: 'a non-zero exit, and the file still saying 1',
@@ -152,7 +152,7 @@ if (!await must(context, {
 // table that is not there is the next person's confusing morning.
 writeFileSync(schema, before, 'utf8')
 
-if (!await must(context, {
+if (!await must($, {
   ok:    check().ok,
   name:  'with it taken out again the app is green, and the ceiling stands at one',
   asked: 'exit 0',
@@ -164,5 +164,5 @@ log.info(`  ${baseline}`)
 log.info('  one line per rule, and it may never rise without somebody saying so')
 log.info('')
 
-remember(context, '06-baseline', { baseline })
+remember($, '06-baseline', { baseline })
 ```

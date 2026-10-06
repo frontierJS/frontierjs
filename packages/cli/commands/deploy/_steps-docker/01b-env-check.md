@@ -2,14 +2,14 @@
 title: 01b-env-check
 description: Validate that the server's .env.production has all required keys from .env.example
 optional: true
-skip: "!context.config.doApi || (!context.config.deployConf.api?.envCheck && !context.config.deployConf.api?.env_check && !Object.keys({ ...context.config.deployConf?.configuration, ...context.config.deployConf?.secrets, ...context.config.deployConf?.[context.config.target]?.configuration, ...context.config.deployConf?.[context.config.target]?.secrets }).length)"
+skip: "!$.config.doApi || (!$.config.deployConf.api?.envCheck && !$.config.deployConf.api?.env_check && !Object.keys({ ...$.config.deployConf?.configuration, ...$.config.deployConf?.secrets, ...$.config.deployConf?.[$.config.target]?.configuration, ...$.config.deployConf?.[$.config.target]?.secrets }).length)"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { target, deployConf } = context.config
-const { host, path: serverPath } = context.config.api
+const { target, deployConf } = $.config
+const { host, path: serverPath } = $.config.api
 const { existsSync, readFileSync } = await import('fs')
 const { resolve } = await import('path')
 
@@ -18,7 +18,7 @@ const { resolve } = await import('path')
 const candidates = ['.env.example', '.env.keys']
 let refFile = null
 for (const name of candidates) {
-  const p = resolve(context.paths.root, name)
+  const p = resolve($.paths.root, name)
   if (existsSync(p)) { refFile = p; break }
 }
 
@@ -87,7 +87,7 @@ if (!requiredKeys.length) {
 const envFile   = deployConf.api?.env ?? `${serverPath}/.env.production`
 let serverEnv = ''
 try {
-  serverEnv = machineFor(context, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`)
+  serverEnv = machineFor($, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`)
 } catch {
   log.warn(`Env check: could not read ${envFile} on ${host} — skipping`)
   return
@@ -120,5 +120,5 @@ log.info(`Add the missing keys to ${envFile} on the server, then redeploy.`)
 log.info(`You can set them with:  fli env:set --remote ${missing[0]}=value`)
 log.info(`Or pull them from local: fli env:pull --from ssh --server ${target} --path ${envFile}`)
 
-context.config.abort = true
+$.config.abort = true
 ```

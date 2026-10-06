@@ -52,7 +52,7 @@ echo('Commit types:')
 TYPES.forEach((t, i) => echo(`  ${String(i + 1).padStart(2)}. ${t.label}`))
 echo('')
 
-let typeInput = await question('Type (number or name): ')
+let typeInput = await tty.line('Type (number or name): ')
 typeInput = typeInput.trim()
 const typeEntry = TYPES.find((t, i) =>
   t.value === typeInput || String(i + 1) === typeInput
@@ -61,21 +61,21 @@ if (!typeEntry) { log.error('Invalid type'); return }
 const type = typeEntry.value
 
 // ─── Scope (optional) ────────────────────────────────────────────────────────
-const scopeInput = await question('Scope (optional, e.g. auth, db — press Enter to skip): ')
+const scopeInput = await tty.line('Scope (optional, e.g. auth, db — press Enter to skip): ')
 const scope = scopeInput.trim()
 
 // ─── Breaking change ──────────────────────────────────────────────────────────
-const breaking = (await question('Breaking change? (y/N): ')).trim().toLowerCase() === 'y'
+const breaking = (await tty.line('Breaking change? (y/N): ')).trim().toLowerCase() === 'y'
 
 // ─── Subject ──────────────────────────────────────────────────────────────────
 let subject = ''
 while (!subject) {
-  subject = (await question('Subject (short description): ')).trim()
+  subject = (await tty.line('Subject (short description): ')).trim()
   if (!subject) log.warn('Subject is required')
 }
 
 // ─── Body (optional) ─────────────────────────────────────────────────────────
-const body = (await question('Body (optional, press Enter to skip): ')).trim()
+const body = (await tty.line('Body (optional, press Enter to skip): ')).trim()
 
 // ─── Build message ────────────────────────────────────────────────────────────
 const scopeStr   = scope ? `(${scope})` : ''
@@ -89,7 +89,7 @@ echo(fullMsg)
 echo('──────────────────────────────────────────────────')
 echo('')
 
-const confirm = (await question('Commit? (Y/n): ')).trim().toLowerCase()
+const confirm = (await tty.line('Commit? (Y/n): ')).trim().toLowerCase()
 if (confirm === 'n') { log.warn('Aborted'); return }
 
 if (flag.dry) {

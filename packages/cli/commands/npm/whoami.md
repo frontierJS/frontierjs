@@ -16,5 +16,5 @@ flags:
 ```js
 const parts = ['npm whoami']
 if (flag.registry) parts.push(`--registry ${flag.registry}`)
-context.exec({ command: parts.join(' '), dry: flag.dry })
+$.exec({ command: parts.join(' '), dry: flag.dry })
 ```

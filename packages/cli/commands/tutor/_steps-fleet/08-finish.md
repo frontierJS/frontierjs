@@ -7,34 +7,34 @@ runOnAbort: true
 ```js
 // The reader `narrate` asks its questions through. Held open it keeps the event
 // loop alive and the lesson never exits.
-context.config.prompts?.close()
+$.config.prompts?.close()
 
 // Runs on the way out of a refusal too, so it stops what it started rather than
 // leaving a control plane and a machine listening after a diagnosis.
 
-stopServers(context)
+stopServers($)
 
 // The release left a container running, which is the one thing in this lesson
 // that outlives the processes it started. Named rather than swept: `docker rm`
 // on a filter is how somebody else's work gets removed by a tutorial.
-if (context.config.container) {
-  try { probe.runArgv('docker', ['rm', '-f', context.config.container]) } catch {}
+if ($.config.container) {
+  try { probe.runArgv('docker', ['rm', '-f', $.config.container]) } catch {}
 }
 
-const ws = context.config.ws
+const ws = $.config.ws
 
-if (context.config.stop) {
-  context.config.journal.settle('succeeded')
+if ($.config.stop) {
+  $.config.journal.settle('succeeded')
   return
 }
 
-if (context.config.abort) {
-  log.info(`  the control plane's database is at ${context.config.dbFile ?? join(ws.dir, 'basecamp.db')}`)
+if ($.config.abort) {
+  log.info(`  the control plane's database is at ${$.config.dbFile ?? join(ws.dir, 'basecamp.db')}`)
   log.info(`  both processes wrote to ${join(ws.dir, '.tutor')}`)
   return
 }
 
-context.config.journal.settle('succeeded')
+$.config.journal.settle('succeeded')
 
 log.success('Lesson 12 done — a machine that reported in, a command that ran on it, and a release it ran')
 log.info('')
@@ -52,7 +52,7 @@ log.info('  fli tutor:adopt           next — the other door: a database that p
 log.info('                             what is wrong, what is settled, what is not started')
 log.info('')
 
-if (ws.kind === 'temp' && !context.flag.keep) {
+if (ws.kind === 'temp' && !$.flag.keep) {
   T.sweepWorkspace(ws, { keep: false })
   log.info('  (the temporary workspace was removed — pass --keep to hold on to it)')
 }

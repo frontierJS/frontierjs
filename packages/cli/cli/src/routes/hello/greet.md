@@ -34,7 +34,7 @@ const buildGreeting = (name, shout) => {
 Greet someone by name. Pass `--shout` to yell at them.
 
 ```js
-arg.name ??= await question('Who should I greet? ')
+arg.name ??= await tty.line('Who should I greet? ')
 
 const greeting = buildGreeting(arg.name, flag.shout)
 

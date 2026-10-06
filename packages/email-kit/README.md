@@ -7,7 +7,7 @@ Replaces MJML for transactional email built with the Frontier ecosystem.
 ## Install
 
 ```bash
-bun add @frontierjs/email-kit @frontierjs/mesa happy-dom
+bun add @frontierjs/email-kit @frontierjs/mesa happy-dom css-tree
 ```
 
 ## Usage

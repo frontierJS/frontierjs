@@ -3,7 +3,7 @@ title: 01-throws
 ---
 
 ```js
-context.config.ran.push('01')
-context.config.abort = true
+$.config.ran.push('01')
+$.config.abort = true
 throw new Error('health check failed')
 ```

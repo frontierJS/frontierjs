@@ -11755,6 +11755,24 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d595"></a>2026-10-06 · `FJS-D595` — What replaces zx's `question()` — `tty.line(prompt, { default })` beside `tty.keys()`, with the same rules: `--yes` answers the default, no terminal refuses by name, the web runner gets an event.
+
+Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (keep `question` as a name destructured from `$`).
+
+The paper's recommendation, taken as written: the input already has an owner, `core/tty.js`, and `FJS-1406` is the measurement that a second one beside it breaks the first.
+
+### <a id="fjs-d594"></a>2026-10-06 · `FJS-D594` — Which names does the compiled shim inject — Three: `$`, `path`, `fs`. The two builtins resolve from anywhere and 23 command files use them without importing.
+
+Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (`$` alone; each file imports what it uses).
+
+The paper's recommendation, taken as written: three names is a list short enough to write down and grade, and B costs 23 edits plus the first two lines of every future command for one rule fewer.
+
+### <a id="fjs-d593"></a>2026-10-06 · `FJS-D593` — What runtime is `fli` — `fli` runs under bun; `Bun.$` is the shell. The three shebangs flip, a missing bun is refused by name, and `create-frontier` (reached through `npm create`, so still node) spawns `bun` rather than `process.execPath`.
+
+Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (`fli` stays dual-runtime; its own `$` over `spawn('bash', ['-c'])`, no Windows).
+
+The paper's recommendation, taken as written: the engines field already says it, every test and CI invocation already runs `fli` under bun, and junction and litestone's client are bun-only, so an app's `fli` cannot run where its API cannot. `FJS-D222` does not bind: it rules that a HARNESS runs under node, and `fli` is not one — `fli ci` only forwards to `scripts/ci.mjs`, which stays node, and `fli check` is a package the harness spawns, which D222 permits (*a package runs under what it needs*). The one node-only argument, `IDEAS/bun-natives.md`'s *fli is node*, was a premise and not a ruling.
+
 ### <a id="fjs-d589"></a>2026-10-05 · `FJS-D589` — The committed workspace pages hold the structure only. The three registers and the file counts are on `fli ws:atlas --live`, which is never committed.
 
 Asked while reading a red `snapshots` phase in `fli gui`. **Structure only** was picked over **keeping both pages as they were** and over **committing the report and building the deck on demand**. The two pages are one model read two ways (`FJS-D223`), so a stale model staled both, and what staled it was nearly always a register: filing one row in `ISSUES.md` moved the open count, a severity table and the plate heat, and a new file anywhere moved a tracked-file count. Both pages were red on every branch, and the change `--check` exists to surface (a new command, drive, CI phase, snapshot or package) arrived under a diff of counts nobody read. Committing one page would halve that noise and keep its cause.

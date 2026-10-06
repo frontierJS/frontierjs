@@ -56,9 +56,9 @@ flags:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 const opts = [
   flag.as      ? `--as ${flag.as}`         : '',
@@ -73,10 +73,10 @@ const opts = [
   flag['with-deleted']      ? '--with-deleted'      : '',
 ].filter(Boolean).join(' ')
 
-const dataset = context.args[0] ?? ''
+const dataset = $.args[0] ?? ''
 
-await context.stream({
-  command: `${litestone(context)} export ${dataset} --schema ${schema} ${opts}`,
+await $.stream({
+  command: `${litestone($)} export ${dataset} --schema ${schema} ${opts}`,
 })
 ```
 

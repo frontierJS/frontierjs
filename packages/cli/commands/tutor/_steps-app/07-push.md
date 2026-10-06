@@ -19,43 +19,43 @@ command that exits 0 and a table that exists are two different claims, and only
 the second one is worth having.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-context.exec({ command: `${context.fli} db:push`, cwd: context.config.appDir })
+$.exec({ command: `${$.fli} db:push`, cwd: $.config.appDir })
 
-const db = join(context.config.appDir, 'db', 'app.db')
+const db = join($.config.appDir, 'db', 'app.db')
 
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db,
   sql:    "select name from sqlite_master where type = 'table' and name = 'note'",
   expect: (rows) => rows.length === 1,
   name:   'the note table exists in db/app.db',
 }), {
   likely:    'db:push refused the change — a required column with no default blocks, and says so',
-  reproduce: `cd ${context.config.appDir} && fli db:push`,
+  reproduce: `cd ${$.config.appDir} && fli db:push`,
 })) return
 
-const api = await restartApi(context)
+const api = await restartApi($)
 
-if (!await must(context, api.up, {
+if (!await must($, api.up, {
   likely:    'the API did not come back after the schema change — its output is below',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
 // The service is mounted from the file `fli scaffold` wrote, autoloaded at boot
 // — so a 404 here would mean the restart missed it rather than that the table
 // is absent, which is why this is asked separately from the row above.
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
   retries: 10,
   name:    'GET /api/notes is served, and public',
 }), {
   likely:    'the notes service did not load — check .tutor/api.log',
-  reproduce: `curl -sS -i ${apiUrl(context, '/notes')}`,
+  reproduce: `curl -sS -i ${apiUrl($, '/notes')}`,
 })) return
 ```

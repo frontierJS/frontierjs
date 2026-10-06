@@ -4,11 +4,11 @@ optional: true
 ---
 
 ```js
-log.info(`Building for ${context.config.env}...`)
-context.exec({
-  command: `echo "BUILD: ${context.config.env} @ ${context.config.branch}"`,
+log.info(`Building for ${$.config.env}...`)
+$.exec({
+  command: `echo "BUILD: ${$.config.env} @ ${$.config.branch}"`,
   dry: flag.dry
 })
-context.config.buildOutput = `/dist/${context.config.env}`
-log.success(`Build output: ${context.config.buildOutput}`)
+$.config.buildOutput = `/dist/${$.config.env}`
+log.success(`Build output: ${$.config.buildOutput}`)
 ```

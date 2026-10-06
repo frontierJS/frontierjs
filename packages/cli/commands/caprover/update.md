@@ -20,6 +20,6 @@ flags:
 
 ```js
 const config = flag.production ? '.caprover.config.yml' : '.caprover.dev.config.yml'
-const dir    = `${context.paths.root}/${arg.target}`
-context.exec({ command: `caprover deploy --configFile ${config} --tarFile ${dir}`, dry: flag.dry })
+const dir    = `${$.paths.root}/${arg.target}`
+$.exec({ command: `caprover deploy --configFile ${config} --tarFile ${dir}`, dry: flag.dry })
 ```

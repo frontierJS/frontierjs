@@ -23,13 +23,13 @@ also why a header a caller varies per call has to be declared before it is
 allowed to ride one.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
@@ -39,13 +39,13 @@ const run      = Date.now().toString(36)
 const password = 'correct-horse-battery-staple'
 const user     = `ada-${run}@example.test`
 
-const registered = await registerAccount(context, { email: user, password, name: 'Ada' })
-if (!await must(context, registered, {
+const registered = await registerAccount($, { email: user, password, name: 'Ada' })
+if (!await must($, registered, {
   likely: 'auth is not installed in this app',
 })) return
 
 log.info(`  signed in as   ${user}`)
 log.info('  and nobody     — the second client holds no token at all')
 
-remember(context, '03-account', { user, password, userToken: registered.json.token })
+remember($, '03-account', { user, password, userToken: registered.json.token })
 ```

@@ -8,8 +8,8 @@ examples:
 ---
 
 ```js
-context.exec({
-  command: `NODE_ENV=production npm run build --prefix ${context.paths.web}`,
+$.exec({
+  command: `NODE_ENV=production npm run build --prefix ${$.paths.web}`,
   dry: flag.dry
 })
 ```

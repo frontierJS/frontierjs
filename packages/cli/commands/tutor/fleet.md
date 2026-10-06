@@ -42,13 +42,13 @@ flags:
 // Both processes are started by this lesson and stopped by its last step, and
 // neither is a fact a journal can hold: replayed into a no-op, the first leaves
 // every step after it talking to a dead port.
-openTutor(context, 'tutor:fleet', { ephemeral: ['02-basecamp', '05-outpost', '07-finish'] })
+openTutor($, 'tutor:fleet', { ephemeral: ['02-basecamp', '05-outpost', '07-finish'] })
 
-context.config.apiPort     = flag['api-port']
-context.config.outpostPort = flag['outpost-port']
+$.config.apiPort     = flag['api-port']
+$.config.outpostPort = flag['outpost-port']
 
-context.vars.apiPort     = context.config.apiPort
-context.vars.outpostPort = context.config.outpostPort
+$.vars.apiPort     = $.config.apiPort
+$.vars.outpostPort = $.config.outpostPort
 ```
 
 ## Lesson 12 — one control plane, one machine

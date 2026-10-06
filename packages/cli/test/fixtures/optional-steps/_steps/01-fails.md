@@ -4,6 +4,6 @@ optional: true
 ---
 
 ```js
-context.config.ran.push('01')
+$.config.ran.push('01')
 throw new Error('intentional failure')
 ```

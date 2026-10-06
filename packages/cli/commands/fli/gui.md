@@ -36,7 +36,7 @@ const url  = `http://localhost:${port}`
 process.env.FLI_PORT = String(port)
 
 log.info(`Starting FLI Web GUI on ${url}`)
-log.info(`Project: ${context.paths.root}`)
+log.info(`Project: ${$.paths.root}`)
 
 if (flag.dry) {
   log.dry(`Would start server on port ${port}`)

@@ -8,8 +8,8 @@ examples:
 ---
 
 ```js
-const url = context.env.LIVE_SITE_URL
+const url = $.env.LIVE_SITE_URL
 if (!url) { log.error('$LIVE_SITE_URL is not set in your .env'); return }
-const browser = context.env.BROWSER || 'xdg-open'
-context.exec({ command: `${browser} ${url}`, dry: flag.dry })
+const browser = $.env.BROWSER || 'xdg-open'
+$.exec({ command: `${browser} ${url}`, dry: flag.dry })
 ```

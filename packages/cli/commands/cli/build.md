@@ -28,18 +28,18 @@ first time, so it needs the network once.
 
 ```js
 const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js'))
-const build = shippedFile(context.paths.root, '@frontierjs/mcp', './client/build')
+const build = shippedFile($.paths.root, '@frontierjs/mcp', './client/build')
 
 if (!build) {
-  log.error(`@frontierjs/mcp is not installed in ${context.paths.root}, or ships no ./client/build`)
+  log.error(`@frontierjs/mcp is not installed in ${$.paths.root}, or ships no ./client/build`)
   log.info('Install it first: bun add @frontierjs/mcp')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 const target = flag.target ? ` --target ${JSON.stringify(flag.target)}` : ''
-context.exec({
-  command: `bun ${JSON.stringify(build.file)} --root ${JSON.stringify(context.paths.cli)}${target}`,
+$.exec({
+  command: `bun ${JSON.stringify(build.file)} --root ${JSON.stringify($.paths.cli)}${target}`,
   dry:     flag.dry,
 })
 ```

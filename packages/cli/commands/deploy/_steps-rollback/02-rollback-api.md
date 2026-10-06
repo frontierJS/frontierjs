@@ -1,19 +1,19 @@
 ---
 title: 02-rollback-api
 description: Restore _replaced container or select a previous image
-skip: "!context.config.doApi"
+skip: "!$.config.doApi"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, appId, deployConf } = context.config
+const { host, serverPath, appId, deployConf } = $.config
 const apiPort  = deployConf.api?.port ?? 3000
 const dbPath   = deployConf.db?.path  ?? `${serverPath}/db`
 const envFile  = deployConf.api?.env  ?? `${serverPath}/.env.production`
 const container = apiContainer(appId, deployConf)
 const replaced  = `${container}_replaced`
-const machine   = machineFor(context, host, serverPath)
+const machine   = machineFor($, host, serverPath)
 
 // ─── Check for _replaced container first ─────────────────────────────────────
 // Present if the last deploy failed health check or was manually interrupted.
@@ -78,7 +78,7 @@ docker start  ${container}`, { dry: flag.dry })
     return
   }
 
-  const confirm = await question(`Roll back API to ${previous.tag} (${short(previous.id)})? (y/N) `)
+  const confirm = await tty.line(`Roll back API to ${previous.tag} (${short(previous.id)})? (y/N) `)
   if (confirm.trim().toLowerCase() !== 'y') {
     log.info('API rollback cancelled')
     return

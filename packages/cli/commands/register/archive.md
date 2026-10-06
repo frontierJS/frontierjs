@@ -17,7 +17,7 @@ const { findRegisterRoot }    = await import(resolve(global.fliRoot, 'core/regis
 
 // The nearest package.json declaring `registers`, so a run from inside a
 // package or a surface means the project's registers.
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 const out = archiveClosed({ root, keep: flag.keep ?? KEEP })
 

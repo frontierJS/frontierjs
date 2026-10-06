@@ -43,13 +43,13 @@ starts failing the day somebody raises the model's read gate, which is a change
 that has nothing to do with the test.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const dir  = join(app, 'api', 'test')
 const file = join(dir, 'notes.test.ts')
 
@@ -85,7 +85,7 @@ writeFileSync(file, [
 // `bun test` exits 0 when it finds no test files at all, so the assertion is on
 // what it PRINTED. A step that checked the code alone would pass against a
 // file the runner never saw — which is exactly what a wrong path looks like.
-if (!await must(context, probe.command({
+if (!await must($, probe.command({
   bin:      'bun',
   args:     ['test', 'api/test/notes.test.ts'],
   cwd:      app,
@@ -101,5 +101,5 @@ log.info('')
 log.info(`  ${file}`)
 log.info('')
 
-remember(context, '02-first', { testFile: file })
+remember($, '02-first', { testFile: file })
 ```

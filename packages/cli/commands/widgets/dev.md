@@ -19,9 +19,9 @@ writing loop, not the proof.
 
 ```js
 const port = flag.port ? `WIDGET_PORT=${flag.port} ` : ''
-context.exec({
+$.exec({
   command: `${port}bunx vite -c config/vite.config.js`,
-  cwd:     context.paths.widgets,
+  cwd:     $.paths.widgets,
   dry:     flag.dry,
 })
 ```

@@ -50,13 +50,13 @@ const confirm = async (msg) => {
     log.info(msg + ' (auto-yes)')
     return true
   }
-  const answer = (await question(msg + ' (y/n) › ')).trim().toLowerCase()
+  const answer = (await tty.line(msg + ' (y/n) › ')).trim().toLowerCase()
   return answer === 'y' || answer === 'yes' || answer === ''
 }
 
 // ─── Pre-flight: is this a ksite project? ────────────────────────────────────
-const sitePath   = context.paths.site
-const settings   = `${context.paths.siteContent}/settings`
+const sitePath   = $.paths.site
+const settings   = `${$.paths.siteContent}/settings`
 const systemFile = `${settings}/system.md`
 const siteFile   = `${settings}/site.md`
 const robotsFile = `${settings}/robots.txt`
@@ -77,8 +77,8 @@ if (hasRanSetup && !flag.force) {
 }
 
 // ─── Derive domain from project root folder name ─────────────────────────────
-const domain = basename(context.paths.root)
-log.info(`Project: ${context.paths.root}`)
+const domain = basename($.paths.root)
+log.info(`Project: ${$.paths.root}`)
 log.info(`Domain:  ${domain}`)
 log.info('')
 
@@ -90,7 +90,7 @@ const skipCleanup = skip.includes('cleanup')
 const skipSed     = skip.includes('sed')
 const skipGit     = skip.includes('git')
 
-const pagesDir = `${context.paths.siteContent}/pages`
+const pagesDir = `${$.paths.siteContent}/pages`
 const blogDir  = `${pagesDir}/blog`
 
 const actions = []
@@ -101,7 +101,7 @@ if (!skipCleanup) {
     label: `Remove ${pagesDir}/internal/`,
     run: async () => {
       if (!existsSync(`${pagesDir}/internal`)) return false
-      await context.exec({ command: `rm -rf ${pagesDir}/internal`, dry: flag.dry })
+      await $.exec({ command: `rm -rf ${pagesDir}/internal`, dry: flag.dry })
       return true
     },
   })
@@ -110,7 +110,7 @@ if (!skipCleanup) {
     label: `Remove ${pagesDir}/service-areas/`,
     run: async () => {
       if (!existsSync(`${pagesDir}/service-areas`)) return false
-      await context.exec({ command: `rm -rf ${pagesDir}/service-areas`, dry: flag.dry })
+      await $.exec({ command: `rm -rf ${pagesDir}/service-areas`, dry: flag.dry })
       return true
     },
   })
@@ -119,7 +119,7 @@ if (!skipCleanup) {
     label: `Remove ${blogDir}/index.md (placeholder)`,
     run: async () => {
       if (!existsSync(`${blogDir}/index.md`)) return false
-      await context.exec({ command: `rm ${blogDir}/index.md`, dry: flag.dry })
+      await $.exec({ command: `rm ${blogDir}/index.md`, dry: flag.dry })
       return true
     },
   })
@@ -129,7 +129,7 @@ if (!skipCleanup) {
     run: async () => {
       if (!existsSync(blogDir)) return false
       // Use a glob shell so we don't have to walk JS-side
-      await context.exec({ command: `rm -f ${blogDir}/*-blogpost.md`, dry: flag.dry })
+      await $.exec({ command: `rm -f ${blogDir}/*-blogpost.md`, dry: flag.dry })
       return true
     },
   })
@@ -175,7 +175,7 @@ if (!skipGit) {
       try {
         const { execSync } = await import('child_process')
         existing = execSync('git branch --list stage', {
-          cwd: context.paths.root,
+          cwd: $.paths.root,
           encoding: 'utf8',
           stdio: ['pipe', 'pipe', 'ignore'],
         }).trim()
@@ -186,7 +186,7 @@ if (!skipGit) {
         log.info('  stage branch already exists — skipping')
         return false
       }
-      await context.exec({
+      await $.exec({
         command: 'git checkout -b stage && git push -u origin stage && git checkout main',
         dry: flag.dry,
       })

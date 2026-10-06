@@ -52,7 +52,7 @@ Revokes active sessions by deleting them from the database.
 The user will be required to log in again on all devices.
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,7 @@ if (flag.dry) {
 if (flag.all) {
   echo('')
   log.warn('This will revoke ALL sessions for ALL users.')
-  const confirmed = await question('Continue? (y/n) › ')
+  const confirmed = await tty.line('Continue? (y/n) › ')
   if (confirmed.toLowerCase() !== 'y' && confirmed.toLowerCase() !== 'yes') {
     log.info('Aborted')
     return
@@ -104,7 +104,7 @@ if (flag.all) {
 // ─── Run ──────────────────────────────────────────────────────────────────────
 
 const { unlinkSync } = await import('fs')
-const tmpPath = resolve(context.paths.root, `.fli-revoke-sessions-${Date.now()}.ts`)
+const tmpPath = resolve($.paths.root, `.fli-revoke-sessions-${Date.now()}.ts`)
 
 try {
   writeFileSync(tmpPath, makeScript(
@@ -114,7 +114,7 @@ try {
     flag.all
   ), 'utf8')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
+  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('{'))
 

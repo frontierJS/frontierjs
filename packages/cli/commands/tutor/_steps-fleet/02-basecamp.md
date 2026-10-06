@@ -24,42 +24,42 @@ up — and it is the next step that reads the answer, since *empty* is only true
 until somebody sets it up and this step runs again on every resume.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['basecamp'], { from: '01-machine' })) return
+if (!needs($, ['basecamp'], { from: '01-machine' })) return
 
 // The fleet secret, minted per run. It is the credential on BOTH ends — the
 // control plane verifies with it and the outpost signs with it — so it is
 // remembered here and read again by the step that starts the machine.
 // `OUTPOST_SECRET` is declared with a minimum length, so this is not a nonce.
 const secret = `tutor-fleet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-const dbFile = join(context.config.ws.dir, 'basecamp.db')
+const dbFile = join($.config.ws.dir, 'basecamp.db')
 
 // `--restart` begins the lesson again, and the rows are part of what the last
 // run left: setup succeeds exactly once against a database, so without this a
 // restart is refused at this step for having worked before. Everything removed
 // is inside the workspace by construction.
-if (context.flag.restart) {
+if ($.flag.restart) {
   for (const f of ['basecamp.db', 'basecamp-jobs.db'])
     for (const suffix of ['', '-wal', '-shm'])
-      rmSync(join(context.config.ws.dir, f + suffix), { force: true })
-  rmSync(join(context.config.ws.dir, 'audit'), { recursive: true, force: true })
+      rmSync(join($.config.ws.dir, f + suffix), { force: true })
+  rmSync(join($.config.ws.dir, 'audit'), { recursive: true, force: true })
   log.info('--restart: the control plane starts on an empty database again')
 }
 
-context.config.secret = secret
+$.config.secret = secret
 
-const hub = await startHub(context)
+const hub = await startHub($)
 
-if (!await must(context, hub.up, {
+if (!await must($, hub.up, {
   likely:    'the control plane did not come up — its output is below',
-  reproduce: `cd ${context.config.basecamp} && DATABASE_URL=${dbFile} bun run start`,
+  reproduce: `cd ${$.config.basecamp} && DATABASE_URL=${dbFile} bun run start`,
   detail:    serverLog(hub),
 })) return
 
 log.info(`  ${dbFile}`)
 
-remember(context, '02-basecamp', { secret, dbFile })
+remember($, '02-basecamp', { secret, dbFile })
 ```

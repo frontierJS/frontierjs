@@ -31,7 +31,7 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 
 // The nearest package.json declaring `registers`, so a run from inside a
 // package or a surface means the project's registers.
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 const out  = rankNext(root, { pkg: flag.pkg || null })
 
 if (flag.json) {
@@ -79,12 +79,16 @@ if (out.blocked.length) {
 
 ## How a row is scored
 
-Severity first, and three terms under it that break the ties severity leaves —
+Severity first, and four terms under it that break the ties severity leaves —
 most open rows share one. **Cited**: how many live records (open rows, rulings,
 proposals) cite the row, capped. **Blocks**: how many open rows declare
 themselves `blocked by` it. **Touched**: whether a code file the row links is in
 the working tree or the last few commits, which is the cheapest context to pick
-up. The weights are one table in `core/next.js` and no flag moves them.
+up. **Reach**: how many workspace packages depend on the row's package, directly
+or through another, read from their manifests — a defect in toolbelt or
+litestone is met by every package above it. Reach is capped below one citation,
+so it orders rows inside a tie and never past one. The weights are one table in
+`core/next.js` and no flag moves them.
 
 A row that cannot start until another closes says `blocked by FJS-###` in its
 own text; it leaves the ranking and is listed under *blocked* until the blocker

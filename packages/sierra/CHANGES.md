@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-05 — js-yaml dropped; frontmatter is `@frontierjs/toolbelt/frontmatter` (`FJS-D549`)
+
+The scanner's `parseFrontmatter` reads the toolbelt kit, which mesa's `.md` compiler reads too, so a route's `page.meta` and a module's `frontmatter` are one object (`FJS-1541`). Two meanings changed. A date is the string written rather than a `Date`, and anchors and aliases are refused, so the `FJS-821` expansion count is gone too. The alias bomb in `test/scanner-hostile-input.test.js` is refused at its first anchor, and the negative control there is now ksite's nested menu shape. The error reads `frontmatter line N: …`, with N counted from the top of the file.
+
 ## 2026-10-05 — happy-dom `^20.11.1` → `^20.11.6`
 
 The devDependency now matches mesa and email-kit, so the workspace installs one happy-dom instead of two.

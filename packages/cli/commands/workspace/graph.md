@@ -24,7 +24,7 @@ and publish in. Workspace interdependencies are highlighted — external deps
 are counted but hidden by default (use `--external` to show them).
 
 ```js
-const { wsRoot, packages } = await context.wsPackages()
+const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {

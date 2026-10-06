@@ -1,4 +1,4 @@
-// ─── exec-options.test.js — an option `context.exec` does not have ────────────
+// ─── exec-options.test.js — an option `$.exec` does not have ────────────
 //
 // `config.exec` spread whatever it was handed straight into `execSync`, and an
 // unrecognized key there changes nothing. `capture: true` is what that cost:
@@ -8,7 +8,7 @@
 // (`FJS-537`). The data was on screen and the command said it had failed.
 //
 // Two halves here and the second is the one with teeth. The first asserts the
-// refusal; the second reads every `context.exec({…})` in every shipped command
+// refusal; the second reads every `$.exec({…})` in every shipped command
 // and grades the keys it passes, which is what would have caught the original
 // four. Commands are markdown, so a compile is not a run and there is no other
 // moment at which a wrong option is visible.

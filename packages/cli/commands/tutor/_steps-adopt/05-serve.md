@@ -47,13 +47,13 @@ rows would not look like the old ones. Reading a database gets you a schema to
 start from, and that gap is what the first hour of work after it is for.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'imported', 'legacyDb'], { from: '03-introspect' })) return
+if (!needs($, ['appDir', 'imported', 'legacyDb'], { from: '03-introspect' })) return
 
-const app    = context.config.appDir
+const app    = $.config.appDir
 const schema = join(app, 'db', 'schema.lite')
 const lite   = join(app, 'node_modules', '.bin', 'litestone')
 
@@ -62,7 +62,7 @@ const lite   = join(app, 'node_modules', '.bin', 'litestone')
 // whole schema: it answers yes to a re-run against a DIFFERENT database, and
 // the step then adopts nothing while every assertion above it passes.
 const MARK   = '// ─── Adopted by fli tutor:adopt'
-const models = readFileSync(context.config.imported, 'utf8')
+const models = readFileSync($.config.imported, 'utf8')
   .split('\n').filter(l => !l.startsWith('///')).join('\n')
   // The one thing a database could not say. Written per model rather than
   // once, because a gate is per model — that is the whole of what it means.
@@ -90,34 +90,34 @@ writeFileSync(schema, [
 const envFile = join(app, '.env')
 const envText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
 if (!envText.includes('DATABASE_URL='))
-  appendFileSync(envFile, `\nDATABASE_URL=${context.config.legacyDb}\n`, 'utf8')
+  appendFileSync(envFile, `\nDATABASE_URL=${$.config.legacyDb}\n`, 'utf8')
 
 // A model is not a route. The services are generated around models that already
 // exist, which is what --skip-schema means.
 for (const model of ['Customer', 'Order']) {
   if (existsSync(join(app, 'api', 'src', 'services', `${model.toLowerCase()}s.service.ts`))) continue
-  context.exec({ command: `${context.fli} scaffold ${model} --skip-schema`, cwd: app })
+  $.exec({ command: `${$.fli} scaffold ${model} --skip-schema`, cwd: app })
 }
 
-const api = await startServer(context, {
+const api = await startServer($, {
   name:   'api',
   script: 'start',
   cwd:    app,
-  env:    { PORT: String(context.config.apiPort), DATABASE_URL: context.config.legacyDb },
-  port:   context.config.apiPort,
+  env:    { PORT: String($.config.apiPort), DATABASE_URL: $.config.legacyDb },
+  port:   $.config.apiPort,
   path:   '/api/health',
 })
 
-if (!await must(context, api.up, {
+if (!await must($, api.up, {
   likely:    'the API exited on startup — the last of its output is below',
-  reproduce: `cd ${app} && DATABASE_URL=${context.config.legacyDb} bun run start`,
+  reproduce: `cd ${app} && DATABASE_URL=${$.config.legacyDb} bun run start`,
   detail:    serverLog(api),
 })) return
 
 // The lesson. A row nobody here wrote, over HTTP, through a schema read out of
 // the database that held it.
-if (!await must(context, probe.httpJson({
-  url:      `http://127.0.0.1:${context.config.apiPort}/api/orders`,
+if (!await must($, probe.httpJson({
+  url:      `http://127.0.0.1:${$.config.apiPort}/api/orders`,
   expect:   (j) => {
     const rows = Array.isArray(j) ? j : (j?.data ?? [])
     return rows.length === 1 && Number(rows[0].total_cents) === 4250
@@ -127,7 +127,7 @@ if (!await must(context, probe.httpJson({
   retries:  4,
 }), {
   likely:    'the schema names a table or a column the database does not have — which is what @@map and --no-camel are for',
-  reproduce: `curl -s localhost:${context.config.apiPort}/api/orders`,
+  reproduce: `curl -s localhost:${$.config.apiPort}/api/orders`,
 })) return
 
 // The other question, and the answer is a refusal. `migrate create` writes the
@@ -137,10 +137,10 @@ if (!await must(context, probe.httpJson({
 // `env:` REPLACES the environment rather than adding to it, and litestone's bin
 // is a `#!/usr/bin/env bun` shebang — so a bare `{ DATABASE_URL }` here loses
 // PATH and the failure is `env: 'bun': No such file or directory`.
-context.exec({
+$.exec({
   command: `${lite} migrate create adopted`,
   cwd:     app,
-  env:     { ...process.env, DATABASE_URL: context.config.legacyDb },
+  env:     { ...process.env, DATABASE_URL: $.config.legacyDb },
   stdio:   ['ignore', 'pipe', 'pipe'],
 })
 
@@ -148,25 +148,25 @@ const refused = probe.command({
   bin:      lite,
   args:     ['migrate', 'baseline'],
   cwd:      app,
-  env:      { DATABASE_URL: context.config.legacyDb },
+  env:      { DATABASE_URL: $.config.legacyDb },
   expect:   1,
   needle:   /rebuild/,
   describe: 'a refusal naming what differs',
   name:     'and a baseline is refused rather than recorded',
 })
 
-if (!await must(context, refused, {
+if (!await must($, refused, {
   likely:    'the reading matched the database to the letter, which is better — this assertion is the one to update',
-  reproduce: `cd ${app} && DATABASE_URL=${context.config.legacyDb} bunx litestone migrate baseline`,
+  reproduce: `cd ${app} && DATABASE_URL=${$.config.legacyDb} bunx litestone migrate baseline`,
 })) return
 
 for (const line of (refused.detail ?? '').split('\n').filter(l => /~ col|\[rebuild\]/.test(l)))
   log.info(`  ${line.trim()}`)
 
 log.info('')
-log.info(`  ${context.config.legacyDb}`)
+log.info(`  ${$.config.legacyDb}`)
 log.info('  read by an app that did not create it, one row, over HTTP')
 log.info('')
 
-remember(context, '05-serve', { served: true })
+remember($, '05-serve', { served: true })
 ```

@@ -8,17 +8,17 @@ description: FJS native authentication — install, users, sessions, key rotatio
 // Checks that auth:install has been run — schema.lite contains the auth models.
 // Call at the top of any auth command that requires the tables to exist.
 
-const requireAuthInstalled = (context) => {
-  const schemaPath = resolve(context.paths.db, 'schema.lite')
+const requireAuthInstalled = ($) => {
+  const schemaPath = resolve($.paths.db, 'schema.lite')
   if (!existsSync(schemaPath)) {
-    context.log.error('schema.lite not found — run fli auth:install first')
+    $.log.error('schema.lite not found — run fli auth:install first')
     return false
   }
   const contents = fs.readFileSync(schemaPath, 'utf8')
   const hasAuth = ['model users', 'model sessions', 'model credentials', 'model verifications']
     .every(m => contents.includes(m))
   if (!hasAuth) {
-    context.log.error('Auth models not found in schema.lite — run fli auth:install first')
+    $.log.error('Auth models not found in schema.lite — run fli auth:install first')
     return false
   }
   return true
@@ -27,10 +27,10 @@ const requireAuthInstalled = (context) => {
 // ─── requireEncryptionKey ─────────────────────────────────────────────────────
 // Checks ENCRYPTION_KEY is set in .env.
 
-const requireEncryptionKey = (context) => {
+const requireEncryptionKey = ($) => {
   if (!process.env.ENCRYPTION_KEY) {
-    context.log.error('ENCRYPTION_KEY not set in .env')
-    context.log.info('Run fli auth:install to generate it, or: fli keygen aes --name ENCRYPTION_KEY --env --format hex')
+    $.log.error('ENCRYPTION_KEY not set in .env')
+    $.log.info('Run fli auth:install to generate it, or: fli keygen aes --name ENCRYPTION_KEY --env --format hex')
     return false
   }
   return true

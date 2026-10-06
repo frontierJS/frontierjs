@@ -134,7 +134,8 @@ function scanDirRecursive(dir, ext, out = []) {
 
 // ─── Result printer ───────────────────────────────────────────────────────────
 
-function printResults(errors, warns) {
+// `echo` is a parameter: module scope sees nothing run() destructures.
+function printResults(errors, warns, echo) {
   if (warns.length) {
     echo('')
     for (const w of warns) {
@@ -172,19 +173,19 @@ so results always reflect the current schema, not a stale snapshot.
 Use `--layer` to scope: `schema` `services` `resources` `env`
 
 ```js
-const root        = context.paths.root
-const schemaLite  = resolve(context.paths.db, 'schema.lite')
+const root        = $.paths.root
+const schemaLite  = resolve($.paths.db, 'schema.lite')
 // One owner for where the derived JSON Schema lives (`core/derived-paths.js`).
 // This command both WRITES it and reads it back, so a literal here is the
 // shape that regenerates one file and validates another — a clean pass over a
 // schema nobody looked at.
 const { jsonSchemaPath } = await import(resolve(global.fliRoot, 'core/derived-paths.js'))
-const schemaJson  = jsonSchemaPath(context.paths.db)
-const servicesDir = existsSync(resolve(context.paths.api, 'src/services'))
-  ? resolve(context.paths.api, 'src/services')
-  : resolve(context.paths.api, 'services')
-const resourcesDir = resolve(context.paths.web, 'src/resources')
-const routesDir   = resolve(context.paths.web, 'src/routes')
+const schemaJson  = jsonSchemaPath($.paths.db)
+const servicesDir = existsSync(resolve($.paths.api, 'src/services'))
+  ? resolve($.paths.api, 'src/services')
+  : resolve($.paths.api, 'services')
+const resourcesDir = resolve($.paths.web, 'src/resources')
+const routesDir   = resolve($.paths.web, 'src/routes')
 const envPath     = resolve(root, '.env')
 const layer       = (flag.layer || '').toLowerCase()
 
@@ -205,7 +206,7 @@ if (!existsSync(schemaLite)) {
 
 log.info('Generating schema.json...')
 try {
-  execSync(`${context.bin('litestone')} jsonschema --schema db/schema.lite --out ${JSON.stringify(schemaJson)}`, {
+  execSync(`${$.bin('litestone')} jsonschema --schema db/schema.lite --out ${JSON.stringify(schemaJson)}`, {
     cwd: root, stdio: 'pipe',
   })
 } catch (e) {
@@ -361,7 +362,7 @@ if (!layer || layer === 'env') {
 // ─── Results ──────────────────────────────────────────────────────────────────
 
 echo('')
-printResults(errors, warns)
+printResults(errors, warns, echo)
 
 if (errors.length) {
   log.error(`${errors.length} error${errors.length !== 1 ? 's' : ''} found`)

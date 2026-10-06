@@ -13,9 +13,9 @@ library mode takes one entry. N widgets is N builds; `sierra widgets` runs the
 loop.
 
 ```js
-context.exec({
-  command: `${context.bin('sierra', context.paths.widgets)} widgets --config config/sierra.config.js`,
-  cwd:     context.paths.widgets,
+$.exec({
+  command: `${$.bin('sierra', $.paths.widgets)} widgets --config config/sierra.config.js`,
+  cwd:     $.paths.widgets,
   dry:     flag.dry,
 })
 ```

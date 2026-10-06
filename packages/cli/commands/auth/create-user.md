@@ -87,7 +87,7 @@ Creates a user directly in the database using the Litestone client.
 No running server required — safe to use during initial setup and in CI.
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -112,12 +112,12 @@ if (!encKey) {
 let password = flag.password
 
 if (!password) {
-  password = await question('Password: ')
+  password = await tty.line('Password: ')
   if (!password) {
     log.error('Password is required')
     return
   }
-  const confirm = await question('Confirm password: ')
+  const confirm = await tty.line('Confirm password: ')
   if (password !== confirm) {
     log.error('Passwords do not match')
     return
@@ -135,7 +135,7 @@ if (flag.dry) {
 
 // ─── Write + run temp script ──────────────────────────────────────────────────
 
-const tmpPath = resolve(context.paths.root, `.fli-auth-create-${Date.now()}.ts`)
+const tmpPath = resolve($.paths.root, `.fli-auth-create-${Date.now()}.ts`)
 
 try {
   const script = makeScript(
@@ -149,7 +149,7 @@ try {
 
   writeFileSync(tmpPath, script, 'utf8')
 
-  const result = context.exec({
+  const result = $.exec({
     command: `bun run "${tmpPath}"`,
     stdio: ['ignore', 'pipe', 'inherit'],
   })

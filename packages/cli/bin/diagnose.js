@@ -1,10 +1,10 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
-console.log('Node version:', process.version)
+console.log('Bun version: ', process.versions.bun ?? `none — node ${process.version}`)
 console.log('Platform:    ', process.platform)
 
 global.fliRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')

@@ -25,13 +25,13 @@ It is the property litestone's own suite holds over seven corpus schemas and a
 trust the output — which is what this step does.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir', 'imported'], { from: '03-introspect' })) return
+if (!needs($, ['appDir', 'imported'], { from: '03-introspect' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const lite = join(app, 'node_modules', '.bin', 'litestone')
 
 // The imported schema declares no `database` block — it describes tables, not
@@ -42,7 +42,7 @@ const rtDb  = join(app, 'roundtrip.db')
 if (existsSync(rtDb)) rmSync(rtDb, { force: true })
 writeFileSync(round,
   'database main { path "./roundtrip.db" }\n\n'
-  + readFileSync(context.config.imported, 'utf8')
+  + readFileSync($.config.imported, 'utf8')
       .split('\n').filter(l => !l.startsWith('///')).join('\n'),
   'utf8')
 
@@ -52,7 +52,7 @@ const built = probe.command({
   cwd:  app,
   name: 'a database is built from the reading',
 })
-if (!await must(context, built, {
+if (!await must($, built, {
   likely:    'the schema it wrote does not build — which is the strongest thing this step can find',
   reproduce: `cd ${app} && bunx litestone db push --schema roundtrip.lite`,
 })) return
@@ -63,7 +63,7 @@ const again = probe.command({
   cwd:  app,
   name: 'and read back again',
 })
-if (!await must(context, again, { likely: 'the rebuilt database could not be read' })) return
+if (!await must($, again, { likely: 'the rebuilt database could not be read' })) return
 
 // The comparison, on the MODELS. The header names the file it came from, which
 // is a different file on the second pass and is the one line that is allowed to
@@ -71,7 +71,7 @@ if (!await must(context, again, { likely: 'the rebuilt database could not be rea
 const models = (p) => readFileSync(p, 'utf8')
   .split('\n').filter(l => !l.startsWith('///')).join('\n').trim()
 
-const before = models(context.config.imported)
+const before = models($.config.imported)
 const after  = models(join(app, 'roundtrip.out.lite'))
 
 const firstDiff = (() => {
@@ -81,19 +81,19 @@ const firstDiff = (() => {
   return null
 })()
 
-if (!await must(context, {
+if (!await must($, {
   ok:    before === after,
   name:  'the reading is a fixed point — the same text, twice',
   asked: 'introspect(build(introspect(db))) === introspect(db)',
   got:   firstDiff ?? 'identical',
 }, {
   likely:    'something in the reading compounds or is dropped — the first differing line is above',
-  reproduce: `diff ${context.config.imported} ${join(app, 'roundtrip.out.lite')}`,
+  reproduce: `diff ${$.config.imported} ${join(app, 'roundtrip.out.lite')}`,
 })) return
 
 log.info('')
 log.info('  the same text, twice — nothing compounded and nothing fell out')
 log.info('')
 
-remember(context, '04-fixedpoint', { roundtrip: round })
+remember($, '04-fixedpoint', { roundtrip: round })
 ```

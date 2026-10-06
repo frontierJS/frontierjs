@@ -117,7 +117,7 @@ if (flag.json && flag.as !== 'list') {
   return
 }
 
-const root = await context.wsRoot()
+const root = await $.wsRoot()
 if (!root) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 const model = collectTerms({ root })

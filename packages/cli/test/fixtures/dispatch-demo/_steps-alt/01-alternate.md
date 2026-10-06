@@ -4,5 +4,5 @@ description: Alternate step — runs when orchestrator sets stepsDir to _steps-a
 ---
 
 ```js
-log.success(`ALT step ran — mode: ${context.config.mode}`)
+log.success(`ALT step ran — mode: ${$.config.mode}`)
 ```

@@ -20,9 +20,15 @@ const REPO = fileURLToPath(new URL('../../..', import.meta.url))
 const row = (id, pkg, title, detail = '—') =>
   `| <a id="${id.toLowerCase()}"></a>${id} | ${pkg} | **${title}** | open | 2026-09-10 | ${detail} |`
 
-function fixture(rows, { closed = [], decisions = [] } = {}) {
+// `packages` is folder → the sibling folders it depends on.
+function fixture(rows, { closed = [], decisions = [], packages = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-next-'))
   writeFileSync(join(root, 'package.json'), DECLARED)
+  for (const [folder, deps] of Object.entries(packages)) {
+    mkdirSync(join(root, 'packages', folder), { recursive: true })
+    const dependencies = Object.fromEntries(deps.map(d => [`@x/${d}`, 'workspace:*']))
+    writeFileSync(join(root, 'packages', folder, 'package.json'), JSON.stringify({ name: `@x/${folder}`, dependencies }))
+  }
   mkdirSync(join(root, 'IDEAS'))
   mkdirSync(join(root, 'src'))
   for (const f of ['a.js', 'b.js', 'notes.md']) writeFileSync(join(root, 'src', f), '')
@@ -106,6 +112,30 @@ describe('the terms', () => {
       expect(out[0].terms.find(t => t.term === 'touched').note).toMatch(/src\/a\.js/)
       expect(out[1].terms.some(t => t.term === 'touched')).toBe(false)
     } finally { cleanup() }
+  })
+
+  test('a row in a package others depend on comes first — counted through a package between', () => {
+    // base ← mid ← top, and base ← side: base reaches three, leaf none.
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'leaf', 'Nothing imports it.'),
+      S3('FJS-002', 'base', 'Everything imports it.'),
+    ], { packages: { base: [], mid: ['base'], top: ['mid'], side: ['base'], leaf: [] } })
+    try {
+      const out = rankNext(root, { touched: new Set() }).ready
+      expect(ids(out)).toEqual(['FJS-002', 'FJS-001'])
+      expect(out[0].terms.find(t => t.term === 'reach')).toEqual({ term: 'reach', value: WEIGHTS.reach, note: 'base reaches 3' })
+      expect(out[1].terms.some(t => t.term === 'reach')).toBe(false)
+    } finally { cleanup() }
+  })
+
+  test('reach only breaks ties: the widest package there is loses to one citation', () => {
+    const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`p${i}`, ['base']]))
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'base', 'Reaches thirty.'),
+      S3('FJS-002', 'leaf', 'Cited once.'),
+    ], { packages: { base: [], leaf: [], ...many }, decisions: ['### <a id="fjs-d01"></a>2026-09-01 · `FJS-D01` — leans on FJS-002.', '', 'Body.'] })
+    try { expect(ids(rankNext(root, { touched: new Set() }).ready)).toEqual(['FJS-002', 'FJS-001']) }
+    finally { cleanup() }
   })
 
   test('the score is the sum of the terms printed beside it', () => {

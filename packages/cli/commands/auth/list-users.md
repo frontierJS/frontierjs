@@ -78,7 +78,7 @@ await db.$close()
 Lists users directly from the database. No running server required.
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -100,7 +100,7 @@ if (!encKey) {
 // ─── Run ──────────────────────────────────────────────────────────────────────
 
 const { unlinkSync } = await import('fs')
-const tmpPath = resolve(context.paths.root, `.fli-list-users-${Date.now()}.ts`)
+const tmpPath = resolve($.paths.root, `.fli-list-users-${Date.now()}.ts`)
 
 try {
   writeFileSync(tmpPath, makeScript(
@@ -111,7 +111,7 @@ try {
     flag.sessions
   ), 'utf8')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
+  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('['))
 

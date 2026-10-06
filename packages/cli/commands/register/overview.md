@@ -15,7 +15,7 @@ const { openDecisions }    = await import(resolve(global.fliRoot, 'core/decision
 
 // The nearest package.json declaring `registers`, so a run from inside a
 // package or a surface means the project's registers.
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 const issues = rankNext(root)
 const q      = openDecisions(root)
@@ -37,12 +37,12 @@ const RULE  = 78
 
 const paint = (cmd) => cmd
   .replace(/(?<= )\([^)]*\)/g, m => chalk.dim(m))
-  .replace(/\bfli [\w:-]+/g, m => amber.bold(m))
-  .replace(/(^|· )(\/[\w-]+)/g, (_, pre, m) => pre + chalk.cyan.bold(m))
-  .replace(/\bbun run [\w:-]+/g, m => chalk.cyan.bold(m))
+  .replace(/\bfli [\w:-]+/g, m => chalk.bold(amber(m)))
+  .replace(/(^|· )(\/[\w-]+)/g, (_, pre, m) => pre + chalk.bold(chalk.cyan(m)))
+  .replace(/\bbun run [\w:-]+/g, m => chalk.bold(chalk.cyan(m)))
   .replace(/ · /g, chalk.dim(' · '))
 
-const tone = (v, hue) => (v ? hue.bold : chalk.dim)(String(v).padStart(4))
+const tone = (v, hue) => v ? chalk.bold(hue(String(v).padStart(4))) : chalk.dim(String(v).padStart(4))
 
 const row    = (count, what, cmd) => echo(`  ${count}  ${what.padEnd(30)} ${paint(cmd)}`)
 const act    = (what, cmd)        => echo(`  ${chalk.dim('   ›')}  ${chalk.italic(what.padEnd(30))} ${paint(cmd)}`)
@@ -52,7 +52,7 @@ const header = (file, gist)       => {
 }
 
 echo('')
-echo(`  ${amber.bold('fli register:overview')} ${chalk.dim('— two loops over three files')}`)
+echo(`  ${chalk.bold(amber('fli register:overview'))} ${chalk.dim('— two loops over three files')}`)
 echo('')
 header('ISSUES.md', 'what is wrong')
 row(tone(issues.ready.length, chalk.green),  'ready to work, ranked',       'fli next  (--pkg <name>)')
@@ -80,7 +80,7 @@ const start =
   : issues.ready.length                 ? `fli next — ${issues.ready.length} row(s) ready`
   : q.open.length                       ? `${q.open.length} open question(s) need options before anyone can rule`
   : 'nothing open'
-echo(`  ${chalk.bgHex('#f5a623').black.bold(' ▶ Start here: ')}${paint(start)}`)
+echo(`  ${chalk.bold(amber(' ▶ Start here: '))}${paint(start)}`)
 echo('')
 ```
 

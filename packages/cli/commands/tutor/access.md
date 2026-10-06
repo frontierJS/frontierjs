@@ -39,11 +39,11 @@ flags:
 ---
 
 ```js
-openTutor(context, 'tutor:access', { ephemeral: ['02-run', '09-finish'] })
+openTutor($, 'tutor:access', { ephemeral: ['02-run', '09-finish'] })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.vars.apiPort   = context.config.apiPort
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.vars.apiPort   = $.config.apiPort
 ```
 
 ## Lesson 4 — who may do what

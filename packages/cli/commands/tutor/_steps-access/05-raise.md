@@ -19,40 +19,40 @@ The restart is not tidiness: an app reads `db/schema.lite` once, at
 it booted with.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'userToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
+if (!needs($, ['appDir', 'userToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
 
-const edit = editSchema(context, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+const edit = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
 if (!edit.ok) {
   log.error(`${edit.why} — this step edits the gate on model Note`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-pushSchema(context)
+pushSchema($)
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back after the schema change — its output is below',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
   expect:  401,
   retries: 5,
   name:    'the stranger who could list notes a moment ago is now refused',
 }), {
   likely:    'the edit did not reach the running app — was db:push run, and did the API restart?',
-  reproduce: `grep '@@gate' ${schemaFile(context)}`,
+  reproduce: `grep '@@gate' ${schemaFile($)}`,
 })) return
 
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
-  headers: asCaller(context.config.userToken),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
+  headers: asCaller($.config.userToken),
   name:    'and a signed-in caller still reads them',
 }), {
   likely: 'the read gate went above 4 — check the first of the four numbers',

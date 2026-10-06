@@ -14,7 +14,7 @@ flags:
 
 ```js
 const config = flag.production ? '.caprover.config.yml' : '.caprover.dev.config.yml'
-context.exec({
+$.exec({
   command: `caprover serversetup --assumeYes --configFile ${config}`,
   dry: flag.dry
 })

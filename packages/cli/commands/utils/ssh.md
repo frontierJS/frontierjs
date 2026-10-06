@@ -19,7 +19,7 @@ flags:
 ---
 
 ```js
-const env = context.env
+const env = $.env
 let server
 
 if (flag.production) {
@@ -36,5 +36,5 @@ if (!server) {
 }
 
 log.info(`Connecting to ${server}...`)
-context.exec({ command: `ssh ${server}`, dry: flag.dry })
+$.exec({ command: `ssh ${server}`, dry: flag.dry })
 ```

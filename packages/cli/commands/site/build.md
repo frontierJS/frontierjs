@@ -18,14 +18,14 @@ render that failed — stops the build naming the route, rather than exiting 0
 with one line among the bundler's own.
 
 ```js
-context.exec({
+$.exec({
   // `bun --bun`, not `bunx`: a static route's `load()` imports the app's own
   // Litestone client, which is TypeScript and opens `bun:sqlite` — under node
   // that is `Only URLs with a scheme in: file, data, and node are supported`,
   // reported as *could not load the db*. And `--env-file`, because this runs
   // from the surface and bun auto-loads `.env` from the working directory.
   command: 'bun --bun --env-file=../.env vite build -c config/vite.config.js',
-  cwd:     context.paths.site,
+  cwd:     $.paths.site,
   dry:     flag.dry,
 })
 ```

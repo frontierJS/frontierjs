@@ -57,7 +57,7 @@ Run this once when adding FLI to an existing project.
 ```js
 const { getConfig } = await import(resolve(global.fliRoot, 'core/config.js'))
 const { routesDir: ROUTES_DIR, defaultNamespace } = getConfig()
-const projectRoot = context.paths.root
+const projectRoot = $.paths.root
 const ns          = flag.namespace || defaultNamespace
 const routesDir   = resolve(projectRoot, ROUTES_DIR)
 const nsDir       = resolve(routesDir, ns)

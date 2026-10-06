@@ -34,13 +34,13 @@ if (flag.dry) {
 }
 
 if (!flag.force) {
-  const confirm = await question(`Type the package name to confirm (${arg.package.split('@')[0]}): `)
+  const confirm = await tty.line(`Type the package name to confirm (${arg.package.split('@')[0]}): `)
   if (confirm.trim() !== arg.package.split('@')[0]) {
     log.error('Confirmation did not match — aborting')
     return
   }
 }
 
-context.exec({ command: `npm unpublish ${arg.package} --force` })
+$.exec({ command: `npm unpublish ${arg.package} --force` })
 log.success(`Unpublished ${arg.package}`)
 ```

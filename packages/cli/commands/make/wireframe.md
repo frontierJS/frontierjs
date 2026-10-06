@@ -38,7 +38,7 @@ grader the app does not have is named, never skipped quietly.
 const { readWireframe, analyze, report, draw, emitMesa, draftSchema, KIT_PROPS, WireframeError } =
   await import(resolve(global.fliRoot, 'core/wireframe.js'))
 
-const root  = context.paths.root
+const root  = $.paths.root
 const file  = resolve(process.cwd(), arg.file)
 if (!existsSync(file)) { log.error(`no such file: ${file}`); process.exitCode = 1; return }
 
@@ -75,7 +75,7 @@ if (existsSync(uiDir)) {
 }
 
 const files   = emitMesa(a, { kit })
-const outDir  = join(context.paths.webComponents, wf.screen)
+const outDir  = join($.paths.webComponents, wf.screen)
 const draft   = draftSchema(a)
 const draftAt = join(dirname(file), `${wf.screen}.draft.lite`)
 

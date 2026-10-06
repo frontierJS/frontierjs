@@ -11,16 +11,16 @@ flags:
 ---
 
 ```js
-const target      = resolveTarget(flag, context.git)
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const target      = resolveTarget(flag, $.git)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf  = frontierConfig?.deploy
 
 if (deployConf?.server) {
-  context.config.stepsDir = '_steps-docker'
-  context.config.mode     = 'docker'
+  $.config.stepsDir = '_steps-docker'
+  $.config.mode     = 'docker'
 } else {
-  context.config.stepsDir = '_steps'
-  context.config.mode     = 'legacy'
+  $.config.stepsDir = '_steps'
+  $.config.mode     = 'legacy'
 }
-context.config.target = target
+$.config.target = target
 ```

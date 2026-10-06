@@ -101,8 +101,8 @@ describe('what the shortcut runs', () => {
   // shortcut resolving `fli` off PATH would reach the other one, and nothing
   // would print.
   test('a leading fli becomes the fli that is running', () => {
-    expect(targetExpression('fli ws:atlas --open')).toBe('${context.fli} ws:atlas --open')
-    expect(targetExpression('fli')).toBe('${context.fli}')
+    expect(targetExpression('fli ws:atlas --open')).toBe('${$.fli} ws:atlas --open')
+    expect(targetExpression('fli')).toBe('${$.fli}')
   })
 
   test('anything else is left as written', () => {
@@ -152,8 +152,8 @@ describe('the file it writes', () => {
 
   test('the target reaches the compiled body intact', () => {
     const src = compileCli(render('fli ws:atlas --open --live'), '', '/tmp/shortcut.md')
-    expect(src).toContain('${context.fli} ws:atlas --open --live')
-    expect(src).toContain('context.paths.root')
+    expect(src).toContain('${$.fli} ws:atlas --open --live')
+    expect(src).toContain('$.paths.root')
   })
 
   test('the path is under the routes directory, in its own namespace', () => {

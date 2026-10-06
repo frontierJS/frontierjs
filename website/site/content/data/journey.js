@@ -8,25 +8,16 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 
 const POSTS = join(dirname(fileURLToPath(import.meta.url)), '..', 'routes', 'journey')
-
-/** `key: value` lines between the fences; quotes optional. Enough for a post. */
-function frontmatter(src) {
-  const m = src.match(/^---\n([\s\S]*?)\n---/)
-  if (!m) return {}
-  return Object.fromEntries(m[1].split('\n')
-    .map((l) => l.match(/^(\w+):\s*(.*)$/))
-    .filter(Boolean)
-    .map(([, k, v]) => [k, v.replace(/^(["'])(.*)\1$/, '$2')]))
-}
 
 /** Newest first. A post with no `date` is a draft and is not listed. */
 export async function loadPosts() {
   const files = (await readdir(POSTS))
     .filter((f) => f.endsWith('.mesa') && f !== 'index.mesa' && !f.startsWith('_') && !f.startsWith('['))
   const posts = await Promise.all(files.map(async (f) => {
-    const fm = frontmatter(await readFile(join(POSTS, f), 'utf8'))
+    const { frontmatter: fm } = parseFrontmatter(await readFile(join(POSTS, f), 'utf8'))
     return {
       slug:  f.replace(/\.mesa$/, ''),
       title: fm.title?.replace(/ — The journey$/, '') ?? f,

@@ -25,56 +25,56 @@ required and unwritable by the ordinary caller at once, and the write fails at
 the database rather than at the boundary.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
-if (!needs(context, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
+if (!needs($, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
 
-if (!await refreshTokens(context)) return
+if (!await refreshTokens($)) return
 
-const edit = editSchema(context,
+const edit = editSchema($,
   '  done      Boolean',
   "  done      Boolean   @default(false) @allow('write', auth().isAdmin)")
 
 if (!edit.ok) {
   log.error(`${edit.why} — this step puts a write policy on Note.done`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-pushSchema(context)
+pushSchema($)
 
-const api = await restartApi(context)
-if (!await must(context, api.up, { likely: 'the API did not come back', detail: serverLog(api) })) return
+const api = await restartApi($)
+if (!await must($, api.up, { likely: 'the API did not come back', detail: serverLog(api) })) return
 
 const body = JSON.stringify({ title: `flag ${Date.now().toString(36)}`, body: 'same body, two callers', done: true })
 
 const byUser = await probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+  url:      apiUrl($, '/notes'),
   method:   'POST',
-  headers:  asCaller(context.config.userToken),
+  headers:  asCaller($.config.userToken),
   body,
   expect:   (j) => typeof j.done === 'boolean',
   describe: 'a created note',
   name:     'the ordinary caller sends done: true and is accepted',
 })
-if (!await must(context, byUser, {
+if (!await must($, byUser, {
   likely: 'the create was refused outright — a field policy drops the column, it does not refuse the row',
 })) return
 
 const byAdmin = await probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+  url:      apiUrl($, '/notes'),
   method:   'POST',
-  headers:  asCaller(context.config.adminToken),
+  headers:  asCaller($.config.adminToken),
   body,
   expect:   (j) => typeof j.done === 'boolean',
   describe: 'a created note',
   name:     'the administrator sends the identical body and is accepted',
 })
-if (!await must(context, byAdmin, { likely: 'the admin create was refused' })) return
+if (!await must($, byAdmin, { likely: 'the admin create was refused' })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    byUser.json.done === false && byAdmin.json.done === true,
   name:  'and only one of the two rows carries the value that was sent',
   asked: 'done stored false for the ordinary caller and true for the administrator',
@@ -83,6 +83,6 @@ if (!await must(context, {
   likely: byUser.json.done === true
     ? 'the column is writable by anyone — is the @allow on `done`, and is isAdmin really true for the admin?'
     : 'neither caller could write it, which is a rule that refuses everybody',
-  reproduce: `grep -n "done" ${schemaFile(context)}`,
+  reproduce: `grep -n "done" ${schemaFile($)}`,
 })) return
 ```

@@ -69,7 +69,7 @@ Parses [Conventional Commits](https://www.conventionalcommits.org) from git hist
 and generates a grouped, readable `CHANGELOG.md`.
 
 ```js
-const cwd      = context.paths.root
+const cwd      = $.paths.root
 const lastTag  = flag.from || getLastTag(cwd)
 const commits  = getCommits(lastTag, flag.to, cwd)
 

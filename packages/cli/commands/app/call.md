@@ -42,7 +42,7 @@ flags:
 const { callArgv } = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { spawnSync } = await import('node:child_process')
 
-const plan = callArgv(context.paths.root, {
+const plan = callArgv($.paths.root, {
   app:        flag.app,
   exportName: flag.export,
   words:      [arg.method, arg.idOrJson, arg.json],

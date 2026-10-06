@@ -27,14 +27,14 @@ flags:
 ---
 
 ```js
-const dbPath  = context.paths.db
+const dbPath  = $.paths.db
 const dbName  = flag.test ? 'test' : 'development'
 const dbFile  = `${dbPath}/${dbName}.db`
 
 // No query — open interactive shell
 if (!arg.query) {
   log.info(`Opening ${dbName}.db`)
-  context.exec({ command: `sqlite3 ${dbFile}`, dry: flag.dry })
+  $.exec({ command: `sqlite3 ${dbFile}`, dry: flag.dry })
   return
 }
 
@@ -45,10 +45,10 @@ if (flag.output) {
   const table = sql.replace(/^.*from\s+/i, '').replace(/[;"'\s]+$/, '').split(/\s/)[0]
   const cmd = `sqlite3 ${dbFile} ".mode insert ${table}" ".out ${flag.output}" "${sql.replace(/"/g, '\\"')}"`
   log.info(`Dumping ${table} → ${flag.output}`)
-  context.exec({ command: cmd, dry: flag.dry })
+  $.exec({ command: cmd, dry: flag.dry })
   return
 }
 
 // Run query directly
-context.exec({ command: `sqlite3 ${dbFile} "${sql.replace(/"/g, '\\"')}"`, dry: flag.dry })
+$.exec({ command: `sqlite3 ${dbFile} "${sql.replace(/"/g, '\\"')}"`, dry: flag.dry })
 ```

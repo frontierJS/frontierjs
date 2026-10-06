@@ -15,5 +15,5 @@ flags:
 
 ```js
 const cmd = `npx --yes npm-check-updates${flag.update ? ' -u' : ''}`
-context.exec({ command: cmd, dry: flag.dry })
+$.exec({ command: cmd, dry: flag.dry })
 ```

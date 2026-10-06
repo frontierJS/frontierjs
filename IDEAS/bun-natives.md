@@ -22,8 +22,9 @@ The answer is *one*, and the reason the other nine fail is the same reason each 
 A Bun global is a dependency on an interpreter. Most of this workspace cannot take
 one:
 
-- **`fli` is `#!/usr/bin/env node`** and `packages/cli/core/*.js` contains zero
-  `Bun.` calls. An installed app's `fli` runs on whatever node the machine has.
+- **`fli` runs under bun as of `FJS-D593`** (it was `#!/usr/bin/env node` when
+  this was written, and every *fli is node* row below was costed on that premise —
+  `zx-exit.md` is the one that reopened them).
 - **mesa, sierra, ui, css, jetty and toolbelt are published to consumers** who run
   vite under node. `toolbelt`'s harness is *node or bun* by design and the
   `hygiene` phase already grades that package for taking on dependencies.
@@ -132,7 +133,7 @@ The chain it would have replaced is still worth removing — 82 packages, 8.7 MB
 measured in this tree — but the door is a kit rather than a native, because a kit
 runs in all three places. See `markdown-kit.md`.
 
-**`Bun.markdown` → the cli's literate command runtime.** `fli` is node; and the cli
+**`Bun.markdown` → the cli's literate command runtime.** `fli` was node; and the cli
 does not want HTML, it wants *structure* — steps, `<script>` blocks, fenced js. The
 visitor form could do it, on a runtime the cli does not have.
 
@@ -171,7 +172,7 @@ of exactly those bytes). A different archiver would produce an archive nobody
 installs.
 
 **`Bun.secrets` (OS keychain) → deploy credentials.** The credential path is `fli`,
-which is node. Revisit only if `fli` ever moves to bun, which is its own decision.
+which was node. `FJS-D593` moved it to bun; this row is open again.
 
 **`bun test --changed` → `fli proves`.** They look alike and are not: `--changed` is
 an import graph, and `fli proves` is explicitly not one — half its rows (*a `@@gate`

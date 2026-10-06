@@ -346,6 +346,9 @@ describe('the clean app', () => {
     // Installed, so `mesa-compiles` runs over CLEAN's .mesa rather than skipping.
     mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
     symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
+    // And typescript, the parser `command-resolves` reads with — a scaffolded
+    // app installs it as a devDependency.
+    symlinkSync(join(import.meta.dir, '..', '..', '..', 'node_modules', 'typescript'), join(root, 'node_modules', 'typescript'))
     const { findings, ran, skipped } = runChecks({ root })
 
     expect(findings).toEqual([])
@@ -353,6 +356,45 @@ describe('the clean app', () => {
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
     expect(ran.length).toBe(RULES.filter(r => r.scope !== 'repo').length)
+  })
+})
+
+describe('command-resolves', () => {
+  const cmd = (title, body, script = '') =>
+    `---\ntitle: ${title}\ndescription: d\n---\n\n${script && `<script>\n${script}\n</script>\n\n`}${body}`
+  // The rule reads with the project's typescript; the fixture borrows this
+  // workspace's, which is what an app's devDependency installs.
+  const withTs = (root) => {
+    mkdirSync(join(root, 'node_modules'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '../../../node_modules/typescript'), join(root, 'node_modules/typescript'), 'junction')
+    return root
+  }
+
+  test('a free identifier in a body names the .md line; one in the module names the module', () => {
+    const root = withTs(tree('cr-free', without('cli/', {
+      'cli/src/routes/sup/_module.md': '---\n---\n\nHelpers.\n\n<script>\nconst shout = (s) => echo(s)\n</script>\n',
+      'cli/src/routes/sup/show.md':    cmd('sup:show', '```js\nshout(flag.x)\nreadFileSync(arg.file)\n```\n'),
+    })))
+    const { findings } = only(root, 'command-resolves')
+    expect(findings.map(f => [f.file.replace(root + '/', ''), f.line, f.message.split(' ')[0]])).toEqual([
+      ['cli/src/routes/sup/_module.md', 7, '`echo`'],
+      ['cli/src/routes/sup/show.md',    8, '`readFileSync`'],
+    ])
+  })
+
+  test('the shim\'s three names and a destructured one are not findings', () => {
+    const root = withTs(tree('cr-clean', without('cli/', {
+      'cli/src/routes/sup/show.md': cmd('sup:show', '```js\nlog.info(path.join($.paths.root, fs.readdirSync(\'.\')[0]))\n```\n'),
+    })))
+    expect(only(root, 'command-resolves').findings).toEqual([])
+  })
+
+  test('no typescript in the project is a skip that says so', () => {
+    const root = tree('cr-nots', without('cli/', {
+      'cli/src/routes/sup/show.md': cmd('sup:show', '```js\nnope()\n```\n'),
+    }))
+    const { skipped } = only(root, 'command-resolves')
+    expect(skipped).toEqual([{ rule: 'command-resolves', why: expect.stringMatching(/typescript/) }])
   })
 })
 

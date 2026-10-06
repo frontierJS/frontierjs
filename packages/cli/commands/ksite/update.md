@@ -5,8 +5,8 @@ alias: ksite-update
 examples:
   - fli ksite:update
   - fli ksite:update --dry
-  - fli site-update --force        # bypass version + dirty-checkout guards
-  - fli ksite:update --no-install   # skip the final npm install
+  - 'fli site-update --force        # bypass version + dirty-checkout guards'
+  - 'fli ksite:update --no-install   # skip the final npm install'
 flags:
   force:
     type: boolean
@@ -29,12 +29,13 @@ import { existsSync, readFileSync } from 'fs'
 import { resolve, basename } from 'path'
 
 // Confirm helper — y/Y/yes/<empty> accepts; --yes auto-accepts everything.
-const confirm = async (msg, log, ask) => {
+// `log` and `tty` are parameters: module scope sees nothing run() destructures.
+const confirm = async (msg, log, tty, ask) => {
   if (ask === false) {
     log.info(msg + ' (auto-yes)')
     return true
   }
-  const answer = (await question(msg + ' (y/n) › ')).trim().toLowerCase()
+  const answer = (await tty.line(msg + ' (y/n) › ')).trim().toLowerCase()
   return answer === 'y' || answer === 'yes' || answer === ''
 }
 
@@ -69,8 +70,8 @@ major version — pass `--force` to override. Pass `--no-install` to skip
 the final `npm install`.
 
 ```js
-const ksiteDir = context.env.KSITE_DIR
-console.log(context.env)
+const ksiteDir = $.env.KSITE_DIR
+console.log($.env)
 if (!ksiteDir || !existsSync(ksiteDir)) {
   log.error(`KSITE_DIR is not set or does not exist`)
   log.info(`Set KSITE_DIR in your env (try \`fli env\`) to the local clone of the ksite canonical`)
@@ -86,7 +87,7 @@ if (!(await haveCmd('rsync'))) {
 }
 
 // ── Pre-flight: this is a ksite project ────────────────────────────────────
-const sitePath = context.paths.site
+const sitePath = $.paths.site
 const sitePkgPath = `${sitePath}/package.json`
 const sitePkg     = readJson(sitePkgPath)
 if (!sitePkg) {
@@ -108,7 +109,7 @@ if (!canonPkg) {
 const localVer = sitePkg.version
 const canonVer = canonPkg.version
 
-log.info(`Local site:    ${context.paths.root}`)
+log.info(`Local site:    ${$.paths.root}`)
 log.info(`Local version: ${localVer}`)
 log.info(`Canonical:     ${ksiteDir}`)
 log.info(`Canon version: ${canonVer}`)
@@ -121,27 +122,27 @@ if (major(localVer) !== major(canonVer) && !flag.force) {
 }
 
 // ── Pre-flight: dirty-checkout warning ─────────────────────────────────────
-const dirty = context.git.status(context.paths.root)
+const dirty = $.git.status($.paths.root)
 if (dirty.length > 0 && !flag.force) {
-  log.warn(`Uncommitted changes in ${context.paths.root} (${dirty.length} file(s))`)
+  log.warn(`Uncommitted changes in ${$.paths.root} (${dirty.length} file(s))`)
   log.warn(`This command overwrites files in src/, config/, functions/, public/theme/, patches/.`)
   log.warn(`Local edits to those will be lost without warning.`)
-  const ok = (await question('Continue anyway? (y/N): ')).trim().toLowerCase()
+  const ok = (await tty.line('Continue anyway? (y/N): ')).trim().toLowerCase()
   if (ok !== 'y') { log.info('Aborted'); return }
 }
 
 // ── Pre-flight: branch warning ─────────────────────────────────────────────
-const branch = context.git.branch(context.paths.root)
+const branch = $.git.branch($.paths.root)
 if (branch && branch !== 'main' && !flag.yes) {
   log.warn(`You are on branch '${branch}', not 'main'`)
-  const ok = (await question(`Update '${branch}' anyway? (y/N): `)).trim().toLowerCase()
+  const ok = (await tty.line(`Update '${branch}' anyway? (y/N): `)).trim().toLowerCase()
   if (ok !== 'y') { log.info('Aborted'); return }
 }
 
 // ── Step 1: git pull in the canonical ──────────────────────────────────────
 log.info('')
 log.info(`Pulling latest in ${ksiteDir}...`)
-await context.exec({
+await $.exec({
   command: `git --git-dir=${ksiteDir}/.git --work-tree=${ksiteDir} pull`,
   dry: flag.dry,
 })
@@ -197,14 +198,14 @@ actions.push({
 })
 actions.push({
   label: 'Copy CHANGELOG.md',
-  command: `cp "${ksiteDir}/CHANGELOG.md" "${context.paths.root}/CHANGELOG.md"`,
+  command: `cp "${ksiteDir}/CHANGELOG.md" "${$.paths.root}/CHANGELOG.md"`,
 })
 
 // Final action — npm install (defaults to yes since most updates need it)
 if (flag.install !== false) {
   actions.push({
     label: 'Install npm dependencies (npm install)',
-    command: `npm install --prefix="${context.paths.root}"`,
+    command: `npm install --prefix="${$.paths.root}"`,
   })
 }
 
@@ -217,7 +218,7 @@ let ran = 0, skipped = 0, failed = 0
 for (const action of actions) {
   log.info(action.label)
   log.info(`  ${action.command}`)
-  const ok = await confirm('  Run?', log, !flag.yes)
+  const ok = await confirm('  Run?', log, tty, !flag.yes)
   if (!ok) {
     skipped++
     log.info('  skipped')
@@ -225,13 +226,13 @@ for (const action of actions) {
     continue
   }
   try {
-    await context.exec({ command: action.command, dry: flag.dry })
+    await $.exec({ command: action.command, dry: flag.dry })
     ran++
     log.success('  done')
   } catch (err) {
     failed++
     log.error(`  failed: ${err.message}`)
-    const cont = await confirm('Continue with remaining actions?', log, !flag.yes)
+    const cont = await confirm('Continue with remaining actions?', log, tty, !flag.yes)
     if (!cont) break
   }
   log.info('')
@@ -243,6 +244,6 @@ log.info(`Update complete: ${ran} ran, ${skipped} skipped, ${failed} failed`)
 if (flag.dry) {
   log.dry('(--dry: nothing was actually executed)')
 } else if (failed === 0 && ran > 0) {
-  log.success(`${basename(context.paths.root)} updated to ksite ${canonVer}`)
+  log.success(`${basename($.paths.root)} updated to ksite ${canonVer}`)
 }
 ```

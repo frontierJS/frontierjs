@@ -12,7 +12,7 @@ flags:
 ---
 
 ```js
-context.config.env    = flag.env
-context.config.branch = flag.branch
-log.info(`Deploying ${context.config.branch} → ${context.config.env}`)
+$.config.env    = flag.env
+$.config.branch = flag.branch
+log.info(`Deploying ${$.config.branch} → ${$.config.env}`)
 ```

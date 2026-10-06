@@ -15,5 +15,5 @@ flags:
 
 ```js
 const env = flag.test ? 'NODE_ENV=test ' : ''
-context.exec({ command: `${env}npm run dev --prefix=${context.paths.web}`, dry: flag.dry })
+$.exec({ command: `${env}npm run dev --prefix=${$.paths.web}`, dry: flag.dry })
 ```

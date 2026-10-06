@@ -15,5 +15,5 @@ flags:
 
 ```js
 const cmd = flag.rebase ? 'git pull --rebase' : 'git pull'
-context.exec({ command: cmd, dry: flag.dry })
+$.exec({ command: cmd, dry: flag.dry })
 ```

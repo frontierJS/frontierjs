@@ -4,22 +4,22 @@ description: Validate config, check SSH, acquire deploy lock
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { server, serverPath, target, hosts } = context.config
-const host = context.config.api?.host ?? context.config.web.host
+const { server, serverPath, target, hosts } = $.config
+const host = $.config.api?.host ?? $.config.web.host
 
 // ─── Validate required config ─────────────────────────────────────────────────
-const deployConf = context.config.deployConf
+const deployConf = $.config.deployConf
 const appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
 const apiPort    = deployConf.api?.port ?? 3000
 const healthPath = deployConf.api?.health ?? '/health'
 
-context.config.host       = host
-context.config.appId      = appId
-context.config.apiPort    = apiPort
-context.config.healthPath = healthPath
-context.config.commit     = context.git.branch() || 'unknown'
+$.config.host       = host
+$.config.appId      = appId
+$.config.apiPort    = apiPort
+$.config.healthPath = healthPath
+$.config.commit     = $.git.branch() || 'unknown'
 
 // ─── Check the machines are reachable ─────────────────────────────────────────
 // Every machine, not just the API's: a split deploy that can reach one host and
@@ -28,14 +28,14 @@ context.config.commit     = context.git.branch() || 'unknown'
 //
 // `reach()` is a no-op on a local machine, which is correct rather than lenient
 // — there is nothing to log in to.
-const machines = new Map(hosts.map(h => [h.host, machineFor(context, h.host, h.path)]))
+const machines = new Map(hosts.map(h => [h.host, machineFor($, h.host, h.path)]))
 
 for (const h of hosts) {
   const m = machines.get(h.host)
   log.info(`Checking ${m.kind === 'local' ? 'the local machine' : `SSH → ${h.host}`}`)
   if (!m.reach()) {
     log.error(`Cannot reach ${h.host} — check your SSH key and server address`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -45,22 +45,22 @@ for (const h of hosts) {
 // One lock per machine+path pair. A split app is two locks; an app whose halves
 // share a host is one, which is why distinctHosts() dedupes on the pair.
 log.info('Acquiring deploy lock...')
-const lock = await acquireLock(context, { hosts, target, takeover: context.flag.resume })
+const lock = await acquireLock($, { hosts, target, takeover: $.flag.resume })
 if (!lock.ok) {
   for (const [level, line] of await lockRefusal(lock)) log[level](line)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
-if (context.config.lockTookOver)
-  log.warn(`  --resume took the lock over — it held: ${context.config.lockTookOver}`)
+if ($.config.lockTookOver)
+  log.warn(`  --resume took the lock over — it held: ${$.config.lockTookOver}`)
 
-context.config.lockAcquired = true
+$.config.lockAcquired = true
 
 // ─── Litestream detection ─────────────────────────────────────────────────────
 // Litestream runs as a separate process outside Docker — do not stop it.
 // We just need to know it's there so we can log it and remind the operator
 // that continuous replication is active throughout the deploy.
-const apiMachine = machines.get(host) ?? machineFor(context, host)
+const apiMachine = machines.get(host) ?? machineFor($, host)
 const ls = litestreamStatus((script) => {
   try { return apiMachine.capture(script) }
   catch { return '' }
@@ -84,7 +84,7 @@ if (!ls.running) {
   log.info('  DB will be replicated throughout the deploy. Do not stop Litestream.')
 }
 
-context.config.litestreamRunning = ls.running === true && ls.supported !== false
+$.config.litestreamRunning = ls.running === true && ls.supported !== false
 
 log.success(`Preflight passed → ${appId} (${target})`)
 ```

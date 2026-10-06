@@ -12,9 +12,9 @@ If an earlier lesson left an app in this workspace it is reused; otherwise it
 is built here, the same three commands lesson 1 walks through.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
 // Asked before anything is built: no Chrome is a fact about the machine, and a
 // lesson that scaffolded an app and then discovered it could not open one has
@@ -29,32 +29,32 @@ if (!haveChrome()) {
   log.info('')
   // `stop`, not `abort`: nothing failed. The lesson exits 0 and the journal
   // does not record a step that was never attempted.
-  context.config.stop = true
+  $.config.stop = true
   return
 }
 
-const dir = appDir(context)
+const dir = appDir($)
 
 if (!existsSync(join(dir, 'db', 'schema.lite'))) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
 
   log.info(`building an app with screens in it — ${dir}`)
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
-  context.exec({
-    command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  $.exec({
+    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
-  context.exec({ command: `${context.fli} db:push`, cwd: dir })
+  $.exec({ command: `${$.fli} db:push`, cwd: dir })
 } else {
   log.info(`reusing the app at ${dir}`)
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
-if (!await must(context, probe.fileExists({
+if (!await must($, probe.fileExists({
   path: join(dir, 'web', 'src', 'routes', 'notes', 'create.mesa'),
   name: 'there is a create page to open',
 }), {
@@ -62,5 +62,5 @@ if (!await must(context, probe.fileExists({
   reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

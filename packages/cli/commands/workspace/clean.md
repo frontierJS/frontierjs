@@ -33,7 +33,7 @@ every package. Pass `--deps` to also wipe `node_modules` (implies `bun install`
 after). Safe to run anytime — just re-run `ws:run build` to rebuild.
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 let packages = all
 

@@ -39,7 +39,7 @@ Everything it writes is generated — `deploy/generated/` belongs in
 const { existsSync } = await import('fs')
 const { resolve }    = await import('path')
 
-const root = context.paths.root
+const root = $.paths.root
 
 if (!existsSync(resolve(root, 'package.json')))
   throw new Error(`No package.json at ${root} — run this from an app root`)

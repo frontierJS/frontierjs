@@ -14,5 +14,5 @@ flags:
 
 ```js
 const config = flag.production ? '.caprover.config.yml' : '.caprover.dev.config.yml'
-context.exec({ command: `caprover api --configFile ${config} --path /user/apps/appDefinitions/backup --method POST`, dry: flag.dry })
+$.exec({ command: `caprover api --configFile ${config} --path /user/apps/appDefinitions/backup --method POST`, dry: flag.dry })
 ```

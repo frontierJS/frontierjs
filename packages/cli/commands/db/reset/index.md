@@ -15,10 +15,10 @@ flags:
 ---
 
 ```js
-context.config.env    = flag.test ? ':test' : ''
-context.config.dbFile = flag.test ? 'test.db' : 'development.db'
-context.config.dbPath = context.paths.db
-context.config.root   = context.paths.root
+$.config.env    = flag.test ? ':test' : ''
+$.config.dbFile = flag.test ? 'test.db' : 'development.db'
+$.config.dbPath = $.paths.db
+$.config.root   = $.paths.root
 
-log.warn(`Resetting ${context.config.dbFile} — this is destructive`)
+log.warn(`Resetting ${$.config.dbFile} — this is destructive`)
 ```

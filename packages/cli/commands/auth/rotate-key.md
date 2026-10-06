@@ -57,8 +57,8 @@ Then run `fli auth:rotate-key`. On success, `ENCRYPTION_KEY` is updated
 to the new value and `ENCRYPTION_KEY_NEW` is removed from `.env`.
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
-const envPath    = resolve(context.paths.root, '.env')
+const schemaPath = resolve($.paths.db, 'schema.lite')
+const envPath    = resolve($.paths.root, '.env')
 
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ log.warn('This will re-encrypt all @secret fields in the database.')
 log.warn('Make a backup first: fli db:backup')
 echo('')
 
-const confirmed = await question('Continue? (y/n) › ')
+const confirmed = await tty.line('Continue? (y/n) › ')
 if (confirmed.toLowerCase() !== 'y' && confirmed.toLowerCase() !== 'yes') {
   log.info('Aborted')
   return
@@ -120,7 +120,7 @@ if (confirmed.toLowerCase() !== 'y' && confirmed.toLowerCase() !== 'yes') {
 // ─── Write + run rotation script ─────────────────────────────────────────────
 
 const { unlinkSync } = await import('fs')
-const tmpPath = resolve(context.paths.root, `.fli-rotate-key-${Date.now()}.ts`)
+const tmpPath = resolve($.paths.root, `.fli-rotate-key-${Date.now()}.ts`)
 
 try {
   writeFileSync(tmpPath, makeScript(
@@ -131,7 +131,7 @@ try {
 
   log.info('Rotating key — this may take a moment on large databases...')
 
-  const result = context.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
+  const result = $.exec({ command: `bun run "${tmpPath}"`, stdio: ['ignore', 'pipe', 'inherit'] })
   const output = (result?.stdout ?? result ?? '').toString().trim()
   const last   = output.split('\n').find(l => l.startsWith('{'))
 

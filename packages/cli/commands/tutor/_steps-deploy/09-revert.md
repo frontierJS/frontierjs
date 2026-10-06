@@ -27,33 +27,33 @@ cannot: no recorded image, a deploy in flight, nothing prior. Three of its
 refusals carry no override at all, because they are not judgement calls.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 9
+$.config.__step = 9
 
-if (!needs(context, ['appDir', 'firstImage', 'secondImage'], { from: { appDir: '02-app', firstImage: '06-deploy', secondImage: '08-change' } })) return
+if (!needs($, ['appDir', 'firstImage', 'secondImage'], { from: { appDir: '02-app', firstImage: '06-deploy', secondImage: '08-change' } })) return
 
-const app       = context.config.appDir
-const container = context.config.container
+const app       = $.config.appDir
+const container = $.config.container
 
-context.exec({ command: `${context.fli} deploy:revert`, cwd: app })
+$.exec({ command: `${$.fli} deploy:revert`, cwd: app })
 
 const back = imageBehind(container)
 
-if (!await must(context, {
-  ok:    back === context.config.firstImage,
+if (!await must($, {
+  ok:    back === $.config.firstImage,
   name:  'the previous release is serving again',
-  asked: `the container on ${String(context.config.firstImage).slice(0, 19)}`,
+  asked: `the container on ${String($.config.firstImage).slice(0, 19)}`,
   got:   back ? back.slice(0, 19) : 'there is no container',
 }, {
-  likely:    back === context.config.secondImage
+  likely:    back === $.config.secondImage
     ? 'the revert reported success and moved nothing'
     : 'the revert restored something that is neither release',
   reproduce: `cd ${app} && fli deploy:journal --steps`,
 })) return
 
-if (!await must(context, probe.httpStatus({
-  url:     `http://127.0.0.1:${context.config.port}/api/health`,
+if (!await must($, probe.httpStatus({
+  url:     `http://127.0.0.1:${$.config.port}/api/health`,
   retries: 20,
   name:    'and the release it went back to still works',
 }), {
@@ -61,12 +61,12 @@ if (!await must(context, probe.httpStatus({
 })) return
 
 // The way back from the way back.
-context.exec({ command: `${context.fli} deploy:revert`, cwd: app })
+$.exec({ command: `${$.fli} deploy:revert`, cwd: app })
 
-if (!await must(context, {
-  ok:    imageBehind(container) === context.config.secondImage,
+if (!await must($, {
+  ok:    imageBehind(container) === $.config.secondImage,
   name:  'and a revert can itself be reverted',
-  asked: `the container back on ${String(context.config.secondImage).slice(0, 19)}`,
+  asked: `the container back on ${String($.config.secondImage).slice(0, 19)}`,
   got:   imageBehind(container)?.slice(0, 19) || 'there is no container',
 }, {
   likely: 'the revert recorded no image for itself, so there is nothing to go back to',
@@ -74,7 +74,7 @@ if (!await must(context, {
 
 const steps = sh('bun', [join(global.fliRoot, 'bin', 'fli.js'), 'deploy:journal', '--steps'], { cwd: app })
 
-if (!await must(context, {
+if (!await must($, {
   ok:    /revert/.test(steps.stdout),
   name:  'the journal records the reverts as transitions of their own',
   asked: 'a revert transition in the journal',

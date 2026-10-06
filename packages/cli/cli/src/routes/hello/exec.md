@@ -34,5 +34,5 @@ const command = buildCommand(arg.dir, flag.all)
 
 log.info(`Running: ${command}`)
 
-context.exec({ command, dry: flag.dry })
+$.exec({ command, dry: flag.dry })
 ```

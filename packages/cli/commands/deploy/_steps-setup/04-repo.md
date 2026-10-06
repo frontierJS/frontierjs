@@ -4,10 +4,10 @@ description: Verify or clone the git repo on the server
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath } = context.config
-const machine = machineFor(context, host, serverPath)
+const { host, serverPath } = $.config
+const machine = machineFor($, host, serverPath)
 
 // Check if repo already exists
 let repoExists = false
@@ -26,11 +26,11 @@ if (repoExists) {
 // Prompt for the remote URL — read from local git origin by default
 let remoteUrl = ''
 try {
-  const result = context.exec({ command: `git remote get-url origin`, stdio: 'pipe' })
+  const result = $.exec({ command: `git remote get-url origin`, stdio: 'pipe' })
   remoteUrl = result?.toString('utf8').trim() ?? ''
 } catch {}
 
-const answer = await question(
+const answer = await tty.line(
   `Git remote URL to clone${remoteUrl ? ` [${remoteUrl}]` : ''}: `
 )
 const url = answer.trim() || remoteUrl

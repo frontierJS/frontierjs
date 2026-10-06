@@ -28,7 +28,7 @@ flags:
 // comes from a thrown error and nothing else — so these used to report a
 // problem and exit 0, which makes this command unusable as a gate: the CI
 // phase that runs it, and a person reading `echo $?`, both saw success.
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf) {
@@ -36,7 +36,7 @@ if (!deployConf) {
   throw new Error('No deploy block found in frontier.config.js')
 }
 
-const appId      = deployConf.app_id ?? context.paths.root.split('/').pop()
+const appId      = deployConf.app_id ?? $.paths.root.split('/').pop()
 const dockerfile = deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 const healthPath = deployConf.api?.health ?? '/health'
 const port       = flag.port
@@ -49,13 +49,13 @@ const dbDir      = './db'
 const { existsSync } = await import('fs')
 const { resolve }    = await import('path')
 
-const dockerfilePath = resolve(context.paths.root, dockerfile)
+const dockerfilePath = resolve($.paths.root, dockerfile)
 if (!existsSync(dockerfilePath)) {
   log.info('Run fli make:deploy to scaffold one, or set deploy.api.dockerfile in frontier.config.js')
   throw new Error(`Dockerfile not found: ${dockerfile}`)
 }
 
-const envFilePath = resolve(context.paths.root, envFile)
+const envFilePath = resolve($.paths.root, envFile)
 if (!existsSync(envFilePath)) {
   log.warn(`${envFile} not found — container will start without env vars`)
   log.info('Create it or use --env-file to point at another file')
@@ -63,7 +63,7 @@ if (!existsSync(envFilePath)) {
 
 if (flag.dry) {
   log.dry(`Would vendor: ${GENERATED_DIR}/ (manifest + any link:/workspace: package)`)
-  log.dry(`Would build: docker build -t ${tag} -f ${dockerfilePath} ${context.paths.root}`)
+  log.dry(`Would build: docker build -t ${tag} -f ${dockerfilePath} ${$.paths.root}`)
   log.dry(`Would run:   docker run -d --name ${container} -p 127.0.0.1:${port}:3000 ...`)
   return
 }
@@ -72,13 +72,13 @@ if (flag.dry) {
 if (flag.clean) {
   log.info(`Removing existing container: ${container}`)
   try {
-    context.exec({ command: `docker stop ${container} 2>/dev/null || true` })
-    context.exec({ command: `docker rm   ${container} 2>/dev/null || true` })
+    $.exec({ command: `docker stop ${container} 2>/dev/null || true` })
+    $.exec({ command: `docker rm   ${container} 2>/dev/null || true` })
   } catch {}
 } else {
   // Check if test container already exists
   try {
-    context.exec({ command: `docker inspect ${container} > /dev/null 2>&1` })
+    $.exec({ command: `docker inspect ${container} > /dev/null 2>&1` })
     log.info('Stop it first with:  docker rm -f ' + container)
     log.info('Or rerun with:       fli deploy:local --clean')
     throw new Error(`Container '${container}' already exists`)
@@ -94,8 +94,8 @@ if (flag.clean) {
 // which a build cannot resolve — this is what makes it buildable at all
 // (FJS-241), and it is why this command can now be run against the scaffold this
 // repo produces by default.
-log.info('Vendoring dependencies into the build context...')
-vendorApp(context.paths.root, log)
+log.info('Vendoring dependencies into the build $...')
+vendorApp($.paths.root, log)
 
 // ─── Build check ──────────────────────────────────────────────────────────────
 // Reported here and refused in `fli deploy`. The difference is what the two
@@ -103,7 +103,7 @@ vendorApp(context.paths.root, log)
 // and blocking that on a promotion property would trade a working smoke test for
 // a correctness argument the deploy is about to make anyway.
 const bc = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
-const bcFindings = bc.inspectBuild(bc.gatherLocal({ root: context.paths.root, fs: await import('fs'), dockerfile }))
+const bcFindings = bc.inspectBuild(bc.gatherLocal({ root: $.paths.root, fs: await import('fs'), dockerfile }))
 
 if (!bcFindings.length) {
   log.success(`Build check: ${bc.summarize(bcFindings)}`)
@@ -131,7 +131,7 @@ if (!bcFindings.length) {
 // existence check above already resolves it, so the check passed and the build
 // failed, which reads as *the Dockerfile was written and docker cannot read it*.
 log.info(`Building ${tag} from ${dockerfile}...`)
-context.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${context.paths.root}` })
+$.exec({ command: `docker build -t ${tag} -f ${dockerfilePath} ${$.paths.root}` })
 log.success(`Image built → ${tag}`)
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ const runCmd = [
   'docker run -d',
   `--name ${container}`,
   `-p 127.0.0.1:${port}:3000`,
-  `--volume ${resolve(context.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
+  `--volume ${resolve($.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
   envArg,
   // AFTER --env-file, so it wins. The image EXPOSEs 3000 and the port mapping
   // targets 3000, but the app binds whatever PORT says — and the scaffold's .env
@@ -156,7 +156,7 @@ const runCmd = [
   tag,
 ].filter(Boolean).join(' ')
 
-context.exec({ command: runCmd })
+$.exec({ command: runCmd })
 log.success(`Container started → ${container}`)
 log.info('  Migrations running in entrypoint...')
 
@@ -170,7 +170,7 @@ let healthy = false
 for (let i = 1; i <= attempts; i++) {
   await new Promise(r => setTimeout(r, intervalMs))
   try {
-    const result = context.exec({
+    const result = $.exec({
       command: `curl -s -o /dev/null -w "%{http_code}" http://localhost:${port}${healthPath}`,
       stdio: 'pipe',
     })
@@ -186,7 +186,7 @@ if (!healthy) {
   log.info('')
   log.info('Container logs:')
   echo('')
-  context.exec({ command: `docker logs --tail 50 ${container}` })
+  $.exec({ command: `docker logs --tail 50 ${container}` })
   echo('')
   log.info(`Stop the container with:  docker rm -f ${container}`)
   throw new Error(`Health check failed after ${attempts * intervalMs / 1000}s — http://localhost:${port}${healthPath}`)

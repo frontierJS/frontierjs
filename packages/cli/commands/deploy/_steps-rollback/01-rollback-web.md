@@ -2,14 +2,14 @@
 title: 01-rollback-web
 description: Point current symlink at the previous web release
 optional: true
-skip: "!context.config.doWeb || context.config.deployConf.web === false"
+skip: "!$.config.doWeb || $.config.deployConf.web === false"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath } = context.config
-const machine = machineFor(context, host, serverPath)
+const { host, serverPath } = $.config
+const machine = machineFor($, host, serverPath)
 
 // List releases newest-first — second entry is the previous release
 let releases = ''
@@ -36,6 +36,6 @@ log.info(`Rolling web back: ${currName} → ${prevName}`)
 
 machine.run(`ln -sfn ${previous} ${serverPath}/current && nginx -s reload`, { dry: flag.dry })
 
-context.config.webRolledBack = true
+$.config.webRolledBack = true
 log.success(`Web rolled back → releases/${prevName}`)
 ```

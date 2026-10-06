@@ -356,6 +356,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
 | exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
 | exports | `./geo (default)` | `src/geo/geo.js` | yes |
+| exports | `./frontmatter` | `src/frontmatter/frontmatter.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |

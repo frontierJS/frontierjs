@@ -19,47 +19,47 @@ this prose would make both unreadable, and a failed health check needs somewhere
 to point.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-const api = await startServer(context, {
+const api = await startServer($, {
   name:   'api',
   script: 'start',
-  cwd:    context.config.appDir,
-  env:    { PORT: String(context.config.apiPort) },
-  port:   context.config.apiPort,
+  cwd:    $.config.appDir,
+  env:    { PORT: String($.config.apiPort) },
+  port:   $.config.apiPort,
   path:   '/api/health',
 })
 
-if (!await must(context, api.up, {
+if (!await must($, api.up, {
   likely:    'the API exited on startup — the last of its output is below',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
 // The web server proxies to the API, so it is told where that is. Without
 // FLI_PORT_BE it proxies to 8100 whatever --api-port said, and the browser gets
 // a 502 from a page that loaded perfectly.
-const web = await startServer(context, {
+const web = await startServer($, {
   name:   'web',
   script: 'dev:web',
-  cwd:    context.config.appDir,
-  env:    { WEB_PORT: String(context.config.webPort), FLI_PORT_BE: String(context.config.apiPort) },
-  port:   context.config.webPort,
+  cwd:    $.config.appDir,
+  env:    { WEB_PORT: String($.config.webPort), FLI_PORT_BE: String($.config.apiPort) },
+  port:   $.config.webPort,
   path:   '/',
 })
 
-if (!await must(context, web.up, {
+if (!await must($, web.up, {
   likely:    'vite exited, or refused the port — it is strictPort, so it does not move',
-  reproduce: `cd ${context.config.appDir} && WEB_PORT=${context.config.webPort} bun run dev:web`,
+  reproduce: `cd ${$.config.appDir} && WEB_PORT=${$.config.webPort} bun run dev:web`,
   detail:    serverLog(web),
 })) return
 
 log.info('')
-log.info(`  the app     http://127.0.0.1:${context.config.webPort}`)
-log.info(`  the API     http://127.0.0.1:${context.config.apiPort}/api`)
+log.info(`  the app     http://127.0.0.1:${$.config.webPort}`)
+log.info(`  the API     http://127.0.0.1:${$.config.apiPort}/api`)
 log.info('')
 ```

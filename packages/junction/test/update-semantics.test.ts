@@ -79,7 +79,9 @@ describe('a PUT to a @version model', () => {
   })
 
   // The pair for the strip: the same call omitting it must still be refused, or
-  // the fix would read as "the boundary stopped asking".
+  // the fix would read as "the boundary stopped asking". The message reaches a
+  // screen, so it names no column — which one to send rides on the server-side
+  // `hint` (`FJS-1478`).
   test('omitting it is refused by the Data boundary', async () => {
     const { app } = await appWith()
     const row = await made(app)
@@ -87,7 +89,9 @@ describe('a PUT to a @version model', () => {
     const res = await request(app).put(`/docs/${row.id}`).send({ title: 'B' })
 
     expect(res.status).toBe(400)
-    expect(JSON.stringify(res.body)).toMatch(/version/)
+    expect(res.body.retryable).toBe(false)
+    expect(res.body.message).toMatch(/not opened from a current copy/)
+    expect(JSON.stringify(res.body)).not.toMatch(/asSystem|data\.version|@version/)
   })
 })
 

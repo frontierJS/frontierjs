@@ -8,9 +8,9 @@ examples:
 ---
 
 ```js
-const root      = context.paths.root
+const root      = $.paths.root
 const templates = `${global.fliRoot}/src/templates/project`
 
-context.exec({ command: `git diff ${templates}/env ${root}/.env`, dry: flag.dry })
-context.exec({ command: `git diff ${templates}/env.test ${root}/.env.test`, dry: flag.dry })
+$.exec({ command: `git diff ${templates}/env ${root}/.env`, dry: flag.dry })
+$.exec({ command: `git diff ${templates}/env.test ${root}/.env.test`, dry: flag.dry })
 ```

@@ -56,11 +56,11 @@ everything outbound looks up. A machine can be `online` in the list and have
 nowhere to send a command, and those are two different failures.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['serverId', 'secret', 'outpost', 'basecamp', 'token', 'workspaceId'], {
+if (!needs($, ['serverId', 'secret', 'outpost', 'basecamp', 'token', 'workspaceId'], {
   from: {
     serverId: '04-server', secret: '02-basecamp',
     outpost: '01-machine', basecamp: '01-machine',
@@ -68,17 +68,17 @@ if (!needs(context, ['serverId', 'secret', 'outpost', 'basecamp', 'token', 'work
   },
 })) return
 
-const publicUrl = outpostUrl(context)
-const tls       = await outpostTls(context)
+const publicUrl = outpostUrl($)
+const tls       = await outpostTls($)
 
-if (!await must(context, await ensureFleet(context), {
+if (!await must($, await ensureFleet($), {
   likely: 'the control plane is not answering — run this lesson from the start',
 })) return
 
 const as = {
   'content-type':   'application/json',
-  authorization:    `Bearer ${context.config.token}`,
-  'x-workspace-id': context.config.workspaceId,
+  authorization:    `Bearer ${$.config.token}`,
+  'x-workspace-id': $.config.workspaceId,
 }
 
 // ── the exchange ──────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ const as = {
 // given. Running them as one call would be a control plane that hands out
 // credentials to whoever asks.
 const issued = await probe.httpJson({
-  url:      hubUrl(context, `/servers/${context.config.serverId}`),
+  url:      hubUrl($, `/servers/${$.config.serverId}`),
   method:   'POST',
   headers:  { ...as, 'x-service-method': 'issueEnrollment' },
   expect:   (j) => typeof j.token === 'string' && j.token.length > 0 && typeof j.command === 'string',
@@ -96,7 +96,7 @@ const issued = await probe.httpJson({
   name:     'the operator issues this machine a credential',
 })
 
-if (!await must(context, issued, {
+if (!await must($, issued, {
   likely: 'issueEnrollment was refused — it is gate 5, the same rung as provision and destroy',
 })) return
 
@@ -104,7 +104,7 @@ if (!await must(context, issued, {
 // has nothing to authenticate with yet. That is the whole reason the token is
 // single-use and lives fifteen minutes.
 const enrolled = await probe.httpJson({
-  url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
+  url:      hubUrl($, `/servers/${$.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
   body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
@@ -113,17 +113,17 @@ const enrolled = await probe.httpJson({
   name:     'and the machine spends it, once',
 })
 
-if (!await must(context, enrolled, {
+if (!await must($, enrolled, {
   likely:    'the exchange was refused — every refusal here says the same sentence on purpose',
-  reproduce: `curl -s -X POST ${hubUrl(context, `/servers/${context.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…","cert":"…"}'`,
+  reproduce: `curl -s -X POST ${hubUrl($, `/servers/${$.config.serverId}/enroll`)} -H 'content-type: application/json' -d '{"token":"…","cert":"…"}'`,
 })) return
 
 // The negative control, and it is the claim rather than tidiness: a token that
 // still worked the second time would pass every assertion above and leave the
 // burn untested. Replayed with the SAME token, which is what a retry or a
 // second machine reading the same metadata blob would send.
-if (!await must(context, await probe.httpStatus({
-  url:      hubUrl(context, `/servers/${context.config.serverId}/enroll`),
+if (!await must($, await probe.httpStatus({
+  url:      hubUrl($, `/servers/${$.config.serverId}/enroll`),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
   body:     JSON.stringify({ token: issued.json.token, cert: tls.cert }),
@@ -131,21 +131,21 @@ if (!await must(context, await probe.httpStatus({
   name:     'and it is worth nothing the second time',
 })) ) return
 
-context.config.outpostSecret = enrolled.json.secret
+$.config.outpostSecret = enrolled.json.secret
 
-const machine = await startOutpost(context)
+const machine = await startOutpost($)
 
-if (!await must(context, machine.up, {
+if (!await must($, machine.up, {
   likely:    'the outpost refused to start — it names the variable it wanted',
-  reproduce: `cd ${context.config.outpost} && OUTPOST_SERVER_ID=${context.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl(context)} OUTPOST_TLS_CERT=${tls.certPath} OUTPOST_TLS_KEY=${tls.keyPath} bun run start`,
+  reproduce: `cd ${$.config.outpost} && OUTPOST_SERVER_ID=${$.config.serverId} OUTPOST_SECRET=… BASECAMP_URL=${hubUrl($)} OUTPOST_TLS_CERT=${tls.certPath} OUTPOST_TLS_KEY=${tls.keyPath} bun run start`,
   detail:    serverLog(machine),
 })) return
 
 // Polled rather than slept on: the first heartbeat goes out as the process
 // starts, so this is normally answered on the first try, and a machine whose
 // clock or secret is wrong is answered by the same request never changing.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, `/servers/${context.config.serverId}`),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, `/servers/${$.config.serverId}`),
   headers:  as,
   expect:   (j) => j.status === 'online' && Boolean(j.lastHeartbeatAt) && Boolean(j.outpostVersion),
   describe: 'a machine that has reported in',
@@ -154,30 +154,30 @@ if (!await must(context, await probe.httpJson({
   name:     'the machine is online, and said which outpost it runs',
 }), {
   likely:    'the heartbeat is being refused — the two ends disagree about the fleet secret',
-  reproduce: `curl -s ${hubUrl(context, `/servers/${context.config.serverId}`)}`,
+  reproduce: `curl -s ${hubUrl($, `/servers/${$.config.serverId}`)}`,
   detail:    serverLog(machine),
 })) return
 
 // The health block is the second half of the same check and it is worth its own
 // line: a heartbeat that arrived carrying nothing would move `status` on its
 // own, and a fleet screen would then show a machine that is up and blank.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, `/servers/${context.config.serverId}`),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, `/servers/${$.config.serverId}`),
   headers:  as,
   expect:   (j) => typeof j.health?.memory === 'number' || typeof j.health?.load === 'number',
   describe: 'a machine that said how it is doing',
   name:     'and it reported the load and memory it is under',
 })) ) return
 
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, '/conduit-targets'),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, '/conduit-targets'),
   headers:  as,
-  expect:   (j) => (j.data ?? []).some((t) => t.id === `outpost:${context.config.serverId}` && t.address === publicUrl),
+  expect:   (j) => (j.data ?? []).some((t) => t.id === `outpost:${$.config.serverId}` && t.address === publicUrl),
   describe: `a target at ${publicUrl}`,
   name:     'and there is now somewhere to send it a command',
 }), {
   likely: 'the heartbeat landed but registered no address — OUTPOST_PUBLIC_URL was not set',
 })) return
 
-remember(context, '05-outpost', { publicUrl, outpostSecret: enrolled.json.secret })
+remember($, '05-outpost', { publicUrl, outpostSecret: enrolled.json.secret })
 ```

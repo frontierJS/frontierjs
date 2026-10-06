@@ -22,19 +22,19 @@ Its sibling is worth knowing about now that you have moved one: `fli test:access
 can share a database.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 8
+$.config.__step = 8
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-context.exec({ command: `${context.fli} test:access`, cwd: context.config.appDir })
+$.exec({ command: `${$.fli} test:access`, cwd: $.config.appDir })
 
-const snap = join(context.config.appDir, 'db', 'access.snapshot.md')
+const snap = join($.config.appDir, 'db', 'access.snapshot.md')
 
-if (!await must(context, probe.fileExists({ path: snap, name: 'db/access.snapshot.md' }), {
+if (!await must($, probe.fileExists({ path: snap, name: 'db/access.snapshot.md' }), {
   likely:    'test:access did not write it — its output is above',
-  reproduce: `cd ${context.config.appDir} && fli test:access`,
+  reproduce: `cd ${$.config.appDir} && fli test:access`,
 })) return
 
 // Each of the three edits, read back out of the artefact. A snapshot that is
@@ -45,7 +45,7 @@ for (const [needle, what] of [
   [/allow \*\*read\*\* — `authorId == auth\(\)\.id`/, 'the row policy is in it'],
   [/`Note` \| `done` \|.*isAdmin/,              'the field policy is in it'],
 ]) {
-  if (!await must(context, probe.fileContains({ path: snap, needle, name: what }), {
+  if (!await must($, probe.fileContains({ path: snap, needle, name: what }), {
     likely:    'the snapshot was written before the schema change, or the format moved',
     reproduce: `cat ${snap}`,
   })) return

@@ -42,22 +42,22 @@ It cannot tell a deliberate rename from a typo, so it reports rather than
 refuses. **A stated `type:` wins** — which is the whole reason to state one.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'notifDir'], { from: '04-send' })) return
+if (!needs($, ['appDir', 'notifDir'], { from: '04-send' })) return
 
 // A session minted on another day is expired, and it arrives as a 401 the step
 // then blames on the thing it is teaching. Only for a standalone step: a full
 // run has just registered, and login is rate-limited.
-if (context.flag.step && context.config.userEmail) {
-  const again = await signIn(context, context.config.userEmail, 'correct-horse-battery-staple')
-  if (again.ok) context.config.userToken = again.json.token
+if ($.flag.step && $.config.userEmail) {
+  const again = await signIn($, $.config.userEmail, 'correct-horse-battery-staple')
+  if (again.ok) $.config.userToken = again.json.token
 }
 
-const app     = context.config.appDir
-const dir     = context.config.notifDir
+const app     = $.config.appDir
+const dir     = $.config.notifDir
 const service = join(app, 'api', 'src', 'services', 'notes.service.ts')
 const db      = join(app, 'db', 'app.db')
 const before  = join(dir, 'NoteAdded.notification.ts')
@@ -71,13 +71,13 @@ if (existsSync(before)) {
     .replace('../notifications/NoteAdded.notification.ts', '../notifications/NoteCreated.notification.ts'), 'utf8')
 }
 
-let api = await restartApi(context)
-if (!await must(context, api.up, {
+let api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back — the last of its output is below',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, await createNote(context, `renamed-${Date.now().toString(36)}`), {
+if (!await must($, await createNote($, `renamed-${Date.now().toString(36)}`), {
   likely: 'the write was refused — the body is above',
   detail: serverLog(api),
 })) return
@@ -85,7 +85,7 @@ if (!await must(context, await createNote(context, `renamed-${Date.now().toStrin
 // Two facts in one query, and neither is interesting alone: the newest row
 // carries the NEW name and the older rows still carry the old one. A count of
 // distinct types is the shape that can see both at once.
-if (!await must(context, probe.eventually(() => probe.sqliteRow({
+if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
   sql:    "select type, count(*) as n from notification group by type order by type",
   expect: (rows) => rows.some(r => r.type === 'NoteAdded')
@@ -114,18 +114,18 @@ if (!/^\s*type:\s*'/m.test(src)) {
   writeFileSync(after, src, 'utf8')
 }
 
-api = await restartApi(context)
-if (!await must(context, api.up, {
+api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back — the last of its output is below',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, await createNote(context, `held-${Date.now().toString(36)}`), {
+if (!await must($, await createNote($, `held-${Date.now().toString(36)}`), {
   likely: 'the write was refused — the body is above',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, probe.eventually(() => probe.sqliteRow({
+if (!await must($, probe.eventually(() => probe.sqliteRow({
   db,
   sql:    'select type from notification order by id desc limit 1',
   expect: (rows) => rows[0]?.type === 'NoteAdded',
@@ -138,7 +138,7 @@ if (!await must(context, probe.eventually(() => probe.sqliteRow({
 // The loader's own sentence, read off the running app's output. The assertion
 // is that it SAYS something: a rename that is silent in both directions is the
 // failure this step exists to show.
-if (!await must(context, {
+if (!await must($, {
   ok:    /states type "NoteAdded", which is\s+not its file name/.test(serverLog(api, 200)),
   name:  'and the loader reported the divergence rather than accepting it in silence',
   asked: 'a line naming both the stated type and the file name',
@@ -148,5 +148,5 @@ if (!await must(context, {
   detail: serverLog(api),
 })) return
 
-remember(context, '05-name', { notifFile: after })
+remember($, '05-name', { notifFile: after })
 ```

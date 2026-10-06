@@ -1,22 +1,22 @@
 ---
 title: 03b-queues-pause
 description: Drain every queue in the serving container, once the edge is refusing
-skip: "context.config.pauseKind !== 'pause'"
+skip: "$.config.pauseKind !== 'pause'"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, appId, deployConf, transitionId } = context.config
+const { host, serverPath, appId, deployConf, transitionId } = $.config
 const { queueScript, queueVerdict } = await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
 // After the edge, not before (FJS-D262): callers stop first, then the work they
 // left behind is drained. A dispatch that lands in between is queued, not run.
 log.info('Draining every queue in the running app...')
-const output = machineFor(context, host, serverPath).capture(queueScript({
+const output = machineFor($, host, serverPath).capture(queueScript({
   container: apiContainer(appId, deployConf),
   verb:      'drain',
-  actor:     context.git.user?.() ?? null,
+  actor:     $.git.user?.() ?? null,
   reason:    `fli deploy:pause ${transitionId}`,
 }))
 
@@ -29,7 +29,7 @@ if (verdict.level === 'fail') {
   // pause again is accepted over a guard file the journal did not record.
   log.error('The edge is paused and the queues are NOT — jobs are still running')
   log.info('  fix what the bin refused, then run fli deploy:pause again')
-  context.config.abort = true
+  $.config.abort = true
   throw new Error('the queue half of the pause did not run')
 }
 ```

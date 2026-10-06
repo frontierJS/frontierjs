@@ -47,16 +47,16 @@ flags:
 // `04-run` starts processes and `11-finish` stops them, and neither is a fact a
 // journal can hold: replayed into a no-op, the first leaves every step after it
 // talking to a dead port and the second leaves a dev server running.
-openTutor(context, 'tutor:app', { ephemeral: ['04-run', '11-finish'] })
+openTutor($, 'tutor:app', { ephemeral: ['04-run', '11-finish'] })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.config.webPort = flag['web-port']
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.config.webPort = flag['web-port']
 
 // Every URL this lesson prints comes from these two, so a port that moved
 // cannot make a printed URL a lie.
-context.vars.apiPort = context.config.apiPort
-context.vars.webPort = context.config.webPort
+$.vars.apiPort = $.config.apiPort
+$.vars.webPort = $.config.webPort
 ```
 
 ## Lesson 1 — an app that runs

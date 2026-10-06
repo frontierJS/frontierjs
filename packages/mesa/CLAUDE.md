@@ -83,7 +83,7 @@ also the rule for every in-repo consumer of mesa (`bun install` copies workspace
 deps, so a package-name import serves a stale snapshot). `vite` is an optional
 peer — mesa stays a leaf.
 
-**happy-dom and the six markdown packages are optional peers too**, mirrored in
+**happy-dom, css-tree and the six markdown packages are optional peers too**, mirrored in
 `devDependencies` for this suite. The server half reaches them through a
 top-level `await import()` that `missingPeer` (`src/optional-peer.js`) turns into
 an error naming the install. **A static `import` of one from anything a client

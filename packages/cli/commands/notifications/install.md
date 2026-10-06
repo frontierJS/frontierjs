@@ -85,12 +85,12 @@ The text has one origin all the same. `fli check`'s `package-model-drift` reads
 the file this copied from and names a column that has since diverged.
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 if (!existsSync(schemaPath)) {
   log.error(`schema.lite not found at ${schemaPath}`)
   log.info('Run this from an app root — `fli new` writes one.')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -111,18 +111,18 @@ if (schemaContents.includes(MARK) || /^\s*model\s+Notification\b/m.test(schemaCo
 if (!new RegExp(`database\\s+${flag.db}\\s*\\{`).test(schemaContents)) {
   log.error(`Database block '${flag.db}' not found in schema.lite`)
   log.info(`Add a 'database ${flag.db} { path ... }' block first, or pass --db <name>`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 // Installed HERE, and read through the package's own exports map.
-const shipped = shippedFile(context.paths.root, PKG, './schema.lite')
+const shipped = shippedFile($.paths.root, PKG, './schema.lite')
 
 if (!shipped) {
-  log.error(`Could not read ${PKG}/schema.lite from ${context.paths.root}`)
+  log.error(`Could not read ${PKG}/schema.lite from ${$.paths.root}`)
   log.info(`Install it first: bun add ${PKG}`)
   log.info('A version that ships no db/notification.lite has no model to install.')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -152,7 +152,7 @@ if (flag.push) {
   // No announcement here: `db:push` opens with the same line, and the two
   // printed one after the other read as two pushes.
   try {
-    context.exec({ command: `${context.fli} db:push`, cwd: context.paths.root })
+    $.exec({ command: `${$.fli} db:push`, cwd: $.paths.root })
     log.success('Schema pushed')
   } catch (e) {
     log.warn(`db:push failed: ${e.message} — run it yourself once the schema parses`)

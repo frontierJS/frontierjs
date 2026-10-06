@@ -57,6 +57,18 @@ export async function load(url, context, defaultLoad) {
  * going to answer this. `core/stack.js` rewrites the frames instead, off this
  * offset, and gets both runtimes right (`FJS-066`).
  */
+// ─── what a compiled command can see ─────────────────────────────────────────
+// Three names and no more: `$` is the command in progress, handed to run() —
+// the context, callable as the shell tag — and `path` and `fs` are the two
+// builtins so many bodies reach for that importing them per file would be the
+// first two lines of every command. Everything else a body uses is destructured
+// from `$` in the head or imported in its own <script>. The free-identifier
+// check (`core/scope.js`) reads this list; a fourth name goes here and nowhere
+// else. A <script> importing `path` or `fs` itself declares the name twice,
+// which is a SyntaxError the parse sweep reports.
+export const SHIM_GLOBALS = ['$', 'path', 'fs']
+export const SHIM_IMPORTS = "import path from 'node:path'\nimport fs from 'node:fs'"
+
 export function compileCliWithMap(template, moduleScript = '', sourcePath = '') {
   const { meta: frontmatter, bodyLine } = splitFrontmatter(template)
   const own         = scriptBlockOf(template)
@@ -75,21 +87,17 @@ export function compileCliWithMap(template, moduleScript = '', sourcePath = '') 
   // body lands on is COUNTED rather than kept in step by hand. The body is not
   // indented into `run()` either: two leading spaces on its first line only
   // would put every column in a frame from that line two out.
-  const head = `import 'zx/globals'
+  const head = `${SHIM_IMPORTS}
 ${scriptBlock}
 
 export const metadata = ${JSON.stringify(frontmatter)}
 
-export async function run(context) {
-  const { flags, args, flag, arg, log, tty, answers = {} } = context
-  // Override the ZX global echo with context.echo when provided (web/SSE runs).
-  // This works because 'zx/globals' sets globalThis.echo, and we re-assign it
-  // locally here. For CLI runs context.echo is undefined and ZX's echo is used.
-  const echo = context.echo ?? globalThis.echo
+export async function run($) {
+  const { flags, args, flag, arg, log, tty, echo, chalk, answers = {} } = $
 `
 
   const tail = `
-  return context
+  return $
 }`
 
   // head's newline count is the generated line the body's first line sits on,
@@ -98,7 +106,7 @@ export async function run(context) {
 
   // The head is the one part the offset does not cover: a <script> block is
   // lifted out of its place and the namespace module's is pasted above it.
-  const moduleFrom = 2
+  const moduleFrom = countLines(SHIM_IMPORTS) + 2
   const moduleTo   = moduleScript ? moduleFrom + countLines(moduleScript) : moduleFrom - 1
   const ownFrom    = moduleScript ? moduleTo + 2 : moduleFrom
   const ownTo      = ownFrom + countLines(ownScript)

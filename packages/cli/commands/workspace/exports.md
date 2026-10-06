@@ -205,7 +205,7 @@ const render = ({ sections, problems, wsNames }) => {
 ```js
 // `args` is already bound in the compiled shim — a second declaration is a
 // SyntaxError the compiler reports as a clean build (Invariant 15).
-const { wsRoot, packages } = await context.wsPackages()
+const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 const publishable = packages.filter(p => !p.pkg.private)

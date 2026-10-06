@@ -146,7 +146,7 @@ const plural   = servicePlural(model)
 
 // ─── 1. Append the model to schema.lite ──────────────────────────────────────
 
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 if (!existsSync(schemaPath)) {
   log.error(`schema.lite not found at ${schemaPath}`)
@@ -174,7 +174,7 @@ if (declared) {
 // ─── 2. Service ───────────────────────────────────────────────────────────────
 
 if (flag.service) {
-  const servicesDir = resolve(context.paths.api, 'src/services')
+  const servicesDir = resolve($.paths.api, 'src/services')
   const servicePath = resolve(servicesDir, `${plural}.service.ts`)
 
   if (existsSync(servicePath)) {
@@ -192,7 +192,7 @@ if (flag.service) {
 // ─── 3. Resource ──────────────────────────────────────────────────────────────
 
 if (flag.resource) {
-  const resourcesDir = resolve(context.paths.web, 'src/resources')
+  const resourcesDir = resolve($.paths.web, 'src/resources')
   // Named for the MODEL, exported as the SERVICE — repo invariant 19, and the
   // rule `fli check` enforces on the file this command writes.
   const resourcePath = resolve(resourcesDir, `${model}.mesa`)
@@ -212,6 +212,6 @@ if (flag.resource) {
 // ─── Open created files ───────────────────────────────────────────────────────
 
 if (flag.open && created.length && !flag.dry) {
-  for (const f of created) context.exec({ command: `${editor} "${f}"` })
+  for (const f of created) $.exec({ command: `${editor} "${f}"` })
 }
 ```

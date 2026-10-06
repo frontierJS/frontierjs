@@ -179,18 +179,18 @@ if (wired?.error) {
 // directory already exists becomes its index; a file standing where this one
 // needs a directory is the user's, so it is named rather than moved — moving
 // it would break every relative import in it.
-let file = wired ? resolve(context.paths.webPages, wired.file)
-         : flag.layout ? resolve(context.paths.webPages, raw, '_module.mesa')
-         : resolve(context.paths.webPages, raw + '.mesa')
+let file = wired ? resolve($.paths.webPages, wired.file)
+         : flag.layout ? resolve($.paths.webPages, raw, '_module.mesa')
+         : resolve($.paths.webPages, raw + '.mesa')
 
-if (!wired && !flag.layout && existsSync(resolve(context.paths.webPages, raw))) {
-  file = resolve(context.paths.webPages, raw, 'index.mesa')
+if (!wired && !flag.layout && existsSync(resolve($.paths.webPages, raw))) {
+  file = resolve($.paths.webPages, raw, 'index.mesa')
 }
 
-const rel     = file.slice(resolve(context.paths.webPages).length + 1).split(/[\\/]/)
+const rel     = file.slice(resolve($.paths.webPages).length + 1).split(/[\\/]/)
 const blocker = rel.slice(0, -1)
   .map((_, i) => rel.slice(0, i + 1).join('/') + '.mesa')
-  .find(f => existsSync(resolve(context.paths.webPages, f)))
+  .find(f => existsSync(resolve($.paths.webPages, f)))
 
 if (blocker) {
   const dir = blocker.replace(/\.mesa$/, '')
@@ -219,7 +219,7 @@ if (flag.dry) {
 
 if (flag.component) {
   const cname    = flag.component.replace(/\.mesa$/, '')
-  const compPath = resolve(context.paths.webComponents, cname + '.mesa')
+  const compPath = resolve($.paths.webComponents, cname + '.mesa')
 
   if (flag.dry) {
     log.dry(`Would create component: ${compPath}`)
@@ -243,7 +243,7 @@ if (!flag.layout) {
 
 // The route imports the resource whether or not it exists; say so rather than
 // letting the dev server be the one to mention it.
-if (flag.resource && !existsSync(resolve(context.paths.webResources, `${model}.mesa`))) {
+if (flag.resource && !existsSync(resolve($.paths.webResources, `${model}.mesa`))) {
   echo('')
   log.warn(`The page imports resources/${model}.mesa, which does not exist yet:`)
   echo(`    fli make:resource ${model}`)
@@ -254,6 +254,6 @@ echo('  Sierra rescans src/routes on the next build — restart the dev server i
 echo('')
 
 if (flag.open && created.length && !flag.dry) {
-  for (const f of created) context.exec({ command: `${editor} "${f}"` })
+  for (const f of created) $.exec({ command: `${editor} "${f}"` })
 }
 ```

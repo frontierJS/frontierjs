@@ -39,7 +39,7 @@ A target that is a test FILE is listed, not run — the runner differs per
 package. The package's own suite is still first; this is what runs after it.
 
 ```js
-const root = (await context.wsRoot?.()) ?? context.paths.root
+const root = (await $.wsRoot?.()) ?? $.paths.root
 
 const { provesFor, changedTree } = await import(resolve(global.fliRoot, 'core/proofs.js'))
 const { runnables }              = await import(resolve(global.fliRoot, 'core/runnables.js'))

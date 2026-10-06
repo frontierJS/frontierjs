@@ -5,9 +5,9 @@
 //   - Classifier: every row of the precision matrix
 //   - DevServer: start, broadcast, multiple clients, identify, stop
 //   - End-to-end: server + WebSocket client, broadcast → client receives
+//   - Watcher: nested paths, one save is one change, ignores, delete
 //
 // What's NOT covered here:
-//   - The orchestrator's chokidar wiring (file-system races; manual smoke)
 //   - dev-plugin.js Vite chunk transforms (covered by build-output check)
 //   - web-ext browser launch (Phase 5 ships WS infra; web-ext launch optional)
 
@@ -427,6 +427,52 @@ group('dev client → Mesa swap resolution')
   const { swapInstances } = await import('../src/dev/mesa-swap-fallback.js')
   if (swapInstances(new Set(), () => {}) === 0) ok('the fallback answers 0 — nothing can register without a compiled component')
   else bad('fallback did not answer 0')
+}
+
+// --- watcher ---
+
+group('Watcher')
+{
+  const { watchTree } = await import('../src/dev/watch.js')
+  const { mkdtempSync, mkdirSync, writeFileSync, renameSync, rmSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const tick = (ms) => new Promise((r) => setTimeout(r, ms))
+
+  const src = join(mkdtempSync(join(tmpdir(), 'jetty-watch-')), 'src')
+  const deep = join(src, 'islands', 'deep')
+  mkdirSync(deep, { recursive: true })
+  let got = []
+  const w = watchTree([src], { onChange: (p) => got.push(p.slice(src.length + 1)) })
+  await tick(100)
+
+  writeFileSync(join(deep, 'a.mesa'), 'x'); await tick(200)
+  if (JSON.stringify(got) === JSON.stringify(['islands/deep/a.mesa'])) ok('a file two levels down is seen')
+  else bad('nested add', JSON.stringify(got))
+
+  got = []
+  writeFileSync(join(deep, 'a.mesa'), 'y'); writeFileSync(join(deep, 'a.mesa'), 'z'); await tick(200)
+  if (got.length === 1) ok('two writes inside the settle window are one change')
+  else bad('writes not settled', JSON.stringify(got))
+
+  // An atomic save: a dot temp file renamed over the real one.
+  got = []
+  writeFileSync(join(src, '.b.js.tmp'), 'q'); renameSync(join(src, '.b.js.tmp'), join(src, 'b.js')); await tick(200)
+  if (JSON.stringify(got) === JSON.stringify(['b.js'])) ok('an atomic save is the saved file alone, not its temp file')
+  else bad('atomic save', JSON.stringify(got))
+
+  got = []
+  mkdirSync(join(src, 'node_modules')); writeFileSync(join(src, 'node_modules', 'x.js'), ''); await tick(200)
+  if (got.length === 0) ok('node_modules is ignored')
+  else bad('node_modules not ignored', JSON.stringify(got))
+
+  got = []
+  rmSync(join(deep, 'a.mesa')); await tick(200)
+  if (JSON.stringify(got) === JSON.stringify(['islands/deep/a.mesa'])) ok('a delete is a change')
+  else bad('delete', JSON.stringify(got))
+
+  await w.close()
+  rmSync(join(src, '..'), { recursive: true })
 }
 
 // --- summary ---

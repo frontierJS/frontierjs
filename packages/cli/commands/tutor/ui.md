@@ -46,16 +46,16 @@ flags:
 // The servers and the browser are processes, and a process is the one thing a
 // journal cannot hold: replayed into a no-op, a step that opened a page is
 // recorded as done with nothing open.
-openTutor(context, 'tutor:ui', {
+openTutor($, 'tutor:ui', {
   ephemeral: ['03-form', '04-rule', '05-write', '06-finish'],
 })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.config.webPort = flag['web-port']
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.config.webPort = flag['web-port']
 
-context.vars.apiPort = context.config.apiPort
-context.vars.webPort = context.config.webPort
+$.vars.apiPort = $.config.apiPort
+$.vars.webPort = $.config.webPort
 ```
 
 ## Lesson 2 — a screen you did not write

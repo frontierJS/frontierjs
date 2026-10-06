@@ -9,7 +9,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, repo, startTime, interactive, prompts } = context.config
+const { released, repo, startTime, interactive, prompts } = $.config
 if (!released?.length) return
 
 if (interactive && flag.push) {

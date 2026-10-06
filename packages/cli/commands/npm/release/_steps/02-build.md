@@ -1,7 +1,7 @@
 ---
 title: 02-build
 description: Build the package
-skip: "context.config.noBuild"
+skip: "$.config.noBuild"
 optional: true
 ---
 
@@ -17,12 +17,12 @@ const hasScript = (root, name) => {
 </script>
 
 ```js
-if (!hasScript(context.config.root, 'build')) {
+if (!hasScript($.config.root, 'build')) {
   log.info('No build script found — skipping')
   return
 }
 
 log.info('Building...')
-context.exec({ command: `npm run build --prefix ${context.config.root}`, dry: flag.dry })
+$.exec({ command: `npm run build --prefix ${$.config.root}`, dry: flag.dry })
 log.success('Build complete')
 ```

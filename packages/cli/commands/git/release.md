@@ -45,7 +45,7 @@ const tagExists = (tag, cwd) => {
 </script>
 
 ```js
-const root    = context.paths.root
+const root    = $.paths.root
 const tagName = arg.tag || getPkgVersion(root)
 
 if (!tagName) {
@@ -67,7 +67,7 @@ if (flag.changelog) {
     log.dry('Would run: git:changelog')
   } else {
     try {
-      execSync(`node ${global.fliRoot}/bin/fli.js changelog --output CHANGELOG.md`, {
+      execSync(`${$.fli} changelog --output CHANGELOG.md`, {
         cwd: root, stdio: 'inherit'
       })
     } catch (err) {

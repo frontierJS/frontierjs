@@ -18,39 +18,39 @@ response — a 201 says the request was answered, and only the row says the writ
 happened.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 8
+$.config.__step = 8
 
-if (!needs(context, ['appDir', 'token'], { from: { appDir: '02-new', token: '05-register' } })) return
+if (!needs($, ['appDir', 'token'], { from: { appDir: '02-new', token: '05-register' } })) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely:    'nothing is answering on the API port — run the lesson from the start, or `bun run dev` in the app',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
 })) return
 
 const title = `First note ${Date.now().toString(36)}`
 const body  = JSON.stringify({ title, body: 'Written by the tutor.', done: false })
 
 const created = await probe.httpJson({
-  url:     apiUrl(context, '/notes'),
+  url:     apiUrl($, '/notes'),
   method:  'POST',
-  headers: { 'content-type': 'application/json', authorization: `Bearer ${context.config.token}` },
+  headers: { 'content-type': 'application/json', authorization: `Bearer ${$.config.token}` },
   body,
   expect:   (j) => j && j.title === title,
   describe: 'the created note',
   name:     'POST /api/notes with a token is accepted',
 })
 
-if (!await must(context, created, {
+if (!await must($, created, {
   likely:    'the token has expired, or the service refused the payload — the body is above',
-  reproduce: `curl -sS -X POST ${apiUrl(context, '/notes')} -H 'authorization: Bearer …' -H 'content-type: application/json' -d '${body}'`,
+  reproduce: `curl -sS -X POST ${apiUrl($, '/notes')} -H 'authorization: Bearer …' -H 'content-type: application/json' -d '${body}'`,
 })) return
 
 // The control. Same URL, same payload, no token — and it must be refused, or
 // the acceptance above says nothing about the gate.
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
   method:  'POST',
   headers: { 'content-type': 'application/json' },
   body,
@@ -58,11 +58,11 @@ if (!await must(context, probe.httpStatus({
   name:    'the same POST with no token is refused',
 }), {
   likely:    'the gate on Note was changed, or the service overrides create',
-  reproduce: `curl -sS -i -X POST ${apiUrl(context, '/notes')} -H 'content-type: application/json' -d '${body}'`,
+  reproduce: `curl -sS -i -X POST ${apiUrl($, '/notes')} -H 'content-type: application/json' -d '${body}'`,
 })) return
 
-if (!await must(context, probe.sqliteRow({
-  db:     join(context.config.appDir, 'db', 'app.db'),
+if (!await must($, probe.sqliteRow({
+  db:     join($.config.appDir, 'db', 'app.db'),
   sql:    'select id, title from note where title = ?',
   params: [title],
   expect: (rows) => rows.length === 1,
@@ -71,6 +71,6 @@ if (!await must(context, probe.sqliteRow({
   likely: 'the API is writing to a different database than the one this is reading — check DATABASE_URL in .env',
 })) return
 
-log.info(`open http://127.0.0.1:${context.config.webPort}/notes/ and it is there`)
-remember(context, '08-write', { noteId: created.json.id })
+log.info(`open http://127.0.0.1:${$.config.webPort}/notes/ and it is there`)
+remember($, '08-write', { noteId: created.json.id })
 ```

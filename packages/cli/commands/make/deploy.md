@@ -233,7 +233,7 @@ const injectDeployBlock = (existing, deployBlock) => {
 
 ```js
 // ─── Resolve app identity ─────────────────────────────────────────────────────
-const appId    = context.paths.root.split('/').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase()
+const appId    = $.paths.root.split('/').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase()
 const server   = flag.server  || ''
 const domain   = flag.domain  || ''
 const editor   = process.env.EDITOR || 'vi'
@@ -242,7 +242,7 @@ const created  = []
 echo(`\nScaffolding deploy artifacts for: ${appId}\n`)
 
 // ─── 1. Dockerfile ────────────────────────────────────────────────────────────
-const dockerfileDir  = resolve(context.paths.root, 'deploy')
+const dockerfileDir  = resolve($.paths.root, 'deploy')
 const dockerfilePath = resolve(dockerfileDir, 'Dockerfile')
 
 if (existsSync(dockerfilePath)) {
@@ -257,7 +257,7 @@ if (existsSync(dockerfilePath)) {
 }
 
 // ─── 2. .dockerignore ─────────────────────────────────────────────────────────
-const dockerignorePath = resolve(context.paths.root, '.dockerignore')
+const dockerignorePath = resolve($.paths.root, '.dockerignore')
 if (existsSync(dockerignorePath)) {
   log.info(`.dockerignore already exists — skipping`)
 } else {
@@ -291,8 +291,8 @@ if (existsSync(dockerignorePath)) {
 }
 
 // ─── 3. frontier.config.js deploy block ──────────────────────────────────────
-const configPath = resolve(context.paths.root, 'frontier.config.js')
-const health      = resolveHealthPath(context.paths.root)
+const configPath = resolve($.paths.root, 'frontier.config.js')
+const health      = resolveHealthPath($.paths.root)
 const deployBlock = makeDeployBlock(appId, server, domain, health.path)
 
 if (!existsSync(configPath)) {
@@ -320,7 +320,7 @@ if (!existsSync(configPath)) {
 }
 
 // ─── 4. .env.example hint ─────────────────────────────────────────────────────
-const envExamplePath = resolve(context.paths.root, '.env.example')
+const envExamplePath = resolve($.paths.root, '.env.example')
 if (!existsSync(envExamplePath)) {
   log.warn(`.env.example not found`)
   log.info('  Create one to enable pre-deploy env validation (deploy.api.envCheck)')
@@ -332,10 +332,10 @@ if (!existsSync(envExamplePath)) {
 // API source, and `plugins: { health: true }` in junction.config.js — which is
 // what `fli new` writes, so a reader that only grepped the source warned about
 // every scaffold it had just produced. core/health-target.js owns the question.
-const declared = declaresHealth(context.paths.root, health.path)
+const declared = declaresHealth($.paths.root, health.path)
 
 if (health.from) {
-  log.info(`Health path: ${health.path}  (apiPrefix '${health.prefix}' read from ${health.from.replace(context.paths.root + '/', '')})`)
+  log.info(`Health path: ${health.path}  (apiPrefix '${health.prefix}' read from ${health.from.replace($.paths.root + '/', '')})`)
 }
 
 if (declared.clash) {
@@ -369,7 +369,7 @@ echo('')
 
 if (flag.open && created.length && !flag.dry) {
   for (const f of created) {
-    try { context.exec({ command: `${editor} "${f}"` }) } catch {}
+    try { $.exec({ command: `${editor} "${f}"` }) } catch {}
   }
 }
 ```

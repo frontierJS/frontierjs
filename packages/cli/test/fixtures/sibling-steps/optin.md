@@ -5,6 +5,6 @@ steps: _steps
 ---
 
 ```js
-context.config.ran = []
+$.config.ran = []
 log.info('optin body ran')
 ```

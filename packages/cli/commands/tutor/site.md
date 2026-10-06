@@ -40,11 +40,11 @@ flags:
 
 
 ```js
-openTutor(context, 'tutor:site', { ephemeral: ['02-run', '08-finish'] })
+openTutor($, 'tutor:site', { ephemeral: ['02-run', '08-finish'] })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.vars.apiPort   = context.config.apiPort
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.vars.apiPort   = $.config.apiPort
 ```
 
 ## Lesson 8 — the public half

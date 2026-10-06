@@ -27,20 +27,20 @@ to offer. The model you add later in this lesson gets a different four, and the
 difference will be visible without you writing a check anywhere.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-const schema = join(context.config.appDir, 'db', 'schema.lite')
+const schema = join($.config.appDir, 'db', 'schema.lite')
 
-if (!await must(context, probe.fileContains({ path: schema, needle: /@@gate/, name: 'the seed declares a gate' }), {
+if (!await must($, probe.fileContains({ path: schema, needle: /@@gate/, name: 'the seed declares a gate' }), {
   likely:    'the scaffold changed shape, or --source npm installed an older framework',
   reproduce: `cat ${schema}`,
 })) return
 
-if (!await must(context, probe.fileContains({ path: schema, needle: /^\s*model\s+\w+/m, name: 'the seed declares a model' }), {
+if (!await must($, probe.fileContains({ path: schema, needle: /^\s*model\s+\w+/m, name: 'the seed declares a model' }), {
   likely: 'fli new wrote a schema with no models in it',
 })) return
 

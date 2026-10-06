@@ -5,22 +5,22 @@ runOnAbort: true
 ---
 
 ```js
-context.config.prompts?.close()
+$.config.prompts?.close()
 
-stopServers(context)
+stopServers($)
 
-const ws  = context.config.ws
-const app = context.config.appDir
+const ws  = $.config.ws
+const app = $.config.appDir
 
-if (context.config.abort) {
+if ($.config.abort) {
   if (app) log.info(`the app is still at ${app} — the servers and the browser were stopped`)
   return
 }
 
 // `stop` is the no-Chrome exit: nothing failed and nothing ran.
-if (context.config.stop) return
+if ($.config.stop) return
 
-context.config.journal.settle('succeeded')
+$.config.journal.settle('succeeded')
 
 log.success('Lesson 2 done — a form nobody wrote, refusing on a rule nobody wired')
 log.info('')
@@ -42,7 +42,7 @@ log.info('')
 log.info('  fli tutor:tools           next — the four tools, and when to open which')
 log.info('')
 
-if (ws.kind === 'temp' && !context.flag.keep) {
+if (ws.kind === 'temp' && !$.flag.keep) {
   T.sweepWorkspace(ws, { keep: false })
   log.info('  (the temporary workspace was removed — pass --keep to hold on to it)')
 }

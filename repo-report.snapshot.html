@@ -353,9 +353,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/cli</td>
-        <td class="m sub">0.1.7</td>
+        <td class="m sub">0.1.27</td>
         <td class="m sub">css · mesa · toolbelt</td>
-        <td class="m sub">npm run test</td>
+        <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit</td>
         <td class="m sub">0.1.4</td>
@@ -453,7 +453,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">318 across 23 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">319 across 23 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">Setup</td>
@@ -611,18 +611,18 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
-      <td class="m">The context</td>
-      <td class="m sub">The &lt;script&gt; and js blocks run inside a function handed a context.</td>
+      <td class="m">The context — $</td>
+      <td class="m sub">The js block runs inside run($).</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Which project am I in</td>
-      <td class="m sub">context.paths. all hang off one root, walked up from the working directory:</td>
+      <td class="m sub">$.paths. all hang off one root, walked up from the working directory:</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Built-in flags</td>
-      <td class="m sub">--project is consumed before the command runs — it sets context.paths.</td>
+      <td class="m sub">--project is consumed before the command runs — it sets $.paths.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -642,7 +642,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Traps</td>
-      <td class="m sub">- Nothing on the read-only path may import zx.</td>
+      <td class="m sub">- The read-only path imports no command runtime.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1592,7 +1592,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Quick start</td>
-      <td class="m sub">bun install         # acorn, astring, vitest -- and the optional peers, as devDependencies</td>
+      <td class="m sub">bun install         # acorn, vitest -- and the optional peers, as devDependencies</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1933,6 +1933,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m"></td>
       <td class="m">directives — the $ convention</td>
       <td class="m sub">import { splitParams, RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">frontmatter — what a --- block means</td>
+      <td class="m sub">import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>

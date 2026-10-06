@@ -116,7 +116,7 @@ commands/hello/greet.md
 ```
 
 **Only a fence runs.** ` ```js `/` ```ts ` is the body as written and ` ```bash `
-runs through zx; every other fence, and all prose, is a comment. An indented
+runs through `$`, the shell; every other fence, and all prose, is a comment. An indented
 block is prose too — markdown's indented code block is not code here, so an
 example indented in a paragraph cannot break the command.
 
@@ -167,7 +167,7 @@ const buildGreeting = (name, shout) => {
 </script>
 
 ```js
-arg.name ??= await question('Who should I greet? ')
+arg.name ??= await tty.line('Who should I greet?')
 
 const greeting = buildGreeting(arg.name, flag.shout)
 
@@ -293,7 +293,7 @@ state. Step files are never registered as commands of their own.
 
 ```
 commands/deploy/
-  index.md          ← orchestrator: defines the flags, populates context.config
+  index.md          ← orchestrator: defines the flags, populates $.config
   _steps/
     01-validate.md
     02-build.md     ← optional: true   — failure warns and continues
@@ -314,43 +314,64 @@ fli deploy --step 2     # re-run one step, shown as [2/3]
 |---|---|
 | `optional: true` | A failure warns and the run continues |
 | `skip: "expr"` | A JS expression; truthy means skip |
-| `parallel: true` | Runs with adjacent parallel steps. A non-parallel step is a serial checkpoint — everything before it must finish first. Parallel steps share `context.config`, so write to distinct keys |
+| `parallel: true` | Runs with adjacent parallel steps. A non-parallel step is a serial checkpoint — everything before it must finish first. Parallel steps share `$.config`, so write to distinct keys |
 
 Steps sort lexicographically by filename, and **two files sharing a numeric
 prefix warn at runtime** rather than picking an order nobody wrote.
 
 ---
 
-## The context
+## The context — `$`
 
-The `<script>` and ` ```js ` blocks run inside a function handed a `context`.
-It is **one per invocation, and it is not a request context** — nothing here
-acts on behalf of a remote caller, so there is no principal, no `auth`, no
-`query`. The fields are capabilities rather than inputs.
+The ` ```js ` block runs inside `run($)`. **`$` is the command in progress**: the
+context, and callable as the shell. It is one per invocation and it is not a
+request context — nothing here acts on behalf of a remote caller, so there is no
+principal, no `auth`, no `query`; the fields are capabilities rather than inputs.
+The spelling is the framework's: Junction's `$` is the call in progress and
+Mesa's is the component runtime, so knowing one teaches the next.
 
 ```js
-// Top-level locals in the ```js block:
+// Destructured from $ at the top of the body:
 arg             // positional args        → arg.name, arg.path
 flag            // flags                  → flag.dry, flag.force
-log             // the styled logger      → log.info/success/warn/error/dry/debug
-tty             // the terminal, held     → tty.keys/live/aside/onExit/title/wrap
-context         // everything below
-context.config  // shared mutable state across _steps/
+log             // the styled logger      → log.info/success/warn/error/dry/detail
+tty             // the terminal, held     → tty.keys/line/live/aside/onExit/title/wrap
+echo            // one output line (stdout, or the GUI's event stream)
+chalk           // core/color.js — follows NO_COLOR, as fli's own output does
 
-// On the context:
-context.paths    // the resolved project → .root .api .web .db .cli .widgets …
-context.env      // process.env
-context.git      // repo access — pkgState(name, dir), wsRepo(packages)
-context.exec     // a synchronous shell command
-context.stream   // an async streaming one
-context.execute  // several, in sequence
-context.wsRoot() // the workspace root, found from cwd
+// On $:
+$.config   // shared mutable state across _steps/
+$.paths    // the resolved project → .root .api .web .db .cli .widgets …
+$.env      // process.env
+$.git      // repo access — pkgState(name, dir), wsRepo(packages)
+$.exec     // a synchronous shell command
+$.stream   // an async streaming one
+$.execute  // several, in sequence
+$.wsRoot() // the workspace root, found from cwd
 
-// zx globals, everywhere:
-echo()  question()  $``  chalk   // chalk follows NO_COLOR, as fli's own output does
+// $ itself, as a tag — Bun's shell, under fli's rules:
+const sha = (await $`git rev-parse HEAD`).text().trim()
+
+// Imported for every command, so they need no <script>:
+path  fs
 ```
 
-**`context.git` asks with a pathspec, and that is not a nicety.** Every member of
+**`` $`…` `` captures by default** and prints only under `--verbose`; `.stdout`
+is a Buffer, so read `.text()`, `.json()` or `.lines()`. **`--dry` runs
+nothing** and logs the command, the rule `$.exec` has, through the same owner.
+A non-zero exit throws with the command in the message and `.exitCode`,
+`.stdout`, `.stderr` on the error; `.nothrow()` opts out. **The shell is Bun's,
+not bash**: no heredoc and no `for`/`while` — a body that needs them spells
+`` $`bash -c ${script}` ``. An interpolation is one argument whatever it
+holds.
+
+**A `<script>` block is module scope and sees none of the destructured names**
+— `log`, `echo`, `tty`, `flag` are `ReferenceError`s there. A helper takes what
+it needs as a parameter. `fli check`'s `command-resolves` rule reports every
+such name at its line, and a name declared in both the namespace module and
+the command.
+
+**`$.git` asks with a pathspec, and that is not a nicety.** Every member of
 this workspace shares one `.git`, so a bare `git status --porcelain` run from
 `packages/mesa` describes the whole monorepo — which had all sixteen `ws:*` rows
 reporting one another's state.
@@ -359,20 +380,20 @@ reporting one another's state.
 
 **Every command gets `--dry` for free and both respect it.**
 
-`context.exec` is synchronous — for short work whose output can arrive at the
+`$.exec` is synchronous — for short work whose output can arrive at the
 end (git, a quick docker call, file manipulation):
 
 ```js
-context.exec({ command: `git push origin ${flag.branch}` })
+$.exec({ command: `git push origin ${flag.branch}` })
 // --dry logs "[dry] git push origin main" and runs nothing
 ```
 
-`context.stream` is async — for long work where live output is the point (a
+`$.stream` is async — for long work where live output is the point (a
 docker build, tailing logs, a dev server, an SSH session). In the GUI it streams
 line by line as SSE rather than landing all at once:
 
 ```js
-await context.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
+await $.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
 ```
 
 ### `tty` — a command that holds the terminal
@@ -386,7 +407,7 @@ tty.title('● online')
 const bar = tty.live(() => [chalk.green('● online'), `${waiting} waiting`, chalk.dim('? keys')])
 
 const k = await tty.keys(`Send #${id}?`, { y: 'yes', e: 'edit', s: 'skip' })
-if (k === 'e') await tty.aside(() => context.stream({ command: `$EDITOR ${file}` }))
+if (k === 'e') await tty.aside(() => $.stream({ command: `$EDITOR ${file}` }))
 ```
 
 **Whatever the command prints lands above the footer**: `echo`, `log` and
@@ -410,7 +431,7 @@ its first choice when the command declares `--yes` and it was passed. Check
 
 ## Which project am I in
 
-`context.paths.*` all hang off one root, walked up from the working directory:
+`$.paths.*` all hang off one root, walked up from the working directory:
 
 1. `--project <dir>` / `FLI_PROJECT` — explicit, beats everything
 2. `.fli.json` — an explicit marker. Deepest match wins
@@ -456,7 +477,7 @@ Directory names are environment variables, one per surface — `WEB_DIR`,
 | `--step` | | Re-run one `_steps/` step by number |
 | `--project <dir>` | | Run against that root instead of resolving one |
 
-`--project` is consumed before the command runs — it sets `context.paths.*` and
+`--project` is consumed before the command runs — it sets `$.paths.*` and
 is stripped from the command's own flags, so it drives an application from
 outside it: `fli project:map --project packages/basecamp`.
 
@@ -537,12 +558,10 @@ at `~/.fli/cache/registry-<key>.json` that rebuilds when any command file change
 
 ## Traps
 
-- **Nothing on the read-only path may import zx.** It is ~85ms of what was a
-  ~200ms invocation, and `list`, `help`, `?` and completion wanted one thing from
-  it — color, which is `core/color.js` now. That is also why `bootstrap.js`
-  imports `runtime.js` at the call site rather than at the top: a static import
-  pulls zx back in for every `fli list`. A command body is unaffected, since its
-  compiled shim imports `zx/globals` itself.
+- **The read-only path imports no command runtime.** `list`, `help`, `?` and
+  completion take color from `core/color.js` and reach `runtime.js` only at the
+  call site that runs a command, never at the top of `bootstrap.js` — a static
+  import there is paid by every `fli list`.
 - **A clean compile is not proof of valid JS** (Invariant 15). Compiling every
   command file and *parsing* the output found 14 producing broken JavaScript the
   compiler reported as fine. Every command file has a parse test; a new one needs
@@ -573,9 +592,7 @@ const scriptClose = '</' + 'script>'  // no literal closing script tag
 
 | Package | |
 |---|---|
-| `zx` | Shell execution (`$`), `question()`, `echo()` |
-| `minimist` | argv parsing |
-| `linkedom` · `turndown` | `fetch:*` — HTML into markdown |
+| `linkedom` · `turndown` | Optional peers, only for `ksite:fetch` — HTML into markdown. The app installs them: `bun add -d linkedom turndown` |
 
 ---
 

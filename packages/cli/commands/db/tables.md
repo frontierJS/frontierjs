@@ -20,12 +20,12 @@ flags:
 ---
 
 ```js
-const { full } = resolveDb(context, flag)
+const { full } = resolveDb($, flag)
 
 if (flag.size) {
   const sql = `"SELECT name, (SUM(pgsize)/1024) AS size_KB FROM dbstat WHERE name NOT LIKE '\\_%' ESCAPE '\\' GROUP BY name ORDER BY (SUM(pgsize)/1024) DESC;"`
-  context.exec({ command: `sqlite3 ${full} ${sql}`, dry: flag.dry })
+  $.exec({ command: `sqlite3 ${full} ${sql}`, dry: flag.dry })
 } else {
-  context.exec({ command: `sqlite3 ${full} '.schema'`, dry: flag.dry })
+  $.exec({ command: `sqlite3 ${full} '.schema'`, dry: flag.dry })
 }
 ```

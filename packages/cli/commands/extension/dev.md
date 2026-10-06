@@ -27,8 +27,8 @@ serves is a reload signal. Port 8400 is `dev / ext / project 0`, declared in
 to it.
 
 ```js
-const cliArgs = [`--root=${context.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
+const cliArgs = [`--root=${$.paths.extension}`, `--browser=${flag.browser || 'chrome'}`]
 if (flag.launch)  cliArgs.push('--launch')
 if (flag.verbose) cliArgs.push('--verbose')
-context.exec({ command: `bunx jetty-dev-ext ${cliArgs.join(' ')}`, dry: flag.dry })
+$.exec({ command: `bunx jetty-dev-ext ${cliArgs.join(' ')}`, dry: flag.dry })
 ```

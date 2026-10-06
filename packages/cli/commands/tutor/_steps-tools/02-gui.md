@@ -30,36 +30,36 @@ to remember.
 The GUI is started for you now, and then asked all three questions.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app = context.config.appDir
+const app = $.config.appDir
 
 // The GUI reports which surfaces are up, so there has to be one up to report.
-const api = await ensureApi(context)
-if (!await must(context, api, {
+const api = await ensureApi($)
+if (!await must($, api, {
   likely:    'the API did not come up — see .tutor/api.log in the workspace',
   reproduce: `cd ${app} && bun run start`,
 })) return
 
-const gui = await startServer(context, {
+const gui = await startServer($, {
   name: 'gui',
-  argv: fliArgv('fli:gui', '--port', String(context.config.guiPort)),
+  argv: fliArgv('fli:gui', '--port', String($.config.guiPort)),
   cwd:  app,
-  port: context.config.guiPort,
+  port: $.config.guiPort,
   // Not /api/health — the GUI does not answer that path, and a readiness probe
   // against a 404 waits out its whole retry budget before saying so.
   path: '/api/meta',
 })
-if (!await must(context, gui.up, {
-  likely:    `something already holds ${context.config.guiPort}`,
-  reproduce: `cd ${app} && fli gui --port ${context.config.guiPort}`,
+if (!await must($, gui.up, {
+  likely:    `something already holds ${$.config.guiPort}`,
+  reproduce: `cd ${app} && fli gui --port ${$.config.guiPort}`,
 })) return
 
-const at = (path) => `http://127.0.0.1:${context.config.guiPort}${path}`
+const at = (path) => `http://127.0.0.1:${$.config.guiPort}${path}`
 
 const runnables = await probe.httpJson({
   url:      at('/api/runnables'),
@@ -67,7 +67,7 @@ const runnables = await probe.httpJson({
   describe: 'the API surface is listed as startable',
   name:     'what can I start',
 })
-if (!await must(context, runnables, {
+if (!await must($, runnables, {
   likely: 'the GUI reads the app in front of it — check it was started inside the app directory',
 })) return
 
@@ -88,7 +88,7 @@ const mine = await probe.portAnswering({
   retries: 4,
   name:    `something answers ${apiRow.port}`,
 })
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/api/state'),
   expect:   (j) => (j.state?.['surface:./api']?.state === 'up') === mine.ok,
   describe: `the API reads as ${mine.ok ? 'up' : 'down'}, which is what port ${apiRow.port} is doing`,
@@ -99,7 +99,7 @@ if (!await must(context, await probe.httpJson({
 })) return
 
 if (!mine.ok)
-  log.info(`  (the API is on ${context.config.apiPort} for this run, so the GUI reads ${apiRow.port} as down — correctly)`)
+  log.info(`  (the API is on ${$.config.apiPort} for this run, so the GUI reads ${apiRow.port} as down — correctly)`)
 
 // A scaffolded app passes its own checks. That is the assertion: an app that
 // warns about itself out of the box teaches everybody to ignore the output.
@@ -111,7 +111,7 @@ if (!mine.ok)
 const clean = (j) => (j.scopes ?? []).length > 0 && j.scopes.every((s) =>
   (s.findings ?? []).length === 0 || (s.baseline && s.baseline.ok))
 
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/api/check'),
   expect:   clean,
   describe: 'fli check runs and finds nothing',
@@ -148,12 +148,12 @@ const broken = await probe.httpJson({
 
 rmSync(ghost, { force: true })
 
-if (!await must(context, broken, {
+if (!await must($, broken, {
   likely: 'the panel reads the same engine `fli check` does — a clean answer over a broken file is the finding',
 })) return
 
 // Back to clean, so the fault is shown to be the FILE and not the app.
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/api/check'),
   expect:   clean,
   describe: 'nothing again, with the file gone',
@@ -170,8 +170,8 @@ log.info(`  one file, two rules: ${[...new Set(rules)].join(' · ')}`)
 log.info('')
 
 log.info('')
-log.info(`  the GUI is at http://localhost:${context.config.guiPort} — leave it open`)
+log.info(`  the GUI is at http://localhost:${$.config.guiPort} — leave it open`)
 log.info('')
 
-remember(context, '02-gui', {})
+remember($, '02-gui', {})
 ```

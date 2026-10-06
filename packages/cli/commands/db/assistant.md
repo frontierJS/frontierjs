@@ -21,15 +21,15 @@ flags:
 // --bare asks about the language and needs no schema, the same reason
 // db:explain skips requireSchema. The ordinary run is about THIS app, and a
 // document with no schema in it would open by asking for one.
-if (!flag.bare && !requireSchema(context)) return
+if (!flag.bare && !requireSchema($)) return
 
 const opts = []
 if (flag.bare) opts.push('--bare')
-else           opts.push(`--schema ${resolveDb(context, flag).schema}`)
+else           opts.push(`--schema ${resolveDb($, flag).schema}`)
 if (flag.out)  opts.push(`--out ${resolve(process.cwd(), flag.out)}`)
 
-await context.stream({
-  command: `${litestone(context)} assistant ${opts.join(' ')}`,
+await $.stream({
+  command: `${litestone($)} assistant ${opts.join(' ')}`,
 })
 ```
 

@@ -4,10 +4,10 @@ description: Push schema to fresh database
 ---
 
 ```js
-const { schema } = resolveDb(context, flag)
-context.exec({
-  command: `${context.bin('litestone', context.config.root)} db push --schema ${schema}`,
-  cwd: context.config.root,
+const { schema } = resolveDb($, flag)
+$.exec({
+  command: `${$.bin('litestone', $.config.root)} db push --schema ${schema}`,
+  cwd: $.config.root,
   dry: flag.dry
 })
 log.success('Database reset complete')

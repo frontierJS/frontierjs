@@ -122,7 +122,7 @@ versioning and one before the push — the pacing to reach for when the 2FA
 prompt is a browser round trip rather than a code you can type.
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!all.length) {
@@ -165,7 +165,7 @@ if (!flag.private) {
 }
 
 if (flag['changed-only']) {
-  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).dirty)
+  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).dirty)
   if (!packages.length) {
     log.info('No packages with uncommitted changes — nothing to publish')
     return
@@ -179,7 +179,7 @@ if (flag['changed-only']) {
 // so the filter is the default and `--all` is what turns it off.
 if (!flag.all) {
   const before = packages.length
-  packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
+  packages = packages.filter(({ dir, pkg }) => $.git.pkgState(pkg.name, dir).affected)
   if (packages.length < before)
     log.info(`${before - packages.length} package(s) have no commits since their own tag — holding back (--all publishes them)`)
 }
@@ -192,10 +192,10 @@ if (!packages.length) {
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
 let planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
-const repo  = context.wsRepo(all)
+const repo  = $.wsRepo(all)
 
 // ─── prompts ──────────────────────────────────────────────────────────────────
-// Constructed ONCE and carried to the steps on `context.config`. A step
+// Constructed ONCE and carried to the steps on `$.config`. A step
 // importing its own would put a second readline interface on one TTY, and the
 // two then race for every keystroke. Constructing is free — `prompt.js` opens
 // stdin lazily, on the first question actually asked — so they are built for
@@ -215,25 +215,25 @@ echo('')
 for (const { pkg, newVersion } of planned) log.info(`  ${pkg.name}  ${pkg.version} → ${newVersion}`)
 echo('')
 
-context.config.wsRoot     = wsRoot
-context.config.repo       = repo
+$.config.wsRoot     = wsRoot
+$.config.repo       = repo
 // Every member, not the release set: the package a peer range breaks is the one
 // DECLARING it, and that is usually not one of the packages being bumped.
-context.config.members    = all
-context.config.planned    = planned
-context.config.bump       = arg.bump
-context.config.tag        = flag.tag
-context.config.otp        = flag.otp
-context.config.tolerate   = flag['tolerate-republish']
-context.config.released   = []
-context.config.startTime  = Date.now()
+$.config.members    = all
+$.config.planned    = planned
+$.config.bump       = arg.bump
+$.config.tag        = flag.tag
+$.config.otp        = flag.otp
+$.config.tolerate   = flag['tolerate-republish']
+$.config.released   = []
+$.config.startTime  = Date.now()
 
 // Steps are compiled without the namespace module, so the helpers travel here.
-context.config.releaseTag     = releaseTag
-context.config.releaseSubject = releaseSubject
+$.config.releaseTag     = releaseTag
+$.config.releaseSubject = releaseSubject
 
 // The pacing the later steps read. `prompts` is null on a --dry run, which is
 // the one shape that must never ask a question.
-context.config.interactive = flag.interactive
-context.config.prompts     = prompts
+$.config.interactive = flag.interactive
+$.config.prompts     = prompts
 ```

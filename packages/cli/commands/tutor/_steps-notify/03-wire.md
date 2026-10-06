@@ -45,17 +45,17 @@ through `asSystem()` — which is the gate you set in step 1 being the reason th
 package can write a row that no request could.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app     = context.config.appDir
+const app     = $.config.appDir
 const appTs   = join(app, 'api', 'src', 'app.ts')
 const mailer  = join(app, 'api', 'src', 'core', 'outbox-mailer.ts')
 
-context.config.outbox = join(app, 'db', 'outbox.jsonl')
+$.config.outbox = join(app, 'db', 'outbox.jsonl')
 
 writeFileSync(mailer, [
   '// api/src/core/outbox-mailer.ts',
@@ -89,7 +89,7 @@ if (!src.includes('notificationsPlugin')) {
   const imports   = [...src.matchAll(/^import .*$/gm)]
 
   if (!CONFIGURE || imports.length === 0) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',
       asked: "the scaffold's own app.ts",
@@ -128,18 +128,18 @@ if (!src.includes('notificationsPlugin')) {
   writeFileSync(appTs, src, 'utf8')
 }
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely:    'the API did not come back — the last of its output is below',
-  reproduce: `cd ${app} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${app} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
 // Asked of the RUNNING app: the edit above proves the text is there, and this
 // proves both plugins registered — which is the half a bad import or the wrong
 // order would fail at.
-if (!await must(context, probe.httpJson({
-  url:      apiUrl(context, '/manifest'),
+if (!await must($, probe.httpJson({
+  url:      apiUrl($, '/manifest'),
   expect:   (j) => Array.isArray(j.plugins)
                 && j.plugins.includes('mailer')
                 && j.plugins.includes('notifications'),
@@ -148,6 +148,6 @@ if (!await must(context, probe.httpJson({
 }), {
   likely:    'a plugin threw on register — the last of the API output is below',
   detail:    serverLog(api),
-  reproduce: `curl -s http://127.0.0.1:${context.config.apiPort}/api/manifest`,
+  reproduce: `curl -s http://127.0.0.1:${$.config.apiPort}/api/manifest`,
 })) return
 ```

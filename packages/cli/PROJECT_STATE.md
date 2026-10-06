@@ -43,7 +43,7 @@ Both are scanned at startup. Project commands override core commands with the sa
 | `core/server.js` | HTTP: `GET /api/commands`, `GET /api/commands/:name`, `POST /api/run/:name` (SSE), 2-second registry cache |
 | `core/config.js` | Loads `.fli.json` from `projectRoot` into `global.fliConfig` |
 | `core/utils.js` | `logger`, `findFilesPlugin`, `loadEnv`, `loadFrontierConfig`, `findProjectRoot` |
-| `core/prose.js` | Prose-driven dry-run — interpolates `context.vars` into prose section |
+| `core/prose.js` | Prose-driven dry-run — interpolates `$.vars` into prose section |
 | `core/ports.js` | Port broker — `[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit scheme, lock file at `~/.fli/sessions.lock` |
 | `web/index.html` | Single-file Web GUI — sidebar, form/source view, SSE output. Written in `@frontierjs/css` |
 | `web/viewer/index.html` | FJSChain — chain-of-responsibility diagram for `project:map --as=serve`. Written in `@frontierjs/css` |
@@ -64,20 +64,20 @@ The compiler emits **literate-style segments** — prose and code blocks interle
 
 ### `_steps/` convention
 
-Large commands break into numbered step files sharing `context.config`:
+Large commands break into numbered step files sharing `$.config`:
 
 ```
 commands/deploy/
-  index.md            ← orchestrator: sets context.config.stepsDir based on frontier.config.js
+  index.md            ← orchestrator: sets $.config.stepsDir based on frontier.config.js
   _steps/             ← legacy CapRover deploy
   _steps-docker/      ← Docker/SSH/nginx deploy (default for new apps)
   _steps-rollback/    ← rollback flow
   _steps-setup/       ← first-time server setup
 ```
 
-The orchestrator sets `context.config.stepsDir = '_steps-docker'` (or another folder) and the runtime dispatches to the right one. Step files share `context.config` mutation so each can read what previous steps set.
+The orchestrator sets `$.config.stepsDir = '_steps-docker'` (or another folder) and the runtime dispatches to the right one. Step files share `$.config` mutation so each can read what previous steps set.
 
-**Step abort behavior**: if a step or orchestrator sets `context.config.abort = true`, subsequent steps are skipped without logging their headers. Steps that need to run on abort (cleanup, lock release) opt in via `runOnAbort: true` in their frontmatter.
+**Step abort behavior**: if a step or orchestrator sets `$.config.abort = true`, subsequent steps are skipped without logging their headers. Steps that need to run on abort (cleanup, lock release) opt in via `runOnAbort: true` in their frontmatter.
 
 ### Context object
 
@@ -88,14 +88,14 @@ arg          // positional args by name
 flag         // named flags (--dry always present, --debug hidden but present)
 log          // log.info / .success / .warn / .error / .dry
 context      // full context — .paths .env .exec .execute .config .echo .git .vars
-echo()       // ZX stdout, also used by Web GUI to capture command output
-question()   // interactive prompt
-$``          // ZX shell execution
+echo()       // one output line — stdout, or the GUI's event stream
+tty.line()   // one typed line; tty.keys() one key
+$``          // the shell — Bun's, captured by default, --dry aware
 ```
 
-`context.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`. Defaults to `paths.root` for the dir but accepts an override.
+`$.git` provides: `branch()`, `status()`, `isDirty()`, `lastTag()`, `hasChangesSince()`, `isAffected()`, `log()`, `remote()`, `ahead()`, `behind()`, `repoRoot()`, `pkgState()`. Defaults to `paths.root` for the dir but accepts an override.
 
-`context.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `siteContent`, `siteMedia`, `mobile`, `extension`.
+`$.paths` exposes: `root`, `wiki`, `tests`, `cli`, `api`, `db`, `web`, `webPages`, `webComponents`, `webResources`, `site`, `siteContent`, `siteMedia`, `mobile`, `extension`.
 
 ### Workspace context
 
@@ -319,10 +319,9 @@ DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 A read-only invocation (`fli list`, `help`, `?`, completion) is ~119ms where it was ~306ms, measured as 10 runs of each. Three things paid for that and each is a rule, not a tweak:
 
 - **No `.md` loader hook.** `module.register()` starts a hooks thread — 56ms — and nothing imports a `.md`; the runtime compiles with the namespace module script and imports the shim.
-- **No zx on the read-only path.** ~85ms for chalk. `core/color.js` is the ANSI subset those paths use; `bootstrap.js` imports `runtime.js` at the call site so a `fli list` does not pull zx in through it. A command body still gets the real zx from its own shim, so nothing a command author writes changes.
-- **The registry cache** — see below.
+- **The read-only path imports no command runtime.** `core/color.js` is the ANSI subset those paths use; `runtime.js` is imported where a command is run.
 
-A command that actually runs still pays zx once (~206ms for `crypto:keygen`), because its shim imports `zx/globals`.
+A command that runs imports its shim, which imports two node builtins and nothing else; the shell it may call is `Bun.$`, already in the runtime.
 
 ### Registry cache
 
@@ -334,7 +333,7 @@ Discovery still walks the directories — a cached file list would not notice a 
 
 Compiled command shims live at `<fliRoot>/.fli-tmp/<pid>/c_*.mjs`. Created lazily on first compile, removed on exit. Stale-PID sweep at every fli startup. `.gitignore` includes `.fli-tmp/` and the legacy `.__fli_*.mjs` pattern.
 
-`fliTmpRoot()` in `core/utils.js` decides the location and is the only thing that does — a shim imports `zx/globals` by bare specifier, so it has to sit where Node's resolver can reach a `node_modules`. When fliRoot is not writable (a global install under a root-owned prefix, where every command used to die on the first mkdir) the session moves to `$TMPDIR/fli-<digest of fliRoot>/` with `node_modules` symlinked back at the install's. `sweepStaleTmp()` is the other half; it reaps `<pid>` and the suites' `test-<pid>` alike.
+`fliTmpRoot()` in `core/utils.js` decides the location and is the only thing that does. When fliRoot is not writable (a global install under a root-owned prefix, where every command used to die on the first mkdir) the session moves to `$TMPDIR/fli-<digest of fliRoot>/`; a shim imports nothing by a bare specifier, so it may sit anywhere. `sweepStaleTmp()` is the other half; it reaps `<pid>` and the suites' `test-<pid>` alike.
 
 ---
 
@@ -380,7 +379,7 @@ ANTHROPIC_API_KEY=sk-...
 
 ## Tools & resources
 
-- **Runtime**: node's shebang, re-invoked under whichever runtime started the parent (bun in this repo's own scripts and tests); ZX globals only in compiled commands
+- **Runtime**: bun (`FJS-D593`) — the shebang, the version check in `bin/fli.js`, and `Bun.$` behind a command's `$`
 - **Frontend**: `web/index.html` — a single-file GUI written in `@frontierjs/css`, no framework dependency
 - **Testing**: `bun test`, plus `bun run test:browser` (mesa's CDP harness) for the GUI
 - **Visualization**: FJSChain — plain HTML/JS in `@frontierjs/css`, served with no network

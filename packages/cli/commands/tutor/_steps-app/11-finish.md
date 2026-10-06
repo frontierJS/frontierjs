@@ -7,18 +7,18 @@ runOnAbort: true
 ```js
 // The reader `narrate` asks its questions through. Held open it keeps the event
 // loop alive and the lesson never exits.
-context.config.prompts?.close()
+$.config.prompts?.close()
 
 // No narration: this step runs on the way out of a REFUSAL as well as at the
 // end, and a page of prose after a failed step buries the diagnosis that
 // matters. It reports, and stops what it started.
 
-stopServers(context)
+stopServers($)
 
-const ws  = context.config.ws
-const app = context.config.appDir
+const ws  = $.config.ws
+const app = $.config.appDir
 
-if (context.config.abort) {
+if ($.config.abort) {
   if (app) log.info(`the app is still at ${app} — nothing was undone`)
   // Not `settle`: the lesson did not finish, and the row for the step that
   // refused already says so. Marking the lesson `failed` here would lose the
@@ -26,7 +26,7 @@ if (context.config.abort) {
   return
 }
 
-context.config.journal.settle('succeeded')
+$.config.journal.settle('succeeded')
 
 log.success('Lesson 1 done — an app that runs, with a model of your own in it')
 log.info('')
@@ -45,7 +45,7 @@ log.info('')
 // swept unless they asked to keep it — and the path is printed either way,
 // because a lesson that silently deleted the app it just taught you to build
 // is a lesson you cannot go back to.
-if (ws.kind === 'temp' && !context.flag.keep) {
+if (ws.kind === 'temp' && !$.flag.keep) {
   T.sweepWorkspace(ws, { keep: false })
   log.info('  (the temporary workspace was removed — pass --keep to hold on to it)')
 }

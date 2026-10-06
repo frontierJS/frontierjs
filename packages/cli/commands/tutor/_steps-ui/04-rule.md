@@ -33,17 +33,17 @@ move**, because the request was never made. The resource's own validation is
 what moves the first *no* to the person's screen instead of a round trip.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
-const page = context.config.__page ?? await openPage(context, '/')
+const app  = $.config.appDir
+const page = $.config.__page ?? await openPage($, '/')
 
 // A step run on its own has neither a caller nor a signed-in page.
-if (!await must(context, await ensureCaller(context, page), {
+if (!await must($, await ensureCaller($, page), {
   likely: 'the API is up but registering or signing in did not work — step 3 diagnoses that',
 })) return
 
@@ -53,8 +53,8 @@ if (!await must(context, await ensureCaller(context, page), {
 // comparison against null.
 const countNotes = async () => {
   const r = await probe.httpJson({
-    url:      apiUrl(context, '/notes'),
-    headers:  asCaller(context.config.userToken),
+    url:      apiUrl($, '/notes'),
+    headers:  asCaller($.config.userToken),
     expect:   (j) => typeof j.total === 'number',
     describe: 'the note count', name: 'how many notes there are',
   })
@@ -62,7 +62,7 @@ const countNotes = async () => {
 }
 
 const openForm = async () => {
-  await page.goto(`http://127.0.0.1:${context.config.webPort}/notes/create/`)
+  await page.goto(`http://127.0.0.1:${$.config.webPort}/notes/create/`)
   return probe.pageEval({ page, ask: `!!document.querySelector('input[name=title]')`, name: 'the create form is up' })
 }
 
@@ -85,24 +85,24 @@ const submitEmpty = async () => {
 // workspace this lesson has already run in still carries the attribute, and
 // asking then would be asking about the after twice. Taken back out first —
 // which is also the fastest way to watch the change in the other direction.
-if (readFileSync(schemaFile(context), 'utf8').includes('@length(3, 80)')) {
+if (readFileSync(schemaFile($), 'utf8').includes('@length(3, 80)')) {
   log.info('this workspace already has the rule — taking it out, so the before is a real before')
-  editSchema(context, '  title     String    @length(3, 80)\n', '  title     String\n')
-  pushSchema(context)
-  const undone = await restartApi(context)
-  if (!await must(context, undone.up, {
+  editSchema($, '  title     String    @length(3, 80)\n', '  title     String\n')
+  pushSchema($)
+  const undone = await restartApi($)
+  if (!await must($, undone.up, {
     likely: 'the API did not come back — its output is below',
     detail: serverLog(undone),
   })) return
 }
 
-if (!await must(context, await openForm(), { likely: 'the form did not render — step 3 is where that is diagnosed' })) return
+if (!await must($, await openForm(), { likely: 'the form did not render — step 3 is where that is diagnosed' })) return
 
 const before = await countNotes()
 const first  = await submitEmpty()
 const after  = await countNotes()
 
-if (!await must(context, after === before + 1
+if (!await must($, after === before + 1
   ? { ok: true,  name: 'with nothing declared, an empty title is a legal write',
       asked: `${before} notes to become ${before + 1}`, got: `${after}, at ${first.path}` }
   : { ok: false, name: 'with nothing declared, an empty title is a legal write',
@@ -111,26 +111,26 @@ if (!await must(context, after === before + 1
 })) return
 
 // ── the one line ────────────────────────────────────────────────────────────
-const edit = editSchema(context, '  title     String\n', '  title     String    @length(3, 80)\n')
+const edit = editSchema($, '  title     String\n', '  title     String    @length(3, 80)\n')
 if (!edit.ok) {
   log.error(`${edit.why} — this step adds @length(3, 80) to Note.title`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-pushSchema(context)
+pushSchema($)
 
-const back = await restartApi(context)
-if (!await must(context, back.up, {
+const back = await restartApi($)
+if (!await must($, back.up, {
   likely: 'the API did not come back after the schema change — its output is below',
   detail: serverLog(back),
 })) return
 
 // ── after ───────────────────────────────────────────────────────────────────
-if (!await must(context, await openForm(), { likely: 'the dev server rebuilds the schema it hands the browser — see .tutor/web.log' })) return
+if (!await must($, await openForm(), { likely: 'the dev server rebuilds the schema it hands the browser — see .tutor/web.log' })) return
 
 // The attribute, on the control. Nothing edited a form to put it there.
-if (!await must(context, await probe.pageEval({
+if (!await must($, await probe.pageEval({
   page,
   ask:      `(() => { const el = document.querySelector('input[name=title]')
                       return JSON.stringify({ min: el.getAttribute('minlength'), max: el.getAttribute('maxlength') }) })()`,
@@ -145,7 +145,7 @@ const was     = await countNotes()
 const refused = await submitEmpty()
 const now     = await countNotes()
 
-if (!await must(context, refused.invalid.includes('title')
+if (!await must($, refused.invalid.includes('title')
   ? { ok: true,  name: 'the browser refuses, and says which field',
       asked: 'title marked aria-invalid', got: refused.invalid.join(', ') || 'nothing' }
   : { ok: false, name: 'the browser refuses, and says which field',
@@ -156,7 +156,7 @@ if (!await must(context, refused.invalid.includes('title')
 // The assertion the beat rests on: not that an error appeared, but that
 // nothing was sent. An error message is renderable by a page that also wrote
 // the row.
-if (!await must(context, now === was && refused.path === '/notes/create/'
+if (!await must($, now === was && refused.path === '/notes/create/'
   ? { ok: true,  name: 'and the request was never made',
       asked: `${was} notes to stay ${was}, still on the create page`, got: `${now}, at ${refused.path}` }
   : { ok: false, name: 'and the request was never made',
@@ -164,7 +164,7 @@ if (!await must(context, now === was && refused.path === '/notes/create/'
   likely: 'a row that appeared means the check ran on the server and the message came back — which works, and is a round trip',
 })) return
 
-if (!await must(context, probe.pageClean({ page }), {})) return
+if (!await must($, probe.pageClean({ page }), {})) return
 
-remember(context, '04-rule', {})
+remember($, '04-rule', {})
 ```

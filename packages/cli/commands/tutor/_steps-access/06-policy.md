@@ -31,69 +31,69 @@ compiles into the WHERE clause of every read. Two accounts, one list endpoint,
 two different answers — both 200.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
+if (!needs($, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
 
-if (!await refreshTokens(context)) return
+if (!await refreshTokens($)) return
 
 // Only where no model is marked: a second `@@auth` is refused by `db push`, and
 // an app scaffolded with `--auth` already carries one on User.
-const marked = /^\s*@@auth\b/m.test(readFileSync(schemaFile(context), 'utf8'))
+const marked = /^\s*@@auth\b/m.test(readFileSync(schemaFile($), 'utf8'))
 
 for (const [from, to] of [
   ...(marked ? [] : [['  @@gate("4.4.4.5")', '  @@auth\n  @@gate("4.4.4.5")']]),
   ['  updatedAt DateTime  @default(now()) @updatedAt\n\n  ///',
    '  updatedAt DateTime  @default(now()) @updatedAt\n  authorId  String?   @default(auth().id)\n\n  @@allow(\'read\', authorId == auth().id)\n\n  ///'],
 ]) {
-  const edit = editSchema(context, from, to)
+  const edit = editSchema($, from, to)
   if (!edit.ok) {
     log.error(`${edit.why} — this step adds @@auth to User and a read policy to Note`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
 
-pushSchema(context)
+pushSchema($)
 
-const api = await restartApi(context)
-if (!await must(context, api.up, { likely: 'the API did not come back', detail: serverLog(api) })) return
+const api = await restartApi($)
+if (!await must($, api.up, { likely: 'the API did not come back', detail: serverLog(api) })) return
 
 // A note owned by the ordinary caller. Nothing states the author — the column's
 // own default does.
 const mine = await probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+  url:      apiUrl($, '/notes'),
   method:   'POST',
-  headers:  asCaller(context.config.userToken),
+  headers:  asCaller($.config.userToken),
   body:     JSON.stringify({ title: `owned ${Date.now().toString(36)}`, body: 'mine', done: false }),
   expect:   (j) => typeof j.authorId === 'string' && j.authorId.length > 0,
   describe: 'a note stamped with its author',
   name:     'the note records who wrote it, without being told',
 })
-if (!await must(context, mine, {
+if (!await must($, mine, {
   likely: '@default(auth().id) did not stamp — is @@auth on model User?',
 })) return
 
 const countFor = (token, name) => probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+  url:      apiUrl($, '/notes'),
   headers:  asCaller(token),
   expect:   (j) => true,
   describe: 'the list',
   name,
 })
 
-const asOwner = await countFor(context.config.userToken, 'the author lists their note')
-if (!await must(context, asOwner, { likely: 'the list did not answer' })) return
+const asOwner = await countFor($.config.userToken, 'the author lists their note')
+if (!await must($, asOwner, { likely: 'the list did not answer' })) return
 
-const asOther = await countFor(context.config.adminToken, 'the other account lists the same endpoint')
-if (!await must(context, asOther, { likely: 'the list did not answer' })) return
+const asOther = await countFor($.config.adminToken, 'the other account lists the same endpoint')
+if (!await must($, asOther, { likely: 'the list did not answer' })) return
 
 const ownerSees = asOwner.json.data.filter(n => n.id === mine.json.id).length
 const otherSees = asOther.json.data.filter(n => n.id === mine.json.id).length
 
-if (!await must(context, {
+if (!await must($, {
   ok:    ownerSees === 1 && otherSees === 0,
   name:  'the same GET answers 200 to both, and one of them cannot see the row',
   asked: 'the author sees their note and the other account does not',
@@ -102,8 +102,8 @@ if (!await must(context, {
   likely:    otherSees > 0
     ? 'the policy is not filtering — check @@allow on model Note and @@auth on model User'
     : 'the author cannot see their own row either, which is a policy that refuses everybody',
-  reproduce: `grep -n "@@allow" ${schemaFile(context)}`,
+  reproduce: `grep -n "@@allow" ${schemaFile($)}`,
 })) return
 
-remember(context, '06-policy', { policiedNoteId: mine.json.id })
+remember($, '06-policy', { policiedNoteId: mine.json.id })
 ```

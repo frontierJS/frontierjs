@@ -20,7 +20,7 @@ whole repo — they are the same number on every row and are printed once at the
 top rather than repeated sixteen times as if each package had its own.
 
 ```js
-const { wsRoot, packages } = await context.wsPackages()
+const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {
@@ -28,13 +28,13 @@ if (!packages.length) {
   return
 }
 
-const repo = context.wsRepo(packages)
+const repo = $.wsRepo(packages)
 
 echo(`\nWorkspace: ${wsRoot}`)
 if (repo) {
-  const branch = context.git.branch(repo)
-  const ahead  = context.git.ahead(repo)
-  const behind = context.git.behind(repo)
+  const branch = $.git.branch(repo)
+  const ahead  = $.git.ahead(repo)
+  const behind = $.git.behind(repo)
   echo(`Repo:      one at ${repo}`)
   echo(`Branch:    ${branch}  ↑${ahead} ↓${behind}\n`)
 } else {
@@ -44,7 +44,7 @@ if (repo) {
 let anyDirty = false
 
 for (const { dir, pkg } of packages) {
-  const lines = context.git.pkgState(pkg.name, dir).files
+  const lines = $.git.pkgState(pkg.name, dir).files
   const dirty = lines.length > 0
   if (dirty) anyDirty = true
 
@@ -52,7 +52,7 @@ for (const { dir, pkg } of packages) {
   // IS its own repo.
   const head = repo
     ? `${pkg.name}@${pkg.version}`
-    : `${pkg.name}@${pkg.version}  ${context.git.branch(dir)} ↑${context.git.ahead(dir)} ↓${context.git.behind(dir)}`
+    : `${pkg.name}@${pkg.version}  ${$.git.branch(dir)} ↑${$.git.ahead(dir)} ↓${$.git.behind(dir)}`
 
   if (flag.short) {
     echo(`  ${head}${dirty ? `  [${lines.length} changed]` : '  [clean]'}`)

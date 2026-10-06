@@ -58,3 +58,41 @@ describe('a .md module exports its frontmatter', () => {
     expect(result.html).toContain('No frontmatter here.')
   })
 })
+
+// FJS-1541: mesa's own reader flattened a list of maps into the top level, read
+// a column-0 list as null and a `|` block as the string "|", while sierra's
+// route table read the same file correctly. Both read toolbelt's kit now, so
+// the module's `frontmatter` is the route's `page.meta`.
+describe('a .md module reads the frontmatter sierra reads', () => {
+  const KSITE = [
+    '---',
+    'items:',
+    '-',
+    '  name: Services',
+    '  items:',
+    '  - name: Deep Cleaning',
+    '    link: /deep/',
+    'hero_text: |',
+    '  One.',
+    '  Two.',
+    '---',
+    '',
+    'Body.',
+    '',
+  ].join('\n')
+
+  it('keeps nesting, a column-0 list and a | block', async () => {
+    const ctx = await compileMd(KSITE, { filename: 'menu.md' })
+    expect(ctx.analysis?.errors ?? []).toEqual([])
+    expect(ctx.frontmatter).toEqual({
+      items: [{ name: 'Services', items: [{ name: 'Deep Cleaning', link: '/deep/' }] }],
+      hero_text: 'One.\nTwo.\n',
+    })
+  })
+
+  it('reports a refused block rather than compiling a wrong object', async () => {
+    const ctx = await compileMd('---\ntitle: A\nalso: &x 1\n---\n\nBody.\n', { filename: 'bad.md' })
+    expect(ctx.frontmatter).toEqual({})
+    expect(ctx.analysis.errors.join('\n')).toMatch(/frontmatter line 3: an anchor/)
+  })
+})

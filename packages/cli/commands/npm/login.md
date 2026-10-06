@@ -23,5 +23,5 @@ flags:
 const parts = ['npm login']
 if (flag.registry) parts.push(`--registry ${flag.registry}`)
 if (flag.scope)    parts.push(`--scope ${flag.scope}`)
-context.exec({ command: parts.join(' '), dry: flag.dry })
+$.exec({ command: parts.join(' '), dry: flag.dry })
 ```

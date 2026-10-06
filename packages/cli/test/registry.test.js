@@ -159,7 +159,7 @@ describe('fli list --json', () => {
 
   test('outputs valid JSON array', async () => {
     const { execSync } = await import('child_process')
-    const out = execSync(`node ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
+    const out = execSync(`bun ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
     expect(() => JSON.parse(out)).not.toThrow()
     const cmds = JSON.parse(out)
     expect(Array.isArray(cmds)).toBe(true)
@@ -168,7 +168,7 @@ describe('fli list --json', () => {
 
   test('--json output includes title and _source on every entry', async () => {
     const { execSync } = await import('child_process')
-    const out  = execSync(`node ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
+    const out  = execSync(`bun ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
     const cmds = JSON.parse(out)
     for (const cmd of cmds) {
       expect(typeof cmd.title).toBe('string')
@@ -179,7 +179,7 @@ describe('fli list --json', () => {
 
   test('--json output contains both core and project commands', async () => {
     const { execSync } = await import('child_process')
-    const out   = execSync(`node ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
+    const out   = execSync(`bun ${ROOT}/bin/fli.js list --json`, { encoding: 'utf8' })
     const cmds  = JSON.parse(out)
     const core    = cmds.filter(c => c._source === 'core')
     const project = cmds.filter(c => c._source === 'project')

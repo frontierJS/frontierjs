@@ -36,7 +36,7 @@ and a person who can call it too. Naming that is why this refuses rather than
 reporting that it found nothing to run.
 
 ```js
-// Walk up for the runner rather than asking `context.wsRoot()`, which prompts
+// Walk up for the runner rather than asking `$.wsRoot()`, which prompts
 // when it finds nothing — a prompt is the wrong answer to being in the wrong
 // repo, and it hangs a CI job that got here by mistake.
 let dir = process.cwd()

@@ -26,14 +26,14 @@ way out and the one to reach for first, because it continues that transition
 rather than opening a second.
 
 ```js
-const target = resolveTarget(flag, context.git)
+const target = resolveTarget(flag, $.git)
 
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -46,7 +46,7 @@ const user   = targetConf.user   ?? deployConf.user ?? 'deploy'
 const path   = targetConf.path   ?? deployConf.path
 const host   = `${user}@${server}`
 
-const machine  = machineFor(context, host, path, deployConf.transport)
+const machine  = machineFor($, host, path, deployConf.transport)
 const lockFile = lockPath(path)
 
 // A lock is one file; reading it and removing it are two commands and the run
@@ -57,7 +57,7 @@ let body = ''
 try { body = machine.capture(`cat ${lockFile} 2>/dev/null || true`) }
 catch (err) {
   log.error(`Cannot read ${host} — ${err.message}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 

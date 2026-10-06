@@ -61,10 +61,10 @@ export const stepNameOf = (file) => file.replace(/\.md$/, '')
  * the runner falls through to running the step for the same reason, so a plan
  * that reported it skipped would describe a deploy that does not happen.
  */
-export function skipDecision(skip, { flag, context }) {
+export function skipDecision(skip, { flag, $ }) {
   if (!skip) return { skipped: false, reason: null }
   try {
-    const skipped = Boolean(new Function('flag', 'context', `return ${skip}`)(flag, context))
+    const skipped = Boolean(new Function('flag', '$', `return ${skip}`)(flag, $))
     return { skipped, reason: skipped ? skip : null }
   } catch (err) {
     return { skipped: false, reason: null, threw: err?.message ?? String(err) }
@@ -80,9 +80,9 @@ export function skipDecision(skip, { flag, context }) {
  * ordinals to be stable so a resume can find the step it left off at even when
  * a `skip:` has since changed answer.
  */
-export function planSteps(steps, { flag = {}, context = {} } = {}) {
+export function planSteps(steps, { flag = {}, $ = {} } = {}) {
   return steps.map((s, i) => {
-    const d = skipDecision(s.skip, { flag, context })
+    const d = skipDecision(s.skip, { flag, $ })
     return {
       ordinal:  i + 1,
       name:     s.name,

@@ -29,7 +29,7 @@ beside them. The destination is a timestamped directory, not a file, because a
 schema declares as many databases as it likes.
 
 ```js
-const dbPath = context.paths.db
+const dbPath = $.paths.db
 if (!dbPath) { log.error('DB path not configured'); return }
 
 // This command used to run `sqlite3 {dbPath}/development.db '.backup …'`, which
@@ -39,13 +39,13 @@ if (!dbPath) { log.error('DB path not configured'); return }
 // ordinary shape, so the trail was the part not being copied.
 const dest = `${dbPath}/backups`
 
-// Not `args` — the compiled command already destructures that from context.
+// Not `args` — the compiled command already destructures that from $.
 const argv = ['backup', dest]
 if (flag.vacuum) argv.push('--vacuum')
 if (flag.zip)    argv.push('--zip')
 if (flag.db)     argv.push('--db', flag.db)
 
-context.exec({ command: `${litestone(context)} ${argv.join(' ')}`, dry: flag.dry })
+$.exec({ command: `${litestone($)} ${argv.join(' ')}`, dry: flag.dry })
 
 if (!flag.dry) log.success(`Backed up every declared database → ${dest}`)
 ```

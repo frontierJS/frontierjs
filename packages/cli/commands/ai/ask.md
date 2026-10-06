@@ -47,7 +47,7 @@ profile `ant auth login` writes. A Claude.ai subscription is not an API credenti
 
 ```js
 // ─── Resolve prompt ───────────────────────────────────────────────────────────
-let prompt = arg.prompt || await question('Ask Claude: ')
+let prompt = arg.prompt || await tty.line('Ask Claude: ')
 
 if (!prompt) {
   log.error('No prompt provided')

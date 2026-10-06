@@ -144,7 +144,7 @@ log.success(`wrote ${filePath}`)
 log.info(`edit it, then run: fli ksite:fetch --config ./${filename}`)
 
 if (flag.open) {
-  const editor = process.env.EDITOR || context.env.OPEN_COMMAND || 'vi'
-  context.exec({ command: `${editor} "${filePath}"` })
+  const editor = process.env.EDITOR || $.env.OPEN_COMMAND || 'vi'
+  $.exec({ command: `${editor} "${filePath}"` })
 }
 ```

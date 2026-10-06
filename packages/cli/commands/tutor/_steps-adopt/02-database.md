@@ -46,11 +46,11 @@ Stand in front of it as if you had inherited it. Nothing below deletes it,
 migrates it or rewrites it — the whole lesson is about reading it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-const legacy = join(context.config.ws.dir, 'legacy')
+const legacy = join($.config.ws.dir, 'legacy')
 const dbFile = join(legacy, 'shop.db')
 
 mkdirSync(legacy, { recursive: true })
@@ -61,7 +61,7 @@ if (existsSync(dbFile)) rmSync(dbFile, { force: true })
 // everything else here. Through a SUBPROCESS rather than an import, because
 // `fli` runs on node and `bun:sqlite` cannot be loaded there — the same
 // subprocess `probe.sqliteRow` reads with.
-if (!await must(context, probe.sqliteExec({
+if (!await must($, probe.sqliteExec({
   db:   dbFile,
   name: 'a shop database, made the way a real one is made',
   statements: [
@@ -94,7 +94,7 @@ if (!await must(context, probe.sqliteExec({
   likely: 'bun could not write there — check the workspace is writable, and that bun is on PATH',
 })) return
 
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db:     dbFile,
   sql:    'select id, total_cents from orders',
   expect: (rows) => rows.length === 1 && Number(rows[0].total_cents) === 4250,
@@ -107,5 +107,5 @@ log.info('')
 log.info(`  ${dbFile}`)
 log.info('')
 
-remember(context, '02-database', { legacyDir: legacy, legacyDb: dbFile })
+remember($, '02-database', { legacyDir: legacy, legacyDb: dbFile })
 ```

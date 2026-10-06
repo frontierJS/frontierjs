@@ -4,16 +4,16 @@ description: Check SSH and take the deploy lock — a revert is a deploy going t
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { hosts, target } = context.config
+const { hosts, target } = $.config
 
 for (const h of hosts) {
-  const m = machineFor(context, h.host, h.path)
+  const m = machineFor($, h.host, h.path)
   log.info(`Checking ${m.kind === 'local' ? 'the local machine' : `SSH → ${h.host}`}`)
   if (!m.reach()) {
     log.error(`Cannot reach ${h.host} — check your SSH key and server address`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -22,13 +22,13 @@ for (const h of hosts) {
 // have two writers on one SQLite database and two answers to what is serving,
 // which is the state the journal exists to make impossible.
 log.info('Acquiring deploy lock...')
-const lock = await acquireLock(context, { hosts, target })
+const lock = await acquireLock($, { hosts, target })
 if (!lock.ok) {
   for (const [level, line] of await lockRefusal(lock, { verb: 'revert' })) log[level](line)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-context.config.lockAcquired = true
-log.success(`Preflight passed → ${context.config.appId} (${target})`)
+$.config.lockAcquired = true
+log.success(`Preflight passed → ${$.config.appId} (${target})`)
 ```

@@ -85,7 +85,7 @@ const escapeTemplate = (s) => s
 /**
  * The command line as it appears inside the generated template literal.
  *
- * A leading `fli` becomes `${context.fli}` — the fli that is running, resolved
+ * A leading `fli` becomes `${$.fli}` — the fli that is running, resolved
  * by absolute path, rather than whichever one is on the shell's PATH. A global
  * install and a workspace checkout are routinely both present, and a shortcut
  * that reached the other one would be wrong in a way nothing prints.
@@ -95,7 +95,7 @@ export function targetExpression(command) {
   const value = command.trim()
   const rest  = value === 'fli' ? '' : value.startsWith('fli ') ? value.slice(4) : null
   if (rest === null) return escapeTemplate(value)
-  return '${context.fli}' + (rest ? ' ' + escapeTemplate(rest) : '')
+  return '${$.fli}' + (rest ? ' ' + escapeTemplate(rest) : '')
 }
 
 export function renderShortcut({ name, command, description = '' }) {
@@ -126,15 +126,15 @@ export function renderShortcut({ name, command, description = '' }) {
     'here, not a migration.',
     '',
     fence + 'js',
-    "// minimist has already read the argv into `flag`, so forwarding `flag`",
+    "// fli has already read the argv into `flag`, so forwarding `flag`",
     "// would send fli's own defaults (--dry, --test) to a command that never",
     '// asked for them. The raw tail is the only faithful copy of what was typed.',
     'const q     = (a) => "\'" + a.split("\'").join("\'\\\\\'\'") + "\'"',
     'const extra = process.argv.slice(3).map(q).join(\' \')',
     '',
-    'context.exec({',
+    '$.exec({',
     '  command: `' + target + '${extra ? \' \' + extra : \'\'}`,',
-    '  cwd:     context.paths.root,',
+    '  cwd:     $.paths.root,',
     '  dry:     flag.dry,',
     '})',
     fence,

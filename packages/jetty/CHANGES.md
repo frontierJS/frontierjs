@@ -1,5 +1,13 @@
 # Changes — @frontierjs/jetty
 
+## 2026-10-05 — the dev server watches with `fs.watch`; chokidar dropped
+
+`src/dev/watch.js` `watchTree(dirs, { onChange })` replaces chokidar: one recursive `fs.watch` per directory, each path settled for 60 ms after its LAST event, so an atomic save is one rebuild. The ignore list moved there as `IGNORED`. Its dot-file entry used to match only `.` and `..`, and now matches any dot-named file. Bun reports an editor's temp file during an atomic save and Node does not, so without that entry Bun saw two changes for one save. Tests: a Watcher group in `phase5` (nested add, two writes settled to one, an atomic save, `node_modules` ignored, a delete), under node and bun. Run against `example/extension` with the real `jetty-dev-ext`, touching `src/dock/App.mesa` produced one `mesa:hot-update:dock`.
+
+## 2026-10-05 — vite `^8.3.2`
+
+Both the peer range and the dev range were `^8.0.10`. They now match every other vite range in the workspace.
+
 ## 2026-10-05 — vite, chokidar and ws are the app's to install
 
 They were `dependencies`, so every install of jetty pulled a bundler, a file watcher and a

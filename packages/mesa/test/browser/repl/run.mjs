@@ -9,11 +9,11 @@
  *
  * ── Why this one is manual ────────────────────────────────────────────
  *
- * `example/index.html` loads nineteen things from the internet: Tailwind, an
- * lz-string off cdnjs, and an importmap of seventeen esm.sh entries — acorn
- * and astring, which are the compiler's own dependencies, the unified/remark
- * chain, and eight CodeMirror packages. Nine of those resolve from
- * `node_modules` today and eight are not in the tree at all, so making this
+ * `example/index.html` loads eighteen things from the internet: Tailwind, an
+ * lz-string off cdnjs, and an importmap of sixteen esm.sh entries — acorn,
+ * which is the compiler's own dependency, the unified/remark chain, and eight
+ * CodeMirror packages. Eight of those resolve from `node_modules` today and
+ * eight are not in the tree at all, so making this
  * offline is real work rather than a flag: `FJS-326` has the tiers.
  *
  * Until then a suite that needs a CDN is a suite that goes red on a train, so

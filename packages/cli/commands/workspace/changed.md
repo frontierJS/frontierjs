@@ -24,7 +24,7 @@ tag (`<name>@<version>`, the scheme `ws:version` and `ws:pub` write).
 Run this before `fli ws:pub` to confirm what will be published.
 
 ```js
-const { wsRoot, packages } = await context.wsPackages()
+const { wsRoot, packages } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {
@@ -33,7 +33,7 @@ if (!packages.length) {
 }
 
 const results = packages.map(({ dir, path, pkg }) => {
-  const state = context.git.pkgState(pkg.name, dir)
+  const state = $.git.pkgState(pkg.name, dir)
   return { name: pkg.name, version: pkg.version, path, ...state }
 })
 

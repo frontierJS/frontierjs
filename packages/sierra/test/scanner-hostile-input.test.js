@@ -7,8 +7,9 @@
  * is not the person who runs the build. Three inputs the reader had half a rule
  * for (`FJS-821` (f) and (g)):
  *
- *   • a YAML alias bomb, which parses in six milliseconds and serializes to
- *     205 MB inside the generated config/routes.js;
+ *   • a YAML alias bomb, which parsed in six milliseconds and serialized to
+ *     205 MB inside the generated config/routes.js — refused now at its first
+ *     anchor, because the frontmatter subset reads no aliases (FJS-D549);
  *   • a symlinked route DIRECTORY, invisible where a symlinked route FILE was
  *     included;
  *   • `[__proto__].mesa`, a legal filename whose param could never be read.
@@ -42,16 +43,13 @@ const BOMB = [
 ].join('\n')
 
 describe('frontmatter expansion is bounded', () => {
-  test('an alias bomb is refused, and refused CHEAPLY', () => {
+  test('an alias bomb is refused at its first anchor, and refused CHEAPLY', () => {
     const t0 = Date.now()
     const { frontmatter, error } = parseFrontmatter(BOMB)
     const ms = Date.now() - t0
 
-    expect(error).toMatch(/expands to more than/)
+    expect(error).toMatch(/line 2: an anchor/)
     expect(frontmatter).toEqual({})
-    // Serializing it to find out how big it is takes 1.6s and 205 MB — the
-    // count has to abort at the budget instead.
-    expect(JSON.stringify(frontmatter).length).toBeLessThan(64)
     expect(ms).toBeLessThan(1000)
   })
 
@@ -63,22 +61,27 @@ describe('frontmatter expansion is bounded', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  // The negative control. A bound that refused everything would satisfy the two
-  // assertions above and stop every route declaring anything.
-  test('ordinary frontmatter is untouched, aliases included', () => {
+  // The negative control. A reader that refused everything would satisfy the
+  // two assertions above and stop every route declaring anything — so the
+  // nesting a real client site writes (ksite's menus) has to come through.
+  test('ordinary frontmatter is untouched, nesting included', () => {
     const src = [
       '---',
       'title: About',
       'render: static',
-      'tags: &t [a, b]',
-      'also: *t',
+      'items:',
+      '-',
+      '  name: Services',
+      '  items:',
+      '  - name: Deep Cleaning',
+      '    link: /deep/',
       '---',
       'body',
     ].join('\n')
     const { frontmatter, error } = parseFrontmatter(src)
     expect(error).toBeNull()
     expect(frontmatter.title).toBe('About')
-    expect(frontmatter.also).toEqual(['a', 'b'])
+    expect(frontmatter.items).toEqual([{ name: 'Services', items: [{ name: 'Deep Cleaning', link: '/deep/' }] }])
   })
 })
 

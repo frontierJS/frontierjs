@@ -28,10 +28,10 @@ const RELEASE = {
 const STEPS = [
   { name: '01-preflight' },
   { name: '02-pull' },
-  { name: '04-build-api', skip: '!context.config.doApi' },
+  { name: '04-build-api', skip: '!$.config.doApi' },
 ]
 
-const plannedWith = (config) => planSteps(STEPS, { flag: {}, context: { config } })
+const plannedWith = (config) => planSteps(STEPS, { flag: {}, $: { config } })
 
 // ─── the step list ───────────────────────────────────────────────────────────
 
@@ -78,17 +78,17 @@ describe('the steps are read, not listed', () => {
 
 describe('evaluating a skip predicate the way the runner does', () => {
   test('no predicate runs the step', () => {
-    expect(skipDecision(null, { flag: {}, context: {} })).toMatchObject({ skipped: false })
+    expect(skipDecision(null, { flag: {}, $: {} })).toMatchObject({ skipped: false })
   })
 
   test('a true predicate skips it, and the reason is the predicate itself', () => {
-    const d = skipDecision('!context.config.doApi', { flag: {}, context: { config: { doApi: false } } })
+    const d = skipDecision('!$.config.doApi', { flag: {}, $: { config: { doApi: false } } })
     expect(d.skipped).toBe(true)
-    expect(d.reason).toBe('!context.config.doApi')
+    expect(d.reason).toBe('!$.config.doApi')
   })
 
   test('a false predicate runs it and records no reason', () => {
-    expect(skipDecision('!context.config.doApi', { flag: {}, context: { config: { doApi: true } } }))
+    expect(skipDecision('!$.config.doApi', { flag: {}, $: { config: { doApi: true } } }))
       .toEqual({ skipped: false, reason: null })
   })
 
@@ -96,39 +96,39 @@ describe('evaluating a skip predicate the way the runner does', () => {
   // step skipped would describe a deploy that does not happen. Fail-open in the
   // same direction, and say so.
   test('a predicate that throws leaves the step running, and is reported', () => {
-    const d = skipDecision('nope.nothing.here', { flag: {}, context: {} })
+    const d = skipDecision('nope.nothing.here', { flag: {}, $: {} })
     expect(d.skipped).toBe(false)
     expect(d.threw).toBeTruthy()
   })
 
   test('a flag is in scope, as it is for the runner', () => {
-    expect(skipDecision('flag.web', { flag: { web: true }, context: {} }).skipped).toBe(true)
+    expect(skipDecision('flag.web', { flag: { web: true }, $: {} }).skipped).toBe(true)
   })
 
   // The runner evaluates a predicate as `(config.flag, config)`, so a step may
   // reach the flag EITHER way and both have to resolve. `04c-journal` reads
-  // `context.flag.dry`, and against a context carrying only `config` it threw —
+  // `$.flag.dry`, and against a context carrying only `config` it threw —
   // so the plan could not grade the journal step itself.
   test('the flag is reachable through the context too, the way the runner passes it', () => {
     const ctx = { flag: { dry: true }, config: { deployConf: {} } }
-    const d = skipDecision('context.flag.dry', { flag: ctx.flag, context: ctx })
+    const d = skipDecision('$.flag.dry', { flag: ctx.flag, $: ctx })
     expect(d.skipped).toBe(true)
     expect(d.threw).toBeUndefined()
   })
 
   test("the real 04c-journal predicate grades rather than throwing", () => {
-    const pred = 'context.flag.dry || context.config.deployConf.journal === false'
+    const pred = '$.flag.dry || $.config.deployConf.journal === false'
     const ctx  = (flagDry, journal) =>
       ({ flag: { dry: flagDry }, config: { deployConf: { journal } } })
 
     const dry = ctx(true, undefined)
-    expect(skipDecision(pred, { flag: dry.flag, context: dry })).toMatchObject({ skipped: true })
+    expect(skipDecision(pred, { flag: dry.flag, $: dry })).toMatchObject({ skipped: true })
 
     const off = ctx(false, false)
-    expect(skipDecision(pred, { flag: off.flag, context: off })).toMatchObject({ skipped: true })
+    expect(skipDecision(pred, { flag: off.flag, $: off })).toMatchObject({ skipped: true })
 
     const on = ctx(false, undefined)
-    const d  = skipDecision(pred, { flag: on.flag, context: on })
+    const d  = skipDecision(pred, { flag: on.flag, $: on })
     expect(d.skipped).toBe(false)
     expect(d.threw).toBeUndefined()
   })
@@ -254,7 +254,7 @@ describe('the journal rows', () => {
     expect(transition.plan.formatVersion).toBe(PLAN_FORMAT)
     expect(transition.plan.steps.map(s => s.ordinal)).toEqual(steps.map(s => s.ordinal))
     expect(transition.plan.steps.map(s => s.name)).toEqual(steps.map(s => s.name))
-    expect(transition.plan.steps[2].skippedBy).toBe('!context.config.doApi')
+    expect(transition.plan.steps[2].skippedBy).toBe('!$.config.doApi')
   })
 
   test('a plan without a Release is refused rather than half-built', () => {
@@ -339,11 +339,11 @@ describe('what a person reads', () => {
   test('a skipped step is shown with the predicate that skipped it', () => {
     const out = render(RELEASE, { doApi: false })
     expect(out).toContain('2 of 3 would run')
-    expect(out).toContain('!context.config.doApi')
+    expect(out).toContain('!$.config.doApi')
   })
 
   test('a predicate that threw is reported as RUNNING, not as skipped', () => {
-    const steps = planSteps([{ name: '01-x', skip: 'nope.nothing' }], { flag: {}, context: {} })
+    const steps = planSteps([{ name: '01-x', skip: 'nope.nothing' }], { flag: {}, $: {} })
     const plan  = planTransition({ release: RELEASE, steps })
     const out   = formatPlan({ ...plan, release: RELEASE })
     expect(out).toContain('it will RUN')

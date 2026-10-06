@@ -4,10 +4,10 @@ description: Check SSH connectivity and audit required server dependencies
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host } = context.config
-const machine  = machineFor(context, host, context.config.serverPath)
+const { host } = $.config
+const machine  = machineFor($, host, $.config.serverPath)
 
 // ─── Is the machine reachable ─────────────────────────────────────────────────
 log.info(`Checking ${machine.describe()}`)
@@ -17,7 +17,7 @@ if (machine.reach()) {
   log.error(`Cannot reach ${host}`)
   log.info('Check that your SSH key is authorized on the server:')
   log.info(`  ssh-copy-id ${host}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -49,7 +49,7 @@ for (const dep of deps) {
   }
 }
 
-context.config.missingDeps = missing
+$.config.missingDeps = missing
 
 if (missing.length === 0) {
   log.success('All dependencies present')

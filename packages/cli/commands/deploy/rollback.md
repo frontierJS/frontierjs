@@ -28,7 +28,7 @@ flags:
     defaultValue: false
 # Not the directory's index, so it declares its own steps folder rather than
 # inheriting `_steps/` — the runtime attaches a bare `_steps/` to index.md only
-# (FJS-250). Setting context.config.stepsDir alone is not enough: that redirects
+# (FJS-250). Setting $.config.stepsDir alone is not enough: that redirects
 # a steps run, it does not start one.
 steps: _steps-rollback
 ---
@@ -37,7 +37,7 @@ Rolls back to the previous release. Defaults to full rollback (web + API).
 Use --web or --api to roll back only one part.
 
 ```js
-const target = resolveTarget(flag, context.git)
+const target = resolveTarget(flag, $.git)
 
 // ─── Resolve scope ────────────────────────────────────────────────────────────
 // --web and --api are additive filters. Neither flag = full rollback.
@@ -47,13 +47,13 @@ const doWeb  = both || flag.web
 const doApi  = both || flag.api
 
 // ─── Load config ──────────────────────────────────────────────────────────────
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
   log.info('Add a deploy block with server, user, and path to enable rollback')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -67,13 +67,13 @@ const host       = `${user}@${server}`
 const scopeLabel = both ? 'web + API' : doWeb ? 'web only' : 'API only'
 log.info(`Rolling back ${appId} on ${target} → ${host} (${scopeLabel})`)
 
-context.config.stepsDir   = '_steps-rollback'
-context.config.host       = host
-context.config.serverPath = path
-context.config.target     = target
-context.config.appId      = appId
-context.config.deployConf = deployConf
-context.config.doWeb      = doWeb
-context.config.doApi      = doApi
-context.config.startTime  = Date.now()
+$.config.stepsDir   = '_steps-rollback'
+$.config.host       = host
+$.config.serverPath = path
+$.config.target     = target
+$.config.appId      = appId
+$.config.deployConf = deployConf
+$.config.doWeb      = doWeb
+$.config.doApi      = doApi
+$.config.startTime  = Date.now()
 ```

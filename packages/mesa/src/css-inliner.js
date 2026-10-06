@@ -21,10 +21,11 @@
  *   const html = await inlineCSS(htmlString, cssString, options)
  */
 
-import * as csstree from 'css-tree'
 import { missingPeer } from './optional-peer.js'
 
-const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'inlineCSS'))
+const PEERS = 'happy-dom css-tree'
+const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'inlineCSS', PEERS))
+const csstree    = await import('css-tree').catch(missingPeer('css-tree', 'inlineCSS', PEERS))
 
 // ── Specificity ────────────────────────────────────────────────────────────────
 // Calculates [a, b, c] specificity from a selector string.

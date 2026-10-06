@@ -2,17 +2,17 @@
 title: 03-build-web
 description: Build web on the server and create versioned release
 optional: true
-skip: "!context.config.doWeb"
+skip: "!$.config.doWeb"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { commit, deployConf } = context.config
-const { host, path: serverPath } = context.config.web
+const { commit, deployConf } = $.config
+const { host, path: serverPath } = $.config.web
 const keepReleases = deployConf.web?.keep_releases ?? 3
 const releaseDir   = `${serverPath}/releases/${commit}`
-const machine      = machineFor(context, host, serverPath)
+const machine      = machineFor($, host, serverPath)
 
 // ─── Install dependencies ─────────────────────────────────────────────────────
 // Step 02 pulled new source but not new node_modules, and vite resolves imports
@@ -58,7 +58,7 @@ try { origin = apiOrigin(edgeNames(deployConf)) }
 catch (e) {
   if (!(e instanceof EdgeError)) throw e
   log.error(e.message)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -73,7 +73,7 @@ if (origin) {
   if (!String(carried ?? '').trim()) {
     log.error(`The web build does not contain ${origin}. Its sierra.config.js has to read VITE_API_URL for junction.url:`)
     log.error(`  url: import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : '')`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -110,6 +110,6 @@ log.info(`Merged previous release assets from ${assetDir}/ (stale client protect
 // Keep the last N releases on disk for rollback and the asset merge window above.
 machine.run(`ls -1dt ${serverPath}/releases/* 2>/dev/null | tail -n +${keepReleases + 1} | xargs rm -rf --`)
 
-context.config.releaseDir = releaseDir
+$.config.releaseDir = releaseDir
 log.success(`Web release ready → releases/${commit} (keeping ${keepReleases})`)
 ```

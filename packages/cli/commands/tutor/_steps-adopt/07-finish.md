@@ -5,19 +5,19 @@ runOnAbort: true
 ---
 
 ```js
-context.config.prompts?.close()
+$.config.prompts?.close()
 
-const ws  = context.config.ws
-const app = context.config.appDir
+const ws  = $.config.ws
+const app = $.config.appDir
 
-stopServers(context)
+stopServers($)
 
-if (context.config.abort) {
+if ($.config.abort) {
   if (app) log.info(`the app is still at ${app} — imported.lite and gaps.json are in it`)
   return
 }
 
-context.config.journal.settle('succeeded')
+$.config.journal.settle('succeeded')
 
 log.success('Lesson 13 done — an existing database, read, checked, served, and its debt written down')
 log.info('')
@@ -41,7 +41,7 @@ log.info('    fli check                the architecture rules, run against your 
 log.info('    ISSUES.md · DECISIONS.md · IDEAS/')
 log.info('')
 
-if (ws.kind === 'temp' && !context.flag.keep) {
+if (ws.kind === 'temp' && !$.flag.keep) {
   T.sweepWorkspace(ws, { keep: false })
   log.info('  (the temporary workspace was removed — pass --keep to hold on to it)')
 }

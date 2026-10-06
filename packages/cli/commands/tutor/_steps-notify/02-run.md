@@ -11,19 +11,19 @@ bell menu is a screen you already know how to build — `tutor:ui` builds one �
 and putting one here would test the screen instead of the send.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const api = await restartApi(context)
+const api = await restartApi($)
 
-if (!await must(context, api.up, {
+if (!await must($, api.up, {
   likely:    'the API exited on startup — the last of its output is below',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
   detail:    serverLog(api),
 })) return
 
-log.info(`  the API     http://127.0.0.1:${context.config.apiPort}/api`)
+log.info(`  the API     http://127.0.0.1:${$.config.apiPort}/api`)
 ```

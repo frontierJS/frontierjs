@@ -65,7 +65,7 @@ const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 
 const dir  = flag.dir || 'site'
-const root = context.paths.root
+const root = $.paths.root
 
 const surface = resolve(root, dir)
 const fresh   = !existsSync(surface)
@@ -148,6 +148,6 @@ log.info('')
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${join(surface, 'src/routes/index.mesa')}"` })
+  $.exec({ command: `${editor} "${join(surface, 'src/routes/index.mesa')}"` })
 }
 ```

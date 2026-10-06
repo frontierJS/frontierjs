@@ -41,7 +41,7 @@ Bump the version in `package.json` using `npm version`. By default also
 creates a git commit and tag — pass `--no-git` to skip that.
 
 ```js
-const root    = context.paths.root
+const root    = $.paths.root
 const before  = getVersion(root)
 const preid   = flag.preid ? `--preid=${flag.preid}` : ''
 const gitFlag = flag.git ? '' : '--no-git-tag-version'
@@ -55,7 +55,7 @@ if (flag.dry) {
   return
 }
 
-context.exec({ command: cmd })
+$.exec({ command: cmd })
 const after = getVersion(root)
 log.success(`${before} → ${after}`)
 if (flag.git) log.info('Git commit and tag created')

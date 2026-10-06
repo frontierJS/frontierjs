@@ -1,4 +1,4 @@
-// tty.test.js — `context.tty`: keys, the footer, aside, onExit, and the terminal
+// tty.test.js — `$.tty`: keys, the footer, aside, onExit, and the terminal
 // put back.
 //
 // The streams are fakes because a unit test has no terminal; what they fake is
@@ -127,6 +127,53 @@ describe('keys', () => {
   })
 })
 
+describe('line', () => {
+  test('a typed line answers, without its newline', async () => {
+    const t = terminal(), tty = make(t)
+    const asked = tty.line('Name?')
+    expect(t.text()).toContain('Name? ')
+    t.press('maid\n')
+    expect(await asked).toBe('maid')
+    await tty.close()
+  })
+
+  test('an empty answer is the default, which the prompt shows', async () => {
+    const t = terminal(), tty = make(t)
+    const asked = tty.line('Branch?', { default: 'main' })
+    expect(t.text()).toContain('Branch? (main) ')
+    t.press('\n')
+    expect(await asked).toBe('main')
+    await tty.close()
+  })
+
+  test('raw mode is handed back for the line and taken again after, so keys() still hears', async () => {
+    const t = terminal(), tty = make(t)
+    const first = tty.keys('Go?', { y: 'yes', n: 'no' })
+    expect(t.input.rawMode).toBe(true)
+    t.press('y')
+    expect(await first).toBe('y')
+    const line = tty.line('Why?')
+    await new Promise(r => setTimeout(r, 0))
+    expect(t.input.rawMode).toBe(false)
+    t.press('because\n')
+    expect(await line).toBe('because')
+    expect(t.input.rawMode).toBe(true)
+    const again = tty.keys('Sure?', { y: 'yes', n: 'no' })
+    t.press('n')
+    expect(await again).toBe('n')
+    await tty.close()
+  })
+
+  test('--yes answers the default, and no terminal refuses by name', async () => {
+    const t = terminal()
+    expect(await make(t, { yes: true }).line('Name?', { default: 'x' })).toBe('x')
+    expect(await make(t, { yes: true }).line('Name?')).toBe('')
+    const piped = make(terminal({ tty: false }))
+    await expect(piped.line('Name?')).rejects.toThrow('tty.line("Name?") needs a person at a terminal')
+    expect(piped.interactive).toBe(false)
+  })
+})
+
 describe('live', () => {
   test('output prints above the footer, which is redrawn after it', async () => {
     const t = terminal(), tty = make(t)
@@ -137,7 +184,7 @@ describe('live', () => {
   })
 
   // Bun's console writes to the fd and never calls process.stdout.write, and
-  // `log` and zx's `echo` are both console.log.
+  // `log` and `echo` are both console.log.
   test('console prints above the footer too', async () => {
     const t = terminal()
     const real = console.log
@@ -294,11 +341,11 @@ describe('Command() closes the tty', () => {
     return spawnSync('sh', ['-c', `(sleep 1; printf '\\003'; sleep 2) | script -qec "${process.execPath} ${runner}" /dev/null`],
       { encoding: 'utf8', timeout: 15000, env: { ...inherited, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...env } })
   }
-  const away = (mark) => `tty.onExit(async () => { await sleep(50); fs.writeFileSync(${JSON.stringify(mark)}, 'away') })`
+  const away = (mark) => `tty.onExit(async () => { await Bun.sleep(50); fs.writeFileSync(${JSON.stringify(mark)}, 'away') })`
 
-  // zx's chalk reads a level of 0 back as undefined, so `hex` and the chained
-  // `bg` forms colored every pipe, and named colors ignored NO_COLOR.
-  const PAINT = `echo(JSON.stringify([chalk.hex('#9fc612')('l'), chalk.bgGreen.black.bold(' N '), chalk.red('r'), chalk.level]))`
+  // A body's chalk is color.js's, and follows its rule: nothing styled into a
+  // pipe or under NO_COLOR, truecolor at a terminal.
+  const PAINT = `echo(JSON.stringify([chalk.hex('#9fc612')('l'), chalk.bold(chalk.red('r'))]))`
 
   test('a piped body gets a chalk that styles nothing', async () => {
     const file = command('paint', PAINT)
@@ -307,11 +354,11 @@ describe('Command() closes the tty', () => {
       `const { Command } = await import(${JSON.stringify(join(global.fliRoot, 'core/runtime.js'))})`,
       `await (await Command({ file: ${JSON.stringify(file)}, arg: [], flag: {} }))()`,
     ].join('\n')], { encoding: 'utf8', env: { ...process.env, FORCE_COLOR: '', NO_COLOR: '' } })
-    expect(r.stdout.trim()).toBe('["l"," N ","r",0]')
+    expect(r.stdout.trim()).toBe('["l","r"]')
   })
 
   test.skipIf(!hasScript)('NO_COLOR at a terminal turns chalk off; without it chalk colors', () => {
-    expect(inPty('paint-off', [PAINT], { NO_COLOR: '1' }).stdout).toContain('["l"," N ","r",0]')
+    expect(inPty('paint-off', [PAINT], { NO_COLOR: '1' }).stdout).toContain('["l","r"]')
     expect(inPty('paint-on', [PAINT]).stdout).toContain('\\u001b[38;2;159;198;18ml')
   })
 
@@ -323,9 +370,9 @@ describe('Command() closes the tty', () => {
     expect(r.stdout).not.toContain('not reached')
   })
 
-  test.skipIf(!hasScript)('Ctrl-C during context.stream runs onExit and exits 130', () => {
+  test.skipIf(!hasScript)('Ctrl-C during $.stream runs onExit and exits 130', () => {
     const mark = join(dir, 'away-stream')
-    const r = inPty('stream', [away(mark), `await context.stream({ command: 'sleep 5' })`, `echo('not reached')`])
+    const r = inPty('stream', [away(mark), `await $.stream({ command: 'sleep 5' })`, `echo('not reached')`])
     expect(r.status).toBe(130)
     expect(existsSync(mark) && readFileSync(mark, 'utf8')).toBe('away')
     expect(r.stdout).not.toContain('not reached')
@@ -333,7 +380,7 @@ describe('Command() closes the tty', () => {
 
   test.skipIf(!hasScript)('Ctrl-C inside aside is the child\'s, and the command carries on', () => {
     const r = inPty('aside', [
-      `try { await tty.aside(() => context.stream({ command: 'sleep 5' })) } catch (e) { echo('caught ' + e.message) }`,
+      `try { await tty.aside(() => $.stream({ command: 'sleep 5' })) } catch (e) { echo('caught ' + e.message) }`,
       `echo('carried on')`,
     ])
     expect(r.status).toBe(0)

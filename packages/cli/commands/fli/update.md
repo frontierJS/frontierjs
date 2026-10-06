@@ -109,7 +109,7 @@ if (!repoRoot) {
 
   log.info(`version:   ${before || '(unknown)'} at ${fliRoot}`)
   log.info(`installed by ${manager} — upgrading from npm`)
-  await context.exec({ command, dry: flag.dry })
+  await $.exec({ command, dry: flag.dry })
 
   if (flag.dry) return
 
@@ -127,7 +127,7 @@ log.info(`fli root:   ${fliRoot}`)
 log.info(`repo root:  ${repoRoot}`)
 
 // Pre-flight: warn on dirty fli source
-const dirtyFiles = context.git.status(fliRoot)
+const dirtyFiles = $.git.status(fliRoot)
 if (dirtyFiles.length > 0) {
   log.warn(`uncommitted changes in fli source (${dirtyFiles.length} file(s)):`)
   dirtyFiles.slice(0, 5).forEach((line) => log.warn(`  ${line}`))
@@ -136,12 +136,12 @@ if (dirtyFiles.length > 0) {
 }
 
 // Determine target branch
-const currentBranch = context.git.branch(repoRoot)
+const currentBranch = $.git.branch(repoRoot)
 const targetBranch = flag.branch || currentBranch
 
 if (flag.branch && flag.branch !== currentBranch) {
   log.info(`switching from ${currentBranch} → ${targetBranch}`)
-  await context.exec({
+  await $.exec({
     command: `cd ${repoRoot} && git checkout ${targetBranch}`,
     dry: flag.dry
   })
@@ -151,7 +151,7 @@ if (flag.branch && flag.branch !== currentBranch) {
 
 // Pull
 log.info('pulling latest...')
-await context.exec({
+await $.exec({
   command: `cd ${repoRoot} && git pull`,
   dry: flag.dry
 })
@@ -161,7 +161,7 @@ if (flag.install === false) {
   log.info('skipping bun install (--no-install)')
 } else {
   log.info('installing deps...')
-  await context.exec({
+  await $.exec({
     command: `cd ${repoRoot} && bun install`,
     dry: flag.dry
   })
@@ -177,7 +177,7 @@ if (flag.link === false) {
   log.info('fli already linked globally — code changes are live')
 } else {
   log.info('linking fli globally...')
-  await context.exec({
+  await $.exec({
     command: `cd ${fliRoot} && bun link`,
     dry: flag.dry
   })

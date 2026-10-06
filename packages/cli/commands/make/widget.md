@@ -70,7 +70,7 @@ const { port: portFor, projectIdFor } =
 
 const name = arg.name.replace(/\.mesa$/, '').replace(/^.*\//, '')
 const dir  = flag.dir || 'widgets'
-const root = context.paths.root
+const root = $.paths.root
 
 if (!isWidgetName(name)) {
   log.error(
@@ -166,6 +166,6 @@ log.info('')
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${target}"` })
+  $.exec({ command: `${editor} "${target}"` })
 }
 ```

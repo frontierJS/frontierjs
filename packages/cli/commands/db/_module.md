@@ -16,10 +16,10 @@ import { existsSync, readFileSync } from 'fs'
 // Reads DB_FILE from env to override the default (development.db / test.db).
 //
 // Usage in any db command:
-//   const { dbPath, dbFile, dbName, full, schema } = resolveDb(context, flag)
+//   const { dbPath, dbFile, dbName, full, schema } = resolveDb($, flag)
 
-const resolveDb = (context, flag) => {
-  const dbPath  = context.paths.db
+const resolveDb = ($, flag) => {
+  const dbPath  = $.paths.db
   const dbName  = flag.test ? 'test' : 'development'
   const dbFile  = process.env.DB_FILE || `${dbName}.db`
   const schema  = resolve(dbPath, 'schema.lite')
@@ -47,9 +47,9 @@ const resolveDb = (context, flag) => {
 //
 // Returns { command, describe } or null.
 
-const resolveSeeder = (context, { force = false } = {}) => {
-  const root   = context.paths.root
-  const dbDir  = context.paths.db
+const resolveSeeder = ($, { force = false } = {}) => {
+  const root   = $.paths.root
+  const dbDir  = $.paths.db
   const extra  = force ? ' --force' : ''
 
   // 1 · litestone.config.js — the declaration wins over any guess.
@@ -92,11 +92,11 @@ const resolveSeeder = (context, { force = false } = {}) => {
 // ─── requireSchema ────────────────────────────────────────────────────────────
 // Checks schema.lite exists before running a command.
 
-const requireSchema = (context) => {
-  const schemaPath = resolve(context.paths.db, 'schema.lite')
+const requireSchema = ($) => {
+  const schemaPath = resolve($.paths.db, 'schema.lite')
   if (!existsSync(schemaPath)) {
-    context.log.error(`schema.lite not found at ${schemaPath}`)
-    context.log.info('Create a schema.lite file in your db/ directory to get started')
+    $.log.error(`schema.lite not found at ${schemaPath}`)
+    $.log.info('Create a schema.lite file in your db/ directory to get started')
     return false
   }
   return true
@@ -105,11 +105,11 @@ const requireSchema = (context) => {
 // ─── requireDb ───────────────────────────────────────────────────────────────
 // Checks the db file exists before running a command.
 
-const requireDb = (context, flag) => {
-  const { full } = resolveDb(context, flag)
+const requireDb = ($, flag) => {
+  const { full } = resolveDb($, flag)
   if (!existsSync(full)) {
-    context.log.error(`Database not found: ${full}`)
-    context.log.info('Run: fli db:push  to create it from schema.lite')
+    $.log.error(`Database not found: ${full}`)
+    $.log.info('Run: fli db:push  to create it from schema.lite')
     return false
   }
   return true
@@ -118,8 +118,8 @@ const requireDb = (context, flag) => {
 // ─── litestone ───────────────────────────────────────────────────────────────
 // Returns the litestone CLI invocation for the current project.
 
-const litestone = (context) => {
-  return `cd ${JSON.stringify(context.paths.root)} && ${context.bin('litestone')}`
+const litestone = ($) => {
+  return `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')}`
 }
 </script>
 

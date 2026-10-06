@@ -35,13 +35,13 @@ takes any number of NULLs, so there is no duplicate to try) and a create-only
 policy (checked by one interpreter, so nothing independent can grade it).
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app = context.config.appDir
+const app = $.config.appDir
 
 // Roughly ten seconds: every mutant is a fresh database, and the template copy
 // is what makes that affordable at all.
@@ -54,7 +54,7 @@ const run = probe.command({
   name:     'the schema is mutated and the checks are graded',
 })
 
-if (!await must(context, run, {
+if (!await must($, run, {
   likely:    'litestone is not installed in this app, or the schema declares nothing to mutate',
   reproduce: `cd ${app} && bunx litestone mutate`,
 })) return
@@ -64,7 +64,7 @@ if (!await must(context, run, {
 const killed = /(\d+)\s*\/\s*(\d+)\s+graded/.exec(run.detail ?? '')
   ?? /(\d+)%\s+killed\s+\D*(\d+)\s*\/\s*(\d+)/.exec(run.detail ?? '')
 
-if (!await must(context, {
+if (!await must($, {
   ok:    /\d+ mutants/.test(run.detail ?? ''),
   name:  'there were mutants to grade',
   asked: 'at least one mutation of this schema',
@@ -90,5 +90,5 @@ log.info('  a survivor is a hole in the CHECKS, and it names itself')
 log.info('  the two expected ones are named in the output above')
 log.info('')
 
-remember(context, '05-mutate', { mutated: true })
+remember($, '05-mutate', { mutated: true })
 ```

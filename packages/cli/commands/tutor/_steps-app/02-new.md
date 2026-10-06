@@ -20,35 +20,35 @@ What lands is five directories and one file that matters more than the rest:
 Everything else in FrontierJS is derived from the first of those.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-const dir = appDir(context)
+const dir = appDir($)
 
 // `--restart` begins the lesson again, and the app on disk is part of what the
 // last run left: `fli new` refuses a directory that exists, so without this the
 // restart fails at step 2 every time. Inside the workspace by construction —
 // `appDir` joins the workspace to the app name and this removes nothing else.
 if (existsSync(dir)) {
-  if (!context.flag.restart) {
+  if (!$.flag.restart) {
     log.error([
       `${dir} already exists, and this step is what creates it`,
       `    ${'likely'.padEnd(10)}an earlier run got this far and its journal has been lost or cleared`,
-      `    ${'continue'.padEnd(10)}fli ${context.config.lesson} --workspace ${context.config.ws.dir} --restart`,
+      `    ${'continue'.padEnd(10)}fli ${$.config.lesson} --workspace ${$.config.ws.dir} --restart`,
     ].join('\n'))
-    context.config.abort = true
+    $.config.abort = true
     return
   }
   log.info(`--restart: removing the app the last run made at ${dir}`)
   rmSync(dir, { recursive: true, force: true })
 }
 
-log.info(`scaffolding ${context.config.app} from --source ${context.config.source}`)
+log.info(`scaffolding ${$.config.app} from --source ${$.config.source}`)
 
-context.exec({
-  command: `${context.fli} new ${context.config.app} --yes --auth --no-git --no-deploy --source ${context.config.source}`,
-  cwd:     context.config.ws.dir,
+$.exec({
+  command: `${$.fli} new ${$.config.app} --yes --auth --no-git --no-deploy --source ${$.config.source}`,
+  cwd:     $.config.ws.dir,
 })
 
 for (const [path, what] of [
@@ -56,11 +56,11 @@ for (const [path, what] of [
   ['api/index.ts',    'the API entry'],
   ['package.json',    'the manifest'],
 ]) {
-  if (!await must(context, probe.fileExists({ path: join(dir, path), name: `${path} — ${what}` }), {
+  if (!await must($, probe.fileExists({ path: join(dir, path), name: `${path} — ${what}` }), {
     likely:    'fli new did not finish — its output is above',
-    reproduce: `cd ${context.config.ws.dir} && fli new ${context.config.app} --yes --auth`,
+    reproduce: `cd ${$.config.ws.dir} && fli new ${$.config.app} --yes --auth`,
   })) return
 }
 
-remember(context, '02-new', { appDir: dir })
+remember($, '02-new', { appDir: dir })
 ```

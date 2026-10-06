@@ -307,7 +307,7 @@ echo(x)
     expect(result).not.toContain('```')
   })
 
-  test('wraps ```bash blocks in ZX await $`...`', () => {
+  test('wraps ```bash blocks in the shell tag, await $`...`', () => {
     const result = transformMarkdown(`---
 title: t
 ---
@@ -409,8 +409,10 @@ echo('hi')
 \`\`\`
 `)
     expect(src).toContain('export const metadata =')
-    expect(src).toContain('export async function run(context)')
-    expect(src).toContain("import 'zx/globals'")
+    expect(src).toContain('export async function run($)')
+    expect(src).toContain("import path from 'node:path'")
+    expect(src).toContain("import fs from 'node:fs'")
+    expect(src).not.toContain('zx')
   })
 
   test('metadata export contains correct title', () => {
@@ -520,7 +522,7 @@ echo('hi')
 
 describe('compileCli — echo context shadowing', () => {
 
-  test('compiled run() uses context.echo when provided', async () => {
+  test('compiled run() prints through $.echo', async () => {
     const md = `---
 title: test:echo
 description: echo test
@@ -551,7 +553,7 @@ echo('hello from command')
       try { unlinkSync(tmp) } catch {}
     }
 
-    // Run with context.echo set — should call our function, not globalThis.echo
+    // echo is destructured from $ in the head; nothing global is consulted
     const captured = []
     const ctx = {
       echo:    (...args) => captured.push(args.join(' ')),
@@ -569,7 +571,7 @@ echo('hello from command')
     expect(captured.some(t => t.includes('hello from command'))).toBe(true)
   })
 
-  test('compiled run() falls back to globalThis.echo when context.echo is undefined', async () => {
+  test('compiled run() has no echo but the one $ carries', async () => {
     const md = `---
 title: test:echo2
 description: echo fallback test
@@ -596,28 +598,11 @@ echo('fallback echo')
       try { ul2(tmp) } catch {}
     }
 
-    // Run without context.echo — globalThis.echo (ZX) should handle it
-    const globalCaptured = []
-    const prevEcho = globalThis.echo
-    globalThis.echo = (...args) => globalCaptured.push(args.join(' '))
-    try {
-      const ctx = {
-        echo:    undefined,
-        flag:    {},
-        arg:     {},
-        log:     { info: () => {}, success: () => {}, warn: () => {}, error: () => {}, dry: () => {}, debug: () => {} },
-        paths:   {},
-        env:     {},
-        exec:    () => {},
-        execute: () => {},
-        config:  {},
-      }
-      await mod.run(ctx)
-      expect(globalCaptured.some(t => t.includes('fallback echo'))).toBe(true)
-    } finally {
-      if (prevEcho !== undefined) globalThis.echo = prevEcho
-      else delete globalThis.echo
-    }
+    // No global is consulted: a $ carrying no echo is a TypeError at the call,
+    // which names the problem, rather than a print landing in the wrong run.
+    const ctx = { echo: undefined, flag: {}, arg: {}, log: {}, paths: {}, env: {}, config: {} }
+    await expect(mod.run(ctx)).rejects.toThrow(/echo is not a function/)
+    expect(globalThis.echo).toBeUndefined()
   })
 
 })
@@ -837,7 +822,7 @@ const fliRoot = global.fliRoot
 This is a paragraph between blocks.
 
 \`\`\`js
-const dirty = context.git.status(fliRoot)
+const dirty = $.git.status(fliRoot)
 \`\`\`
 
 ## Final step

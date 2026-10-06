@@ -20,7 +20,7 @@ const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/co
 const probe             = await import(new URL('file://' + global.fliRoot + '/core/probe.js'))
 const T                 = await import(new URL('file://' + global.fliRoot + '/core/tutor.js'))
 const B                 = await import(new URL('file://' + global.fliRoot + '/core/browser.js'))
-const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
+const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-$.js'))
 
 const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync, mkdtempSync } = await import('node:fs')
 const { join, resolve, basename } = await import('node:path')
@@ -53,10 +53,10 @@ const probeWorkBase = (candidates) => {
   } catch { return null }
 }
 
-const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
+const openTutor = ($, lesson, { ephemeral = [], base } = {}) => {
   const ws = T.tutorWorkspace({
-    name: context.flag.workspace,
-    tmp:  context.flag.tmp || !context.flag.workspace,
+    name: $.flag.workspace,
+    tmp:  $.flag.tmp || !$.flag.workspace,
     cwd:  process.cwd(),
     base,
     // Only where a base was asked for — that is the lesson which hands its
@@ -66,27 +66,27 @@ const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
 
   const verdict = T.journalVerdict(T.readJournal(ws.dir), { workspace: ws.dir })
   if (!verdict.ok) {
-    context.log.error(verdict.message)
-    context.config.abort = true
+    $.log.error(verdict.message)
+    $.config.abort = true
     return null
   }
 
-  context.config.ws     = ws
-  context.config.lesson = lesson
-  context.config.app    = ws.app
+  $.config.ws     = ws
+  $.config.lesson = lesson
+  $.config.app    = ws.app
   // ONE reader for the lesson, closed by the finish step. Not one per question:
   // a piped stdin is DRAINED by the first reader, so a second one waits on a
   // stream that has already ended and the lesson hangs after step 1.
-  context.config.prompts = createPrompts({ yes: Boolean(context.flag.yes) })
+  $.config.prompts = createPrompts({ yes: Boolean($.flag.yes) })
 
-  const recorder = T.makeRecorder({ workspace: ws.dir, lesson, context, ephemeral })
-  if (context.flag.restart) recorder.restart()
-  context.config.journal = recorder
+  const recorder = T.makeRecorder({ workspace: ws.dir, lesson, $, ephemeral })
+  if ($.flag.restart) recorder.restart()
+  $.config.journal = recorder
 
-  Object.assign(context.config, T.hydrate(recorder.doc(), lesson))
+  Object.assign($.config, T.hydrate(recorder.doc(), lesson))
 
-  context.vars.workspace = ws.dir
-  context.vars.app       = ws.app
+  $.vars.workspace = ws.dir
+  $.vars.app       = ws.app
 
   // Whatever this run starts, this run stops — on the way out of `--step N`,
   // which never reaches the teardown step, and on a Ctrl-C, which reaches
@@ -95,16 +95,16 @@ const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
   //
   // Synchronous by necessity: an `exit` handler cannot await, which is why
   // `stopServers` signals rather than waiting for anything.
-  if (!context.config.__trapped) {
-    context.config.__trapped = true
-    const off = () => stopServers(context)
+  if (!$.config.__trapped) {
+    $.config.__trapped = true
+    const off = () => stopServers($)
     process.once('exit', off)
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
       process.once(sig, () => { off(); process.exit(130) })
     }
   }
 
-  context.log.info(`workspace: ${ws.dir}${ws.kind === 'temp' ? ' (temporary)' : ''}`)
+  $.log.info(`workspace: ${ws.dir}${ws.kind === 'temp' ? ' (temporary)' : ''}`)
   return ws
 }
 
@@ -123,22 +123,22 @@ const openTutor = (context, lesson, { ephemeral = [], base } = {}) => {
 // The question is the step's own `description:`, so it is about THIS step
 // rather than a generic *continue?* — and it costs no second place to keep in
 // step with what the step does.
-const stepDescription = (context) => {
+const stepDescription = ($) => {
   try {
-    const head = readFileSync(context.filePath, 'utf8').split('\n---')[0]
+    const head = readFileSync($.filePath, 'utf8').split('\n---')[0]
     return head.match(/^description:\s*(.+)$/m)?.[1]?.trim() ?? null
   } catch { return null }
 }
 
-const narrate = async (context) => {
-  context.printPlan()
+const narrate = async ($) => {
+  $.printPlan()
 
   // `--step N` is a person naming the one thing they want done. Asking again is
   // asking twice.
-  if (context.flag.yes || context.flag.step) return true
+  if ($.flag.yes || $.flag.step) return true
 
-  const what = stepDescription(context)
-  const go   = await context.config.prompts.confirm(`  ${what ? `${what} —` : ''} ready?`, { default: true })
+  const what = stepDescription($)
+  const go   = await $.config.prompts.confirm(`  ${what ? `${what} —` : ''} ready?`, { default: true })
 
   if (go) return true
 
@@ -146,29 +146,29 @@ const narrate = async (context) => {
   // SUCCEEDED (`FJS-589`), so the lesson exits 0 — but the servers this run
   // started are still this run's to stop — and a `stop` skips the finish step
   // that would have done both that and closed the reader.
-  stopServers(context)
-  context.config.prompts.close()
+  stopServers($)
+  $.config.prompts.close()
 
-  // `context.log`, not `log`: this module's script runs outside a step body, and
+  // `$.log`, not `log`: this module's script runs outside a step body, and
   // the bare binding is only in scope inside one.
-  const where = context.flag.workspace ? ` --workspace ${context.flag.workspace}` : ''
-  context.log.info('')
-  context.log.info('  Stopped here — nothing after this step ran.')
-  if (context.config.appDir) context.log.info(`  The app is at ${context.config.appDir}`)
-  context.log.info(`  Pick up where you left off:  fli ${context.config.lesson}${where}`)
-  context.log.info('')
+  const where = $.flag.workspace ? ` --workspace ${$.flag.workspace}` : ''
+  $.log.info('')
+  $.log.info('  Stopped here — nothing after this step ran.')
+  if ($.config.appDir) $.log.info(`  The app is at ${$.config.appDir}`)
+  $.log.info(`  Pick up where you left off:  fli ${$.config.lesson}${where}`)
+  $.log.info('')
 
   // Named so the recorder can drop the row: a declined step must not be
   // remembered as done, or the resume skips the one place they stopped.
-  context.config.__declinedAt = basename(context.filePath, '.md')
-  context.config.stop = true
+  $.config.__declinedAt = basename($.filePath, '.md')
+  $.config.stop = true
   return false
 }
 
 // ─── must ─────────────────────────────────────────────────────────────────────
 //
 // The gate. A probe answers rather than throwing, and this is what turns a
-// `false` into a stop — through `context.config.abort`, which is the ruled
+// `false` into a stop — through `$.config.abort`, which is the ruled
 // refusal path (`FJS-589`): non-zero exit, no stack trace, and the teardown
 // step still runs so a lesson cannot leave a container behind.
 //
@@ -176,25 +176,25 @@ const narrate = async (context) => {
 // that knows what it just did. `continue` is filled in here, since where to
 // pick up from is the lesson's business rather than the step's.
 
-const must = async (context, result, diagnosis = {}) => {
+const must = async ($, result, diagnosis = {}) => {
   const r = await result
   if (r.ok) {
     // The NAME alone. A probe's `got` is written for a failure — "it does",
     // "it is free" — and reading it back on the success line says nothing twice.
-    context.log.success(r.name)
+    $.log.success(r.name)
     return true
   }
 
-  const lesson = context.config.lesson
-  const step   = context.config.__step
-  const where  = context.flag.workspace ? ` --workspace ${context.flag.workspace}` : ''
+  const lesson = $.config.lesson
+  const step   = $.config.__step
+  const where  = $.flag.workspace ? ` --workspace ${$.flag.workspace}` : ''
 
   // A step's own `detail` wins over the probe's, for the reason `likely` does:
   // the probe saw a status, the step knows it had just started a server and can
   // hand over its output.
   const shown = diagnosis.detail ? { ...r, detail: diagnosis.detail } : r
 
-  context.log.error(probe.formatFailure(shown, {
+  $.log.error(probe.formatFailure(shown, {
     ...diagnosis,
     continues: diagnosis.continues ?? [
       `fli ${lesson}${where}`,
@@ -202,7 +202,7 @@ const must = async (context, result, diagnosis = {}) => {
     ].filter(Boolean),
   }))
 
-  context.config.abort = true
+  $.config.abort = true
   return false
 }
 
@@ -217,21 +217,21 @@ const must = async (context, result, diagnosis = {}) => {
 // `from` may name one step or map each key to its own, because two missing
 // facts usually come from two different steps and pointing at one of them sends
 // the reader to a step that was never going to establish the other.
-const needs = (context, keys, { from } = {}) => {
-  const missing = keys.filter((k) => context.config[k] === undefined)
+const needs = ($, keys, { from } = {}) => {
+  const missing = keys.filter((k) => $.config[k] === undefined)
   if (!missing.length) return true
 
   const stepFor = (k) => (typeof from === 'string' ? from : from?.[k])
   const named   = [...new Set(missing.map(stepFor).filter(Boolean))]
-  const where   = context.flag.workspace ? ` --workspace ${context.flag.workspace}` : ''
+  const where   = $.flag.workspace ? ` --workspace ${$.flag.workspace}` : ''
 
-  context.log.error([
+  $.log.error([
     `this step needs ${missing.join(', ')}, and this workspace has not got that far yet`,
     named.length ? `    ${'earlier'.padEnd(10)}${named.join(', ')}` : null,
-    `    ${'continue'.padEnd(10)}fli ${context.config.lesson}${where}`,
+    `    ${'continue'.padEnd(10)}fli ${$.config.lesson}${where}`,
   ].filter(Boolean).join('\n'))
 
-  context.config.abort = true
+  $.config.abort = true
   return false
 }
 
@@ -240,7 +240,7 @@ const needs = (context, keys, { from } = {}) => {
 // it on a LATER run, where this one is replayed into a no-op and runs none of
 // its own code.
 
-const remember = (context, stepName, facts) => T.note(context, stepName, facts)
+const remember = ($, stepName, facts) => T.note($, stepName, facts)
 
 // ─── where a scaffold comes from ──────────────────────────────────────────────
 //
@@ -269,9 +269,9 @@ const defaultSource = () =>
 // the lesson's own prose makes both unreadable, and the diagnosis on a failed
 // health check needs somewhere to point.
 
-const startServer = async (context, { name, script, argv, cwd, env = {}, port, path = '/', ready = 40, logs, scheme = 'http', tls }) => {
-  context.config.__servers ??= {}
-  if (context.config.__servers[name]) return context.config.__servers[name]
+const startServer = async ($, { name, script, argv, cwd, env = {}, port, path = '/', ready = 40, logs, scheme = 'http', tls }) => {
+  $.config.__servers ??= {}
+  if ($.config.__servers[name]) return $.config.__servers[name]
 
   // `logs` is for a server started inside a directory the lesson does not own:
   // `tutor:fleet` runs basecamp out of the checkout, and a log written beside
@@ -295,7 +295,7 @@ const startServer = async (context, { name, script, argv, cwd, env = {}, port, p
   child.unref()
 
   const rec = { name, pid: child.pid, port, logPath, child }
-  context.config.__servers[name] = rec
+  $.config.__servers[name] = rec
 
   // The port answering is not the same as the app being up — vite binds before
   // it has a route table — so this asks the URL a caller would ask for.
@@ -311,13 +311,13 @@ const serverLog = (rec, lines = 6) => {
 
 // Stopping is by GROUP, and a failure to stop is not a failure of the lesson:
 // the process may already be gone, which is the ordinary case on a rerun.
-const stopServers = (context) => {
-  for (const page of context.config.__pages ?? []) { try { page.close() } catch {} }
-  context.config.__pages = []
-  for (const rec of Object.values(context.config.__servers ?? {})) {
+const stopServers = ($) => {
+  for (const page of $.config.__pages ?? []) { try { page.close() } catch {} }
+  $.config.__pages = []
+  for (const rec of Object.values($.config.__servers ?? {})) {
     try { process.kill(-rec.pid, 'SIGTERM') } catch { try { rec.child?.kill('SIGTERM') } catch {} }
   }
-  context.config.__servers = {}
+  $.config.__servers = {}
 }
 
 // ─── the browser ──────────────────────────────────────────────────────────────
@@ -330,9 +330,9 @@ const stopServers = (context) => {
 // about the app — so a lesson asks before it opens anything.
 const haveChrome = () => B.findChrome() !== null
 
-const openPage = async (context, path = '/') => {
-  const page = await B.openPage({ url: `http://127.0.0.1:${context.config.webPort}${path}` })
-  ;(context.config.__pages ??= []).push(page)
+const openPage = async ($, path = '/') => {
+  const page = await B.openPage({ url: `http://127.0.0.1:${$.config.webPort}${path}` })
+  ;($.config.__pages ??= []).push(page)
   return page
 }
 
@@ -362,25 +362,25 @@ const clickText = (text, within = '') =>
 // a signed-in page for the browser ones. A step run on its own (`--step 5`) has
 // neither, and the token cannot come out of the journal: a session is not a fact
 // a file should hold. So the address is minted per run rather than remembered.
-const ensureCaller = async (context, page) => {
-  if (!context.config.userToken) {
+const ensureCaller = async ($, page) => {
+  if (!$.config.userToken) {
     const who = `ui-${Date.now()}@frontier.invalid`
-    const reg = await registerAccount(context, { email: who, password: 'correct horse battery', name: 'Ada' })
+    const reg = await registerAccount($, { email: who, password: 'correct horse battery', name: 'Ada' })
     if (!reg.ok) return reg
-    context.config.userToken = reg.json.token
-    context.config.uiEmail   = who
+    $.config.userToken = reg.json.token
+    $.config.uiEmail   = who
   }
-  if (context.config.__signedIn) return { ok: true, name: 'already signed in', asked: 'a session', got: 'one' }
-  const io = await signInPage(context, page, context.config.uiEmail, 'correct horse battery')
-  if (io.ok) context.config.__signedIn = true
+  if ($.config.__signedIn) return { ok: true, name: 'already signed in', asked: 'a session', got: 'one' }
+  const io = await signInPage($, page, $.config.uiEmail, 'correct horse battery')
+  if (io.ok) $.config.__signedIn = true
   return io
 }
 
 // Sign in through the app's own login page. Over HTTP would be quicker and
 // would prove less: the token has to end up where the BROWSER's client reads
 // it, and that is the half a fetch cannot stand in for.
-const signInPage = async (context, page, email, password) => {
-  await page.goto(`http://127.0.0.1:${context.config.webPort}/login/`)
+const signInPage = async ($, page, email, password) => {
+  await page.goto(`http://127.0.0.1:${$.config.webPort}/login/`)
   await probe.pageEval({ page, ask: `!!document.querySelector('input[type=email]')`, name: 'the sign-in form is up' })
 
   // Standing on the login page is the one moment a lesson knows for certain
@@ -424,11 +424,11 @@ const signInPage = async (context, page, email, password) => {
   })
 }
 
-const stopServer = (context, name) => {
-  const rec = context.config.__servers?.[name]
+const stopServer = ($, name) => {
+  const rec = $.config.__servers?.[name]
   if (!rec) return
   try { process.kill(-rec.pid, 'SIGTERM') } catch { try { rec.child?.kill('SIGTERM') } catch {} }
-  delete context.config.__servers[name]
+  delete $.config.__servers[name]
 }
 
 // A step run on its own — `--step 8` — has no servers, because the step that
@@ -436,15 +436,15 @@ const stopServer = (context, name) => {
 // missing PROCESS, so a step that talks to the API asks for it rather than
 // assuming: if something is already answering health it is used as it stands,
 // which is also what a person with the app open in another terminal wants.
-const ensureApi = async (context) => {
-  const port    = context.config.apiPort
+const ensureApi = async ($) => {
+  const port    = $.config.apiPort
   const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/api/health`, name: 'the API is up' })
   if (already.ok) return already
 
-  const api = await startServer(context, {
+  const api = await startServer($, {
     name:   'api',
     script: 'start',
-    cwd:    context.config.appDir,
+    cwd:    $.config.appDir,
     env:    { PORT: String(port) },
     port,
     path:   '/api/health',
@@ -455,16 +455,16 @@ const ensureApi = async (context) => {
 // The web server's half of the same problem. `--step 9` reaches a lesson whose
 // dev server is not running, and the Mesa step asks that server to compile a
 // file — so it is the process, not a fact, and `needs()` cannot cover it.
-const ensureWeb = async (context) => {
-  const port    = context.config.webPort
+const ensureWeb = async ($) => {
+  const port    = $.config.webPort
   const already = await probe.httpStatus({ url: `http://127.0.0.1:${port}/`, name: 'the web server is up' })
   if (already.ok) return already
 
-  const web = await startServer(context, {
+  const web = await startServer($, {
     name:   'web',
     script: 'dev:web',
-    cwd:    context.config.appDir,
-    env:    { WEB_PORT: String(port), FLI_PORT_BE: String(context.config.apiPort) },
+    cwd:    $.config.appDir,
+    env:    { WEB_PORT: String(port), FLI_PORT_BE: String($.config.apiPort) },
     port,
     path:   '/',
   })
@@ -475,25 +475,25 @@ const ensureWeb = async (context) => {
 // has to put the process through it again or the app goes on serving the shape
 // it started with — and the request that follows is refused for a model the
 // file plainly declares.
-const restartApi = async (context) => {
-  stopServer(context, 'api')
+const restartApi = async ($) => {
+  stopServer($, 'api')
   await new Promise((r) => setTimeout(r, 700))
-  return startServer(context, {
+  return startServer($, {
     name:   'api',
     script: 'start',
-    cwd:    context.config.appDir,
-    env:    { PORT: String(context.config.apiPort) },
-    port:   context.config.apiPort,
+    cwd:    $.config.appDir,
+    env:    { PORT: String($.config.apiPort) },
+    port:   $.config.apiPort,
     path:   '/api/health',
   })
 }
 
-const apiUrl = (context, path = '') => `http://127.0.0.1:${context.config.apiPort}/api${path}`
+const apiUrl = ($, path = '') => `http://127.0.0.1:${$.config.apiPort}/api${path}`
 
 // The control plane of `tutor:fleet` is a different app and mounts its services
 // at the root — junction's default `apiPrefix` is '' and basecamp keeps it, so
 // `/api` here would be a 404 on every call.
-const hubUrl = (context, path = '') => `http://127.0.0.1:${context.config.apiPort}${path}`
+const hubUrl = ($, path = '') => `http://127.0.0.1:${$.config.apiPort}${path}`
 
 // ─── the fleet's two processes ────────────────────────────────────────────────
 //
@@ -503,23 +503,23 @@ const hubUrl = (context, path = '') => `http://127.0.0.1:${context.config.apiPor
 // — reaches neither. Two environments written twice is how the lesson and the
 // resume end up disagreeing about which secret is the fleet's.
 
-const startHub = (context) => startServer(context, {
+const startHub = ($) => startServer($, {
   name:   'basecamp',
   script: 'start',
-  cwd:    context.config.basecamp,
-  logs:   join(context.config.ws.dir, '.tutor'),
+  cwd:    $.config.basecamp,
+  logs:   join($.config.ws.dir, '.tutor'),
   env:    {
     NODE_ENV:       'development',
-    PORT:           String(context.config.apiPort),
-    DATABASE_URL:   join(context.config.ws.dir, 'basecamp.db'),
+    PORT:           String($.config.apiPort),
+    DATABASE_URL:   join($.config.ws.dir, 'basecamp.db'),
     // Both databases have to be redirected, not one. The audit trail is a
     // second `database` block with a RELATIVE path, so it follows the process
     // CWD — which is the checkout — and a lesson that set only `DATABASE_URL`
     // writes its rows into the developer's own trail (`FJS-633`).
-    AUDIT_PATH:     join(context.config.ws.dir, 'audit'),
-    OUTPOST_SECRET: context.config.secret,
+    AUDIT_PATH:     join($.config.ws.dir, 'audit'),
+    OUTPOST_SECRET: $.config.secret,
   },
-  port:   context.config.apiPort,
+  port:   $.config.apiPort,
   path:   '/setup/probe',
 })
 
@@ -528,57 +528,57 @@ const startHub = (context) => startServer(context, {
 // certificate it enrolled with and a new one is a machine Basecamp refuses.
 // It is the PEM the enroll exchange carries and the CA every probe of the port
 // trusts; the hostname check is off because the pin is the fingerprint.
-const outpostTls = async (context) => {
-  const { ensureCert } = await import(new URL('file://' + join(context.config.outpost, 'src', 'cert.js')))
-  const made = ensureCert(join(context.config.ws.dir, 'outpost-tls'))
+const outpostTls = async ($) => {
+  const { ensureCert } = await import(new URL('file://' + join($.config.outpost, 'src', 'cert.js')))
+  const made = ensureCert(join($.config.ws.dir, 'outpost-tls'))
   return { ...made, pin: { ca: made.cert, checkServerIdentity: () => undefined } }
 }
 
-const outpostUrl = (context, path = '') => `https://127.0.0.1:${context.config.outpostPort}${path}`
+const outpostUrl = ($, path = '') => `https://127.0.0.1:${$.config.outpostPort}${path}`
 
-const startOutpost = async (context) => {
-  const tls = await outpostTls(context)
-  return startServer(context, {
+const startOutpost = async ($) => {
+  const tls = await outpostTls($)
+  return startServer($, {
     name:   'outpost',
     script: 'start',
-    cwd:    context.config.outpost,
-    logs:   join(context.config.ws.dir, '.tutor'),
+    cwd:    $.config.outpost,
+    logs:   join($.config.ws.dir, '.tutor'),
     scheme: 'https',
     tls:    tls.pin,
     env:    {
-      OUTPOST_SERVER_ID:  context.config.serverId,
+      OUTPOST_SERVER_ID:  $.config.serverId,
       // The machine's OWN secret, learned by enrolling, and never the fleet-wide
       // one. Basecamp stopped accepting `OUTPOST_SECRET` as an authentication
       // input when per-machine credentials landed — one string every machine
       // holds means a compromised box can forge any other machine's check-in —
       // and this lesson went on handing over the fleet key, so every heartbeat
       // was answered 401 and the lesson died at step 5 (`FJS-1041`).
-      OUTPOST_SECRET:     context.config.outpostSecret,
-      BASECAMP_URL:       hubUrl(context),
-      OUTPOST_PORT:       String(context.config.outpostPort),
-      OUTPOST_PUBLIC_URL: outpostUrl(context),
+      OUTPOST_SECRET:     $.config.outpostSecret,
+      BASECAMP_URL:       hubUrl($),
+      OUTPOST_PORT:       String($.config.outpostPort),
+      OUTPOST_PUBLIC_URL: outpostUrl($),
       OUTPOST_TLS_CERT:   tls.certPath,
       OUTPOST_TLS_KEY:    tls.keyPath,
-      OUTPOST_WORK_DIR:   join(context.config.ws.dir, 'outpost-work'),
+      OUTPOST_WORK_DIR:   join($.config.ws.dir, 'outpost-work'),
     },
-    port:   context.config.outpostPort,
+    port:   $.config.outpostPort,
     path:   '/health',
   })
 }
 
 // Anything already answering is used as it stands, which is also what somebody
 // with the control plane open in another terminal wants.
-const ensureFleet = async (context, { outpost = false } = {}) => {
-  const up = await probe.httpStatus({ url: hubUrl(context, '/setup/probe'), name: 'the control plane is up' })
+const ensureFleet = async ($, { outpost = false } = {}) => {
+  const up = await probe.httpStatus({ url: hubUrl($, '/setup/probe'), name: 'the control plane is up' })
   if (!up.ok) {
-    const hub = await startHub(context)
+    const hub = await startHub($)
     if (!hub.up.ok) return { ...hub.up, detail: serverLog(hub) }
   }
   if (!outpost) return up.ok ? up : { ok: true, name: 'the control plane is up' }
 
-  const machine = await probe.httpStatus({ url: outpostUrl(context, '/health'), tls: (await outpostTls(context)).pin, name: 'the outpost is up' })
+  const machine = await probe.httpStatus({ url: outpostUrl($, '/health'), tls: (await outpostTls($)).pin, name: 'the outpost is up' })
   if (machine.ok) return machine
-  const started = await startOutpost(context)
+  const started = await startOutpost($)
   return started.up.ok ? started.up : { ...started.up, detail: serverLog(started) }
 }
 
@@ -589,10 +589,10 @@ const ensureFleet = async (context, { outpost = false } = {}) => {
 // the file back unchanged — a rewrite that silently missed leaves the lesson
 // asserting the old behavior and blaming the framework for it.
 
-const schemaFile = (context) => join(context.config.appDir, 'db', 'schema.lite')
+const schemaFile = ($) => join($.config.appDir, 'db', 'schema.lite')
 
-const editSchema = (context, from, to) => {
-  const path = schemaFile(context)
+const editSchema = ($, from, to) => {
+  const path = schemaFile($)
   const src  = readFileSync(path, 'utf8')
   // *Already done* means there is nothing LEFT to change, and that is a question
   // about `from` rather than about `to`. Asking whether the target text appears
@@ -615,8 +615,8 @@ const editSchema = (context, from, to) => {
 
 // A field added to `model Note`, which is what `tutor:change` edits three times.
 // Refuses rather than writing the file back unchanged, for `editSchema`'s reason.
-const addNoteField = (context, line) => {
-  const path = schemaFile(context)
+const addNoteField = ($, line) => {
+  const path = schemaFile($)
   const src  = readFileSync(path, 'utf8')
   const name = line.trim().split(/\s+/)[0]
 
@@ -640,8 +640,8 @@ const addNoteField = (context, line) => {
   return { ok: true }
 }
 
-const pushSchema = (context) =>
-  context.exec({ command: `${context.fli} db:push`, cwd: context.config.appDir })
+const pushSchema = ($) =>
+  $.exec({ command: `${$.fli} db:push`, cwd: $.config.appDir })
 
 // An account, and the token it answers with. Two callers is the whole shape of
 // this lesson — a refusal proves nothing without an otherwise identical call
@@ -658,8 +658,8 @@ const pushSchema = (context) =>
 // The token rides the UPGRADE, never a frame: the identity of a connection is
 // established once, when it is made, and a frame that could name its own
 // principal would be a frame that could name anybody's.
-const openSocket = async (context, { token, channels, settleMs = 250 }) => {
-  const url    = `ws://127.0.0.1:${context.config.apiPort}/ws`
+const openSocket = async ($, { token, channels, settleMs = 250 }) => {
+  const url    = `ws://127.0.0.1:${$.config.apiPort}/ws`
   const frames = []
   const ws     = new WebSocket(url, token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
 
@@ -694,15 +694,15 @@ const openSocket = async (context, { token, channels, settleMs = 250 }) => {
 // rather than in a step: steps 5 and 6 open the same two clients against the
 // same publish, and two sockets built twice is how a lesson ends up proving
 // that two DIFFERENT connections behave differently.
-const bothSockets = async (context, { channels = ['notes'] } = {}) => {
-  const signedIn  = await openSocket(context, { token: context.config.userToken, channels })
-  const anonymous = await openSocket(context, { token: null, channels })
+const bothSockets = async ($, { channels = ['notes'] } = {}) => {
+  const signedIn  = await openSocket($, { token: $.config.userToken, channels })
+  const anonymous = await openSocket($, { token: null, channels })
 
   const close = () => { try { signedIn.ws.close() } catch {} ; try { anonymous.ws.close() } catch {} }
 
   if (!signedIn.ok || !anonymous.ok) {
     close()
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'two sockets are connected',
       asked: 'a connected frame on each',
@@ -728,34 +728,34 @@ const bothSockets = async (context, { channels = ['notes'] } = {}) => {
   }
 }
 
-const createNote = (context, title) => probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+const createNote = ($, title) => probe.httpJson({
+  url:      apiUrl($, '/notes'),
   method:   'POST',
-  headers:  { 'content-type': 'application/json', authorization: `Bearer ${context.config.userToken}` },
+  headers:  { 'content-type': 'application/json', authorization: `Bearer ${$.config.userToken}` },
   body:     JSON.stringify({ title, body: 'written over HTTP', done: false }),
   expect:   (j) => typeof j.id !== 'undefined',
   describe: 'the note was created',
   name:     `POST /api/notes — ${title}`,
 })
 
-// Running `fli` and reading the ANSWER rather than the exit code. `context.exec`
+// Running `fli` and reading the ANSWER rather than the exit code. `$.exec`
 // is a shell and prints; a lesson that has to branch on a verdict needs the
 // document. Never a bare `fli` — that is whatever global install the machine
 // happens to have, which is not the build under test.
-// The argv form of the same rule `context.fli` states: the RUNNING cli, never a
-// bare `fli`. `startServer({ argv })` takes this; `context.fli` is the shell
-// form for `context.exec`.
+// The argv form of the same rule `$.fli` states: the RUNNING cli, never a
+// bare `fli`. `startServer({ argv })` takes this; `$.fli` is the shell
+// form for `$.exec`.
 const fliArgv = (...args) => [process.execPath, join(global.fliRoot, 'bin', 'fli.js'), ...args]
 
-const fliJson = (context, args, cwd) => {
+const fliJson = ($, args, cwd) => {
   const r = probe.runArgv(process.execPath, [join(global.fliRoot, 'bin', 'fli.js'), ...args], { cwd })
   let json = null
   try { json = JSON.parse(r.stdout) } catch {}
   return { code: r.code, json, stdout: r.stdout, stderr: r.stderr }
 }
 
-const signIn = (context, email, password) => probe.httpJson({
-  url:      apiUrl(context, '/auth/login'),
+const signIn = ($, email, password) => probe.httpJson({
+  url:      apiUrl($, '/auth/login'),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
   body:     JSON.stringify({ email, password }),
@@ -764,8 +764,8 @@ const signIn = (context, email, password) => probe.httpJson({
   name:     `sign in as ${email}`,
 })
 
-const registerAccount = (context, { email, password, name }) => probe.httpJson({
-  url:      apiUrl(context, '/auth/register'),
+const registerAccount = ($, { email, password, name }) => probe.httpJson({
+  url:      apiUrl($, '/auth/register'),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
   body:     JSON.stringify({ email, password, name }),
@@ -779,24 +779,24 @@ const registerAccount = (context, { email, password, name }) => probe.httpJson({
 // on the gate it is teaching. Signing both callers in again costs two requests
 // and only happens for a standalone step, because auth rate-limits login and a
 // full run would spend that budget for nothing.
-const refreshTokens = async (context) => {
-  if (!context.flag.step) return true
-  const { user, admin, password } = context.config
+const refreshTokens = async ($) => {
+  if (!$.flag.step) return true
+  const { user, admin, password } = $.config
   if (!user || !admin || !password) return true
 
   // Signing in is an HTTP request, so the API has to be up before the tokens
   // can be refreshed — a standalone step has started nothing.
-  const up = await ensureApi(context)
-  if (!up.ok) return must(context, up, {
+  const up = await ensureApi($)
+  if (!up.ok) return must($, up, {
     likely: 'nothing is answering on the API port — run this lesson from the start',
   })
 
   for (const [email, key] of [[user, 'userToken'], [admin, 'adminToken']]) {
-    const r = await signIn(context, email, password)
-    if (!r.ok) return must(context, r, {
+    const r = await signIn($, email, password)
+    if (!r.ok) return must($, r, {
       likely: 'the accounts step 3 made are gone — run the lesson from the start',
     })
-    context.config[key] = r.json.token
+    $.config[key] = r.json.token
   }
   return true
 }
@@ -842,7 +842,7 @@ const dockerSweep = (container, appName) => {
 }
 
 // The app directory of the lesson in progress.
-const appDir = (context) => join(context.config.ws.dir, context.config.app)
+const appDir = ($) => join($.config.ws.dir, $.config.app)
 </script>
 
 Eight lessons, in order. Each one leaves an app you can open.

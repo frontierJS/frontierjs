@@ -27,26 +27,26 @@ acting under* — the same request with a workspace the caller is not a member o
 is a different answer.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['token', 'workspaceId', 'secret', 'basecamp'], {
+if (!needs($, ['token', 'workspaceId', 'secret', 'basecamp'], {
   from: { token: '03-setup', workspaceId: '03-setup', secret: '02-basecamp', basecamp: '01-machine' },
 })) return
 
-if (!await must(context, await ensureFleet(context), {
+if (!await must($, await ensureFleet($), {
   likely: 'the control plane is not answering — run this lesson from the start',
 })) return
 
 const as = {
   'content-type':   'application/json',
-  authorization:    `Bearer ${context.config.token}`,
-  'x-workspace-id': context.config.workspaceId,
+  authorization:    `Bearer ${$.config.token}`,
+  'x-workspace-id': $.config.workspaceId,
 }
 
 const created = await probe.httpJson({
-  url:      hubUrl(context, '/servers'),
+  url:      hubUrl($, '/servers'),
   method:   'POST',
   headers:  as,
   body:     JSON.stringify({ name: 'tutorial-box', region: 'custom', ipAddress: '127.0.0.1' }),
@@ -55,7 +55,7 @@ const created = await probe.httpJson({
   name:     'the machine exists as a row, at pending',
 })
 
-if (!await must(context, created, {
+if (!await must($, created, {
   likely: 'the create was refused — an owner may create a server, so this is a standing problem',
 })) return
 
@@ -65,8 +65,8 @@ const serverId = created.json.id
 // decides a machine is reachable by asking Conduit for a target — never by
 // reading the row — so a run that had one left over from an earlier attempt
 // would show step 5 passing for the wrong reason.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, '/conduit-targets'),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, '/conduit-targets'),
   headers:  as,
   expect:   (j) => !(j.data ?? []).some((t) => t.id === `outpost:${serverId}`),
   describe: 'no way to reach this machine',
@@ -77,5 +77,5 @@ if (!await must(context, await probe.httpJson({
 
 log.info(`  server ${serverId}`)
 
-remember(context, '04-server', { serverId })
+remember($, '04-server', { serverId })
 ```

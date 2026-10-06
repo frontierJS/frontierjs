@@ -310,7 +310,7 @@ const write = (path, content, label) => {
 
 // ─── 1. schema.lite ───────────────────────────────────────────────────────────
 
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 if (flag['skip-schema']) {
   log.info('Skipping schema.lite — assumed to already contain model ' + modelName)
@@ -342,7 +342,7 @@ if (flag['skip-schema']) {
 // name from the filename, so leads.service.ts is what makes /api/leads exist.
 
 write(
-  resolve(context.paths.api, `src/services/${plural}.service.ts`),
+  resolve($.paths.api, `src/services/${plural}.service.ts`),
   makeServiceFile(modelName, plural, pascalPlural),
   'service'
 )
@@ -356,7 +356,7 @@ if (flag.resource) {
   // accessor. Where the plural is irregular that puts the irregularity in the
   // filename, where it is visible.
   write(
-    resolve(context.paths.webResources, `${modelName}.mesa`),
+    resolve($.paths.webResources, `${modelName}.mesa`),
     resourceFile(modelName, plural),
     'resource'
   )
@@ -365,7 +365,7 @@ if (flag.resource) {
 // ─── 4. Routes ────────────────────────────────────────────────────────────────
 
 if (!skipRoutes) {
-  const routesBase = resolve(context.paths.webPages, plural)
+  const routesBase = resolve($.paths.webPages, plural)
 
   const pages = routePages(modelName, plural, fields)
 
@@ -391,6 +391,6 @@ if (!flag.dry && created.length) {
 }
 
 if (flag.open && created.length && !flag.dry) {
-  for (const f of created) context.exec({ command: `${editor} "${f}"` })
+  for (const f of created) $.exec({ command: `${editor} "${f}"` })
 }
 ```

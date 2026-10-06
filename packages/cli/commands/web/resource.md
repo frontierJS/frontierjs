@@ -57,7 +57,7 @@ if (!/^[A-Z]/.test(model)) {
 // `model Order` and `db.order`. Naming the file for the service put every
 // irregular plural in a place nothing reads, and `fli check`'s own
 // `resource-file-name` rule refused what this command had just written.
-const filePath = resolve(context.paths.webResources, model + '.mesa')
+const filePath = resolve($.paths.webResources, model + '.mesa')
 
 if (flag.dry) {
   log.dry(`Would create: ${filePath}`)
@@ -69,7 +69,7 @@ if (existsSync(filePath)) {
   return
 }
 
-mkdirSync(context.paths.webResources, { recursive: true })
+mkdirSync($.paths.webResources, { recursive: true })
 writeFileSync(filePath, resourceFile(model, service), 'utf8')
 log.success(`Created ${filePath}`)
 
@@ -80,5 +80,5 @@ echo('')
 echo(`  It calls the '${service}' service, so api/src/services/${service}.service.ts must register it.`)
 echo('')
 
-if (flag.open) { const e = process.env.EDITOR || 'vi'; context.exec({ command: `${e} "${filePath}"` }) }
+if (flag.open) { const e = process.env.EDITOR || 'vi'; $.exec({ command: `${e} "${filePath}"` }) }
 ```

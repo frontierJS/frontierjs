@@ -145,8 +145,8 @@ async function main() {
 
   // ── Frontmatter ───────────────────────────────────────────────────────────
   //
-  // A `---` block at the top of a component is route metadata and Sierra reads
-  // it as real YAML (js-yaml), so it is an embedded language and not a slab of
+  // A `---` block at the top of a component is route metadata, read as a YAML
+  // subset with real nesting, so it is an embedded language and not a slab of
   // punctuation. Both parsers anchor at the START of the file, so the negative
   // controls are the rule: a `---` further down is markup, not a second block.
 

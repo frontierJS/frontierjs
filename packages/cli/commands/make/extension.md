@@ -57,7 +57,7 @@ const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 
 const dir  = flag.dir || 'extension'
-const root = context.paths.root
+const root = $.paths.root
 const surface = join(root, dir)
 const fresh   = !existsSync(surface)
 const appName = basename(root)
@@ -127,6 +127,6 @@ log.info('')
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${join(surface, 'src/harbor/index.js')}"` })
+  $.exec({ command: `${editor} "${join(surface, 'src/harbor/index.js')}"` })
 }
 ```

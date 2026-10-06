@@ -58,7 +58,7 @@ if (refusal) {
 }
 
 const { routesDir } = getConfig()
-const outputPath = shortcuts.shortcutPath({ root: context.paths.root, routesDir, name })
+const outputPath = shortcuts.shortcutPath({ root: $.paths.root, routesDir, name })
 
 if (existsSync(outputPath)) {
   log.error(`${shortcuts.shortcutTitle(name)} already exists at ${outputPath}`)

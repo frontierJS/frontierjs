@@ -44,7 +44,7 @@ import { resolve } from 'path'
 const { ask, scoreQuestions, INTENTS } = await import(resolve(global.fliRoot, 'core/ask.js'))
 const { QUESTIONS }                    = await import(resolve(global.fliRoot, 'core/questions.js'))
 
-const root = await context.wsRoot()
+const root = await $.wsRoot()
 if (!root) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 const tok = (b) => Math.round(b / 4)

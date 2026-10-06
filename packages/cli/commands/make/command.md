@@ -160,7 +160,7 @@ if (flag._spec) {
   const [namespace, name] = spec.title.split(':')
 
   const outputPath = resolve(
-    context.paths.cli,
+    $.paths.cli,
     'src/routes',
     namespace,
     `${name}.md`
@@ -211,7 +211,7 @@ p.close()
 
 // ─── Step 5: resolve output path and write ────────────────────────────────────
 const outputPath = resolve(
-  context.paths.cli,
+  $.paths.cli,
   'src/routes',
   namespace,
   `${name}.md`

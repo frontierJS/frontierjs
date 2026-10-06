@@ -6,6 +6,9 @@
 //   keys(q, choices)  one keypress, no Enter. Raw mode stays on from the first
 //                     call to close: switched per prompt, keys typed between
 //                     two prompts echo onto the screen.
+//   line(q, {default}) one typed line, Enter ends it. Raw mode is handed back
+//                     for the line and taken again after, so a keys() that
+//                     follows still hears its key (FJS-1406).
 //   live(render)      one footer line. stdout, stderr and console are patched
 //                     while it shows, so echo, log and console print ABOVE it;
 //                     every write would otherwise land on the footer's own line.
@@ -26,11 +29,12 @@
 //
 // No terminal — a pipe, or `fli gui`, whose stdin is the terminal it was started
 // from with nobody at it for this run — and live, title and aside add nothing,
-// while keys refuses by name, or answers a question with its first choice under
-// `yes`. `interactive` is how a command asks first.
+// while keys and line refuse by name, or answer under `yes` with the first
+// choice and the default. `interactive` is how a command asks first.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { stripVTControlCharacters } from 'node:util'
+import { createInterface } from 'node:readline'
 import { chalk } from './color.js'
 
 const ERASE    = '\r\x1b[2K'
@@ -254,8 +258,8 @@ export function createTty({
       : `${label.slice(0, at)}${chalk.dim('[')}${chalk.bold(shown)}${chalk.dim(']')}${label.slice(at + key.length)}`
   }
 
-  const refusal = (question) =>
-    `tty.keys(${question == null ? 'null' : JSON.stringify(question)}) needs a person at a terminal, and this run has none` +
+  const refusal = (question, method = 'keys') =>
+    `tty.${method}(${question == null ? 'null' : JSON.stringify(question)}) needs a person at a terminal, and this run has none` +
     (emit ? ' — fli gui runs a command with no terminal' : '') +
     '. Check tty.interactive before asking.'
 
@@ -284,6 +288,39 @@ export function createTty({
         listen()
         draw()
       })
+    },
+
+    /**
+     * One typed line, resolved without its newline. An empty answer is the
+     * default when one is given. The keyboard goes back to cooked mode for the
+     * line — the terminal echoes what is typed — and raw mode, the footer and
+     * a listening keys() are all put back after.
+     */
+    line(question, { default: fallback = null } = {}) {
+      if (yes) return Promise.resolve(fallback ?? '')
+      if (!interactive) return Promise.reject(new Error(refusal(question, 'line')))
+      if (restored) return new Promise(() => {})
+      return (async () => {
+        enlist()
+        erase()
+        const wasRaw = raw
+        if (wasRaw) unlisten()
+        // Through the patched stream, so an answer lands above a footer that
+        // comes back; `terminal: false` because cooked mode echoes for us and
+        // readline's own line editing would need raw mode, which is the state
+        // this call exists to leave.
+        const rl = createInterface({ input, output, terminal: false })
+        try {
+          const prompt = fallback == null || fallback === '' ? `${question} ` : `${question} (${fallback}) `
+          const answer = await new Promise((resolve) => rl.question(prompt, resolve))
+          lineOpen = false
+          return answer === '' && fallback != null ? fallback : answer
+        } finally {
+          rl.close()
+          if (wasRaw) listen()
+          draw()
+        }
+      })()
     },
 
     /**

@@ -20,7 +20,7 @@ flags:
 const { amendIssue }       = await import(resolve(global.fliRoot, 'core/amend.js'))
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
 
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 const out = amendIssue({ root, id: arg.id, detail: flag.detail })
 

@@ -45,6 +45,6 @@ log.info(`Opening ${configFile}`)
 if (flag.dry) {
   log.dry(`${editor} "${configFile}"`)
 } else {
-  context.exec({ command: `${editor} "${configFile}"` })
+  $.exec({ command: `${editor} "${configFile}"` })
 }
 ```

@@ -105,7 +105,7 @@ const { findRegisterRoot }  = await import(resolve(global.fliRoot, 'core/registe
 
 // A project with no `packages/` is not a workspace, and `wsRoot()` would prompt
 // for one; the `package.json` declaring its registers is the root it means.
-const wsRoot = findWorkspaceRoot(process.cwd()) ?? findRegisterRoot(process.cwd()) ?? await context.wsRoot()
+const wsRoot = findWorkspaceRoot(process.cwd()) ?? findRegisterRoot(process.cwd()) ?? await $.wsRoot()
 if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 // Both refusals come before anything is read: `--live` shells out to git and to

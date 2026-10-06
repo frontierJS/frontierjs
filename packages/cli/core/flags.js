@@ -6,7 +6,7 @@
 //
 // A flag is named for what it DOES. A boolean that is on unless asked is
 // declared `push` with `defaultValue: true` and typed `--no-push`, which is
-// minimist's own reading of the argv — so `no-push` is never a declaration,
+// the argv parser's own reading — so `no-push` is never a declaration,
 // and one is refused by name rather than read as a second flag that the
 // negation silently never reaches. Its `description` says what `--no-push`
 // does, because that is the spelling every listing prints.

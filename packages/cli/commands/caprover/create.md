@@ -25,9 +25,9 @@ flags:
 
 ```js
 const suffix = flag.production ? '.yml' : '.dev.yml'
-const config = `${context.paths.root}/${arg.target}/.caprover${suffix}`
+const config = `${$.paths.root}/${arg.target}/.caprover${suffix}`
 
-context.exec({
+$.exec({
   command: `caprover api --configFile ${config} --path /user/apps/appDefinitions/register --method POST`,
   dry: flag.dry
 })

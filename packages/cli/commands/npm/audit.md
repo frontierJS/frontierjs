@@ -26,6 +26,6 @@ const parts = ['npm audit']
 if (flag.fix)        parts.push('fix')
 if (flag.production) parts.push('--only=prod')
 if (flag.json)       parts.push('--json')
-parts.push(`--prefix ${context.paths.root}`)
-context.exec({ command: parts.join(' '), dry: flag.dry })
+parts.push(`--prefix ${$.paths.root}`)
+$.exec({ command: parts.join(' '), dry: flag.dry })
 ```

@@ -40,11 +40,11 @@ flags:
 
 
 ```js
-openTutor(context, 'tutor:jobs', { ephemeral: ['02-run', '06-finish'] })
+openTutor($, 'tutor:jobs', { ephemeral: ['02-run', '06-finish'] })
 
-context.config.source  = flag.source || defaultSource()
-context.config.apiPort = flag['api-port']
-context.vars.apiPort   = context.config.apiPort
+$.config.source  = flag.source || defaultSource()
+$.config.apiPort = flag['api-port']
+$.vars.apiPort   = $.config.apiPort
 ```
 
 ## Lesson 6 — work that outlives the request

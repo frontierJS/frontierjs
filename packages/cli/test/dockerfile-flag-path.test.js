@@ -1,7 +1,7 @@
 // ─── dockerfile-flag-path.test.js — `-f` against the caller's cwd ────────────
 //
 // `deploy:local` builds with an ABSOLUTE context and passed `-f` the CONFIGURED
-// string, which is relative — and `context.exec` carries no cwd, so it inherits
+// string, which is relative — and `$.exec` carries no cwd, so it inherits
 // the process's. Docker resolves `-f` against the caller's cwd, so the build
 // worked only when somebody happened to be standing in the app root.
 //
@@ -28,7 +28,7 @@ let hasDocker = true
 try { execFileSync('docker', ['info'], { stdio: 'ignore' }) } catch { hasDocker = false }
 
 describe('the shipped command passes an absolute -f', () => {
-  const buildLine = LOCAL.split('\n').find((l) => l.includes('context.exec') && l.includes('docker build'))
+  const buildLine = LOCAL.split('\n').find((l) => l.includes('$.exec') && l.includes('docker build'))
 
   test('there is exactly one build call to grade', () => {
     expect(buildLine).toBeTruthy()
@@ -44,7 +44,7 @@ describe('the shipped command passes an absolute -f', () => {
   test('the --dry line prints what would actually run', () => {
     const dry = LOCAL.split('\n').find((l) => l.includes('log.dry') && l.includes('docker build'))
     expect(dry).toContain('-f ${dockerfilePath}')
-    expect(dry).toContain('${context.paths.root}')
+    expect(dry).toContain('${$.paths.root}')
   })
 
   // The sibling call is relative ON PURPOSE and must stay that way: it runs on

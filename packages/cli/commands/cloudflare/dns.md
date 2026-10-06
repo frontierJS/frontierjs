@@ -71,13 +71,13 @@ Full CRUD for DNS records. Without `--add`, `--update`, or `--delete` it lists
 all records for the zone. Filter by type with `--type CNAME`.
 
 ```js
-const zoneId = await resolveZone(context, flag.zone)
+const zoneId = await resolveZone($, flag.zone)
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 if (flag.delete) {
   log.info(`Deleting record ${flag.delete} from ${flag.zone}`)
   if (flag.dry) { log.dry(`DELETE /zones/${zoneId}/dns_records/${flag.delete}`); return }
-  await cfApi(context, 'DELETE', `/zones/${zoneId}/dns_records/${flag.delete}`)
+  await cfApi($, 'DELETE', `/zones/${zoneId}/dns_records/${flag.delete}`)
   log.success('Record deleted')
   return
 }
@@ -85,7 +85,7 @@ if (flag.delete) {
 // ── UPDATE ────────────────────────────────────────────────────────────────────
 if (flag.update) {
   if (!flag.content && !flag.name) { log.error('Provide --content or --name to update'); return }
-  const current = await cfApi(context, 'GET', `/zones/${zoneId}/dns_records/${flag.update}`)
+  const current = await cfApi($, 'GET', `/zones/${zoneId}/dns_records/${flag.update}`)
   const payload = {
     type:    flag.type    || current.type,
     name:    flag.name    || current.name,
@@ -95,7 +95,7 @@ if (flag.update) {
   }
   log.info(`Updating record ${flag.update}`)
   if (flag.dry) { log.dry(`PATCH ${JSON.stringify(payload)}`); return }
-  const updated = await cfApi(context, 'PATCH', `/zones/${zoneId}/dns_records/${flag.update}`, payload)
+  const updated = await cfApi($, 'PATCH', `/zones/${zoneId}/dns_records/${flag.update}`, payload)
   log.success(`Updated: ${updated.type} ${updated.name} → ${updated.content}`)
   return
 }
@@ -116,14 +116,14 @@ if (flag.add) {
   }
   log.info(`Adding ${flag.type} record: ${flag.name} → ${flag.content}`)
   if (flag.dry) { log.dry(`POST ${JSON.stringify(payload)}`); return }
-  const record = await cfApi(context, 'POST', `/zones/${zoneId}/dns_records`, payload)
+  const record = await cfApi($, 'POST', `/zones/${zoneId}/dns_records`, payload)
   log.success(`Created: ${record.id}  ${record.type} ${record.name} → ${record.content}`)
   return
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
 const qs = flag.type ? `?type=${flag.type}&per_page=100` : '?per_page=100'
-const records = await cfApi(context, 'GET', `/zones/${zoneId}/dns_records${qs}`)
+const records = await cfApi($, 'GET', `/zones/${zoneId}/dns_records${qs}`)
 
 if (flag.json) { echo(JSON.stringify(records, null, 2)); return }
 

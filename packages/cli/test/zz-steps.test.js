@@ -112,7 +112,7 @@ describe('_steps/ — execution scenarios', () => {
     expect(lg1.some(t => t.includes('[3/3] 03-push'))).toBe(true)
     expect(ev1.filter(e => e.type === 'error')).toHaveLength(0)
 
-    // 2. context.config flows through steps
+    // 2. $.config flows through steps
     const ev2 = await runCommand(deployFile, [], { env: 'production', branch: 'release/v2' })
     const lg2 = texts(ev2)
     expect(lg2.some(t => t.includes('Environment: production'))).toBe(true)
@@ -225,13 +225,13 @@ describe('_steps/ attaches to the index, not to every sibling', () => {
   // caught by the parse sweep — a command using a _module.md helper compiles
   // whether or not the module defines it, so only running it says anything.
 
-  test('context.config exists on a command with no steps at all', async () => {
+  test('$.config exists on a command with no steps at all', async () => {
     const file = resolve(__dir, 'fixtures/sibling-steps/scratch.md')
     const ev   = await runCommand(file, [], {})
     const log  = texts(ev)
     // It used to be initialized only inside the steps runner, so every deploy
     // command got it by accident and deploy:doctor threw
-    // "undefined is not an object" on context.config.abort = true.
+    // "undefined is not an object" on $.config.abort = true.
     expect(log.some(t => t.includes('scratch is object'))).toBe(true)
     expect(ev.some(e => e.type === 'error')).toBe(false)
   })
@@ -259,7 +259,7 @@ describe('_steps/ attaches to the index, not to every sibling', () => {
 
 // ─── A refusal is not a success (FJS-589) ────────────────────────────────────
 //
-// A step refuses by setting `context.config.abort` and returning. Every later
+// A step refuses by setting `$.config.abort` and returning. Every later
 // step then self-skips and the command exited **0**, so seven of the deploy
 // pipeline's nine refusal sites reported success — including all six of
 // `deploy:revert`'s, which are the whole safety argument of the Release realm.
@@ -324,7 +324,7 @@ describe('a refusal fails the command', () => {
 // ─── A step narrates its OWN prose ────────────────────────────────────────────
 //
 // `stepContext` is spread from the orchestrator's, so before FJS-725 a step
-// calling `context.printPlan()` rendered `index.md`'s prose and reported
+// calling `$.printPlan()` rendered `index.md`'s prose and reported
 // success. That is the wrong answer rather than a missing feature: nothing
 // fails, and the lesson text a reader sees belongs to a different file.
 //
@@ -358,7 +358,7 @@ describe('step prose', () => {
     expect(out).not.toContain('{{who}}')
   })
 
-  test('context.filePath names the step', async () => {
+  test('$.filePath names the step', async () => {
     const file   = resolve(__dir, 'fixtures/step-prose/index.md')
     const events = await runCommand(file, [], { step: 2 })
 

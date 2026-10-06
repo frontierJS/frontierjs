@@ -17,12 +17,12 @@ Neither being here is a reason to think something is wrong: if you installed
 `fli` from npm this lesson has nothing to stand on, and it says so and stops.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
 for (const bin of ['bun', 'git']) {
-  if (!await must(context, probe.commandExists({ bin }), {
+  if (!await must($, probe.commandExists({ bin }), {
     likely: `${bin} is not installed, or not on the PATH this shell has`,
   })) return
 }
@@ -44,21 +44,21 @@ for (const [dir, what] of [[basecamp, 'basecamp'], [outpost, 'outpost']]) {
     log.info(`  looked in  ${dir}`)
     log.info('  Lessons 1 to 3 need none of this. Clone the framework to run this one:')
     log.info('    git clone https://github.com/frontierJS/frontierjs && cd frontierjs && bun install')
-    context.config.stop = true
+    $.config.stop = true
     return
   }
   log.success(`${what} — ${dir}`)
 }
 
 for (const [port, what] of [
-  [context.config.apiPort,     'the control plane'],
-  [context.config.outpostPort, 'the outpost'],
+  [$.config.apiPort,     'the control plane'],
+  [$.config.outpostPort, 'the outpost'],
 ]) {
-  if (!await must(context, probe.portFree({ port, name: `port ${port} is free for ${what}` }), {
+  if (!await must($, probe.portFree({ port, name: `port ${port} is free for ${what}` }), {
     likely:    `something is already listening on ${port} — a dev server, or an earlier run of this lesson`,
     reproduce: `fli ports:status`,
   })) return
 }
 
-remember(context, '01-machine', { basecamp, outpost })
+remember($, '01-machine', { basecamp, outpost })
 ```

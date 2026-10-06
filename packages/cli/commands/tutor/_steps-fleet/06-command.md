@@ -31,14 +31,14 @@ job's recorded output. A canned answer, a stubbed executor or a command that
 never left the control plane all fail it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
 // `outpostSecret` is the machine's own, minted at 05. It is needed here because
 // `ensureFleet({ outpost: true })` below RESTARTS the outpost when nothing is
 // answering, and starting it on any other key is a machine Basecamp refuses.
-if (!needs(context, ['serverId', 'dbFile', 'secret', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+if (!needs($, ['serverId', 'dbFile', 'secret', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
     serverId: '04-server', dbFile: '02-basecamp', secret: '02-basecamp',
     outpostSecret: '05-outpost',
@@ -49,18 +49,18 @@ if (!needs(context, ['serverId', 'dbFile', 'secret', 'outpostSecret', 'token', '
 
 // `--step 6` reaches neither process, because the two steps that start them are
 // replayed into no-ops on a resume and skipped outright by `--step`.
-if (!await must(context, await ensureFleet(context, { outpost: true }), {
+if (!await must($, await ensureFleet($, { outpost: true }), {
   likely: 'the control plane or the machine is not answering — run this lesson from the start',
 })) return
 
 const as = {
   'content-type':   'application/json',
-  authorization:    `Bearer ${context.config.token}`,
-  'x-workspace-id': context.config.workspaceId,
+  authorization:    `Bearer ${$.config.token}`,
+  'x-workspace-id': $.config.workspaceId,
 }
 
 const post = (path, body, method) => probe.httpJson({
-  url:      hubUrl(context, path),
+  url:      hubUrl($, path),
   method:   'POST',
   headers:  method ? { ...as, 'x-service-method': method } : as,
   body:     JSON.stringify(body),
@@ -75,17 +75,17 @@ const post = (path, body, method) => probe.httpJson({
 const run = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 
 const project = await post('/projects', { name: `Tutorial ${run}` })
-if (!await must(context, project, { likely: 'the create was refused — check the standing on this workspace' })) return
+if (!await must($, project, { likely: 'the create was refused — check the standing on this workspace' })) return
 
 const environment = await post('/environments', { projectId: project.json.id, name: 'prod', tier: 'production' })
-if (!await must(context, environment)) return
+if (!await must($, environment)) return
 
 const application = await post('/apps', { environmentId: environment.json.id, name: 'hello' })
-if (!await must(context, application)) return
+if (!await must($, application)) return
 
 const appId = application.json.id
 
-if (!await must(context, await post(`/apps/${appId}`, { serverId: context.config.serverId }, 'place'), {
+if (!await must($, await post(`/apps/${appId}`, { serverId: $.config.serverId }, 'place'), {
   likely: 'the machine cannot hold work — a destroyed or stopped server is refused by name',
 })) return
 
@@ -100,14 +100,14 @@ const job = await post('/jobs', {
   command:        `echo ${nonce} && uname -s`,
   timeoutSeconds: 20,
 })
-if (!await must(context, job)) return
+if (!await must($, job)) return
 
 // Creating a one-shot job IS the dispatch, so nothing triggers it: a second
 // run asked for while the first is going is refused as already running.
 // The dispatch is durable work: the call answers as soon as the job is queued,
 // so the ANSWER is polled rather than awaited.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, `/jobs/${job.json.id}`),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, `/jobs/${job.json.id}`),
   headers:  as,
   expect:   (j) => j.lastRunStatus === 'success',
   describe: 'a run that finished',
@@ -116,15 +116,15 @@ if (!await must(context, await probe.httpJson({
   name:     'the machine answered, and the run succeeded',
 }), {
   likely:    'the command was refused before it left — no placement, or no outpost target for the machine',
-  reproduce: `curl -s ${hubUrl(context, `/jobs/${job.json.id}`)}`,
-  detail:    serverLog(context.config.__servers?.outpost ?? { logPath: '' }),
+  reproduce: `curl -s ${hubUrl($, `/jobs/${job.json.id}`)}`,
+  detail:    serverLog($.config.__servers?.outpost ?? { logPath: '' }),
 })) return
 
 // The database rather than the API, and that is the whole point of this line:
 // the answer is read out of the row the control plane wrote, and it has to
 // contain a string that was invented in this process a second ago.
-if (!await must(context, probe.sqliteRow({
-  db:     context.config.dbFile,
+if (!await must($, probe.sqliteRow({
+  db:     $.config.dbFile,
   sql:    'select output from job_run where jobId = ? order by rowid desc limit 1',
   params: [job.json.id],
   expect: (rows) => String(rows[0]?.output ?? '').includes(nonce),
@@ -136,5 +136,5 @@ if (!await must(context, probe.sqliteRow({
 log.info('')
 log.info(`  echo ${nonce}   ran on this machine, sent by the control plane, signed with the fleet secret`)
 
-remember(context, '06-command', { appId, jobId: job.json.id, nonce })
+remember($, '06-command', { appId, jobId: job.json.id, nonce })
 ```

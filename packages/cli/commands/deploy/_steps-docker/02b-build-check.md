@@ -1,16 +1,16 @@
 ---
 title: 02b-build-check
 description: Refuse a build that would bake configuration into the image
-skip: "!context.config.doApi || context.config.deployConf.api?.buildCheck === false"
+skip: "!$.config.doApi || $.config.deployConf.api?.buildCheck === false"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
 // The BUILDER's context, not the target's — that is the tree `docker build`
 // reads, and under a declared `deploy.builder` they are different machines.
-const { host, path: serverPath } = context.config.builder ?? context.config.api
-const dockerfile = context.config.deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
+const { host, path: serverPath } = $.config.builder ?? $.config.api
+const dockerfile = $.config.deployConf.api?.dockerfile ?? 'deploy/Dockerfile'
 
 const { gather, inspectBuild, refuses, summarize, renderFinding, CONTEXT_FIND } =
   await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
@@ -21,7 +21,7 @@ const { gather, inspectBuild, refuses, summarize, renderFinding, CONTEXT_FIND } 
 // {serverPath}, which is the context root, so a check run against the local tree
 // cannot see the case it exists for. It runs after 02-pull for the same reason —
 // before the pull, the server's Dockerfile is the previous release's.
-const machine = machineFor(context, host, serverPath)
+const machine = machineFor($, host, serverPath)
 const ask = (script) => {
   try { return machine.capture(script, { cwd: serverPath }) }
   catch { return null }
@@ -75,5 +75,5 @@ log.error(`Build check: ${summarize(findings)} — refusing to build`)
 log.info('')
 log.info('  A Release promotes one artefact between environments and changes only its configuration.')
 log.info('  Set deploy.api.buildCheck = false in frontier.config.js to deploy anyway.')
-context.config.abort = true
+$.config.abort = true
 ```

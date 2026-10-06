@@ -35,19 +35,19 @@ parses this variable as hex, so a base64 key decodes to zero bytes and is
 refused for its length.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
-const dir = appDir(context)
+const dir = appDir($)
 
 if (!existsSync(join(dir, 'db', 'schema.lite'))) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
 
   log.info(`building somewhere to adopt into — ${dir}`)
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --no-auth --no-example --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --no-auth --no-example --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
 } else {
   log.info(`reusing the app at ${dir}`)
@@ -58,14 +58,14 @@ if (!existsSync(join(dir, 'db', 'schema.lite'))) {
 // scaffold rather than as a missing variable.
 const envFile = join(dir, '.env')
 if (!/^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''))
-  context.exec({ command: `${context.fli} keygen aes --format hex --name ENCRYPTION_KEY --env`, cwd: dir })
+  $.exec({ command: `${$.fli} keygen aes --format hex --name ENCRYPTION_KEY --env`, cwd: dir })
 
-context.config.appDir = dir
+$.config.appDir = dir
 
 // The whole lesson runs litestone out of THIS app's node_modules. A bare
 // `bunx litestone` in a directory with none goes to the registry and reads the
 // database with a different build of the tool than the app will run.
-if (!await must(context, probe.fileExists({
+if (!await must($, probe.fileExists({
   path: join(dir, 'node_modules', '.bin', 'litestone'),
   name: 'litestone is installed in the app',
 }), {
@@ -73,5 +73,5 @@ if (!await must(context, probe.fileExists({
   reproduce: `cd ${dir} && bun install`,
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

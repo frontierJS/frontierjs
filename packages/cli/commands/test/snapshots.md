@@ -35,7 +35,7 @@ flags:
 const { findSnapshots, missingSnapshots, checkSnapshots, formatSnapshotResults, SNAPSHOT_BINS } =
   await import(resolve(global.fliRoot, 'core/snapshots.js'))
 
-const root = context.paths.root
+const root = $.paths.root
 
 // Matched exactly against what discovery found, so a path that names nothing
 // is refused rather than read as zero snapshots, all current.

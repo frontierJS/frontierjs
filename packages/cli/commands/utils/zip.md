@@ -8,5 +8,5 @@ examples:
 ---
 
 ```js
-context.exec({ command: `npm run zip --prefix ${context.paths.root}`, dry: flag.dry })
+$.exec({ command: `npm run zip --prefix ${$.paths.root}`, dry: flag.dry })
 ```

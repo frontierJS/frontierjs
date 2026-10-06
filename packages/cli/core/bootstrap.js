@@ -1,10 +1,10 @@
 // bootstrap.js — fli's command-resolution + help/list/search entry point.
 // Nothing on the read-only path (list, help, search, completion) may import zx,
 // which is ~85ms of a ~200ms invocation. That means chalk comes from color.js
-// and minimist is a direct dependency rather than one of zx's re-exports — and
+// and the argv is read by argv.js rather than zx's minimist re-export — and
 // it also means `Command` is imported where a command is actually run, since a
 // static import of runtime.js pulls zx back in for every `fli list`.
-import minimist from 'minimist'
+import { parseArgv, BOOL_ARGV } from './argv.js'
 import { chalk, amber } from './color.js'
 import { resolve } from 'path'
 import { homedir } from 'os'
@@ -12,7 +12,6 @@ import { logger, loadEnv, fliVersion } from './utils.js'
 import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
-import { BOOL_ARGV, dropUntypedBooleans } from './runtime.js'
 import { setVerbose } from './verbosity.js'
 import { flagSpelling, flagConstraint } from './flags.js'
 import { APPROVED } from './effects.js'
@@ -241,18 +240,17 @@ function printHelp(meta, filePath) {
 // Errors thrown here (or from inside Command()) propagate up to bin/fli.js,
 // which prints clean error messages and supports --debug for full stacks.
 export async function run(process) {
-  const argv = minimist(process.argv.slice(2), { boolean: BOOL_ARGV })
+  const argv = parseArgv(process.argv.slice(2), { bools: BOOL_ARGV })
   let {
     _: [cmd, ...rawArgs],
     ...flag
   } = argv
-  dropUntypedBooleans(flag, process.argv.slice(2))
   // Before anything can log. `--verbose` is global rather than per-command
   // because the thing it turns on crosses commands: a command that composes
   // others hides their output, and the flag has to reach the child too.
   setVerbose(flag.verbose === true)
   // `fli --version` before anything else — a stranger asking which build they
-  // have must not be answered with the usage screen, which is what minimist's
+  // have must not be answered with the usage screen, which is what an
   // empty `_` used to fall through to.
   if (!cmd && (flag.version || flag.v)) {
     process.stdout.write((fliVersion() ?? 'unknown') + '\n')
@@ -268,7 +266,7 @@ export async function run(process) {
   // NOTE: only short-circuit here when there is NO command. `--help`/`-h`
   // WITH a command name (e.g. `fli crypto:keygen --help`) must fall through
   // to the per-command help path below. `fli`, `fli --help`, and `fli -h`
-  // still land here because minimist leaves `_` empty, so `cmd` is undefined.
+  // still land here because the argv parser leaves `_` empty, so `cmd` is undefined.
   if (!cmd) {
     const line = (s) => process.stdout.write(s + '\n')
     const dim = (s) => chalk.dim(s)

@@ -48,7 +48,7 @@ const { scaffoldDesktopSurface, desktopScripts, desktopNames } =
 const { port: portFor, projectIdFor } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 
-const root    = context.paths.root
+const root    = $.paths.root
 const surface = resolve(root, 'desktop')
 const wraps   = flag.wraps || null
 

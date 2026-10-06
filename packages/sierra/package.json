@@ -39,8 +39,7 @@
     "example": "vite --config example/vite.config.js"
   },
   "dependencies": {
-    "@frontierjs/toolbelt": "workspace:*",
-    "js-yaml": "^4.3.2"
+    "@frontierjs/toolbelt": "workspace:*"
   },
   "devDependencies": {
     "@frontierjs/junction": "workspace:*",

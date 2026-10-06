@@ -8,7 +8,7 @@
 import { describe, test, expect, afterEach } from 'bun:test'
 import { logger }                            from '../core/utils.js'
 import { setVerbose, isVerbose }             from '../core/verbosity.js'
-import { BOOL_ARGV, dropUntypedBooleans }    from '../core/runtime.js'
+import { BOOL_ARGV, parseArgv }    from '../core/argv.js'
 
 const capture = (fn) => {
   const lines = []
@@ -46,10 +46,10 @@ describe('--verbose parsing', () => {
     expect(BOOL_ARGV).toContain('verbose')
   })
 
-  test('minimist defaults it to false; an untyped one is dropped', () => {
-    // Left in place, getConfig reads a DEFINED false as "the flag was given".
-    expect(dropUntypedBooleans({ verbose: false }, ['new', 'app'])).toEqual({})
-    expect(dropUntypedBooleans({ verbose: true },  ['new', 'app', '--verbose'])).toEqual({ verbose: true })
+  test('an untyped one is absent, never false', () => {
+    // A false would be read by getConfig as "the flag was given".
+    expect(parseArgv(['new', 'app'], { bools: BOOL_ARGV })).toEqual({ _: ['new', 'app'] })
+    expect(parseArgv(['new', 'app', '--verbose'], { bools: BOOL_ARGV })).toEqual({ _: ['new', 'app'], verbose: true })
   })
 })
 

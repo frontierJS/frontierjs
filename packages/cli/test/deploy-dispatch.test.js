@@ -87,7 +87,7 @@ describe('deploy dispatch — Docker mode (frontier.config.js present)', () => {
     expect(errors(ev)).toHaveLength(0)
   })
 
-  test('stores mode=docker on context.config', async () => {
+  test('stores mode=docker on $.config', async () => {
     writeFrontierConfig(TMP_DOCKER, {
       deploy: { server: 'myapp.com', path: '/apps/myapp' }
     })
@@ -96,7 +96,7 @@ describe('deploy dispatch — Docker mode (frontier.config.js present)', () => {
     expect(lg.some(t => t.includes('mode: docker'))).toBe(true)
   })
 
-  test('stores server, user, path on context.config', async () => {
+  test('stores server, user, path on $.config', async () => {
     writeFrontierConfig(TMP_DOCKER, {
       deploy: { server: 'myapp.com', user: 'deploy', path: '/apps/myapp' }
     })
@@ -166,7 +166,7 @@ describe('deploy dispatch — legacy mode (no frontier.config.js)', () => {
     expect(errors(ev)).toHaveLength(0)
   })
 
-  test('stores mode=legacy on context.config', async () => {
+  test('stores mode=legacy on $.config', async () => {
     const ev = await runCommand(legacyFixture, [], {}, TMP_LEGACY)
     const lg = logs(ev)
     expect(lg.some(t => t.includes('mode: legacy'))).toBe(true)

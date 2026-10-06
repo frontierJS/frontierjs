@@ -53,7 +53,7 @@ in your `.env`. The repo is private by default.
 - Token needs `repo` scope to create private repos
 
 ```js
-const token = context.env.GITHUB_TOKEN
+const token = $.env.GITHUB_TOKEN
 if (!token) {
   log.error('GITHUB_TOKEN is not set')
   log.info('Add it with:  fli eset GITHUB_TOKEN <your-token> --global')
@@ -62,7 +62,7 @@ if (!token) {
 }
 
 // Resolve owner: --org flag → $GITHUB_DEFAULT_ORG → authenticated user
-let owner = flag.org || context.env.GITHUB_DEFAULT_ORG || null
+let owner = flag.org || $.env.GITHUB_DEFAULT_ORG || null
 if (!owner) {
   log.info('Resolving authenticated GitHub user...')
   if (!flag.dry) {
@@ -74,7 +74,7 @@ if (!owner) {
 }
 
 // Resolve template: --template flag → $GITHUB_DEFAULT_TEMPLATE → kobamisites/ksite
-const template = flag.template || context.env.GITHUB_DEFAULT_TEMPLATE || 'kobamisites/ksite'
+const template = flag.template || $.env.GITHUB_DEFAULT_TEMPLATE || 'kobamisites/ksite'
 const [tmplOwner, tmplRepo] = template.split('/')
 if (!tmplOwner || !tmplRepo) {
   log.error(`Invalid template format "${template}" — expected owner/repo`)

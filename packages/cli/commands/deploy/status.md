@@ -18,15 +18,15 @@ flags:
 ---
 
 ```js
-const target = resolveTarget(flag, context.git)
+const target = resolveTarget(flag, $.git)
 
 // ─── Load config ──────────────────────────────────────────────────────────────
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -40,7 +40,7 @@ const host       = `${user}@${server}`
 const container  = apiContainer(appId, deployConf)
 
 // ─── Is the machine reachable ─────────────────────────────────────────────────
-const machine = machineFor(context, host, path, deployConf.transport)
+const machine = machineFor($, host, path, deployConf.transport)
 const ask = (script) => {
   try { return machine.capture(script) }
   catch { return '' }
@@ -100,7 +100,7 @@ try {
     try {
       // A reader, so it does not migrate: answering a question must not change
       // the schema of the thing being asked.
-      const j = await connectJournal(context, { host, serverPath: path, deployConf })
+      const j = await connectJournal($, { host, serverPath: path, deployConf })
       const opened = await j.open({ app: appId, host, migrate: false })
       if (opened.verdict.kind === 'behind') behind = opened.verdict.from
       const st = await j.state({ app: appId, environment: target })

@@ -23,6 +23,6 @@ flags:
 const parts = ['npm outdated']
 if (flag.global) parts.push('--global')
 if (flag.json)   parts.push('--json')
-else             parts.push('--prefix', context.paths.root)
-context.exec({ command: parts.join(' '), dry: flag.dry })
+else             parts.push('--prefix', $.paths.root)
+$.exec({ command: parts.join(' '), dry: flag.dry })
 ```

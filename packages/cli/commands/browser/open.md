@@ -13,6 +13,6 @@ args:
 ---
 
 ```js
-const browser = context.env.BROWSER || 'xdg-open'
-context.exec({ command: `${browser} "${arg.url}"`, dry: flag.dry })
+const browser = $.env.BROWSER || 'xdg-open'
+$.exec({ command: `${browser} "${arg.url}"`, dry: flag.dry })
 ```

@@ -66,7 +66,7 @@ machine and a database by what was seeded.
 const { resolve } = await import('node:path')
 const bench = await import(resolve(global.fliRoot, 'core/bench.js'))
 
-const root = context.paths.root
+const root = $.paths.root
 
 const { getCases, runCases } = await import(resolve(global.fliRoot, 'core/latency.js'))
 

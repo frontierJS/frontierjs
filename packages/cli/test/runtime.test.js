@@ -120,7 +120,7 @@ describe('getConfig — flags', () => {
 
     const meta = base({ flags: { push: { type: 'boolean', defaultValue: true } } })
     expect(getConfig(meta, [], {}).flag.push).toBe(true)
-    // minimist's reading of `--no-push`.
+    // the argv parser's reading of `--no-push`.
     expect(getConfig(meta, [], { push: false }).flag.push).toBe(false)
   })
 

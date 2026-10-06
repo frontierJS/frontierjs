@@ -73,10 +73,10 @@ so it pipes.
 `--short` hands over to plain `git status -s` unchanged.
 
 ```js
-const root = context.git.repoRoot(context.paths.root) ?? context.paths.root
+const root = $.git.repoRoot($.paths.root) ?? $.paths.root
 
 if (flag.short) {
-  context.exec({ command: 'git status -s', dry: flag.dry })
+  $.exec({ command: 'git status -s', dry: flag.dry })
   return
 }
 

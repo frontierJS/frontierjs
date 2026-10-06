@@ -9,7 +9,7 @@ examples:
 args:
   -
     name: url
-    description: URL to fetch (prefix with : or / for localhost)
+    description: 'URL to fetch (prefix with : or / for localhost)'
     required: true
 flags:
   method:

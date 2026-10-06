@@ -18,12 +18,12 @@ import { join } from 'path'
 </script>
 
 ```js
-const sitesDir = context.env.SITES_DIR || '~/projects/sites'
+const sitesDir = $.env.SITES_DIR || '~/projects/sites'
 const sitePath = join(sitesDir, arg.name)
 
 if (!existsSync(sitePath)) {
   log.info(`Cloning kobamisites/${arg.name} → ${sitePath}`)
-  context.exec({
+  $.exec({
     command: `git clone git@github.com:kobamisites/${arg.name} ${sitePath}`,
     dry: flag.dry
   })

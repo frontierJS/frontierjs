@@ -50,7 +50,7 @@ export default createBaseService({
 </script>
 
 ```js
-const servicesDir = resolve(context.paths.api, 'src/services')
+const servicesDir = resolve($.paths.api, 'src/services')
 const editor      = process.env.EDITOR || 'vi'
 
 // service filename + path for a model name (identical to manual behavior)
@@ -61,7 +61,7 @@ const serviceOf = (model) => {
 
 // ─── --auto: read models from schema.lite, step through each with Y/n ──────────
 if (flag.auto) {
-  const schemaPath = resolve(context.paths.db, 'schema.lite')
+  const schemaPath = resolve($.paths.db, 'schema.lite')
   if (!existsSync(schemaPath)) {
     log.error(`schema.lite not found at ${schemaPath}`)
     log.info('Run this from a FJS project root (or add models with fli make:model).')
@@ -82,7 +82,7 @@ if (flag.auto) {
   const created = []
   let skipped = 0
 
-  // Minimal stdin line reader. We avoid readline / zx question() here: readline
+  // Minimal stdin line reader. We avoid readline / tty.line() here: readline
   // emits buffered lines eagerly, so with piped or scripted input every answer
   // after the first is dropped. Queuing lines ourselves and handing them out on
   // demand works for both an interactive TTY and pipes. EOF → '' (default Yes).
@@ -150,7 +150,7 @@ if (flag.auto) {
     log.info('Services autoload from api/src/services/ (see api/config/junction.config.js).')
   }
   if (flag.open && created.length) {
-    for (const p of created) context.exec({ command: `${editor} "${p}"` })
+    for (const p of created) $.exec({ command: `${editor} "${p}"` })
   }
   return
 }
@@ -167,7 +167,7 @@ const { serviceName, servicePath } = serviceOf(arg.model)
 if (existsSync(servicePath)) {
   log.warn(`${servicePath} already exists`)
   log.info('Use --open to edit it: fli make:service ' + arg.model + ' --open')
-  if (flag.open) context.exec({ command: `${editor} "${servicePath}"` })
+  if (flag.open) $.exec({ command: `${editor} "${servicePath}"` })
   return
 }
 
@@ -183,5 +183,5 @@ log.info('Register in api/src/server.ts:')
 log.info(`  import ${serviceName}Service from './services/${serviceName}.service.ts'`)
 log.info(`  app.services.register(${serviceName}Service)`)
 
-if (flag.open) context.exec({ command: `${editor} "${servicePath}"` })
+if (flag.open) $.exec({ command: `${editor} "${servicePath}"` })
 ```

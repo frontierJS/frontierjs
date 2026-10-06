@@ -21,19 +21,19 @@ baseline now is what makes the rest of the lesson possible, which is a fair
 picture of what it is for.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '02-app' })) return
+if (!needs($, ['appDir'], { from: '02-app' })) return
 
-context.exec({ command: `${context.fli} release:check`, cwd: context.config.appDir })
+$.exec({ command: `${$.fli} release:check`, cwd: $.config.appDir })
 
-if (!await must(context, probe.fileExists({
-  path: join(context.config.appDir, 'db', 'release.snapshot.md'),
+if (!await must($, probe.fileExists({
+  path: join($.config.appDir, 'db', 'release.snapshot.md'),
   name: 'db/release.snapshot.md',
 }), {
   likely:    'release:check did not write a baseline — its output is above',
-  reproduce: `cd ${context.config.appDir} && fli release:check`,
+  reproduce: `cd ${$.config.appDir} && fli release:check`,
 })) return
 ```

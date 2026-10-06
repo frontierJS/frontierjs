@@ -20,7 +20,7 @@ src/
     walk.js              recursive directory walk; follows a symlink, and a
                          `*.mount.js` into the directory it names (`FJS-D282`)
     classify.js          what each file is (page, layout, error, …)
-    parse-frontmatter.js YAML frontmatter
+    parse-frontmatter.js frontmatter, via @frontierjs/toolbelt/frontmatter
     build-tree.js        the node tree
     generate-route-table.js  writes config/routes.js (a build: routes.build.js); routeTablePath() owns the path
 

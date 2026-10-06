@@ -11,25 +11,25 @@ cannot start without one and a deploy that fails at the last step teaches
 nothing about deploying.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-const dir = appDir(context)
+const dir = appDir($)
 const built = existsSync(join(dir, 'db', 'schema.lite'))
 
 if (!built) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
   log.info(`building an app to deploy — ${dir}`)
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
 } else {
   log.info(`reusing the app in ${dir}`)
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
 // The environment the CONTAINER runs with, written beside the workspace rather
 // than over the app's own `.env`.
@@ -49,14 +49,14 @@ const envFile = join(dir, '.env')
 const existing = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
 const key = existing.match(/^ENCRYPTION_KEY=(\S+)/m)?.[1] ?? randomBytes(32).toString('hex')
 
-const deployEnv = join(context.config.ws.dir, 'deploy.env')
+const deployEnv = join($.config.ws.dir, 'deploy.env')
 writeFileSync(deployEnv, `ENCRYPTION_KEY=${key}\nDATABASE_URL=/db/app.db\nAUDIT_PATH=/db/audit/\nNODE_ENV=production\n`)
 
 // A fresh app scaffolded without auth has no `.env` at all, and the local half
 // of the lesson still needs a key.
 if (!existing) writeFileSync(envFile, `ENCRYPTION_KEY=${key}\nDATABASE_URL=./db/app.db\n`)
 
-if (!await must(context, probe.fileExists({ path: join(dir, 'package.json'), name: 'the app is on disk' }), {
+if (!await must($, probe.fileExists({ path: join(dir, 'package.json'), name: 'the app is on disk' }), {
   likely: 'fli new did not finish — its output is above',
 })) return
 
@@ -78,9 +78,9 @@ if (built) {
   // be `ALTER TABLE ADD COLUMN` against a column that exists. `db:baseline` is
   // the other half — it records the files as applied without running them, and
   // refuses to record a lie.
-  context.exec({ command: `${context.fli} db:migrate --create-only`, cwd: dir })
-  context.exec({ command: `${context.fli} db:baseline`, cwd: dir })
+  $.exec({ command: `${$.fli} db:migrate --create-only`, cwd: dir })
+  $.exec({ command: `${$.fli} db:baseline`, cwd: dir })
 }
 
-remember(context, '02-app', { appDir: dir, deployEnv })
+remember($, '02-app', { appDir: dir, deployEnv })
 ```

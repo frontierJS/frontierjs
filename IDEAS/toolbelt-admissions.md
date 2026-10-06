@@ -1,6 +1,6 @@
 ---
 id: toolbelt-admissions
-status: proposed
+status: partial
 dated: 2026-09-07
 ---
 
@@ -59,6 +59,8 @@ with the dependency direction argued on its own terms. Nothing in the repo is
 currently asking for one.
 
 ## 4. `frontmatter` — two parsers that disagree, and §3 does not settle it
+
+**Built 2026-10-05 as [`@frontierjs/toolbelt/frontmatter`](../packages/toolbelt/README.md#frontmatter--what-a----block-means)** on `FJS-D549`'s subset; sierra and mesa both read it and js-yaml is gone. What follows is the argument as it stood.
 
 **Not the same question as §3**, which refuses a yaml WRAPPER because a
 dependency under `src/` fails `hygiene`. This asks whether the framework commits

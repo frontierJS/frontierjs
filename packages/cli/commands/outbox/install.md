@@ -117,7 +117,7 @@ What it does:
 - Prints the two lines to add to `api/src/server.ts`
 
 ```js
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 // ─── 1. Preflight ─────────────────────────────────────────────────────────────
 
@@ -154,8 +154,8 @@ if (!new RegExp(`database\\s+${flag.db}\\s*\\{`).test(schemaContents)) {
 // installed fails at parse in exactly the same way, and the schema is about to
 // import this specifier by name.
 
-if (!resolveFromApp(context.paths.root, `${PKG}/outbox.lite`)) {
-  log.error(`Could not resolve ${PKG}/outbox.lite from ${context.paths.root}`)
+if (!resolveFromApp($.paths.root, `${PKG}/outbox.lite`)) {
+  log.error(`Could not resolve ${PKG}/outbox.lite from ${$.paths.root}`)
   log.info(`Install it first: bun add ${PKG}`)
   log.info('A version that does not ship db/outbox.lite has no outbox to install.')
   return
@@ -186,7 +186,7 @@ if (flag.dry) {
   log.dry('Would run: litestone db push')
 } else {
   log.info('Pushing schema to database...')
-  context.exec({ command: `cd ${context.paths.root} && bun run litestone db push --schema db/schema.lite` })
+  $.exec({ command: `cd ${$.paths.root} && bun run litestone db push --schema db/schema.lite` })
   log.success('Schema pushed')
 }
 

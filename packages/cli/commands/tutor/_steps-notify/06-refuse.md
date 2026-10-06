@@ -43,24 +43,24 @@ refusal that cannot be shown next to the same thing succeeding proves nothing
 about the rule it names.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir', 'notifFile'], { from: '05-name' })) return
+if (!needs($, ['appDir', 'notifFile'], { from: '05-name' })) return
 
 // A session minted on another day is expired, and it arrives as a 401 the step
 // then blames on the thing it is teaching. Only for a standalone step: a full
 // run has just registered, and login is rate-limited.
-if (context.flag.step && context.config.userEmail) {
-  const again = await signIn(context, context.config.userEmail, 'correct-horse-battery-staple')
-  if (again.ok) context.config.userToken = again.json.token
+if ($.flag.step && $.config.userEmail) {
+  const again = await signIn($, $.config.userEmail, 'correct-horse-battery-staple')
+  if (again.ok) $.config.userToken = again.json.token
 }
 
-const app    = context.config.appDir
-const file   = context.config.notifFile
+const app    = $.config.appDir
+const file   = $.config.notifFile
 const db     = join(app, 'db', 'app.db')
-const outbox = context.config.outbox
+const outbox = $.config.outbox
 
 const WITH    = "via: () => ['inApp', 'email', 'sms'],"
 const WITHOUT = "via: () => ['inApp', 'email'],"
@@ -85,15 +85,15 @@ const countMail = () => {
 // ─── the refusal ──────────────────────────────────────────────────────────
 writeFileSync(file, readFileSync(file, 'utf8').replace(WITHOUT, WITH), 'utf8')
 
-let api = await restartApi(context)
-if (!await must(context, api.up, {
+let api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back — the last of its output is below',
   detail: serverLog(api),
 })) return
 
 const rowsBefore = await countRows()
 const mailBefore = countMail()
-if (!await must(context, {
+if (!await must($, {
   ok:    rowsBefore !== null,
   name:  'the notification table can be read before the refusal',
   asked: 'a row count',
@@ -101,9 +101,9 @@ if (!await must(context, {
 }, { likely: `the database moved — ${db}` })) return
 
 const refused = await probe.httpJson({
-  url:      apiUrl(context, '/notes'),
+  url:      apiUrl($, '/notes'),
   method:   'POST',
-  headers:  { 'content-type': 'application/json', authorization: `Bearer ${context.config.userToken}` },
+  headers:  { 'content-type': 'application/json', authorization: `Bearer ${$.config.userToken}` },
   body:     JSON.stringify({ title: 'sms please', body: 'written over HTTP', done: false }),
   expect:   (j) => j.code === 500
                 && /does not implement toSms/.test(String(j.message))
@@ -111,7 +111,7 @@ const refused = await probe.httpJson({
   describe: 'a refusal naming the missing formatter, and committed: true',
   name:     'the send was refused, and the note it was about is still committed',
 })
-if (!await must(context, refused, {
+if (!await must($, refused, {
   likely:    'the transport list did not change — the file may not have been edited',
   detail:    serverLog(api),
   reproduce: `grep -n via ${file}`,
@@ -121,7 +121,7 @@ if (!await must(context, refused, {
 // number taken a moment earlier — otherwise "no new row" and "this app never
 // writes rows" are the same reading.
 const rowsAfter = await countRows()
-if (!await must(context, {
+if (!await must($, {
   ok:    rowsAfter === rowsBefore && countMail() === mailBefore,
   name:  'and nothing was half-delivered',
   asked: `${rowsBefore} rows and ${mailBefore} mail, unchanged`,
@@ -136,13 +136,13 @@ if (!await must(context, {
 // proves only that something refused, which a broken app also does.
 writeFileSync(file, readFileSync(file, 'utf8').replace(WITH, WITHOUT), 'utf8')
 
-api = await restartApi(context)
-if (!await must(context, api.up, {
+api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back — the last of its output is below',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, await createNote(context, `allowed-${Date.now().toString(36)}`), {
+if (!await must($, await createNote($, `allowed-${Date.now().toString(36)}`), {
   likely: 'the write was refused — the body is above',
   detail: serverLog(api),
 })) return
@@ -153,12 +153,12 @@ const rowsFinal = await probe.eventually(async () => {
     ? { ok: true,  name: 'the same call, with the transport taken out, delivered both', asked: `${rowsBefore + 1} rows`, got: `${n} rows` }
     : { ok: false, name: 'the same call, with the transport taken out, delivered both', asked: `${rowsBefore + 1} rows`, got: `${n} rows` }
 }, { retries: 10, everyMs: 300 })
-if (!await must(context, rowsFinal, {
+if (!await must($, rowsFinal, {
   likely: 'the notification did not go out at all — the refusal above may have been for another reason',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    countMail() === mailBefore + 1,
   name:  'and the mail with it',
   asked: `${mailBefore + 1} lines in the outbox`,

@@ -26,20 +26,20 @@ now lives in. What the app can send is the type, and the file is where it is
 written.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app   = context.config.appDir
+const app   = $.config.appDir
 const appTs = join(app, 'api', 'src', 'app.ts')
 
 let src = readFileSync(appTs, 'utf8')
 if (!src.includes('/notification-types')) {
   const ANCHOR = "  transports: { email: { mailer: 'default' } },\n}))"
   if (!src.includes(ANCHOR)) {
-    await must(context, {
+    await must($, {
       ok:    false,
       name:  'api/src/app.ts has the place this step edits',
       asked: "the plugin block step 3 wrote",
@@ -60,20 +60,20 @@ if (!src.includes('/notification-types')) {
   writeFileSync(appTs, src, 'utf8')
 }
 
-const api = await restartApi(context)
-if (!await must(context, api.up, {
+const api = await restartApi($)
+if (!await must($, api.up, {
   likely: 'the API did not come back — the last of its output is below',
   detail: serverLog(api),
 })) return
 
-if (!await must(context, probe.httpJson({
-  url:      apiUrl(context, '/notification-types'),
+if (!await must($, probe.httpJson({
+  url:      apiUrl($, '/notification-types'),
   expect:   (j) => Array.isArray(j) && j.length === 1 && j[0] === 'NoteAdded',
   describe: 'the one type this app declares, by the name it states',
   name:     'the app can say what it is able to send',
 }), {
   likely:    'the loader found no definitions — it probes notifications/ and src/notifications/ beside the ENTRY, so an app started from elsewhere finds none',
   detail:    serverLog(api),
-  reproduce: `curl -s http://127.0.0.1:${context.config.apiPort}/api/notification-types`,
+  reproduce: `curl -s http://127.0.0.1:${$.config.apiPort}/api/notification-types`,
 })) return
 ```

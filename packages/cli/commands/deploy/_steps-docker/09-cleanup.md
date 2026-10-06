@@ -8,9 +8,9 @@ runOnAbort: true
 // Every machine the run locked, not just the API's — a split deploy that aborts
 // after taking both locks otherwise leaves the web host locked forever.
 const dropLocks = async () => {
-  if (!context.config.lockAcquired) return
-  await releaseLocks(context, context.config.hosts ?? [])
-  context.config.lockAcquired = false
+  if (!$.config.lockAcquired) return
+  await releaseLocks($, $.config.hosts ?? [])
+  $.config.lockAcquired = false
 }
 
 // ─── Settle the transition ────────────────────────────────────────────────────
@@ -19,25 +19,25 @@ const dropLocks = async () => {
 // mistake for a crash and try to resume. `runOnAbort: true` on this step is what
 // makes that reachable at all.
 const settle = async (status) => {
-  if (!context.config.journal || !context.config.transitionId) return
-  try { await context.config.journal.settle(status) }
+  if (!$.config.journal || !$.config.transitionId) return
+  try { await $.config.journal.settle(status) }
   catch (err) { log.warn(`Journal: could not settle the transition — ${err.message}`) }
 }
 
-if (context.config.abort) {
+if ($.config.abort) {
   // Abnormal exit — still release the locks so the next deploy isn't blocked
   await settle('failed')
   await dropLocks()
   return
 }
 
-const { replaced, imageTag, appId } = context.config
-const apiSide = context.config.api
+const { replaced, imageTag, appId } = $.config
+const apiSide = $.config.api
 
 // ─── Remove _replaced container ───────────────────────────────────────────────
 // Containers and images live on the API host; a web-only run has none.
 if (apiSide) {
-const machine = machineFor(context, apiSide.host, apiSide.path)
+const machine = machineFor($, apiSide.host, apiSide.path)
 
 machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
   docker stop ${replaced} || true
@@ -54,6 +54,6 @@ await settle('succeeded')
 await dropLocks()
 
 // ─── Report ───────────────────────────────────────────────────────────────────
-const elapsed = ((Date.now() - context.config.startTime) / 1000).toFixed(1)
-log.success(`Deployed ${context.config.commit} to ${context.config.target} in ${elapsed}s`)
+const elapsed = ((Date.now() - $.config.startTime) / 1000).toFixed(1)
+log.success(`Deployed ${$.config.commit} to ${$.config.target} in ${elapsed}s`)
 ```

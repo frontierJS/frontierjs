@@ -39,7 +39,7 @@ this answers *and then which drive*.
 // `wsRoot()` is ASYNC, and an unawaited one is a Promise that reaches
 // `execSync` as a cwd — which fails with a message about a type, three steps
 // from the cause. The workspace, because the proof table is at its root.
-const root = (await context.wsRoot?.()) ?? context.paths.root
+const root = (await $.wsRoot?.()) ?? $.paths.root
 
 // `resolve` is already in scope — the compiled shim imports `zx/globals`.
 const { provesFor, changedTree } = await import(resolve(global.fliRoot, 'core/proofs.js'))

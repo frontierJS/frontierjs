@@ -28,5 +28,5 @@ flags:
 ```js
 const field = flag.versions ? 'versions' : flag.field || ''
 const cmd   = `npm info ${arg.package} ${field}`.trim()
-context.exec({ command: cmd, dry: flag.dry })
+$.exec({ command: cmd, dry: flag.dry })
 ```

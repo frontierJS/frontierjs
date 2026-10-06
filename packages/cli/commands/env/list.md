@@ -55,7 +55,7 @@ const mask = (val) => {
 </script>
 
 ```js
-const envPath = resolve(context.paths.root, flag.file)
+const envPath = resolve($.paths.root, flag.file)
 
 if (!existsSync(envPath)) {
   log.error(`${envPath} not found`)

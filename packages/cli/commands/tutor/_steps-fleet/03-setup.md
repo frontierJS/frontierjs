@@ -21,23 +21,23 @@ the same account is an owner in one workspace and a viewer in another. That is
 the same `@@gate` ladder from lesson 4, resolved one row further out.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['dbFile', 'secret', 'basecamp'], {
+if (!needs($, ['dbFile', 'secret', 'basecamp'], {
   from: { dbFile: '02-basecamp', secret: '02-basecamp', basecamp: '01-machine' },
 })) return
 
-if (!await must(context, await ensureFleet(context), {
+if (!await must($, await ensureFleet($), {
   likely: 'the control plane is not answering — run this lesson from the start',
 })) return
 
 // Asserted as a PAIR with the one below it, and that is what makes either
 // worth making: a probe that always answered `needs_setup` would pass one of
 // them, and a setup route that wrote nothing would pass the other.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, '/setup/probe'),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, '/setup/probe'),
   expect:   (j) => j.needs_setup === true && j.users === 0,
   describe: 'a control plane with nobody in it',
   name:     'nobody has ever signed in here',
@@ -49,7 +49,7 @@ const email    = `sam-${Date.now().toString(36)}@example.test`
 const password = 'correct-horse-battery-staple'
 
 const setup = await probe.httpJson({
-  url:      hubUrl(context, '/setup'),
+  url:      hubUrl($, '/setup'),
   method:   'POST',
   headers:  { 'content-type': 'application/json' },
   body:     JSON.stringify({ workspace_name: 'Tutorial Fleet', name: 'Sam', email, password }),
@@ -58,16 +58,16 @@ const setup = await probe.httpJson({
   name:     'the first account is made and signed in',
 })
 
-if (!await must(context, setup, {
+if (!await must($, setup, {
   likely:    'setup has already run against this database — pass --restart',
-  reproduce: `curl -s ${hubUrl(context, '/setup/probe')}`,
+  reproduce: `curl -s ${hubUrl($, '/setup/probe')}`,
 })) return
 
 // The same question the step before asked, answered the other way. A setup
 // route that reported success while writing nothing would pass the assertion
 // above and fail this one.
-if (!await must(context, await probe.httpJson({
-  url:      hubUrl(context, '/setup/probe'),
+if (!await must($, await probe.httpJson({
+  url:      hubUrl($, '/setup/probe'),
   expect:   (j) => j.needs_setup === false && j.workspaces === 1,
   describe: 'a control plane with one workspace in it',
   name:     'it no longer needs setting up',
@@ -78,7 +78,7 @@ if (!await must(context, await probe.httpJson({
 log.info(`  ${email}`)
 log.info(`  workspace ${setup.json.workspace_id}`)
 
-remember(context, '03-setup', {
+remember($, '03-setup', {
   email, password,
   token:       setup.json.token,
   workspaceId: setup.json.workspace_id,

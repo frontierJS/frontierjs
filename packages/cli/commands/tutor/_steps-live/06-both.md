@@ -19,29 +19,29 @@ refusal — so the refusal in the next step is only evidence if this step's
 delivery is asserted first, on the same mechanism.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir', 'userToken'], { from: '03-account' })) return
+if (!needs($, ['appDir', 'userToken'], { from: '03-account' })) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
-const pair = await bothSockets(context)
+const pair = await bothSockets($)
 if (!pair.ok) return
 
 const title = `open-${Date.now().toString(36)}`
-const made  = await createNote(context, title)
-if (!await must(context, made, { likely: 'the write was refused — the body is above' })) {
+const made  = await createNote($, title)
+if (!await must($, made, { likely: 'the write was refused — the body is above' })) {
   pair.close()
   return
 }
 
 const heard = await pair.settle()
 
-if (!await must(context, {
+if (!await must($, {
   ok:    heard.signedIn.some(f => f.data?.title === title),
   name:  'the signed-in socket is told',
   asked: `a frame carrying ${title}`,
@@ -50,21 +50,21 @@ if (!await must(context, {
   likely: 'the publish did not go out — step 4 is the one that would have failed',
 })) return
 
-if (!await must(context, {
+if (!await must($, {
   ok:    heard.anonymous.some(f => f.data?.title === title),
   name:  'so is the anonymous one, because reads are public',
   asked: `a frame carrying ${title}`,
   got:   heard.anonymous.length ? `${heard.anonymous.length} frame(s)` : 'no frames at all',
 }, {
   likely:    'the gate on Note is not 0 for read — look at db/schema.lite',
-  reproduce: `grep -n '@@gate' ${join(context.config.appDir, 'db', 'schema.lite')}`,
+  reproduce: `grep -n '@@gate' ${join($.config.appDir, 'db', 'schema.lite')}`,
 })) return
 
 // The control for the control: what a stranger is told over the socket agrees
 // with what a stranger is answered over HTTP. Two transports, one rule — and
 // the whole of the next step is that they go on agreeing after the rule moves.
-if (!await must(context, probe.httpStatus({
-  url:    apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:    apiUrl($, '/notes'),
   expect: 200,
   name:   'and a stranger may list them over HTTP',
 }), {

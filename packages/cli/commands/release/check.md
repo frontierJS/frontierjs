@@ -51,8 +51,8 @@ const opts = [
   flag.out    ? `--out ${flag.out}` : '',
 ].filter(Boolean).join(' ')
 
-context.exec({
-  command: `${litestone(context)} release --schema ${schemaPath(context)} ${opts}`,
+$.exec({
+  command: `${litestone($)} release --schema ${schemaPath($)} ${opts}`,
 })
 
 // ─── the middle step ─────────────────────────────────────────────────────────
@@ -72,8 +72,8 @@ if (!flag.json && !flag.check && !flag.stdout) {
   const { declaredBackfills, backfillReport, formatBackfillReport } =
     await import(new URL('file://' + global.fliRoot + '/core/backfills.js'))
 
-  const probe = context.exec({
-    command: `${litestone(context)} release --schema ${schemaPath(context)} ${flag.from ? `--from ${flag.from}` : ''} --json`,
+  const probe = $.exec({
+    command: `${litestone($)} release --schema ${schemaPath($)} ${flag.from ? `--from ${flag.from}` : ''} --json`,
     stdio:   'pipe',
     dry:     false,
   })
@@ -81,7 +81,7 @@ if (!flag.json && !flag.check && !flag.stdout) {
   let findings = []
   try { findings = JSON.parse(String(probe ?? '{}')).findings ?? [] } catch { findings = [] }
 
-  const rows = backfillReport(findings, declaredBackfills(context.paths.root))
+  const rows = backfillReport(findings, declaredBackfills($.paths.root))
   for (const line of formatBackfillReport(rows)) log.info(line ? `  ${line}` : '')
   if (rows.length) log.info('')
 }

@@ -19,11 +19,11 @@ Nothing below depends on which of those two happened. That is the point of a
 tool: it reads the app in front of it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
-const dir = appDir(context)
+const dir = appDir($)
 
 // Reuse is by the FILE, not by the journal: `--tmp` gives a fresh workspace
 // every run, and a person may also have deleted the app under a named one.
@@ -31,23 +31,23 @@ if (!existsSync(join(dir, 'db', 'schema.lite'))) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
 
   log.info(`building an app to look at — ${dir}`)
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
-  context.exec({
-    command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  $.exec({
+    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
-  context.exec({ command: `${context.fli} db:push`, cwd: dir })
+  $.exec({ command: `${$.fli} db:push`, cwd: dir })
 } else {
   log.info(`reusing the app at ${dir}`)
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
-if (!await must(context, probe.fileContains({
-  path:   schemaFile(context),
+if (!await must($, probe.fileContains({
+  path:   schemaFile($),
   needle: /^model Note \{/m,
   name:   'the app has a Note model',
 }), {
@@ -55,5 +55,5 @@ if (!await must(context, probe.fileContains({
   reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

@@ -423,10 +423,10 @@ Each model also needs a Junction service on the API side. Missing ones are
 reported at the end — create them with `fli make:service <Model>`.
 
 ```js
-const root         = context.paths.root
-const schemaLite   = resolve(context.paths.db, 'schema.lite')
-const resourcesDir = resolve(context.paths.web, 'src/resources')
-const adminDir     = resolve(context.paths.web, 'src/routes/admin')
+const root         = $.paths.root
+const schemaLite   = resolve($.paths.db, 'schema.lite')
+const resourcesDir = resolve($.paths.web, 'src/resources')
+const adminDir     = resolve($.paths.web, 'src/routes/admin')
 const created      = []
 
 // ─── Guard ────────────────────────────────────────────────────────────────────
@@ -560,7 +560,7 @@ log.info(`Generating admin routes for: ${targets.map(m => m.name).join(', ')}`)
 // ─── Session module ───────────────────────────────────────────────────────────
 // Prefer the project's own session over a second copy of the same idea.
 
-const projectSession = resolve(context.paths.web, 'src/session.js')
+const projectSession = resolve($.paths.web, 'src/session.js')
 const ownSession     = existsSync(projectSession)
 
 if (ownSession) log.info('Using the existing web/src/session.js for gate levels')

@@ -182,7 +182,7 @@ describe('what fli new actually writes', () => {
 })
 
 describe('an extension app names what jetty builds with', () => {
-  // jetty declares vite, chokidar and ws as optional peers so an extension's
+  // jetty declares vite and ws as optional peers so an extension's
   // users never install them; the app is then the only thing that does, and a
   // range here that drifts from jetty's is a peer warning on every install.
   test('the scaffold\'s devDependencies are jetty\'s peer ranges', () => {

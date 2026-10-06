@@ -18,11 +18,11 @@ fli db:push
 From here on the only thing that changes is `db/schema.lite`.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
-const dir = appDir(context)
+const dir = appDir($)
 
 // Reuse is by the FILE, not by the journal: `--tmp` gives a fresh workspace
 // every run, and a person may also have deleted the app under a named one.
@@ -49,23 +49,23 @@ if (!built) {
   log.info(noteBlock && !pristine
     ? `the Note here carries a row policy, which filters a broadcast as well as a query — rebuilding ${dir}`
     : `building an app to watch — ${dir}`)
-  context.exec({
-    command: `${context.fli} new ${context.config.app} --yes --auth --no-git --no-deploy --source ${context.config.source}`,
-    cwd:     context.config.ws.dir,
+  $.exec({
+    command: `${$.fli} new ${$.config.app} --yes --auth --no-git --no-deploy --source ${$.config.source}`,
+    cwd:     $.config.ws.dir,
   })
-  context.exec({
-    command: `${context.fli} scaffold Note --fields "title:string body:text done:boolean"`,
+  $.exec({
+    command: `${$.fli} scaffold Note --fields "title:string body:text done:boolean"`,
     cwd:     dir,
   })
-  context.exec({ command: `${context.fli} db:push`, cwd: dir })
+  $.exec({ command: `${$.fli} db:push`, cwd: dir })
 } else {
   log.info(`reusing the app lesson 1 left at ${dir}`)
 }
 
-context.config.appDir = dir
+$.config.appDir = dir
 
-if (!await must(context, probe.fileContains({
-  path:   schemaFile(context),
+if (!await must($, probe.fileContains({
+  path:   schemaFile($),
   needle: /^model Note \{/m,
   name:   'the app has a Note model to watch',
 }), {
@@ -73,5 +73,5 @@ if (!await must(context, probe.fileContains({
   reproduce: `cd ${dir} && fli scaffold Note --fields "title:string body:text done:boolean"`,
 })) return
 
-remember(context, '01-app', { appDir: dir })
+remember($, '01-app', { appDir: dir })
 ```

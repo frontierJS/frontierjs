@@ -50,6 +50,6 @@ if (flag.dry) {
 
 if (flag.open && !flag.dry) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${filePath}"` })
+  $.exec({ command: `${editor} "${filePath}"` })
 }
 ```

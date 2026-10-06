@@ -77,8 +77,8 @@ if (flag.json && flag.as !== 'report') {
 const as    = flag.json ? 'json' : flag.as
 const layer = (flag.layer || '').toLowerCase()
 
-if (!existsSync(resolve(context.paths.db, 'schema.lite'))) {
-  log.error(`no db/schema.lite under ${context.paths.root} — cd into a FJS app, or point at one with --project <dir>`)
+if (!existsSync(resolve($.paths.db, 'schema.lite'))) {
+  log.error(`no db/schema.lite under ${$.paths.root} — cd into a FJS app, or point at one with --project <dir>`)
   return
 }
 
@@ -90,7 +90,7 @@ if (!existsSync(resolve(context.paths.db, 'schema.lite'))) {
 // of the flag by one `Reading schema...` line above the object.
 
 const quiet = as === 'json' || !!flag.out
-const { map, error } = await buildProjectMap(context, {
+const { map, error } = await buildProjectMap($, {
   layer,
   atlas: flag.atlas,
   log:   quiet ? null : log,
@@ -98,7 +98,7 @@ const { map, error } = await buildProjectMap(context, {
 if (error) { log.error(error); return }
 
 if (flag.out) {
-  const outPath = resolve(context.paths.root, flag.out)
+  const outPath = resolve($.paths.root, flag.out)
   writeFileSync(outPath, JSON.stringify(map, null, 2))
   log.success(`Written to ${flag.out}`)
   return
@@ -110,7 +110,7 @@ if (as === 'json') {
 }
 
 if (as === 'serve') {
-  await serveProjectMap(context, map, { port: flag.port, open: flag.open, atlas: flag.atlas, log })
+  await serveProjectMap($, map, { port: flag.port, open: flag.open, atlas: flag.atlas, log })
   return
 }
 
@@ -151,7 +151,7 @@ if (schema) {
     types.length ? `${types.length} type${types.length !== 1 ? 's' : ''}` : '',
     `${enums.length} enum${enums.length !== 1 ? 's' : ''}`,
   ].filter(Boolean).join('  ·  ')
-  echo(`  ${chalk.bold.cyan('Schema')}  ·  ${counts}`)
+  echo(`  ${chalk.bold(chalk.cyan('Schema'))}  ·  ${counts}`)
   echo('')
 
   for (const [name, def] of [...models, ...views]) {
@@ -188,7 +188,7 @@ if (schema) {
 }
 
 if (services.length) {
-  echo(`  ${chalk.bold.blue('Services')}  ·  ${services.length} registered  ${chalk.dim(`· ${basename(surface.file)}`)}`)
+  echo(`  ${chalk.bold(chalk.blue('Services'))}  ·  ${services.length} registered  ${chalk.dim(`· ${basename(surface.file)}`)}`)
   echo('')
 
   for (const svc of services) {
@@ -232,7 +232,7 @@ if (services.length) {
 }
 
 if (resources.length) {
-  echo(`  ${chalk.bold.hex('#c26a1a')('Resources')}  ·  ${resources.length} registered`)
+  echo(`  ${chalk.bold(chalk.hex('#c26a1a')('Resources'))}  ·  ${resources.length} registered`)
   echo('')
 
   for (const res of resources) {
@@ -249,7 +249,7 @@ if (resources.length) {
 // this merge exists to remove (`FJS-927`).
 const atlas = map.atlas ?? {}
 if (atlas.jobs || atlas.notifications || atlas.principal) {
-  echo(`  ${chalk.bold.green('Unattended')}  ${chalk.dim('· read off a built app')}`)
+  echo(`  ${chalk.bold(chalk.green('Unattended'))}  ${chalk.dim('· read off a built app')}`)
   echo('')
   const j = atlas.jobs ?? {}
   if (!j.hasQueue) echo(chalk.dim('    no queue installed — nothing here is durable'))
@@ -275,7 +275,7 @@ if (atlas.jobs || atlas.notifications || atlas.principal) {
 } 
 
 if (migrations.length) {
-  echo(`  ${chalk.bold.magenta('Migrations')}  ·  ${migrations.length} file${migrations.length !== 1 ? 's' : ''}`)
+  echo(`  ${chalk.bold(chalk.magenta('Migrations'))}  ·  ${migrations.length} file${migrations.length !== 1 ? 's' : ''}`)
   echo('')
 
   for (const m of migrations) {

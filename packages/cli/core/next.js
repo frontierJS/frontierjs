@@ -28,11 +28,22 @@
 // Proposals. `IDEAS/overview.md` ranks those by hand, and nothing a reader can
 // measure about an unbuilt idea separates the first wave from the fifth.
 //
+// ── Reach ───────────────────────────────────────────────────────────────────
+//
+// A defect in a package many others import is met by all of them, and a row
+// downstream of it may be its symptom. Reach is the count of workspace packages
+// that depend on the row's package, directly or through another, read from the
+// manifests. It is a tiebreak and no more: a dependency between two PACKAGES
+// says nothing about whether one fix waits on another — `blocked by` says that —
+// so its cap stays under one citation, and a cosmetic toolbelt row never jumps
+// a cited sierra one.
+//
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { execFileSync } from 'node:child_process'
 
 import { readRegisters } from './registers.js'
+import { workspaceDeps } from './runnables.js'
 import { openDecisions, QUESTION_ID } from './decisions.js'
 
 // One table, and no flag moves it: a weight somebody can pass is a ranking
@@ -42,9 +53,12 @@ export const WEIGHTS = Object.freeze({
   citedBy:   4,    // per record citing the row, up to CITED_CAP of them
   blocks:    10,   // per open row declaring itself blocked by this one
   touched:   12,   // a file the row links is in the working tree or a recent commit
+  reach:     1,    // per REACH_PER packages depending on the row's, up to REACH_CAP
 })
 const CITED_CAP     = 5
 const BLOCKS_CAP    = 3
+const REACH_PER     = 3
+const REACH_CAP     = 3
 const RECENT_COMMITS = 10
 
 // Any prefix: a blocker is only counted when it names an open row, so the
@@ -64,6 +78,7 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
   const open   = doc.issues.filter(r => !r.closed)
   const openId = new Set(open.map(r => r.id))
   const recent = touched ?? recentPaths(root)
+  const reachOf = dependentCounts(root)
 
   // Who cites whom, over every live record — a ruling or a proposal leaning on
   // an open row is weight on that row. A record citing itself is not.
@@ -95,6 +110,11 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
 
     const near = r.files.filter(isCode).filter(f => recent.has(f.replace(/\/$/, '')) || [...recent].some(p => f.endsWith('/') && p.startsWith(f)))
     if (near.length) terms.push({ term: 'touched', value: WEIGHTS.touched, note: `touched recently: ${near[0]}` })
+
+    // A row filed against two packages reaches as far as the wider of them.
+    const [wide] = r.pkg.filter(p => reachOf.has(p)).sort((a, b) => reachOf.get(b) - reachOf.get(a))
+    const reach  = wide ? Math.min(Math.floor(reachOf.get(wide) / REACH_PER), REACH_CAP) : 0
+    if (reach) terms.push({ term: 'reach', value: reach * WEIGHTS.reach, note: `${wide} reaches ${reachOf.get(wide)}` })
 
     return {
       id:        r.id,
@@ -147,6 +167,28 @@ export function byHand(record) {
 
 export function blockedBy(record) {
   return [...String(record.body ?? '').matchAll(BLOCKED_BY)].map(m => m[1].toUpperCase())
+}
+
+// ─── reach ────────────────────────────────────────────────────────────────────
+//
+// Keyed by FOLDER, because that is what a register row's package cell names. A
+// row naming no member — `repo`, `example` — reaches nothing.
+
+export function dependentCounts(root) {
+  const members = workspaceDeps(root)
+  const folderOf = new Map([...members].map(([folder, m]) => [m.name, folder]))
+  const up = new Map()
+  for (const [folder, m] of members) for (const d of m.deps) {
+    const dep = folderOf.get(d)
+    up.set(dep, [...(up.get(dep) ?? []), folder])
+  }
+  const counts = new Map()
+  for (const folder of members.keys()) {
+    const seen = new Set(), queue = [folder]
+    while (queue.length) for (const u of up.get(queue.pop()) ?? []) if (!seen.has(u)) { seen.add(u); queue.push(u) }
+    counts.set(folder, seen.size)
+  }
+  return counts
 }
 
 // ─── recent ───────────────────────────────────────────────────────────────────

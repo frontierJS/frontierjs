@@ -49,7 +49,7 @@ const findEnvFile = (root, file) => {
 </script>
 
 ```js
-const envFile = findEnvFile(context.paths.root, flag.file)
+const envFile = findEnvFile($.paths.root, flag.file)
 if (!envFile) {
   // Fall back to process.env
   const val = process.env[arg.key]

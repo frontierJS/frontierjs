@@ -83,7 +83,7 @@ package, run concurrently, compared against the version in the working tree.
 `fli ws:changed` to see what is in it, then `fli ws:pub`.
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 let packages = all

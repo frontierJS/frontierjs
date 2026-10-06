@@ -18,8 +18,8 @@ flags:
 // SyntaxError the compiler reports as a clean build (Invariant 15).
 const opts = flag.kinds ? `--kinds ${flag.kinds}` : ''
 
-context.exec({
-  command: `${litestone(context)} mutate --schema ${schemaPath(context)} ${opts}`,
+$.exec({
+  command: `${litestone($)} mutate --schema ${schemaPath($)} ${opts}`,
 })
 ```
 

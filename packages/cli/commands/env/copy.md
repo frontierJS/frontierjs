@@ -39,8 +39,8 @@ Generates a `.env.example` from your real `.env` — keys preserved,
 values stripped. Safe to commit to git.
 
 ```js
-const srcPath  = resolve(context.paths.root, flag.from)
-const destPath = resolve(context.paths.root, flag.to)
+const srcPath  = resolve($.paths.root, flag.from)
+const destPath = resolve($.paths.root, flag.to)
 
 if (!existsSync(srcPath)) {
   log.error(`${srcPath} not found`)

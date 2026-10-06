@@ -13,15 +13,15 @@ flags:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 // Not a gate and it never exits non-zero on a finding. `fli test:access
 // --strict` and `fli release:check` are the two that fail a branch; this one
 // reads.
-await context.stream({
-  command: `${litestone(context)} advise --schema ${schema}${flag.json ? ' --json' : ''}`,
+await $.stream({
+  command: `${litestone($)} advise --schema ${schema}${flag.json ? ' --json' : ''}`,
 })
 ```
 

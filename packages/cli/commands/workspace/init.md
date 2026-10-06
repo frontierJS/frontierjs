@@ -41,10 +41,10 @@ Set `WORKSPACE_DIR` in your `.env` once and you'll never be prompted again.
 ```js
 let wsRoot = flag.dir
   ? flag.dir.trim().replace(/^~/, process.env.HOME || '')
-  : await context.wsRoot()
+  : await $.wsRoot()
 if (!wsRoot) { log.error('No path provided'); return }
 
-context.vars.wsRoot = wsRoot
+$.vars.wsRoot = wsRoot
 
 if (existsSync(wsRoot) && existsSync(resolve(wsRoot, 'package.json'))) {
   log.warn(`Workspace already exists at ${wsRoot}`)
@@ -53,7 +53,7 @@ if (existsSync(wsRoot) && existsSync(resolve(wsRoot, 'package.json'))) {
 }
 
 if (flag.dry) {
-  context.printPlan()
+  $.printPlan()
   return
 }
 

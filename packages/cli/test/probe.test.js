@@ -1,7 +1,7 @@
 // probe.test.js — the assertions a lesson ends with, graded themselves.
 //
 // Two rules this file exists to hold. **A probe never throws**: a step that
-// refuses does it through `context.config.abort`, and an exception would take
+// refuses does it through `$.config.abort`, and an exception would take
 // the `runOnAbort` teardown with it and leave a container running. And **a
 // failure is a diagnosis** — asked, got, likely, continue — because the reader
 // is somebody learning the framework, for whom a stack trace reads as the

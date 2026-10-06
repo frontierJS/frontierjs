@@ -1,16 +1,13 @@
-// ─── color.js — the ANSI subset the startup path uses ────────────────────────
-// A leaf with no dependencies, and that is the entire point: it exists so that
-// `fli list`, `fli help`, `?` and completion do not import zx.
+// ─── color.js — the one chalk ─────────────────────────────────────────────────
+// A leaf with no dependencies, read on the startup path before a command is
+// compiled, and handed to every command body as `chalk` on `$`. One color
+// rule for fli's own output and a command's.
 //
-// zx is ~85ms of a ~200ms invocation and the only thing the read-only paths
-// wanted from it was `chalk`. A command body still gets the real one — a
-// compiled shim imports `zx/globals` itself — so nothing a command author
-// writes changes.
-//
-// API-compatible with the chalk calls this package makes (`chalk.dim(s)`,
-// `chalk.hex('#f5a623')(s)`), so a call site reads the same after the swap.
-// Chained styles (`chalk.bold.underline`) are NOT supported; nothing here uses
-// them and supporting them costs the proxy this file exists to avoid.
+// The shape is chalk's for the calls this package makes (`chalk.dim(s)`,
+// `chalk.hex('#f5a623')(s)`). Chained styles (`chalk.bold.cyan`) are NOT
+// supported — nest them, `chalk.bold(chalk.cyan(s))` — because supporting
+// them costs a proxy, and a chain reads as undefined at the call rather than
+// throwing where it is written.
 
 // Match chalk's default rather than picking our own: color when stdout is a
 // terminal, honouring NO_COLOR and FORCE_COLOR. A drive that pipes fli's output

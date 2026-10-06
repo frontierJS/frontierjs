@@ -21,5 +21,5 @@ flags:
 ```js
 const db  = flag.test ? 'test' : 'development'
 const sql = `"SELECT GROUP_CONCAT(name) AS fields FROM PRAGMA_TABLE_INFO('${arg.table}');"`
-context.exec({ command: `sqlite3 ${context.paths.db}/${db}.db ${sql}`, dry: flag.dry })
+$.exec({ command: `sqlite3 ${$.paths.db}/${db}.db ${sql}`, dry: flag.dry })
 ```

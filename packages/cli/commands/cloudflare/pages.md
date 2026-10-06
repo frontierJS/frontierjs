@@ -45,14 +45,14 @@ flags:
 ---
 
 <script>
-const accountId = (context) => context.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
+const accountId = ($) => $.flag.account || process.env.CLOUDFLARE_ACCOUNT_ID
 </script>
 
 Manage Cloudflare Pages projects — list, create, check deployments, and
 trigger new deploys. Requires a token with **Cloudflare Pages / Edit** scope.
 
 ```js
-const acct = accountId(context)
+const acct = accountId($)
 if (!acct) { log.error('No account ID — set CLOUDFLARE_ACCOUNT_ID or use --account'); return }
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ if (flag.create) {
   log.info(`Creating Pages project: ${flag.create}`)
   log.info(`Repo:   ${flag.repo}  ·  branch: ${flag.branch}`)
   if (flag.dry) { log.dry(`POST /accounts/${acct}/pages/projects`); return }
-  const project = await cfApi(context, 'POST', `/accounts/${acct}/pages/projects`, payload)
+  const project = await cfApi($, 'POST', `/accounts/${acct}/pages/projects`, payload)
   log.success(`Created: ${project.name}`)
   echo(`  subdomain: ${project.subdomain}`)
   echo(`  dashboard: https://dash.cloudflare.com/${acct}/pages/view/${project.name}`)
@@ -81,7 +81,7 @@ if (flag.create) {
 if (flag.deploy) {
   log.info(`Triggering deployment for: ${flag.deploy}`)
   if (flag.dry) { log.dry(`POST /accounts/${acct}/pages/projects/${flag.deploy}/deployments`); return }
-  const deployment = await cfApi(context, 'POST', `/accounts/${acct}/pages/projects/${flag.deploy}/deployments`)
+  const deployment = await cfApi($, 'POST', `/accounts/${acct}/pages/projects/${flag.deploy}/deployments`)
   log.success(`Deployment triggered: ${deployment.id}`)
   echo(`  url:    ${deployment.url || 'pending…'}`)
   echo(`  status: ${deployment.latest_stage?.name || 'queued'}`)
@@ -90,7 +90,7 @@ if (flag.deploy) {
 
 // ── STATUS ────────────────────────────────────────────────────────────────────
 if (flag.status) {
-  const deployments = await cfApi(context, 'GET', `/accounts/${acct}/pages/projects/${flag.status}/deployments?per_page=5`)
+  const deployments = await cfApi($, 'GET', `/accounts/${acct}/pages/projects/${flag.status}/deployments?per_page=5`)
   echo('')
   echo(`  ${flag.status} — last ${deployments.length} deployments\n`)
   for (const d of deployments) {
@@ -105,7 +105,7 @@ if (flag.status) {
 }
 
 // ── LIST ──────────────────────────────────────────────────────────────────────
-const projects = await cfApi(context, 'GET', `/accounts/${acct}/pages/projects?per_page=50`)
+const projects = await cfApi($, 'GET', `/accounts/${acct}/pages/projects?per_page=50`)
 if (flag.json) { echo(JSON.stringify(projects, null, 2)); return }
 
 echo('')

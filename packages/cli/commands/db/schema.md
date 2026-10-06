@@ -50,7 +50,7 @@ model ${pascal} {
 </script>
 
 ```js
-const schemaPath = context.paths.schema
+const schemaPath = $.paths.schema
 if (!existsSync(schemaPath)) {
   log.error(`schema.prisma not found at ${schemaPath}`)
   return
@@ -69,6 +69,6 @@ log.success(`Appended ${arg.model} to ${schemaPath}`)
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${schemaPath}"` })
+  $.exec({ command: `${editor} "${schemaPath}"` })
 }
 ```

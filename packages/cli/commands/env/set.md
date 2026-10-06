@@ -68,7 +68,7 @@ const setEnvVar = (content, key, value) => {
 const configDir = resolve(homedir(), '.config', 'fli')
 const envPath   = flag.global
   ? resolve(configDir, '.env')
-  : resolve(context.paths.root, flag.file)
+  : resolve($.paths.root, flag.file)
 
 // Ensure global config dir exists
 if (flag.global && !existsSync(configDir)) {

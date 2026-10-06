@@ -52,14 +52,14 @@ flags:
 // `open Dockerfile: no such file or directory`, with an absolute `-f` and an
 // absolute context making no difference. So this is `fjs-tutor` and not
 // `.fli/tutor`, which is where it was first put.
-openTutor(context, 'tutor:deploy', {
+openTutor($, 'tutor:deploy', {
   ephemeral: ['10-finish'],
   base:      join(homedir(), 'fjs-tutor'),
 })
 
-context.config.source = flag.source || defaultSource()
-context.config.port   = flag.port
-context.vars.port     = context.config.port
+$.config.source = flag.source || defaultSource()
+$.config.port   = flag.port
+$.vars.port     = $.config.port
 
 // The container and the images are named for the app, so the teardown can find
 // everything this lesson built without a list.
@@ -68,8 +68,8 @@ context.vars.port     = context.config.port
 // other nine look fixed: the deploy created the tier-suffixed container and the
 // lesson then looked for the unsuffixed one.
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
-context.config.container = apiContainerName(context.config.app, context.config.port)
-context.vars.container   = context.config.container
+$.config.container = apiContainerName($.config.app, $.config.port)
+$.vars.container   = $.config.container
 ```
 
 ## Lesson 9 — deploying it, and taking it back

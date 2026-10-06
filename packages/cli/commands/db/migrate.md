@@ -23,10 +23,10 @@ flags:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
-const ls = litestone(context)
+const { schema } = resolveDb($, flag)
+const ls = litestone($)
 
 if (flag['apply-only']) {
   if (flag.dry) {
@@ -34,7 +34,7 @@ if (flag['apply-only']) {
     return
   }
   log.info('Applying pending migrations...')
-  context.exec({ command: `${ls} migrate apply --schema ${schema}` })
+  $.exec({ command: `${ls} migrate apply --schema ${schema}` })
   log.success('Migrations applied')
   return
 }
@@ -45,7 +45,7 @@ if (flag['create-only']) {
     return
   }
   log.info('Creating migration from schema changes...')
-  context.exec({ command: `${ls} migrate create --schema ${schema}` })
+  $.exec({ command: `${ls} migrate create --schema ${schema}` })
   log.success('Migration file created in db/migrations/')
   return
 }
@@ -61,10 +61,10 @@ if (flag.dry) {
 // about to write, and `duplicate column name` from the middle of a generated
 // file is not an answer anybody can act on (FJS-D123).
 log.info('Creating and applying the migration...')
-context.exec({ command: `${ls} migrate dev --schema ${schema}` })
+$.exec({ command: `${ls} migrate dev --schema ${schema}` })
 log.success('Migration created and applied')
 
 log.info('Regenerating JSON Schema...')
-context.exec({ command: `${ls} jsonschema --schema ${schema}` })
+$.exec({ command: `${ls} jsonschema --schema ${schema}` })
 log.success('JSON Schema updated')
 ```

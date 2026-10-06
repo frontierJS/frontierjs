@@ -1,5 +1,9 @@
 # Changes — @frontierjs/email-kit
 
+## 2026-10-05 — css-tree is a peer, next to happy-dom
+
+Mesa's CSS inliner, which every email render runs, now takes css-tree as an optional peer rather than a dependency. email-kit always inlines, so css-tree is a required peer here, the way happy-dom already was, and the README's install line names it.
+
 ## 2026-10-05 — happy-dom is a peer
 
 Every render goes through mesa's server render, which no longer brings `happy-dom` with it (it is an optional peer of mesa now). email-kit declares it as a required peer, so the package manager installs it at the app, which is where mesa resolves it from. In a packed install without that peer, `renderEmail` failed with mesa's *renderToHTML needs happy-dom*; with it, the same install rendered and inlined. The README's install line names it.

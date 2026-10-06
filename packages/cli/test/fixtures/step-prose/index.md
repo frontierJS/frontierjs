@@ -8,5 +8,5 @@ description: A step renders its OWN prose, not the orchestrator's
 This line is ORCHESTRATOR-PROSE and must not appear when a step narrates.
 
 ```js
-context.vars.who = 'nobody'
+$.vars.who = 'nobody'
 ```

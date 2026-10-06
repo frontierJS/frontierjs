@@ -4,14 +4,14 @@ description: Put the container back onto the release being restored
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, deployConf, appId, apiPort, revertImage } = context.config
+const { host, serverPath, deployConf, appId, apiPort, revertImage } = $.config
 
 // The same function `_steps-docker/06-swap` calls. One owner, because the
 // going-back path is the one nobody exercises until the day it matters, and a
 // copy that had drifted would be discovered mid-incident.
-const { container, replaced } = swapContainer(context, {
+const { container, replaced } = swapContainer($, {
   host,
   container: apiContainer(appId, deployConf),
   image:     revertImage,
@@ -22,17 +22,17 @@ const { container, replaced } = swapContainer(context, {
   log,
 })
 
-context.config.container = container
-context.config.replaced  = replaced
+$.config.container = container
+$.config.replaced  = replaced
 
 // The bytes this revert put into service, in the same shape `04-build-api`
 // writes. Without it a revert transition records no image, so the release it
 // restored cannot be reverted TO — the next revert reads `no-image` about a
 // release that is plainly running.
-noteForJournal(context, '03-swap', {
+noteForJournal($, '03-swap', {
   image: revertImage,
   tag:   null,
-  scope: context.config.revertTo?.id ? 'restored' : null,
+  scope: $.config.revertTo?.id ? 'restored' : null,
 })
 
 log.success(`Container started → ${container} on ${revertImage}`)

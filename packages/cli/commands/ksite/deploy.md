@@ -8,5 +8,5 @@ examples:
 ---
 
 ```js
-context.exec({ command: 'npm run deploy:site', dry: flag.dry })
+$.exec({ command: 'npm run deploy:site', dry: flag.dry })
 ```

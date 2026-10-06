@@ -36,8 +36,8 @@ const opts = [flag.visibility && '--visibility', flag.json && '--json'].filter(B
 // (exit 1): cd … litestone … explain @nosuch` underneath that, which is a
 // second report saying less than the first. Keep the status, drop the noise.
 try {
-  await context.stream({
-    command: `${litestone(context)} explain${word}${opts ? ' ' + opts : ''}`,
+  await $.stream({
+    command: `${litestone($)} explain${word}${opts ? ' ' + opts : ''}`,
   })
 } catch {
   process.exitCode = 1

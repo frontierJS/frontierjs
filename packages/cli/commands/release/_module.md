@@ -11,13 +11,13 @@ import { resolve } from 'path'
 // helper in db/_module.md and test/_module.md — a namespace module is the only
 // script a command is compiled with, so there is nowhere shared to put it.
 
-const litestone = (context) => `cd ${JSON.stringify(context.paths.root)} && ${context.bin('litestone')}`
+const litestone = ($) => `cd ${JSON.stringify($.paths.root)} && ${$.bin('litestone')}`
 
 // ─── schemaPath ──────────────────────────────────────────────────────────────
 // Existence is not checked here: the litestone CLI already fatals by name when
 // the schema is missing, and a second check would drift from it.
 
-const schemaPath = (context) => resolve(context.paths.db, 'schema.lite')
+const schemaPath = ($) => resolve($.paths.db, 'schema.lite')
 </script>
 
 ## The Release realm

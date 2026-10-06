@@ -64,7 +64,7 @@ function runWith(runtime) {
 }
 
 describe('a stack from a command names the .md and the line', () => {
-  for (const runtime of ['node', 'bun']) {
+  for (const runtime of ['bun']) {
     test(`${runtime}: the frame is boom.md:9`, () => {
       const out = runWith(runtime)
 

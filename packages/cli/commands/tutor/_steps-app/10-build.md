@@ -16,22 +16,22 @@ injection and the page loads no JavaScript at all. The HTML looks right, the
 build is green, and nothing runs.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 10
+$.config.__step = 10
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
-context.exec({ command: 'bun run build', cwd: context.config.appDir })
+$.exec({ command: 'bun run build', cwd: $.config.appDir })
 
-const index = join(context.config.appDir, 'web', 'dist', 'client', 'index.html')
+const index = join($.config.appDir, 'web', 'dist', 'client', 'index.html')
 
-if (!await must(context, probe.fileExists({ path: index, name: 'web/dist/client/index.html' }), {
+if (!await must($, probe.fileExists({ path: index, name: 'web/dist/client/index.html' }), {
   likely:    'the build failed — its output is above',
-  reproduce: `cd ${context.config.appDir} && bun run build`,
+  reproduce: `cd ${$.config.appDir} && bun run build`,
 })) return
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   index,
   needle: /<script[^>]+src="[^"]+\.js"/,
   name:   'the built page loads its bundle',

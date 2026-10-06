@@ -40,9 +40,9 @@ flags:
 
 
 ```js
-openTutor(context, 'tutor:change', { ephemeral: [] })
+openTutor($, 'tutor:change', { ephemeral: [] })
 
-context.config.source = flag.source || defaultSource()
+$.config.source = flag.source || defaultSource()
 ```
 
 ## Lesson 10 — the schema you already deployed

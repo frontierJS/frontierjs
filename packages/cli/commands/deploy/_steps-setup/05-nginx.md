@@ -4,9 +4,9 @@ description: Generate and write nginx config for this app
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath, appId, edge, apiPort } = context.config
+const { host, serverPath, appId, edge, apiPort } = $.config
 
 // The pause guard and the page it serves come from `core/pause.js`, which is
 // also what `deploy:pause` writes against and what `deploy:status` greps for.
@@ -27,7 +27,7 @@ echo('\n' + nginxConf + '\n')
 const remotePath = vhostPath(appId)
 const enabledPath = `/etc/nginx/sites-enabled/${appId}`
 
-const answer = await question(`Write this config to ${host}:${remotePath}? (y/N) `)
+const answer = await tty.line(`Write this config to ${host}:${remotePath}? (y/N) `)
 if (answer.trim().toLowerCase() !== 'y') {
   log.info('Skipped — copy the config above to your server manually')
   return
@@ -38,7 +38,7 @@ if (answer.trim().toLowerCase() !== 'y') {
 // expands them writes `proxy_set_header Host ;` — a file that looks like a
 // config and is one nginx refuses. `machine.run` pipes this to the target's own
 // shell, so `'NGINXEOF'` is the only quoting between here and the file.
-const machine = machineFor(context, host, context.config.serverPath)
+const machine = machineFor($, host, $.config.serverPath)
 
 machine.run(`sudo tee ${remotePath} > /dev/null << 'NGINXEOF'
 ${nginxConf}
@@ -61,7 +61,7 @@ try {
 try {
   machine.run('sudo nginx -t')
   log.success('nginx config written and validated')
-  context.config.nginxWritten = true
+  $.config.nginxWritten = true
 } catch (err) {
   log.warn('nginx config written but validation failed: ' + err.message)
   log.info(`Review with: ${machine.local ? 'sudo nginx -t' : `ssh ${host} "sudo nginx -t"`}`)

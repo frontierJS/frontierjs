@@ -72,7 +72,7 @@ if (!/^[A-Z]/.test(name)) {
   log.warn(`Components are PascalCase — got '${name}'. A lowercase name under src/routes/ is scanned as a route.`)
 }
 
-const filePath = resolve(context.paths.webComponents, file)
+const filePath = resolve($.paths.webComponents, file)
 
 if (flag.dry) {
   log.dry(`Would create: ${filePath}`)
@@ -90,6 +90,6 @@ log.success(`Created ${filePath}`)
 
 if (flag.open) {
   const editor = process.env.EDITOR || 'vi'
-  context.exec({ command: `${editor} "${filePath}"` })
+  $.exec({ command: `${editor} "${filePath}"` })
 }
 ```

@@ -23,14 +23,14 @@ only a deployed container answers with it. It is what lets a browser know it is
 running against a build that no longer exists.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir', 'serverDir'], { from: { appDir: '02-app', serverDir: '03-target' } })) return
+if (!needs($, ['appDir', 'serverDir'], { from: { appDir: '02-app', serverDir: '03-target' } })) return
 
-const app       = context.config.appDir
-const container = context.config.container
+const app       = $.config.appDir
+const container = $.config.container
 
 // `fli deploy` throws on a failed step and the throw is the whole diagnosis a
 // person gets. One class deserves better because nothing about it is their
@@ -39,29 +39,29 @@ const container = context.config.container
 // there. The lesson already puts its workspace under $HOME to avoid it, so
 // reaching here means the workspace was STATED.
 try {
-  context.exec({ command: `${context.fli} deploy --api`, cwd: app })
+  $.exec({ command: `${$.fli} deploy --api`, cwd: app })
 } catch (err) {
-  const blind = /unable to prepare context: path .* not found|failed to build: resolve .*lstat .*: no such file or directory/
+  const blind = /unable to prepare $: path .* not found|failed to build: resolve .*lstat .*: no such file or directory/
   if (!blind.test(String(err?.stdout ?? '') + String(err?.message ?? ''))) throw err
 
   log.error([
     'the Docker daemon cannot read the build context',
-    `    ${'asked'.padEnd(10)}docker build in ${context.config.serverDir}`,
+    `    ${'asked'.padEnd(10)}docker build in ${$.config.serverDir}`,
     `    ${'got'.padEnd(10)}a path it says is not there, and it is`,
     `    ${'likely'.padEnd(10)}this shell's /tmp is private to it, so the daemon sees a different one`,
-    `    ${'continue'.padEnd(10)}fli ${context.config.lesson} --workspace ~/frontier-tutorial`,
+    `    ${'continue'.padEnd(10)}fli ${$.config.lesson} --workspace ~/frontier-tutorial`,
   ].join('\n'))
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-if (!await must(context, probe.dockerRunning({ container, name: `the container ${container} is running` }), {
+if (!await must($, probe.dockerRunning({ container, name: `the container ${container} is running` }), {
   likely:    'the deploy did not reach the swap, or the container exited — its output is above',
   reproduce: `docker logs --tail 40 ${container}`,
 })) return
 
-if (!await must(context, probe.httpStatus({
-  url:     `http://127.0.0.1:${context.config.port}/api/health`,
+if (!await must($, probe.httpStatus({
+  url:     `http://127.0.0.1:${$.config.port}/api/health`,
   retries: 20,
   name:    'the deployed app answers health',
 }), {
@@ -71,15 +71,15 @@ if (!await must(context, probe.httpStatus({
 
 const commit = shortCommit(app)
 
-if (!await must(context, probe.header({
-  url:    `http://127.0.0.1:${context.config.port}/api/health`,
+if (!await must($, probe.header({
+  url:    `http://127.0.0.1:${$.config.port}/api/health`,
   name:   'x-fjs-build',
   expect: commit,
   label:  'the app states the build a browser compares against',
 }), {
   likely:    'the stamp and the statement disagree — the cli writes VITE_FJS_BUILD and the container is passed FJS_BUILD',
-  reproduce: `curl -sI http://127.0.0.1:${context.config.port}/api/health | grep -i x-fjs-build`,
+  reproduce: `curl -sI http://127.0.0.1:${$.config.port}/api/health | grep -i x-fjs-build`,
 })) return
 
-remember(context, '06-deploy', { firstImage: imageBehind(container), firstCommit: commit })
+remember($, '06-deploy', { firstImage: imageBehind(container), firstCommit: commit })
 ```

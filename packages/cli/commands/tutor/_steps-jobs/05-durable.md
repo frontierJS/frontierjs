@@ -34,22 +34,22 @@ the primary key, so a second dispatch under the same id is a no-op for all time.
 That is how a redelivery is made safe.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir', 'jobNoteId'], { from: '04-job' })) return
+if (!needs($, ['appDir', 'jobNoteId'], { from: '04-job' })) return
 
-const jobsDb = join(context.config.appDir, 'db', 'jobs.db')
+const jobsDb = join($.config.appDir, 'db', 'jobs.db')
 
-if (!await must(context, probe.fileExists({ path: jobsDb, name: 'db/jobs.db — the queue is a file' }), {
+if (!await must($, probe.fileExists({ path: jobsDb, name: 'db/jobs.db — the queue is a file' }), {
   likely: 'the queue never opened its database, which means nothing was ever dispatched',
 })) return
 
 // The name is asserted along with the status. A row that succeeded under some
 // OTHER name would mean the file-naming rule had not held, which is the one
 // thing about this queue that fails silently.
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db:     jobsDb,
   sql:    "select name, status, attempts from jobs where name = 'finish-note' order by rowid desc limit 1",
   expect: (rows) => rows[0]?.status === 'done',
@@ -59,7 +59,7 @@ if (!await must(context, probe.sqliteRow({
   reproduce: `bun -e "const {Database}=require('bun:sqlite');console.log(new Database('${jobsDb}',{readonly:true}).query('select name,status,attempts from jobs').all())"`,
 })) return
 
-if (!await must(context, probe.sqliteRow({
+if (!await must($, probe.sqliteRow({
   db:     jobsDb,
   sql:    "select attempts from jobs where name = 'finish-note' order by rowid desc limit 1",
   expect: (rows) => Number(rows[0]?.attempts) >= 1,

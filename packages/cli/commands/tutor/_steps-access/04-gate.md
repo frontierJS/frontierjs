@@ -22,31 +22,31 @@ Nothing in `api/src/services/notes.service.ts` says any of this. The service is
 eleven lines and none of them mention authentication.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir', 'userToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
+if (!needs($, ['appDir', 'userToken'], { from: { appDir: '01-app', userToken: '03-people' } })) return
 
-if (!await refreshTokens(context)) return
+if (!await refreshTokens($)) return
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
 const note = JSON.stringify({ title: 'a note', body: 'from lesson 4', done: false })
 
 // read at 0 — a stranger, with no token at all
-if (!await must(context, probe.httpStatus({
-  url:  apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:  apiUrl($, '/notes'),
   name: 'a stranger may LIST notes — read is 0',
 }), {
   likely: 'the gate has been changed already, or the notes service did not load',
 })) return
 
 // create at 4 — the same stranger, refused
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
   method:  'POST',
   headers: asCaller(null),
   body:    note,
@@ -54,14 +54,14 @@ if (!await must(context, probe.httpStatus({
   name:    'and may NOT write one — create is 4',
 }), {
   likely:    'the create gate is not 4 — read the four numbers on model Note',
-  reproduce: `grep -A 2 '@@gate' ${schemaFile(context)}`,
+  reproduce: `grep -A 2 '@@gate' ${schemaFile($)}`,
 })) return
 
 // …and the pair that makes the refusal mean something
-if (!await must(context, probe.httpStatus({
-  url:     apiUrl(context, '/notes'),
+if (!await must($, probe.httpStatus({
+  url:     apiUrl($, '/notes'),
   method:  'POST',
-  headers: asCaller(context.config.userToken),
+  headers: asCaller($.config.userToken),
   body:    note,
   expect:  201,
   name:    'a signed-in caller sending the same body is accepted',

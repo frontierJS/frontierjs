@@ -1,17 +1,17 @@
 ---
 title: 02-pause
 description: Write the guard file — the edge refuses from the next request
-skip: "context.config.pauseKind !== 'pause'"
+skip: "$.config.pauseKind !== 'pause'"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath } = context.config
+const { host, serverPath } = $.config
 const { pausedFile, pagePath, DEFAULT_PAGE } =
   await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
 
-const machine = machineFor(context, host, serverPath)
+const machine = machineFor($, host, serverPath)
 
 // The page first. nginx answers its own 503 when the file it was pointed at is
 // missing, which is a blank sentence to the person reading it — so a pause that

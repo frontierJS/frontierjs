@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 
 const { findProjectRoot, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } = await import('../core/utils.js')
+const { compileCli } = await import('../core/compiler.js')
 
 // A monorepo with two FJS apps inside it — the shape of this repo (example/,
 // packages/basecamp/). Walking up to the .git root landed on a directory with
@@ -118,22 +119,29 @@ describe('temp root', () => {
     expect(fliTmpRoot(t('writable'))).toBe(join(t('writable'), '.fli-tmp'))
   })
 
-  test('a read-only install falls back to the OS temp dir, node_modules linked', () => {
+  test('a read-only install falls back to the OS temp dir', () => {
     if (process.getuid?.() === 0) return   // root ignores the mode bits
     const root = t('readonly')
-    mkdirSync(join(root, 'node_modules'), { recursive: true })
+    mkdirSync(root, { recursive: true })
     chmodSync(root, 0o555)
     try {
       const answer = fliTmpRoot(root)
       expect(answer.startsWith(realpathSync(tmpdir()))).toBe(true)
-      // The link is what keeps `import 'zx/globals'` resolving from a shim that
-      // no longer sits inside the install.
-      expect(realpathSync(join(answer, 'node_modules'))).toBe(join(root, 'node_modules'))
       writeFileSync(join(answer, 'probe.mjs'), 'export default 1\n')
       rmSync(answer, { recursive: true, force: true })
     } finally {
       chmodSync(root, 0o755)
     }
+  })
+
+  // What lets the fallback be a bare directory: a shim resolves nothing from
+  // where it sits. A bare specifier in the head would need a node_modules on
+  // the path, which is the symlink FJS-166 was closed with and no longer has.
+  test('a compiled shim imports nothing by a bare specifier', () => {
+    const shim = compileCli('---\ntitle: t\n---\n\n```js\necho(1)\n```\n')
+    const specifiers = [...shim.matchAll(/^import\b[^'"]*['"]([^'"]+)['"]/gm)].map(m => m[1])
+    expect(specifiers.length).toBeGreaterThan(0)
+    for (const s of specifiers) expect(s).toMatch(/^node:/)
   })
 
   test('the sweep reaps dead sessions and leaves live ones', () => {

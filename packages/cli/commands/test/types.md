@@ -37,7 +37,7 @@ const { resolve } = await import('node:path')
 const { runTypecheck, formatTypecheck } =
   await import(resolve(global.fliRoot, 'core/typecheck.js'))
 
-const result = runTypecheck({ dir: context.paths.root })
+const result = runTypecheck({ dir: $.paths.root })
 
 if (result.status !== 'ok') {
   log.error(result.message)

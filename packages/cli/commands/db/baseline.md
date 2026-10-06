@@ -16,11 +16,11 @@ examples:
 //
 // It refuses to record a lie: anything the migrations build and this database
 // lacks is named, and nothing is written.
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 log.info('Recording migrations as applied...')
-context.exec({ command: `${litestone(context)} migrate baseline --schema ${schema}` })
+$.exec({ command: `${litestone($)} migrate baseline --schema ${schema}` })
 log.success('Baselined — nothing was run')
 ```

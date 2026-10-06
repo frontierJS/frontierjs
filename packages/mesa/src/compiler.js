@@ -16,7 +16,6 @@
  */
 
 import * as acorn from 'acorn'
-import * as astring from 'astring'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -413,18 +412,57 @@ const svgElementList =
   'animate,animateMotion,animateTransform,circle,clipPath,defs,desc,ellipse,feBlend,feColorMatrix,feComponentTransfer,feComposite,feConvolveMatrix,feDiffuseLighting,feDisplacementMap,feDistantLight,feDropShadow,feFlood,feFuncA,feFuncB,feFuncG,feFuncR,feGaussianBlur,feImage,feMerge,feMergeNode,feMorphology,feOffset,fePointLight,feSpecularLighting,feSpotLight,feTile,feTurbulence,filter,g,hatch,hatchpath,image,line,linearGradient,marker,mask,mpath,path,pattern,polygon,polyline,radialGradient,rect,set,stop,switch,symbol,text,textPath,tspan,use,view'
 export const svgElements = Object.fromEntries(svgElementList.split(',').map((k) => [k, true]))
 
+/**
+ * Rename identifiers in `exp` by splicing each new name over the old one at
+ * acorn's offsets, so the author's spacing and comments survive. Re-printing
+ * the tree reflowed them and needed a printer dependency for two call sites.
+ */
 export function replaceKeyword(exp, fn, fullParse) {
-  let changed = false
-  const r = parseJS(exp, fullParse).transform((n, pk) => {
-    if (n.type !== 'Identifier') return
-    if (pk === 'property' || pk === 'params') return
+  const edits = []
+  const r = parseJS(exp, fullParse)
+  r.transform((n, pk) => {
+    if (n.type !== 'Identifier' || pk === 'params') return
+    const parent = r.getParent(n)
+    // `a.b` names nothing to rename after the dot; `a[b]` does.
+    if (pk === 'property' && parent?.type === 'MemberExpression' && !parent.computed) return
+    if (pk === 'key' && parent?.type === 'Property' && !parent.computed) return
     const name = fn(n.name)
-    if (name) {
-      n.name = name
-      changed = true
-    }
+    if (!name || name === n.name) return
+    // `{a}` is `{a: a}`, and only the value is the author's variable.
+    if (pk === 'value' && parent?.type === 'Property' && parent.shorthand) {
+      edits.push({ start: parent.start, end: parent.end, text: `${n.name}: ${name}` })
+    } else edits.push({ start: n.start, end: n.end, text: name })
   })
-  return changed ? r.build() : exp
+  return spliceEdits(exp, edits)
+}
+
+/**
+ * Apply `{start, end, text}` edits to `src`. Offsets are into the ORIGINAL
+ * text and edits must not overlap; applied last-first so earlier offsets stay
+ * valid. Returns `src` itself when there is nothing to do.
+ */
+export function spliceEdits(src, edits) {
+  if (!edits.length) return src
+  const sorted = [...edits].sort((a, b) => b.start - a.start || b.end - a.end)
+  let out = src
+  for (const e of sorted) out = out.slice(0, e.start) + e.text + out.slice(e.end)
+  return out
+}
+
+/**
+ * Map an offset into the spliced text back onto the original: a diagnostic
+ * raised against the rewritten script has to name the line the author wrote.
+ * An offset inside replaced text maps to where that text began.
+ */
+export function unspliceOffset(pos, edits) {
+  let shift = 0
+  for (const e of [...edits].sort((a, b) => a.start - b.start)) {
+    const at = e.start + shift
+    if (pos < at) break
+    if (pos < at + e.text.length) return e.start
+    shift += e.text.length - (e.end - e.start)
+  }
+  return pos - shift
 }
 
 export function detectExpressionType(name) {
@@ -474,7 +512,6 @@ export function parseJS(exp, fullParse) {
     return self
   }
   self.getParent = (n) => parents.get(n)
-  self.build = (data) => astring.generate(data || self.ast, { indent: '', lineEnd: '' })
   return self
 }
 
@@ -9699,9 +9736,9 @@ export async function compile(source, config = {}) {
   // Where the script body begins in the `.mesa`, so acorn's offsets can be put
   // back onto the file. `readTag` leaves `end` at the character after `>`.
   const _scriptStart = ctx.scriptNodes[0]?.end ?? null
-  // The `$.context` rewrite below reprints the script, after which an offset
-  // into it means nothing.
-  let _scriptRegenerated = false
+  // The `$.context` rewrite below splices the script; these edits put an
+  // offset into the result back onto the author's text.
+  let _scriptEdits = []
 
   // ── the bare spelling is gone (FJS-D132 phase 4) ─────────────────────────
   // `$$onMount` and its eleven siblings are reached through the door now. This
@@ -9729,14 +9766,15 @@ export async function compile(source, config = {}) {
   // access they would all compile and none would do its job — `$.context.k = 1`
   // would quietly assign to the shared context object.
   //
-  // Rewritten on the AST rather than the text so a `'$.context'` inside a
-  // string is not caught, and gated on the substring so a component that does
-  // not use the door is not reparsed or reprinted at all.
+  // Found on the AST rather than the text so a `'$.context'` inside a string
+  // is not caught, then spliced over the member expression's own span so the
+  // rest of the script keeps its formatting. Gated on the substring so a
+  // component that does not use the door is not reparsed at all.
   const COMPILED_DOOR = ['context', 'inspect', 'mounted']
   if (COMPILED_DOOR.some((n) => rawScript.includes('$.' + n))) {
     try {
       const ast = acorn.parse(rawScript, { sourceType: 'module', ecmaVersion: 'latest' })
-      let changed = false
+      const edits = []
       const walk = (node) => {
         if (!node || typeof node !== 'object') return
         for (const key of Object.keys(node)) {
@@ -9748,16 +9786,15 @@ export async function compile(source, config = {}) {
               child.object?.type === 'Identifier' && child.object.name === '$' &&
               COMPILED_DOOR.includes(child.property?.name)
             ) {
-              node[key] = { type: 'Identifier', name: '$' + child.property.name }
-              changed = true
+              edits.push({ start: child.start, end: child.end, text: '$' + child.property.name })
             } else walk(child)
           }
         }
       }
       walk(ast)
-      if (changed) {
-        rawScript = astring.generate(ast)
-        _scriptRegenerated = true
+      if (edits.length) {
+        rawScript = spliceEdits(rawScript, edits)
+        _scriptEdits = edits
       }
     } catch {
       // A script that will not parse is reported by the parse below; leaving
@@ -9779,9 +9816,9 @@ export async function compile(source, config = {}) {
     scriptAST = { type: 'Program', body: [], sourceType: 'module' }
     // acorn's offset is into the script body; `_scriptStart` puts it back onto
     // the `.mesa` so the line named is the line the author is looking at.
-    const at = (_scriptRegenerated || e.pos == null || _scriptStart == null)
+    const at = (e.pos == null || _scriptStart == null)
       ? null
-      : ctx.posOf(_scriptStart + e.pos)
+      : ctx.posOf(_scriptStart + unspliceOffset(e.pos, _scriptEdits))
     scriptParseError = `<script> does not parse: ${e.message}${at ? ` — ${at}` : ''}`
   }
 
@@ -9805,11 +9842,11 @@ export async function compile(source, config = {}) {
   // A script diagnostic may carry the offset it happened at. Only here are the
   // filename and the script's own start in scope, so the offset becomes a
   // `File.mesa:line:column` on the way out — the same shape the template's
-  // parse errors take below. A regenerated script has no offsets to put back.
+  // parse errors take below.
   ctx.analysis.errors = ctx.analysis.errors.map((e) => {
     if (typeof e === 'string') return e
-    const at = (!_scriptRegenerated && e.pos != null && _scriptStart != null)
-      ? ctx.posOf(_scriptStart + e.pos)
+    const at = (e.pos != null && _scriptStart != null)
+      ? ctx.posOf(_scriptStart + unspliceOffset(e.pos, _scriptEdits))
       : null
     return at ? `${e.message} — ${at}` : e.message
   })

@@ -41,13 +41,13 @@ validator is enforced, and a `@@gate` refusing the write first would answer
 What none of it proves is itself. That is the next step.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const file = join(app, 'api', 'test', 'schema.test.ts')
 
 writeFileSync(file, [
@@ -89,7 +89,7 @@ writeFileSync(file, [
   '',
 ].join('\n'), 'utf8')
 
-if (!await must(context, probe.command({
+if (!await must($, probe.command({
   bin:      'bun',
   args:     ['test', 'api/test/schema.test.ts'],
   cwd:      app,
@@ -105,5 +105,5 @@ log.info('')
 log.info('  none of those four is a test anybody wrote')
 log.info('')
 
-remember(context, '04-checks', { checksFile: file })
+remember($, '04-checks', { checksFile: file })
 ```

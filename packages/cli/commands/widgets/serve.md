@@ -20,9 +20,9 @@ change. Local and deployed answer alike, which is the only way a header is
 tested at all.
 
 ```js
-context.exec({
-  command: `${context.bin('sierra', context.paths.widgets)} widgets --config config/sierra.config.js --serve --port ${flag.port || 8300}`,
-  cwd:     context.paths.widgets,
+$.exec({
+  command: `${$.bin('sierra', $.paths.widgets)} widgets --config config/sierra.config.js --serve --port ${flag.port || 8300}`,
+  cwd:     $.paths.widgets,
   dry:     flag.dry,
 })
 ```

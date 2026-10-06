@@ -32,7 +32,7 @@ For the language specification, see
 ## Quick start
 
 ```bash
-bun install         # acorn, astring, vitest -- and the optional peers, as devDependencies
+bun install         # acorn, vitest -- and the optional peers, as devDependencies
 bun run serve       # then open /packages/mesa/example/ — the live REPL
 bun run test        # vitest, then Chrome — compiler, runtime, render, css
 ```
@@ -57,7 +57,8 @@ import fails with an error naming the feature and the install line:
 | To use | Add to the app |
 |---|---|
 | `.md` pages | `unified remark-parse remark-gfm remark-rehype rehype-slug rehype-stringify` |
-| `render`, `render-component`, `css-inliner` | `happy-dom` |
+| `render` | `happy-dom` |
+| `render-component`, `css-inliner` | `happy-dom css-tree` |
 
 ---
 

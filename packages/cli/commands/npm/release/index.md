@@ -57,7 +57,7 @@ Full release pipeline. Steps run in sequence:
 5. **push** — `git push origin HEAD --tags` (one invocation: two would run a pre-push hook twice)
 
 ```js
-const root  = context.paths.root
+const root  = $.paths.root
 const pkg   = getPkg(root)
 
 if (!pkg.name || !pkg.version) {
@@ -70,13 +70,13 @@ log.info(`Bump:     ${arg.bump}${flag.preid ? `-${flag.preid}` : ''}`)
 log.info(`Tag:      ${flag.tag}`)
 
 // Share state across steps
-context.config.root    = root
-context.config.pkg     = pkg
-context.config.bump    = arg.bump
-context.config.tag     = flag.tag
-context.config.preid   = flag.preid
-context.config.otp     = flag.otp
-context.config.noBuild = !flag.build
-context.config.noTest  = !flag.tests
-context.config.startTime = Date.now()
+$.config.root    = root
+$.config.pkg     = pkg
+$.config.bump    = arg.bump
+$.config.tag     = flag.tag
+$.config.preid   = flag.preid
+$.config.otp     = flag.otp
+$.config.noBuild = !flag.build
+$.config.noTest  = !flag.tests
+$.config.startTime = Date.now()
 ```

@@ -19,40 +19,40 @@ one function — `pointAtLocalServer` — and the deploy CI phase runs the ident
 one, because two copies of a recipe drift and only one of them is exercised.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '02-app' })) return
+if (!needs($, ['appDir'], { from: '02-app' })) return
 
-const app = context.config.appDir
-const srv = join(context.config.ws.dir, 'server')
+const app = $.config.appDir
+const srv = join($.config.ws.dir, 'server')
 
-context.exec({
-  command: `${context.fli} make:deploy --server localhost --domain ${context.config.app}.invalid`,
+$.exec({
+  command: `${$.fli} make:deploy --server localhost --domain ${$.config.app}.invalid`,
   cwd:     app,
 })
 
-if (!await must(context, probe.fileExists({ path: join(app, 'deploy', 'Dockerfile'), name: 'deploy/Dockerfile' }), {
+if (!await must($, probe.fileExists({ path: join(app, 'deploy', 'Dockerfile'), name: 'deploy/Dockerfile' }), {
   likely: 'make:deploy did not finish — its output is above',
 })) return
 
 const confPath = join(app, 'frontier.config.js')
-const { text, ok } = pointAtLocalServer(readFileSync(confPath, 'utf8'), { serverDir: srv, port: context.config.port })
+const { text, ok } = pointAtLocalServer(readFileSync(confPath, 'utf8'), { serverDir: srv, port: $.config.port })
 writeFileSync(confPath, text, 'utf8')
 
 // `ok: false` means every rewrite missed and the file went back unchanged — the
 // deploy would then go to whatever host make:deploy was given, which is the one
 // failure this lesson must not have.
-if (!await must(context, {
+if (!await must($, {
   ok,
   name:  'the deploy block points at this machine',
-  asked: `server localhost, path ${srv}, port ${context.config.port}`,
+  asked: `server localhost, path ${srv}, port ${$.config.port}`,
   got:   ok ? 'it does' : 'the generated block did not match what the rewrite expects',
 }, {
   likely:    'the make:deploy template changed shape — pointAtLocalServer is written against it',
   reproduce: `cat ${confPath}`,
 })) return
 
-remember(context, '03-target', { serverDir: srv })
+remember($, '03-target', { serverDir: srv })
 ```

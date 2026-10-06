@@ -14,8 +14,8 @@ flags:
 ---
 
 ```js
-const url = flag.url || context.env.SERVERS_URL
+const url = flag.url || $.env.SERVERS_URL
 if (!url) { log.error('$SERVERS_URL is not set — use --url or add it to .env'); return }
-const browser = context.env.BROWSER || 'xdg-open'
-context.exec({ command: `${browser} ${url} &`, dry: flag.dry })
+const browser = $.env.BROWSER || 'xdg-open'
+$.exec({ command: `${browser} ${url} &`, dry: flag.dry })
 ```

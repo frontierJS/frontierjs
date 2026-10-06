@@ -4,10 +4,10 @@ description: Create the app directory structure on the server
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, serverPath } = context.config
-const machine = machineFor(context, host, serverPath)
+const { host, serverPath } = $.config
+const machine = machineFor($, host, serverPath)
 
 log.info(`Creating directory structure at ${serverPath}...`)
 

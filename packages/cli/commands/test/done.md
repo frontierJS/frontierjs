@@ -17,7 +17,7 @@ flags:
 const { runDone } = await import(resolve(global.fliRoot, 'core/done.js'))
 
 // The workspace, because the diff and the registers are its.
-const root   = (await context.wsRoot?.()) ?? context.paths.root
+const root   = (await $.wsRoot?.()) ?? $.paths.root
 const report = runDone(root)
 
 if (flag.json) {

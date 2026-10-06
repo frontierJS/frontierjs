@@ -4,7 +4,7 @@
 // The assertions that have to stay are the ones a resume gets wrong silently.
 //
 //   **a refused step records `failed`** — the runner hands `afterStep` the
-//   status `succeeded` for a step that set `context.config.abort` and returned,
+//   status `succeeded` for a step that set `$.config.abort` and returned,
 //   because nothing threw. Take its word and every failed probe is remembered
 //   as done, so the resume skips the step that broke and the lesson continues
 //   past it.

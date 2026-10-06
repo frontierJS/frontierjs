@@ -13,9 +13,9 @@ If Docker is not here the lesson stops rather than failing — there is nothing
 wrong with your machine, this lesson just cannot be run on it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 1
+$.config.__step = 1
 
 for (const bin of ['docker', 'git']) {
   const found = probe.commandExists({ bin })
@@ -25,7 +25,7 @@ for (const bin of ['docker', 'git']) {
     // is not a deploy target and that is a legitimate answer.
     log.warn(`${bin} is not on this PATH, so there is no machine to deploy to — stopping here.`)
     log.info('  Lessons 1 and 2 need neither. This one is the only part of FrontierJS that does.')
-    context.config.stop = true
+    $.config.stop = true
     return
   }
   log.success(`${bin}`)
@@ -35,13 +35,13 @@ const daemon = sh('docker', ['version', '--format', '{{.Server.Version}}'])
 if (daemon.code !== 0) {
   log.warn('the Docker daemon is not answering, so nothing can be built or run — stopping here.')
   log.info(`  ${daemon.stderr || daemon.error || 'docker version failed'}`)
-  context.config.stop = true
+  $.config.stop = true
   return
 }
 log.success(`the Docker daemon answers — ${daemon.stdout}`)
 
-if (!await must(context, probe.portFree({ port: context.config.port, name: `port ${context.config.port} is free for the container` }), {
+if (!await must($, probe.portFree({ port: $.config.port, name: `port ${$.config.port} is free for the container` }), {
   likely:    'something is already listening there — an earlier run of this lesson, or a dev server',
-  reproduce: `docker ps --filter publish=${context.config.port}`,
+  reproduce: `docker ps --filter publish=${$.config.port}`,
 })) return
 ```

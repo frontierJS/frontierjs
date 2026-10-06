@@ -31,17 +31,17 @@ a baseline that brought its own imports keeps them, because those are the ones
 that release actually had.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 2
+$.config.__step = 2
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app = context.config.appDir
+const app = $.config.appDir
 
-context.exec({ command: `${context.fli} release:check`, cwd: app })
+$.exec({ command: `${$.fli} release:check`, cwd: app })
 
-if (!await must(context, probe.fileExists({
+if (!await must($, probe.fileExists({
   path: join(app, 'db', 'release.snapshot.md'),
   name: 'db/release.snapshot.md — the declared surface, committed',
 }), {
@@ -49,7 +49,7 @@ if (!await must(context, probe.fileExists({
   reproduce: `cd ${app} && fli release:check`,
 })) return
 
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   join(app, 'db', 'release.snapshot.md'),
   needle: 'Note',
   name:   'and it knows about Note',
@@ -62,7 +62,7 @@ if (!await must(context, probe.fileContains({
 // line, so an app arriving here already changed is ordinary — normalized rather
 // than assumed, since the alternative is a lesson whose last step depends on
 // which lessons you ran before it.
-editSchema(context, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
+editSchema($, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
 
 // The same normalization for the column this lesson adds. Running it twice in
 // one workspace would otherwise capture a baseline that ALREADY has `priority`,
@@ -72,11 +72,11 @@ editSchema(context, '@@gate("4.4.4.6")', '@@gate("0.4.4.6")')
 // Written directly rather than through `editSchema`, whose contract is *the
 // target wins where it is already there* — and every schema already contains
 // the empty string, so a removal expressed that way is a no-op every time.
-const before = readFileSync(schemaFile(context), 'utf8')
+const before = readFileSync(schemaFile($), 'utf8')
 const without = before.replace(/^[ \t]*priority[ \t]+Int\??[ \t]*\r?\n/m, '')
-if (without !== before) writeFileSync(schemaFile(context), without, 'utf8')
+if (without !== before) writeFileSync(schemaFile($), without, 'utf8')
 
-copyFileSync(schemaFile(context), join(app, 'db', 'before.lite'))
+copyFileSync(schemaFile($), join(app, 'db', 'before.lite'))
 
-remember(context, '02-baseline', { baseline: 'db/before.lite' })
+remember($, '02-baseline', { baseline: 'db/before.lite' })
 ```

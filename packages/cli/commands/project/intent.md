@@ -36,7 +36,7 @@ What a screen shows is not indexed, so a UI fact reports that half as
 `unverified` rather than guessing.
 
 ```js
-const root = context.paths.root
+const root = $.paths.root
 
 const text = flag.file ? readFileSync(flag.file, 'utf8') : flag.candidate
 if (!text) { log.error('pass --candidate <json> or --file <path>'); return }

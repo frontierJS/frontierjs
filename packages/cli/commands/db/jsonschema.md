@@ -7,9 +7,9 @@ examples:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 // Same destination as `fli db:push`, which regenerates it — one answer to
 // where the derived document lives, or the two commands write two files and
@@ -18,6 +18,6 @@ const { jsonSchemaPath } = await import(path.resolve(global.fliRoot, 'core/deriv
 const jsonOut = jsonSchemaPath(path.dirname(schema))
 
 log.info('Generating JSON Schema from schema.lite...')
-context.exec({ command: `${litestone(context)} jsonschema --schema ${schema} --out ${jsonOut}` })
+$.exec({ command: `${litestone($)} jsonschema --schema ${schema} --out ${jsonOut}` })
 log.success(`JSON Schema written to ${jsonOut}`)
 ```

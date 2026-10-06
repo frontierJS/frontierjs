@@ -17,11 +17,11 @@ The account is real. You can sign in with it at
 `http://127.0.0.1:{{webPort}}/login/`.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 5
+$.config.__step = 5
 
-if (!needs(context, ['appDir'], { from: '02-new' })) return
+if (!needs($, ['appDir'], { from: '02-new' })) return
 
 // A run-scoped address. A fixed one passes exactly once and then collides on
 // `email @unique` — and because User soft-deletes, deleting the row through the
@@ -29,13 +29,13 @@ if (!needs(context, ['appDir'], { from: '02-new' })) return
 const email    = `ada-${Date.now().toString(36)}@acme.test`
 const password = 'correct-horse-battery-staple'
 
-if (!await must(context, await ensureApi(context), {
+if (!await must($, await ensureApi($), {
   likely:    'nothing is answering on the API port — run the lesson from the start, or `bun run dev` in the app',
-  reproduce: `cd ${context.config.appDir} && PORT=${context.config.apiPort} bun run start`,
+  reproduce: `cd ${$.config.appDir} && PORT=${$.config.apiPort} bun run start`,
 })) return
 
 const registered = await probe.httpJson({
-  url:     apiUrl(context, '/auth/register'),
+  url:     apiUrl($, '/auth/register'),
   method:  'POST',
   headers: { 'content-type': 'application/json' },
   body:    JSON.stringify({ email, password, name: 'Ada' }),
@@ -44,13 +44,13 @@ const registered = await probe.httpJson({
   name:     'POST /api/auth/register answers a token',
 })
 
-if (!await must(context, registered, {
+if (!await must($, registered, {
   likely:    'auth is not installed in this app — fli new was run without --auth',
-  reproduce: `curl -sS -X POST ${apiUrl(context, '/auth/register')} -H 'content-type: application/json' -d '{"email":"${email}","password":"…","name":"Ada"}'`,
+  reproduce: `curl -sS -X POST ${apiUrl($, '/auth/register')} -H 'content-type: application/json' -d '{"email":"${email}","password":"…","name":"Ada"}'`,
 })) return
 
 const token = registered.json.token
 
 log.info(`signed up as ${email}`)
-remember(context, '05-register', { email, password, token })
+remember($, '05-register', { email, password, token })
 ```

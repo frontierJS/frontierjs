@@ -31,13 +31,13 @@ no command — `digest: null` and `healthy: true` — which is the vacuous pass 
 `providers/executor.ts` exists to make impossible. This lesson never sets it.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 7
+$.config.__step = 7
 
 // `outpostSecret` for the same reason 06 needs it: ensureFleet restarts the
 // machine when nothing is answering, and it may only start on its own key.
-if (!needs(context, ['appId', 'dbFile', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
+if (!needs($, ['appId', 'dbFile', 'outpostSecret', 'token', 'workspaceId', 'basecamp', 'outpost'], {
   from: {
     appId: '06-command', dbFile: '02-basecamp',
     outpostSecret: '05-outpost',
@@ -46,7 +46,7 @@ if (!needs(context, ['appId', 'dbFile', 'outpostSecret', 'token', 'workspaceId',
   },
 })) return
 
-if (!await must(context, await ensureFleet(context, { outpost: true }), {
+if (!await must($, await ensureFleet($, { outpost: true }), {
   likely: 'the control plane or the machine is not answering — run this lesson from the start',
 })) return
 
@@ -61,16 +61,16 @@ if (!probe.commandExists({ bin: 'docker' }).ok) {
   log.info('  control plane really ran on it. A RELEASE starts a container here, which is')
   log.info('  the one thing this machine cannot be asked to do.')
   log.info('')
-  context.config.stop = true
+  $.config.stop = true
   return
 }
 
 const as = {
   'content-type':   'application/json',
-  authorization:    `Bearer ${context.config.token}`,
-  'x-workspace-id': context.config.workspaceId,
+  authorization:    `Bearer ${$.config.token}`,
+  'x-workspace-id': $.config.workspaceId,
 }
-const appId = context.config.appId
+const appId = $.config.appId
 
 // ─── something to release ─────────────────────────────────────────────────
 //
@@ -82,8 +82,8 @@ const image = 'nginx:alpine'
 
 // `patch`, because everything else about the row is already right and a
 // release reads the row as it stands.
-if (!await must(context, await probe.httpJson({
-  url:     hubUrl(context, `/apps/${appId}`),
+if (!await must($, await probe.httpJson({
+  url:     hubUrl($, `/apps/${appId}`),
   method:  'PATCH',
   headers: as,
   body:    JSON.stringify({
@@ -99,7 +99,7 @@ if (!await must(context, await probe.httpJson({
 
 // ─── the release ──────────────────────────────────────────────────────────
 const release = await probe.httpJson({
-  url:      hubUrl(context, '/deployments'),
+  url:      hubUrl($, '/deployments'),
   method:   'POST',
   headers:  as,
   body:     JSON.stringify({ appId, trigger: 'manual' }),
@@ -107,9 +107,9 @@ const release = await probe.httpJson({
   describe: 'a Deployment row, and a job on the queue',
   name:     'a release is created',
 })
-if (!await must(context, release, {
+if (!await must($, release, {
   likely:    'the create refused, which it does when the app has no placement or the machine has no outpost — the reason is in the body above',
-  reproduce: `curl -s -X POST ${hubUrl(context, '/deployments')}`,
+  reproduce: `curl -s -X POST ${hubUrl($, '/deployments')}`,
 })) return
 
 const deploymentId = release.json.id
@@ -117,7 +117,7 @@ const deploymentId = release.json.id
 // Durable work again: the call answered when the row was written, so the
 // verdict is polled. A pull is minutes on a cold daemon.
 const finished = await probe.httpJson({
-  url:      hubUrl(context, `/deployments/${deploymentId}`),
+  url:      hubUrl($, `/deployments/${deploymentId}`),
   headers:  as,
   expect:   (j) => j.status === 'success' || j.status === 'failed',
   describe: 'a release that reached a verdict',
@@ -125,15 +125,15 @@ const finished = await probe.httpJson({
   everyMs:  2_000,
   name:     'the release ran to a verdict',
 })
-if (!await must(context, finished, {
+if (!await must($, finished, {
   likely:    'the pipeline is still running or the job never started — the outpost log is below',
-  detail:    serverLog(context.config.__servers?.outpost ?? { logPath: '' }, 20),
-  reproduce: `curl -s ${hubUrl(context, `/deployments/${deploymentId}`)}`,
+  detail:    serverLog($.config.__servers?.outpost ?? { logPath: '' }, 20),
+  reproduce: `curl -s ${hubUrl($, `/deployments/${deploymentId}`)}`,
 })) return
 
-const machineLog = serverLog(context.config.__servers?.outpost ?? { logPath: '' }, 20)
+const machineLog = serverLog($.config.__servers?.outpost ?? { logPath: '' }, 20)
 
-if (!await must(context, {
+if (!await must($, {
   ok:    finished.json.status === 'success',
   name:  'and it succeeded',
   asked: 'status success',
@@ -150,8 +150,8 @@ if (!await must(context, {
 // answers with. This is the line that separates a release from a job that
 // returned 200.
 let digest = null
-if (!await must(context, probe.sqliteRow({
-  db:     context.config.dbFile,
+if (!await must($, probe.sqliteRow({
+  db:     $.config.dbFile,
   sql:    'select status, builtImage from deployment where id = ?',
   params: [deploymentId],
   expect: (rows) => {
@@ -167,19 +167,19 @@ if (!await must(context, probe.sqliteRow({
 // deliberately stable so a machine cannot accumulate app-1, app-2.
 const container = `fjs-${appId}`
 
-if (!await must(context, probe.dockerRunning({
+if (!await must($, probe.dockerRunning({
   container,
   name: 'a container of that image is running here',
 }), {
   likely:    'the deploy reported success and started nothing — the outpost log is below',
-  detail:    serverLog(context.config.__servers?.outpost ?? { logPath: '' }, 20),
+  detail:    serverLog($.config.__servers?.outpost ?? { logPath: '' }, 20),
   reproduce: `docker ps --filter name=${container}`,
 })) return
 
 // The pair. A digest in a row and a container on a machine are two facts, and
 // only their AGREEMENT says the row describes what is serving.
 const running = probe.dockerImageOf({ container })
-if (!await must(context, {
+if (!await must($, {
   ok:    String(running.got ?? '').startsWith(digest.slice(0, 20)),
   name:  'and it is the same image the row names',
   asked: `the container to be running ${digest.slice(0, 20)}…`,
@@ -193,5 +193,5 @@ log.info(`  ${digest.slice(0, 23)}…   pulled onto this machine, recorded by th
 log.info(`  ${container}   still running — the finish step takes it down`)
 log.info('')
 
-remember(context, '07-release', { deploymentId, container })
+remember($, '07-release', { deploymentId, container })
 ```

@@ -45,7 +45,7 @@ const { runnables }   = await import(resolve(global.fliRoot, 'core/runnables.js'
 const { hostTable, hostCollisions, createProxy, listenWithFallback } =
   await import(resolve(global.fliRoot, 'core/proxy.js'))
 
-const root  = (await context.wsRoot?.()) ?? context.paths.root
+const root  = (await $.wsRoot?.()) ?? $.paths.root
 const rows  = runnables(root)
 const table = hostTable(rows)
 

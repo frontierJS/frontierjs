@@ -16,6 +16,6 @@ args:
 ---
 
 ```js
-const root = context.paths.root
-context.exec({ command: `npm run ${arg.script} --prefix ${root}`, dry: flag.dry })
+const root = $.paths.root
+$.exec({ command: `npm run ${arg.script} --prefix ${root}`, dry: flag.dry })
 ```

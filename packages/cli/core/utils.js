@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, symlinkSync, constants } from 'fs'
+import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, constants } from 'fs'
 import { join, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
@@ -359,17 +359,14 @@ export function findProjectRoot(start, fliRootSelf) {
 // The one owner of "where does a compiled command shim go". Both the runtime
 // (which writes them) and bin/fli.js (which sweeps them at startup) ask here.
 //
-// A shim imports `zx/globals` by bare specifier, so it has to sit somewhere
-// Node's resolver can walk up from and find a node_modules holding zx —
-// <fliRoot>/.fli-tmp/<pid>/ whenever fliRoot is writable.
-//
-// It is not writable for a global install: `npm i -g @frontierjs/cli` lands
-// under a root-owned prefix, where the first temp write is EACCES and EVERY
-// command dies before running. The fallback moves the session under the OS temp
-// dir and symlinks node_modules back at fliRoot's, which is what keeps the bare
-// specifier resolving — Node resolves from the importing file's own directory,
-// and the link sits on that path. The directory is keyed by a digest of fliRoot
-// so two installs never share one link pointing at the wrong tree.
+// <fliRoot>/.fli-tmp/<pid>/ whenever fliRoot is writable. It is not writable
+// for a global install: `npm i -g @frontierjs/cli` lands under a root-owned
+// prefix, where the first temp write is EACCES and EVERY command dies before
+// running (FJS-166). The fallback moves the session under the OS temp dir,
+// keyed by a digest of fliRoot so two installs never share one. A shim can sit
+// anywhere: it imports two node builtins and nothing by a bare specifier that
+// has to be resolved from where the file is, which `test/project-root.test.js`
+// holds.
 const _tmpRoots = new Map()
 
 export function fliTmpRoot(fliRoot) {
@@ -389,14 +386,6 @@ export function fliTmpRoot(fliRoot) {
   const key = createHash('sha1').update(fliRoot).digest('hex').slice(0, 10)
   const fallback = join(tmpdir(), `fli-${key}`)
   mkdirSync(fallback, { recursive: true })
-  try {
-    // 'junction' is the Windows directory-link type that needs no privilege;
-    // ignored on POSIX. EEXIST is the normal case after the first run, and a
-    // dangling link is not one existsSync can see.
-    symlinkSync(join(fliRoot, 'node_modules'), join(fallback, 'node_modules'), 'junction')
-  } catch (err) {
-    if (err.code !== 'EEXIST') throw err
-  }
   _tmpRoots.set(fliRoot, fallback)
   return fallback
 }

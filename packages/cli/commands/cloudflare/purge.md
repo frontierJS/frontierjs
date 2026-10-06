@@ -27,7 +27,7 @@ Purges the Cloudflare cache for a zone. Without `--urls` it purges everything.
 With `--urls` it purges only those specific URLs (up to 30 at a time).
 
 ```js
-const zoneId = await resolveZone(context, flag.zone)
+const zoneId = await resolveZone($, flag.zone)
 
 if (flag.urls) {
   const urls = flag.urls.split(',').map(u => u.trim()).filter(Boolean)
@@ -38,13 +38,13 @@ if (flag.urls) {
   const chunks = []
   for (let i = 0; i < urls.length; i += 30) chunks.push(urls.slice(i, i + 30))
   for (const chunk of chunks) {
-    await cfApi(context, 'POST', `/zones/${zoneId}/purge_cache`, { files: chunk })
+    await cfApi($, 'POST', `/zones/${zoneId}/purge_cache`, { files: chunk })
   }
   log.success(`Purged ${urls.length} URL(s)`)
 } else {
   log.info(`Purging ALL cache for ${flag.zone || zoneId}`)
   if (flag.dry) { log.dry('Would purge all cache'); return }
-  await cfApi(context, 'POST', `/zones/${zoneId}/purge_cache`, { purge_everything: true })
+  await cfApi($, 'POST', `/zones/${zoneId}/purge_cache`, { purge_everything: true })
   log.success('Cache purged')
 }
 ```

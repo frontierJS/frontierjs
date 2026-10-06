@@ -4,9 +4,9 @@ description: Remove the database file
 ---
 
 ```js
-context.exec({
-  command: `rm -f ${context.config.dbPath}/${context.config.dbFile}`,
+$.exec({
+  command: `rm -f ${$.config.dbPath}/${$.config.dbFile}`,
   dry: flag.dry
 })
-log.info(`Removed ${context.config.dbFile}`)
+log.info(`Removed ${$.config.dbFile}`)
 ```

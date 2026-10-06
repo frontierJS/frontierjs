@@ -277,8 +277,7 @@ export function scaffoldExtensionSurface({
  */
 export function extensionDevDeps() {
   return {
-    'chokidar': '^5.0.0',
-    'vite':     '^8.0.10',
+    'vite':     '^8.3.2',
     'ws':       '^8.20.0',
   }
 }

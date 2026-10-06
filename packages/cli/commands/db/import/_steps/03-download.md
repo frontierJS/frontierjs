@@ -4,8 +4,8 @@ description: Download the backup from the remote server
 ---
 
 ```js
-const { server, serverPath, dbPath, backupFile } = context.config
-context.exec({
+const { server, serverPath, dbPath, backupFile } = $.config
+$.exec({
   command: `scp ${server}:${serverPath}/db/backups/${backupFile} ${dbPath}/backups/.`,
   dry: flag.dry
 })

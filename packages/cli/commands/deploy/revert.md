@@ -41,43 +41,43 @@ steps: _steps-revert
 ---
 
 ```js
-const target         = resolveTarget(flag, context.git)
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const target         = resolveTarget(flag, $.git)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is no journal to revert from')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 const api = resolveSide(deployConf, target, 'api')
 if (!api) {
   log.error(`Cannot resolve a server and path for the api side on target: ${target}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
-context.config.stepsDir   = '_steps-revert'
-context.config.target     = target
-context.config.deployConf = deployConf
-context.config.api        = api
-context.config.hosts      = distinctHosts([api])
-context.config.host       = api.host
-context.config.serverPath = api.path
-context.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
-context.config.apiPort    = deployConf.api?.port ?? 3000
-context.config.healthPath = deployConf.api?.health ?? '/health'
-context.config.doApi      = true
-context.config.doWeb      = false
-context.config.startTime  = Date.now()
-context.config.force      = {
+$.config.stepsDir   = '_steps-revert'
+$.config.target     = target
+$.config.deployConf = deployConf
+$.config.api        = api
+$.config.hosts      = distinctHosts([api])
+$.config.host       = api.host
+$.config.serverPath = api.path
+$.config.appId      = deployConf.app_id ?? deployConf.path.split('/').pop()
+$.config.apiPort    = deployConf.api?.port ?? 3000
+$.config.healthPath = deployConf.api?.health ?? '/health'
+$.config.doApi      = true
+$.config.doWeb      = false
+$.config.startTime  = Date.now()
+$.config.force      = {
   pivot:         flag['past-pivot'],
   retention:     flag['past-retention'],
   configuration: flag['onto-current-configuration'],
 }
 
-log.info(`Reverting ${context.config.appId} on ${target}`)
+log.info(`Reverting ${$.config.appId} on ${target}`)
 log.info(`  ${api.host}:${api.path}`)
 ```
 

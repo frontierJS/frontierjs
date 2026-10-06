@@ -37,18 +37,18 @@ sees exactly what goes public, and it is in the committed route snapshot. Add
 the list.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 6
+$.config.__step = 6
 
-if (!needs(context, ['appDir', 'siteDir'], { from: '04-site' })) return
+if (!needs($, ['appDir', 'siteDir'], { from: '04-site' })) return
 
-const app  = context.config.appDir
-const site = context.config.siteDir
+const app  = $.config.appDir
+const site = $.config.siteDir
 const page = join(site, 'src', 'routes', 'notes', 'index.mesa')
 
-const edit = editSchema(context, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
-if (!await must(context, {
+const edit = editSchema($, '@@gate("0.4.4.6")', '@@gate("4.4.4.6")')
+if (!await must($, {
   ok:    edit.ok,
   name:  'reads on Note now need a signed-in caller',
   asked: 'the gate raised from 0 to 4',
@@ -57,19 +57,19 @@ if (!await must(context, {
   likely: 'the scaffold wrote a different gate — raise the first number by hand',
 })) return
 
-pushSchema(context)
+pushSchema($)
 
 // The build MUST fail here, so the exec is expected to throw and a success is
 // the finding. Stated this way round because a check that passes everything is
 // indistinguishable from one that works until somebody publishes a user table.
 let refused = false
 try {
-  context.exec({ command: `${context.fli} site:build`, cwd: app, stdio: 'pipe' })
+  $.exec({ command: `${$.fli} site:build`, cwd: app, stdio: 'pipe' })
 } catch {
   refused = true
 }
 
-if (!await must(context, {
+if (!await must($, {
   ok:    refused,
   name:  'the build refuses to publish a gated model',
   asked: 'site:build to stop',
@@ -84,7 +84,7 @@ if (!await must(context, {
 let src = readFileSync(page, 'utf8')
 if (!src.includes('publishes:')) {
   if (!src.startsWith('---\n')) {
-    await must(context, {
+    await must($, {
       ok: false, name: 'the page has frontmatter to add the override to',
       asked: 'a --- block at the top of index.mesa', got: 'no frontmatter',
     }, { likely: 'the page was rewritten by hand — add `publishes:` naming `Note: [id, title]` to its frontmatter' })
@@ -93,9 +93,9 @@ if (!src.includes('publishes:')) {
   writeFileSync(page, src.replace('render: static', 'render: static\npublishes:\n  Note: [id, title]'), 'utf8')
 }
 
-context.exec({ command: `${context.fli} site:build`, cwd: app })
+$.exec({ command: `${$.fli} site:build`, cwd: app })
 
-if (!await must(context, probe.fileExists({
+if (!await must($, probe.fileExists({
   path: join(site, 'dist', 'notes', 'index.html'),
   name: 'with publishes: naming Note\'s id and title, it builds',
 }), {

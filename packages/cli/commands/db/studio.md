@@ -18,12 +18,12 @@ flags:
 ---
 
 ```js
-if (!requireSchema(context)) return
+if (!requireSchema($)) return
 
-const { schema } = resolveDb(context, flag)
+const { schema } = resolveDb($, flag)
 
 log.info(`Starting Litestone Studio on http://localhost:${flag.port}`)
-await context.stream({
-  command: `${litestone(context)} studio --schema ${schema} --port ${flag.port}${flag.open ? '' : ' --no-open'}`
+await $.stream({
+  command: `${litestone($)} studio --schema ${schema} --port ${flag.port}${flag.open ? '' : ' --no-open'}`
 })
 ```

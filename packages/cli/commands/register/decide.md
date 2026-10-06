@@ -37,7 +37,7 @@ const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/register
 
 // The nearest package.json declaring `registers`, so a run from inside a
 // package or a surface means the project's registers.
-const root = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root = findRegisterRoot(process.cwd()) ?? $.paths.root
 
 if (!arg.id) {
   if (!tty.interactive) {
@@ -54,7 +54,7 @@ if (!arg.id) {
   // for the editors that take one; any other opens the file at its top.
   const editor = process.env.VISUAL || process.env.EDITOR || 'vi'
   const jumps  = /(^|\/)(n?vim?|vi|nano|emacs|micro|hx)(\s|$)/.test(editor)
-  const open   = (file, line) => tty.aside(() => context.exec({ command: `${editor}${line && jumps ? ` +${line}` : ''} "${file}"`, allowFailure: true }))
+  const open   = (file, line) => tty.aside(() => $.exec({ command: `${editor}${line && jumps ? ` +${line}` : ''} "${file}"`, allowFailure: true }))
 
   const edit = async (text) => {
     const dir  = mkdtempSync(join(tmpdir(), 'fli-why-'))

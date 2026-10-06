@@ -67,7 +67,7 @@ import { resolve } from 'path'
 </script>
 
 ```js
-const root = context.paths.root
+const root = $.paths.root
 
 const { warnIfDatabaseEmpty, detectRunner } =
   await import(resolve(global.fliRoot, 'core/db-preflight.js'))
@@ -113,7 +113,7 @@ if (flag.check) {
   }
 
   try {
-    warnIfDatabaseEmpty(context)
+    warnIfDatabaseEmpty($)
   } catch (err) {
     // A preflight that throws must not stop a dev server. It is a courtesy.
     log.detail(`database preflight skipped: ${err.message}`)
@@ -124,5 +124,5 @@ const runner = detectRunner(root)
 
 log.info(`${runner} — running: ${runner} run dev`)
 // `env:` and never an assignment to process.env, which a child under bun does not see.
-context.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env: { ...process.env, ...session.vars } })
+$.exec({ command: `cd ${root} && ${runner} run dev`, dry: flag.dry, env: { ...process.env, ...session.vars } })
 ```

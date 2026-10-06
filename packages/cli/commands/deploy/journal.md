@@ -38,25 +38,25 @@ flags:
 ---
 
 ```js
-const target         = resolveTarget(flag, context.git)
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const target         = resolveTarget(flag, $.git)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is no target to read a journal from')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 const side = resolveSide(deployConf, target, 'api') ?? resolveSide(deployConf, target, 'web')
 if (!side) {
   log.error(`Cannot resolve a server and path for target: ${target}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 const app = deployConf.app_id ?? deployConf.appId ?? deployConf.path?.split('/').pop()
-const j   = await connectJournal(context, { host: side.host, serverPath: side.path, deployConf })
+const j   = await connectJournal($, { host: side.host, serverPath: side.path, deployConf })
 
 // No `open()` here, and that is deliberate: opening REFUSES a journal belonging
 // to another app or another host, which is right for a writer and wrong for a

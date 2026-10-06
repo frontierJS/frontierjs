@@ -31,7 +31,7 @@ import { resolve } from 'node:path'
 const { collectExports, matchSymbol, renderSymbol, renderIndex } = await import(resolve(global.fliRoot, 'core/signatures.js'))
 const { typeScriptAt } = await import(resolve(global.fliRoot, 'core/functions.js'))
 
-const root = await context.wsRoot()
+const root = await $.wsRoot()
 if (!root) { log.error('No workspace found from here'); process.exitCode = 1; return }
 const ts = await typeScriptAt(root)
 if (!ts) { log.error(`no typescript installed in ${root} — the signatures are read with its parser`); process.exitCode = 1; return }

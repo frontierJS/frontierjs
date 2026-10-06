@@ -121,7 +121,7 @@ import { join } from 'path'
 
 // `existsSync, readFileSync, readdirSync, writeFileSync` come from _module.md
 // `resolve, basename` come from _module.md
-// `execSync` comes from _module.md (used via context.exec which wraps it)
+// `execSync` comes from _module.md (used via $.exec which wraps it)
 
 // What the app is given besides its own source — dev dependencies, the check
 // scripts, tsconfig, biome.json, .editorconfig, the workflow. One module, so
@@ -2108,7 +2108,7 @@ ${sc}
 // the namespace <script> and the command body is a separate function, so a
 // const declared in the body is not in scope up here — it reads as `verbose is
 // not defined` at the first composed command.
-function runFli(context, args, cwd, label = args[0], verbose = false) {
+function runFli($, args, cwd, label = args[0], verbose = false) {
   // The RUNNING cli, never whatever `fli` is on PATH. A bare `fli` is a GLOBAL
   // install: it exists on the machine of anyone who has ever run `bun add -g`
   // and on no CI runner, in no container, and for nobody who reached this
@@ -2117,16 +2117,16 @@ function runFli(context, args, cwd, label = args[0], verbose = false) {
   // out with no User model — an app that installs, builds, boots, answers health
   // and can register nobody (FJS-252, found on a runner).
   const argv = verbose ? [...args, '--verbose'] : args
-  const cmd  = [context.fli, ...argv.map(a => JSON.stringify(a))].join(' ')
+  const cmd  = [$.fli, ...argv.map(a => JSON.stringify(a))].join(' ')
 
-  // `context.log`, not the bare `log` the command body gets: this helper is in
+  // `$.log`, not the bare `log` the command body gets: this helper is in
   // the namespace <script> and that binding is injected into the body alone.
-  context.log.info(`→ ${label}`)
+  $.log.info(`→ ${label}`)
 
-  if (verbose) return context.exec({ command: cmd, cwd, stdio: 'inherit' })
+  if (verbose) return $.exec({ command: cmd, cwd, stdio: 'inherit' })
 
   try {
-    return context.exec({ command: cmd, cwd, stdio: ['inherit', 'pipe', 'inherit'] })
+    return $.exec({ command: cmd, cwd, stdio: ['inherit', 'pipe', 'inherit'] })
   } catch (err) {
     const out = err.stdout?.toString() ?? ''
     if (out.trim()) console.log('\n' + out.trimEnd() + '\n')
@@ -2162,24 +2162,24 @@ const verbose = flag.verbose === true
 // passed against the previous run's files (`FJS-589`'s rule, nine sites).
 if (!useHere && !name) {
   log.error('Project name is required. Use `fli new <name>` or `fli new --here`.')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 if (name && !isValidProjectName(name)) {
   log.error(`Invalid project name: "${name}". Use lowercase letters, digits, and hyphens.`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 // ─── 2. Resolve target directory ──────────────────────────────────────────────
 
-const targetDir = useHere ? context.paths.root : resolve(context.paths.root, name)
-const appName   = useHere ? basename(context.paths.root) : name
+const targetDir = useHere ? $.paths.root : resolve($.paths.root, name)
+const appName   = useHere ? basename($.paths.root) : name
 
 if (!useHere && existsSync(targetDir)) {
   log.error(`Directory ${name}/ already exists. Use --here if you meant to scaffold into it, or pick a different name.`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -2187,7 +2187,7 @@ if (useHere && !flag.force) {
   const entries = readdirSync(targetDir).filter(f => !f.startsWith('.'))
   if (entries.length > 0) {
     log.error(`Current directory is not empty (${entries.length} entries). Use --force to override.`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -2253,7 +2253,7 @@ else if (flag.yes)     useAuth = true
 else if (skipPrompts)  useAuth = true   // --dry treats prompts as accepted
 else {
   // Interactive prompt
-  const answer = await question(`\n  Install @frontierjs/auth? (sessions, password reset, email verify) [Y/n] › `)
+  const answer = await tty.line(`\n  Install @frontierjs/auth? (sessions, password reset, email verify) [Y/n] › `)
   useAuth = !(answer && answer.toLowerCase().startsWith('n'))
 }
 
@@ -2272,19 +2272,19 @@ if (useWorkspace) {
   const wsRoot = process.env.WORKSPACE_DIR || process.env.OUTLAW_DIR
   if (!wsRoot) {
     log.error('--workspace requires $WORKSPACE_DIR to be set.')
-    context.config.abort = true
+    $.config.abort = true
     return
   }
   const wsResolved = resolve(wsRoot.replace(/^~/, process.env.HOME || ''))
   if (!existsSync(wsResolved)) {
     log.error(`$WORKSPACE_DIR does not exist: ${wsResolved}`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
   const wsTarget = resolve(wsResolved, 'packages', name)
   if (existsSync(wsTarget)) {
     log.error(`Workspace package already exists: packages/${name}/`)
-    context.config.abort = true
+    $.config.abort = true
     return
   }
   log.info(`Workspace mode — creating at ${wsTarget}`)
@@ -2314,7 +2314,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
     ? '--source github is not supported yet.'
     : `Unknown --source "${fjsSource}".`
   log.error(`${hint} Use local (symlink to your packages) or npm (published).`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -2355,7 +2355,7 @@ if (fjsSource === 'local') {
     log.error(`--source local: package(s) not found under ${packagesDir}:`)
     for (const m of missing) log.error(`  ${m}  (expected ${pkgDir(m)})`)
     log.info('Set $FJS_PACKAGES_DIR or $WORKSPACE_DIR, or use --source npm.')
-    context.config.abort = true
+    $.config.abort = true
     return
   }
 }
@@ -2540,7 +2540,7 @@ if (fjsSource === 'local') {
   log.info(`Linking ${neededPkgs.length} local @frontierjs package(s) from ${packagesDir}…`)
   for (const p of neededPkgs) {
     try {
-      context.exec({ command: 'bun link', cwd: pkgDir(p), stdio: 'pipe' })
+      $.exec({ command: 'bun link', cwd: pkgDir(p), stdio: 'pipe' })
       log.detail(`  → ${p}`)
     } catch (e) {
       log.warn(`  bun link failed for ${p}: ${e.message}`)
@@ -2555,7 +2555,7 @@ if (useInstall) {
     // and then the one line anybody reads — how many, how long. Its own
     // failures go to stderr, which is inherited, so a broken install still
     // says so here.
-    const out = context.exec({
+    const out = $.exec({
       command: 'bun install', cwd: finalTarget,
       stdio: verbose ? 'inherit' : ['inherit', 'pipe', 'inherit'],
     })
@@ -2577,7 +2577,7 @@ echo('')
 // fli:init — drops the cli/src/routes scaffold
 if (useFli) {
   try {
-    runFli(context, ['init', '--namespace', appName], finalTarget, 'fli:init', verbose)
+    runFli($, ['init', '--namespace', appName], finalTarget, 'fli:init', verbose)
   } catch (e) {
     log.warn(`fli:init failed: ${e.message} — continuing`)
   }
@@ -2590,7 +2590,7 @@ if (useFli) {
 // createLitestoneAuth over a second client on the same file.
 if (useAuth) {
   try {
-    runFli(context, ['auth:install'], finalTarget, 'auth:install', verbose)
+    runFli($, ['auth:install'], finalTarget, 'auth:install', verbose)
   } catch (e) {
     // Warning and continuing handed back an app that installs, builds, boots and
     // answers health, and then 500s on the first register with `"user" is not a
@@ -2613,7 +2613,7 @@ if (useAuth) {
 // app can run the command itself.
 if (withPkgs.includes('notifications')) {
   try {
-    runFli(context, ['notifications:install'], finalTarget, 'notifications:install', verbose)
+    runFli($, ['notifications:install'], finalTarget, 'notifications:install', verbose)
   } catch (e) {
     log.warn(`notifications:install failed: ${e.message} — run it yourself before the first app.notify()`)
   }
@@ -2623,7 +2623,7 @@ if (withPkgs.includes('notifications')) {
 // Schema already populated by auth:install (or user adds one manually if no-auth)
 if (useExample) {
   try {
-    runFli(context, ['scaffold', 'User', '--skip-schema'], finalTarget, 'make:scaffold User', verbose)
+    runFli($, ['scaffold', 'User', '--skip-schema'], finalTarget, 'make:scaffold User', verbose)
   } catch (e) {
     log.warn(`make:scaffold User failed: ${e.message} — continuing`)
   }
@@ -2637,7 +2637,7 @@ if (useDeploy && useApi) {
     const args = ['make:deploy']
     if (flag.server) args.push('--server', flag.server)
     if (flag.domain) args.push('--domain', flag.domain)
-    runFli(context, args, finalTarget, 'make:deploy', verbose)
+    runFli($, args, finalTarget, 'make:deploy', verbose)
   } catch (e) {
     log.warn(`make:deploy failed: ${e.message} — you can run it manually later`)
   }
@@ -2653,9 +2653,9 @@ if (useDeploy && useApi) {
 if (useGit) {
   try {
     log.info('→ git init')
-    context.exec({ command: 'git init', cwd: finalTarget, stdio: 'pipe' })
-    context.exec({ command: 'git add .', cwd: finalTarget, stdio: 'pipe' })
-    context.exec({ command: 'git commit -m "init"', cwd: finalTarget, stdio: 'pipe' })
+    $.exec({ command: 'git init', cwd: finalTarget, stdio: 'pipe' })
+    $.exec({ command: 'git add .', cwd: finalTarget, stdio: 'pipe' })
+    $.exec({ command: 'git commit -m "init"', cwd: finalTarget, stdio: 'pipe' })
     log.success('Git repository initialized')
   } catch (e) {
     log.warn(`git init step failed: ${e.message} — skipping`)
@@ -2682,8 +2682,8 @@ if (useGit) {
 if (useInstall) {
   try {
     log.info('→ initial migration')
-    context.exec({
-      command: `${context.bin('litestone', finalTarget)} migrate create initial --schema db/schema.lite`,
+    $.exec({
+      command: `${$.bin('litestone', finalTarget)} migrate create initial --schema db/schema.lite`,
       cwd: finalTarget, stdio: 'pipe',
     })
   } catch (e) {

@@ -31,50 +31,50 @@ A row is written over HTTP first, so the count that follows is one this lesson
 really put there.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 3
+$.config.__step = 3
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app = context.config.appDir
-await ensureApi(context)
+const app = $.config.appDir
+await ensureApi($)
 
 // Note creates at USER(4), so there has to be somebody. A fresh address per
 // run: an app reused from an earlier lesson already has the other one.
 const who = `studio-${Date.now()}@frontier.invalid`
-const registered = await registerAccount(context, { email: who, password: 'correct horse battery', name: 'Ada' })
-if (!await must(context, registered, {
+const registered = await registerAccount($, { email: who, password: 'correct horse battery', name: 'Ada' })
+if (!await must($, registered, {
   likely: 'the API is up but /auth/register is not answering — is auth installed?',
 })) return
 
-context.config.userToken = registered.json.token
+$.config.userToken = registered.json.token
 
-const made = await createNote(context, 'written before the studio was opened')
-if (!await must(context, made, {
+const made = await createNote($, 'written before the studio was opened')
+if (!await must($, made, {
   likely: 'the note was refused — the response is above',
 })) return
 
-const studio = await startServer(context, {
+const studio = await startServer($, {
   name: 'studio',
   // --no-open, because a studio started by a script otherwise opens a browser
   // window on whatever machine is running it.
-  argv: fliArgv('db:studio', '--port', String(context.config.studioPort), '--no-open'),
+  argv: fliArgv('db:studio', '--port', String($.config.studioPort), '--no-open'),
   cwd:  app,
-  port: context.config.studioPort,
+  port: $.config.studioPort,
   path: '/api/info',
 })
-if (!await must(context, studio.up, {
-  likely:    `something already holds ${context.config.studioPort}`,
-  reproduce: `cd ${app} && fli db:studio --port ${context.config.studioPort}`,
+if (!await must($, studio.up, {
+  likely:    `something already holds ${$.config.studioPort}`,
+  reproduce: `cd ${app} && fli db:studio --port ${$.config.studioPort}`,
 })) return
 
-const at = (path) => `http://127.0.0.1:${context.config.studioPort}${path}`
+const at = (path) => `http://127.0.0.1:${$.config.studioPort}${path}`
 
 // The file, and the row. Asked together because either one alone is
 // satisfiable by a studio pointed at the wrong database: an empty one has a
 // path, and a stale one has rows.
-if (!await must(context, await probe.httpJson({
+if (!await must($, await probe.httpJson({
   url:      at('/api/info'),
   expect:   (j) => j.dbPath === join(app, 'db', 'app.db') && j.counts?.Note >= 1,
   describe: `dbPath ${join(app, 'db', 'app.db')} and at least one Note`,
@@ -94,7 +94,7 @@ const drift = (want, name) => probe.httpJson({
   retries:  4,
 })
 
-if (!await must(context, await drift(false, 'no drift, on an app nobody has edited'), {
+if (!await must($, await drift(false, 'no drift, on an app nobody has edited'), {
   likely: 'db/schema.lite has been edited since the process read it — restart the API, or run fli db:push',
 })) return
 
@@ -102,7 +102,7 @@ if (!await must(context, await drift(false, 'no drift, on an app nobody has edit
 // and reverting is exact. What the panel compares is the file against what this
 // process read at boot — which is the real thing behind *I added a column and
 // the app cannot see it*: the running process is on the old schema.
-const schema = schemaFile(context)
+const schema = schemaFile($)
 const before = readFileSync(schema, 'utf8')
 writeFileSync(schema, `${before}\n// edited, and not yet pushed\n`, 'utf8')
 
@@ -110,17 +110,17 @@ const moved = await drift(true, 'and drift the moment the file moves')
 
 writeFileSync(schema, before, 'utf8')
 
-if (!await must(context, moved, {
+if (!await must($, moved, {
   likely: 'the panel compares the file with what the process read at boot — a false here means it is comparing nothing',
 })) return
 
-if (!await must(context, await drift(false, 'and back, with the edit taken out'), {
+if (!await must($, await drift(false, 'and back, with the edit taken out'), {
   likely: `the edit was reverted — if this still reports drift, compare ${schema} with git`,
 })) return
 
 log.info('')
-log.info(`  the studio is at http://localhost:${context.config.studioPort} — the Note table has a row in it`)
+log.info(`  the studio is at http://localhost:${$.config.studioPort} — the Note table has a row in it`)
 log.info('')
 
-remember(context, '03-studio', {})
+remember($, '03-studio', {})
 ```

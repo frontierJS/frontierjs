@@ -13,9 +13,9 @@ import { homedir } from 'os'
 </script>
 
 ```js
-const wsRoot = await context.wsRoot()
+const wsRoot = await $.wsRoot()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 log.info(`Installing all workspace deps at ${wsRoot}`)
-context.exec({ command: `bun install --cwd ${wsRoot}`, dry: flag.dry })
+$.exec({ command: `bun install --cwd ${wsRoot}`, dry: flag.dry })
 if (!flag.dry) log.success('All workspace deps installed')
 ```

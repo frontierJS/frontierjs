@@ -2,14 +2,14 @@
 title: 06-ssl
 description: Verify SSL certificates exist on the server
 optional: true
-skip: "!(context.config.edge?.web.sslCert || context.config.edge?.api.sslCert)"
+skip: "!($.config.edge?.web.sslCert || $.config.edge?.api.sslCert)"
 ---
 
 ```js
-if (context.config.abort) return
+if ($.config.abort) return
 
-const { host, edge } = context.config
-const machine = machineFor(context, host, context.config.serverPath)
+const { host, edge } = $.config
+const machine = machineFor($, host, $.config.serverPath)
 
 log.info('Checking SSL certificates...')
 

@@ -14,5 +14,5 @@ args:
 ---
 
 ```js
-context.exec({ command: `cloudflared tunnel run ${arg.name}`, dry: flag.dry })
+$.exec({ command: `cloudflared tunnel run ${arg.name}`, dry: flag.dry })
 ```

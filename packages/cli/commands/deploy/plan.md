@@ -37,14 +37,14 @@ flags:
 ---
 
 ```js
-const target         = resolveTarget(flag, context.git)
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const target         = resolveTarget(flag, $.git)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block in frontier.config.js — there is nothing to plan against')
   log.info('Run `fli make:deploy` to write one')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -54,11 +54,11 @@ const bothSides = !flag.api && !flag.web
 const doApi     = bothSides || flag.api
 const doWeb     = (bothSides || flag.web) && deployConf.web !== false
 
-const plan = await deployPlan(context, flag, { target, deployConf, doApi, doWeb })
+const plan = await deployPlan($, flag, { target, deployConf, doApi, doWeb })
 
 if (plan.error) {
   log.error(plan.error)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 

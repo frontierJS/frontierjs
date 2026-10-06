@@ -24,21 +24,21 @@ flags:
 ---
 
 ```js
-const target = resolveTarget(flag, context.git)
+const target = resolveTarget(flag, $.git)
 
-const frontierConfig = await loadFrontierConfig(context.paths.root)
+const frontierConfig = await loadFrontierConfig($.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf?.server) {
   log.error('No deploy block found in frontier.config.js')
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
 const resolved = resolveDeployConf(deployConf, target)
 if (!resolved) {
   log.error(`deploy.server or deploy.path is not set for target: ${target}`)
-  context.config.abort = true
+  $.config.abort = true
   return
 }
 
@@ -48,7 +48,7 @@ const container = apiContainer(appId, deployConf)
 const host      = `${user}@${server}`
 
 // Check the machine, then the container
-const machine = machineFor(context, host, path, deployConf.transport)
+const machine = machineFor($, host, path, deployConf.transport)
 
 if (!machine.reach()) {
   log.error(`Cannot reach ${host}`)

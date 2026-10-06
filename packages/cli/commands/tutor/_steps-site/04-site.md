@@ -30,17 +30,17 @@ cannot say what a page published, and refuses to emit any page that read
 anything.
 
 ```js
-if (!await narrate(context)) return
+if (!await narrate($)) return
 
-context.config.__step = 4
+$.config.__step = 4
 
-if (!needs(context, ['appDir'], { from: '01-app' })) return
+if (!needs($, ['appDir'], { from: '01-app' })) return
 
-const app  = context.config.appDir
+const app  = $.config.appDir
 const site = join(app, 'site')
 
 if (!existsSync(join(site, 'config', 'sierra.config.js'))) {
-  context.exec({ command: `${context.fli} make:site`, cwd: app })
+  $.exec({ command: `${$.fli} make:site`, cwd: app })
 }
 
 for (const [path, what] of [
@@ -48,7 +48,7 @@ for (const [path, what] of [
   ['site/config/vite.config.js',   'the Vite root'],
   ['site/src/routes/index.mesa',   'a first page'],
 ]) {
-  if (!await must(context, probe.fileExists({ path: join(app, path), name: `${path} — ${what}` }), {
+  if (!await must($, probe.fileExists({ path: join(app, path), name: `${path} — ${what}` }), {
     likely:    'fli make:site stopped part way — its output is above',
     reproduce: `cd ${app} && fli make:site`,
   })) return
@@ -57,7 +57,7 @@ for (const [path, what] of [
 // The publish check is the whole of the next two steps, and it is off unless
 // this line is there — a site with no `db:` refuses every page that reads
 // anything, which is a different failure and would be blamed on the page.
-if (!await must(context, probe.fileContains({
+if (!await must($, probe.fileContains({
   path:   join(site, 'config', 'sierra.config.js'),
   needle: "db: '../api/src/core/db.ts'",
   name:   'the build knows which client to tap',
@@ -65,5 +65,5 @@ if (!await must(context, probe.fileContains({
   likely: 'this app has no api/ surface, so make:site had nothing to point at',
 })) return
 
-remember(context, '04-site', { siteDir: site })
+remember($, '04-site', { siteDir: site })
 ```

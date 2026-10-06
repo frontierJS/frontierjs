@@ -108,7 +108,7 @@ const traits   = String(flag.traits || '')
 // A factory for a model the schema does not declare fails at createOne() with
 // "model not found", far from here. Catch it now.
 
-const schemaPath = resolve(context.paths.db, 'schema.lite')
+const schemaPath = resolve($.paths.db, 'schema.lite')
 
 if (existsSync(schemaPath)) {
   const schemaText = readFileSync(schemaPath, 'utf8')
@@ -124,7 +124,7 @@ if (existsSync(schemaPath)) {
 
 // ─── Write ───────────────────────────────────────────────────────────────────
 
-const dir  = resolve(context.paths.db, 'factories')
+const dir  = resolve($.paths.db, 'factories')
 const file = resolve(dir, `${model}Factory.js`)
 
 if (existsSync(file) && !flag.force) {
@@ -141,7 +141,8 @@ if (traits.length) log.info(`Traits stubbed: ${traits.join(', ')}`)
 log.info(`Use it: makeTestClient(schema, { factories: { ${accessorOf(model)}: ${model}Factory } })`)
 
 if (flag.open) {
+  // The screen is lent to the editor: a captured shell would give it no terminal.
   const editor = process.env.EDITOR || 'vi'
-  await $`${editor} ${file}`
+  await tty.aside(() => $.stream({ command: `${editor} ${JSON.stringify(file)}` }))
 }
 ```

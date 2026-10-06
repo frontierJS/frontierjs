@@ -17,7 +17,7 @@
   "repository": {
 
     "frontmatter": {
-      "comment": "A `---` block at the top of a component is route metadata, read as YAML by Sierra's scanner (js-yaml, so anchors and arrays are real). Exactly three dashes on a line of their own, at the very start of the file: `\\A` is the whole document's first line in vscode-textmate, and both parsers anchor there too, so a `---` further down is not a block.",
+      "comment": "A `---` block at the top of a component is route metadata, read by @frontierjs/toolbelt/frontmatter, a YAML subset with real nesting and arrays. Exactly three dashes on a line of their own, at the very start of the file: `\\A` is the whole document's first line in vscode-textmate, and both parsers anchor there too, so a `---` further down is not a block.",
       "begin": "\\A(-{3})[ \\t]*$",
       "end": "^(-{3})[ \\t]*$",
       "beginCaptures": {

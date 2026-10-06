@@ -7,6 +7,6 @@ title: 01-narrates
 This line is STEP-PROSE, and it is addressed to {{who}}.
 
 ```js
-context.vars.who = 'the learner'
-context.printPlan()
+$.vars.who = 'the learner'
+$.printPlan()
 ```

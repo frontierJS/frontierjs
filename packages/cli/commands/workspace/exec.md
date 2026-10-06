@@ -39,7 +39,7 @@ A directory under `packages/` with no `package.json` is not a member and is
 not visited.
 
 ```js
-const { wsRoot, packages: all } = await context.wsPackages()
+const { wsRoot, packages: all } = await $.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 let packages = all
 

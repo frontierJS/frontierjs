@@ -33,7 +33,7 @@ often does more than run one file — reset first, migrate, set an env var — a
 that is the thing the app author actually meant by "seed".
 
 ```js
-const seeder = resolveSeeder(context, { force: flag.force })
+const seeder = resolveSeeder($, { force: flag.force })
 
 if (!seeder) {
   log.error('No seeder found for this app')
@@ -51,8 +51,8 @@ if (flag.dry) {
   return
 }
 
-// context.exec throws on a non-zero exit, so reaching the next line means the
+// $.exec throws on a non-zero exit, so reaching the next line means the
 // seeder actually finished — the old version announced success unconditionally.
-context.exec({ command: seeder.command })
+$.exec({ command: seeder.command })
 log.success('Seed complete')
 ```

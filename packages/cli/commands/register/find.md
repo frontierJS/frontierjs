@@ -23,7 +23,7 @@ flags:
 const { findRows }         = await import(resolve(global.fliRoot, 'core/find.js'))
 const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
 
-const root  = findRegisterRoot(process.cwd()) ?? context.paths.root
+const root  = findRegisterRoot(process.cwd()) ?? $.paths.root
 const limit = Math.max(1, Number(flag.limit) || 20)
 
 const out = findRows({ root, terms: arg.terms, limit })
