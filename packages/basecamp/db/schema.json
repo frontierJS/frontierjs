@@ -34,6 +34,13 @@
             "string",
             "null"
           ]
+        },
+        "totpLastStep": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "TOTP only — the last step this secret was accepted at, which is what makes a code single-use. A code is valid for its whole 30-second window, so without this the window IS a replay window and nothing about the second code looks wrong. Null until the first successful login.  Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in the same way: one table per KIND of credential would be four tables whose only difference is which columns are null."
         }
       },
       "additionalProperties": false,
@@ -117,6 +124,12 @@
         "userId",
         "expiresAt"
       ],
+      "x-effective": {
+        "from": null,
+        "to": "expiresAt",
+        "kind": "instant",
+        "imposed": true
+      },
       "x-gate": {
         "read": 8,
         "create": 8,
@@ -175,6 +188,49 @@
         "identifier",
         "expiresAt"
       ],
+      "x-effective": {
+        "from": null,
+        "to": "expiresAt",
+        "kind": "instant",
+        "imposed": true
+      },
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "LoginChallenge": {
+      "type": "object",
+      "title": "LoginChallenge",
+      "x-litestone-kind": "model",
+      "description": "A login that is half done.  The password was right and there is a second factor, so the caller holds a ticket and no session. It is its own model rather than a fifth `VerificationPurpose` for the reason `OauthFlow` below is not one either: nobody is proving control of an ADDRESS here — there is no `identifier` and the address was settled a step ago — and `attempts` is a column the other purposes have no use for. Three answers to what a column means is three tables wearing one name (`FJS-D261`).  `attempts` is the whole of what stands between a six-digit code and a million guesses, so it is counted on the row rather than in a limiter: a process-local count is reset by a redeploy and is not shared by two instances, and this is the one table where both of those are an authorization bypass rather than a slow path.",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "attempts": {
+          "type": "integer",
+          "default": 0,
+          "description": "Counted up on every wrong code. The row is spent when it reaches the ceiling — the caller signs in from the top rather than guessing again."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "expiresAt"
+      ],
+      "x-effective": {
+        "from": null,
+        "to": "expiresAt",
+        "kind": "instant",
+        "imposed": true
+      },
       "x-gate": {
         "read": 8,
         "create": 8,
@@ -208,6 +264,12 @@
         "provider",
         "expiresAt"
       ],
+      "x-effective": {
+        "from": null,
+        "to": "expiresAt",
+        "kind": "instant",
+        "imposed": true
+      },
       "x-gate": {
         "read": 8,
         "create": 8,
@@ -222,6 +284,9 @@
       "properties": {
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -231,16 +296,26 @@
           "x-sortable": "json"
         },
         "labelsKey": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "type": {
           "$ref": "#/$defs/MetricType",
           "default": "gauge"
         },
         "unit": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "lastSeenAt": {
@@ -251,6 +326,9 @@
       "additionalProperties": false,
       "required": [
         "name",
+        "labelsKey"
+      ],
+      "x-identify": [
         "labelsKey"
       ],
       "x-gate": {
@@ -384,6 +462,711 @@
         }
       ]
     },
+    "Flow": {
+      "type": "object",
+      "title": "Flow",
+      "x-litestone-kind": "model",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/FlowStatus",
+          "default": "draft"
+        },
+        "currentVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "x-litestone-write-policy": true
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "runsPerMinute": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxWrites": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1000
+        },
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 4,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-transitions": {
+        "status": {
+          "activate": {
+            "from": [
+              "draft",
+              "paused"
+            ],
+            "to": "active",
+            "gate": 5,
+            "system": false
+          },
+          "pause": {
+            "from": [
+              "active"
+            ],
+            "to": "paused",
+            "gate": null,
+            "system": false
+          },
+          "archive": {
+            "from": [
+              "draft",
+              "active",
+              "paused"
+            ],
+            "to": "archived",
+            "gate": null,
+            "system": false
+          },
+          "restore": {
+            "from": [
+              "archived"
+            ],
+            "to": "draft",
+            "gate": null,
+            "system": false
+          }
+        }
+      },
+      "x-relations": [
+        {
+          "field": "versions",
+          "model": "FlowVersion",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "layout",
+          "model": "FlowLayout",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": true
+        }
+      ]
+    },
+    "FlowVersion": {
+      "type": "object",
+      "title": "FlowVersion",
+      "x-litestone-kind": "model",
+      "properties": {
+        "flowId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "definition": {
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "authorId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "flowId",
+        "version",
+        "definition"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "version"
+      ],
+      "x-gate": {
+        "read": 4,
+        "create": 4,
+        "update": 9,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "flow",
+          "model": "Flow",
+          "type": "belongsTo",
+          "fields": [
+            "flowId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "runs",
+          "model": "Run",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "FlowLayout": {
+      "type": "object",
+      "title": "FlowLayout",
+      "x-litestone-kind": "model",
+      "properties": {
+        "flowId": {
+          "type": "string"
+        },
+        "layout": {
+          "default": {},
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "flowId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 4,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "flow",
+          "model": "Flow",
+          "type": "belongsTo",
+          "fields": [
+            "flowId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Run": {
+      "type": "object",
+      "title": "Run",
+      "x-litestone-kind": "model",
+      "properties": {
+        "flowVersionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FlowRunStatus",
+          "default": "pending"
+        },
+        "trigger": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "context": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
+        },
+        "currentStage": {
+          "type": "integer",
+          "default": 0
+        },
+        "actorId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heartbeatAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "flowVersionId"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 4,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-transitions": {
+        "status": {
+          "start": {
+            "from": [
+              "pending"
+            ],
+            "to": "running",
+            "gate": null,
+            "system": false
+          },
+          "suspend": {
+            "from": [
+              "pending",
+              "running"
+            ],
+            "to": "waiting",
+            "gate": null,
+            "system": false
+          },
+          "resume": {
+            "from": [
+              "waiting"
+            ],
+            "to": "running",
+            "gate": null,
+            "system": false
+          },
+          "complete": {
+            "from": [
+              "running"
+            ],
+            "to": "completed",
+            "gate": null,
+            "system": false
+          },
+          "fail": {
+            "from": [
+              "pending",
+              "running",
+              "waiting"
+            ],
+            "to": "failed",
+            "gate": null,
+            "system": false
+          },
+          "cancel": {
+            "from": [
+              "pending",
+              "running",
+              "waiting"
+            ],
+            "to": "cancelled",
+            "gate": null,
+            "system": false
+          }
+        }
+      },
+      "x-relations": [
+        {
+          "field": "flowVersion",
+          "model": "FlowVersion",
+          "type": "belongsTo",
+          "fields": [
+            "flowVersionId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "steps",
+          "model": "RunStep",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "waits",
+          "model": "Wait",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "RunStep": {
+      "type": "object",
+      "title": "RunStep",
+      "x-litestone-kind": "model",
+      "properties": {
+        "runId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FlowStepStatus"
+        },
+        "attempts": {
+          "type": "integer",
+          "default": 0
+        },
+        "fromCache": {
+          "type": "boolean",
+          "default": false
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "logs": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "nodeId",
+        "status"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "nodeId"
+      ],
+      "x-gate": {
+        "read": 4,
+        "create": 8,
+        "update": 9,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "run",
+          "model": "Run",
+          "type": "belongsTo",
+          "fields": [
+            "runId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Wait": {
+      "type": "object",
+      "title": "Wait",
+      "x-litestone-kind": "model",
+      "properties": {
+        "resumeKey": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "nodeId": {
+          "type": "string"
+        },
+        "timeoutAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "resumeKey",
+        "runId",
+        "nodeId"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "resumeKey"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "run",
+          "model": "Run",
+          "type": "belongsTo",
+          "fields": [
+            "runId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "FlowCredential": {
+      "type": "object",
+      "title": "FlowCredential",
+      "x-litestone-kind": "model",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "provider": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
+        },
+        "address": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
+        },
+        "auth": {
+          "$ref": "#/$defs/FlowCredentialAuth",
+          "default": "none"
+        },
+        "header": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "encoding": {
+          "anyOf": [
+            {
+              "type": "string",
+              "default": "json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secret": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
+        },
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "provider",
+        "address"
+      ],
+      "x-litestone-policies": true,
+      "x-identify": [
+        "name"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      }
+    },
+    "KvEntry": {
+      "type": "object",
+      "title": "KvEntry",
+      "x-litestone-kind": "model",
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "x-aggregatable": "json",
+          "x-sortable": "json"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "key",
+        "value"
+      ],
+      "x-litestone-policies": true,
+      "x-effective": {
+        "from": null,
+        "to": "expiresAt",
+        "kind": "instant",
+        "imposed": true
+      },
+      "x-identify": [
+        "scope",
+        "key"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
     "User": {
       "type": "object",
       "title": "User",
@@ -391,46 +1174,76 @@
       "properties": {
         "email": {
           "type": "string",
-          "format": "email"
+          "x-transforms": [
+            "lower"
+          ],
+          "format": "email",
+          "x-litestone-write-policy": true
         },
         "name": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "emailVerified": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "x-litestone-write-policy": true
         },
         "role": {
           "type": "string",
-          "default": "user"
+          "default": "user",
+          "x-litestone-write-policy": true
         },
         "accountId": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "x-litestone-write-policy": true
         },
         "kind": {
           "$ref": "#/$defs/UserKind",
-          "default": "human"
+          "default": "human",
+          "x-litestone-write-policy": true
         },
         "status": {
           "$ref": "#/$defs/UserStatus",
-          "default": "pending_verification"
+          "default": "pending_verification",
+          "x-litestone-write-policy": true
         },
         "username": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "displayName": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "avatarUrl": {
@@ -441,12 +1254,14 @@
         },
         "scopes": {
           "default": [],
+          "x-litestone-write-policy": true,
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
         "isSystemAdmin": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "x-litestone-write-policy": true
         }
       },
       "additionalProperties": false,
@@ -454,10 +1269,13 @@
         "email"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "email"
+      ],
       "x-gate": {
-        "read": 4,
-        "create": 4,
-        "update": 4,
+        "read": 1,
+        "create": 8,
+        "update": 1,
         "delete": 5
       },
       "x-relations": [
@@ -518,11 +1336,17 @@
         },
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
         "displayName": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -537,6 +1361,9 @@
       "required": [
         "slug",
         "displayName"
+      ],
+      "x-identify": [
+        "slug"
       ],
       "x-gate": {
         "read": 6,
@@ -575,11 +1402,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80
         },
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
@@ -598,6 +1431,18 @@
         "status": {
           "$ref": "#/$defs/WorkspaceStatus",
           "default": "active"
+        },
+        "ingressAccountId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ingressZoneId": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false,
@@ -608,6 +1453,9 @@
         "ownerId"
       ],
       "x-version": "version",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 1,
         "create": 1,
@@ -790,6 +1638,9 @@
         "userId"
       ],
       "x-litestone-policies": true,
+      "x-determined": {
+        "workspaceId": "auth().workspaceId"
+      },
       "x-gate": {
         "read": 1,
         "create": 5,
@@ -837,6 +1688,10 @@
         },
         "email": {
           "type": "string",
+          "x-transforms": [
+            "trim",
+            "lower"
+          ],
           "format": "email",
           "minLength": 6,
           "maxLength": 200
@@ -862,6 +1717,9 @@
         "expiresAt"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "email"
+      ],
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -896,6 +1754,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -938,6 +1799,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "name"
+      ],
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -983,6 +1847,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -1060,6 +1927,9 @@
         "name"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "name"
+      ],
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -1107,11 +1977,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
         "slug": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "status": {
           "$ref": "#/$defs/ServerStatus",
@@ -1177,12 +2053,6 @@
             "null"
           ]
         },
-        "outpostUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "lastHeartbeatAt": {
           "anyOf": [
             {
@@ -1210,7 +2080,14 @@
             "string",
             "null"
           ],
-          "description": "The `Secret` holding THIS machine's own Outpost credential, minted at enrollment. A bare id for `Domain.certSecretId`'s reason.  Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`, which every machine shares — so one compromised box can forge any other's check-in (`core/hooks.ts` says so at the verification). Per-server credentials are what make that column non-null; deleting the fallback is phase 3, and it can only happen once every machine in a fleet has one."
+          "description": "The `Secret` holding THIS machine's own Outpost credential, minted at enrollment. A bare id for `Domain.certSecretId`'s reason.  Null means the machine has not enrolled, and every signed request about it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet key to fall back to. Nullable because the row exists before the machine does: provisioned or imported, it is created first and enrolls after."
+        },
+        "outpostCert": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The certificate this machine's command port answers with, PEM, handed over in the enrollment exchange and pinned on its Conduit target — the one certificate a command to it will accept (`FJS-1603`). Public by nature, so no protection. Null means no command can reach the machine: no target is registered without it, and the only way to change it is to enroll again."
         },
         "plan": {
           "default": {},
@@ -1259,6 +2136,9 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1336,6 +2216,14 @@
               "unreachable"
             ],
             "to": "online",
+            "gate": null,
+            "system": true
+          },
+          "loseContact": {
+            "from": [
+              "online"
+            ],
+            "to": "unreachable",
             "gate": null,
             "system": true
           },
@@ -1456,7 +2344,7 @@
           "type": "string"
         },
         "kind": {
-          "type": "string"
+          "$ref": "#/$defs/ServerEventKind"
         },
         "message": {
           "type": "string"
@@ -1530,6 +2418,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 255
         },
@@ -1586,6 +2477,9 @@
         "name"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "name"
+      ],
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1619,10 +2513,16 @@
           "x-litestone-kind": "tenancy"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "slug": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "type": {
           "type": "string",
@@ -1649,6 +2549,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1751,11 +2654,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80
         },
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
@@ -1787,6 +2696,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1833,11 +2745,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
@@ -1848,12 +2766,6 @@
         "isProtected": {
           "type": "boolean",
           "default": false
-        },
-        "variables": {
-          "default": [],
-          "description": "The environment's variables — a separate grant from editing the environment itself. Renaming a staging environment and reading its secrets are the same `update` to the gate and are not the same act.",
-          "x-aggregatable": "json",
-          "x-sortable": "json"
         }
       },
       "additionalProperties": false,
@@ -1864,6 +2776,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1877,9 +2792,7 @@
           "delete": "Environment.delete"
         },
         "moves": {},
-        "columns": {
-          "variables": "Environment.variables"
-        }
+        "columns": {}
       },
       "x-relations": [
         {
@@ -1930,6 +2843,15 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "variables",
+          "model": "Variable",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
         }
       ]
     },
@@ -1948,11 +2870,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80
         },
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
@@ -1962,27 +2890,109 @@
         },
         "status": {
           "$ref": "#/$defs/AppStatus",
-          "default": "unknown"
+          "default": "unknown",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "source": {
           "default": {},
           "x-aggregatable": "json",
           "x-sortable": "json"
         },
-        "config": {
-          "default": {},
-          "x-aggregatable": "json",
-          "x-sortable": "json"
-        },
-        "port": {
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
         "isPublic": {
           "type": "boolean",
           "default": false
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "containerPort": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "volumePath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "pattern": "^/[^:,]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-messages": {
+            "regex": "an absolute path with no ':' or ','",
+            "pattern": "an absolute path with no ':' or ','"
+          }
+        },
+        "healthCheck": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
+              "pattern": "^/[^ ]*$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "x-messages": {
+            "regex": "a path beginning with '/'",
+            "pattern": "a path beginning with '/'"
+          }
+        },
+        "cpuLimit": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memLimitMb": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 6
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blueprintId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -1992,6 +3002,9 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2011,6 +3024,19 @@
           ],
           "onDelete": "Cascade",
           "optional": false
+        },
+        {
+          "field": "blueprint",
+          "model": "Blueprint",
+          "type": "belongsTo",
+          "fields": [
+            "blueprintId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
         },
         {
           "field": "deployments",
@@ -2056,6 +3082,122 @@
           "references": [],
           "onDelete": null,
           "optional": false
+        },
+        {
+          "field": "variables",
+          "model": "Variable",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Variable": {
+      "type": "object",
+      "title": "Variable",
+      "x-litestone-kind": "model",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "environmentId": {
+          "type": "string"
+        },
+        "appId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,99}$",
+          "x-messages": {
+            "regex": "a variable name is up to 100 letters, digits and underscores, not starting with a digit",
+            "pattern": "a variable name is up to 100 letters, digits and underscores, not starting with a digit"
+          }
+        },
+        "secret": {
+          "type": "boolean",
+          "default": false
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 10000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secretValue": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-aggregatable": "encrypted",
+          "x-sortable": "encrypted",
+          "x-filterable": "encrypted"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "environmentId",
+        "key"
+      ],
+      "x-litestone-policies": true,
+      "x-version": "version",
+      "x-gate": {
+        "read": 2,
+        "create": 4,
+        "update": 4,
+        "delete": 4
+      },
+      "x-capabilities": {
+        "operations": {
+          "create": "Variable.create",
+          "update": "Variable.update",
+          "delete": "Variable.delete"
+        },
+        "moves": {},
+        "columns": {}
+      },
+      "x-relations": [
+        {
+          "field": "environment",
+          "model": "Environment",
+          "type": "belongsTo",
+          "fields": [
+            "environmentId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "app",
+          "model": "App",
+          "type": "belongsTo",
+          "fields": [
+            "appId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": true
         }
       ]
     },
@@ -2074,6 +3216,9 @@
         },
         "hostname": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 253
         },
@@ -2141,6 +3286,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "hostname"
+      ],
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -2221,6 +3369,9 @@
         "serverId"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "replicaIndex"
+      ],
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -2463,51 +3614,29 @@
             ],
             "to": "building",
             "gate": null,
-            "system": false
-          },
-          "push": {
-            "from": [
-              "building"
-            ],
-            "to": "pushing",
-            "gate": null,
-            "system": false
-          },
-          "release": {
-            "from": [
-              "pushing"
-            ],
-            "to": "deploying",
-            "gate": null,
-            "system": false
+            "system": true
           },
           "succeed": {
             "from": [
-              "building",
-              "pushing",
-              "deploying"
+              "building"
             ],
             "to": "success",
             "gate": null,
-            "system": false
+            "system": true
           },
           "fail": {
             "from": [
               "pending",
-              "building",
-              "pushing",
-              "deploying"
+              "building"
             ],
             "to": "failed",
             "gate": null,
-            "system": false
+            "system": true
           },
           "cancel": {
             "from": [
               "pending",
-              "building",
-              "pushing",
-              "deploying"
+              "building"
             ],
             "to": "cancelled",
             "gate": null,
@@ -2581,6 +3710,10 @@
       "properties": {
         "deploymentId": {
           "type": "string"
+        },
+        "position": {
+          "type": "integer",
+          "default": 0
         },
         "name": {
           "type": "string"
@@ -2676,6 +3809,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -2699,17 +3835,6 @@
             "null"
           ]
         },
-        "nextRunAt": {
-          "anyOf": [
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "trigger": {
           "type": "string",
           "default": "manual"
@@ -2729,7 +3854,9 @@
         },
         "retryCount": {
           "type": "integer",
-          "default": 0
+          "default": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "lastRunAt": {
           "anyOf": [
@@ -2740,13 +3867,17 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "lastRunStatus": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -2769,7 +3900,7 @@
             ],
             "to": "running",
             "gate": null,
-            "system": false
+            "system": true
           },
           "idle": {
             "from": [
@@ -2777,7 +3908,7 @@
             ],
             "to": "pending",
             "gate": null,
-            "system": false
+            "system": true
           },
           "fail": {
             "from": [
@@ -2785,7 +3916,7 @@
             ],
             "to": "failed",
             "gate": null,
-            "system": false
+            "system": true
           },
           "cancel": {
             "from": [
@@ -2944,11 +4075,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 120
         },
         "slug": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "description": {
           "anyOf": [
@@ -3002,6 +4139,9 @@
         "script"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 4,
         "create": 5,
@@ -3348,6 +4488,10 @@
         },
         "key": {
           "type": "string",
+          "x-transforms": [
+            "trim",
+            "slug"
+          ],
           "minLength": 1,
           "maxLength": 120
         },
@@ -3398,6 +4542,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "key"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -3510,6 +4657,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -3585,6 +4735,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "name"
+      ],
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -3628,6 +4781,9 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -3643,6 +4799,9 @@
         },
         "metricName": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -3662,6 +4821,19 @@
         "isActive": {
           "type": "boolean",
           "default": true
+        },
+        "snoozedUntil": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -3869,11 +5041,17 @@
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 120
         },
         "slug": {
-          "type": "string"
+          "type": "string",
+          "x-transforms": [
+            "trim"
+          ]
         },
         "description": {
           "type": [
@@ -3911,6 +5089,9 @@
       ],
       "x-litestone-policies": true,
       "x-version": "version",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -4121,31 +5302,49 @@
       "properties": {
         "slug": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 64
         },
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80
         },
         "category": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 40
         },
         "description": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 300
         },
         "version": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 40
         },
         "image": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
@@ -4153,6 +5352,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 1,
               "maxLength": 8
             },
@@ -4165,6 +5367,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 4,
               "maxLength": 9
             },
@@ -4189,58 +5394,59 @@
             }
           ]
         },
-        "persistent": {
-          "type": "boolean",
-          "default": false
-        },
         "volumePath": {
           "anyOf": [
             {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 255
+              "x-transforms": [
+                "trim"
+              ],
+              "pattern": "^/[^:,]*$"
             },
             {
               "type": "null"
             }
-          ]
+          ],
+          "x-messages": {
+            "regex": "an absolute path with no ':' or ','",
+            "pattern": "an absolute path with no ':' or ','"
+          }
         },
         "healthCheck": {
           "anyOf": [
             {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 255
+              "x-transforms": [
+                "trim"
+              ],
+              "pattern": "^/[^ ]*$"
             },
             {
               "type": "null"
             }
-          ]
-        },
-        "replicas": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 50,
-          "default": 1
+          ],
+          "x-messages": {
+            "regex": "a path beginning with '/'",
+            "pattern": "a path beginning with '/'"
+          }
         },
         "cpuLimit": {
           "anyOf": [
             {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 16
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 256
             },
             {
               "type": "null"
             }
           ]
         },
-        "memLimit": {
+        "memLimitMb": {
           "anyOf": [
             {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 16
+              "type": "integer",
+              "minimum": 6
             },
             {
               "type": "null"
@@ -4286,6 +5492,9 @@
         "image"
       ],
       "x-version": "revision",
+      "x-identify": [
+        "slug"
+      ],
       "x-gate": {
         "read": 1,
         "create": 7,
@@ -4296,6 +5505,15 @@
         {
           "field": "params",
           "model": "BlueprintParam",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "apps",
+          "model": "App",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -4314,11 +5532,17 @@
         },
         "key": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 100
         },
         "label": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80
         },
@@ -4326,6 +5550,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 0,
               "maxLength": 200
             },
@@ -4375,6 +5602,9 @@
         "key",
         "label"
       ],
+      "x-identify": [
+        "key"
+      ],
       "x-gate": {
         "read": 1,
         "create": 7,
@@ -4409,16 +5639,25 @@
         },
         "repository": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 200
         },
         "tag": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 128
         },
         "digest": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 100
         },
@@ -4445,6 +5684,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 0,
               "maxLength": 120
             },
@@ -4465,6 +5707,10 @@
         "digest"
       ],
       "x-litestone-policies": true,
+      "x-identify": [
+        "repository",
+        "tag"
+      ],
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -4514,6 +5760,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 0,
               "maxLength": 500
             },
@@ -4584,16 +5833,25 @@
       "properties": {
         "name": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 80,
           "default": "Basecamp"
         },
         "baseUrl": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "format": "uri"
         },
         "adminEmail": {
           "type": "string",
+          "x-transforms": [
+            "lower"
+          ],
           "format": "email"
         },
         "heartbeatTimeoutSeconds": {
@@ -4626,6 +5884,9 @@
         },
         "backupCron": {
           "type": "string",
+          "x-transforms": [
+            "trim"
+          ],
           "minLength": 1,
           "maxLength": 100,
           "default": "0 2 * * *"
@@ -4638,6 +5899,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "lower"
+              ],
               "format": "email"
             },
             {
@@ -4649,6 +5913,9 @@
           "anyOf": [
             {
               "type": "string",
+              "x-transforms": [
+                "trim"
+              ],
               "minLength": 0,
               "maxLength": 80
             },
@@ -4724,7 +5991,7 @@
       "x-gate": {
         "read": 0,
         "create": 8,
-        "update": 4,
+        "update": 1,
         "delete": 8
       },
       "x-relations": [
@@ -4769,6 +6036,12 @@
         "kind"
       ],
       "x-litestone-policies": true,
+      "x-determined": {
+        "userId": "auth().id"
+      },
+      "x-identify": [
+        "kind"
+      ],
       "x-gate": {
         "read": 1,
         "create": 1,
@@ -4848,6 +6121,49 @@
         "histogram"
       ],
       "title": "MetricType"
+    },
+    "FlowStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "active",
+        "paused",
+        "archived"
+      ],
+      "title": "FlowStatus"
+    },
+    "FlowRunStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "waiting",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "FlowRunStatus"
+    },
+    "FlowStepStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed",
+        "skipped"
+      ],
+      "title": "FlowStepStatus"
+    },
+    "FlowCredentialAuth": {
+      "type": "string",
+      "enum": [
+        "none",
+        "bearer",
+        "api_key",
+        "hmac"
+      ],
+      "title": "FlowCredentialAuth"
     },
     "AccountType": {
       "type": "string",
@@ -4941,12 +6257,47 @@
       ],
       "title": "ServerRole"
     },
+    "ServerEventKind": {
+      "type": "string",
+      "enum": [
+        "created",
+        "removed",
+        "reboot_requested",
+        "drain_started",
+        "drain_cancelled",
+        "provision_requested",
+        "provision_created",
+        "provision_ready",
+        "provision_timeout",
+        "destroy_requested",
+        "destroy_finished",
+        "enrollment_issued",
+        "sync_requested",
+        "status_synced",
+        "status_sync_ignored",
+        "sync_failed",
+        "sync_no_account",
+        "sync_unsupported",
+        "sync_unrecognized",
+        "came_online",
+        "unreachable",
+        "recipe_ran",
+        "recipe_failed",
+        "cleanup_queued",
+        "cleanup_ran",
+        "cleanup_failed",
+        "volume_removed",
+        "volumes_pruned"
+      ],
+      "title": "ServerEventKind"
+    },
     "ProviderKind": {
       "type": "string",
       "enum": [
         "custom",
         "hetzner",
-        "digitalocean"
+        "digitalocean",
+        "cloudflare"
       ],
       "title": "ProviderKind"
     },
@@ -4992,8 +6343,6 @@
       "enum": [
         "pending",
         "building",
-        "pushing",
-        "deploying",
         "success",
         "failed",
         "cancelled",
@@ -5153,6 +6502,7 @@
         "Deployment",
         "AlertEvent",
         "JobRun",
+        "Server",
         "Workspace"
       ],
       "title": "NotificationContext"
@@ -5164,6 +6514,7 @@
         "deploy_failed",
         "alert_firing",
         "alert_resolved",
+        "server_unreachable",
         "member_joined",
         "job_failed",
         "weekly_digest"
@@ -5176,7 +6527,6 @@
         "Environment.create",
         "Environment.delete",
         "Environment.update",
-        "Environment.variables",
         "Server.create",
         "Server.delete",
         "Server.destroy",
@@ -5184,7 +6534,10 @@
         "Server.provision",
         "Server.reboot",
         "Server.undrain",
-        "Server.update"
+        "Server.update",
+        "Variable.create",
+        "Variable.delete",
+        "Variable.update"
       ],
       "title": "Capability"
     }
