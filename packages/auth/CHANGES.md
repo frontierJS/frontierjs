@@ -1,5 +1,9 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-05 — audit repro tests under `test/audit-*`, failing by design
+
+The Fable audit of 2026-10-05 wrote 18 `test/audit-*.test.ts` files plus `test/audit-routes-http.ts`. Each FINDING test asserts the secure behavior and fails on this tree; each HOLDS test pins what survived the attack. Rows are filed from the [review](https://claude.ai/code/artifact/2b00a647-30db-40da-8cd5-cdd3f7a880cd); a fix is done when its audit test goes green.
+
 ## 2026-10-04 — a registration has a step at which the app gives the person their tenant (`FJS-1458`)
 
 `onRegistered({ user, db })` (`FJS-D520`) runs inside the registration, after the user row and its credential and before the commit. A row-tenanted app creates the Account and the membership there and writes the tenant column; a throw rolls the whole registration back, so a retry meets no `EmailTakenError` from a half-made account. The session that follows is built from the row as the hook left it, so `accountId` reaches it through the existing `toContext`. Before, `POST /auth/register` made a user with `accountId NULL` and every read answered 403.

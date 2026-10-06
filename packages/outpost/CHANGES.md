@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-05 — audit repro tests under `test/audit-*`, failing by design
+
+`test/audit-signature.test.js` and `test/audit-static.test.js` from the Fable audit of 2026-10-05: six FINDING tests fail on this tree, fourteen HOLDS tests pin what survived. See the [review](https://claude.ai/code/artifact/2b00a647-30db-40da-8cd5-cdd3f7a880cd).
+
 ## 2026-10-03 — `/deploy` checks its run config before it moves the route (`FJS-1682`)
 
 `checkRunConfig` (volume path, CPU, memory) is exported from `docker.js` and `/deploy` calls it before re-pointing Caddy. Refused after the route moved, a redeploy that changed its port left the old container running behind a route dialing the new one. Basecamp no longer sends `/stop` ahead of `/deploy`, so every refusal here now leaves the live app serving. `test/outpost.test.js` § *a redeploy refused for its config…* fails with the call removed.

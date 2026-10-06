@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-05 — audit repro tests under `test/audit-*`, failing by design
+
+Two tests from the Fable audit of 2026-10-05: a `$raw` key smuggled through a `find` tool argument, and `withholdProtected` under `strategy database`. Both fail on this tree; see the [review](https://claude.ai/code/artifact/2b00a647-30db-40da-8cd5-cdd3f7a880cd).
+
 
 ## 2026-09-29 — a money column always names its currency (`FJS-D556`)
 

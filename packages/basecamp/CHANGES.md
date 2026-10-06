@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-05 — gate-parity audit tests under `test/audit-gate-parity-*`, six failing by design
+
+From the Fable audit of 2026-10-05: the matrix and protected-field tests pin 46 agreeing cells; the mcp, broadcast and members finding tests fail on this tree. See the [review](https://claude.ai/code/artifact/2b00a647-30db-40da-8cd5-cdd3f7a880cd).
+
 ## 2026-10-05 — the screens drive waits for the rename to finish before it renames back (`FJS-1736`)
 
 The workspace screen disables Save while the call is in flight as well as when nothing changed, and the drive's *settled* wait read only `disabled`, so it passed mid-save. The name typed back then landed while `busy` was still set, the click hit a disabled button and was dropped, and nothing ever disabled Save again (`last value undefined`). The wait now needs the *Workspace saved* toast, which is raised after the reload just before `busy` clears; the typed-back name must enable Save before it is pressed, and the final wait reads the saved name back off the screen. The defect was in the drive, not the screen. `verify:screens` 234/234.
