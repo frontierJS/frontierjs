@@ -19,6 +19,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tokenize, TK } from '@frontierjs/toolbelt/predicate'
+import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 import { PARSABLE, typeScriptAt, functionName } from './functions.js'
 
 /** A row this long shows what is inside it; a shorter one is read whole. */
@@ -133,6 +134,14 @@ export function outlineCode(ts, path, text) {
   return root.children
 }
 
+// How many lines the frontmatter block takes, closing fence included; 0 with none.
+function fenceLines(text) {
+  const { block, body } = splitFrontmatter(text)
+  if (block === null) return 0
+  const head = text.slice(0, text.length - body.length).replace(/\r?\n$/, '')
+  return head.split('\n').length
+}
+
 export function outlineMarkdown(text) {
   const lines = text.split('\n')
   const root = { level: 0, children: [] }
@@ -140,10 +149,7 @@ export function outlineMarkdown(text) {
   let fence = null
   let i = 0
   // front matter's `# comment` is yaml, not a heading
-  if (lines[0] === '---') {
-    const close = lines.indexOf('---', 1)
-    if (close > 0) i = close + 1
-  }
+  i = fenceLines(text)
   const close = (row, endLine) => {
     let end = endLine
     while (end > row.start && !lines[end - 1].trim()) end--
@@ -235,7 +241,7 @@ export function outlineMesa(ts, path, text) {
   }
   const markup = []
   // a route's `---` meta is not markup, and `markup` would send a reader to the wrong lines
-  const meta = lines[0] === '---' ? lines.indexOf('---', 1) + 1 : 0
+  const meta = fenceLines(text)
   if (meta > 0) markup.push({ name: 'front matter', kind: '', start: 1, end: meta, children: [] })
   for (let k = 0, from = meta + 1; k <= blocks.length; k++) {
     let start = from, end = k < blocks.length ? blocks[k].start - 1 : lines.length

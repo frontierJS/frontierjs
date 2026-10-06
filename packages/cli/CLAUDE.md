@@ -24,6 +24,8 @@ core/
   compiler.js   .md command → JavaScript. Only a fence runs; an indented block
                 is prose. `locate` maps a generated line to the module, the
                 lifted <script> or the body — the offset alone covers the body
+                Frontmatter is `@frontierjs/toolbelt/frontmatter`'s, and a
+                refused block throws naming the file — never a reader here
   flags.js      what a declared flag permits and how it is written — the
                 `--no-push` spelling of a boolean that defaults on, `choices`
                 and `min`/`max`, and the declarations refused on every run. A
@@ -1044,12 +1046,13 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `scripts/ci.mjs` imports it by relative path and runs it over this repo as the
   `structure` phase. Loosening a rule here loosens it for every app on the next
   release, and tightening one can fail the repo's own CI — which is the point.
-  Plain ESM, node or bun, and **one import**: `@frontierjs/toolbelt/inflect`, the
-  substrate package below the dependency graph (`FJS-D26`). *What is the singular
-  of this service name* has one owner (Invariant 2) and five callers, and a rule
-  answering it a sixth time would grade an app by an inflection the app does not
-  run — `people` → `person` is exactly the case `service-model` has to get right.
-  Nothing else may be imported: `ci.mjs` runs on plain node.
+  Plain ESM, node or bun, and **one package**: `@frontierjs/toolbelt`, the
+  substrate below the dependency graph (`FJS-D26`) — `/inflect` and
+  `/frontmatter`. *What is the singular of this service name* has one owner
+  (Invariant 2) and five callers, and a rule answering it a sixth time would
+  grade an app by an inflection the app does not run — `people` → `person` is
+  exactly the case `service-model` has to get right. Nothing else may be
+  imported: `ci.mjs` runs on plain node.
 - **`core/invariants.js` is the enforcer per Invariant, and it may not import
   `core/checks.js`.** The rule table is the derived half of that answer, so it is
   handed IN — the same shape `checkRulesCountable` uses and for the same reason:

@@ -1,5 +1,30 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-05 — Command frontmatter is read by `@frontierjs/toolbelt/frontmatter`
+
+fli had its own reader, and it read some blocks differently from sierra and mesa. `- name: x` came out as the string `name: x`. A ` # note` stayed in the value. `"a" b` was taken for a quoted string. `compiler.js`'s `splitFrontmatter` now reads through the kit and keeps its shape (`meta`, `body`, `bodyLine`, blank lines after the fence going with it). `parseYaml` and `coerceYamlValue` are gone. The other hand readers moved to the kit as well:
+
+- `decisions.js`'s IDEAS reader
+- the GUI's step list in `server.js`, whose regex returned `skip:` with its quotes still on
+- `checks.js`'s skill-name rule
+- the fence finders in `terms.js`, `vite-ask.js` and `outline.js`
+
+`checks.js`'s unused `frontmatter(path)` is deleted.
+
+**A refused block now says so.** It used to be misread without a word. Now it throws with the file and line in the message. The registry warns and leaves the command out, where its `catch {}` used to drop it with no message. `command-parses` reports it as a finding through `commandFiles`'s new `refused` entry.
+
+Three shipped commands were outside the subset, and quoting fixed them:
+
+- `fetch/json.md`: an unquoted `: ` in a description
+- `git/stash.md`: an example with `"WIP: auth work"` inside it
+- `ksite/update.md`: two examples whose ` # …` notes would have been cut off
+
+A comparison of the old reader against the kit now agrees on all 450 `.md` files under `packages/cli`, `example/cli` and `packages/*/cli`, on 161 IDEAS papers and app `cli/` files, and on 9 files in `fjs-prototypes`.
+
+**Writers use `frontmatterValue`**: `shortcuts.js`, `make:command`, `make:route`, `web:route`, `crud-templates.js`, `site-surface.js`, `desktop-surface.js` and `utils:note`. `compiler.js` re-exports it, so a command reaches it through `global.fliRoot`. `flags.js` no longer says the reader cannot take `[a, b]`, because now it can. `checks.js` imports `@frontierjs/toolbelt/frontmatter` too, so the one-import rule now reads *one package*.
+
+Tests: `test/compiler.test.js` § frontmatter is the kit (a list of maps, a refusal that names the file and line, `command-parses` reporting it) and `test/shortcuts.test.js` (a description holding `: `, ` #` or `@` reads back as written). `bun run test` has 2 failures, both in `pause-journal.test.js`. Both are `FJS-1172`, which times out under load (load average 4.2 during the run) and touches no frontmatter.
+
 ## 2026-10-05 — `fli next` ranks by reach
 
 A fourth tiebreak under severity: how many workspace packages depend on the row's package, counted through any package between, read from the manifests. +1 for every 3 dependents, capped at +3, which is below one citation (+4), so reach orders rows within a tie and never moves a row past one. Today toolbelt reaches 18, litestone 11, junction 10, mesa 8 and css 5. The largest tie in the register (S3 with no other term) went from 104 rows to 55. The manifest reader is `workspaceDeps(root)` in `core/runnables.js`, and `repo-map.js`'s `packages()` now takes its deps from it instead of reading them a second way. Tests: `test/next.test.js` checks a pair that counts reach through a package in between, and that the widest reach still loses to one citation. Docs: `register/next.md` § How a row is scored, `CLAUDE.md` layout.

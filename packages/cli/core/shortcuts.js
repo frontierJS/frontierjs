@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { resolve } from 'path'
+import { frontmatterValue } from './compiler.js'
 
 export const SHORTCUT_NAMESPACE = 'shortcut'
 
@@ -106,14 +107,14 @@ export function renderShortcut({ name, command, description = '' }) {
   return [
     '---',
     `title: ${shortcutTitle(name)}`,
-    `description: ${description || line}`,
+    `description: ${frontmatterValue(description || line)}`,
     `alias: ${name}`,
     // The command's flags are the TARGET's. Without this, every forwarded flag
     // is announced as "not defined" by the one command that does not define
     // flags on purpose.
     'mode: passthrough',
     'examples:',
-    `  - fli ${name}`,
+    `  - ${frontmatterValue('fli ' + name)}`,
     '---',
     '',
     `Runs \`${line}\` from the project root.`,

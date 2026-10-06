@@ -15,10 +15,11 @@
 // framework that breaks its own stated rules is worse than one that never stated
 // them, and the way that happens is a second copy nobody re-derives.
 //
-// So: plain ESM, node or bun, and one import — `@frontierjs/toolbelt/inflect`,
-// the substrate package below the dependency graph, because *what is the
-// singular of this service name* has one owner (Invariant 2) and a rule that
-// answered it a sixth time would grade an app by rules the app does not run.
+// So: plain ESM, node or bun, and one package — `@frontierjs/toolbelt`, the
+// substrate below the dependency graph, because *what is the singular of this
+// service name* (`/inflect`, Invariant 2) and *what does this `---` block say*
+// (`/frontmatter`) each have one owner, and a rule answering either again would
+// grade an app by rules the app does not run.
 // `ci.mjs` imports this file by relative path, which is what keeps it honest —
 // a rule loosened for the repo is loosened for every app on the next release.
 //
@@ -35,6 +36,7 @@ import { spawnSync }                                                  from 'chil
 import { join, relative, basename, extname }               from 'path'
 
 import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
+import { parseFrontmatter }                from '@frontierjs/toolbelt/frontmatter'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
@@ -3690,20 +3692,6 @@ function staticSurfaces(root) {
   return out
 }
 
-/**
- * A `.mesa` route's frontmatter block, with the whole file beside it.
- *
- * Both, because a finding needs a line number in the FILE and matching the file
- * would find the word in the markup below. `start` is where the block begins,
- * so an offset inside it can be reported against the file it came from.
- */
-function frontmatter(path) {
-  let text = ''
-  try { text = readFileSync(path, 'utf8') } catch { return { text: '', block: '', start: 0 } }
-  const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-  return { text, block: m ? m[1] : '', start: m ? m[0].indexOf(m[1]) : 0 }
-}
-
 // ─── the schema, as far as three rules need it ────────────────────────────────
 
 /**
@@ -4251,8 +4239,14 @@ function skillPointer({ root }) {
       }
       if (graded.has(name)) continue
       graded.add(name)
-      const front = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, 'utf8'))
-      const declared = /^name:\s*(\S+)\s*$/m.exec(front?.[1] ?? '')?.[1]
+      let declared
+      try { declared = parseFrontmatter(readFileSync(file, 'utf8')).frontmatter.name } catch (err) {
+        findings.push({ file, line: err.line ?? 1,
+          message: `has frontmatter that does not read — ${err.message.replace(/^line \d+: /, '')}. ` +
+                   `The Skill tool registers a skill under its \`name:\`, so one that cannot be read ` +
+                   `names nothing.` })
+        continue
+      }
       if (declared !== name) findings.push({ file, line: 1,
         message: `is named \`${name}\` by ${label} and declares \`name: ${declared ?? '(none)'}\`. The Skill ` +
                  `tool registers it under the frontmatter, so the pointer names a skill the tool cannot ` +

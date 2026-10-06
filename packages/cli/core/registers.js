@@ -585,7 +585,7 @@ function readIdeas({ root, dir: registerDir, ids }) {
 
   for (const name of readdirSync(dir).filter(n => n.endsWith('.md')).sort()) {
     const raw          = readFileSync(join(dir, name), 'utf8')
-    const { meta, body } = splitFrontmatter(raw)
+    const { meta, body } = splitFrontmatter(raw, join(dir, name))
     const id           = meta.id || name.replace(/\.md$/, '')
 
     out.push({

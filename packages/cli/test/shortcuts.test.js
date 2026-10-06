@@ -134,6 +134,16 @@ describe('the file it writes', () => {
     expect(meta.description).toBe('The atlas, opened')
   })
 
+  // The writer interpolated the words bare, and the frontmatter kit refuses a
+  // `: ` in a plain value and cuts one at ` #` — the shortcut either vanished
+  // from `fli list` or said half of what was typed.
+  test('a description holding `: ` or ` #` reads back as written', () => {
+    for (const description of ['Deploy: staging', 'tests # fast ones', '@scope/pkg release']) {
+      expect(extractFrontmatter(renderShortcut({ name: 'go-time', command: 'fli ws:atlas', description })).description)
+        .toBe(description)
+    }
+  })
+
   // Invariant 15: a clean compile is not proof of valid JS. The command string
   // is author input that lands inside a template literal, which is the one
   // place a stray backtick stops being a character and starts being syntax.

@@ -79,10 +79,19 @@ export function getModule(namespace) {
 /** The namespace a `_module.md` serves: `namespace:` if it says, else its folder. */
 export const moduleNamespace = (mod) => mod.meta.namespace || basename(dirname(mod.filePath))
 
+// A block the frontmatter kit refuses drops the file, and the loop around every
+// file skips anything that throws — so without this line the command is simply
+// gone from `fli list`, with nothing saying why.
+const warnRefused = (filePath, err) => {
+  if (typeof err?.line === 'number') console.error(`\x1b[33m⚠\x1b[0m ${err.message} — not loaded`)
+}
+
 export function loadModuleFile(filePath) {
   try {
     const raw  = readFileSync(filePath, 'utf8')
-    const { meta, body } = splitFrontmatter(raw)
+    let parts
+    try { parts = splitFrontmatter(raw, filePath) } catch (err) { warnRefused(filePath, err); throw err }
+    const { meta, body } = parts
     const prose = stripScriptBlocks(body)
       .replace(/```[\s\S]*?```/g, '')
       .trim()
@@ -115,7 +124,8 @@ export function buildRegistry() {
         return hit.meta
       }
     } catch {}
-    const meta = extractFrontmatter(readFileSync(filePath, 'utf8'))
+    let meta
+    try { meta = extractFrontmatter(readFileSync(filePath, 'utf8'), filePath) } catch (err) { warnRefused(filePath, err); throw err }
     if (sig) {
       fresh[filePath] = { sig, meta }
       cacheChanged = true

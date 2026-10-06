@@ -297,7 +297,7 @@ parseFrontmatter('---\ntitle: About\nitems:\n- name: Home\n  link: /\n---\nBody'
 // → { frontmatter: { title: 'About', items: [{ name: 'Home', link: '/' }] }, body: 'Body' }
 ```
 
-Sierra's route table and mesa's `.md` compiler both read it, so a page's `page.meta` and its module's `frontmatter` are the same object. It reads a declared subset of YAML (`FJS-D549`):
+Sierra's route table, mesa's `.md` compiler and fli's command files all read it, so a page's `page.meta` and its module's `frontmatter` are the same object, and a command means to fli what it means to any other reader. It reads a declared subset of YAML (`FJS-D549`):
 
 | Reads | Refuses, naming the line |
 | --- | --- |
@@ -307,6 +307,8 @@ Sierra's route table and mesa's `.md` compiler both read it, so a page's `page.m
 | `'single'` and `"double"` quotes with YAML's escapes | anything YAML itself refuses, such as an unquoted `: ` in a value or a duplicate key |
 
 Scalars resolve by YAML 1.2's core schema: `2024-01-05`, `yes` and `on` stay strings. A refusal throws an `Error` whose message starts `line N:` and whose `.line` is N, counted from the top of the file. `parseFrontmatterBlock(text)` reads the text between the fences. `splitFrontmatter(source)` answers `{ block, body }` without reading the block, so a caller that reports a refusal can still show the body.
+
+A generator writing a person's words into a block uses `frontmatterValue(value)` — the text to put after `key: ` that this reader reads back as exactly that string. It is plain where plain already means it and double-quoted otherwise, so `Fix: login` becomes `"Fix: login"` and `@scope/app` stops being refused.
 
 ---
 

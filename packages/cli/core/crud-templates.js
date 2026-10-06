@@ -30,6 +30,8 @@
 
 // ─── shared pieces ────────────────────────────────────────────────────────────
 
+import { frontmatterValue } from './compiler.js'
+
 const SC = '<' + '/script>'
 
 const KIT = {
@@ -145,7 +147,7 @@ export function listPage(o) {
     : ''
 
   return `---
-title: ${o.title}
+title: ${frontmatterValue(o.title)}
 ---
 <script>
 ${o.imports.map(l => '  ' + l).join('\n')}
@@ -258,7 +260,7 @@ export function createPage(o) {
   const watch   = o.gate ? '\n  $: session.level\n' : ''
 
   return `---
-title: ${o.title}
+title: ${frontmatterValue(o.title)}
 ---
 <script>
   // There is no form in this file, and no field name, type, enum value,
@@ -345,7 +347,7 @@ export function editPage(o) {
     : { imp: '', script: '', markup: '' }
 
   return `---
-title: ${o.title}
+title: ${frontmatterValue(o.title)}
 ---
 <script>
 ${o.imports.map(l => '  ' + l).join('\n')}

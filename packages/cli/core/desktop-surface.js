@@ -36,6 +36,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname }                     from 'node:path'
 import { encodePng }                            from './png.js'
+import { frontmatterValue }                     from './compiler.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,7 @@ mount(anchor, RouterView, { root })
 
 export function desktopHomePage({ productName = 'app' } = {}) {
   return `---
-title: ${productName}
+title: ${frontmatterValue(productName)}
 ---
 <div class="container stack">
   <h1>${productName}</h1>

@@ -22,6 +22,8 @@ flags:
 import { writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
+
+const { frontmatterValue } = await import(resolve(global.fliRoot, 'core/compiler.js'))
 </script>
 
 ```js
@@ -30,7 +32,7 @@ const cleaned = arg.name.trim().replace(/ /g, '_').toLowerCase()
 const file    = `${cleaned}.${date}.md`
 const meta    = [
   '---',
-  `title: ${arg.name}`,
+  `title: ${frontmatterValue(arg.name)}`,
   `tags: []`,
   `createdAt: ${date}`,
   '---',

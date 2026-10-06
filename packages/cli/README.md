@@ -211,6 +211,12 @@ sorted so that is at least reproducible, but nothing about `utils` sorting after
 
 ### Frontmatter
 
+Read by `@frontierjs/toolbelt/frontmatter`, the same YAML subset sierra and mesa
+read (`FJS-D549`). A block outside it — an unquoted `: ` in a value, an anchor,
+a tab in the indentation — is refused, naming the file and line: `fli list`
+warns and leaves the command out, and `fli check`'s `command-parses` reports it.
+Quote a value that holds `: ` or ` #`.
+
 | Field | Required | Description |
 |---|---|---|
 | `title` | ✅ | Command name, `namespace:command` |

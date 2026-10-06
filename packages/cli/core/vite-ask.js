@@ -27,6 +27,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
 
 import { editPrompt, resumeCommand, runAsk } from './ask-claude.js'
 
@@ -367,7 +368,7 @@ export function locateText(src, { ext, line, col, tag, old, next }) {
     from = span.start
     to = span.end
   } else {
-    from = (/^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/.exec(src)?.[0].length) ?? 0
+    from = src.length - splitFrontmatter(src).body.length
   }
 
   // A word boundary at each end where the text has one, so `Item` is not found

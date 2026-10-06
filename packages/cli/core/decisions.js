@@ -28,12 +28,14 @@
 // and a slug of the question — stable while the question's wording is, which
 // is the same promise a heading anchor makes.
 //
-// Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
+// Plain ESM, node or bun, and no dependency but `@frontierjs/toolbelt` — the
+// frontmatter kit, through `compiler.js` — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, relative }                        from 'node:path'
 
 import { readRegisters, registerLayout } from './registers.js'
+import { extractFrontmatter }             from './compiler.js'
 
 // A paper arguing its own questions under a numbered or qualified heading is
 // still arguing them — `## 9. Open questions`, `## The open question worth
@@ -118,8 +120,9 @@ function ideaQuestions(root) {
   const out = []
   for (const name of readdirSync(dir).filter(n => n.endsWith('.md')).sort()) {
     const rel   = relative(root, join(dir, name))
-    const lines = readFileSync(join(dir, name), 'utf8').split('\n')
-    const meta  = frontmatter(lines)
+    const text  = readFileSync(join(dir, name), 'utf8')
+    const lines = text.split('\n')
+    const meta  = extractFrontmatter(text, join(dir, name))
     if (MOOT_STATUS.has(meta.status)) continue
 
     const paper = { id: meta.id || name.replace(/\.md$/, ''), status: meta.status || '', file: rel }
@@ -229,16 +232,6 @@ function issueQuestions(root) {
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-function frontmatter(lines) {
-  if (lines[0] !== '---') return {}
-  const meta = {}
-  for (let i = 1; i < lines.length && lines[i] !== '---'; i++) {
-    const m = lines[i].match(/^([a-z-]+):\s*(.*)$/i)
-    if (m) meta[m[1]] = m[2].trim()
-  }
-  return meta
-}
 
 export function slug(text) {
   return text.toLowerCase()

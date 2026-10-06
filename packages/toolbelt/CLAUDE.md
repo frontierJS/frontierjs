@@ -104,8 +104,10 @@ src/frontmatter/     what a `---` block MEANS — a declared YAML subset
                      YAML 1.2 core scalars (a date stays a string). Anchors,
                      aliases, tags and merge keys are REFUSED by name, which is
                      what retired sierra's `FJS-821` expansion bound. Read by
-                     sierra's scanner and mesa's `.md` compiler — two readers
-                     answered two objects for one ksite menu (`FJS-1541`)
+                     sierra's scanner, mesa's `.md` compiler and fli's command
+                     files — two readers answered two objects for one ksite
+                     menu (`FJS-1541`). `frontmatterValue` is the writer's
+                     half: plain where plain reads back, otherwise quoted
 src/history/         `occurrenceKey` — the one definition of *this unit of work
                      already happened*
 src/match/           does this record still belong in that query's results.

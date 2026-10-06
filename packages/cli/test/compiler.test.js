@@ -2,9 +2,10 @@ import { describe, test, expect } from 'bun:test'
 import { extractFrontmatter, transformMarkdown, compileCli, extractSegments,
          stripFrontmatter, splitFrontmatter, compileCliWithMap } from '../core/compiler.js'
 import { registerShim, rewriteStackString, _clearShims } from '../core/stack.js'
-import { commandFiles } from '../core/command-parse.js'
+import { commandFiles, parseCommands } from '../core/command-parse.js'
 import { declarationProblem } from '../core/flags.js'
-import { readdirSync, statSync, readFileSync } from 'fs'
+import { readdirSync, statSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -161,6 +162,39 @@ describe('stripFrontmatter', () => {
   test('reads a Buffer, the way the loader hands it over', () => {
     const buf = new TextEncoder().encode('---\ntitle: x\n---\n\nprose\n')
     expect(stripFrontmatter(buf)).toBe('prose\n')
+  })
+})
+
+// ─── what the block means is the kit's ────────────────────────────────────────
+
+describe('frontmatter is @frontierjs/toolbelt/frontmatter', () => {
+  // fli's own reader read `- name: x` as the string `name: x`, kept ` # note`
+  // as part of the value and took `"a" b` for a quoted string, so one `.md`
+  // meant one thing to fli and another to sierra and mesa.
+  test('a list of maps, a comment and a quoted value read as sierra and mesa read them', () => {
+    const fm = extractFrontmatter('---\nargs:\n  - name: path\n    required: true\nalias: go # the short one\nq: "a: b"\n---\n')
+    expect(fm).toEqual({ args: [{ name: 'path', required: true }], alias: 'go', q: 'a: b' })
+  })
+
+  test('a block outside the subset is refused, naming the file and the line', () => {
+    let err = null
+    try { extractFrontmatter('---\ntitle: x:y\ndescription: Fix: it\n---\n', 'x/y.md') } catch (e) { err = e }
+    expect(err?.line).toBe(3)
+    expect(err?.message).toMatch(/^x\/y\.md: frontmatter line 3: quote this value/)
+  })
+
+  test('`command-parses` reports a refused file rather than losing it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fli-fm-'))
+    try {
+      mkdirSync(join(dir, 'x'))
+      writeFileSync(join(dir, 'x', 'bad.md'), '---\ntitle: x:bad\ndescription: Fix: it\n---\n\n```js\necho(1)\n```\n')
+      writeFileSync(join(dir, 'x', 'good.md'), '---\ntitle: x:good\n---\n\n```js\necho(1)\n```\n')
+      const { checked, problems } = parseCommands(dir)
+      expect(checked).toBe(2)
+      expect(problems).toEqual([{ file: join(dir, 'x', 'bad.md'), line: 3, message: expect.stringMatching(/^frontmatter quote this value/) }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

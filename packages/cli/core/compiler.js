@@ -8,6 +8,11 @@
 // writes a .mesa Resource does. It follows that a command has exactly one script
 // block; a second one would be swallowed into the first.
 
+import { parseFrontmatter } from '@frontierjs/toolbelt/frontmatter'
+
+// What a writer puts after `key: ` — here so a command reaches it through
+// `global.fliRoot` the way it reaches every other core module.
+export { frontmatterValue } from '@frontierjs/toolbelt/frontmatter'
 
 const utf8Decoder = new TextDecoder('utf-8')
 const bufToString = (buf) => (typeof buf === 'string' ? buf : utf8Decoder.decode(buf))
@@ -134,32 +139,38 @@ export function compileCli(template, moduleScript = '', sourcePath = '') {
   return compileCliWithMap(template, moduleScript, sourcePath).code
 }
 
-// ─── Frontmatter parser ───────────────────────────────────────────────────────
+// ─── Frontmatter ───────────────────────────────────────────────────────────────
 
-// A fence is `---` ALONE on its line, at the top of the file and again to
-// close. The looser `/^---[\s\S]*?---\s*/` that five call sites carried by hand
-// ended the block at the first `---` anywhere, mid-line included, so a
-// `description: use --- as a divider` left the rest of the frontmatter and its
-// own closing fence sitting in the body — and the meta parser, whose regex was
-// the stricter of the two, disagreed with the body about where the file began.
-// Blank lines after the closing fence go with it — the old strip ate them and
-// the markdown walkers were written against a body that starts at content.
-const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n(?:[ \t]*\r?\n)*|$)/
+// What a block MEANS is `@frontierjs/toolbelt/frontmatter`'s — the reader sierra
+// and mesa use (`FJS-D549`). fli kept one of its own that read `- a: b` as a
+// one-key map, cut nothing at ` #` and took `"x" y` for a quoted string, so the
+// same `.md` meant two things depending on which tool opened it. A block outside
+// the subset is refused, naming the line in the FILE.
 
 /**
- * `{ meta, body, bodyLine }` from one match, so nothing can disagree about the
- * split. `bodyLine` is the 1-based line of the ORIGINAL that `body` starts at,
- * which is half of what maps a stack frame back to the `.md` — see
- * `compileCliWithMap`.
+ * `{ meta, body, bodyLine }` from one split, so nothing can disagree about it.
+ * `bodyLine` is the 1-based line of the ORIGINAL that `body` starts at, which
+ * is half of what maps a stack frame back to the `.md` — see
+ * `compileCliWithMap`. Blank lines after the closing fence go with it: the
+ * markdown walkers were written against a body that starts at content.
+ *
+ * @param {string} [file] named in a refusal, which otherwise says only the line
+ * @throws {Error} on a block the kit refuses; `.line` is the file's line
  */
-export function splitFrontmatter(template) {
-  const text  = bufToString(template)
-  const match = text.match(FRONTMATTER)
-  if (!match) return { meta: {}, body: text, bodyLine: 1 }
+export function splitFrontmatter(template, file) {
+  const text = bufToString(template)
+  let parsed
+  try { parsed = parseFrontmatter(text) } catch (err) {
+    if (file && typeof err.line === 'number') err.message = `${file}: frontmatter ${err.message}`
+    throw err
+  }
+  const { frontmatter, body: rest } = parsed
+  if (rest.length === text.length) return { meta: frontmatter, body: text, bodyLine: 1 }
+  const body = rest.replace(/^(?:[ \t]*\r?\n)+/, '')
   return {
-    meta:     parseYaml(match[1]),
-    body:     text.slice(match[0].length),
-    bodyLine: countLines(match[0]) + 1,
+    meta:     frontmatter,
+    body,
+    bodyLine: countLines(text.slice(0, text.length - body.length)) + 1,
   }
 }
 
@@ -171,98 +182,12 @@ const countLines = (s) => {
 }
 
 /** The body with its frontmatter removed. The one owner — do not re-derive it. */
-export function stripFrontmatter(template) {
-  return splitFrontmatter(template).body
+export function stripFrontmatter(template, file) {
+  return splitFrontmatter(template, file).body
 }
 
-export function extractFrontmatter(template) {
-  return splitFrontmatter(template).meta
-}
-
-function parseYaml(yaml) {
-  const lines = yaml.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#'))
-
-  // Count leading spaces directly — avoids regex match + capture allocation
-  // per call (this fires once per line of frontmatter).
-  const indent = (line) => {
-    let n = 0
-    while (n < line.length && line.charCodeAt(n) === 32) n++
-    return n
-  }
-
-  const result = {}
-  let stack = [{ container: result, indentLevel: -1 }]
-  const top = () => stack[stack.length - 1]
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]
-    const lvl = indent(raw)
-    const line = raw.trim()
-
-    while (stack.length > 1 && lvl <= top().indentLevel) stack.pop()
-
-    const current = top().container
-
-    // Bare dash — object array item
-    if (line === '-') {
-      const item = {}
-      if (Array.isArray(current)) current.push(item)
-      stack.push({ container: item, indentLevel: lvl })
-      continue
-    }
-
-    // Inline array item: "- value"
-    const inlineItem = line.match(/^-\s+(.+)$/)
-    if (inlineItem && Array.isArray(current)) {
-      current.push(coerceYamlValue(inlineItem[1]))
-      continue
-    }
-
-    // Key: value
-    const kv = line.match(/^([\w-]+)\s*:\s*(.*)$/)
-    if (kv) {
-      const [, key, value] = kv
-      const val = value.trim()
-      if (val === '') {
-        // Blank/comment lines are pre-filtered out (see line 97), so the next
-        // line in `lines` is the next meaningful line. If it's more indented,
-        // we have a child block; otherwise the value is empty string.
-        const nextLine = lines[i + 1]
-        const nextLvl  = nextLine ? indent(nextLine) : -1
-        const hasChild = nextLine && nextLvl > lvl
-        if (hasChild) {
-          const nextTrimmed = nextLine.trim()
-          const isArray = nextTrimmed === '-' || nextTrimmed.startsWith('- ')
-          const child = isArray ? [] : {}
-          current[key] = child
-          stack.push({ container: child, indentLevel: lvl })
-        } else {
-          current[key] = ''
-        }
-      } else {
-        current[key] = coerceYamlValue(val)
-      }
-      continue
-    }
-  }
-
-  return result
-}
-
-function coerceYamlValue(val) {
-  if (val === 'true')  return true
-  if (val === 'false') return false
-  if (val === 'null' || val === '~') return null
-  // Only coerce to number if it round-trips cleanly — avoids surprising
-  // conversions like "+123" → 123, "0xff" → 255, "1e3" → 1000, "Infinity" → null.
-  // We want a YAML 1.2 scalar that's unambiguously a plain integer or float.
-  if (/^-?\d+$/.test(val) || /^-?\d+\.\d+$/.test(val)) {
-    const n = Number(val)
-    if (Number.isFinite(n)) return n
-  }
-  if ((val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))) return val.slice(1, -1)
-  return val
+export function extractFrontmatter(template, file) {
+  return splitFrontmatter(template, file).meta
 }
 
 // ─── Script block helpers ─────────────────────────────────────────────────────

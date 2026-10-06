@@ -48,6 +48,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
+import { frontmatterValue } from './compiler.js'
 
 /** The six, minus the ones a build writes. `dist/` is output, never scaffolded. */
 export const SITE_SURFACE_DIRS = [
@@ -214,7 +215,7 @@ mount(anchor, RouterView, { root })
 
 export function siteHomePage({ appName = 'app' } = {}) {
   return `---
-title: ${appName}
+title: ${frontmatterValue(appName)}
 render: static
 ---
 <!--

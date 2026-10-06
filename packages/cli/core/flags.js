@@ -46,8 +46,8 @@ export function declarationProblem(name, def = {}) {
     return `\`${name}\` declares \`options\`. The allowed values are \`choices\`, a list, one \`- value\` per line.`
   }
   if ('choices' in def && !(Array.isArray(def.choices) && def.choices.length)) {
-    return `\`${name}\`'s \`choices\` is ${JSON.stringify(def.choices)}. Write a list, one \`- value\` per ` +
-           `line under \`choices:\` — the frontmatter reader takes no \`[a, b]\` form.`
+    return `\`${name}\`'s \`choices\` is ${JSON.stringify(def.choices)}. Write a list — \`[a, b]\`, or one \`- value\` per ` +
+           `line under \`choices:\`.`
   }
   if (name === 'as' && Array.isArray(def.choices) && def.choices.includes('json')) {
     return `\`as\` offers \`json\`. JSON is \`--json\`, a boolean flag of its own; \`as\` picks among the ` +

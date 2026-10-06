@@ -138,7 +138,7 @@ export async function Command({ file, arg, flag, emit }) {
   if (file.endsWith('.md')) {
     const template = readFileSync(file, 'utf8')
     // Load namespace module if one exists
-    const ns = (extractedMeta => extractedMeta?.title?.split(':')?.[0])(extractFrontmatter(template))
+    const ns = (extractedMeta => extractedMeta?.title?.split(':')?.[0])(extractFrontmatter(template, file))
     mod      = ns ? getModule(ns) : null
 
     // ── Module cache check ────────────────────────────────────────────────────
@@ -522,7 +522,7 @@ export async function Command({ file, arg, flag, emit }) {
   //   steps: _steps-docker
   //   ---
   const ownSteps = file.endsWith('.md')
-    ? extractFrontmatter(readFileSync(file, 'utf8'))?.steps
+    ? extractFrontmatter(readFileSync(file, 'utf8'), file)?.steps
     : null
 
   const defaultStepsDir = !file.endsWith('.md')
@@ -617,7 +617,7 @@ export async function Command({ file, arg, flag, emit }) {
         const totalSteps = allStepFiles.length
         const stepName   = basename(stepFile, '.md')
 
-        const stepMeta = extractFrontmatter(stepTemplate)
+        const stepMeta = extractFrontmatter(stepTemplate, stepFile)
 
         // Honor an early stop signaled by the orchestrator or a previous step.
         // The step body's own `if (context.config.abort) return` would still
@@ -776,7 +776,7 @@ export async function Command({ file, arg, flag, emit }) {
 
       for (const stepFile of stepFiles) {
         const template = readFileSync(stepFile, 'utf8')
-        const meta = extractFrontmatter(template)
+        const meta = extractFrontmatter(template, stepFile)
         const entry = { file: stepFile, template }
         if (meta.parallel) {
           parallelBatch.push(entry)

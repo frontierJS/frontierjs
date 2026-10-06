@@ -43,7 +43,11 @@ function walkMd(dir) {
   return out
 }
 
-const namespaceOf = (file) => extractFrontmatter(readFileSync(file, 'utf8'))?.title?.split(':')?.[0] ?? null
+// A block the frontmatter kit refuses names no namespace — the file is reported
+// as `refused` below, and a step beside it is paired with nothing.
+const readMeta = (template) => { try { return { meta: extractFrontmatter(template) } } catch (refused) { return { refused } } }
+
+const namespaceOf = (file) => readMeta(readFileSync(file, 'utf8')).meta?.title?.split(':')?.[0] ?? null
 
 // A step runs with its command's module, and its command is the one in the
 // directory holding the `_steps*` folder — `index.md` by default, or the file
@@ -65,23 +69,32 @@ function stepNamespace(stepFile) {
  * Every command and step file under `routesDir`, each with the namespace
  * module the runtime would compile it with. A `.md` with no `title:` that is
  * not a step is not a command, which is the registry's own reading.
+ *
+ * A file whose frontmatter the kit refuses — a module included — is an entry
+ * carrying `refused`, the kit's error: its title cannot be read, and leaving it
+ * out is how the registry already loses it.
  */
 export function commandFiles(routesDir) {
   const files   = walkMd(routesDir)
   const modules = new Map()
+  const out     = []
   for (const file of files) {
     if (basename(file) !== '_module.md') continue
+    const template    = readFileSync(file, 'utf8')
+    const { refused } = readMeta(template)
+    if (refused) { out.push({ file, template, module: null, refused }); continue }
     const mod = loadModuleFile(file)
     if (mod) modules.set(moduleNamespace(mod), mod)
   }
 
-  const out = []
   for (const file of files) {
     if (basename(file) === '_module.md') continue
-    const template = readFileSync(file, 'utf8')
+    const template          = readFileSync(file, 'utf8')
+    const { meta, refused } = readMeta(template)
+    if (refused) { out.push({ file, template, module: null, refused }); continue }
     const step     = STEPS_DIR.test(basename(dirname(file)))
-    const ns       = step ? stepNamespace(file) : extractFrontmatter(template)?.title?.split(':')?.[0]
-    if (!step && !extractFrontmatter(template)?.title) continue
+    const ns       = step ? stepNamespace(file) : meta.title?.split(':')?.[0]
+    if (!step && !meta.title) continue
     out.push({ file, template, module: (ns && modules.get(ns)) || null })
   }
   return out
@@ -115,7 +128,8 @@ export function parseCommands(routesDir, { node = NODE } = {}) {
   return { checked: entries.length, problems: [...problems.values()] }
 }
 
-function parseOne({ file, template, module }, shim, node) {
+function parseOne({ file, template, module, refused }, shim, node) {
+  if (refused) return { file, line: refused.line, message: `frontmatter ${refused.message.replace(/^line \d+: /, '')}` }
   const { code, locate } = compileCliWithMap(template, module?.script || '', file)
   writeFileSync(shim, code)
   const r = spawnSync(node, ['--check', shim], { encoding: 'utf8' })
@@ -155,7 +169,9 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export function resolveCommands(routesDir, ts) {
   const entries  = commandFiles(routesDir)
   const problems = new Map()
-  for (const { file, template, module } of entries) {
+  for (const { file, template, module, refused } of entries) {
+    // `parseCommands` reports it; nothing compiles to resolve.
+    if (refused) continue
     const { code, locate } = compileCliWithMap(template, module?.script || '', file)
     const { free, duplicates } = scopeProblems(ts, code, { globals: SHIM_GLOBALS })
     const report = (line, message) => {

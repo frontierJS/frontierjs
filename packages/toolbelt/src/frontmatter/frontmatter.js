@@ -64,6 +64,25 @@ export function parseFrontmatterBlock(text) {
   return read(text, 0)
 }
 
+/**
+ * The text to write after `key: ` so this reader reads back exactly `value`.
+ * A scaffold interpolating a person's words into a block wrote `description:
+ * Fix: the login` and got a refusal, or `alias: a # b` and got `a`.
+ *
+ * Plain where plain reads back as itself, otherwise double-quoted — a JSON
+ * string is a valid YAML double-quoted scalar, escapes included.
+ *
+ * @param {unknown} value written as `String(value)`
+ * @returns {string}
+ */
+export function frontmatterValue(value) {
+  const s = String(value)
+  if (!/[\r\n]/.test(s)) {
+    try { if (read('k: ' + s, 0).k === s) return s } catch {}
+  }
+  return JSON.stringify(s)
+}
+
 // ─── scalars ─────────────────────────────────────────────────────────────────
 
 const NULL = /^(?:~|null|Null|NULL)?$/

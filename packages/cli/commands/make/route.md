@@ -40,6 +40,8 @@ flags:
 import { mkdirSync, writeFileSync, existsSync } from 'fs'
 import { resolve, dirname, basename } from 'path'
 
+const { frontmatterValue } = await import(resolve(global.fliRoot, 'core/compiler.js'))
+
 // A literal closing script tag ends this block — core/compiler.js extracts it
 // with a non-greedy match and does not care that the tag is inside a string.
 const SC = '<' + '/script>'
@@ -77,7 +79,7 @@ const makePage = (title, params) => {
     : '<p>New route.</p>'
 
   return `---
-title: ${title}
+title: ${frontmatterValue(title)}
 ---
 <script>
 ${head}${SC}
@@ -99,7 +101,7 @@ const { resourceRoutePage } = await import(resolve(global.fliRoot, 'core/crud-te
 // one composes inside any layout above it rather than replacing it.
 
 const makeLayout = (title) => `---
-title: ${title}
+title: ${frontmatterValue(title)}
 ---
 <script>
   import { isActive } from '@frontierjs/sierra/router'

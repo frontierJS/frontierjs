@@ -8,7 +8,7 @@
  * mesa answered a wrong object without a word (`FJS-1541`).
  */
 
-import { parseFrontmatter, parseFrontmatterBlock as read, splitFrontmatter } from '../../src/frontmatter/frontmatter.js'
+import { parseFrontmatter, parseFrontmatterBlock as read, splitFrontmatter, frontmatterValue } from '../../src/frontmatter/frontmatter.js'
 
 const doc = (...lines) => lines.join('\n')
 
@@ -205,4 +205,23 @@ test('frontmatter: the fence, and line numbers counted from the top of the file'
   try { parseFrontmatter('---\ntitle: A\nb: &x 1\n---\n') } catch (e) { err = e }
   assert.equal(err && err.line, 3)
   assert.match(err && err.message, /^line 3: /)
+})
+
+// ─── the writer ──────────────────────────────────────────────────────────────
+
+test('frontmatter: a written value reads back as the string it was', function () {
+  const values = [
+    'Fetch a URL', 'fli gstash --message "WIP: auth work"', 'a # b', 'a#b', 'URL (prefix with : or /)',
+    '', ' padded ', 'true', 'null', '~', '3', '0x1F', '.inf', '2024-01-05', '- item', '[a, b]', '{x: 1}',
+    '&anchor', '*alias', '!tag', '@scope/pkg', '`tick`', '%dir', '? key', '"quoted"', "it's", '|', '>',
+    'line one\nline two', 'tab\there', 'back\\slash', 'unicode ✓  ', 'trailing:', 'key: value',
+  ]
+  for (const v of values) {
+    const text = frontmatterValue(v)
+    assert.equal(read('k: ' + text).k, v, JSON.stringify(v) + ' wrote ' + text)
+  }
+  // Plain where plain already means it, so a scaffold's output reads as hand-written.
+  assert.equal(frontmatterValue('Fetch a URL'), 'Fetch a URL')
+  assert.equal(frontmatterValue('hello:greet'), 'hello:greet')
+  assert.equal(frontmatterValue('Fix: login'), '"Fix: login"')
 })

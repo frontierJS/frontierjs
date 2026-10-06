@@ -41,6 +41,7 @@
 import { readdirSync, readFileSync, existsSync } from 'fs'
 import { join, relative, sep }                   from 'path'
 import { singularize }                           from '@frontierjs/toolbelt/inflect'
+import { splitFrontmatter }                      from '@frontierjs/toolbelt/frontmatter'
 
 // ─── corpus ───────────────────────────────────────────────────────────────────
 //
@@ -136,8 +137,7 @@ function ownerOf(root, path) {
 // counting it in both is how `createResource` would rank as a concept.
 
 function proseOf(text) {
-  return text
-    .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, ' ')  // frontmatter
+  return splitFrontmatter(text).body
     .replace(/```[\s\S]*?```/g, ' ')                 // fenced code
     .replace(/~~~[\s\S]*?~~~/g, ' ')
     .replace(/`[^`\n]*`/g, ' ')                      // inline code

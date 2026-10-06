@@ -48,7 +48,7 @@ import { homedir } from 'os'
 const __dir = dirname(fileURLToPath(import.meta.url))
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { Command } from './runtime.js'
-import { extractSegments, stripFrontmatter } from './compiler.js'
+import { extractSegments, splitFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 import { ownStyleBundle, glowSource, CDN_STYLESHEET } from './assets.js'
@@ -997,17 +997,14 @@ async function handleMeta(req, res, name) {
               .filter(f => f.endsWith('.md') && /^\d/.test(f))
               .sort()
               .map(f => {
-                const stepRaw  = readFileSync(resolve(folderPath, f), 'utf8')
-                const stepBody = stripFrontmatter(stepRaw)
-                const skipMatch = stepRaw.match(/^skip:\s*(.+)$/m)
-                const optMatch  = stepRaw.match(/^optional:\s*(true|false)/m)
-                const descMatch = stepRaw.match(/^description:\s*(.+)$/m)
+                const stepPath = resolve(folderPath, f)
+                const { meta } = splitFrontmatter(readFileSync(stepPath, 'utf8'), stepPath)
                 return {
                   file:        f,
                   name:        basename(f, '.md'),
-                  description: descMatch ? descMatch[1].trim() : null,
-                  skip:        skipMatch ? skipMatch[1].trim() : null,
-                  optional:    optMatch  ? optMatch[1] === 'true' : false,
+                  description: meta.description ?? null,
+                  skip:        meta.skip ?? null,
+                  optional:    meta.optional === true,
                 }
               })
           : []

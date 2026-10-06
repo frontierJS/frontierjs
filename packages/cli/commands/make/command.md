@@ -32,7 +32,8 @@ import { resolve, dirname } from 'path'
 // about whether readline may be used at all, and the tutorial needed the
 // question settled rather than copied a third time.
 
-const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
+const { createPrompts }    = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
+const { frontmatterValue } = await import(new URL('file://' + global.fliRoot + '/core/compiler.js'))
 
 // ─── Collectors ───────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ const serializeArgs = (args) => {
   return 'args:\n' + args.map((a) => {
     let out = '  -\n'
     out += `    name: ${a.name}\n`
-    if (a.description) out += `    description: ${a.description}\n`
+    if (a.description) out += `    description: ${frontmatterValue(a.description)}\n`
     if (a.required)    out += `    required: true\n`
     if (a.variadic)    out += `    variadic: true\n`
     return out
@@ -92,8 +93,9 @@ const serializeFlags = (flags) => {
     let out = `  ${name}:\n`
     if (def.char)                       out += `    char: ${def.char}\n`
     if (def.type)                       out += `    type: ${def.type}\n`
-    if (def.description)                out += `    description: ${def.description}\n`
-    if (def.defaultValue !== undefined) out += `    defaultValue: ${def.defaultValue}\n`
+    if (def.description)                out += `    description: ${frontmatterValue(def.description)}\n`
+    // A number or boolean default is written bare so it reads back as one.
+    if (def.defaultValue !== undefined) out += `    defaultValue: ${def.type === 'number' || def.type === 'boolean' ? def.defaultValue : frontmatterValue(def.defaultValue)}\n`
     return out
   }).join('')
 }
@@ -124,7 +126,7 @@ const writeCommand = (title, description, newArgs, newFlags, outputPath) => {
   const parts = [
     '---',
     `title: ${title}`,
-    `description: ${description || ''}`,
+    `description: ${frontmatterValue(description || '')}`,
     `alias: ${alias}`,
     'examples:',
     `  - fli ${title}`,
