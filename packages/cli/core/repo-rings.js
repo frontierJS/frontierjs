@@ -173,7 +173,7 @@ export function docsOf(model) {
 
 // ─── the page's data ──────────────────────────────────────────────────────────
 
-export function dataOf(model, { root } = {}) {
+export function dataOf(model, { root, ...opts } = {}) {
   const { rings } = placement(model)
   const folderOf  = new Map(model.packages.map(p => [p.name, p.folder]))
   const issues    = model.issues
@@ -187,6 +187,9 @@ export function dataOf(model, { root } = {}) {
     // Without it the links are relative to the page, which is right only when
     // the page sits at the workspace root.
     base:  root ?? null,
+    // The work map written beside this page, or null where the project runs
+    // no loops for it to draw — a link to a page never written is a dead end.
+    work:  opts.work ?? null,
     rings: rings.map(r => ({ id: r.id, name: r.name, blurb: r.blurb, why: r.why, pkgs: r.pkgs })),
     packages: model.packages.map(p => ({
       id:    p.folder,
@@ -401,8 +404,10 @@ h1.pkh { display: flex; align-items: center; gap: .35em }
 
 .path { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 28px 0 0; padding: 14px 16px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px }
 .path .k { font-size: .8rem; color: var(--ink-mute); margin-right: 6px }
-.path button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: .88rem; font-weight: 600; color: var(--c) }
-.path button:hover { background: color-mix(in srgb, var(--c) 12%, transparent) }
+.path :is(button, a) { text-decoration: none; display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: .88rem; font-weight: 600; color: var(--c) }
+.path :is(button, a):hover { background: color-mix(in srgb, var(--c) 12%, transparent) }
+.lede .worklink { color: var(--dec); font-weight: 600; text-decoration: none; white-space: nowrap }
+.lede .worklink:hover { text-decoration: underline }
 .path .arrow { color: var(--ink-mute); font-size: .8rem }
 
 .next { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; flex-wrap: wrap }
@@ -739,6 +744,7 @@ function client(D) {
           <button type="button" data-go="${ringHash(RINGS[0])}" style="--c:${RINGS[0].color}">Walk ${RINGS[0].name.replace('The ', 'the ')}</button>
           ${D.field ? `<span class="arrow">→</span><button type="button" data-go="field" style="--c:var(--fd-fjs)">See it among its neighbors</button>` : ''}
           ${D.specs ? `<span class="arrow">→</span><button type="button" data-go="specs" style="--c:var(--accent)">Read the specifications</button>` : ''}
+          ${D.work ? `<span class="arrow">→</span><a href="${esc(D.work)}" style="--c:var(--dec)">See how work moves</a>` : ''}
         </div>`
       }
     },
@@ -953,7 +959,7 @@ function client(D) {
         html: `
         <div class="eyebrow">The project</div>
         <h1>How the work is run.</h1>
-        <p class="lede">Ordered like the rings, center out: the files that answer the big questions first, then the rules, the rulings, what is broken, and what is not started yet.</p>
+        <p class="lede">Ordered like the rings, center out: the files that answer the big questions first, then the rules, the rulings, what is broken, and what is not started yet.${D.work ? ` <a class="worklink" href="${esc(D.work)}">How work moves through them →</a>` : ''}</p>
         <div class="cards">
           ${card({ go: 'docs', ico: 'docs', tag: 'Ring 1', num: DOCS.length, label: 'Key documents', sub: 'Which file answers which question, in the order to open them.', c: 'var(--r-seed)' })}
           ${card({ go: 'invariants', ico: 'invariants', tag: 'Ring 2', num: D.invariants.length, label: 'Invariants & proof', sub: 'What may never break without a ruling, and what proves it still holds.', c: 'var(--accent)', meta: PROOF.filter(g => g.rows.length).map(g => `${g.rows.length} ${g.title.toLowerCase()}`) })}

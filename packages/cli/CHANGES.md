@@ -1,5 +1,17 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-06 — `fli ws:atlas --as=rings` writes the work map beside the rings and links it
+
+`core/repo-work.js` draws how work moves through the registers on one page. It shows where defects and ideas come from, the three register files, the issue loop through `/fix-next` and `fix:loop`, and the decision loop through `/frame-next` and `fli decide`. Along the bottom is what keeps them honest. Each box is clickable for its command, its file and today's count.
+
+The rings run writes it as `repo-work.html` beside `repo-rings.html`. It is gitignored for the same reason the rings page is: it counts the registers. The rings home path and the project ring link it.
+
+- **Only where the project has the `fix-next` skill.** Elsewhere there is no page and no link, because a map of loops a project does not run sends somebody after commands that are not there.
+- **The counts are `fli next`'s and `fli decisions`'s**, read through `next.js` and `decisions.js`. The fix loop's figures come from `~/.fli/fix-loop.jsonl`, counting finished attempts and not the line that opens one.
+- **Written in `@frontierjs/css`.** The stylesheet writes no hex (tested). The classes the package also defines are spelled `wk-`.
+
+`test/repo-work.test.js` runs the page's script against a stubbed document. It clicks every box and checks the inspector answers with that box's entry.
+
 ## 2026-10-05 — a tutor lesson re-run in a kept workspace replays its facts again (`FJS-1769`)
 
 `openTutor` handed `makeRecorder` its context under the key `$`, which it does not read, so the journal recorded no step's facts and a replayed step handed nothing on — every lesson's second step refused with *this step needs appDir* on a re-run. It passes `context: $`.

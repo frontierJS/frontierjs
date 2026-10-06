@@ -509,6 +509,13 @@ core/
                 drawn *unplaced* and warned about; the test fails on any in this
                 tree. Reads no files; `client` is serialized with `toString()`.
                 Not a snapshot: it counts the registers (`FJS-D589`)
+  repo-work.js  how work moves through the registers, one clickable map —
+                written by the same `--as=rings` run beside the rings page,
+                which links it from home and the project ring. Only where the
+                project has the `fix-next` skill: a map of loops a project does
+                not run sends somebody after commands that are not there. Counts
+                come from `next.js` and `decisions.js`, so they agree with `fli
+                next`; the fix loop's figures from `~/.fli/fix-loop.jsonl`
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries

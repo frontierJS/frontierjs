@@ -12,7 +12,7 @@ flags:
   as:
     char: a
     type: string
-    description: Which page — atlas (the deck), report (one page read top to bottom) or rings (a newcomer's way in, center out)
+    description: Which page — atlas (the deck), report (one page read top to bottom) or rings (a newcomer's way in, center out, with the work map beside it)
     choices:
       - atlas
       - report
@@ -54,7 +54,7 @@ flags:
 <script>
 import { spawn } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { resolve } from 'path'
+import { basename, dirname, resolve } from 'path'
 
 const diffLines = (was, now) => {
   const a = was.split('\n'), b = now.split('\n')
@@ -89,6 +89,7 @@ const openInBrowser = (path) => {
 const { collect, structureOf, renderHtml, renderJson } = await import(resolve(global.fliRoot, 'core/repo-map.js'))
 const { renderAtlas, cards }              = await import(resolve(global.fliRoot, 'core/repo-atlas.js'))
 const { renderRings, placement, docsOf }  = await import(resolve(global.fliRoot, 'core/repo-rings.js'))
+const { renderWork, workOf, WORK_FILE }   = await import(resolve(global.fliRoot, 'core/repo-work.js'))
 
 // `--as` picks the page a person reads and `--json` is the model a program
 // reads (`FJS-D401`), so the two together are two answers to one run.
@@ -133,6 +134,10 @@ if (flag.check && flag.live) {
 
 const model = collect({ root: wsRoot })
 
+// The rings page links the work map only when it is written beside it, so a
+// printed page or a project running no loops gets no link to a missing file.
+const work = as === 'rings' && !flag.stdout ? workOf(wsRoot, model) : null
+
 // The live edition holds a clock and a registry answer, so it can be neither
 // byte-compared nor committed. It is a different file with no generator line,
 // and `--check` has nothing to say about it.
@@ -148,7 +153,7 @@ if (flag.live) {
 // `--check` compares (`FJS-D589`).
 const page = (m) => as === 'json'   ? renderJson(m)
                   : as === 'report' ? renderHtml(structureOf(m))
-                  : as === 'rings'  ? renderRings(m, { root: wsRoot })
+                  : as === 'rings'  ? renderRings(m, { root: wsRoot, work: work ? WORK_FILE : null })
                   : renderAtlas(flag.live ? m : structureOf(m), live)
 const render = () => page(collect({ root: wsRoot }))
 
@@ -195,6 +200,11 @@ writeFileSync(outPath, body, 'utf8')
 if (!existed && !flag.live && as !== 'json' && as !== 'rings') writeFileSync(outPath, render(), 'utf8')
 
 echo(`  ✓  ${shown}`)
+
+if (work) {
+  writeFileSync(resolve(dirname(outPath), WORK_FILE), renderWork(model, work, { back: basename(outPath) }), 'utf8')
+  echo(`  ✓  ${resolve(dirname(outPath), WORK_FILE).replace(wsRoot + '/', '')}  linked from the rings`)
+}
 
 if (as === 'rings') {
   const { rings, unplaced, unknown } = placement(model)

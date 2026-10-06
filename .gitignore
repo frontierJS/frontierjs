@@ -84,6 +84,7 @@ temp/
 repo-atlas.live.html
 # `fli ws:atlas --as=rings` counts the registers too, so it is not committed either.
 repo-rings.html
+repo-work.html
 
 # mesa
 _tmp_slots_*/

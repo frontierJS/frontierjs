@@ -229,6 +229,16 @@ describe('the page', () => {
     expect(structureOf(collect({ root: REPO })).specs).toBeNull()
   })
 
+  test('the work map is linked from home and the project only when it is written beside the page', () => {
+    const model = workspace('work')
+    const linked = renderRings(model, { work: 'repo-work.html' })
+    expect(renderAt(linked, '')).toContain('href="repo-work.html"')
+    expect(renderAt(linked, 'project')).toContain('href="repo-work.html"')
+    const bare = renderRings(model)
+    expect(renderAt(bare, '')).not.toContain('repo-work.html')
+    expect(renderAt(bare, 'project')).not.toContain('repo-work.html')
+  })
+
   test('a document links to its file: absolute under a root, page-relative without one', () => {
     const model = workspace('links')
     const rooted = renderAt(renderRings(model, { root: '/ws root' }), 'doc-README')

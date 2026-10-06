@@ -36,3 +36,20 @@ line that reproduces what you see. Download buttons give the last build.
 The glyph recipes are the second half of `build_serif.py`. Many of their
 numbers are literal, so a big change to `S` or `CH` breaks a glyph or two:
 the GUI is how you find which.
+
+## Font options for the wordmark
+
+The mockup (a heavy condensed Clarendon on worn paper) matches no free font.
+Thirty Google Fonts slabs and Clarendons were rendered against it on
+2026-10-05; the mockup is most likely AI-rendered, so there is a nearest
+neighbor and not a source.
+
+| Option | Cost | Verdict |
+| --- | --- | --- |
+| Clarendon Bold Condensed (Linotype or Bitstream) | paid | Closest real face. Full character set, right at text sizes. |
+| Egyptienne F Bold Condensed | paid | Same genre, slightly softer. |
+| Sutro Bold | paid | Wood-type Clarendon, good worn-poster fit. |
+| Bevan, condensed to ~74% | free (OFL) | Nearest free shape: brackets, hooked J, flat S terminals. Too black, low contrast. Logo SVG only. |
+| Coustard Black, Ultra, Holtwood One SC | free (OFL) | Right genre, too wide and too heavy even condensed. |
+| This procedural builder | free | Wordmark acceptable after tuning; the rest of the alphabet looks crude. Keep for the worn effect only. |
+| `FrontierJS Field` (website/site/content/media/fonts) | ours | Geometric stencil, unrelated to the mockup. |
