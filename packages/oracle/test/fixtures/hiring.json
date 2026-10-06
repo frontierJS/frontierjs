@@ -1,0 +1,277 @@
+{
+ "summary": "An applicant tracker: a company posts jobs, candidates apply, and the hiring team moves each application to a decision.",
+ "actors": [
+  {
+   "name": "Recruiter",
+   "archetype": "owner",
+   "who": "runs the company's hiring"
+  },
+  {
+   "name": "Hiring manager",
+   "archetype": "coordinator",
+   "who": "owns one job's decision"
+  },
+  {
+   "name": "Interviewer",
+   "archetype": "performer",
+   "who": "writes a scorecard"
+  }
+ ],
+ "entities": [
+  {
+   "name": "Company",
+   "from": "Organization",
+   "rung": "variant",
+   "why": "the tenant every hiring row belongs to",
+   "cost": "no billing plan of its own",
+   "escape": "split when one company runs several brands",
+   "access": {
+    "members": "Membership"
+   },
+   "links": [
+    {
+     "name": "owner",
+     "to": "User",
+     "actor": "owner",
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Membership",
+   "rung": "property",
+   "why": "the rows of the Company\u2013User relation",
+   "fields": [
+    {
+     "name": "role",
+     "type": "enum",
+     "values": [
+      "recruiter",
+      "manager",
+      "interviewer"
+     ],
+     "default": "interviewer"
+    }
+   ],
+   "links": [
+    {
+     "name": "company",
+     "to": "Company",
+     "required": true
+    },
+    {
+     "name": "user",
+     "to": "User",
+     "actor": "subject",
+     "required": true
+    }
+   ]
+  },
+  {
+   "name": "Job",
+   "rung": "novel",
+   "why": "a requisition: Offer is what a customer buys, and a job is not sold",
+   "fields": [
+    {
+     "name": "title",
+     "type": "text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "type": "markdown"
+    }
+   ],
+   "links": [
+    {
+     "name": "company",
+     "to": "Company",
+     "required": true
+    },
+    {
+     "name": "manager",
+     "to": "User",
+     "actor": "coordinator"
+    }
+   ],
+   "lifecycle": {
+    "states": [
+     "draft",
+     "open",
+     "closed"
+    ],
+    "moves": [
+     {
+      "name": "publish",
+      "from": [
+       "draft"
+      ],
+      "to": "open"
+     },
+     {
+      "name": "close",
+      "from": [
+       "open"
+      ],
+      "to": "closed"
+     },
+     {
+      "name": "reopen",
+      "from": [
+       "closed"
+      ],
+      "to": "open"
+     }
+    ]
+   },
+   "access": {
+    "via": "company",
+    "public": [
+     "read"
+    ],
+    "publicWhen": {
+     "status": "open"
+    },
+    "why": "the careers page lists open jobs"
+   }
+  },
+  {
+   "name": "Candidate",
+   "from": "Contact",
+   "kind": "lead",
+   "rung": "variant",
+   "why": "a person the company keeps a record about, who never signs in",
+   "cost": "a candidate cannot log in to see their status",
+   "escape": "link a User when candidates get a portal",
+   "omit": [
+    "tags"
+   ],
+   "fields": [
+    {
+     "name": "resume",
+     "type": "file"
+    }
+   ],
+   "links": [
+    {
+     "name": "company",
+     "to": "Company",
+     "required": true
+    }
+   ],
+   "access": {
+    "via": "company"
+   }
+  },
+  {
+   "name": "Application",
+   "from": "Submission",
+   "rung": "variant",
+   "why": "a candidate's submission against one job",
+   "cost": "no form builder",
+   "escape": "add Form when applications ask custom questions",
+   "omit": [
+    "answers"
+   ],
+   "links": [
+    {
+     "name": "job",
+     "to": "Job",
+     "required": true
+    },
+    {
+     "name": "candidate",
+     "to": "Candidate",
+     "required": true
+    }
+   ],
+   "lifecycle": {
+    "states": [
+     "applied",
+     "screening",
+     "interviewing",
+     "offered",
+     "hired",
+     "rejected"
+    ],
+    "moves": [
+     {
+      "name": "screen",
+      "from": [
+       "applied"
+      ],
+      "to": "screening"
+     },
+     {
+      "name": "interview",
+      "from": [
+       "screening"
+      ],
+      "to": "interviewing"
+     },
+     {
+      "name": "offer",
+      "from": [
+       "interviewing"
+      ],
+      "to": "offered"
+     },
+     {
+      "name": "hire",
+      "from": [
+       "offered"
+      ],
+      "to": "hired"
+     },
+     {
+      "name": "reject",
+      "from": "*",
+      "to": "rejected"
+     }
+    ]
+   },
+   "access": {
+    "via": "job"
+   },
+   "patterns": [
+    "approval",
+    "audit"
+   ]
+  },
+  {
+   "name": "Scorecard",
+   "rung": "novel",
+   "why": "an interviewer's structured verdict on one application",
+   "fields": [
+    {
+     "name": "rating",
+     "type": "count",
+     "required": true
+    },
+    {
+     "name": "notes",
+     "type": "longtext"
+    }
+   ],
+   "links": [
+    {
+     "name": "application",
+     "to": "Application",
+     "required": true
+    },
+    {
+     "name": "interviewer",
+     "to": "User",
+     "actor": "author",
+     "required": true
+    }
+   ],
+   "access": {
+    "via": "application"
+   }
+  }
+ ],
+ "open": [
+  "Do candidates apply through a public careers form, or does a recruiter enter them?"
+ ]
+}

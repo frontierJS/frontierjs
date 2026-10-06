@@ -1,0 +1,25 @@
+{
+  "name": "@frontierjs/oracle",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The domain catalog, the ladder's checks and the emitter from a graded answer to db/schema.lite — no model inside",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "bun test test/",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
+  },
+  "devDependencies": {
+    "@frontierjs/litestone": "workspace:*"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "license": "MIT"
+}
