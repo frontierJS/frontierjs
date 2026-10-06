@@ -89,8 +89,9 @@ describe('a PUT to a @version model', () => {
     const res = await request(app).put(`/docs/${row.id}`).send({ title: 'B' })
 
     expect(res.status).toBe(400)
-    expect(res.body.retryable).toBe(false)
-    expect(res.body.message).toMatch(/not opened from a current copy/)
+    const body = res.body as { retryable: boolean; message: string }
+    expect(body.retryable).toBe(false)
+    expect(body.message).toMatch(/not opened from a current copy/)
     expect(JSON.stringify(res.body)).not.toMatch(/asSystem|data\.version|@version/)
   })
 })

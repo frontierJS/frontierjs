@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-05 — the PUT-without-version test types its response body
+
+The reworded assertions below read `res.body.retryable` and `res.body.message`, and `request()` types `body` as `unknown` on purpose, so `bun test` passed while `bun run typecheck` failed with two `TS18046`. The test now casts `res.body` once to `{ retryable, message }`, the way the `src/testing` header shows. Junction typechecks clean again, against a ceiling of 0.
+
 ## 2026-10-05 — the PUT-without-version test pins the reworded `VersionRequiredError` (`FJS-1729`)
 
 `test/update-semantics.test.ts` § omitting it is refused by the Data boundary still looked for `/version/` in the body. `FJS-1478` moved the column name onto the server-side `hint`, so the 400 was right and the assertion was out of date, the same break `FJS-1729` fixed in basecamp. It now checks for a 400, `retryable: false`, and the reload message, and that the body names no `asSystem`, `data.version` or `@version`.
