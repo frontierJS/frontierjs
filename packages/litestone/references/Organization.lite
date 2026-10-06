@@ -1,0 +1,134 @@
+/// The container people belong to, and the row that says who belongs with
+/// what standing.
+///
+/// ─── The shape is universal; the vocabulary is the finding ────────────────
+///
+/// Nine instances read, no two with the same words. linear and notion say
+/// `Workspace`; remnant, portal and basecamp say `Account` (basecamp then
+/// puts `Workspace` UNDER it); connectteam says `Site`; trigger.dev says
+/// `Organization`; documenso says `Organisation` and puts `Team` under it.
+/// The membership row is `Membership`, `Member`, `SiteMembership`,
+/// `WorkspaceMember`, `OrgMember`. And the role enum is different in every
+/// single one:
+///
+///   linear       admin member guest
+///   notion       owner admin member guest
+///   connectteam  member manager
+///   basecamp     owner admin developer viewer
+///
+/// None of that is drift. A site has managers; a workspace has guests; a
+/// product with billing has an owner. **The catalog word is `Organization`
+/// and the app's word is the label** — `@@label` and the resource name carry
+/// what people call it, the model carries the shape. The role enum is NOT in
+/// this file for the same reason: it is the product's vocabulary, and a
+/// shipped one would be wrong for every app but the one it was copied from.
+///
+/// ─── One level or two ─────────────────────────────────────────────────────
+///
+/// Five instances are one level (an org and its members). Two are two
+/// (basecamp Account > Workspace, documenso Organisation > Team, both with a
+/// membership row at each level). The second level is earned by billing or
+/// by isolation — a tenant that pays once and partitions many times — and
+/// nothing smaller. This file is the one level. An app that needs the second
+/// declares it as a second pair under its own names and does NOT make
+/// `Organization` self-parented: a tree of orgs is a different thing from a
+/// billing account over workspaces, and every two-level instance read agreed.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `ownerId`.** Four instances carry it and in every one it is a second
+/// answer to a question the membership row already answers (`role == owner`).
+/// Keep it a role; `@@unique([orgId], where: role == 'owner')` says one
+/// owner where a product means that.
+///
+/// **No `displayName` on the membership.** linear alone has it, for a name
+/// per workspace. It is a real feature and one column in the host.
+///
+/// **No `Invitation`.** It is a `Grant` (references/Grant.lite) with an
+/// `email` and a `role`, on its own row, and basecamp's is the instance.
+///
+/// **No tenancy attributes.** Under `strategy row` the org IS the tenant, and
+/// both models below take `@@tenant(none)` because they are what the tenant
+/// column points at. That line is the host's, because this file cannot know
+/// whether the host is multi-tenant at all.
+model Organization {
+  id        String   @id @default(ulid())
+
+  /// What people call it. The `@@label` below is how every picker, breadcrumb
+  /// and notification names the row.
+  name      String   @trim @length(1, 80)
+
+  /// The URL-safe handle, where the product has one. Nullable because three
+  /// instances have no public URL per org and a required slug there is a
+  /// column every create must invent. Lowercase and a closed character set,
+  /// because it is going into a path.
+  slug      String?  @unique @lower @length(2, 48) @regex("^[a-z0-9-]+$")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@label(name)
+
+  /// Read 4 · create 8 · update 5 · delete 8. A signed-in member reads
+  /// theirs through the policy; creating one is an onboarding flow, which is
+  /// the application acting (`asSystem()`), not a user's standing; an
+  /// administrator renames it; deleting one is the application again, because
+  /// every instance that let a role do it cascaded into something it
+  /// regretted. Lower the delete gate with a policy on `role == owner` where
+  /// the product means that.
+  @@gate("4.8.5.8")
+
+  /// Members read their own organization. `members` is the back-relation the
+  /// host wires once `Member.userId` points at its identity model.
+  @@allow('read',   id == auth().orgId)
+  @@allow('update', id == auth().orgId)
+}
+
+/// The row that makes a person a member, once. `@@relator` is the whole of
+/// it: the pair is unique, and the row exists to carry attributes about the
+/// pairing — here, the role.
+model Member {
+  id        String       @id @default(ulid())
+
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  /// The identity model's key. A column and not a relation, because this file
+  /// declares no `User` — wire it in the host:
+  ///
+  ///     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  /// The product's own enum, declared in the host. Shown here as a String so
+  /// the file parses standalone; a host replaces the type and keeps the
+  /// field-level write guard, which is the one line every instance got right:
+  /// only an administrator changes a role, and a member who could change
+  /// their own would be an administrator.
+  role      String       @default("member") @allow('write', auth().memberRole == 'admin')
+
+  createdAt DateTime     @default(now())
+
+  /// One membership per person per organization. In the host this line is
+  ///
+  ///     @@relator([orgId, userId], once)
+  ///
+  /// which says the same uniqueness AND that the row is a relator — a thing
+  /// that exists to relate two others — so `once` makes a second invite a
+  /// no-op rather than a second row. A relator names its relata by their
+  /// `@relation`s, and this file has no `User` to relate, so it carries the
+  /// uniqueness alone; swap the line the moment `user` is wired.
+  @@unique([orgId, userId])
+
+  /// Read 4 · create 5 · update 5 · delete 5. Members see who else is in;
+  /// an administrator adds, changes and removes.
+  @@gate("4.5.5.5")
+
+  @@allow('read',   userId == auth().id || orgId == auth().orgId)
+  @@allow('create', orgId == auth().orgId)
+  @@allow('update', orgId == auth().orgId)
+  @@allow('delete', orgId == auth().orgId)
+
+  // Every instance audits this row (`@@log(audit)`) — who was added, by whom,
+  // with what role is the first question after a breach. The line is the
+  // host's because it names the host's `database audit` block.
+}

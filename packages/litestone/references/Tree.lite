@@ -1,0 +1,48 @@
+/// Self-parented rows, ordered among their siblings.
+///
+/// ─── Four house instances, one of them twice ──────────────────────────────
+///
+/// notion `Page` and `Block`, portal `Collection`, linear `Issue`; outside the
+/// repo lago (three), cal.com (two), discourse's categories. The parent column
+/// and the cascade agree everywhere. The ORDER is where they split, and one
+/// instance splits with itself: linear `Issue` carries `rank String` AND
+/// `position Int`, each with its own index. Two sort orders on one row is
+/// two origins of truth, and a reader cannot know which one a drag-and-drop
+/// wrote last. That is the row this file exists to prevent.
+///
+/// ─── Why the rank is a string ─────────────────────────────────────────────
+///
+/// A fractional index (`a0`, `a0V`, `a1`) lets a row move between two
+/// neighbours by writing ONE row — the moved one — where an integer position
+/// renumbers every sibling after it. notion, linear and lago all chose the
+/// string for that reason, and all three compare it with plain string
+/// collation, which is what `@@index([parentId, rank])` orders by. The
+/// alphabet and the midpoint arithmetic are a client concern; the schema
+/// only promises the column sorts.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `parent` relation and no `children` back-relation.** A self-relation
+/// names the host model (`parent Page? @relation("PageTree", …)`), which a
+/// trait cannot do. The host writes the pair, with `onDelete: Cascade`, which
+/// every instance chose; a subtree without its root is nothing.
+///
+/// **No `depth` and no `path`.** Both are caches of what the parent chain
+/// already says, and both go stale on the first move. notion renders a
+/// 6-deep tree from the parent column alone. An app that measures a real
+/// need for a materialized path declares it as the cache it is, `@system`.
+///
+/// **No `rootId`.** Same reason, and the same app can add it.
+trait Tree {
+  /// The identity of the parent row, nullable at the root. The relation that
+  /// gives it a type and a cascade is the host's line.
+  parentId String?
+
+  /// A fractional index, compared as a string. `@length(1, 64)` is the bound
+  /// every instance converged on: long enough that a thousand inserts between
+  /// two neighbours do not exhaust it, short enough to index.
+  rank     String  @length(1, 64)
+
+  /// "The children of this row, in order" is the only read a tree has.
+  @@index([parentId, rank])
+}

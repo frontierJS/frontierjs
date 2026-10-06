@@ -44,14 +44,19 @@ describe('reference models', () => {
       expect(messages).toEqual([])
     })
 
-    it(`${file} declares a model named for the file`, () => {
+    it(`${file} declares a model or trait named for the file`, () => {
       const { schema } = parse(src)
-      const names = (schema?.models ?? []).map((m: any) => m.name)
-      expect(names.length).toBeGreaterThan(0)
+      const models = (schema?.models ?? []).map((m: any) => m.name)
+      const traits = (schema?.traits ?? []).map((t: any) => t.name)
+      const noun = file.replace(/\.lite$/, '')
       // Invariant 19's habit, applied to the catalog: the file IS the noun.
       // A file may declare more than one model where the second exists only to
-      // serve the first (Tag + TagAttachment); the first is the file's name.
-      expect(names[0]).toBe(file.replace(/\.lite$/, ''))
+      // serve the first (Organization + Member); the first is the file's name.
+      // A SHAPE that never stands alone (Grant, Interval) is a trait, which the
+      // parser keeps on `schema.traits` after splicing — so the noun is found
+      // there, and a trait-only file is not mistaken for one that declares
+      // nothing.
+      expect(models[0] ?? traits[0]).toBe(noun)
     })
 
     it(`${file} is listed in the README`, () => {

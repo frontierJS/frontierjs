@@ -435,8 +435,8 @@ module's job from recognizing to CHECKING: a model reads the message and the app
 
 **If it becomes its own thing, it is Oracle's first piece.** The moment a customer
 surface exists the module moves to it, the CLI keeps calling it, and that surface is
-an app built on the framework — `packages/oracle`, under `FJS-D14`, which rules
-nothing is owed there until core leaves alpha. § *Two moments* is why it belongs
+an app built on the framework — `packages/oracle`, whose deferral `FJS-D600`
+lifted. § *Two moments* is why it belongs
 there rather than beside it: Oracle is the birth moment and this is the life moment of
 one recognizer. **No further name is coined** until there is a thing to name.
 

@@ -200,8 +200,8 @@ material a second time, which is the origin question failing.
 - **`oracle`** gets the knowledge base. Recognizing *what kind of thing is this*
   is the package's entire stated job, and `oracle-reasoning.md` §1's ladder —
   derived beats variant beats novel — runs over each leaf rather than beside it.
-  V2-deferred (`FJS-D14`), so this costs nothing now and is the reason to write
-  the tree down before the tool exists.
+  Oracle is being rebuilt (`FJS-D600`), so the tree is written down first and
+  the rebuild reads it.
 - **`fli intent`** already resolves a customer's words against a seed
   (`packages/cli/core/intent.js`). The tree is what it would classify INTO when
   the seed has no candidate, which is the case `intent-recognizer.md` records as

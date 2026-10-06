@@ -1,0 +1,66 @@
+/// A recurring slot: this weekday, between these clock times, from this date
+/// to that one.
+///
+/// ─── Two prototypes, one week apart, three weekday encodings ──────────────
+///
+/// calendly `AvailabilityRule` and `AvailabilityOverride`; connectteam
+/// `AvailabilityWindow` and `ShiftRule`; outside the repo cal.com
+/// `Availability` and hrms `ShiftType`. The columns agree. The weekday does
+/// not:
+///
+///   calendly     weekday Int @gte(1) @lte(7)       — a number box in every form
+///   connectteam  weekday Weekday  (mon … sun)      — a picker
+///   cal.com      days Int[]                        — one row, many days
+///
+/// That is the whole reason the enum ships with the trait. An `enum` reaches
+/// the browser as a set a control renders and reaches the table as a CHECK;
+/// an `Int` reaches both as a number and every form writes its own label
+/// map. The two-letter-plus-one spelling is ISO 8601's week order starting
+/// Monday, which is also what `Date.getDay()` is NOT — a host converting from
+/// JavaScript's Sunday-first integer does it in one place, the hook, rather
+/// than in every reader.
+///
+/// cal.com's array is a different shape — one row for Mon/Wed/Fri — and is
+/// three rows here. Three rows is more honest: `@@exclude` and `@@unique` can
+/// see three rows and cannot see inside an array.
+///
+/// ─── Clock times are strings, deliberately ────────────────────────────────
+///
+/// `09:00` is not an instant. It is the same wall-clock time every week,
+/// which lands on a different instant each time the zone's offset moves.
+/// `String @time` keeps it a wall-clock value; a `DateTime` would freeze one
+/// week's offset into every week. The zone it is read in belongs to the host
+/// (the schedule's, the site's) and is where `Interval`'s derivation looks it
+/// up.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `crossesMidnight`.** connectteam carries it for a night shift that
+/// ends tomorrow, and it is the hard case every other instance silently has.
+/// It is left out here because the right fix is in the derivation, not the
+/// row: an end before its start means "next day", and a flag that restates
+/// that is a second answer the check below would have to be relaxed for. A
+/// host that disagrees overrides the check.
+///
+/// **No `available Boolean`.** calendly's override row says "this date is
+/// closed" with the same columns plus a flag. That is a different row —
+/// an exception to a rule rather than a rule — and belongs in the host under
+/// its own name.
+enum Weekday { mon tue wed thu fri sat sun }
+
+trait Window {
+  weekday  Weekday
+
+  /// Wall-clock, in the host's zone. `@time` validates the shape.
+  startAt  String  @time
+  endAt    String  @time
+
+  /// The dates the rule holds between. Both optional: an open-ended standing
+  /// rule is the common case, and a rule with a `toDate` is how a schedule
+  /// changes without a row being edited under the past that depended on it.
+  fromDate String? @date
+  toDate   String? @date
+
+  @@check("startAt < endAt", "A window ends after it starts")
+  @@check("fromDate IS NULL OR toDate IS NULL OR fromDate <= toDate", "A rule ends on or after the day it starts")
+}

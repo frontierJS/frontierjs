@@ -1,0 +1,75 @@
+/// A token that stands in for a person who has no account.
+///
+/// ─── The most-copied shape in the tree, and nobody copied it ───────────────
+///
+/// Eleven instances were read before this was written, and the columns barely
+/// move between them: calendly `BookingGrant`, jazzhr `ApplicationGrant`,
+/// notion `PageLink`, portal `SharedSearch` and `Pass`, transit `ShareLink`,
+/// connectteam `KioskDevice`, basecamp `Invitation`, example `CartGrant`, and
+/// outside this repo cal.com `HashedLink` and documenso `DocumentShareLink`.
+/// Each was written from memory and each spells the hashed column its own
+/// way — `tokenHash`, `digest`, `token @guarded`, `token @secret` — which is
+/// why no drift rule could ever have matched them.
+///
+/// This file is a TRAIT and not a model, because the shape never stands
+/// alone: it is always spliced into the row the token stands for (the
+/// booking, the application, the page link) or into a row of its own that
+/// points at one. `@@trait(Grant)` is the whole install.
+///
+/// ─── The half that is not columns ─────────────────────────────────────────
+///
+/// A grant is only useful with the three lines that make a bearer of it a
+/// principal, and those are the host schema's to write, because they name
+/// the host's own key:
+///
+///     claim bookingId
+///     @@allow('read',   id == auth().bookingId)
+///     @@allow('update', id == auth().bookingId)
+///
+/// The claim is minted by the app when it issues the token, lands in the
+/// session, and is what the row policy compares against. Nothing in this
+/// trait can state it, because a trait cannot know what the host's id is
+/// called. The one instance that forgot the policy (portal `Pass`) is a
+/// table of tokens nothing reads by.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `token`.** The plain token exists for one instant, in the response
+/// that issues it, and is never stored. `@guarded` on the hash is what keeps
+/// the hash out of every read and out of the audit trail (Invariant 7).
+///
+/// **No `capabilities`.** jazzhr and basecamp carry `Capability[]` on the
+/// grant so one token may do less than the row's full policy allows. That is
+/// a real need and a product decision; it is one column in the host when a
+/// product has it, and a trait that ships it makes every other grant look
+/// scoped when it is not.
+///
+/// **No `createdBy`.** Who issued it is `@@log(audit)` on the host, which
+/// records the create with its actor for free.
+trait Grant {
+  /// The hash of the token the bearer holds. `@unique` because a lookup by
+  /// hash is the only read this column ever has; `@guarded` because the hash
+  /// is as good as the token to anyone who can read the row.
+  tokenHash  String    @unique @guarded
+
+  /// Optional, and the instances disagree: basecamp requires it (an invitation
+  /// that never expires is a standing hole), everyone else leaves it nullable
+  /// (a booking's manage-link lives as long as the booking). The trait takes
+  /// the permissive shape; a host that means `required` overrides the field,
+  /// which is the one case where the host winning a trait field is the point.
+  expiresAt  DateTime?
+
+  /// Set by the owner, never cleared. A revoked grant is kept rather than
+  /// deleted so the audit trail still names what the token could reach.
+  revokedAt  DateTime?
+
+  /// Stamped by the exchange, which is `@system` because a bearer must not be
+  /// able to rewrite their own trail. transit was the only instance to record
+  /// it and the only one that could answer "was this link ever opened".
+  lastUsedAt DateTime? @system
+
+  /// 8 across the board. Nothing but `asSystem()` writes a grant — the issuing
+  /// service mints the hash — and a row a bearer could create, read or edit by
+  /// its own standing would let a token issue a token.
+  @@gate("8")
+}

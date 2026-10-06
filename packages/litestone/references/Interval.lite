@@ -1,0 +1,67 @@
+/// A row that occupies time and must not collide with another.
+///
+/// ─── Five instances, one derivation, written three times ──────────────────
+///
+/// calendly `Booking`, connectteam `Shift` and `LeaveRequest`, linear `Cycle`,
+/// jazzhr `Interview`. Every one stores what the person typed in their own
+/// zone, derives an absolute pair in UTC, and declares an exclusion over a
+/// scope so two rows cannot hold the same span. The derivation — local date
+/// plus clock time plus the row's zone, into two instants — is the same hook
+/// in three of the five apps.
+///
+/// What differs is the INPUT, and that is why the input is not in this trait:
+///
+///   calendly     startsAt + endsAt, already absolute, the invitee's zone kept
+///                beside them for display
+///   connectteam  onDate + startLocal + endLocal, the site's zone
+///   leave        fromDate + toDate, whole days
+///   jazzhr       scheduledAt + durationMin — no end stored at all
+///
+/// Those are four honest answers to four different questions a person is
+/// asked. The trait is the half underneath that is the same for all of them:
+/// the pair the database compares.
+///
+/// ─── The pair is `@system` and that is load-bearing ───────────────────────
+///
+/// A caller writes the local input; a hook writes these two. If a caller could
+/// write `startsAt` directly, the exclusion would be checked against a value
+/// nothing derived, and the local input it was supposed to agree with would
+/// be a second origin. `@system` is how the schema says "derived, never
+/// typed".
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `@@exclude`.** The exclusion names a scope (`scope calendar(hostId)`)
+/// and a `where` (`status == "confirmed"`), and both are the host's: which
+/// column partitions the calendar, and which rows count as occupying it.
+/// The host writes
+///
+///     @@exclude(calendar, range: [startsAt, endsAt], where: status == "confirmed")
+///
+/// and the trait guarantees the two columns it names exist and are ordered.
+///
+/// **No buffers.** calendly keeps a second pair, `busyFrom`/`busyUntil`, so a
+/// buffer before and after the meeting excludes without being shown. One
+/// instance in eleven schemas; it is a host's second `@@trait(Interval)`
+/// worth of columns under its own names, not a trait feature.
+///
+/// **No `durationMin`.** jazzhr's shape is an input, and a host that keeps it
+/// derives `endsAt` from it like any other input.
+trait Interval {
+  /// The absolute start, derived. UTC like everything stored.
+  startsAt DateTime @system
+
+  /// The absolute end, derived, exclusive: a row ending at 10:00 does not
+  /// collide with one starting at 10:00, which is what every scheduler means
+  /// and what `@@exclude` implements.
+  endsAt   DateTime @system
+
+  /// A zero- or negative-length interval is a derivation bug, and the check
+  /// catches it at the write that produced it rather than at the first query
+  /// that found a span the exclusion never saw.
+  @@check("startsAt < endsAt", "An interval ends after it starts")
+
+  /// Every read of an interval is "what overlaps this window", and that read
+  /// starts from the start column.
+  @@index([startsAt])
+}

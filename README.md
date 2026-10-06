@@ -244,7 +244,7 @@ than part of it:
 | --- | --- |
 | [Basecamp](./packages/basecamp/README.md) | Fleet operations — the largest dogfooding surface, all three realms real |
 | [`example/`](./example/README.md) | The kitchen sink — a fleet of shops across six surfaces, a drive per feature area, every package exercised |
-| [Oracle](./packages/oracle/README.md) | Claimed, not built. V2, deferred until core leaves alpha (`FJS-D14`) |
+| [Oracle](./packages/oracle/README.md) | Reopened (`FJS-D600`), not built yet |
 
 ---
 

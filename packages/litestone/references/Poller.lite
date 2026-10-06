@@ -1,0 +1,72 @@
+/// Something outside is read on a schedule, and the row remembers how that
+/// went.
+///
+/// ─── Inline or a run log, and both are right ──────────────────────────────
+///
+/// portal `Follow` (a feed: `etag`, `lastModified`, `failures`, `error`,
+/// `polledAt`, `nextPollAt`) and portal `Page` (link health: `linkFailures`,
+/// `checkedAt`, `goneAt`) keep the state ON the thing being polled. transit
+/// `Source` keeps a little (`syncedAt`, `state Json`) and moves the rest into
+/// a `SyncRun` row per attempt with a `Reject` row per bad record. Outside
+/// the repo openmrp has both shapes (`HubspotSyncJob` plus a per-record
+/// `SyncRecord`, and `EdiRun`), documenso three, discourse six.
+///
+/// The split is by what a person needs to read. A feed reader asks "is this
+/// feed alive and when do we try again" — one row answers it. An operator
+/// loading a customer's CSV asks "what happened on Tuesday's run, and which
+/// 14 lines were refused" — that is history, and history is rows. This trait
+/// is the inline half. The run log is a model (`Run`, with a `status` enum
+/// and `@@transitions` the engine moves `@system`) and transit's `SyncRun` is
+/// the instance to derive it from when it is written.
+///
+/// ─── Every column is `@system` ────────────────────────────────────────────
+///
+/// A poller's state is written by the poller. A user who could set
+/// `nextPollAt` could make a feed hammer its origin; one who could zero
+/// `failures` could resurrect a dead source past its own back-off. The host
+/// exposes what a person may change (`paused`, `keywords`, the URL itself)
+/// under its own columns, and those are the ones a form shows.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `status` enum.** `failures` plus `error` plus `nextPollAt` IS the
+/// state: zero failures and a next time is healthy, failures with a next
+/// time is backing off, failures with no next time is given up. An enum
+/// beside those is a second copy that drifts the first time a hook forgets
+/// it. portal's `FollowState { active gone }` is the honest exception — it
+/// records a human decision to stop, which no counter can express — and a
+/// host that needs that word adds it.
+///
+/// **No `interval`.** How often is the schedule's business, usually a cron
+/// string on the host or a job the engine runs; the row only records when it
+/// next expects to be visited.
+///
+/// **No fetched content.** `Follow` keeps the posts in `Post`; `Page` keeps
+/// the capture in its own columns; the trait is only the bookkeeping around
+/// a fetch, never its result.
+trait Poller {
+  /// The last attempt, succeeded or not.
+  polledAt   DateTime? @system
+
+  /// When the engine should look again. Null means never: the source is
+  /// paused, gone, or has exhausted its back-off. This is the column the
+  /// scheduler's query reads, so it is the one indexed.
+  nextPollAt DateTime? @system
+
+  /// Consecutive failures since the last success; reset to zero by a
+  /// success. The back-off is a function of this number, and so is giving up.
+  failures   Int       @system @default(0)
+
+  /// The last failure's message, kept until the next success clears it, so
+  /// an operator sees why without reading a log.
+  error      String?   @system
+
+  /// Conditional-request validators from the last successful fetch, sent back
+  /// as `If-None-Match` / `If-Modified-Since` so an unchanged source costs a
+  /// 304. Both nullable: not every source speaks them.
+  etag         String? @system
+  lastModified String? @system
+
+  /// "Everything due now" — the one query a scheduler runs, every tick.
+  @@index([nextPollAt])
+}

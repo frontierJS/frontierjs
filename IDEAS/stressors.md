@@ -62,6 +62,7 @@ than started.
 | 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
 | 20 | **Dragonfly** — a JSON grid editor, jsongrid.com taken further, ported from a Svelte 4 app | one document with two writable views, where a cell edit re-serializes the whole text; a chain of derived stores over every row, re-run on every keystroke; identity for rows that have none; three condition languages beside the one `.lite` has | `@frontierjs/ui` `Json.mesa` · `Table.mesa` · `CommandPalette.mesa` · mesa `{#virtual each}` · `toolbelt/json` · `toolbelt/predicate` · #18 |
 | 21 | **Transit** — the data layer as a product: intake, normalize, report to screen, PDF and email | foreign data typed by a `.lite` held in a row and built on the fly; a sync cursor across a conduit target; one template to three outputs; a scheduled query run at each recipient's standing | `data-layer-v1.md` · `analytics-and-warehouse.md` · `stored-templates.md` · #9 |
+| 22 | **Base44** — a prompt-to-app builder: chat in, a running app out, every later message an edit | a schema change on every turn against live rows, approved by the person and never the agent; a model writing `.lite` and `.mesa`, which no training set holds; generated server code one call from `asSystem()`; hundreds of apps on one host | `prompt-to-app.md` · `packages/oracle` · `intent-recognizer.md` · `sandboxes.md` · `agent-surface.md` · `on-page-editing.md` |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -878,6 +879,32 @@ for automations, built into `example` and `basecamp`. That slice is the design
 record, not a copy of the product.
 
 Build in `fjs-prototypes/transit`, with questions in its `PLAN.md`, as below.
+
+### 22. Base44 — the thesis as a stressor
+
+*Added 2026-10-06. The prior art, the field's failure record and the feature
+table are `prompt-to-app.md`; this entry does not repeat them. Phase 0 done
+2026-10-06 in `fjs-prototypes/base44`, whose `PLAN.md` carries the run.*
+
+**What it is.** A thin builder: a prompt goes to the Claude API, a
+`db/schema.lite` and its resources come back, and the loop runs parse, `fli
+check` and a drive until green, then takes the next message as an edit to the
+running app.
+
+**What it breaks first.** Every other stressor is a product a person writes
+here. This one is a product a MODEL writes here, so it grades the claim that
+one seed file is a better target for generation than a React app over a document
+store. Every builder in the field ships with the same model, which is why the
+substrate under it is the only part worth comparing.
+
+**What would make it ours is oracle.** The field goes from prompt straight to
+code, with every app making up its own nouns. Oracle's catalog settles the nouns
+first and an emitter writes the `.lite`, so the model never authors the schema
+freehand. The builder is oracle with the loop closed, and oracle's deferral is
+lifted (`FJS-D600`).
+
+Build in `fjs-prototypes/`, under the rule #21 set: its fixes land in FJS and
+its code never does.
 
 ## Not on this list, with reasons
 

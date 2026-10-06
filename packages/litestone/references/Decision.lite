@@ -1,0 +1,64 @@
+/// Who settled it and when, written by the system at a transition.
+///
+/// ─── Four spellings in two prototypes, eight chains in one HRMS ───────────
+///
+/// connectteam `LeaveRequest.decidedAt/decidedById` and
+/// `Timesheet.approvedAt/approvedById`; jazzhr `Offer.respondedAt` and
+/// `Scorecard.submittedAt`; outside the repo documenso's signing status,
+/// mastodon's four moderation decisions, hrms with eight approval chains.
+/// Every one is the same two facts — an instant and an actor — spelled for
+/// the verb that happened to be on the transition. Half of them keep the
+/// actor; half keep only the instant and then cannot answer "who approved
+/// this", which is the first question an approval ever gets asked.
+///
+/// The transition itself is already declared:
+///
+///     @@transitions(status,
+///       approve: requested -> approved @gate(5),
+///       refuse:  requested -> refused  @gate(5))
+///
+/// The stamp is the half nobody declares, and this trait is that half under
+/// one name. A hook on the transition writes both columns; `@system` keeps a
+/// caller from writing them, because a decision a requester could backdate
+/// is not a decision.
+///
+/// ─── Why one stamp and not one per verb ───────────────────────────────────
+///
+/// `Timesheet` has approve, reopen and export. A column pair per verb is six
+/// columns and a row that remembers only the last of each; a `Decision` pair
+/// records the latest settling and the audit trail (`@@log(audit)`) records
+/// the rest with their actors for free. A host that genuinely needs two
+/// standing stamps — submitted AND approved, both shown — declares the second
+/// pair under its own names; `@seals` on the approving transition is what
+/// makes the sealed one permanent.
+///
+/// ─── What this wants to become ────────────────────────────────────────────
+///
+/// A stamp belongs on the transition that produces it, something like
+/// `approve: requested -> approved @stamps(decidedAt, decidedById)`, so the
+/// schema says which edge writes it rather than a hook. That is a language
+/// question for litestone and not a catalog one; until it is answered this
+/// trait is the spelling, and a host that spreads it has nothing to rename
+/// when the attribute arrives.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `decision` enum.** The verdict is the status column the transition
+/// already moved. A second column saying `approved` beside a status saying
+/// `approved` is two answers.
+///
+/// **No `reason`.** A refusal's reason is a product column (`note`,
+/// `cancellationReason`) with its own length and its own visibility; three
+/// instances have one and no two agree on who may read it.
+trait Decision {
+  /// The instant the transition ran. Nullable until it has.
+  decidedAt   DateTime? @system
+
+  /// The identity model's key, a column and not a relation because this file
+  /// declares no `User`; the host may add the relation, and most do not,
+  /// because the actor may since have left and the stamp must outlive them.
+  decidedById String?   @system
+
+  /// Every pending-queue read is "the undecided ones, oldest first".
+  @@index([decidedAt])
+}

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-06 — four more references from the same corpus: `Decision`, `Tree`, `Poller`, `Delivery`
+
+Three traits and a model. `Decision` is the `decidedAt`/`decidedById @system` pair the corpus spelled four ways (decided / approved / responded / submitted), and the file says it wants to become an attribute on the transition. `Tree` is `parentId` plus a fractional `rank`, the self-relation left to the host, written against linear's `Issue` carrying both `rank` and `position`. `Poller` is the inline state around a scheduled fetch, every column `@system`, with the run log named as the model it pairs with and not yet written. `Delivery` is lifted from transit: one row per attempt, `@@unique([runKey, address, attempt])`, and the check that a skip says why and only a skip; it is the record `@frontierjs/notifications` fans out without keeping.
+
+## 2026-10-06 — four references derived from the prototype corpus, and a reference may be a trait
+
+Twenty schemas were read for the shapes that recur under different names (eight `fjs-prototypes`, basecamp, example, nine imported production schemas), and the four with the most instances land in `references/`: `Organization` (+ `Member`, nine instances, four container words, a different role enum in every one — the enum stays the host's), and three that never stand alone and so ship as a `trait`: `Grant` (eleven instances under six names, the claim and row policy stay the host's), `Interval` (the derived UTC pair under `@@exclude`, the local input stays the host's) and `Window` with `enum Weekday` (the recurring slot; the enum ships because the weekday was encoded three ways). Each file names the instances it disagrees with and why. `test/references.test.ts` finds a file's noun on `schema.traits` when `schema.models` has none, so a trait-only file is graded rather than mistaken for prose. The review itself, with the other six shapes and the house's own contradictions, is the artifact *The Ten Shapes*.
+
 ## 2026-10-05 — an update naming no column answers through the update policy (`FJS-1767`)
 
 A patch with nothing to write reads the row back instead of issuing a statement, and that read used the caller's where alone, so `update({ where: { id }, data: {} })` returned a row the caller's update and read policies both exclude. It now reads through `finalWhereSql`, the WHERE a write would have used. `test/litestone.test.ts` § *an update naming no column answers through the update policy, not around it*.

@@ -6,8 +6,8 @@ dated: 2026-08-18
 
 # Oracle — how it should reason
 
-**Design record. Nothing here is built.** Oracle is V2-deferred (`FJS-D14`); this is the half the
-README says costs nothing and does not wait on the ruling — the thinking, lifted out of the JSX so
+**Design record. Nothing here is built.** Oracle's deferral was lifted 2026-10-06 (`FJS-D600`), so
+this is now the reasoning half of the version being built — the thinking, lifted out of the JSX so
 the framework can cite it. It is written to be pasted into a Claude Project as Oracle's reasoning
 doctrine while the tool stays a mockup.
 
@@ -249,7 +249,27 @@ cost and escape · what it costs to be wrong.
 ## What this does not settle
 
 - **The prose→seed gap stays open.** These rules make Oracle's output seed-shaped; they do not make
-  it `.lite`. That is the rebuild, and it is still V2.
+  it `.lite`. That is the rebuild, and it is the work `FJS-D600` started.
 - **The catalog is stated twice** — as data and inside the prompt — and this file is a third
   place. Whoever rebuilds Oracle owns collapsing all three into one origin, which is the framework's
   own first axiom pointed at its own tool.
+
+---
+
+## Open questions
+
+- ~~**Where does the model call live?**~~ **Answered 2026-10-06 (`FJS-D601`): C — The catalog, the ladder's checks and the emitter to `.lite` are one module with no model in it, and whatever runs the model calls that module — a skill for a developer, the prompt-to-app builder for anyone else. `fli` never holds a key.** `FJS-D14` parked this as a posture question about the CLI:
+  Oracle would be the first `fli` command to call an LLM, which brings key handling, offline
+  behavior and CI with it.
+  - **A** — `fli oracle` calls the Claude API itself, needs a key, and is skipped in CI and
+    offline when none is set.
+  - **B** — Oracle is an app built on the framework, as `FJS-D14` first described it, and calls the
+    model from its own `api/` through Junction's AI battery; `fli` never calls one.
+  - **C** — The catalog, the ladder's checks and the emitter to `.lite` are one module with no model
+    in it, and whatever runs the model calls that module — a skill for a developer, the
+    prompt-to-app builder for anyone else. `fli` never holds a key.
+  - **Recommend C** — it is the split the intent recognizer already landed on: a model reads, and
+    `intent.js` holds the draft to the seed with no model inside it. The deterministic half is the
+    part worth testing and the part a builder shares, and C is the only option where CI can run all
+    of it. A puts a key in the CLI for one command, and B makes a developer boot an app to get a
+    schema.

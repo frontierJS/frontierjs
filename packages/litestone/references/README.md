@@ -70,6 +70,16 @@ a column, every app's copy is stale, and nothing can compare them. It ships
 copy against it, and this catalog's entry is a POINTER rather than a second
 copy — the same shape `User` and `Credential` already had.
 
+## A reference may be a trait
+
+Some shapes never stand alone — a bearer token's four columns, an occupying
+interval's derived pair — and a model file for them would invent a host that
+does not exist. Those ship as a `trait`, and the install is `@@trait(Name)` on
+the row that has the shape. The test finds the file's noun on `schema.traits`
+when `schema.models` has none. What a trait deliberately leaves to the host is
+the half that names the host's own columns: the `claim`, the row policy, the
+`@@exclude` scope.
+
 ## The running list
 
 Written means a file exists in this folder. Everything else is a name and a
@@ -84,7 +94,15 @@ replace.
 | META | `Tag` | **written** — no instance in this tree; the shape is argued rather than derived, and the file says so |
 | IDENTITY & ACCESS | `User` | ships — `packages/auth/db/user.lite` is the reference |
 | IDENTITY & ACCESS | `Credential` · `Session` · `Verification` · `OauthFlow` | ships — `packages/auth/db/auth.lite` |
-| IDENTITY & ACCESS | `Organization` · `Group` · `Role` · `Invitation` | not written — basecamp's `Workspace` / `WorkspaceMember` / `Invitation` are the instance to derive from |
+| IDENTITY & ACCESS | `Organization` (+ `Member`) | **written** — derived from nine instances (linear, notion, connectteam, remnant, portal, basecamp, trigger.dev, documenso, cal.com); the role enum and the second level stay the host's, and the file says why |
+| IDENTITY & ACCESS | `Grant` | **written, a trait** — eleven instances under six names; the claim and the row policy stay the host's |
+| IDENTITY & ACCESS | `Group` · `Role` · `Invitation` | not written — an `Invitation` is a `Grant` with an email and a role, and basecamp's is the instance |
+| TIME | `Interval` | **written, a trait** — the derived UTC pair under `@@exclude`; the local input stays the host's |
+| TIME | `Window` (+ `enum Weekday`) | **written, a trait** — the recurring slot; the enum ships because the weekday was encoded three ways |
+| LIFECYCLE | `Decision` | **written, a trait** — who settled it and when, `@system`, one pair under one name where the corpus had four spellings; wants to become an attribute on the transition |
+| STRUCTURE | `Tree` | **written, a trait** — `parentId` + a fractional `rank`; the self-relation stays the host's, and linear's `rank`+`position` is the row it prevents |
+| INTEGRATION | `Poller` | **written, a trait** — the inline bookkeeping around a scheduled fetch, every column `@system`; the run log (`Run`, from transit's `SyncRun`) is the model it pairs with and is not written |
+| COMMUNICATION | `Delivery` | **written** — one row per attempt, from transit; the one model whose check (`(status = 'skipped') = (skipReason IS NOT NULL)`) the whole corpus should have had, and the record `@frontierjs/notifications` does not keep |
 | IDENTITY & ACCESS | `ApiKey` | not written — basecamp has one |
 | COMMUNICATION | `Message` · `Template` | not written — no instance in this tree |
 | COMMUNICATION | `NotificationChannel` · `NotificationPreference` | not written — basecamp has both |

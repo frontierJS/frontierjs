@@ -11755,6 +11755,19 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d601"></a>2026-10-06 · `FJS-D601` — Where does the model call live — The catalog, the ladder's checks and the emitter to `.lite` are one module with no model in it, and whatever runs the model calls that module — a skill for a developer, the prompt-to-app builder for anyone else. `fli` never holds a key.
+
+Asked in [`IDEAS/oracle-reasoning.md`](IDEAS/oracle-reasoning.md) § Open questions. **C** was picked over **A** (`fli oracle` calls the Claude API itself, needs a key, and is skipped in CI and offline when none is set), **B** (Oracle is an app built on the framework, as `FJS-D14` first described it, and calls the model from its own `api/` through Junction's AI battery; `fli` never calls one).
+
+The paper's recommendation, taken as written: it is the split the intent recognizer already landed on: a model reads, and `intent.js` holds the draft to the seed with no model inside it. The deterministic half is the part worth testing and the part a builder shares, and C is the only option where CI can run all of it. A puts a key in the CLI for one command, and B makes a developer boot an app to get a schema.
+
+### <a id="fjs-d600"></a>2026-10-06 · `FJS-D600` — Oracle is no longer deferred. `FJS-D14`'s wait for core to leave alpha is lifted for oracle, as `FJS-D275` lifted it for orion.
+
+`FJS-D14` deferred oracle because building a consumer of seams that are still moving spends alpha time on them. `FJS-D275` answered that for orion with an argument that holds here too: **a consumer built now is how the seams get found.** Oracle's case is sharper. `IDEAS/prompt-to-app.md` finds that the planning step every prompt-to-app builder lacks is the one Oracle performs: settling the nouns before anything is generated, so that an emitter writes the `.lite` rather than a model writing it freehand. That makes Oracle the part of a builder only this framework can have, rather than a tool to build after the framework is done.
+
+The owner lifted the deferral. **The posture question `FJS-D14` parked is now owed, not ruled here**: Oracle would be the first `fli` command to call an LLM. It is asked in `IDEAS/oracle-reasoning.md` § Open questions, with options.
+— `packages/oracle/README.md` · `IDEAS/oracle-reasoning.md` · `IDEAS/prompt-to-app.md`.
+
 ### <a id="fjs-d599"></a>2026-10-06 · `FJS-D599` — Where does a fleet release get its pivot verdict — The build computes it, and the release records it on `Deployment` alongside `builtImage`.
 
 Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (The Outpost runs `litestone release` inside the new image before the swap), **C** (No verdict: every fleet rollback asks for a typed confirmation).
@@ -12014,7 +12027,7 @@ The paper's recommendation, taken as written: the mount is visible in the host's
 
 `FJS-D14` deferred orion because building a consumer of seams still moving spends alpha time on them. Two things answered that for orion. The seam it waited on is built — orion subscribes to litestone's write tap directly (`FJS-D247`) — and `FJS-D269` through `FJS-D274` rule its shape, so a port starts from settled answers rather than an open argument. **A consumer built now is also how the seams get found**, which is basecamp's argument and the README's: anything orion needs and cannot express is filed against the framework.
 
-The owner lifted the deferral for orion. Oracle is untouched — its open decision is a posture question about the CLI calling an LLM, which nothing here answers.
+The owner lifted the deferral for orion. Oracle is untouched — its open decision is a posture question about the CLI calling an LLM, which nothing here answers. ~~Oracle's deferral stands~~ — lifted by [`FJS-D600`](#fjs-d600).
 — `IDEAS/orion-port.md` · `packages/orion/README.md`.
 
 ### <a id="fjs-d270"></a>2026-09-14 · `FJS-D270` — Orion's screens are routes the host's `web/` mounts under a prefix, built by the host's Sierra build.
@@ -13815,7 +13828,7 @@ is reusable and outlives any run of it.
 
 ### <a id="fjs-d14"></a>2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into one package, two are V2.
 
-**Status:** amended-by [`FJS-D269`](#fjs-d269) — orion is a package installed into an app, not an application beside basecamp — and by [`FJS-D275`](#fjs-d275), which lifts orion's deferral. Oracle's deferral is unchanged.
+**Status:** amended-by [`FJS-D269`](#fjs-d269) — orion is a package installed into an app, not an application beside basecamp — by [`FJS-D275`](#fjs-d275), which lifts orion's deferral, and by [`FJS-D600`](#fjs-d600), which lifts oracle's. Nothing in this ruling is still deferred.
 
 `orion` is the automations engine and platform.
 `toolbelt` is the core pure-function library, shared across repos and meant to

@@ -2,8 +2,8 @@
 
 **A domain-modeling recognizer: describe a thing in prose, get back the canonical entity it already is.** You type "customers book a recurring cleaning slot and get invoiced after"; Oracle answers `Contact:customer`, `Visit`, `Document:invoice`, names the actors, and writes the sentence that connects them. It is the step before `db/schema.lite` — the argument about *what nouns exist* that every app has and almost no app writes down.
 
-> **Status: V2, deferred.** Nothing is owed here until FrontierJS core leaves alpha — `FJS-D14`.
-> See § Status below for what reopening it would cost.
+> **Status: in progress.** The deferral `FJS-D14` set was lifted 2026-10-06 (`FJS-D600`).
+> See § Status below for what the rebuild has to do.
 
 Claimed, not built. What is here is a mockup — `mockup/oracle.jsx`, one file, exported from a Claude artifact and now runnable locally. It is **not a workspace member**: `mockup/` holds its own `package.json` and its own React toolchain, the same convention `packages/mesa/mesa-bench` and `packages/orion/mockup/api-engine` use, so nothing it depends on reaches the rest of the repo. Run it from its own directory.
 
@@ -39,11 +39,11 @@ Recognition runs three questions in order — *is this a property of something m
 
 Two more things a real version would have to fix. The catalog's collapse rules are stated twice, once as data and once inside ~1,300 lines of prompt text, so the two drift. And the UI is one 6,471-line React component in a repo whose UI substrate is Mesa — a rebuild is a rewrite, not a port.
 
-## Status: V2, deferred
+## Status: reopened
 
-**Nothing is owed here until FrontierJS core leaves alpha** — `FJS-D14`, `DECISIONS.md` § Repo conventions. Oracle is a tool built on the framework rather than a gap in it, and the version worth having asks a question the CLI has not answered: it would be **the first `fli` command to call an LLM**, which is a posture decision about offline behavior, key handling and CI, not about Oracle.
+**`FJS-D600` lifted `FJS-D14`'s deferral on 2026-10-06**, because Oracle is the planning step a prompt-to-app builder lacks (`IDEAS/prompt-to-app.md`). **No model runs inside Oracle** (`FJS-D601`): the catalog, the ladder's checks and the emitter to `.lite` are one module, and whatever runs the model calls it — a skill for a developer, the prompt-to-app builder for anyone else. `fli` never holds a key, and CI runs all of it.
 
-When it is reopened, the choice is narrower than for the other claimed folders, because the thinking here is worth keeping even if the code is not:
+The work splits in two, because the thinking here is worth keeping even if the code is not:
 
-- **Lift the catalog into `IDEAS/`** and drop the JSX. The 32 entities, 36 patterns and verb vocabulary are design content the framework can cite; the React is disposable. This half costs nothing and does not wait on the ruling above.
-- **Build it as an `fli` command** that ends at `db/schema.lite` instead of at prose. That is the version that earns a package slot, and it needs a Mesa UI, a test suite, a `package.json` at this level rather than one directory down — and a rewrite: `mockup/oracle.jsx` is 6,471 lines of React in a repo whose UI substrate is Mesa.
+- **Lift the catalog into `IDEAS/`** and drop the JSX. The 32 entities, 36 patterns and verb vocabulary are design content the framework can cite; the React is disposable.
+- **Build the module** that ends at `db/schema.lite` instead of at prose: the catalog as its one origin, the ladder's checks, and the emitter, with no model inside (`FJS-D601`). That is the version that earns a package slot — a test suite, a `package.json` at this level rather than one directory down. A screen belongs to whatever calls it, so `mockup/oracle.jsx`, 6,471 lines of React, is reference rather than a thing to port.

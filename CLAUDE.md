@@ -124,7 +124,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | email-kit | UI / email | Table-based email components + `target: 'email'` wrapper — an MJML replacement | Working. Never opened in a real mail client; Outlook conditional-comment handling is fragile — see its `docs/` | batteries |
 | orion | D5 / automations | Flows of triggers, conditions and actions, run by an engine installed into the app (`FJS-D269`) | Being ported (`IDEAS/orion-port.md`). | batteries |
 | basecamp | D7 / app | **Fleet operations app. An FJS application, not a library** — the largest dogfooding surface | Working. All three realms real, zero raw SQL, and every model declares `@@gate`. | frontier |
-| oracle | Data / modeling | A domain-modeling recognizer: prose in, the canonical entities it already names out — the step before `db/schema.lite` | Claimed, not built — a README plus a runnable `mockup/`, V2, owed nothing until core leaves alpha (`FJS-D14`). | tooling |
+| oracle | Data / modeling | A domain-modeling recognizer: prose in, the canonical entities it already names out — the step before `db/schema.lite` | Reopened (`FJS-D600`), not built — a README plus a runnable `mockup/`; the rebuild ends at `db/schema.lite`. | tooling |
 
 ---
 

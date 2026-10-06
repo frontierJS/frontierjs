@@ -1,0 +1,112 @@
+/// One row per try at getting something out the door, with the reason it did
+/// not go.
+///
+/// ─── transit wrote the full version and the rest kept two timestamps ──────
+///
+/// transit `Delivery`: a row per recipient per attempt, a `status`, a
+/// `skipReason` the check forces to agree with it, the bytes sent, the
+/// error. portal `Trigger` folds the same facts into `lastFiredAt`,
+/// `lastStatus`, `lastResponse`, `lastError` on the trigger itself; basecamp
+/// `NotificationChannel` keeps `lastDeliveryAt` and nothing else. Outside the
+/// repo documenso `WebhookCall`, trigger.dev `WebhookDelivery`, openmrp
+/// `EmailLog`, discourse eight. And `@frontierjs/notifications` fans one
+/// notification out to in-app, email and whatever else is registered, and
+/// records none of them — which is why "did the customer get the email" has
+/// no answer in any app on this framework today.
+///
+/// This is a MODEL and not a trait, because an attempt has its own identity:
+/// it is queried on its own ("every failed send this week"), it outlives a
+/// change to the thing it delivered, and there are many of it per subject.
+/// `docs/traits.md`'s test — would you ever query the cluster by itself —
+/// answers yes.
+///
+/// ─── The check is the point ───────────────────────────────────────────────
+///
+/// `(status = 'skipped') = (skipReason IS NOT NULL)` is one line and it is
+/// the best line in the corpus: a skip always says why, and only a skip
+/// says why. Without it the reason column fills with explanations of sends
+/// that happened, and the skipped rows that matter carry null.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No subject relation.** What was delivered is the host's: a
+/// notification, a report subscription, a webhook endpoint. The host adds
+/// `subscriptionId` and its relation, with `onDelete: Restrict` as transit
+/// chose, because deleting the subscription must not delete the proof it
+/// once sent.
+///
+/// **No `SkipReason` values beyond the shape.** The enum below carries the
+/// four reasons every instance had. transit adds `unconfirmed`, `noStanding`
+/// and `unchanged`, each a product rule; a host extends the enum, and an
+/// enum is what makes a new reason a declared value rather than a free
+/// string nobody can filter on.
+///
+/// **No `payload`.** What went out is the host's to keep or not (`bytes` says
+/// how much, which is what a quota needs); storing bodies is a retention
+/// decision and often a redaction one.
+///
+/// **No retry schedule.** `attempt` numbers the tries; when the next one runs
+/// is the engine's, usually a job, never a column a caller can move.
+enum DeliveryStatus { sent skipped failed }
+
+/// Why a delivery was not attempted. Open to extension in the host.
+enum SkipReason {
+  empty        @label("Nothing in it")
+  paused       @label("Subscription paused")
+  unsubscribed @label("Address unsubscribed")
+  noAddress    @label("Nowhere to send it")
+}
+
+model Delivery {
+  id         Int            @id
+
+  /// The key of the run that produced this attempt — a cron fire, a batch,
+  /// a notification id. Together with the address and the attempt number it
+  /// is the idempotency key: the same run cannot send twice to one address
+  /// without saying it is a retry.
+  runKey     String
+
+  /// 1 on the first try. A retry is a new row with the same `runKey` and
+  /// `address`, never an update of the failed one — the failed row is the
+  /// record that a failure happened.
+  attempt    Int            @default(1)
+
+  /// Where it went, as text: an email, a webhook URL, a channel id. Text and
+  /// not a relation because the address is what it WAS at send time; the
+  /// recipient row may since have changed or gone.
+  address    String
+
+  /// The transport's name — `email`, `slack`, `webhook`, `push`. A String
+  /// rather than an enum for the `Notification.type` reason: a transport is
+  /// registered in code and must not be a migration.
+  channel    String
+
+  status     DeliveryStatus
+  skipReason SkipReason?
+
+  /// Size of what went out, for quotas and for "that attachment was 40 MB".
+  bytes      Int?
+
+  /// The transport's own error, verbatim, on a failure. Nullable because a
+  /// send and a skip have none.
+  error      String?
+
+  createdAt  DateTime       @default(now())
+
+  /// A skip says why, and only a skip.
+  @@check("(status = 'skipped') = (skipReason IS NOT NULL)", "A skip says why, and only a skip")
+
+  /// The idempotency key.
+  @@unique([runKey, address, attempt])
+
+  /// Read 5 · create 8 · update 9 · delete 9. Append-only: a delivery that
+  /// happened is not edited, and the engine is the only writer. Read is an
+  /// operator's; a host that shows people their own deliveries lowers it
+  /// with a policy through the subject (`subscription.ownerId == auth().id`),
+  /// never the gate.
+  @@gate("5.8.9.9")
+
+  /// "What happened on this run" and "the recent history of this address".
+  @@index([runKey])
+  @@index([address, createdAt])
+}
