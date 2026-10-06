@@ -37,6 +37,9 @@ export const TYPES = {
   image:    { desc: 'one uploaded image',                                lite: () => ({ type: 'File', attrs: ['@accept("image/*")'] }) },
   files:    { desc: 'several uploaded files',                            lite: () => ({ type: 'File[]', attrs: [] }), array: true },
   tags:     { desc: 'a list of short labels',                            lite: () => ({ type: 'String[]', attrs: [] }), array: true },
-  secret:   { desc: 'a credential the app uses and nobody reads back — an API key, a token', lite: () => ({ type: 'String', attrs: ['@secret'] }) },
+  // A unique secret is looked up by its value — a private link's token — and a
+  // random IV makes every write of the same value different bytes, so the
+  // language refuses `@secret @unique`. Deterministic keeps it readable.
+  secret:   { desc: 'a credential the app uses and nobody reads back — an API key, a token', lite: f => ({ type: 'String', attrs: [f.unique ? '@secret(deterministic: true)' : '@secret'] }) },
   enum:     { desc: 'one of a fixed list of values — needs `values`',   lite: (f, enumName) => ({ type: enumName, attrs: [] }) },
 }

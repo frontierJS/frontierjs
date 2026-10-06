@@ -1,5 +1,9 @@
 # Changes — @frontierjs/oracle
 
+## 2026-10-06 — A unique secret emits as deterministic
+
+A `secret` field marked `unique` emitted `@secret @unique`, which litestone refuses at parse: the IV is random, so the same value never stores the same bytes. It now emits `@secret(deterministic: true) @unique`, which can be looked up by value and is still readable. The base44 stressor's edit turns found it (jazzhr's answer gave an applicant a private status link). Proof: `test/oracle.test.js`, *a unique secret is deterministic*.
+
 ## 2026-10-06 — The module: catalog, checks, emitter (`FJS-D600`, `FJS-D601`)
 
 The rebuild `FJS-D600` reopened, as `FJS-D601` shaped it: one module with no model inside. `src/catalog.js` is the catalog lifted out of `mockup/oracle.jsx` — the 32 entities, now with typed fields and named lifecycle moves, the 7 actors with what each may do, the 18 patterns and the 5 modifiers. `checkAnswer(answer)` grades what a model wrote against it, under thirteen rules (`RULES`). `emit(answer, { scaffold })` writes the graded plan onto the scaffold's `db/schema.lite`. `brief()` renders the contract, types, actors, rules and catalog for a model from the same data, so the prompt and the grader are one list.

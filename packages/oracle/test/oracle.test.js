@@ -104,6 +104,16 @@ describe('emit', () => {
     expect(parses(text)).toBe(true)
   })
 
+  // `@secret @unique` is refused at parse: the IV is random. Found by the base44
+  // edit turns (jazzhr, an applicant's private status link).
+  test('a unique secret is deterministic, so it parses and can be looked up', () => {
+    const a = clone(hiring)
+    a.entities[0].fields = [...(a.entities[0].fields ?? []), { name: 'statusToken', type: 'secret', unique: true, why: 'the private link an applicant checks their application with' }]
+    const text = emit(a, { scaffold: SCAFFOLD }).text
+    expect(text).toContain('@secret(deterministic: true) @unique')
+    expect(parses(text)).toBe(true)
+  })
+
   test('a create names its caller AND reaches the parent', () => {
     const text = emit(hiring, { scaffold: SCAFFOLD }).text
     expect(text).toContain("@@allow('create', check(application, 'read') && (interviewerId == auth().id))")
