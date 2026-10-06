@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-05 — `docker-context.js` imports repaired
+
+The `context` → `$` rename in the zx removal (`1de3d5e4`) also rewrote the filename `docker-context.js` to `docker-$.js` in three places, so `deploy`'s `04-build-api` step died with `Cannot find module …/core/docker-$.js` right after the build check. `04-build-api.md` (comment and import) and `tutor/_module.md` name the file again. A scan of that commit for any other `context` replaced by `$` inside a path or word found no more.
+
 ## 2026-10-05 — Command frontmatter is read by `@frontierjs/toolbelt/frontmatter`
 
 fli had its own reader, and it read some blocks differently from sierra and mesa. `- name: x` came out as the string `name: x`. A ` # note` stayed in the value. `"a" b` was taken for a quoted string. `compiler.js`'s `splitFrontmatter` now reads through the kit and keeps its shape (`meta`, `body`, `bodyLine`, blank lines after the fence going with it). `parseYaml` and `coerceYamlValue` are gone. The other hand readers moved to the kit as well:

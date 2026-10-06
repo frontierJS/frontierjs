@@ -26,9 +26,9 @@ const buildPath   = builder.path
 // Asked before the vendor and the upload, because a context docker cannot see
 // fails at the build with a sentence about a missing file that is plainly there
 // (`FJS-748`) — and everything between here and that build is wasted work.
-// `core/docker-$.js` carries the measurement and the reasons.
+// `core/docker-context.js` carries the measurement and the reasons.
 const { contextProbe, parseProbe, contextRefusal } =
-  await import(new URL('file://' + global.fliRoot + '/core/docker-$.js'))
+  await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
 
 let probeOut = null
 try { probeOut = machine.capture(contextProbe(dockerfile), { cwd: buildPath }) } catch {}

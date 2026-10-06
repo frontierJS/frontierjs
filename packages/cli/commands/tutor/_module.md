@@ -20,7 +20,7 @@ const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/co
 const probe             = await import(new URL('file://' + global.fliRoot + '/core/probe.js'))
 const T                 = await import(new URL('file://' + global.fliRoot + '/core/tutor.js'))
 const B                 = await import(new URL('file://' + global.fliRoot + '/core/browser.js'))
-const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-$.js'))
+const DC                = await import(new URL('file://' + global.fliRoot + '/core/docker-context.js'))
 
 const { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, rmSync, mkdtempSync } = await import('node:fs')
 const { join, resolve, basename } = await import('node:path')
