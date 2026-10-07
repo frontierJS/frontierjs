@@ -1,5 +1,14 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-07 — advise leaves out the models a package ships (`FJS-1887`)
+
+`advise` treated a model from `import "@frontierjs/auth/schema.lite"` as the app's own. So auth's `OauthFlow.link`, an invitation token, was reported to every app as a likely URL column with no `@url`, on a field the app cannot edit. In base44's edit stressor, that one finding kept every turn from settling.
+
+- **The import merge tags each model a package import brings in** with a hidden `shippedBy` (the specifier). The opportunities skip those models, the same way they skip `@external` ones. A relative import is the app's own schema in another file, and its models are still checked. The tag is not enumerable, so no JSON dump or snapshot changes.
+- **A spliced parse is told.** `inlineImports` takes an optional `shipped` map and fills it, and `markShipped(schema, shipped)` tags the parse. Studio's draft pane does this, so its before and after panes agree.
+
+`test/opportunities.test.ts` § *a model a package ships is not the app's* covers both the `parseFile` path and the splice path.
+
 ## 2026-10-06 — a migration that deletes values waits for its loss to be accepted in the file (`FJS-1784`)
 
 `migrate dev`, which `fli db:migrate` runs, created a rename as a drop plus an add and applied it in the same call. In the base44 stressor that deleted 3 of 3 values with exit 0, and the DESTRUCTIVE banner was a review nobody had to hold. `apply` read no file's banner, and `create` computed the loss and returned none of it.

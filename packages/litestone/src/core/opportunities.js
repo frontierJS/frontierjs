@@ -42,8 +42,10 @@ const fieldColumn = (model, name) => {
   return f?.attributes?.find(a => a.kind === 'map')?.value ?? name
 }
 
-/** A model the app declared, as opposed to one litestone or a plugin added. */
-const authored = schema => (schema.models ?? []).filter(m => !modelAttr(m, 'external'))
+/** A model the app declared, as opposed to one litestone or a plugin added —
+ *  `@external`, or imported from a package (`shippedBy`, set by the parser's
+ *  import merge; FJS-1887). */
+const authored = schema => (schema.models ?? []).filter(m => !modelAttr(m, 'external') && !m.shippedBy)
 
 // ─── the checks ───────────────────────────────────────────────────────────────
 //

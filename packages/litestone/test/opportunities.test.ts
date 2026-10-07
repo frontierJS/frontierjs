@@ -14,8 +14,11 @@
 // that fix them are marked. That is the method rather than an embarrassment:
 // a check nobody has pointed at `example` and `basecamp` is a guess.
 
-import { describe, test, expect } from 'bun:test'
-import { parse } from '../src/core/parser.js'
+import { describe, test, expect, afterAll } from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { parse, parseFile, inlineImports, resolveImportSpecifier, markShipped } from '../src/core/parser.js'
 import { OPPORTUNITIES, checkOpportunities, wordFor } from '../src/core/opportunities.js'
 import { lookup } from '../src/core/catalog.js'
 
@@ -199,6 +202,41 @@ describe('format-column-with-no-validator', () => {
 
   test('silent once the validator is there', () => {
     expect(found(`model C { id Int @id  email String @email }`, ID)).toEqual([])
+  })
+
+  // FJS-1887: auth's `OauthFlow.link` — an invitation token, not a URL — was
+  // reported to every app as theirs to fix, and an app cannot edit a package's
+  // field. A model a package ships is the package's; one the app imports from
+  // its own other file is still the app's.
+  describe('a model a package ships is not the app\'s', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-shipped-'))
+    mkdirSync(join(dir, 'node_modules/@acme/kit'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules/@acme/kit/package.json'), JSON.stringify({ name: '@acme/kit', version: '1.0.0' }))
+    writeFileSync(join(dir, 'node_modules/@acme/kit/kit.lite'), `model KitFlow { id Int @id  link String? }`)
+    writeFileSync(join(dir, 'more.lite'), `model Mine { id Int @id  website String }`)
+    const root = join(dir, 'schema.lite')
+    writeFileSync(root, `import "@acme/kit/kit.lite"\nimport "./more.lite"\nmodel Lead { id Int @id  email String }`)
+    afterAll(() => rmSync(dir, { recursive: true, force: true }))
+    const flagged = (schema: any) => checkOpportunities(schema).filter(f => f.id === ID).map(f => f.model).sort()
+
+    test('parseFile: the package\'s model is left out, a relative import\'s is not', () => {
+      const out = parseFile(root)
+      expect(out.valid).toBe(true)
+      expect(flagged(out.schema)).toEqual(['Lead', 'Mine'])
+      expect(out.schema.models.find((m: any) => m.name === 'KitFlow').shippedBy).toBe('@acme/kit/kit.lite')
+      expect(JSON.stringify(out.schema)).not.toContain('shippedBy')
+    })
+
+    test('a splice, as Studio\'s draft pane parses one, agrees once marked', () => {
+      const shipped = new Map()
+      const out = parse(inlineImports(readFileSync(root, 'utf8'), root, {
+        resolveChild: (parent: string, spec: string) => resolveImportSpecifier(spec, parent).path,
+        read: (p: string) => readFileSync(p, 'utf8'), seen: new Set([root]), missing: [], shipped,
+      }))
+      expect(flagged(out.schema)).toEqual(['KitFlow', 'Lead', 'Mine'])
+      markShipped(out.schema, shipped)
+      expect(flagged(out.schema)).toEqual(['Lead', 'Mine'])
+    })
   })
 })
 

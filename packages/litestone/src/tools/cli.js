@@ -20,7 +20,7 @@ import { openDatabase }                           from '../core/engine.js'
 // import.meta.dir remains correct for locating files NEXT TO the source at
 // runtime — but see IS_COMPILED: inside a standalone binary there is no such
 // directory, so on-disk assets must be embedded instead (see studio.html).
-import { parse, parseFile, inlineImports, inlineImportsFromDisk, resolveImportSpecifier } from '../core/parser.js'
+import { parse, parseFile, inlineImports, inlineImportsFromDisk, resolveImportSpecifier, markShipped } from '../core/parser.js'
 import { buildPristine, introspect, diffSchemas,
          generateMigrationSQL, summarizeDiff }         from '../core/migrate.js'
 import { create, apply, status, verify,
@@ -3032,6 +3032,7 @@ async function cmdStudio(cfg) {
           // schema with no imports never reaches the callback, which is why it
           // read as working (`FJS-829`).
           const previewMissing = []
+          const previewShipped = new Map()
           let after
           try {
             after = parse(inlineImports(source, resolve(cfg.schema), {
@@ -3039,7 +3040,11 @@ async function cmdStudio(cfg) {
               read:         (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
               seen:         new Set([resolve(cfg.schema)]),
               missing:      previewMissing,
+              shipped:      previewShipped,
             }))
+            // The pane before is a parseFile, which knows a package's models;
+            // the draft is a splice, which is told (opportunities.js `authored`).
+            markShipped(after.schema, previewShipped)
           }
           catch (e) { return json({ valid: false, errors: [e.message] }) }
           // A fragment that cannot be read describes a SMALLER schema than the

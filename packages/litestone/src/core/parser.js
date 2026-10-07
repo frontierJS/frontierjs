@@ -8241,8 +8241,25 @@ export function inlineImports(text, parent, opts, into = null) {
     const source = opts.read(child)
     if (source === null) { opts.missing.push(spec); return '' }
     // An import with no `into` of its own inherits the one it was reached by.
-    return inlineImports(source, child, opts, childInto ?? into)
+    const spliced = inlineImports(source, child, opts, childInto ?? into)
+    // parseFile's `shippedBy`, for a caller that parses the splice: each model
+    // a package's text brought in, by name, the innermost package first.
+    if (opts.shipped && !RELATIVE_SPEC.test(spec) && !isAbsolute(spec))
+      for (const [, name] of spliced.matchAll(MODEL_NAME))
+        if (!opts.shipped.has(name)) opts.shipped.set(name, spec)
+    return spliced
   })
+}
+
+const MODEL_NAME = /^[ \t]*model\s+([A-Za-z_]\w*)\s*\{/gm
+
+/** Tags a spliced parse's models with the package that shipped each, as
+ *  parseFile does on its own merge. `shipped` is what inlineImports collected. */
+export function markShipped(schema, shipped) {
+  for (const m of schema?.models ?? []) {
+    const spec = shipped.get(m.name)
+    if (spec && !m.shippedBy) Object.defineProperty(m, 'shippedBy', { value: spec })
+  }
 }
 
 // `into` is an AST rewrite in parseFile and there is no AST here, so it is done
@@ -8429,6 +8446,16 @@ export function parseFile(filePath) {
           allErrors.push(`tenancy is declared in more than one imported file — one schema, one tenancy block`)
         importedTenancy = child.tenancy
       }
+
+      // A model a package ships is the package's: the app reads it and can
+      // `extend` it, but its fields are not the app's to fix, so `advise`
+      // leaves it out (opportunities.js `authored`). Hidden, so it never
+      // reaches a JSON dump or a snapshot. A relative import is the app's own
+      // schema in another file, and the innermost package to ship a model
+      // names it.
+      if (child && !RELATIVE_SPEC.test(imp.path) && !isAbsolute(imp.path))
+        for (const m of child.models)
+          if (!m.shippedBy) Object.defineProperty(m, 'shippedBy', { value: imp.path })
 
       if (child) {
         importedModels.push(...child.models)
