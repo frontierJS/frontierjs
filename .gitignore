@@ -105,3 +105,6 @@ repo-terms.html
 # The register page — `fli register:atlas`. Its ranking reads git history, so it
 # is regenerated rather than committed.
 registers.html
+
+# Claude
+.claude/worktrees/
