@@ -59,9 +59,10 @@ async function transform(source, id, { command = 'serve', ...options } = {}) {
   plugin.configResolved({ root: ROOT, command })
 
   const warnings = []
+  const raw      = []
   const errors   = []
   const self     = {
-    warn:  (w) => warnings.push(typeof w === 'string' ? w : w.message),
+    warn:  (w) => { raw.push(w); warnings.push(typeof w === 'string' ? w : w.message) },
     error: (e) => { errors.push(e); throw Object.assign(new Error(e.message), e) }
   }
 
@@ -69,9 +70,9 @@ async function transform(source, id, { command = 'serve', ...options } = {}) {
   // reported still gets to see it.
   try {
     const out = await plugin.transform.call(self, source, id)
-    return { plugin, code: out?.code ?? null, out, warnings, errors, threw: null }
+    return { plugin, code: out?.code ?? null, out, warnings, raw, errors, threw: null }
   } catch (threw) {
-    return { plugin, code: null, out: null, warnings, errors, threw }
+    return { plugin, code: null, out: null, warnings, raw, errors, threw }
   }
 }
 
@@ -167,7 +168,7 @@ describe('compiler warnings', () => {
   // never reaches `this.warn`. Reading the callback alone would report a clean
   // compile for a component the compiler had something to say about.
   test('reach both the module and this.warn', async () => {
-    const { code, warnings } = await transform(WARNS, `${ROOT}/W.mesa`)
+    const { code, warnings, raw } = await transform(WARNS, `${ROOT}/W.mesa`)
 
     // Both channels, because each covers what the other cannot: `this.warn`
     // reaches the terminal at build time, the comment reaches whoever opens
@@ -175,6 +176,8 @@ describe('compiler warnings', () => {
     // — the drain ran before the template was built (FJS-845).
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('<mesa:boundary> reads no async value')
+    // A string is what Vite, under Bun, places at `<file>:8766:43` (FJS-1903).
+    expect(raw.every((w) => typeof w === 'object')).toBe(true)
     expect(code).toContain('// ⚠ Mesa: <mesa:boundary> reads no async value')
     parses(code)
   })

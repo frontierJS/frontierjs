@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-07 — a Mesa warning names its file and no false line, and is printed once (`FJS-1919`)
+
+Under `bun --bun vite`, every warning and compile failure from a `.mesa` transform was placed at `<file>:8766:43`. Handed a string, Vite builds `new Error(message)` and reports that Error's `line` and `column` as a place in the transformed file. Bun gives every Error both: the spot inside Vite's own chunk where it was built. The transform now hands `this.warn` and `this.error` `positionless(message)` (`src/build/warnings.js`), an Error with those two deleted. The compiler's diagnostics carry no position, so the file alone is the honest answer.
+
+Each analysis warning was also printed twice: once by the compiler's default `warning` callback, straight to the console, and once through `this.warn`. The plugin now passes a callback. It forwards `analysis.warnings` once, plus the warnings only the callback carries (`<mesa:mounted>`, a block split across slots), which until now reached the console and never Vite. ksite's static build went from 42 lines to 21.
+
+Proof: `test/transform-logs.test.js`, whose fake context applies Vite's rule as it runs under Bun, since vitest runs on Node, whose Error has no `line`. All four cases fail with the plugin reverted.
+
 ## 2026-10-07 — a Resource over another FrontierJS app: `connectApp()` and `createResource(name, { app })` (`FJS-1907`)
 
 A studio showing the app it hosts had only the page's own client and schema table, so columns, filters, `can()` and moves had to be rebuilt by hand. `connectApp({ url, apiPrefix, schema, user })` answers a handle: a second Junction client and a registry holding that app's schema. `createResource(name, { app })` reads every lookup from that registry (fields, `$ref`s, relations, `children()`, the foreign-key references) and makes every call through that client. A related resource inherits the handle.

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-07 — the Vite plugin's warnings carry no false position (`FJS-1919`)
+
+The `warning` callback handed `this.warn` a string. Vite turns a string into `new Error()`, and under Bun that Error's own `line` and `column`, a place in Vite's chunk, were reported as a place in the `.mesa` file. The callback, and the warning when the compiler cannot load, now pass `{ message }`. Proof: `test/vite-plugin.test.js` § compiler warnings asserts every warning reaches `this.warn` as an object, and fails with the plugin reverted.
+
 ## 2026-10-06 — the REPL boots offline, and its drive is in `test` (`FJS-326`)
 
 `example/index.html` fetched nineteen things off the internet, so its drive was manual and out of CI. The Tailwind Play script and its config line are gone, since the REPL's own chrome used no utility class. lz-string and the sixteen importmap entries are now `example/vendor/`, committed, written by `bun example/build-vendor.mjs` as one `Bun.build` with splitting so the CodeMirror packages share a single `@codemirror/state`. The importmap names those files, which means the page the drive loads is the page that ships. The ten packages behind them (CodeMirror, lezer, vim, lz-string) are mesa devDependencies.

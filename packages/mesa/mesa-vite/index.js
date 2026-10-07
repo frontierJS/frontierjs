@@ -365,7 +365,7 @@ export function __mesa_hot_update(id) {
       try {
         compileSource = await getCompileSource()
       } catch (e) {
-        this.warn(e.message)
+        this.warn({ message: e.message })
         return null
       }
 
@@ -387,9 +387,12 @@ export function __mesa_hot_update(id) {
           // and an app that turned it off should not pay for the DOM noise.
           loc: isDev && inspectOn,
           locRoot: root,
-          warning: (w) => this.warn(
-            typeof w === 'string' ? w : (w.message ?? String(w))
-          )
+          // An object, never a string: Vite turns a string into `new Error()`,
+          // and under Bun that Error's own `line` and `column` — a place in
+          // Vite's chunk — are reported as a place in this file (`FJS-1903`).
+          warning: (w) => this.warn({
+            message: typeof w === 'string' ? w : (w.message ?? String(w))
+          })
         })
       } catch (e) {
         // Dev and build alike: raise. A module body that throws is never

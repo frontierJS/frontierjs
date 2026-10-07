@@ -453,3 +453,21 @@ export function explainModuleInitFailure(message, specifier) {
     `      what it said:\n` +
     `        ${String(first.error?.message ?? first.error).split('\n').join('\n        ')}`
 }
+
+// ─── Positionless logs ────────────────────────────────────────────────────────
+
+/**
+ * A message for `this.warn` / `this.error` inside a `transform` hook, carrying
+ * no position. Handed a string, Vite builds `new Error(message)`, and where the
+ * result has `line` and `column` it reports them as a place in the file being
+ * transformed. Under Bun every `Error` has both — where it was constructed, in
+ * Vite's own chunk — so a warning about a 65-line `.mesa` file pointed at
+ * `SiteMap.mesa:8766:43` (`FJS-1903`). The compiler's diagnostics carry no
+ * position to give, so the honest answer is the file alone.
+ */
+export function positionless(message) {
+  const err = new Error(message)
+  delete err.line
+  delete err.column
+  return err
+}

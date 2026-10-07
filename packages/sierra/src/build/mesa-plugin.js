@@ -10,7 +10,7 @@
  */
 
 import { parseFrontmatter } from '../scanner/parse-frontmatter.js'
-import { warnUnexportedSnippets, extractLayoutProps } from './warnings.js'
+import { warnUnexportedSnippets, extractLayoutProps, positionless } from './warnings.js'
 import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
 import { resolve, dirname } from 'path'
@@ -400,6 +400,13 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         }
       }
 
+      // Every diagnostic reaches this callback, and the analysis ones also stay
+      // on `ctx.analysis` — the complete list, since the callback is drained
+      // before the template is built. Left at its default the callback printed
+      // each analysis warning a second time, straight to the console, while
+      // the ones ONLY it carries (`<mesa:mounted>`, a block split across slots)
+      // never reached Vite at all.
+      const direct = []
       try {
         const ctx = await compiler.compileSource(content, {
           // An uncovered member read on an IMPORTED object is reported, whether
@@ -422,6 +429,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           externalReactivityHints: 'strict',
           filename: id,
           dev: isDev,
+          warning: (w) => direct.push(typeof w === 'string' ? w : (w.message ?? String(w))),
           loc: isDev && inspectOn(mesaOptions),
           locRoot: root,
           // A `.md` file's locs name the template Markdown compiles to, not
@@ -475,15 +483,16 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         }
 
         // Forward Mesa compiler warnings (e.g. redundant $: path watches) to Vite
-        if (ctx.analysis?.warnings?.length) {
-          for (const w of ctx.analysis.warnings) {
-            this.warn(`[Mesa] ${w}`)
-          }
+        const analysed = ctx.analysis?.warnings ?? []
+        const echoed = new Set(analysed.map((w) => `Warning: ${w}`))
+        for (const w of analysed) this.warn(positionless(`[Mesa] ${w}`))
+        for (const m of direct) {
+          if (!echoed.has(m)) this.warn(positionless(`[Mesa] ${m.replace(/^Warning: /, '')}`))
         }
 
         // Warning 1: snippets defined in route files but not exported
         if (id.startsWith(absRoutesDir) && !isLayoutFile(id)) {
-          warnUnexportedSnippets(source, id, absRoutesDir, (msg) => this.warn(msg))
+          warnUnexportedSnippets(source, id, absRoutesDir, (msg) => this.warn(positionless(msg)))
         }
 
         // Declare an HMR boundary in dev so Vite stops escalating every .mesa
@@ -504,7 +513,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           map: wantsHMR ? null : (ctx.map ?? null),
         }
       } catch (err) {
-        this.error(`[Sierra] Mesa compilation failed for ${id}:\n${err.message}`)
+        this.error(positionless(`[Sierra] Mesa compilation failed for ${id}:\n${err.message}`))
       }
     },
 
