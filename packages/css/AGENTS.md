@@ -129,7 +129,7 @@ the authority where the two disagree.
 
 | Modifier | Selector it is written against |
 |---|---|
-| `square` `loading` | `.btn` — and `disabled`, where the attribute is the first choice |
+| `square` | `.btn` — and `disabled`, where the attribute is the first choice; busy is `aria-busy="true"` and has no class |
 | `striped` `compact` `hover` | `.table` |
 | `divided` `hover` | `.rows` — `divided` also on `.facts` |
 | `pills` `stretch` | `.tablist` *(not `.tabs`)* |

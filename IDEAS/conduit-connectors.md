@@ -112,6 +112,19 @@ points instead of one:
   returns one today. A presigned-URL minter installs nothing.)
 - Does it ship a **sink** or a **fixture**? (`stripe-sink.ts` is 263 lines standing in for
   one vendor; S3 has MinIO, a real server anybody can run.)
+
+  *Proposed:* **both, and they are not rivals.** Every connector ships a sink; a
+  fixture is added where a conforming server exists to point at. The sink is the
+  default because it is the only place the vendor's misbehavior can be reproduced —
+  MinIO will not deliver an event twice, lose a response or move its clock when a
+  test asks, and mapping that misbehavior onto `ConduitErrorKind` is most of what a
+  connector is for. It is also smaller than it sounds: a sink covers the calls the
+  connector makes, not the vendor's surface, so an S3 sink for a presigned-URL
+  minter is a signed PUT, a GET and a HEAD, offline and without Docker in CI. The
+  fixture's job is fidelity: the same drive runs against both, and a pass on the
+  sink with a failure on the fixture is the sink drifting from the protocol. The
+  sink owns chaos; the fixture checks the sink. quo's Telnyx sink is the case with
+  no fixture at all, since nobody runs a local carrier.
 - Is the webhook verifier a **function** or a **hook**? (`verifyStripeSignature()` is
   a function called from a raw route. S3 event notifications arrive differently, and
   APNs has no webhook at all.)
@@ -141,7 +154,8 @@ the connector's, unless a second implementation shares them.
 The second unruled thing is smaller and shows up at build time: **what does a
 connector package contain, minimally?** The candidate answer, from the one instance
 that exists, is a target builder, the vendor's payload types, its webhook verifier,
-its error mapping onto `ConduitErrorKind`, and a dev sink. That is a guess made from
+its error mapping onto `ConduitErrorKind`, and a dev sink (with a fixture beside it
+where one exists — see the sink-or-fixture question above). That is a guess made from
 a sample of one, which is what the stop after S3 is for.
 
 ---

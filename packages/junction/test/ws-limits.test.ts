@@ -108,6 +108,10 @@ beforeAll(async () => {
   app.services.register(createService({
     name: 'probe', methods: ['find'], async find() { return [] },
   }))
+  app.services.register(createService({
+    name: 'slow', methods: ['find'],
+    async find() { await new Promise(r => setTimeout(r, 300)); return [] },
+  }))
   app.configure(channels((a: any) => {
     a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
   }, { presence: true, presenceFlushMs: 0, presenceMetaBytes: 256, presenceUpdatesPerSecond: 2 }))
@@ -284,5 +288,35 @@ describe('presence meta is not an amplifier (FJS-704)', () => {
     expect(updates).toBeLessThan(50)
     expect(a.errors().filter(e => (e.error?.code ?? '') === 'presence_meta_too_large')).toEqual([])
     a.close(); b.close()
+  })
+})
+
+describe('too much work outstanding (FJS-705, FJS-1836)', () => {
+
+  // A cap on frames per second says nothing about calls still running: the
+  // count has to span the CALL, and a handler that starts the call and returns
+  // let it drop back to 0 before the next frame arrived, so the cap never fired.
+  it('a third slow call while two are running is refused by name', async () => {
+    const c = client()
+    await c.ready
+    for (let i = 0; i < 4; i++)
+      c.send({ type: 'service_call', id: String(i), service: 'slow', method: 'find' })
+
+    expect(await c.wait(() => c.errors().length > 0, 1000)).toBe(true)
+    expect(c.errors()[0].error.code).toBe('too_many_in_flight')
+    expect(await c.wait(() => c.frames.filter(f => f?.type === 'service_result').length === 2)).toBe(true)
+    expect(c.closed).toBeNull()
+    c.close()
+  })
+
+  it('as many slow calls as the cap are all answered — the control', async () => {
+    const c = client()
+    await c.ready
+    for (let i = 0; i < 2; i++)
+      c.send({ type: 'service_call', id: String(i), service: 'slow', method: 'find' })
+
+    expect(await c.wait(() => c.frames.filter(f => f?.type === 'service_result').length === 2)).toBe(true)
+    expect(c.errors()).toEqual([])
+    c.close()
   })
 })

@@ -57,7 +57,7 @@ import type { CustomField, SegmentTerm }   from './custom-fields.ts'
  *
  *  Stated here because this is the API's one owner of money and the API has
  *  readers of its own — a refused code answers with an amount in it, and two
- *  email bodies quote a total. `web/src/money.js` and `site/src/money.js` each
+ *  email bodies quote a total. `web/src/lib/money.js` and `site/src/money.js` each
  *  state it again for their own surface; a surface may not import another
  *  surface's `src/` (Invariant 3), and the real fix is the shop's currency
  *  being a row rather than a constant, which is a feature and not a formatter. */

@@ -71,7 +71,7 @@
        otherwise breaks the user's expectation of where it will go. -->
   <a
     href={href}
-    class={cx('btn', t, treatment, isSquare && 'square', isLoading && 'loading')}
+    class={cx('btn', t, treatment, isSquare && 'square')}
     style:font-size={fontSize || null}
     aria-busy={isLoading || null}
     {class}
@@ -84,14 +84,14 @@
 {:else}
   <!--
     `disabled` while loading, not just pointer-events — a pointer-events-only
-    guard still allows keyboard activation. aria-busy is what announces it;
-    .loading only draws the spinner.
+    guard still allows keyboard activation. aria-busy both announces it and
+    draws the spinner.
   -->
   <button
     type={type}
     disabled={isOff || isLoading}
     aria-busy={isLoading || null}
-    class={cx('btn', t, treatment, isSquare && 'square', isLoading && 'loading')}
+    class={cx('btn', t, treatment, isSquare && 'square')}
     style:font-size={fontSize || null}
     {class}
     {...$attributes}

@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-06 — the outpost nonce table holds a nonce for twice the tolerance (`FJS-1833`)
+
+`rememberNonce` swept a nonce after one tolerance (300s), but a signed request's timestamp is accepted up to 300s either side of this clock, so a request from a machine running ahead could replay once its row was swept. The window is now twice the tolerance. `services.test.ts` § *a nonce is remembered for as long as its timestamp can still be fresh* seeds a nonce seen 400s ago and expects 401; it goes red at one tolerance.
+
 ## 2026-10-06 — the blueprint catalog is a css Grid (`FJS-D621`)
 
 `<div class="grid cols-3">` named two classes nothing defined, so the catalog's cards stacked in one column. `.grid` is now `@frontierjs/css`'s Grid and lays them out in as many columns as fit; the dead `cols-3` is gone. `verify:build` 9/9.

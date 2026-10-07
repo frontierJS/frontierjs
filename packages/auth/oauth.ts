@@ -439,9 +439,10 @@ export async function fetchIdentity(
 export type OAuthResolution =
   | { outcome: 'signed-in';      token: string; user: import('@frontierjs/junction').SessionContext }
   /**
-   * An account already holds this address and has not proved it owns it, so
-   * there is nothing here to link to safely. NOT an error — it is a legitimate
-   * state with a way out, and the way out is proving the address by mail.
+   * Nobody has proved this address: the provider did not vouch for it, or the
+   * account holding it never verified it, so there is nothing to create or
+   * link to safely. NOT an error — it is a legitimate state with a way out,
+   * and the way out is proving the address by mail.
    */
   | { outcome: 'proof-required'; email: string }
 
@@ -451,17 +452,23 @@ export interface AuthOAuth {
 
   oauthBegin(
     providerName: string,
-    args: { redirectUri: string; returnTo?: string | null; extra?: Record<string, string> },
+    args: {
+      redirectUri: string
+      returnTo?:   string | null
+      extra?:      Record<string, string>
+      /** An oauthLink invitation token: the flow ends at `confirmOAuthLink`. */
+      link?:       string | null
+    },
   ): Promise<{ authorizeUrl: string; state: string }>
 
   oauthCallback(
     providerName: string,
     args: { code: string; state: string; cookieState: string | null; redirectUri: string },
-  ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null }>
+  ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null; link: string | null }>
 
   oauthResolve(providerName: string, identity: OAuthIdentity): Promise<OAuthResolution>
 
-  confirmOAuthLink(token: string): Promise<{
+  confirmOAuthLink(token: string, providerName: string, identity: OAuthIdentity): Promise<{
     token: string
     user:  import('@frontierjs/junction').SessionContext
   }>

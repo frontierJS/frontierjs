@@ -242,7 +242,7 @@ html:has(.band, .bleed) {
 
   
   .spinner,
-  .btn.loading::after {
+  .btn[aria-busy="true"]::after {
     animation-duration:        1.6s !important;
     animation-iteration-count: infinite !important;
   }
@@ -1463,12 +1463,12 @@ code[language] > span::before {
 }
 
 
-.btn.loading {
+.btn[aria-busy="true"] {
   position:       relative;
   color:          transparent;
   pointer-events: none;
 }
-.btn.loading::after {
+.btn[aria-busy="true"]::after {
   content:       "";
   position:      absolute;
   inset:         0;
@@ -1481,7 +1481,7 @@ code[language] > span::before {
   animation:     fjs-spin var(--motion-spin) linear infinite;
 }
 
-.btn.loading:is(.outlined, .link)::after {
+.btn[aria-busy="true"]:is(.outlined, .link)::after {
   border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent);
   border-block-start-color: var(--btn-ink);
 }

@@ -534,6 +534,14 @@ ${kids.markup}{#if record}
 
 // ─── one page, from a route path ──────────────────────────────────────────────
 
+/**
+ * The URL segment Sierra serves a route directory at. Its scanner lowercases a
+ * static segment, so a link naming `searchIndexes/` as written lands on the 404
+ * for every two-word model (`FJS-1821`). Every generated link to a generated
+ * directory goes through this.
+ */
+export const routeSegment = (dir) => dir.toLowerCase()
+
 const labelOf = (name) => name
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
   .replace(/[_-]/g, ' ')
@@ -580,7 +588,7 @@ export function resourceRoutePage({ path, model, service }) {
     `import ${model} from '${up}resources/${model}.mesa'`,
     `import { ${service} } from '${up}resources/${model}.mesa'`,
   ]
-  const basePath = '/' + listDir.map(s => s + '/').join('')
+  const basePath = '/' + listDir.map(s => routeSegment(s) + '/').join('')
   const one      = labelOf(model)
   const many     = labelOf(service)
   const shared   = { basePath, imports, res: service, form: model }

@@ -17,8 +17,7 @@ title: Account
   // No QR image: drawing one needs an encoder this app does not ship. The
   // `otpauth://` URI and the secret are both what an authenticator accepts when
   // the camera is not an option, so the screen offers both to copy.
-  import { session }   from '@/session.js'
-  import { getClient } from '@frontierjs/sierra/junction'
+  import { session, getClient } from '@frontierjs/sierra/junction'
 
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout       from '@frontierjs/ui/components/display/Callout.mesa'

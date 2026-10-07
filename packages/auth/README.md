@@ -130,7 +130,7 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, refused for one standing above yours, and recorded under the operator. Needs `canStartSupport` and a level resolver (`services: { standingLevel }` or `{ level }`); the account is told through `onCredentialChanged` |
 | `GET`  | `/auth/oauth` | Which OAuth providers this app offers |
 | `GET`  | `/auth/oauth/{provider}` · `/auth/oauth/{provider}/callback` | The redirect flow — browser navigations, not `fetch` calls |
-| `GET`  | `/auth/oauth/link/confirm?token=` | Attach a provider to an existing account from the emailed link |
+| `GET`  | `/auth/oauth/{provider}?link=` | The emailed link: starts the provider flow, and the callback attaches the provider to the account only when it returns the identity the link was sent for |
 
 ## Services
 
@@ -142,7 +142,7 @@ own (§ *When a factor is lost*, below).
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET`  | `/account/me` | The caller's session — what `/auth/me` was |
-| `POST` | `/account/me` + `X-Service-Method: changePassword` | Verify the current password, then replace it |
+| `POST` | `/account/me` + `X-Service-Method: changePassword` | Verify the current password, replace it, and sign out every other session |
 | `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
 | `DELETE` | `/sessions/{id}` | End one of them |
 | `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |

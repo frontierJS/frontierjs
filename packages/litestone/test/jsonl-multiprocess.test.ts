@@ -184,6 +184,42 @@ describe('the lock', () => {
     expect(rows.map((r: { body: string }) => r.body).sort()).toEqual(['first', 'second'])
   }, 60_000)
 
+  // The race test above is a sample: with the lock removed it stayed green about
+  // one run in four (`FJS-1837`). This one stages the window instead of waiting
+  // for it — a second process takes the lock and appends a line while holding
+  // it, which is exactly what a racing writer does between its size read and
+  // its write. A writer that does not wait lands BEFORE that line; one that
+  // reads its offset before taking the lock indexes the intruder's line.
+  test('a writer waits for it, and reads its offset only once it holds it', async () => {
+    const dir  = tmp()
+    const file = join(dir, 'trail.jsonl')
+    const db   = await createClient({ db: join(dir, 'main.db'), schema: SCHEMA(dir) })
+    const sys  = db.asSystem()
+    await sys.entry.create({ data: { actorId: 'seed', body: 'seed' } })   // the index exists
+
+    const holder = join(dir, 'hold.mjs')
+    writeFileSync(holder, `
+      import { openIndexDb } from ${JSON.stringify(join(HERE, '../src/drivers/jsonl-index.js'))}
+      import { appendFileSync, writeFileSync } from 'node:fs'
+      const db = openIndexDb(${JSON.stringify(indexPathFor(file))})
+      db.run('BEGIN IMMEDIATE')
+      writeFileSync(${JSON.stringify(join(dir, '.held'))}, '1')
+      Bun.sleepSync(600)
+      appendFileSync(${JSON.stringify(file)}, JSON.stringify({ id: 'intruder', actorId: 'intruder', body: 'x' }) + '\\n')
+      db.run('COMMIT')
+    `)
+    const child = Bun.spawn(['bun', holder])
+    while (!existsSync(join(dir, '.held'))) await new Promise(r => setTimeout(r, 5))
+
+    await sys.entry.create({ data: { actorId: 'mine', body: 'mine' } })
+    expect(await child.exited).toBe(0)
+
+    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l).actorId)
+    expect(lines).toEqual(['seed', 'intruder', 'mine'])
+    const rows = await sys.entry.findMany({ where: { actorId: 'mine' } })
+    expect(rows.map((r: { actorId: string } | null) => r?.actorId)).toEqual(['mine'])
+  }, 30_000)
+
   test('it is re-entrant, so a caller already holding it is not a nested BEGIN', () => {
     const dir = tmp()
     const db  = openIndexDb(join(dir, 'lock.db'))

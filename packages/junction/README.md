@@ -496,6 +496,8 @@ app.ws('/chat/{roomId}', {
 })
 ```
 
+A frame sent the instant the socket opens waits until `open()` has settled, an async one included, and so does `close()`. Frames are not ordered among themselves: each `message()` starts when its frame arrives, so a handler that awaits I/O can see the next frame before the current one has finished.
+
 ### 5. Channels — real-time without polling
 
 ```typescript

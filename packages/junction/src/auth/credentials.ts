@@ -81,8 +81,9 @@ export function signedRequest(opts: SignedRequestOptions): CredentialVerifier {
  * verifiers in order, then the bearer token as the last entry. `REFUSE` is a
  * verifier that claimed the request and found it wrong, or threw — a broken key
  * lookup refused rather than skipped, since skipping reads as anonymous. A
- * bearer that throws propagates, because HTTP answers it anonymous and a socket
- * closes 4001 (`FJS-702`) and that is the transport's to choose.
+ * bearer that throws propagates and one that answers null returns null, because
+ * HTTP answers either anonymous and the app's socket closes 4001 on either
+ * (`FJS-702`, `FJS-1830`) — the transport's to choose, per route.
  *
  * `verifyApiKey` is asked here, after `verifySession` answers null: a provider
  * that routes keys from inside its own `verifySession` costs one repeated

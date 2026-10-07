@@ -58,7 +58,7 @@ where a screenshot misleads, and this is the one that did not.
 
 **Tone followed value, and that is a schema fact.** *New* was always success and
 *HIGH* always warning. A tone that is a function of the value is written to
-`tones.js` — the shape `example/web/src/status-tone.js` already has — rather than
+`tones.js` — the shape `example/web/src/lib/status-tone.js` already has — rather than
 into the component, because whether a value is good news belongs to the value.
 Where tone is fixed by POSITION instead (a card's first badge success, its second
 warning), the two are two props, and they turned out to be two enums: status and

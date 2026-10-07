@@ -1,5 +1,9 @@
 # Changes — @frontierjs/caravan
 
+## 2026-10-06 — `commitments.test.ts` pins a fire on a row the app cannot see (`FJS-1788`)
+
+A row policy hiding the order from the app's principal must fail the fire by name rather than count it fired; the gate test also asserts the missing `createApp({ system })` is named. The fix is junction's `fireCommitment`; no source change here.
+
 ## 2026-10-02 — `cron-dst.test.ts` gets a 30s timeout
 
 Each test steps a scheduler minute by minute across a day or more, 1–3s alone and past bun's 5s default when CI runs packages in parallel. Two timed out. `setDefaultTimeout(30_000)` at the top of the file; no source change.

@@ -217,6 +217,11 @@ model OauthFlow {
   /// Already checked against the app's allow-list when the flow started, so
   /// what is stored here is known good and the way back decides nothing.
   returnTo    String?
+  /// The oauthLink invitation this flow is answering, when it was started from
+  /// the mailed link. The callback attaches only if the provider returns the
+  /// subject the invitation stored: the token proves the mailbox and the
+  /// subject proves the identity, and neither proves the other (FJS-D611).
+  invitation  String?  @guarded
 
   expiresAt   DateTime
   createdAt   DateTime @default(now())

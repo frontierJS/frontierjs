@@ -248,6 +248,65 @@ describe('GET /auth/oauth/{provider}/callback', () => {
     expect(String(noFlow.headers['location'])).toBe(String(noState.headers['location']))
   })
 
+  // ── the mailed oauthLink invitation ──
+  //
+  // The link is `/auth/oauth/{provider}?link=`, so a click runs the provider
+  // again and the callback attaches only the subject the invitation stored.
+
+  function stubProviderAs(sub: string, email: string) {
+    globalThis.fetch = (async (input: any) => {
+      const body = String(input).includes('token')
+        ? { access_token: 'at', expires_in: 3600 }
+        : { sub, email, email_verified: true, name: 'L' }
+      return new Response(JSON.stringify(body), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+  }
+
+  async function inviteFor(email: string, sub: string) {
+    const user = await h.sys.user.create({ data: { email, emailVerified: false } })
+    await h.sys.credential.create({ data: { userId: user.id, type: 'password', value: 'own-hash' } })
+    const out = await h.auth.oauthResolve('google', { providerId: sub, email, emailVerified: true } as any)
+    expect(out.outcome).toBe('proof-required')
+    const row = await h.sys.verification.findFirst({ where: { purpose: 'oauthLink', identifier: email } })
+    return { user, token: row.value as string }
+  }
+
+  async function finishLink(token: string, sub: string, email: string) {
+    const start = await request(app).get(`/auth/oauth/google?link=${token}`)
+    const state = new URL(String(start.headers['location'])).searchParams.get('state')!
+    stubProviderAs(sub, email)
+    return request(app)
+      .get(`/auth/oauth/google/callback?code=c&state=${state}`)
+      .set('cookie', `${OAUTH_STATE_COOKIE}=${state}`)
+  }
+
+  test('a link click that returns the invited subject attaches it and signs in', async () => {
+    const email = 'route-link@shop.test'
+    const { user, token } = await inviteFor(email, 'rl-1')
+
+    const res = await finishLink(token, 'rl-1', email)
+
+    expect(String(res.headers['location'])).toBe('/')
+    expect(cookieOf(res)).toContain('session=')
+    const creds = await h.sys.credential.findMany({ where: { userId: user.id } })
+    expect(creds.some((c: any) => c.type === 'oauth:google' && c.value === 'rl-1')).toBe(true)
+  })
+
+  test("a link click that returns another subject attaches nothing and signs nobody in (FJS-1819)", async () => {
+    const email = 'route-hijack@shop.test'
+    const { user, token } = await inviteFor(email, 'attacker-sub')
+
+    const res = await finishLink(token, 'holder-sub', email)
+
+    expect(String(res.headers['location'])).toBe('/sign-in?oauth_error=state')
+    expect(cookieOf(res)).not.toContain('session=')
+    const creds = await h.sys.credential.findMany({ where: { userId: user.id } })
+    expect(creds.some((c: any) => c.type === 'password')).toBe(true)
+    expect(creds.some((c: any) => String(c.type).startsWith('oauth:'))).toBe(false)
+  })
+
   test('the state cookie is cleared on the way through', async () => {
     const res = await request(app).get('/auth/oauth/google/callback?error=access_denied')
     const cookie = cookieOf(res)

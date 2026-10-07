@@ -1,4 +1,4 @@
-// web/src/custom-fields.js — what a shop's own fields look like to a form.
+// web/src/lib/custom-fields.js — what a shop's own fields look like to a form.
 //
 // The UI half of `api/src/domain/shop/custom-fields.ts`, and the only place in
 // the browser that knows a `CustomField` row can become a control.

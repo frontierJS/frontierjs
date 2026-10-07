@@ -1,4 +1,4 @@
-// web/src/money.js — what a price says, and in which currency.
+// web/src/lib/money.js — what a price says, and in which currency.
 //
 // One owner, because there were five. `` `£${n.toFixed(2)}` `` was written out
 // in the products list, the product page, the basket, the home page's Banked
@@ -24,7 +24,7 @@
 // half of it here would make this example teach the wrong thing.
 
 import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
-import { prefs }                  from './prefs.js'
+import { prefs }                  from '../stores/prefs.js'
 
 /** What the seed's numbers ARE. Every `price` and every `total` in the
  *  database is this currency; nothing stores a currency per row.

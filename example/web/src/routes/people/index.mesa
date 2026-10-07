@@ -29,12 +29,11 @@ title: People
   // about one person.
   import Employee, { employees } from '@/resources/Employee.mesa'
   import { payWindows } from '@/resources/PayWindow.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
+  import { prefs } from '@/stores/prefs.js'
   import { day, today } from '@/datetime.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

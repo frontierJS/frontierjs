@@ -60,13 +60,17 @@ describe('a provider account we have seen', () => {
 
   test('the same subject at a DIFFERENT provider is a different person', async () => {
     // Two providers can issue the same subject string. The key is the pair.
-    await h.auth.oauthResolve('google', id({ providerId: 'collide', email: 'g@shop.test' }))
-    const other = await h.auth.oauthResolve('okta', id({ providerId: 'collide', email: 'o@shop.test' }))
-    expect(other.outcome).toBe('signed-in')
+    // Both trusted, so neither stops at a mailed proof.
+    const twin = await makeAuth({ oauthProviders: { google: trusted, apple: defineProvider('apple', 'google', { clientId: 'c', clientSecret: 's' }) } })
+    try {
+      await twin.auth.oauthResolve('google', id({ providerId: 'collide', email: 'g@shop.test' }))
+      const other = await twin.auth.oauthResolve('apple', id({ providerId: 'collide', email: 'o@shop.test' }))
+      expect(other.outcome).toBe('signed-in')
 
-    const g = await userByEmail('g@shop.test')
-    const o = await userByEmail('o@shop.test')
-    expect(g.id).not.toBe(o.id)
+      const g = await twin.sys.user.findFirst({ where: { email: 'g@shop.test' } })
+      const o = await twin.sys.user.findFirst({ where: { email: 'o@shop.test' } })
+      expect(g.id).not.toBe(o.id)
+    } finally { twin.cleanup() }
   })
 
   test('a session is issued and no third-party token is kept', async () => {
@@ -111,11 +115,19 @@ describe('an address nobody holds', () => {
     expect((await userByEmail('verified@shop.test')).emailVerified).toBe(true)
   })
 
-  test('an UNTRUSTED provider does not, however loudly it claims', async () => {
+  test('an UNTRUSTED provider creates nothing, however loudly it claims', async () => {
     // nOAuth: the issuer is whatever the app pointed `oidc` at, and an attacker
-    // who can stand one up can assert anything.
-    await h.auth.oauthResolve('okta', id({ providerId: 'u-1', email: 'untrusted@shop.test', emailVerified: true }))
-    expect((await userByEmail('untrusted@shop.test')).emailVerified).toBe(false)
+    // who can stand one up can assert anything. A row on its word squats the
+    // address (FJS-1820), so the address is mailed instead.
+    const out = await h.auth.oauthResolve('okta', id({ providerId: 'u-1', email: 'untrusted@shop.test', emailVerified: true }))
+    expect(out.outcome).toBe('proof-required')
+    expect(await userByEmail('untrusted@shop.test')).toBeNull()
+  })
+
+  test('a trusted provider that did not verify creates nothing either', async () => {
+    const out = await h.auth.oauthResolve('google', id({ providerId: 'u-2', email: 'unverified@shop.test', emailVerified: false }))
+    expect(out.outcome).toBe('proof-required')
+    expect(await userByEmail('unverified@shop.test')).toBeNull()
   })
 
   test("onRegister can refuse, and nothing is written when it does", async () => {

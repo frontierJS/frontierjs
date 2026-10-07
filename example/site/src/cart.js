@@ -14,9 +14,9 @@
 // re-export flips direction — one line, in one place, either way.
 import { createJunctionClient } from '@frontierjs/junction/client'
 import { clientOptions }        from './api.js'
-import { useCartClient }        from '../../web/src/cart.js'
+import { useCartClient }        from '../../web/src/stores/cart.js'
 
-export * from '../../web/src/cart.js'
+export * from '../../web/src/stores/cart.js'
 
 /**
  * The storefront's ONE Junction client, built on first mount.

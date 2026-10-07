@@ -88,9 +88,10 @@ export interface LitestoneAuthOptions {
   // and nothing else to tell them apart.
   totpIssuer?: string
 
-  // Called immediately after a password reset token is created.
-  // The token is the raw value — use it to build a reset link.
-  // Called in the same stack as token creation so errors are catchable.
+  // Called after a password reset token is created, which is AFTER
+  // `requestPasswordReset` has answered: an awaited send would put a known
+  // address on the clock (FJS-1832). The token is the raw value — use it to
+  // build a reset link. A throw is logged, never returned to the caller.
   //
   // Example:
   //   onPasswordResetRequested: async (email, token) => {
@@ -295,7 +296,10 @@ export interface LitestoneAuthOptions {
    * An OAuth identity wants to attach to an account that has NOT proved it owns
    * this address, so the address is being asked to prove itself. Send the link.
    *
-   * The token is the raw value; build a URL to `/auth/oauth/link/confirm`.
+   * The token is the raw value; build a URL to `/auth/oauth/{provider}?link=`.
+   * The click runs the provider sign-in again, and the identity is attached
+   * only when the provider returns the one that asked — so the mail proves the
+   * mailbox and the provider proves the identity.
    *
    * REQUIRED for the recovery path to exist at all. Without it the rule still
    * holds — the identity is refused and nothing unsafe happens — but there is
@@ -307,7 +311,7 @@ export interface LitestoneAuthOptions {
    *     await mailer.send({
    *       to:      email,
    *       subject: `Connect ${provider} to your account`,
-   *       html:    `<a href="${APP_URL}/auth/oauth/link/confirm?token=${token}">Connect</a>`,
+   *       html:    `<a href="${APP_URL}/auth/oauth/${provider}?link=${token}">Connect</a>`,
    *     })
    *   }
    */
@@ -490,11 +494,10 @@ export interface OAuthRouteOptions {
    * deliberately coarse, and never the provider's own message, which is
    * attacker-influenced text headed for a screen.
    *
-   * `link_required` is the one that says something specific: an account holds
-   * this address and has not proved it owns it. That discloses the address
-   * exists — which `POST /auth/register` already discloses by answering 409,
-   * so hiding it here would buy nothing and leave somebody who cannot sign in
-   * with no idea why.
+   * `link_required` is the one that says something specific: nobody has
+   * proved this address yet, and a link to prove it was mailed. It is the same
+   * answer whether or not an account holds the address, so it discloses
+   * nothing `POST /auth/register` does not.
    */
   errorRedirect?: string
 

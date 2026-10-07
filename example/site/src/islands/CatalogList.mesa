@@ -115,7 +115,7 @@
       ? local(needle)
       : hits.map(slug => bySlug.get(slug) ?? { slug, name: slug, skus: [] })
 
-  // The shop's BASE currency, always. `web/src/money.js` converts against a
+  // The shop's BASE currency, always. `web/src/lib/money.js` converts against a
   // reader's saved preference; a prerendered page has no reader and no storage,
   // and what belongs in a file a CDN serves to a stranger is the currency the
   // shop keeps its books in.

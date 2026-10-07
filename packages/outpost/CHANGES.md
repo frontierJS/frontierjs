@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-06 — a signed command cannot replay while its timestamp is fresh (`FJS-1833`)
+
+The nonce memory forgot a nonce after one tolerance (300s), but a timestamp is accepted up to 300s either side of this clock. A request signed by a sender running 300s ahead was still fresh 599s after it arrived, so once its nonce was swept the same `/exec` ran again. The memory now holds a nonce for twice the tolerance. `audit-signature.test.js` replays at T+599 and is a plain test now; it goes red with the memory at one tolerance. `bun run test` 129/129, `verify:docker` green.
+
 ## 2026-10-06 — the Fable audit's repro tests, under `test/audit-*`
 
 `audit-signature.test.js` and `audit-static.test.js` come from the Fable audit of 2026-10-05. The cases the listeners survived are plain tests. Six cases are still open and are `test.failing` naming their rows: `FJS-1833` nonce replay, `1834` one app served under another's hostname, `1856` URIError, `1857` `timeout_s: 0`, and `1858` unsigned `x-service-method`. The suite passes 129/129.

@@ -1,4 +1,4 @@
-// web/src/cart.js — the basket, browser side.
+// web/src/stores/cart.js — the basket, browser side.
 //
 // Not a Resource, and the difference is the point. A Resource is a model with a
 // service in front of it: find it, filter it, page it, edit a row. A basket is

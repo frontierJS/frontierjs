@@ -639,7 +639,7 @@
    * .spinner (0,1,0) beats * (0,0,0).
    */
   .spinner,
-  .btn.loading::after {
+  .btn[aria-busy="true"]::after {
     animation-duration:        1.6s !important;
     animation-iteration-count: infinite !important;
   }

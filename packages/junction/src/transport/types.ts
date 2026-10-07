@@ -257,6 +257,9 @@ export interface WsData {
   user:     SessionContext | null
   // The credential read at upgrade, held only until _wsOpen verifies it.
   credential?: string | null
+  // _wsOpen in progress; false when it refused the socket. Bun delivers frames
+  // and the close while it awaits, and each waits on this (`FJS-1828`).
+  opened?:  Promise<boolean>
   // Reference to the matched handler set — set at upgrade time so
   // _wsOpen/_wsMessage/_wsClose don't need to re-run route lookup.
   handlers: WsHandlerSet
@@ -299,11 +302,20 @@ export interface WsContext {
   $ws: unknown
 }
 
+/**
+ * Marks the socket that reads the app's sessions: there a present credential
+ * the provider does not recognize closes 4001, where a raw route is handed it
+ * anonymous, since a carrier's own token may ride `Authorization` and is not
+ * the app's to refuse (`FJS-1830`).
+ */
+export const SESSION_SOCKET: unique symbol = Symbol.for('junction.ws.sessionSocket') as never
+
 // Handler set registered via app.ws() / http.ws()
 export interface WsHandlerSet {
   open?:    (ctx: WsContext) => void | Promise<void>
   message?: (ctx: WsContext, msg: string | Buffer) => void | Promise<void>
   close?:   (ctx: WsContext, code: number, reason: string) => void | Promise<void>
   drain?:   (ctx: WsContext) => void | Promise<void>
+  [SESSION_SOCKET]?: true
 }
 

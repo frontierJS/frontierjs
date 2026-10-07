@@ -1011,10 +1011,26 @@ export function createLitestoneAuth(
 
     async oauthBegin(
       providerName: string,
-      args: { redirectUri: string; returnTo?: string | null; extra?: Record<string, string> },
+      args: {
+        redirectUri: string
+        returnTo?:   string | null
+        extra?:      Record<string, string>
+        link?:       string | null
+      },
     ): Promise<{ authorizeUrl: string; state: string }> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
+
+      // Looked up and NOT spent: a mail scanner prefetching the link lands
+      // here, and all it may do is reach the provider's sign-in page.
+      if (args.link) {
+        const pending = await sys.verification.findFirst({
+          where: { purpose: 'oauthLink', value: args.link },
+        })
+        if (!pending || pending.provider !== providerName) {
+          throw new InvalidTokenError('Invalid or expired link token')
+        }
+      }
 
       // Checked HERE rather than at the callback, so what gets written down is
       // already known good and the way back has nothing left to decide. A
@@ -1032,6 +1048,7 @@ export function createLitestoneAuth(
           provider:  providerName,
           verifier,
           returnTo,
+          invitation: args.link ?? null,
           expiresAt: expiresAt(oauthFlowTtl, sys.$now()),
         }
       })
@@ -1048,7 +1065,7 @@ export function createLitestoneAuth(
     async oauthCallback(
       providerName: string,
       args: { code: string; state: string; cookieState: string | null; redirectUri: string },
-    ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null }> {
+    ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null; link: string | null }> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
 
@@ -1088,7 +1105,7 @@ export function createLitestoneAuth(
       })
       const identity = await fetchIdentity(provider, tokens)
 
-      return { identity, tokens, returnTo: flow.returnTo ?? null }
+      return { identity, tokens, returnTo: flow.returnTo ?? null, link: flow.invitation ?? null }
     },
 
     // ── OAuth: who is this identity? ─────────────────────────────────────
@@ -1150,24 +1167,56 @@ export function createLitestoneAuth(
       // second account for a person who already has one.
       const email    = identity.email.toLowerCase()
       const existing = await sys.user.findFirst({ where: { email } })
+      const proven   = provider.trustEmail && identity.emailVerified
 
-      // ── 3. Nobody holds it → create ───────────────────────────────────
+      // The one answer to an address nobody proved, whether or not a row
+      // holds it: mail the address, and act on the click once the provider
+      // returns the same subject (`confirmOAuthLink`, FJS-D611/FJS-D612).
+      const invite = async (): Promise<OAuthResolution> => {
+        // One pending invitation per address: a fresh attempt replaces the last
+        // rather than leaving a drawer of live tokens behind it.
+        await sys.verification.deleteMany({ where: { purpose: 'oauthLink', identifier: email }, ...PURGE })
+
+        const token = generateToken()
+        await sys.verification.create({
+          data: {
+            purpose:    'oauthLink',
+            identifier: email,
+            value:      token,
+            provider:   providerName,
+            subject:    identity.providerId,
+            expiresAt:  expiresAt(oauthLinkTtl, sys.$now()),
+          }
+        })
+
+        // Still in memory — after this it is @guarded and nothing reads it back.
+        await onOAuthLinkRequested?.({ email, token, provider: providerName })
+
+        return { outcome: 'proof-required', email }
+      }
+
+      // ── 3. Nobody holds it → create, if the address is proven ─────────
+      //
+      // A row made on an unproven claim squats the address: its holder then
+      // gets 409 on register and the FJS-D265 refusal on reset, and a verify
+      // mail turns the squat into a verified account under their name.
       if (!existing) {
+        if (!proven) return invite()
+
         // The app's own gate, already awaited and already able to refuse — a
         // closed beta, a blocked domain. Before the row, per the ordering rule.
         if (onRegister) await onRegister({ email, name: identity.name })
 
-        const proven = provider.trustEmail && identity.emailVerified
-        const made   = await registerUser(async tx => {
+        const made = await registerUser(async tx => {
           const row = await tx.user.create({
-            data: { email, name: identity.name ?? null, emailVerified: proven },
+            data: { email, name: identity.name ?? null, emailVerified: true },
           })
           await tx.credential.create({ data: { userId: row.id, type, value: identity.providerId } })
           return row
         })
         await audit('oauth.registered', {
           model: 'User', records: [made.id], actorId: made.id,
-          meta:  { provider: providerName, emailVerified: proven },
+          meta:  { provider: providerName, emailVerified: true },
         })
         return { outcome: 'signed-in', ...(await issueSession(made, 'session', { provider: providerName })) }
       }
@@ -1192,26 +1241,7 @@ export function createLitestoneAuth(
             accountVerified:  existing.emailVerified === true,
           },
         })
-        // One pending invitation per address: a fresh attempt replaces the last
-        // rather than leaving a drawer of live tokens behind it.
-        await sys.verification.deleteMany({ where: { purpose: 'oauthLink', identifier: email }, ...PURGE })
-
-        const token = generateToken()
-        await sys.verification.create({
-          data: {
-            purpose:    'oauthLink',
-            identifier: email,
-            value:      token,
-            provider:   providerName,
-            subject:    identity.providerId,
-            expiresAt:  expiresAt(oauthLinkTtl, sys.$now()),
-          }
-        })
-
-        // Still in memory — after this it is @guarded and nothing reads it back.
-        await onOAuthLinkRequested?.({ email, token, provider: providerName })
-
-        return { outcome: 'proof-required', email }
+        return invite()
       }
 
       await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId } })
@@ -1222,11 +1252,16 @@ export function createLitestoneAuth(
       return { outcome: 'signed-in', ...(await issueSession(existing, 'session', { provider: providerName })) }
     },
 
-    // ── OAuth: prove the address, then attach ────────────────────────────
+    // ── OAuth: prove the address AND the identity, then attach ───────────
     //
     // The way out of `proof-required`. The token went to the address, so
-    // presenting it proves control of it — the same proof a password reset is,
-    // and the only kind this package can perform without a provider it trusts.
+    // presenting it proves control of the mailbox. It does not prove the
+    // presenter holds the identity waiting on the invitation: branch 4 mints
+    // one for whoever arrives with an address, so the waiting subject may be an
+    // attacker's, and a token-only confirm attached it on the holder's click or
+    // a mail scanner's prefetch. So it is reached only from the callback of a
+    // flow the mailed link started, and attaches only when the provider
+    // returned the subject the invitation stored (FJS-D611).
     //
     // What it does beyond attaching is the other half of the CVE fix. The
     // account being claimed was NEVER VERIFIED, which means nothing already on
@@ -1238,10 +1273,15 @@ export function createLitestoneAuth(
     //
     // The cost is real and is the right side of the trade: somebody who made
     // their OWN unverified account and then linked loses their own password
-    // too, because an unverified row cannot tell the two apart. The way back is
-    // a password reset, which proves the same address.
+    // too, because an unverified row cannot tell the two apart. They keep the
+    // provider as their way in, and no way to a password: a reset refuses an
+    // account holding an OAuth credential (FJS-D265).
 
-    async confirmOAuthLink(token: string): Promise<{ token: string; user: SessionContext }> {
+    async confirmOAuthLink(
+      token: string,
+      providerName: string,
+      identity: OAuthIdentity,
+    ): Promise<{ token: string; user: SessionContext }> {
       const pending = await sys.verification.findFirst({
         where: {
           purpose: 'oauthLink',
@@ -1250,11 +1290,37 @@ export function createLitestoneAuth(
       })
       if (!pending) throw new InvalidTokenError('Invalid or expired link token')
 
-      // Single use, claimed before anything it authorizes.
+      // Single use, claimed before anything it authorizes — a mismatch spends
+      // it too, since the next attempt mints a fresh one.
       await sys.verification.delete({ where: { id: pending.id } })
 
+      if (pending.provider !== providerName || pending.subject !== identity?.providerId) {
+        await audit('oauth.link.refused', {
+          meta: { provider: providerName, reason: 'subject-mismatch' },
+        })
+        throw new OAuthError('The identity returned is not the one this link was sent for')
+      }
+
       const user = await sys.user.findFirst({ where: { email: pending.identifier } })
-      if (!user) throw new UserNotFoundError()
+
+      // Branch 3 on an unproven address: the account is made here, now that the
+      // mailbox and the identity have both answered.
+      if (!user) {
+        if (onRegister) await onRegister({ email: pending.identifier, name: identity.name })
+
+        const made = await registerUser(async tx => {
+          const row = await tx.user.create({
+            data: { email: pending.identifier, name: identity.name ?? null, emailVerified: true },
+          })
+          await tx.credential.create({ data: { userId: row.id, type: `oauth:${pending.provider}`, value: pending.subject } })
+          return row
+        })
+        await audit('oauth.registered', {
+          model: 'User', records: [made.id], actorId: made.id,
+          meta:  { provider: pending.provider, emailVerified: true, viaProof: true },
+        })
+        return issueSession(made, 'session', { provider: pending.provider })
+      }
 
       const wasUnverified = user.emailVerified !== true
 
@@ -1426,29 +1492,43 @@ export function createLitestoneAuth(
     },
 
     // ── requestPasswordReset ─────────────────────────────────────────────
-    // Always resolves — never reveals whether the email is registered.
+    // Always resolves — never reveals whether the email is registered, and
+    // that includes the clock. Nothing that tells the two apart runs before it
+    // answers: the lookup, the writes and the app's mail send all run on a
+    // later task, because awaiting them made a known address 20ms slower than
+    // an unknown one and the form an enumeration oracle (FJS-1832) — the hole
+    // `login()` pays a bcrypt to close. The lookup goes too: a found row costs
+    // tens of microseconds a miss does not. A microtask would not do, since it
+    // drains before the caller resumes. A failure is logged and never thrown,
+    // because a throw only a known address can produce is the same oracle.
 
     async requestPasswordReset(email: string): Promise<void> {
-      const user = await sys.user.findFirst({ where: { email } })
-      if (!user) return   // silent — don't reveal email existence
+      setTimeout(async () => {
+        try {
+          const user = await sys.user.findFirst({ where: { email } })
+          if (!user) return
 
-      await sys.verification.deleteMany({
-        where: { purpose: 'passwordReset', identifier: email }, ...PURGE,
-      })
+          await sys.verification.deleteMany({
+            where: { purpose: 'passwordReset', identifier: email }, ...PURGE,
+          })
 
-      const token = generateToken()
+          const token = generateToken()
 
-      await sys.verification.create({
-        data: {
-          purpose:    'passwordReset',
-          identifier: email,
-          value:      token,
-          expiresAt:  expiresAt(passwordResetTtl, sys.$now()),
+          await sys.verification.create({
+            data: {
+              purpose:    'passwordReset',
+              identifier: email,
+              value:      token,
+              expiresAt:  expiresAt(passwordResetTtl, sys.$now()),
+            }
+          })
+
+          // Token is still in memory — pass to callback before it becomes @guarded
+          await onPasswordResetRequested?.(email, token)
+        } catch (err) {
+          console.warn('[auth] password reset request failed after answering:', (err as Error)?.message)
         }
-      })
-
-      // Token is still in memory — pass to callback before it becomes @guarded
-      await onPasswordResetRequested?.(email, token)
+      }, 0)
     },
 
     // ── confirmPasswordReset ─────────────────────────────────────────────
@@ -1664,7 +1744,10 @@ export function createLitestoneAuth(
     // service: this is the one call that can turn a stolen session into a
     // stolen account, and the check belongs beside the hash it compares.
 
-    async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    async changePassword(
+      userId: string, currentPassword: string, newPassword: string,
+      opts?: { exceptSessionId?: string },
+    ): Promise<void> {
       const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
       // Same refusal for "no password set" as for "wrong password". An account
       // with only an OAuth credential is a fact about that account, and this is
@@ -1677,8 +1760,16 @@ export function createLitestoneAuth(
         data:  { value: await hashPassword(newPassword) },
       })
 
+      // A change is what a person does against a session somebody else holds,
+      // so every other one ends here, as a reset ends them all. An API key
+      // has no session to keep, and keeps none.
+      const where: Record<string, unknown> = { userId }
+      if (opts?.exceptSessionId) where.id = { not: opts.exceptSessionId }
+      const { count } = await sys.session.deleteMany({ where, ...PURGE })
+
       await credentialChanged('password.changed', userId, {
         model: 'Credential', records: [String(cred.id)], actorId: userId, actorType: 'user',
+        meta:  { sessionsRevoked: count },
       })
     },
 

@@ -575,6 +575,7 @@ is.
 ## See also
 
 `run-intent-recognizer-1.md` (sixty synthetic requests, resolved by hand) ·
+`in-app-guide.md` (the `you can do this` verdict served live, against the surface) ·
 `oracle-reasoning.md` (the birth moment, and rules 1–3 used throughout) ·
 `fli app:atlas` (`FJS-D240`, the API-realm index) · `lexicon.md` (the string catalog,
 a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot

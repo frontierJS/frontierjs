@@ -275,9 +275,11 @@ my-app/
       junction.config.js
     src/
       app.ts
-      core/                  ← env, db client, auth, hooks
+      core/                  ← setup of what the framework ships: env, db, auth, gate,
+                               channels, mailer, conduit targets, the claim resolver
       services/              ← *.service.ts, autoloaded at boot
-      domain/                ← logic spanning models; a service calls it with the caller's db
+      plugins/               ← plugins the app wrote; app.ts installs each, in order
+      domain/<area>/         ← logic spanning models; a service calls it with the caller's db
     test/
 
   web/                       ← UI realm — Sierra + Mesa (the Vite root)
@@ -292,7 +294,9 @@ my-app/
       App.mesa
       routes/                ← file-system routes (.mesa / .md)
       resources/             ← createResource() bindings to Junction services
-      components/
+      components/<area>/     ← every other .mesa file
+      lib/<area>/            ← every JS module that is not a route, resource or component
+      stores/                ← state only the browser has: a watchProxy a component watches
     test/
     dist/                    ← build output
 
@@ -363,6 +367,17 @@ my-app/
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
 `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` and `cli/` are peers; none contains another,
 and none contains `db/`.
+
+**Inside `src/`, a file goes in the folder named for its kind, and an area is a
+subfolder of that** (`FJS-D625`): `domain/scheduling/`, `components/reports/`,
+`lib/search/`, never a `reports/` folder holding a route, a job and a component.
+A loader finds a file by its kind, so a file in a feature folder is invisible to
+it. In a folder a loader reads (`services/`, `jobs/`, `notifications/`), a file
+without the loaded suffix is a private helper of the files beside it. Once
+another folder imports it, it is domain logic and moves to `domain/`. A file that
+two surfaces run belongs to the one that runs it, and the other gets its output
+through a service (`FJS-D627`). A cache of server reads is not a store: it
+belongs to the Resource.
 
 **Which surfaces an app has is the app's business.** `fli new --template api-only`
 leaves out `web/`; `--template site-only`, `--template widgets-only` and `--template

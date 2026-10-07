@@ -147,7 +147,7 @@ README's *Verified* section — not a claim.
   catalog and the API's own email bodies. It is `fromMinor` and then
   `formatMoney` — never `/ 100`, which is right for the dollar and wrong for
   the yen. The toggle in Settings converts against a fixed table stated in
-  `web/src/money.js`; `verify:ui` asserts the NUMBER moved and not only the
+  `web/src/lib/money.js`; `verify:ui` asserts the NUMBER moved and not only the
   symbol, because a toggle that changed the glyph alone would show one price as
   two different amounts.
 - **A customer can be taken off the books and their orders cannot.**
@@ -301,8 +301,8 @@ example/
     │   ├── preview.mjs     ← serves dist/ with the dev server's proxies
     │   └── verify-build.mjs
     └── src/
-        ├── prefs.js              ← browser preferences; the only non-model state
-        ├── money.js              ← BASE, the display currency, and the one
+        ├── stores/prefs.js       ← browser preferences; the only non-model state
+        ├── lib/money.js          ← BASE, the display currency, and the one
         │                           `fromMinor` this surface performs
         ├── resources/Order.mesa  ← .mesa, invariants 18 + 19
         └── routes/               ← index, orders/{index,create,[id]}, products,

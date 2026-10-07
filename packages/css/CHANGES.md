@@ -1,6 +1,10 @@
 # Changes — @frontierjs/css
 
 
+## 2026-10-07 — `aria-busy="true"` draws the button spinner; `.loading` is gone
+
+A busy button took the attribute and a class: `aria-busy` announced it, `.loading` drew it, and either could be written without the other. The class without the attribute is a spinner a screen reader is never told about, and that is the half a sighted author cannot see is missing — fli's run page did exactly that. The spinner is now `.btn[aria-busy="true"]`, Pico's spelling, so the attribute that announces the state is the one that paints it, as `disabled` already was. Scoped to `.btn`, because `aria-busy` also marks a region of skeletons and a card, a form or a list row must draw nothing. `loading` leaves the modifier vocabulary; the guide's Bootstrap table states the spinner as Pico's idea rather than a concession. `components.spec.js` grades that a busy `.btn` spins, and that `.loading`, `aria-busy="false"` and a busy `.card` do not. 531 passing.
+
 ## 2026-10-06 — Band, Grid, `.bleed` and the align axis (`FJS-D620`, `FJS-D621`, `FJS-D622`)
 
 Four pieces a website page needed and an app had been writing by hand.

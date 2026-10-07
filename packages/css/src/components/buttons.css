@@ -147,18 +147,20 @@
  * have something to read. Draw the spinner with ::after so no extra
  * markup is needed.
  *
- *   <button class="btn primary loading" aria-busy="true" disabled>Save</button>
+ *   <button class="btn primary" aria-busy="true" disabled>Save</button>
  *
- * aria-busy is the part that actually communicates the state; the class
- * only draws it. Keep `disabled` so the control is genuinely inert —
- * pointer-events alone still allows keyboard activation.
+ * The attribute that announces the state is the one that draws it, so a
+ * spinner cannot be painted without being said. Scoped to .btn because
+ * aria-busy also marks a region of skeletons, which must draw nothing.
+ * Keep `disabled` so the control is genuinely inert — pointer-events alone
+ * still allows keyboard activation.
  */
-.btn.loading {
+.btn[aria-busy="true"] {
   position:       relative;
   color:          transparent;
   pointer-events: none;
 }
-.btn.loading::after {
+.btn[aria-busy="true"]::after {
   content:       "";
   position:      absolute;
   inset:         0;
@@ -173,7 +175,7 @@
 /* Outlined and link buttons draw their spinner in the tone, not on it —
    the same --btn-ink their label takes, so a spinner cannot be the one
    thing on the button drawn at 1.99:1. */
-.btn.loading:is(.outlined, .link)::after {
+.btn[aria-busy="true"]:is(.outlined, .link)::after {
   border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent);
   border-block-start-color: var(--btn-ink);
 }

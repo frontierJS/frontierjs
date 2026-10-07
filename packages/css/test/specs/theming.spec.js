@@ -162,7 +162,7 @@ test('theming: a heavy theme keeps the tab indicator above the strip it sits on'
 var GEOMETRY = [
   {
     name: 'the button spinner',
-    html: '<button class="btn loading">x</button>',
+    html: '<button class="btn" aria-busy="true">x</button>',
     read: function (n) { return getComputedStyle(n, '::after').borderTopWidth; },
     at: 2,
   },
@@ -339,7 +339,7 @@ function matchedDeclarations(node, prop, pseudo) {
     if (!sel) continue;
 
     /* A pseudo-element selector cannot be matched, so it is stripped and the
-       element is asked instead — `.btn.loading::after` is a claim about the
+       element is asked instead — `.btn[aria-busy="true"]::after` is a claim about the
        button, spelled as one about its pseudo. */
     var target = pseudo ? sel.split(pseudo)[0] : sel;
     if (pseudo && target === sel) continue;
@@ -471,7 +471,7 @@ test('theming: the spinner keeps a linear timing function', function () {
    * — only transitions are crushed — so the pseudo-element's computed style
    * is the real answer here.
    */
-  var node = themedBy('--motion-spin: 42ms', '<button class="btn loading">Save</button>');
+  var node = themedBy('--motion-spin: 42ms', '<button class="btn" aria-busy="true">Save</button>');
   var after = getComputedStyle(node, '::after');
 
   assert.equal(after.animationDuration, '0.042s', 'the spinner ignored --motion-spin');

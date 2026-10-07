@@ -292,4 +292,17 @@ describe('make:route --resource', () => {
   test('a detail route keyed by anything but [id] is refused, not written with an undefined id', () => {
     expect(route('orders/[slug]').error).toContain('[id]')
   })
+
+  // Sierra's scanner serves `routes/searchIndexes/` at /searchindexes/, so a
+  // two-word model's every New, Open and Back link landed on the 404 (`FJS-1821`).
+  test('a link names the URL the scanner serves its directory at, not the directory', () => {
+    const page = (path) => resourceRoutePage({ path, model: 'SearchIndex', service: 'searchIndexes' })
+    expect(page('searchIndexes').file).toBe('searchIndexes/index.mesa')
+    expect(page('searchIndexes').content).toContain(`href="/searchindexes/create/"`)
+    expect(page('searchIndexes/create').content).toContain(`href="/searchindexes/"`)
+    expect(page('Admin/searchIndexes/[id]').content).toContain(`href="/admin/searchindexes/"`)
+    for (const p of ['searchIndexes', 'searchIndexes/create', 'searchIndexes/[id]']) {
+      expect(page(p).content, p).not.toContain('/searchIndexes/')
+    }
+  })
 })

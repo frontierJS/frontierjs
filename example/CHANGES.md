@@ -1,5 +1,11 @@
 # Changes — example
 
+## 2026-10-07 — `web/src/` is laid out by kind (`FJS-1894`, `FJS-D625`)
+
+`cart.js` and `prefs.js` moved to `stores/`; `money.js`, `status-tone.js` and `custom-fields.js` to `lib/`; `MoneyCell.mesa` and `StatusPill.mesa` to `components/`. `datetime.js` and `displays.js` stay in the root: one is what `fli new` scaffolds, the other sits where `FJS-1892` will scaffold `controls.js`.
+
+`session.js` is gone. It re-exported `@frontierjs/sierra/junction` and nothing else, so every screen imports the session from there. The drives that sign in from inside the page import it through `web/test/lib/session.mjs`, which names the `/@fs` URL Vite serves for the package. A drive has to use that exact URL: any other spelling of the file loads a second module, so the drive signs in on a `session` the screens never read.
+
 ## 2026-10-06 — local `.grid` and `.band` move off the names `@frontierjs/css` now owns (`FJS-D621`, `FJS-D622`)
 
 web's variant table was `<table class="grid">`, and css's Grid would have made it `display: grid`; it is `.variants`. site's two padded stripes on the home page were `<div class="container stack band">` with a local padding rule, which is the Band term: each is now `<section class="band ghost">` around its container, the local rule is gone, and the padding is the Band's `--space-6xl`. `verify:ui` 35/35.

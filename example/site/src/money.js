@@ -1,7 +1,7 @@
 // site/src/money.js — what a price says on the storefront.
 //
 // The shop's BASE currency and nothing else, which is the whole difference from
-// `web/src/money.js`. That file converts against a fixed table and reads the
+// `web/src/lib/money.js`. That file converts against a fixed table and reads the
 // reader's saved preference out of localStorage; neither exists here. A
 // prerendered page is written once, at build time, with no reader and no
 // storage — and what belongs in a file a CDN serves to a stranger and to a

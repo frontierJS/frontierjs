@@ -110,3 +110,37 @@ describe('a generated page styles with the vocabulary, never a literal', () => {
     }, 30000)
   }
 })
+
+// Sierra's scanner serves a route directory's static segment lowercased, so a
+// two-word model's `searchIndexes/` is /searchindexes/ and every link a
+// generator wrote naming the directory as written was a 404 (`FJS-1821`).
+describe('a generated link names the URL its directory is served at', () => {
+  const SEARCH_SERVICE = { 'api/src/services/searchIndexes.service.ts': 'export default {}\n' }
+  const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }
+  const LINKS = /(?:href=\{?["'`]|goto\(["'`]|: ')(\/[^"'`{}]*)/g
+
+  const CASES = [
+    { cmd: 'make:scaffold',  arg: ['SearchIndex'], flag: { 'skip-schema': true }, files: SCHEMA,
+      wrote: ['web/src/routes/searchIndexes/index.mesa', 'web/src/routes/searchIndexes/create.mesa', 'web/src/routes/searchIndexes/[id].mesa'] },
+    { cmd: 'admin:generate', arg: [], flag: {}, files: { ...SCHEMA, ...SEARCH_SERVICE }, before: [['make:resource', ['SearchIndex'], {}]],
+      wrote: ['web/src/routes/admin/searchIndexes/index.mesa', 'web/src/routes/admin/searchIndexes/[id].mesa', 'web/src/routes/admin/_routes.js', 'web/src/routes/admin/_module.mesa'] },
+  ]
+  for (const c of CASES) {
+    test(`fli ${c.cmd} ${c.arg.join(' ')}`, async () => {
+      const root = makeApp(c.files)
+      try {
+        for (const [cmd, arg, flag] of c.before ?? []) await run(root, cmd, arg, flag)
+        await run(root, c.cmd, c.arg, c.flag)
+        const links = []
+        for (const file of c.wrote) {
+          const src = await Bun.file(join(root, file)).text()
+          links.push(...[...src.matchAll(LINKS)].map(m => m[1]))
+        }
+        expect(links.some(l => l.includes('/searchindexes/'))).toBe(true)
+        expect(links.filter(l => l !== l.toLowerCase())).toEqual([])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+})

@@ -18,10 +18,10 @@
 //     now "OAuth-only". One click: takeover and lockout.
 //
 // A password-reset link gives the mailbox holder a credential THEY choose.
-// This link gives them a credential somebody else chose. Both rows assert the
-// attacker never ends up signed in as the victim; a fix that binds the confirm
-// to the browser that ran the flow, or that requires the holder's own
-// credential before attaching, passes either way.
+// This link gave them a credential somebody else chose. The click now starts
+// the provider flow, and `confirmOAuthLink` attaches only when the provider
+// returns the subject the invitation stored (FJS-D611) — the holder can return
+// their own identity and never the attacker's.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, signedIn, type Harness } from './harness.ts'
@@ -58,10 +58,14 @@ async function victimAccount(email: string, emailVerified: boolean) {
 const attackerIdentity = (email: string, sub: string) =>
   ({ providerId: sub, email, emailVerified: true, name: 'Mallory' } as any)
 
+// What the holder's click brings back from the provider: their own subject
+// there, never the attacker's.
+const holderIdentity = (email: string) =>
+  ({ providerId: `holder-own-${email}`, email, emailVerified: true, name: 'Holder' } as any)
+
 describe('an oauthLink invitation the address holder did not start', () => {
 
-  // FJS-1819: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a VERIFIED account: clicking does not hand the attacker a way in', async () => {
+  test('a VERIFIED account: clicking does not hand the attacker a way in', async () => {
     const email  = 'holder-v@shop.test'
     const victim = await victimAccount(email, true)
 
@@ -69,23 +73,22 @@ describe('an oauthLink invitation the address holder did not start', () => {
     const out = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-v'))
     expect(out.outcome).toBe('proof-required')
 
-    // The holder clicks the mail, in their own browser, with no part in the flow.
-    await h.auth.confirmOAuthLink(lastToken()).catch(() => null)
+    // The holder clicks the mail and signs in at the provider as themselves.
+    await h.auth.confirmOAuthLink(lastToken(), 'okta', holderIdentity(email)).catch(() => null)
 
     // The attacker comes back through their provider.
     const again = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-v'))
     expect(again.outcome === 'signed-in' && again.user.userId === victim.id).toBe(false)
   })
 
-  // FJS-1819: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an UNVERIFIED account: clicking neither admits the attacker nor evicts the holder', async () => {
+  test('an UNVERIFIED account: clicking neither admits the attacker nor evicts the holder', async () => {
     const email  = 'holder-u@shop.test'
     const victim = await victimAccount(email, false)
 
     const out = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-u'))
     expect(out.outcome).toBe('proof-required')
 
-    await h.auth.confirmOAuthLink(lastToken()).catch(() => null)
+    await h.auth.confirmOAuthLink(lastToken(), 'okta', holderIdentity(email)).catch(() => null)
 
     const again = await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-u'))
     expect(again.outcome === 'signed-in' && again.user.userId === victim.id).toBe(false)
@@ -96,7 +99,7 @@ describe('an oauthLink invitation the address holder did not start', () => {
       signedIn(await h.auth.login(email, 'victim-pass'))
       holderIn = true
     } catch {
-      await h.auth.requestPasswordReset!(email)
+      await h.requestReset(email)
       await h.auth.confirmPasswordReset!(h.resetToken(), 'victim-pass-2')
       signedIn(await h.auth.login(email, 'victim-pass-2'))
       holderIn = true
@@ -114,10 +117,11 @@ describe('an oauthLink invitation the address holder did not start', () => {
 
     await h.auth.oauthResolve('okta', attackerIdentity(email, 'mallory-sub-dup'))
     const invite = lastToken()
-    // The same subject, meanwhile, makes its own account.
+    // The same subject, meanwhile, makes its own account on a mailbox it holds.
     await h.auth.oauthResolve('okta', attackerIdentity('mallory@evil.test', 'mallory-sub-dup'))
+    await h.auth.confirmOAuthLink(lastToken(), 'okta', attackerIdentity('mallory@evil.test', 'mallory-sub-dup'))
 
-    await h.auth.confirmOAuthLink(invite).catch(() => null)
+    await h.auth.confirmOAuthLink(invite, 'okta', attackerIdentity(email, 'mallory-sub-dup')).catch(() => null)
 
     const rows = await h.sys.credential.findMany({ where: { type: 'oauth:okta', value: 'mallory-sub-dup' } })
     expect(new Set(rows.map((r: any) => r.userId)).size).toBeLessThanOrEqual(1)

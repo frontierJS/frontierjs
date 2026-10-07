@@ -271,7 +271,6 @@ await check(
   { resource: RESOURCE, submitting: true },
   {
     'the submit button is busy':      has(/aria-busy="true"/),
-    'and drawn as loading':           has(/class="[^"]*\bloading\b/),
     'and disabled':                   has(/disabled/),
     // The cancel button has to stay live — you abandon a save while it runs.
     // The <form> is aria-busy too, so count buttons rather than occurrences.

@@ -46,7 +46,9 @@ export function createOutpostServer(config, {
 } = {}) {
 
   const TOLERANCE_S = 300
-  const seenNonce   = nonceMemory(TOLERANCE_S * 1_000)
+  // Twice the tolerance: a timestamp accepted at the limit ahead stays fresh for
+  // another full tolerance, and a nonce forgotten sooner replays (FJS-1833).
+  const seenNonce   = nonceMemory(2 * TOLERANCE_S * 1_000)
 
   const routes = {
     // snake_case in, camelCase inside. The bodies are basecamp's wire contract

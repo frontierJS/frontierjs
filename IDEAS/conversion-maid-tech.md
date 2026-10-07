@@ -207,6 +207,20 @@ in git.
 
 ---
 
+## The model is `Contact`, not `Client`
+
+*Added 2026-10-07; holds for ELA too (`conversion-ela.md`).*
+
+Oracle's catalog names the person a business keeps a record about `Contact`
+(`packages/oracle/src/catalog.js`), with kinds `customer`, `lead` and
+`prospect`, and no access to the app; a person who signs in is a `User`. The
+application already has that shape under another name: `clients`, `contacts` and
+`leads` are three services over ONE `Client` model (each imports
+`models/client.model.js`). The port's model is `Contact`, and the three services
+become its kinds rather than three nouns.
+
+---
+
 ## The decisions, in the order they unblock each other
 
 1. **Roles → capability grants.** Which capabilities exist, who holds them, and
@@ -317,7 +331,7 @@ The new repo's `CLAUDE.md` carries five lines and no more:
    catalog decides which `view`s exist; the settings split decides which models
    exist. The existing conversion predates all three, so it is a starting point
    rather than the Data realm done.
-2. **One thin slice before going wide.** One model — `Client` is the weight —
+2. **One thin slice before going wide.** One model — `Contact`, the application's `Client`, is the weight —
    through schema, service and one screen, deployed. That proves the scaffold,
    the tests and `fli deploy` against this app before 25 models and 42 services
    are built on an unproven pipeline. Then realm by realm.

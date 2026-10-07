@@ -1,11 +1,11 @@
-// AUDIT 1.1 (2026-10-05) — expected to FAIL on current code.
+// AUDIT 1.1 (2026-10-05), FJS-1832.
 //
 // `login()` pays a bcrypt on every refusal so that a stopwatch cannot tell a
 // registered address from an unknown one (FJS-063, `payPasswordCost`).
-// `requestPasswordReset()` (auth.ts ~1431) answers `{ ok: true }` either way —
-// and returns after ONE read for an unknown address, where a known one does a
-// deleteMany, a create and then AWAITS `onPasswordResetRequested`, which in any
-// real app is a mail send. The silence is in the body and not on the clock.
+// `requestPasswordReset()` answers the same either way, so it must also answer
+// in the same TIME: a known address that awaited a deleteMany, a create and
+// `onPasswordResetRequested` — in any real app a mail send — was readable off
+// the clock. Both branches now return before the lookup.
 //
 // Same measure as test/flows.test.ts's FJS-063 test: the MIN of several runs,
 // and a loose band — before a fix the ratio is far from 1.
@@ -34,8 +34,7 @@ describe('requestPasswordReset on the clock', () => {
   })
   afterAll(() => { mail.cleanup(); quiet.cleanup() })
 
-  // FJS-1832: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('with a mail callback: an unknown address answers in the time a known one does', async () => {
+  test('with a mail callback: an unknown address answers in the time a known one does', async () => {
     await mail.auth.createUser({ email: 'known@example.test', password: 'pw-1' })
     const known   = await floorOf(() => mail.auth.requestPasswordReset!('known@example.test'))
     const unknown = await floorOf(() => mail.auth.requestPasswordReset!('ghost@example.test'))
@@ -43,8 +42,7 @@ describe('requestPasswordReset on the clock', () => {
     expect(unknown).toBeGreaterThan(known * 0.5)
   })
 
-  // FJS-1832: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('with a no-op callback: the two database writes alone are still readable', async () => {
+  test('with a no-op callback: the two database writes alone are still readable', async () => {
     await quiet.auth.createUser({ email: 'known2@example.test', password: 'pw-1' })
     const known   = await floorOf(() => quiet.auth.requestPasswordReset!('known2@example.test'), 15)
     const unknown = await floorOf(() => quiet.auth.requestPasswordReset!('ghost2@example.test'), 15)

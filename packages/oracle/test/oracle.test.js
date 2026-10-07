@@ -97,6 +97,21 @@ describe('emit', () => {
     expect(text).toContain("@@allow('update', check(account, 'read'))")
   })
 
+  // A published shop is read by everybody; its orders are not.
+  test('a child of a public parent delegates to whoever may change it', () => {
+    const a = { entities: [
+      { name: 'Shop', rung: 'novel', why: 'probe', fields: [{ name: 'published', type: 'bool', required: true }], links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }], access: { public: ['read'], publicWhen: { published: true }, why: 'the storefront' } },
+      { name: 'Order', rung: 'novel', why: 'probe', links: [{ name: 'shop', to: 'Shop', required: true }, { name: 'buyer', to: 'User', actor: 'author', required: true }], access: { via: 'shop' } },
+      { name: 'OrderItem', rung: 'novel', why: 'probe', links: [{ name: 'order', to: 'Order', required: true }], access: { via: 'order' } },
+    ] }
+    const { text } = emit(a, { scaffold: SCAFFOLD })
+    expect(text).toMatch(/@@allow\('read', +buyerId == auth\(\)\.id \|\| check\(shop, 'update'\)\)/)
+    expect(text).toContain("@@allow('create', check(shop, 'read') && (buyerId == auth().id))")
+    expect(text).toMatch(/@@allow\('read', +check\(order\)\)/)
+    expect(text).not.toMatch(/check\(shop\)[^,]/)
+    expect(parses(text)).toBe(true)
+  })
+
   // A unique over an optional column is refused at parse: NULLs never compare
   // equal. Found by the base44 corpus (vaultwarden, an invite before sign-up).
   test('a membership whose person is optional keeps pending rows distinct', () => {
@@ -165,6 +180,31 @@ describe('emitted access, on a real client', () => {
       }
       // A draft job is nobody's but the company's; an open one is the careers page.
       expect(await env.actingAs(null).job.findMany({})).toEqual([])
+    } finally {
+      env.close()
+    }
+  })
+
+  // An open job is the careers page; its applications are still the company's.
+  // `check(job)` carried the job's public clause onto every child.
+  test('a published parent opens itself and none of its children', async () => {
+    const env = await createTestEnv({ schema: emit(hiring, { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const a = await sys.user.create({ data: { email: 'a@example.com' } })
+      const b = await sys.user.create({ data: { email: 'b@example.com' } })
+      const company = await sys.company.create({ data: { name: 'a co' } })
+      await sys.membership.create({ data: { companyId: company.id, userId: a.id } })
+      const job = await sys.job.create({ data: { title: 'Engineer', companyId: company.id, managerId: a.id } })
+      await sys.job.update({ where: { id: job.id }, data: { status: 'open' } })
+      const candidate = await sys.candidate.create({ data: { name: 'Ada', companyId: company.id } })
+      const application = await sys.application.create({ data: { jobId: job.id, candidateId: candidate.id } })
+
+      expect((await env.actingAs(b).job.findMany({})).map(j => j.id)).toEqual([job.id])
+      expect(await env.actingAs(b).application.findMany({})).toEqual([])
+      expect(await env.actingAs(b).scorecard.create({ data: { rating: 1, applicationId: application.id, interviewerId: b.id } }).then(() => 'created', () => 'refused')).toBe('refused')
+      expect(await env.actingAs(b).application.create({ data: { jobId: job.id, candidateId: candidate.id } }).then(() => 'created', () => 'refused')).toBe('refused')
+      expect((await env.actingAs(a).application.findMany({})).map(x => x.id)).toEqual([application.id])
     } finally {
       env.close()
     }

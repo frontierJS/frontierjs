@@ -46,6 +46,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { SESSION_MODULE } from './lib/session.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -181,7 +182,7 @@ const type = (sel, value) => evaluate(`
 `)
 
 const signInAs = (email) => evaluate(`
-  const { signOut, signIn, session } = await import('/src/session.js');
+  const { signOut, signIn, session } = await import(${JSON.stringify(SESSION_MODULE)});
   if (session.user) await signOut();
   await signIn(${JSON.stringify(email)}, 'correct-horse-battery');
   return true;
@@ -459,7 +460,7 @@ try {
   t('run.andItCompleted', await attr('[data-step="welcome"] [data-status]', 'data-status'), 'completed')
   t('run.theTriggerNamesTheCustomer', await until(`document.body.textContent.includes(${JSON.stringify(email)})`, 4000), true)
   t('run.itRanAsTheOwner', await evaluate(`
-    const { session } = await import('/src/session.js');
+    const { session } = await import(${JSON.stringify(SESSION_MODULE)});
     return document.body.textContent.includes(String(session.user.userId ?? session.user.id));
   `), true)
 

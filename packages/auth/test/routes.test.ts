@@ -206,7 +206,9 @@ describe('password reset routes', () => {
 
   test('confirm with a valid token is 200 and the new password works', async () => {
     await request(app).post('/auth/register').send({ email: email('prc'), password: 'pw-1' })
+    const minted = h.nextReset()
     await request(app).post('/auth/password-reset/request').send({ email: email('prc') })
+    await minted
 
     const res = await request(app).post('/auth/password-reset/confirm')
       .send({ token: h.resetToken(), password: 'pw-2' })

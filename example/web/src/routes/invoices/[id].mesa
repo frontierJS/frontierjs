@@ -28,10 +28,10 @@ title: Invoice
   // renewal has no session. The correction is a credit note beside the row.
   import { invoices } from '@/resources/Invoice.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
-  import { session } from '@/session.js'
+  import { session } from '@frontierjs/sierra/junction'
   import { day, span, today } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'

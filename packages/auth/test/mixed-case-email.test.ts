@@ -20,7 +20,7 @@ describe('an address with a capital letter', () => {
 
   test('asking for a reset reaches the person, and the reset signs them in', async () => {
     await h.auth.createUser({ email: 'Reset.Me@Example.test', password: 'pw-correct-1' })
-    await h.auth.requestPasswordReset!('Reset.Me@Example.test')
+    await h.requestReset('Reset.Me@Example.test')
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-new-2')
     expect(signedIn(await h.auth.login('RESET.ME@example.test', 'pw-new-2')).token).toBeTruthy()
   })

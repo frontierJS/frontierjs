@@ -332,7 +332,7 @@ test('layers: the reduced-motion spinner exception lives with its guard', functi
     if (text.indexOf('animation-duration') === -1 || text.indexOf('important') === -1) return;
 
     var href = ((rule.parentStyleSheet && rule.parentStyleSheet.href) || '').split('/').pop();
-    if (/\.spinner|\.loading/.test(rule.selectorText || '')) exceptionSheets.push(href);
+    if (/\.spinner|aria-busy/.test(rule.selectorText || '')) exceptionSheets.push(href);
     else guardSheets.push(href);
   });
 

@@ -1,4 +1,4 @@
-// web/src/prefs.js — the browser's own preferences.
+// web/src/stores/prefs.js — the browser's own preferences.
 //
 // A plain object watched with `$:`, the same shape `session.js` uses. It is
 // not a resource and not a model: nothing here is a fact about the shop, so

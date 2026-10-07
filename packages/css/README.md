@@ -301,9 +301,8 @@ result wants Uno's `text-sm` as the body class.
 **Frame** `app` `shell` `topbar` `sidebar` `screen` `pane` `view`
 &nbsp;&nbsp;— the application grid, with `sidebar-first` and `viewport` variants
 
-**Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `glass`, `link`,
-`loading`) · `pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` ·
-`icon`
+**Inline** `btn` (+ `square`, `outlined`, `ghost`, `raised`, `glass`, `link`) ·
+`pill` `badge` `link` `chip` `page` `tooltip` `avatar` `kbd` `icon`
 &nbsp;&nbsp;— one lineage, shared layout and auto-contrast
 
 **Surfaces** `card` `tile` `alert` `toast` `dialog` `popover` (+
@@ -335,7 +334,7 @@ never a class
 **Syntax highlighting** `code[language]` and the elements inside it
 &nbsp;&nbsp;— **no classes**; see below
 
-**States** `spinner` `progress` `skeleton` `empty` · `btn.loading`
+**States** `spinner` `progress` `skeleton` `empty` · `.btn[aria-busy="true"]`
 
 **Layout** `container` `stack` `cluster` `group` `center` `split` `grid` (+ `--grid-min`)
 

@@ -198,7 +198,7 @@ const NOT_A_TERM = {
    */
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
-    'focusable', 'hover', 'loading', 'menu', 'narrow', 'pills', 'removable',
+    'focusable', 'hover', 'menu', 'narrow', 'pills', 'removable',
     'square', 'start', 'stretch', 'striped', 'text', 'vertical', 'viewport',
     'wide', 'wrap',
   ],

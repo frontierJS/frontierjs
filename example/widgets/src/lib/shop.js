@@ -106,7 +106,7 @@ export function createShop({ api }) {
      * The code goes in the FRAGMENT, never the query string: a fragment is not
      * sent to the server, so it is in no access log and no `Referer` header.
      * The shop's own screen redeems it and strips it from history immediately —
-     * see web/src/cart.js. Even leaked it is worth one basket, for two minutes,
+     * see web/src/stores/cart.js. Even leaked it is worth one basket, for two minutes,
      * once.
      */
     async checkoutUrl(shopOrigin) {

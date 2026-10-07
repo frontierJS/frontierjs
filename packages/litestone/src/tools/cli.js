@@ -27,7 +27,7 @@ import { create, apply, status, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
          baseline, historyGap, driftAgainstLive,
-         unacceptedLoss }                              from '../core/migrations.js'
+         unacceptedLoss, unresolvedBlocks }            from '../core/migrations.js'
 import { backupSqliteTo }                              from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
@@ -985,7 +985,7 @@ async function cmdApply(cfg) {
 
       if (!wantsBackup) {
         // A file apply is about to refuse runs nothing, so it is no risk of this run.
-        const held  = new Set(unacceptedLoss(migrationsDir, pending))
+        const held  = new Set([...unacceptedLoss(migrationsDir, pending), ...unresolvedBlocks(migrationsDir, pending)])
         const risky = held.size ? [] : irreversibleMigrations(migrationsDir, pending)
         if (risky.length) {
           console.warn(`  ${yellow('!')}  no way back from this run without a copy of the database:`)

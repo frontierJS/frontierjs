@@ -22,10 +22,10 @@ title: Subscription
   import { plans }         from '@/resources/Plan.mesa'
   import { planVersions }  from '@/resources/PlanVersion.mesa'
   import { invoices }      from '@/resources/Invoice.mesa'
-  import { session } from '@/session.js'
+  import { session } from '@frontierjs/sierra/junction'
   import { day, span } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs         from '@frontierjs/ui/components/display/Breadcrumbs.mesa'

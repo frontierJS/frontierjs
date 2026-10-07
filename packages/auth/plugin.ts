@@ -451,9 +451,12 @@ export function createAuthPlugin(
           if (!oauthAuth.oauthBegin) return oauthFailure(ctx, oauth, 'unavailable')
 
           try {
+            // `?link=` is the mailed oauthLink invitation. The visit only
+            // starts a flow, so a scanner prefetching the mail spends nothing.
             const { authorizeUrl, state } = await oauthAuth.oauthBegin(provider, {
               redirectUri: callbackUri(app, prefix, oauth.publicUrl, provider),
               returnTo:    ctx.query?.returnTo ? String(ctx.query.returnTo) : null,
+              link:        ctx.query?.link     ? String(ctx.query.link)     : null,
             })
 
             // The browser half of the state. A flow record found by the state
@@ -500,7 +503,7 @@ export function createAuthPlugin(
           if (!code || !state)          return oauthFailure(ctx, oauth, 'state')
           if (!oauthAuth.oauthCallback) return oauthFailure(ctx, oauth, 'unavailable')
 
-          let identity, returnTo
+          let identity, returnTo, link
           try {
             const done = await oauthAuth.oauthCallback(provider, {
               code,
@@ -510,12 +513,35 @@ export function createAuthPlugin(
             })
             identity = done.identity
             returnTo = done.returnTo
+            link     = done.link
           } catch {
             // One code for every refusal, deliberately. Which one it was is in
             // the audit trail; telling the browser whether a state existed, or
             // whether an exchange failed, is an oracle handed to whoever can
             // reach the URL.
             return oauthFailure(ctx, oauth, 'state')
+          }
+
+          // A flow the mailed link started ends at the link and nowhere else:
+          // an identity that is not the invitation's must not fall through to
+          // an ordinary sign-in on the holder's browser.
+          if (link) {
+            if (!oauthAuth.confirmOAuthLink) return oauthFailure(ctx, oauth, 'unavailable')
+            let issued
+            try {
+              issued = await oauthAuth.confirmOAuthLink(link, provider, identity)
+            } catch {
+              return oauthFailure(ctx, oauth, 'state')
+            }
+            if (cookieAuth && typeof ctx.setCookie === 'function') {
+              ctx.setCookie('session', issued.token, {
+                httpOnly: true,
+                sameSite: 'lax',
+                secure:   process.env.NODE_ENV === 'production',
+                maxAge:   cookieMaxAge,
+              })
+            }
+            return ctx.redirect!(returnTo ?? '/')
           }
 
           if (!oauthAuth.oauthResolve) return oauthFailure(ctx, oauth, 'unavailable')
@@ -527,11 +553,9 @@ export function createAuthPlugin(
             return oauthFailure(ctx, oauth, 'exchange')
           }
 
-          // An account already holds this address and has not proved it owns
-          // it. A distinct code, and the address-existence it discloses is
-          // already disclosed by POST /auth/register, which answers 409
-          // EmailTakenError — so hiding it here would buy nothing and leave a
-          // person who cannot sign in with no idea why.
+          // Nobody has proved this address, so a link went to it. The same
+          // code whether or not an account holds it, so it tells the caller
+          // nothing about which addresses exist.
           if (resolved.outcome === 'proof-required') {
             return oauthFailure(ctx, oauth, 'link_required')
           }
@@ -551,38 +575,6 @@ export function createAuthPlugin(
           // STARTED and written down only if it passed, so there is nothing
           // left to decide here.
           return ctx.redirect!(returnTo ?? '/')
-        })
-
-        // ── Proving the address, and attaching after ──────────────────
-        //
-        // Reached from a link in an email, so a browser navigation again — and
-        // the LAST step of the flow rather than a second one: it signs the
-        // person in, because presenting this token is the proof the account was
-        // asked for.
-        app.get(`${oauthPath}/link/confirm`, async (ctx: TransportContext) => {
-          oauthLimiter(ctx)
-          const token = ctx.query?.token ? String(ctx.query.token) : ''
-
-          if (!token)                        return oauthFailure(ctx, oauth, 'state')
-          if (!oauthAuth.confirmOAuthLink)   return oauthFailure(ctx, oauth, 'unavailable')
-
-          let issued
-          try {
-            issued = await oauthAuth.confirmOAuthLink(token)
-          } catch {
-            return oauthFailure(ctx, oauth, 'state')
-          }
-
-          if (cookieAuth && typeof ctx.setCookie === 'function') {
-            ctx.setCookie('session', issued.token, {
-              httpOnly: true,
-              sameSite: 'lax',
-              secure:   process.env.NODE_ENV === 'production',
-              maxAge:   cookieMaxAge,
-            })
-          }
-
-          return ctx.redirect!('/')
         })
       }
 

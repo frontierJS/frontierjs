@@ -9,6 +9,22 @@
 
 `test/opportunities.test.ts` § *a model a package ships is not the app's* covers both the `parseFile` path and the splice path.
 
+## 2026-10-06 — the audit-trail write lock is guarded by a test that fails every run without it (`FJS-1837`)
+
+`jsonl-multiprocess` § *every indexed row points at its own line* races four writer processes and counts crossed offsets. That count dropped from 1,999 of 8,000 on the old code to one or two, so with `withWriteLock` stubbed to a pass-through the test stayed green 3 of 8 runs.
+
+`jsonl-multiprocess` § *a writer waits for it, and reads its offset only once it holds it* sets up the window directly. A second process takes the index's `BEGIN IMMEDIATE`, appends a line while it holds it, then commits, and the test's own write must land after that line and index its own. With the lock removed it fails 3 of 3 runs. It also fails 2 of 2 with the lock kept and the file size read before the lock is taken. The race test stays as the end-to-end sample. No source changed.
+
+## 2026-10-06 — a migration file holding a BLOCKED section runs nothing until the section is resolved (`FJS-1785`)
+
+In the base44 stressor, an Oracle answer added a required parent to tables that already held rows. `create` commented out the rebuilds as *rebuild BLOCKED*. `apply` still ran the rest of the file, created 10 tables, and recorded the file as applied, then failed its own check with exit 1. `fli db:status` exited 0 over the half-changed database, and the backfill the comment asked for could no longer go into a file already marked applied.
+
+- **`apply()` refuses every pending file while one still holds a BLOCKED line**, before any statement runs. The refusal returns `refused`, `failed` and `held`, the same shape the unaccepted-loss hold uses. The lines it reads are the two that `create` writes: `-- "<table>": rebuild BLOCKED` and the commented `ALTER TABLE … -- BLOCKED`.
+- **The generated file says the line is the hold.** Each BLOCKED section ends by telling the reviewer to delete the BLOCKED line once the change is written by hand. `migrate apply` drops its *no way back* warning for a run it is about to refuse.
+- `migrations-fixes` § *rebuild adding a NOT NULL column with no default is BLOCKED* tested the defect as *applies as a recorded no-op*, and now expects the refusal.
+
+`test/migrations-fixes.test.ts` § *a file holding a BLOCKED section runs nothing and records nothing*: no new table, nothing recorded, and the file applies once its BLOCKED lines are gone.
+
 ## 2026-10-06 — a migration that deletes values waits for its loss to be accepted in the file (`FJS-1784`)
 
 `migrate dev`, which `fli db:migrate` runs, created a rename as a drop plus an add and applied it in the same call. In the base44 stressor that deleted 3 of 3 values with exit 0, and the DESTRUCTIVE banner was a review nobody had to hold. `apply` read no file's banner, and `create` computed the loss and returned none of it.

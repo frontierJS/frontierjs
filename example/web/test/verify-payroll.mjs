@@ -54,6 +54,7 @@ import { sweepPayroll } from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { SESSION_MODULE } from './lib/session.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -238,7 +239,7 @@ try {
 
 await go('/')
 await evaluate(`
-  const { signIn } = await import('/src/session.js');
+  const { signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signIn('alex@shop.test', 'correct-horse-battery');
 `)
 await go('/')
@@ -528,7 +529,7 @@ t('ladder.andRevertBesideIt', await evaluate(`
 `))
 
 await evaluate(`
-  const { signOut, signIn } = await import('/src/session.js');
+  const { signOut, signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signOut();
   await signIn('sam@shop.test', 'correct-horse-battery');
 `)
@@ -570,7 +571,7 @@ t('ladder.andTheBoundaryRefusesItAnyway', await evaluate(`
 `))
 
 await evaluate(`
-  const { signOut, signIn } = await import('/src/session.js');
+  const { signOut, signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signOut();
   await signIn('alex@shop.test', 'correct-horse-battery');
 `)

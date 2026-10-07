@@ -18,12 +18,11 @@ title: Product
   // gallery above reads from; one file, two halves, and neither restates the
   // other.
   import ProductImageForm    from '../../resources/ProductImage.mesa'
-  import { session } from '@/session.js'
-  import { cart, add } from '@/cart.js'
-  import { money }     from '@/money.js'
-  import { prefs }     from '@/prefs.js'
+  import { cart, add } from '@/stores/cart.js'
+  import { money }     from '@/lib/money.js'
+  import { prefs }     from '@/stores/prefs.js'
   import { page }    from '@frontierjs/sierra/router'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/junction'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'

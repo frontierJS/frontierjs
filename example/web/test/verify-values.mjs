@@ -32,6 +32,7 @@
 
 import { requireServers } from './lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { SESSION_MODULE } from './lib/session.mjs'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
@@ -164,7 +165,7 @@ t('order.tailIsNot',    offered.recent.slice(head0.length).some(Boolean), false)
 // pushed onto the client by hand would be a different code path from the one a
 // signed-in person is on.
 await evaluate(`
-  const { signIn } = await import('/src/session.js');
+  const { signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signIn('alex@shop.test', 'correct-horse-battery');
 `)
 

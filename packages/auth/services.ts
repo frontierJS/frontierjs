@@ -213,7 +213,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!newPassword)     throw new BadRequest('newPassword is required')
 
       reauthenticate(ctx)
-      await need('changePassword')(user.userId, currentPassword, newPassword)
+      await need('changePassword')(user.userId, currentPassword, newPassword, { exceptSessionId: user.sessionId })
       return { ok: true }
     },
 

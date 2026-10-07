@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-06 — a tool result withholds protected columns under `strategy database` too (`FJS-1835`)
+
+`run` read the protected list off `app.db`, which a tenant-per-database app does not have, so the list came back empty and `credentials.mint` handed the agent its decrypted `@secret` and its `@guarded` column. With no `app.db` it now reads the list through `app.withDb`, which is the tenant client the call itself just opened, so no database file is created. `audit-withhold-tenant.test.ts` now drives a real registry over a real port, and is no longer `test.failing`. 145 pass; `example` `verify:mcp` 27/27.
+
 ## 2026-10-06 — the Fable audit's repro tests, under `test/audit-*`
 
 `audit-raw-smuggle.test.ts` is plain: the `$raw` smuggle it proved (`FJS-1816`) closed with `FJS-D609`. `audit-withhold-tenant.test.ts` is `test.failing` for `FJS-1835`: `withholdProtected` does nothing under `tenancy: { strategy: 'database' }`. The suite passes 145/145.

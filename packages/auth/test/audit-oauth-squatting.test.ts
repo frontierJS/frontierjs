@@ -52,7 +52,7 @@ async function victimGetsIn(email: string, password: string) {
   } catch {
     // Somebody holds the address — the mailbox is the proof this package
     // accepts for a password, so prove it.
-    await h.auth.requestPasswordReset!(email)
+    await h.requestReset(email)
     await h.auth.confirmPasswordReset!(h.resetToken(), password)
   }
   return signedIn(await h.auth.login(email, password))
@@ -60,8 +60,7 @@ async function victimGetsIn(email: string, password: string) {
 
 describe('an unproven address claimed through OAuth', () => {
 
-  // FJS-1820: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('UNTRUSTED issuer: the mailbox holder still ends up with the account and the squatter does not', async () => {
+  test('UNTRUSTED issuer: the mailbox holder still ends up with the account and the squatter does not', async () => {
     const email = 'squat-oidc@shop.test'
 
     const squat = await h.auth.oauthResolve('okta', {
@@ -81,8 +80,7 @@ describe('an unproven address claimed through OAuth', () => {
     expect(again.outcome === 'signed-in' && again.user.userId === victim.user.userId).toBe(false)
   })
 
-  // FJS-1820: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('TRUSTED issuer, unverified claim: the same', async () => {
+  test('TRUSTED issuer, unverified claim: the same', async () => {
     const email = 'squat-google@shop.test'
 
     const squat = await h.auth.oauthResolve('google', {
@@ -95,8 +93,7 @@ describe('an unproven address claimed through OAuth', () => {
     if (squatterToken) expect(await h.auth.verifySession(squatterToken)).toBeNull()
   })
 
-  // FJS-1820: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('the squat cannot be laundered into a VERIFIED account by mailing the holder a verify link', async () => {
+  test('the squat cannot be laundered into a VERIFIED account by mailing the holder a verify link', async () => {
     // requestEmailVerification takes the attacker's own user id — a session
     // holder can ask for it — and mails the VICTIM. One click and the row is
     // `emailVerified: true` under an address the attacker never held, after

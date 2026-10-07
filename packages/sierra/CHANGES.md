@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-06 — AGENTS.md names the signed-in person's id `session.user.userId` (`FJS-1827`)
+
+`session.user` is the server's SessionContext, which spells the id `userId` and has no `id`, and no guide said so. Pages written from the guides alone compared a row's owner column to `session.user.id`, always undefined, and hid the owner's own moves and edit form in 9 of 21 base44 stressor apps. The *Wrong guesses* table now carries that spelling and the shape. `test/agents-md-session.test.js` reads the field list out of junction's `SessionContext` and fails when the guide names no `userId`, or names a `session.user` field the interface does not have.
+
 ## 2026-10-06 — a generated form leaves a `@@transitions` column out, and a move carries its label (`FJS-1433`, `FJS-1543`)
 
 `buildFieldRules` marks the column `x-transitions` names with `rule.transitions` (its moves), and `formFieldList` leaves it out of the generated set the way it leaves out a determined column — `only` naming it still draws it. A create is born at the column's `@default` (`FJS-D470`), so the select offered states the boundary refuses; an edit changes the state by a move. `summary()` is the columns a form does not offer, so a detail page shows the state read-only with no change of its own. The column is deliberately not `readOnly`: a direct update to a state a declared move reaches is admitted by the boundary, and `stripReadOnly` would drop it from a hand-written save without saying so. `transitionsAt()` answers `label`, the move's name humanized (`markShipped` → *Mark Shipped*), so a button does not show an identifier. `test/machine-column.test.js`, `test/resource-transitions.test.js`.

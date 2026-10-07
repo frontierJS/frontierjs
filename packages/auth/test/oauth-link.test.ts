@@ -16,7 +16,7 @@
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { makeAuth, rejectsWith, type Harness } from './harness.ts'
-import { defineProvider, InvalidTokenError } from '../index.ts'
+import { defineProvider, InvalidTokenError, OAuthError } from '../index.ts'
 
 const trusted   = defineProvider('google', 'google', { clientId: 'c', clientSecret: 's' })
 const untrusted = defineProvider('okta',   'oidc',   {
@@ -73,7 +73,7 @@ describe('a refused link sends an invitation', () => {
     })
     expect(rows.length).toBe(1)
     // and the superseded one is dead
-    await rejectsWith(() => h.auth.confirmOAuthLink(first), InvalidTokenError)
+    await rejectsWith(() => h.auth.confirmOAuthLink(first, 'google', id({ providerId: 'o-1' })), InvalidTokenError)
   })
 
   test('the refusal still holds when no delivery hook is configured', async () => {
@@ -96,7 +96,7 @@ describe('confirmOAuthLink', () => {
     const user = await account('claim@shop.test', false)
     await h.auth.oauthResolve('google', id({ providerId: 'c-1', email: 'claim@shop.test' }))
 
-    const issued = await h.auth.confirmOAuthLink(lastToken())
+    const issued = await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'c-1' }))
 
     expect(issued.token).toBeTruthy()
     expect(issued.user.userId).toBe(user.id)
@@ -110,7 +110,7 @@ describe('confirmOAuthLink', () => {
     const victim = await account('planted@shop.test', false)
     await h.auth.oauthResolve('google', id({ providerId: 'p-1', email: 'planted@shop.test' }))
 
-    await h.auth.confirmOAuthLink(lastToken())
+    await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'p-1' }))
 
     const creds = await credsFor(victim.id)
     expect(creds.some((c: any) => c.type === 'password')).toBe(false)
@@ -126,21 +126,19 @@ describe('confirmOAuthLink', () => {
     })
 
     await h.auth.oauthResolve('google', id({ providerId: 's-1', email: 'session@shop.test' }))
-    await h.auth.confirmOAuthLink(lastToken())
+    await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 's-1' }))
 
     expect(await h.auth.verifySession('attacker-session')).toBeNull()
   })
 
   test('an identity attached while the account was unverified is evicted too', async () => {
-    // The same hole through a different door: an account created via an
-    // UNTRUSTED issuer is unverified, and that issuer's identity was never
-    // vouched for by anybody either.
-    await h.auth.oauthResolve('okta', id({ providerId: 'okta-sub', email: 'twodoor@shop.test' }))
-    const user = await h.sys.user.findFirst({ where: { email: 'twodoor@shop.test' } })
-    expect(user.emailVerified).toBe(false)
+    // An identity on an unverified row was never vouched for by anybody, so it
+    // goes with the password.
+    const user = await h.sys.user.create({ data: { email: 'twodoor@shop.test', emailVerified: false } })
+    await h.sys.credential.create({ data: { userId: user.id, type: 'oauth:okta', value: 'okta-sub' } })
 
     await h.auth.oauthResolve('google', id({ providerId: 'g-sub', email: 'twodoor@shop.test' }))
-    await h.auth.confirmOAuthLink(lastToken())
+    await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'g-sub' }))
 
     const creds = await credsFor(user.id)
     expect(creds.some((c: any) => c.type === 'oauth:okta')).toBe(false)
@@ -152,7 +150,7 @@ describe('confirmOAuthLink', () => {
     // loop for ever.
     const user = await account('verifyme@shop.test', false)
     await h.auth.oauthResolve('google', id({ providerId: 'v-1', email: 'verifyme@shop.test' }))
-    await h.auth.confirmOAuthLink(lastToken())
+    await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'v-1' }))
 
     expect((await h.sys.user.findUnique({ where: { id: user.id } })).emailVerified).toBe(true)
   })
@@ -165,7 +163,7 @@ describe('confirmOAuthLink', () => {
     await h.auth.oauthResolve('okta', id({ providerId: 'k-1', email: 'kept@shop.test' }))
     expect(sent[sent.length - 1].email).toBe('kept@shop.test')
 
-    await h.auth.confirmOAuthLink(lastToken())
+    await h.auth.confirmOAuthLink(lastToken(), 'okta', id({ providerId: 'k-1' }))
 
     const creds = await credsFor(user.id)
     expect(creds.some((c: any) => c.type === 'password')).toBe(true)
@@ -177,8 +175,8 @@ describe('confirmOAuthLink', () => {
     await h.auth.oauthResolve('google', id({ providerId: 'sg-1', email: 'single@shop.test' }))
     const token = lastToken()
 
-    await h.auth.confirmOAuthLink(token)
-    await rejectsWith(() => h.auth.confirmOAuthLink(token), InvalidTokenError)
+    await h.auth.confirmOAuthLink(token, 'google', id({ providerId: 'sg-1' }))
+    await rejectsWith(() => h.auth.confirmOAuthLink(token, 'google', id({ providerId: 'sg-1' })), InvalidTokenError)
   })
 
   test('an expired invitation is refused', async () => {
@@ -192,13 +190,114 @@ describe('confirmOAuthLink', () => {
       data:  { expiresAt: new Date(Date.now() - 1000).toISOString() },
     })
 
-    await rejectsWith(() => h.auth.confirmOAuthLink(token), InvalidTokenError)
+    await rejectsWith(() => h.auth.confirmOAuthLink(token, 'google', id({ providerId: 'st-1' })), InvalidTokenError)
   })
 
   test('a password-reset token cannot be spent here', async () => {
     // `purpose` from a third direction (FJS-476).
     const u = await account('cross2@shop.test', true)
-    await h.auth.requestPasswordReset!(u.email)
-    await rejectsWith(() => h.auth.confirmOAuthLink(h.resetToken()), InvalidTokenError)
+    await h.requestReset(u.email)
+    await rejectsWith(() => h.auth.confirmOAuthLink(h.resetToken(), 'google', id()), InvalidTokenError)
+  })
+
+  test('the mailbox alone attaches nothing: another subject is refused and spends the link', async () => {
+    // The token proves the mailbox; the identity waiting on it may be somebody
+    // else's, so the provider has to return that same subject (FJS-1819).
+    const user = await account('other-sub@shop.test', false)
+    await h.auth.oauthResolve('google', id({ providerId: 'asked-1', email: 'other-sub@shop.test' }))
+    const token = lastToken()
+
+    await rejectsWith(() => h.auth.confirmOAuthLink(token, 'google', id({ providerId: 'clicker-1' })), OAuthError)
+
+    const creds = await credsFor(user.id)
+    expect(creds.some((c: any) => c.type === 'password')).toBe(true)
+    expect(creds.some((c: any) => c.type === 'oauth:google')).toBe(false)
+    await rejectsWith(() => h.auth.confirmOAuthLink(token, 'google', id({ providerId: 'asked-1' })), InvalidTokenError)
+  })
+
+  test('the same subject at another provider is refused', async () => {
+    const user = await account('other-prov@shop.test', false)
+    await h.auth.oauthResolve('google', id({ providerId: 'shared-1', email: 'other-prov@shop.test' }))
+
+    await rejectsWith(() => h.auth.confirmOAuthLink(lastToken(), 'okta', id({ providerId: 'shared-1' })), OAuthError)
+    expect((await credsFor(user.id)).some((c: any) => String(c.type).startsWith('oauth:'))).toBe(false)
+  })
+})
+
+// ─── the mailed link starts a flow ──────────────────────────────────────────
+
+describe('oauthBegin with a link', () => {
+
+  test('carries the invitation and spends nothing, so a prefetch changes nothing', async () => {
+    const user = await account('prefetch@shop.test', false)
+    await h.auth.oauthResolve('google', id({ providerId: 'pf-1', email: 'prefetch@shop.test' }))
+    const token = lastToken()
+
+    const { state } = await h.auth.oauthBegin('google', { redirectUri: 'https://shop.test/cb', link: token })
+
+    const flow = await h.sys.oauthFlow.findFirst({ where: { state } })
+    expect(flow.invitation).toBe(token)
+    expect(await h.sys.verification.findFirst({ where: { purpose: 'oauthLink', value: token } })).toBeTruthy()
+    expect((await credsFor(user.id)).some((c: any) => c.type === 'password')).toBe(true)
+  })
+
+  test('a link for another provider, or none at all, starts no flow', async () => {
+    await account('wrongprov@shop.test', false)
+    await h.auth.oauthResolve('google', id({ providerId: 'wp-1', email: 'wrongprov@shop.test' }))
+
+    await rejectsWith(() => h.auth.oauthBegin('okta', { redirectUri: 'https://shop.test/cb', link: lastToken() }), InvalidTokenError)
+    await rejectsWith(() => h.auth.oauthBegin('google', { redirectUri: 'https://shop.test/cb', link: 'nope' }), InvalidTokenError)
+  })
+})
+
+// ─── an address nobody holds ────────────────────────────────────────────────
+//
+// Branch 3 on an unproven claim makes no row: a row would squat the address,
+// shutting its holder out of register and reset (FJS-1820, FJS-D612). The
+// account is made on the click, once the mailbox and the identity both answer.
+
+describe('an unproven claim on an address nobody holds', () => {
+
+  test('mails an invitation and writes no account', async () => {
+    const out = await h.auth.oauthResolve('okta', id({ providerId: 'nh-1', email: 'nohold@shop.test' }))
+
+    expect(out.outcome).toBe('proof-required')
+    expect(sent[sent.length - 1]).toMatchObject({ email: 'nohold@shop.test', provider: 'okta' })
+    expect(await h.sys.user.findFirst({ where: { email: 'nohold@shop.test' } })).toBeNull()
+  })
+
+  test('the click makes a verified account holding that identity and signs in', async () => {
+    await h.auth.oauthResolve('google', id({ providerId: 'nh-2', email: 'later@shop.test', emailVerified: false }))
+
+    const issued = await h.auth.confirmOAuthLink(lastToken(), 'google', id({ providerId: 'nh-2', name: 'Later' }))
+
+    const user = await h.sys.user.findFirst({ where: { email: 'later@shop.test' } })
+    expect(issued.user.userId).toBe(user.id)
+    expect(user.emailVerified).toBe(true)
+    expect(user.name).toBe('Later')
+    expect((await credsFor(user.id)).map((c: any) => [c.type, c.value])).toEqual([['oauth:google', 'nh-2']])
+  })
+
+  test('another identity on the click makes nothing', async () => {
+    await h.auth.oauthResolve('okta', id({ providerId: 'atk-nh', email: 'mismatch-nh@shop.test' }))
+
+    await rejectsWith(() => h.auth.confirmOAuthLink(lastToken(), 'okta', id({ providerId: 'holder-nh' })), OAuthError)
+    expect(await h.sys.user.findFirst({ where: { email: 'mismatch-nh@shop.test' } })).toBeNull()
+  })
+
+  test('onRegister refuses on the click, and nothing is written', async () => {
+    const mails: Array<{ token: string }> = []
+    const closed = await makeAuth({
+      oauthProviders:       { okta: untrusted },
+      onOAuthLinkRequested: async (e) => { mails.push(e) },
+      onRegister:           async () => { throw new Error('closed beta') },
+    })
+    try {
+      const out = await closed.auth.oauthResolve('okta', id({ providerId: 'cb-1', email: 'beta@shop.test' }))
+      expect(out.outcome).toBe('proof-required')
+      await expect(closed.auth.confirmOAuthLink(mails[0]!.token, 'okta', id({ providerId: 'cb-1' })))
+        .rejects.toThrow('closed beta')
+      expect(await closed.sys.user.findFirst({ where: { email: 'beta@shop.test' } })).toBeNull()
+    } finally { closed.cleanup() }
   })
 })

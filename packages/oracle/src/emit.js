@@ -12,11 +12,13 @@
 // row, and from nothing else:
 //
 //   read    any of: an actor link to User, `check(via)`, a membership row,
-//           a `publicWhen` condition
+//           a `publicWhen` condition. Under a parent with a public read it is
+//           `check(via, 'update')`, so the parent's public clause stays its own
 //   create  the caller IS the owner/author/coordinator the row names, AND may
 //           read the parent it hangs under. Both, because either alone lets a
 //           caller attach a row to a parent they cannot see, or file one
-//           under somebody else's name
+//           under somebody else's name. A row naming no caller asks the same
+//           of the parent as its read does
 //   update  any of: an owner/author/coordinator/performer link, or whoever may
 //           change the parent
 //   delete  any of: an owner/author link, or whoever may change the parent
@@ -287,9 +289,17 @@ function accessFor(m, of, backs) {
 
   if (a.shared) return { gate: [4, 5, 5, 5], policies: [] }
 
+  // A parent read at gate 0 carries its public clause through `check(parent)`,
+  // so a child of a published shop is read by everybody who reads the shop.
+  // Its private rows are reached through whoever may change it instead, and
+  // with no update rule there is nobody to delegate to.
+  const open = (parent) => of(parent).gate[0] === 0
   // The op a change on this row delegates to: the parent's own update rule
   // where it has one, and otherwise whoever may read the parent.
-  const changeOp = (parent) => of(parent).policies.some(([op]) => op === 'update') ? 'update' : 'read'
+  const changeOp = (parent) => of(parent).policies.some(([op]) => op === 'update') ? 'update' : open(parent) ? null : 'read'
+  const readOp = (parent) => open(parent) ? changeOp(parent) : 'read'
+  const delegate = (link, op) => op ? [`check(${link}, '${op}')`] : []
+  const reader = (link, parent) => readOp(parent) === 'read' ? [`check(${link})`] : delegate(link, readOp(parent))
 
   const self = (op) => m.links.filter(l => l.to === 'User' && ACTORS[l.actor].may.includes(op)).map(l => `${l.name}Id == auth().id`)
   const terms = { read: self('read'), create: [], update: self('update'), delete: self('delete') }
@@ -299,20 +309,24 @@ function accessFor(m, of, backs) {
     // A membership row: its person reads it, and whoever may change the
     // container decides who is in it.
     const c = m.container
-    const op = changeOp(c.model)
-    terms.read = [`${c.user}Id == auth().id`, `check(${c.link})`]
-    terms.create = [`check(${c.link}, '${op}')`]
-    terms.update = [`check(${c.link}, '${op}')`]
-    terms.delete = [`check(${c.link}, '${op}')`]
+    const change = delegate(c.link, changeOp(c.model))
+    terms.read = [`${c.user}Id == auth().id`, ...reader(c.link, c.model)]
+    terms.create = [...change]
+    terms.update = [...change]
+    terms.delete = [...change]
   } else {
     terms.create = self('create')
     if (a.via) {
       const parent = m.links.find(l => l.name === a.via).to
-      const op = changeOp(parent)
-      terms.read.push(`check(${a.via})`)
-      createParent = `check(${a.via}, 'read')`
-      terms.update.push(`check(${a.via}, '${op}')`)
-      terms.delete.push(`check(${a.via}, '${op}')`)
+      const change = delegate(a.via, changeOp(parent))
+      terms.read.push(...reader(a.via, parent))
+      // A caller who names themselves may file under a parent they only read
+      // publicly, as a buyer orders from a published shop; a row naming nobody
+      // is filed only by those who reach the parent's private rows.
+      const into = terms.create.length ? 'read' : readOp(parent)
+      if (into) createParent = `check(${a.via}, '${into}')`
+      terms.update.push(...change)
+      terms.delete.push(...change)
     }
     // A member reads and changes the container; the gate says which rung
     // renames it. Without the update term a membership's create would fall

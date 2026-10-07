@@ -30,6 +30,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { SESSION_MODULE } from './lib/session.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -158,7 +159,7 @@ const waitFor = (sel, ms = 12000) => evaluate(`
 
 await go('/')
 await evaluate(`
-  const { signIn } = await import('/src/session.js');
+  const { signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signIn('alex@shop.test', 'correct-horse-battery');
 `)
 await go('/')
@@ -212,7 +213,7 @@ t('screen.theBankedTileIsTheSumOfTheRowsShown', await evaluate(`
 // /orders/ is theirs to read, and the SUM of them is not.
 
 await evaluate(`
-  const { signOut, signIn } = await import('/src/session.js');
+  const { signOut, signIn } = await import(${JSON.stringify(SESSION_MODULE)});
   await signOut();
   await signIn('sam@shop.test', 'correct-horse-battery');
 `)
@@ -242,7 +243,7 @@ t('staff.areToldTheyMayNot', await waitFor('#rp-gated', 6000), true)
 // an affordance stuck at no both produce a page that looks exactly like this
 // one. Only the two together say which half answered.
 t('staff.theAffordanceKnowsTheProjectionIsGatedAboveThem', await evaluate(`
-  const { session } = await import('/src/session.js');
+  const { session } = await import(${JSON.stringify(SESSION_MODULE)});
   const { revenue } = await import('/src/resources/Revenue.mesa');
   return { level: session.level, affordance: revenue.can('read', session.level) };
 `), { level: 4, affordance: false })

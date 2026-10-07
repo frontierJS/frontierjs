@@ -14,11 +14,10 @@ title: Plans
   // Changing what a plan costs is a plan's own screen, because it is a write to
   // a different table.
   import Plan, { plans } from '@/resources/Plan.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { prefs } from '@/stores/prefs.js'
+  import { session, useStore } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'

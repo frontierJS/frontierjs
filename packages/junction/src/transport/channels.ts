@@ -42,6 +42,7 @@ import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
+import { SESSION_SOCKET }       from './types.ts'
 import type { WsContext }      from './types.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -1084,8 +1085,9 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
 //   any other client may send Authorization, x-api-key or the cookie instead.
 //   A URL never carries it (FJS-D486).
 //   _wsOpen resolves the token asynchronously before joining channels.
-//   A token that is present and does not verify closes the socket with 4001
-//   ('auth_failed') before any channel is joined — the client does not reconnect.
+//   A token that is present and does not verify — thrown or answered null —
+//   closes the socket with 4001 ('auth_failed') before any channel is joined,
+//   and the client does not reconnect. A raw app.ws route is not refused.
 //   No token → joins only the 'anonymous' channel.
 
 export type ChannelSetupFn = (app: App & { channels: ReturnType<typeof createChannelManager> }) => void
@@ -1259,6 +1261,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       }
 
       app.http.ws('/ws', {
+        [SESSION_SOCKET]: true,
 
         open: async (ctx: WsContext) => {
           // Auth was resolved by HttpTransport._wsOpen — ctx.user is set.
@@ -1343,7 +1346,10 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               method:       method as string,
             })
 
-            ;(async () => {
+            // RETURNED, not started and dropped: the transport counts a frame
+            // as in flight until this settles, and a handler that returned
+            // first let maxInFlight read 0 under any number of running calls.
+            return (async () => {
               await ensureDeps()
               const { bridge: _bridge2, withholdProtected: _withhold, errorBody: _errorBody } = _bridge!
               const { callService: _call }        = _callSvc!
@@ -1467,8 +1473,6 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 })
               }
             })().catch(() => {})
-
-            return
           }
 
           // ── Subscribe — meta update + presence sync ─────────────────

@@ -24,12 +24,11 @@ title: Payroll
   // it there.
   import PayRun, { payRuns } from '@/resources/PayRun.mesa'
   import { payRates } from '@/resources/PayRate.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
+  import { prefs } from '@/stores/prefs.js'
   import { day, span } from '@/datetime.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert               from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button              from '@frontierjs/ui/components/forms/Button.mesa'

@@ -113,6 +113,26 @@ test('overlay: .raised, .outlined and .ghost all do something on a .btn', functi
   });
 });
 
+test('busy: aria-busy draws the button spinner, and nothing else does', function () {
+  /*
+   * The attribute that announces the state is the one that draws it, so a
+   * spinner a screen reader is never told about cannot be written. Two
+   * ways that breaks silently: a class that draws without announcing, and
+   * a selector so broad that a region of skeletons gets a spinner too.
+   */
+  function spins(html) {
+    var n = el(html);
+    var on = getComputedStyle(n, '::after').animationName !== 'none';
+    cleanup();
+    return on;
+  }
+  assert.ok(spins('<button class="btn" aria-busy="true">Save</button>'), 'a busy .btn draws no spinner');
+  assert.ok(spins('<button class="btn outlined" aria-busy="true">Save</button>'), 'a busy outlined .btn draws no spinner');
+  assert.notOk(spins('<button class="btn loading">Save</button>'), 'a class draws a spinner nothing announces');
+  assert.notOk(spins('<button class="btn" aria-busy="false">Save</button>'), 'aria-busy="false" still spins');
+  assert.notOk(spins('<div class="card" aria-busy="true"></div>'), 'a busy region of skeletons got a spinner');
+});
+
 test('overlay: a ghost button reads its tone', function () {
   var plain = el('<button class="btn ghost">Delete</button>');
   var plainColor = style(plain, 'color');

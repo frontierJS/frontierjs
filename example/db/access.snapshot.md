@@ -240,6 +240,7 @@ rather than refusing the row.
 | `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
+| `OauthFlow` | `invitation` | `@guarded` |
 | `Order` | `subtotal` | `@system` |
 | `Order` | `discountCode` | `@system` |
 | `Order` | `discountLabel` | `@system` |

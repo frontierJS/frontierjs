@@ -6,7 +6,7 @@
   // declaration. What it cannot know is that this app has a reader-chosen
   // display currency, because that is not in `db/schema.lite` and never will
   // be — the shop keeps its books in one currency and a person reads it in
-  // another (`web/src/money.js`).
+  // another (`web/src/lib/money.js`).
   //
   // So the app claims the rendering and nothing else. `displayFor` already
   // NAMES this column `money` from `x-money` alone, which is the half a
@@ -16,8 +16,8 @@
   // component rather than a formatter passed to `Cell`: Mesa reads an
   // expression's dependencies from its own text, so a cell calling `money(v)`
   // renders once and never moves when the preference changes.
-  import { money } from './money.js'
-  import { prefs } from './prefs.js'
+  import { money } from '@/lib/money.js'
+  import { prefs } from '@/stores/prefs.js'
 
   export let value = undefined
 

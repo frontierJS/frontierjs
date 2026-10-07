@@ -119,8 +119,11 @@ example/
     ├── test/
     │   └── verify.mjs          ← drives a real browser; see "Verified" below
     └── src/
-        ├── main.js  App.mesa  session.js
-            ├── resources/           ← .mesa files (invariant 18): data in <script module>, markup is the default form
+        ├── main.js  App.mesa  datetime.js  displays.js
+        ├── components/          ← every .mesa file that is not a route or resource
+        ├── lib/                 ← every module that is not a route, resource or component
+        ├── stores/              ← state only the browser has: the basket, the preferences
+        ├── resources/           ← .mesa files (invariant 18): data in <script module>, markup is the default form
         └── routes/
 ├── widgets/                    ← a THIRD surface — embeddable scripts. Its own
 │   ├── config/                   Vite root, its own host pages, its own release

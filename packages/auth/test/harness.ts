@@ -34,6 +34,14 @@ export interface Harness {
   auth:        ReturnType<typeof createLitestoneAuth>
   /** Last token handed to onPasswordResetRequested. */
   resetToken:  () => string
+  /**
+   * `requestPasswordReset` for a KNOWN address, resolving once the token is
+   * minted. The method answers before it mints (FJS-1832), so awaiting it
+   * alone reads the previous token. Hangs where `opts` replaces the callback.
+   */
+  requestReset: (email: string) => Promise<void>
+  /** Resolves at the next token minted — for a reset requested over HTTP. Start it before the request. */
+  nextReset:   () => Promise<void>
   /** Last token handed to onEmailVerificationRequested. */
   verifyToken: () => string
   /** Marks this harness done. Files are reaped by the NEXT run — see above. */
@@ -74,9 +82,10 @@ database audit { path "${dir}/audit/"; driver logger; retention 90d }
   const db = await createClient({ parsed, encryptionKey: TEST_KEY, ...(clock ? { now: clock.now } : {}) })
 
   let resetToken = '', verifyToken = ''
+  let resetMinted = () => {}
   const auth = createLitestoneAuth(db, {
     encryptionKey: TEST_KEY,
-    onPasswordResetRequested:     async (_e, t) => { resetToken  = t },
+    onPasswordResetRequested:     async (_e, t) => { resetToken  = t; resetMinted() },
     onEmailVerificationRequested: async (_e, t) => { verifyToken = t },
     ...opts,
   })
@@ -86,6 +95,12 @@ database audit { path "${dir}/audit/"; driver logger; retention 90d }
     sys:         db.asSystem(),
     auth,
     resetToken:  () => resetToken,
+    nextReset:   () => new Promise<void>(r => { resetMinted = r }),
+    requestReset: async (email: string) => {
+      const minted = new Promise<void>(r => { resetMinted = r })
+      await auth.requestPasswordReset!(email)
+      await minted
+    },
     verifyToken: () => verifyToken,
     cleanup:     () => { /* dir is reaped by the next run */ },
   }

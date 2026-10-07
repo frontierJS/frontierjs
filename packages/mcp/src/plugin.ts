@@ -364,10 +364,16 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
   try {
     // `app.service()` is the in-process caller and answers the app whole; an
     // agent is on a wire, so what it is handed is what HTTP would hand it
-    // (`FJS-D473`) -- a system write's `@secret` included.
-    const result = withholdProtected(await invoke(caller, tool, a, opts), {
-      locals: { db: (app as { db?: unknown }).db } as never, model: tool.model ?? undefined, service: tool.service,
+    // (`FJS-D473`) -- a system write's `@secret` included. Under `strategy
+    // database` there is no `app.db`, and with no client the protected list is
+    // empty and the row went out whole (`FJS-1835`); `withDb` is the tenant
+    // client the call itself just opened, so no database file is created.
+    const raw    = await invoke(caller, tool, a, opts)
+    const appDb  = (app as { db?: unknown }).db
+    const withhold = (db: unknown) => withholdProtected(raw, {
+      locals: { db } as never, model: tool.model ?? undefined, service: tool.service,
     })
+    const result = appDb ? withhold(appDb) : await app.withDb(withhold)
     const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
     if (answersOneRow(tool)) {
       // Read off the row the CALLER was answered, so a foreign key their read

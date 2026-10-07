@@ -525,6 +525,7 @@ rather than refusing the row.
 | `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
+| `OauthFlow` | `invitation` | `@guarded` |
 | `Run` | `context` | `@encrypted` |
 | `Secret` | `data` | `@encrypted` |
 | `Server` | `enrollTokenHash` | `@guarded` |

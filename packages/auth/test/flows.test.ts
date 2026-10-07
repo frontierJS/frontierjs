@@ -175,7 +175,7 @@ describe('login', () => {
       data: { userId: u.id, token: 'live-session-token', expiresAt: new Date(Date.now() + 3600e3).toISOString() },
     })
 
-    await h.auth.requestPasswordReset!('oauth@x.test')
+    await h.requestReset('oauth@x.test')
     const token = h.resetToken()
     expect(token).toBeTruthy()
 
@@ -206,7 +206,7 @@ describe('login', () => {
       () => {},
     )
 
-    await h.auth.requestPasswordReset!('invited@x.test')
+    await h.requestReset('invited@x.test')
     const token = h.resetToken()
     await h.auth.confirmPasswordReset!(token, 'FirstPassw0rd!')
 
@@ -229,7 +229,7 @@ describe('login', () => {
       data: { userId: u.id, token: 'doomed-token', expiresAt: new Date(Date.now() + 3600e3).toISOString() },
     })
 
-    await h.auth.requestPasswordReset!('pw@x.test')
+    await h.requestReset('pw@x.test')
     await h.auth.confirmPasswordReset!(h.resetToken(), 'ReplacementPassw0rd!')
 
     const after = await h.sys.session.findMany({ where: { userId: u.id } })
@@ -320,7 +320,7 @@ describe('password reset', () => {
 
   test('confirm sets the new password and retires the old one', async () => {
     const u = await freshUser('pr-happy')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
 
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-new-2')
 
@@ -333,7 +333,7 @@ describe('password reset', () => {
     const live = signedIn(await h.auth.login(u.email, u.password))
     expect(await h.auth.verifySession(live.token)).not.toBeNull()
 
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-new-2')
 
     expect(await h.auth.verifySession(live.token)).toBeNull()
@@ -341,7 +341,7 @@ describe('password reset', () => {
 
   test('a reset token is single-use', async () => {
     const u = await freshUser('pr-reuse')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const token = h.resetToken()
 
     await h.auth.confirmPasswordReset!(token, 'pw-new-2')
@@ -350,7 +350,7 @@ describe('password reset', () => {
 
   test('an EXPIRED reset token is refused', async () => {
     const u = await freshUser('pr-expired')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const token = h.resetToken()
 
     const row = await h.sys.verification.findFirst({ where: { purpose: 'passwordReset', identifier: u.email } })
@@ -425,7 +425,7 @@ describe('tokens do not cross protocols', () => {
 
   test('a password-reset token cannot verify an email', async () => {
     const u = await freshUser('x-reset')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await rejectsWith(() => h.auth.verifyEmail!(h.resetToken()), InvalidTokenError)
   })
 
@@ -623,7 +623,7 @@ describe('deleteUser', () => {
     const u    = await freshUser('del')
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
     signedIn(await h.auth.login(u.email, u.password))
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await h.auth.createApiKey!(user.id)
 
     await h.auth.deleteUser!(user.id)

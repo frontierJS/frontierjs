@@ -297,7 +297,13 @@ export function commitments(opts: CommitmentsPluginOptions = {}): Plugin {
       try {
         if (await fireCommitment(raw, job, { hooks: opts.hooks, outbox: app.outbox, tenant }) === 'fired') fired++
         else lapsed++
-      } catch (err) { failed++; throw err }
+      } catch (err) {
+        failed++
+        // With no system principal the fire is STRANGER(0), and the gate's
+        // refusal names the level it wanted, not the principal nobody declared.
+        if (app.principal?.() || !(err instanceof Error)) throw err
+        throw new Error(`${err.message} — the fire ran as nobody: this app declares no createApp({ system }).`, { cause: err })
+      }
     })
   }
 }
@@ -358,10 +364,23 @@ export async function fireCommitment(
   const later: Array<() => unknown> = []
   const rows:  string[] = []
 
+  // A move on a row this client cannot see answers null, as on a row that does
+  // not exist (`FJS-1093`), so a null is the row policy hiding an owed row from
+  // the fire's principal — counted as fired, the job went done and the row
+  // never moved.
+  const unseen = () => new Error(
+    `[Junction] commitments(): ${model}.${job.transition} is owed on ${row.target.accessor} ` +
+    `${String(row.target.id)} and the move found no row — the fire's principal cannot see it. ` +
+    `A fire runs as createApp({ system }); declare one, and a row policy on ${row.target.accessor} ` +
+    `that admits it.`)
+
   try {
-    if (!hook) await db[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })
+    if (!hook) {
+      if (!await db[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })) throw unseen()
+    }
     else await db.$transaction(async (tx) => {
       const record = await tx[row.target.accessor].transition(row.target.id, row.target.transition, { system: true })
+      if (!record) throw unseen()
       await hook({
         db: tx, record, model, commitment: job.transition, dueAt: row.dueAt,
         timeZone: job.timeZone ?? 'UTC', now: db.$now?.() ?? new Date(),

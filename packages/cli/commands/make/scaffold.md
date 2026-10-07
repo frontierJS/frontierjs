@@ -85,16 +85,6 @@ const SCHEMA_TYPE = {
   json:     'Json',
 }
 
-// ─── Label helper ─────────────────────────────────────────────────────────────
-
-function toLabel(name) {
-  return name
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase())
-    .trim()
-}
-
 // ─── Template: schema.lite stanza ────────────────────────────────────────────
 
 function makeSchemaStanza(name, fields, softDelete) {
@@ -200,41 +190,13 @@ const { resourceFile } =
 // declares, a bound enum, then money and time — so a column added later is
 // ranked with the rest instead of missing from a list frozen at generate time.
 // The page says how to pin the set if this model wants a different answer.
+//
+// The three pages are the ones `fli make:route <dir>/{,create,[id]} --resource`
+// writes, so the links in them and the URL the directory is served at have one
+// answer between the two commands (`FJS-1821`).
 
-const { listPage, createPage, editPage } =
+const { resourceRoutePage, routeSegment } =
   await import(resolve(global.fliRoot, 'core/crud-templates.js'))
-
-const routePages = (model, plural, fields) => {
-  const singularLabel = toLabel(model)
-  const pluralLabel   = toLabel(plural)
-  // Two imports off one file, and they are two different things: the default
-  // export is the model's DEFAULT FORM (the resource's markup half), the named
-  // one is the accessor. A page needs the form; it needs the accessor for the
-  // id field and the gate.
-  const imports       = [
-    `import ${model} from '../../resources/${model}.mesa'`,
-    `import { ${plural} } from '../../resources/${model}.mesa'`,
-  ]
-  const basePath      = `/${plural}/`
-
-  return {
-    list: listPage({
-      title: pluralLabel, heading: pluralLabel, newLabel: `New ${singularLabel}`,
-      basePath, imports, res: plural,
-    }),
-    create: createPage({
-      title: `New ${singularLabel}`, heading: `New ${singularLabel}`,
-      submitLabel: `Create ${singularLabel}`, backLabel: 'Back to list',
-      basePath, imports, res: plural, form: model,
-    }),
-    edit: editPage({
-      title: singularLabel, heading: singularLabel,
-      submitLabel: 'Save', backLabel: `All ${pluralLabel.toLowerCase()}`,
-      deleteLabel: 'Delete',
-      basePath, imports, res: plural, form: model,
-    }),
-  }
-}
 
 </script>
 
@@ -365,13 +327,10 @@ if (flag.resource) {
 // ─── 4. Routes ────────────────────────────────────────────────────────────────
 
 if (!skipRoutes) {
-  const routesBase = resolve($.paths.webPages, plural)
-
-  const pages = routePages(modelName, plural, fields)
-
-  write(resolve(routesBase, 'index.mesa'),  pages.list,   'route/list')
-  write(resolve(routesBase, 'create.mesa'), pages.create, 'route/create')
-  write(resolve(routesBase, '[id].mesa'),   pages.edit,   'route/edit')
+  for (const [path, label] of [[plural, 'route/list'], [`${plural}/create`, 'route/create'], [`${plural}/[id]`, 'route/edit']]) {
+    const page = resourceRoutePage({ path, model: modelName, service: plural })
+    write(resolve($.paths.webPages, page.file), page.content, label)
+  }
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -384,8 +343,9 @@ if (!flag.dry && created.length) {
     echo('  Next: fli db:push to apply the schema change')
   }
   if (!skipRoutes) {
-    echo(`  Routes: /${plural}/  ·  /${plural}/create/  ·  /${plural}/[id]/`)
-    echo(`  Add a nav link to your layout pointing at /${plural}/`)
+    const url = routeSegment(plural)
+    echo(`  Routes: /${url}/  ·  /${url}/create/  ·  /${url}/[id]/`)
+    echo(`  Add a nav link to your layout pointing at /${url}/`)
   }
   echo('')
 }

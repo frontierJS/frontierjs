@@ -176,8 +176,11 @@ index.ts     public API
   grader**, after the app's `canStartSupport`: a subject above the operator is
   refused, a peer is not (`FJS-D574`).
 - **Four awaited callbacks, and A THROW REFUSES** — `onLogin`, `onLoginFailed`,
-  `onLogout`, `onRegister` (`FJS-042`). The same shape `onPasswordResetRequested`
-  already had, so no new vocabulary; single handlers, not a bus, because each is
+  `onLogout`, `onRegister` (`FJS-042`). **`onPasswordResetRequested` is NOT one
+  of them**: it runs after `requestPasswordReset` has answered and a throw is
+  logged, because awaiting the mail put a known address on the clock
+  (`FJS-1832`) — tests wait on `h.requestReset()` / `h.nextReset()` for the
+  token. Single handlers, not a bus, because each is
   a decision and a decision has one owner. A second listener that wants to
   OBSERVE belongs on Junction's `app.events`, which is a separate question and
   is not answered here. The cost is stated rather than hidden: an app handler is

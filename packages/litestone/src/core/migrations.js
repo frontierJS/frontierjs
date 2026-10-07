@@ -416,6 +416,24 @@ export function unacceptedLoss(dir, files) {
   })
 }
 
+// The two lines create writes over a change it could not decide: a rebuild
+// emitted commented out, and an ADD COLUMN with no value for existing rows.
+// The rest of such a file runs fine, so applying it records a migration that
+// did not build its schema and leaves the backfill nowhere to go.
+const BLOCKED_SECTION = /^--\s*"[^"]+":\s*rebuild BLOCKED\b|^--\s*ALTER TABLE\b.*--\s*BLOCKED\s*$/m
+
+// The pending files still holding a section create marked BLOCKED.
+export function unresolvedBlocks(dir, files) {
+  return files.filter(f => f.endsWith('.sql') && BLOCKED_SECTION.test(loadMigrationSql(join(resolve(dir), f)).sql))
+}
+
+export function blockedRefusal(files) {
+  return `${files.join(', ')} ${files.length > 1 ? 'hold' : 'holds'} a section marked BLOCKED, so nothing was ` +
+         `applied. Each names the column existing rows have no value for, or the object a rebuild ` +
+         `would destroy: write the change by hand under it — a backfill, a value expression in the ` +
+         `copy, a @default() — then delete the BLOCKED line`
+}
+
 export function lossRefusal(files) {
   return `${files.join(', ')} ${files.length > 1 ? 'delete' : 'deletes'} column values and nobody has accepted ` +
          `the loss, so nothing was applied. Read the DESTRUCTIVE box in the file: keep the values ` +
@@ -630,6 +648,11 @@ export async function apply(db, dir = './migrations') {
   if (held.length) {
     const message = lossRefusal(held)
     return { applied: [], pending: pending.length, skipped, refused: true, failed: held[0], error: message, message, held }
+  }
+  const blocked = unresolvedBlocks(absDir, pending)
+  if (blocked.length) {
+    const message = blockedRefusal(blocked)
+    return { applied: [], pending: pending.length, skipped, refused: true, failed: blocked[0], error: message, message, held: blocked }
   }
 
   const results = []

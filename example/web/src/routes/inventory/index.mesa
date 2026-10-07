@@ -26,8 +26,7 @@ title: Inventory
   // and that is all it is. The server refuses regardless (Invariant 6).
   import { movements }       from '../../resources/InventoryMovement.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { session } from '@/session.js'
-  import { toFieldErrors, useStore } from '@frontierjs/sierra/junction'
+  import { session, toFieldErrors, useStore } from '@frontierjs/sierra/junction'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

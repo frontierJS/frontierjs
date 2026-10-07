@@ -1241,6 +1241,7 @@ table `oauth_flow` · db `main` · gate `8`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `invitation` | `String` | yes | — | @guarded |
 | `provider` | `String` | no | — | **required on write** |
 | `returnTo` | `String` | yes | — | — |
 | `state` | `String` | no | — | unique · @guarded · **required on write** |

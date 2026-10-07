@@ -14,8 +14,7 @@ beforeAll(async () => { h = await makeAuth() })
 afterAll(() => h.cleanup())
 
 describe('changePassword and the other sessions', () => {
-  // FJS-1831: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a session issued before a password change does not survive it', async () => {
+  test('a session issued before a password change does not survive it', async () => {
     const email = 'change-pw@example.test'
     const made  = await h.auth.createUser({ email, password: 'pw-old-1' })
 
@@ -23,10 +22,9 @@ describe('changePassword and the other sessions', () => {
     const stolen = signedIn(await h.auth.login(email, 'pw-old-1'))
     expect(await h.auth.verifySession(stolen.token)).not.toBeNull()
 
-    await h.auth.changePassword!(made.userId, 'pw-old-1', 'pw-new-2')
+    await h.auth.changePassword!(made.userId, 'pw-old-1', 'pw-new-2', { exceptSessionId: mine.user.sessionId })
 
     // The session that changed the password may stay; every other one must go.
-    // (`revokeSessions(userId, { exceptSessionId })` already exists for this.)
     expect(await h.auth.verifySession(stolen.token)).toBeNull()
     expect(await h.auth.verifySession(mine.token)).not.toBeNull()
   })
@@ -36,7 +34,7 @@ describe('changePassword and the other sessions', () => {
     await h.auth.createUser({ email, password: 'pw-old-1' })
     const stolen = signedIn(await h.auth.login(email, 'pw-old-1'))
 
-    await h.auth.requestPasswordReset!(email)
+    await h.requestReset(email)
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-new-2')
 
     expect(await h.auth.verifySession(stolen.token)).toBeNull()

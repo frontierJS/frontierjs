@@ -22,10 +22,9 @@ title: Reports
   // `@@sql`, kept current by `@@refreshOn([Order])`, so a number on this screen
   // moves when an order does without anything here subscribing to orders.
   import { revenue } from '@/resources/Revenue.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
-  import { useStore } from '@frontierjs/sierra/junction'
-  import { money } from '../../money.js'
+  import { prefs } from '@/stores/prefs.js'
+  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'

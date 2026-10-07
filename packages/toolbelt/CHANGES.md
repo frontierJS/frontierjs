@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-06 — `verifyRequest`'s `seenNonce` contract names how long to remember (`FJS-1833`)
+
+The doc said a nonce is remembered "inside the window", and both callers read that as one tolerance. A timestamp is accepted up to `toleranceSeconds` either side, though, so a request signed at the limit ahead stays fresh for a second full tolerance. The doc now says a nonce must be remembered for twice `toleranceSeconds`. Only the doc changed, since the store belongs to the caller.
+
 ## 2026-10-05 — `frontmatterValue`: the writer's half of the frontmatter kit
 
 `frontmatterValue(value)` answers the text to write after `key: ` so that `parseFrontmatterBlock` reads back exactly `String(value)`. It writes the value plain when plain reads back as itself, and as a JSON string otherwise, because a JSON string is valid YAML double-quoted text, escapes included. The reader is the oracle, so the writer restates none of the subset's rules. fli's generators were interpolating a person's words bare. Since fli reads through the kit, `Deploy: staging` would be refused, `a # b` would read as `a`, and an app named `@scope/app` would be refused. Proof: `test/specs/frontmatter.spec.js` § the writer, which reads back 33 awkward strings.

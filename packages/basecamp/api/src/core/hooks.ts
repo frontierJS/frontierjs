@@ -710,7 +710,9 @@ export function outpostCredential(app: OutpostDeps): CredentialVerifier {
     // would read as a caller's bad signature. Logged first, where it can be told apart.
     seenNonce: async (nonce) => {
       try {
-        return await rememberNonce(app, nonce, TOLERANCE_S * 1_000)
+        // Twice the tolerance: a timestamp accepted at the limit ahead stays fresh
+        // for another full tolerance, and a nonce forgotten sooner replays (FJS-1833).
+        return await rememberNonce(app, nonce, 2 * TOLERANCE_S * 1_000)
       } catch (err) {
         app.logger.error('outpost nonce store failed', { error: err instanceof Error ? err.message : String(err) })
         throw err

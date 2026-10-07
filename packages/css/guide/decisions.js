@@ -287,7 +287,7 @@ var OUTCOMES = {
     treatments: ['outlined', 'ghost', 'raised', 'glass', 'link', 'square'],
     states: [
       { label: 'Disabled', apply: 'disabled', why: 'the native attribute — it removes the button from the tab order too' },
-      { label: 'Busy', apply: 'aria-busy="true"', cls: 'loading', why: '.loading paints the spinner; aria-busy is what announces it' },
+      { label: 'Busy', apply: 'aria-busy="true"', why: 'the attribute that announces it is the one that draws the spinner' },
     ],
     instead: [
       { term: 'Link', when: 'it navigates — even when it is styled as a button. Right-click, middle-click and "open in new tab" all depend on it being an <a>' },

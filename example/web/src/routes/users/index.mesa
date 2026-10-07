@@ -51,9 +51,8 @@ title: Users
   // gray the control out — it is what catches the case where the affordance and
   // the boundary disagree, which is the case an affordance can never cover.
   import User, { users } from '@/resources/User.mesa'
-  import { session }     from '@/session.js'
-  import { prefs }       from '@/prefs.js'
-  import { useStore }    from '@frontierjs/sierra/junction'
+  import { prefs }       from '@/stores/prefs.js'
+  import { session, useStore } from '@frontierjs/sierra/junction'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar         from '@frontierjs/ui/components/display/Avatar.mesa'

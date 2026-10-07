@@ -79,6 +79,7 @@ What a habit from another framework produces, and what this package wants.
 | `resources/orders.js`, two resources in one file | `resources/Order.mesa` exporting `orders`, one per file |
 | hand-written inputs plus a submit handler | `<Order />`, or `<Form resource={orders}>` |
 | `localStorage.setItem('token', …)` after a `fetch('/login')` | `signIn(email, password)` and `session` from `@frontierjs/sierra/junction` |
+| `row.ownerId === session.user.id` | `session.user.userId` — `session.user` is the server's SessionContext, `{ userId, userType, email, name, role, … }`, and has no `id`, so the owner is shown nothing of their own |
 
 ---
 

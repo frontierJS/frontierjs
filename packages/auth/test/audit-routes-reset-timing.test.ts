@@ -1,10 +1,10 @@
 // test/audit-routes-reset-timing.test.ts
 //
-// Audit 2026-10-05: POST /auth/password-reset/request answers `{ ok: true }`
-// for a known and an unknown address alike, and the clock is the remaining
-// oracle. An unknown address returns after one read; a known one deletes,
-// creates and AWAITS the app's mail callback. Login pays bcrypt on every
-// branch for exactly this reason (`FJS-063`); this route pays nothing.
+// Audit 2026-10-05, FJS-1832: POST /auth/password-reset/request answers
+// `{ ok: true }` for a known and an unknown address alike, so the clock is the
+// remaining oracle. A known address that deleted, created and AWAITED the
+// app's mail callback before answering was readable off it. Login pays bcrypt
+// on every branch for the same reason (`FJS-063`).
 //
 // Two harnesses: a mail callback that awaits a 20ms timer (a mail client's
 // round trip), and the harness's own no-op. Medians over 30 interleaved
@@ -47,14 +47,12 @@ async function measure(label: string, onPasswordResetRequested: () => Promise<vo
 }
 
 describe('POST /auth/password-reset/request timing', () => {
-  // FJS-1832: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('with a mail callback that awaits 20ms, a known address is not distinguishable on the clock', async () => {
+  test('with a mail callback that awaits 20ms, a known address is not distinguishable on the clock', async () => {
     const { mk, mu } = await measure('20ms mail callback', async () => { await sleep(20) })
     expect(mk / mu).toBeLessThan(2)
   })
 
-  // FJS-1832: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('with the no-op callback, a known address is not distinguishable on the clock', async () => {
+  test('with the no-op callback, a known address is not distinguishable on the clock', async () => {
     const { mk, mu } = await measure('no-op callback', async () => {})
     expect(mk / mu).toBeLessThan(2)
   })

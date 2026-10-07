@@ -28,15 +28,15 @@ title: Invoices
   //             a column for it would be a value that goes stale while nobody
   //             is looking.
   //   the tone  whether `void` is bad news. No attribute decides that
-  //             (`web/src/status-tone.js`).
+  //             (`web/src/lib/status-tone.js`).
   //   the money the reader's chosen currency, which the schema is right not to
   //             carry (`web/src/displays.js`).
   //
   // The last two reach the cells as REGISTRATIONS rather than as branches
   // here, which is what keeps this table the same table the generator writes.
   import { invoices } from '@/resources/Invoice.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
+  import { session } from '@frontierjs/sierra/junction'
+  import { prefs } from '@/stores/prefs.js'
   import { today } from '@/datetime.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

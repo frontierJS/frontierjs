@@ -209,8 +209,14 @@ export interface IAuth {
   // supplies the id of the thing, and a revoke that only matched on that id
   // would revoke somebody else's.
 
-  /** Verify the current password, then replace it. Throws if it does not verify. */
-  changePassword?(userId: string, currentPassword: string, newPassword: string): Promise<void>
+  /**
+   * Verify the current password, replace it, and revoke every session but
+   * `exceptSessionId` — the one that asked. Throws if it does not verify.
+   */
+  changePassword?(
+    userId: string, currentPassword: string, newPassword: string,
+    opts?: { exceptSessionId?: string },
+  ): Promise<void>
 
   /** The user's live sessions. Never carries the token — see AuthSessionInfo. */
   listSessions?(userId: string):                       Promise<AuthSessionInfo[]>

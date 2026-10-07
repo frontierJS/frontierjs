@@ -15,7 +15,7 @@ title: Customer fields
   // naming it degrades. So the table shows the slot, and shows its absence,
   // because *why is this one slower* has to be answerable from the screen.
   import { customFields } from '../../resources/CustomField.mesa'
-  import { session }      from '@/session.js'
+  import { session } from '@frontierjs/sierra/junction'
 
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout       from '@frontierjs/ui/components/display/Callout.mesa'

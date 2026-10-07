@@ -38,6 +38,10 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
   gate as *no restriction at all*. `accessTable` computes parents first and
   falls back to `read`; a membership that delegated to `update` on a container
   with no update policy let any signed-in caller join any container.
+- **`check(parent)` carries the parent's PUBLIC clause.** Under a parent read
+  at gate 0 a child delegates to `check(parent, 'update')`, or to nothing when
+  the parent holds no update policy; `check(shop)` let every signed-in caller
+  read and add to the orders of a published shop (`FJS-1789`).
 - **A create is an AND.** The caller is the owner/author the row names AND may
   read the parent. Either alone files a row under somebody else's name or
   under a parent the caller cannot see.

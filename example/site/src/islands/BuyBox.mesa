@@ -144,7 +144,7 @@
   }
 
   // Mesa watches PATHS, so the store's fields have to be named for a write to
-  // this component to re-render — see the note at the top of web/src/cart.js.
+  // this component to re-render — see the note at the top of web/src/stores/cart.js.
   $: (cart.busy, cart.count, cart.error)
 </script>
 

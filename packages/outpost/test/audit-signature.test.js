@@ -29,8 +29,7 @@ function server() {
 
 describe('FINDING — replay after the nonce is forgotten', () => {
 
-  // FJS-1833: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a request signed inside the tolerance is accepted AGAIN once its nonce ages out of the 300s memory', async () => {
+  test('a request signed at the tolerance limit ahead is refused for as long as its timestamp stays fresh', async () => {
     const T0 = 1_800_000_000 // receiver clock, seconds
     setSystemTime(new Date(T0 * 1000))
 
@@ -49,11 +48,10 @@ describe('FINDING — replay after the nonce is forgotten', () => {
     expect((await hit()).status).toBe(200)
     expect((await hit()).status).toBe(401)   // the replay is caught now…
 
-    // …and 301s later the nonce has been swept (memory window = tolerance),
-    // while the timestamp T0+300 is still only 1s from the receiver's clock.
-    setSystemTime(new Date((T0 + 301) * 1000))
-    const replay = await hit()
-    expect(replay.status).toBe(401)          // FAILS: 200, the command runs twice
+    // …and 599s later, when a memory of one tolerance had swept the nonce,
+    // the timestamp T0+300 is still only 299s from the receiver's clock.
+    setSystemTime(new Date((T0 + 599) * 1000))
+    expect((await hit()).status).toBe(401)
     expect(calls.length).toBe(1)
   })
 })

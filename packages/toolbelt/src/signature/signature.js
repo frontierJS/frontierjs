@@ -255,7 +255,10 @@ export async function signRequest({ secret, method, path, query, body = '', pref
  *
  * `seenNonce` is the replay half and it is the CALLER's, because storing it is
  * I/O and this package does none: hand in a function that answers whether this
- * nonce has been used inside the window (and records it). Omit it and the
+ * nonce has been used (and records it). It must remember a nonce for TWICE
+ * `toleranceSeconds`: a timestamp accepted at the limit ahead of this clock
+ * stays fresh for another full tolerance, so a memory of one tolerance lets it
+ * replay (FJS-1833). Omit it and the
  * signature is still bound to a freshness window — weaker, and it is the
  * caller's decision rather than a silent default.
  *

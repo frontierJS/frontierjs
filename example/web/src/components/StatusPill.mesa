@@ -11,7 +11,7 @@
   // so `registerDisplay` supplies the name off `{ field, model }`, and
   // `registerDisplayComponent` supplies what it draws.
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
-  import { toneFor } from './status-tone.js'
+  import { toneFor } from '@/lib/status-tone.js'
 
   export let value  = undefined
   // The column entry. `options` is the enum's members with their `@label`

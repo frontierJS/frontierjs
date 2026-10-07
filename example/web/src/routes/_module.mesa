@@ -3,9 +3,8 @@ siteName: Kitchen sink
 ---
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
-  import { status, getClient } from '@frontierjs/sierra/junction'
-  import { session, signIn, submitCode, signOut } from '@/session.js'
-  import { cart, refresh as refreshCart } from '@/cart.js'
+  import { session, signIn, submitCode, signOut, status, getClient } from '@frontierjs/sierra/junction'
+  import { cart, refresh as refreshCart } from '@/stores/cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'

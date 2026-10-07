@@ -1571,7 +1571,7 @@ async function stream(title, body) {
   running = true
   const btn = document.getElementById('run-btn')
   btn.disabled = true
-  btn.classList.add('loading')
+  btn.setAttribute('aria-busy', 'true')
 
   try {
     const res = await fetch(`${API}/api/run/${encodeURIComponent(title)}`, {
@@ -1585,7 +1585,7 @@ async function stream(title, body) {
   } finally {
     running = false
     btn.disabled = false
-    btn.classList.remove('loading')
+    btn.removeAttribute('aria-busy')
   }
 }
 

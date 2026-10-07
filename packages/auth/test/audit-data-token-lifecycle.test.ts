@@ -59,7 +59,7 @@ describe('session tokens', () => {
 describe('reset tokens', () => {
   test('single use, and the second use burns nothing', async () => {
     const u = await fresh('reset-once')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const t = h.resetToken()
     await h.auth.confirmPasswordReset!(t, 'pw-2')
     await rejectsWith(() => h.auth.confirmPasswordReset!(t, 'pw-3'), InvalidTokenError)
@@ -68,7 +68,7 @@ describe('reset tokens', () => {
 
   test('a reset token is refused by verifyEmail and a verify token by confirmPasswordReset', async () => {
     const u = await fresh('reset-purpose')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await h.auth.requestEmailVerification!(u.userId)
     await rejectsWith(() => h.auth.verifyEmail!(h.resetToken()), InvalidTokenError)
     await rejectsWith(() => h.auth.confirmPasswordReset!(h.verifyToken(), 'pw-x'), InvalidTokenError)
@@ -76,7 +76,7 @@ describe('reset tokens', () => {
 
   test('a reset token lapses after passwordResetTtl on the client clock', async () => {
     const u = await fresh('reset-lapse')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const t = h.resetToken()
     const was = now
     now = new Date(was.getTime() + 61 * 60 * 1000)
@@ -87,9 +87,9 @@ describe('reset tokens', () => {
 
   test('a second request supersedes the first token', async () => {
     const u = await fresh('reset-supersede')
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const first = h.resetToken()
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await rejectsWith(() => h.auth.confirmPasswordReset!(first, 'pw-2'), InvalidTokenError)
   })
 
@@ -97,7 +97,7 @@ describe('reset tokens', () => {
     const u = await fresh('reset-revokes')
     const a = signedIn(await h.auth.login(u.email, u.password))
     const b = signedIn(await h.auth.login(u.email, u.password))
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-2')
     expect(await h.auth.verifySession(a.token)).toBeNull()
     expect(await h.auth.verifySession(b.token)).toBeNull()

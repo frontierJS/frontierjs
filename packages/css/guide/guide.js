@@ -7752,11 +7752,11 @@ function feedbackPage() {
         `
         ${preview(`
           <div class="cluster">
-            <button class="btn primary loading" aria-busy="true" disabled>Save changes</button>
-            <button class="btn outlined loading" aria-busy="true" disabled>Retry</button>
+            <button class="btn primary" aria-busy="true" disabled>Save changes</button>
+            <button class="btn outlined" aria-busy="true" disabled>Retry</button>
             <button class="btn primary">Not loading</button>
           </div>`)}
-        ${code(`<button class="btn primary loading" aria-busy="true" disabled>
+        ${code(`<button class="btn primary" aria-busy="true" disabled>
   Save changes
 </button>`)}
         <p>
@@ -10811,19 +10811,19 @@ FrontierJS    <button class="btn outlined danger">`, 'txt')}
               <tr><td>Outlined</td><td><code>btn btn-outline-danger</code></td><td><code>btn danger outlined</code></td></tr>
               <tr><td>Small</td><td><code>btn btn-danger btn-sm</code></td><td><code>btn danger text-sm</code></td></tr>
               <tr><td>Disabled</td><td><code>disabled</code></td><td><code>disabled</code></td></tr>
-              <tr><td>Busy</td><td>a nested <code>&lt;span class="spinner-border"&gt;</code></td><td><code>loading</code> + <code>aria-busy</code></td></tr>
+              <tr><td>Busy</td><td>a nested <code>&lt;span class="spinner-border"&gt;</code></td><td><code>aria-busy="true"</code></td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          One difference is worth naming and one is worth conceding.
+          Two differences are worth naming.
           <code>btn-sm</code> is a size that only a button has; ours is
           <code>text-sm</code>, the type scale, and it is the same class on a
           heading or a table. That is the pattern, not a coincidence. The
-          concession is the spinner: <strong>Pico needs no class for it at
-          all</strong> — <code>aria-busy="true"</code> draws it — where ours
-          wants the attribute <em>and</em> a class, because the attribute
-          announces and the class draws. Pico's is the better idea.
+          spinner is Pico's idea: <strong>no class draws it</strong> —
+          <code>aria-busy="true"</code> does, so the attribute that announces
+          the state is the one that paints it, and a spinner a screen reader
+          is never told about cannot be written.
         </p>
 
         <h3 class="h5">3. Now a color the framework did not ship</h3>
@@ -11290,7 +11290,7 @@ function kb(bytes) {
  * Width only: the bundle also carries `prefers-reduced-motion` and
  * `hover: hover`, which are @media and are not breakpoints. Counting every
  * @media gives 14 instead of 8, and the six it adds — `.card`, `.tile`,
- * `.btn`, `.surface`, `.spinner`, `.loading` — make the package look
+ * `.btn`, `.surface`, `.spinner`, the busy button — make the package look
  * responsive in places it is not.
  *
  * Descends through @import and @layer the same way countShippedClasses()

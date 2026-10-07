@@ -1,4 +1,4 @@
-// web/src/status-tone.js — which tone a state gets.
+// web/src/lib/status-tone.js — which tone a state gets.
 //
 // The STATES come from the schema — `@@transitions` on `Order`, an enum on
 // `Invoice` — and nothing here invents one. What is not in the schema is

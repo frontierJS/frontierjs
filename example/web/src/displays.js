@@ -18,7 +18,7 @@
 // `money` needs only the RENDERING half: `displayFor` already answers `money`
 // for any `x-money` column, so there is nothing left to name. What the kit
 // cannot know is that this app has a reader-chosen display currency — that is
-// `web/src/money.js`, and it is not in `db/schema.lite` and should not be. A
+// `web/src/lib/money.js`, and it is not in `db/schema.lite` and should not be. A
 // shop keeps its books in one currency and a person reads it in another.
 //
 // `status` needs BOTH, because the built-in table has no name for it: it
@@ -28,8 +28,8 @@
 import { registerDisplay }          from '@frontierjs/sierra/junction'
 import { registerDisplayComponent } from '@frontierjs/ui/controls'
 
-import MoneyCell  from './MoneyCell.mesa'
-import StatusPill from './StatusPill.mesa'
+import MoneyCell  from './components/MoneyCell.mesa'
+import StatusPill from './components/StatusPill.mesa'
 
 registerDisplayComponent('money', MoneyCell)
 

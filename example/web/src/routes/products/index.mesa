@@ -17,10 +17,9 @@ title: Products
   // the screen that reads it.
   import { products }      from '@/resources/Product.mesa'
   import { productImages } from '@/resources/ProductImage.mesa'
-  import { session } from '@/session.js'
-  import { prefs }   from '@/prefs.js'
-  import { money }   from '@/money.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { prefs }   from '@/stores/prefs.js'
+  import { money }   from '@/lib/money.js'
+  import { session, useStore } from '@frontierjs/sierra/junction'
   import { goto }     from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

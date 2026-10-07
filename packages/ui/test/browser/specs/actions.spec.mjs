@@ -70,8 +70,8 @@ export async function run(t) {
   await t.clickAt('#toggle-loading')
   await t.eventually(`document.querySelector('#b-loading').getAttribute('aria-busy')`, 'true',
     'loading is announced, not just drawn')
-  t.ok(await t.evaluate(`return document.querySelector('#b-loading').classList.contains('loading');`),
-    'and drawn as well')
+  t.ok(await t.evaluate(`return getComputedStyle(document.querySelector('#b-loading'), '::after').animationName !== 'none';`),
+    'and the same attribute draws the spinner')
   // Disabled rather than pointer-events: a pointer guard still lets the
   // keyboard through, which is the second submit nobody sees coming.
   t.is(await t.evaluate(`return document.querySelector('#b-loading').disabled;`), true,

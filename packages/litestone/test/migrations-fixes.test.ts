@@ -132,12 +132,53 @@ model Post {
     acceptLoss(made.filePath!)
 
     const res = await apply(db, dir)
-    expect(res.failed).toBeUndefined()   // applies as a recorded no-op
+    expect(res.refused).toBe(true)
 
     const cols = db.query(`PRAGMA table_info(post)`).all().map((c: { name: string }) => c.name)
     expect(cols).toContain('views')      // old shape untouched
     expect(cols).not.toContain('rating')
     expect((db.query(`SELECT COUNT(*) c FROM post`).get() as { c: number }).c).toBe(2)
+  })
+
+  // Applying the rest of the file and recording it left the database between
+  // two schemas, and the backfill the comment asks for could no longer go into
+  // a file already marked applied (FJS-1785).
+  it('a file holding a BLOCKED section runs nothing and records nothing', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+
+    const made = create(db, parse(`
+model Post {
+  id     Int    @id
+  title  String
+  views  Int    @default(0)
+  rating Int
+  tag    Tag    @relation(fields: [tagId], references: [id])
+  tagId  Int
+}
+model Tag {
+  id    Int    @id
+  name  String
+}
+`), 'blocked', dir)
+    expect(made.sql).toContain('rebuild BLOCKED')
+    const before = appliedMigrations(db).length
+
+    const res = await apply(db, dir)
+    expect(res.refused).toBe(true)
+    expect(res.failed).toBe(made.name)
+    expect(res.message).toContain('BLOCKED')
+    expect(db.query(`SELECT name FROM sqlite_master WHERE name = 'tag'`).all()).toEqual([])
+    expect(appliedMigrations(db).length).toBe(before)
+
+    // The BLOCKED lines are the hold: once the reviewer has resolved the
+    // section and deleted them, the file applies.
+    const path = made.filePath!
+    writeFileSync(path, readFileSync(path, 'utf8').split('\n').filter(l => !/BLOCKED/.test(l)).join('\n'))
+    const again = await apply(db, dir)
+    expect(again.refused).toBeUndefined()
+    expect(again.failed).toBeUndefined()
+    expect(db.query(`SELECT name FROM sqlite_master WHERE name = 'tag'`).all()).toEqual([{ name: 'tag' }])
   })
 })
 

@@ -26,9 +26,8 @@ title: Customers
   // `@frontierjs/toolbelt/directives` carries, and both boundaries read that
   // one table.
   import Customer, {customers}   from '@/resources/Customer.mesa'
-  import { session } from '@/session.js'
-  import { prefs } from '@/prefs.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { prefs } from '@/stores/prefs.js'
+  import { session, useStore } from '@frontierjs/sierra/junction'
 
   import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar               from '@frontierjs/ui/components/display/Avatar.mesa'

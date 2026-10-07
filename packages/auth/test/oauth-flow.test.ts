@@ -209,7 +209,7 @@ describe('oauthCallback', () => {
   test('a password-reset token cannot be spent as a flow state', async () => {
     // The purpose column, from the other direction (FJS-476).
     const u = await h.sys.user.create({ data: { email: 'cross@shop.test' } })
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const token = h.resetToken()
 
     await rejectsWith(

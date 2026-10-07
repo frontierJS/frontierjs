@@ -762,10 +762,32 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     expect((await req.send(body)).status).toBe(401)
   })
 
+  test('a nonce is remembered for as long as its timestamp can still be fresh', async () => {
+    // Seen 400s ago — past one tolerance, inside two. A sender clock 300s
+    // ahead signs a timestamp that is still fresh here, so a memory of one
+    // tolerance had swept the nonce and let the replay through (FJS-1833).
+    const sys   = env.system as any
+    const nonce = crypto.randomUUID()
+    await sys.outpostNonce.create({
+      data: { nonce, seenAt: new Date(Date.now() - 400_000).toISOString() },
+    })
+
+    const body = { outpost_version: '0.4.3' }
+    const path = `/servers/${machine.id}`
+    const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+    const hs   = await signRequest({
+      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      timestamp: Math.floor(Date.now() / 1000), nonce,
+    })
+    for (const [k, v] of Object.entries(hs)) req.set(k, v)
+
+    expect((await req.send(body)).status).toBe(401)
+  })
+
   test('a spent nonce is swept once it can no longer be replayed', async () => {
-    // The table only has to remember as long as the signature is live — five
-    // minutes — and the sweep runs on write rather than on a timer, so there is
-    // no clock to own and nothing grows while nothing is arriving.
+    // The table only has to remember as long as a timestamp can be fresh —
+    // twice the tolerance — and the sweep runs on write rather than on a timer,
+    // so there is no clock to own and nothing grows while nothing is arriving.
     const sys  = env.system as any
     const old  = crypto.randomUUID()
     await sys.outpostNonce.create({

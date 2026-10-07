@@ -1,6 +1,10 @@
 # Changes
 
 
+## 2026-10-07 — `Button` draws its spinner from `aria-busy` alone
+
+`@frontierjs/css` dropped `.loading` (the attribute draws the spinner now), so `Button` stops adding the class; `loading` and a submitting form still set `aria-busy` and `disabled` as before. `actions.spec` grades the spinner from the computed `::after` rather than the class list, and `form.mjs` drops its class assertion.
+
 ## 2026-10-05 — `CodeInput` repaints the lines a keystroke changed, not the document (`FJS-1621`)
 
 The paint was one `{@html}` of `glow()` over the whole value, so every keystroke re-highlighted and rebuilt every line: 37.7 s a key on a 4.2 MB JSON text. It now glows only the lines between the first and last that differ, plus any after them whose block-comment state the edit changed, and replaces only the chunks that hold them. The paint is a run of `<code>` blocks of at most 64 lines, because adding or removing a line in a single block re-lays every line in it. Measured at 10,000 rows × 20 keys (220,002 lines), one character costs about 0.7–0.8 s against 0.5–0.9 s for a bare `<textarea>` holding the same text; at 22,000 lines, about 85 ms. Opening a block comment still recolors every line after it. Every line is a `<span>` whether or not the box is `numbered`; an unnumbered box turns code.css's counter off.

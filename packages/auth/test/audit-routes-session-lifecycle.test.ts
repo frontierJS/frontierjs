@@ -112,7 +112,9 @@ describe('token reuse after a revoking event', () => {
   test('after password-reset/confirm every earlier session is gone', async () => {
     const a = await person('reset')
     const { token } = signedIn(await h.auth.login(a.email, a.password))
+    const minted = h.nextReset()
     await json(bearerApp, 'POST', '/auth/password-reset/request', { email: a.email })
+    await minted
     const confirm = await json(bearerApp, 'POST', '/auth/password-reset/confirm', { token: h.resetToken(), password: 'new-pw-1' })
     expect(confirm.status).toBe(200)
     expect((await raw(bearerApp, 'GET', '/account/me', { headers: { authorization: `Bearer ${token}` } })).status).toBe(401)

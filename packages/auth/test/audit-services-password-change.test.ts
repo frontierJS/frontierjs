@@ -42,8 +42,7 @@ const me = (token: string) => request(app).get('/account/me').auth(token)
 
 describe('changing the password ends the other sessions', () => {
 
-  // FJS-1831: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('session B is signed out when session A changes the password', async () => {
+  test('session B is signed out when session A changes the password', async () => {
     const u = await person()
     const a = await u.login()
     const b = await u.login()
@@ -59,8 +58,7 @@ describe('changing the password ends the other sessions', () => {
     expect((await me(b)).status).toBe(401)
   })
 
-  // FJS-1831: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('the row count agrees: one session left for the account', async () => {
+  test('the row count agrees: one session left for the account', async () => {
     const u = await person()
     const a = await u.login()
     await u.login()
@@ -71,8 +69,7 @@ describe('changing the password ends the other sessions', () => {
     expect(rows.length).toBe(1)
   })
 
-  // FJS-1831: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an unscoped API key that changes the password also ends every session', async () => {
+  test('an unscoped API key that changes the password also ends every session', async () => {
     // The key path is the one with no sessionId at all, so "others" has no
     // exception to keep — every session is somebody else's tab.
     const u = await person()

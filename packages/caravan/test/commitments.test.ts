@@ -489,6 +489,25 @@ describe('the move is graded, not bypassed', () => {
     expect(await status(order.id)).toBe('pending')
     expect(metrics(app).lapsed).toBe(0)
     expect(fires(queue)).toHaveLength(1)
+    expect(fires(queue)[0]!.error).toContain('declares no createApp({ system })')
+  })
+
+  it('a row policy that hides the row from the app\'s principal FAILS the fire, naming both', async () => {
+    // A move on a row the caller cannot see answers null (`FJS-1093`), and the
+    // fire counted that as made: the job went done and the row stayed owed.
+    const hidden = SCHEMA.replace('model Order {', 'model Order {\n  @@allow(\'all\', auth() != null)')
+    const { app, db, queue, advance, status } = await started(hidden)
+    const order = await db.asSystem().order.create({ data: {} })
+
+    advance(14 * DAY)
+    await app.commitments!.sweep()
+    await until('the fire to be refused', () => metrics(app).failed >= 1)
+    expect(await status(order.id)).toBe('pending')
+    expect(metrics(app).fired).toBe(0)
+    const [job] = fires(queue)
+    expect(job!.status).not.toBe('completed')
+    expect(job!.error).toContain('Order.abandon')
+    expect(job!.error).toContain('createApp({ system })')
   })
 })
 

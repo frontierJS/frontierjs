@@ -18,7 +18,7 @@ import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/crede
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, bridge, jsonResponse, errorResponse } from './bridge.ts'
 import { toFrameworkError }               from '../core/errors.ts'
-import { createStats }                    from './types.ts'
+import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
@@ -385,7 +385,9 @@ export class HttpTransport {
         // no reason, so this is a memory bound and never the app's answer —
         // `maxFrameBytes` sits below it and refuses by name first.
         maxPayloadLength: this._wsLimits.maxPayloadLength,
-        open:    (ws)            => this._wsOpen(ws),
+        // Bun dispatches `message` while an async `open` is still awaiting, so
+        // the frames wait on this instead (`FJS-1828`).
+        open:    (ws)            => { ws.data.opened = this._wsOpen(ws) },
         message: (ws, msg)       => this._wsMessage(ws, msg),
         close:   (ws, code, reason) => this._wsClose(ws, code, reason),
         drain:   (ws)            => this._wsDrain(ws),
@@ -1270,7 +1272,8 @@ export class HttpTransport {
     }
   }
 
-  private async _wsOpen(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
+  /** Resolves false when the socket was refused, so its held frames are dropped. */
+  private async _wsOpen(ws: Bun.ServerWebSocket<WsData>): Promise<boolean> {
     this.stats.performance.online++
     this._sockets.add(ws)
     this._wsPerIp.set(ws.data.ip, (this._wsPerIp.get(ws.data.ip) ?? 0) + 1)
@@ -1300,6 +1303,10 @@ export class HttpTransport {
       } catch {
         principal = REFUSE
       }
+      // A provider answers null for a token it does not recognize as often as
+      // it throws — `@frontierjs/auth` does — so on the app's own socket a
+      // present token that came back null is the same refusal (`FJS-1830`).
+      if (principal === null && token && ws.data.handlers[SESSION_SOCKET]) principal = REFUSE
       if (principal === REFUSE) {
         // A credential that was PRESENT and did not verify is a refusal, not
         // anonymity. Swallowing it connected a revoked, expired or forged
@@ -1316,7 +1323,7 @@ export class HttpTransport {
         this.stats.performance.online--
         this._sockets.delete(ws)
         this._releaseIp(ws.data.ip)
-        return
+        return false
       }
       ws.data.user = principal
     }
@@ -1334,6 +1341,7 @@ export class HttpTransport {
     // predates the field ignores it.
     wsSend(ws, JSON.stringify(
       this._buildId ? { type: 'connected', build: this._buildId } : { type: 'connected' }))
+    return true
   }
 
   /**
@@ -1395,9 +1403,14 @@ export class HttpTransport {
       return
     }
 
+    // Counted while it waits for `open`, so a caller writing before its
+    // credential verifies is bounded the same as one writing after.
     l.inFlight++
-    const ctx = this._buildWsContext(ws)
-    try { await ws.data.handlers.message?.(ctx, message) } catch {}
+    try {
+      if (!await ws.data.opened) return
+      const ctx = this._buildWsContext(ws)
+      await ws.data.handlers.message?.(ctx, message)
+    } catch {}
     finally { l.inFlight-- }
   }
 
@@ -1414,8 +1427,11 @@ export class HttpTransport {
     this._sockets.delete(ws)
     this._releaseIp(ws.data.ip)
     dropSendQueue(ws)
-    const ctx = this._buildWsContext(ws)
-    try { await ws.data.handlers.close?.(ctx, code, reason) } catch {}
+    try {
+      await ws.data.opened
+      const ctx = this._buildWsContext(ws)
+      await ws.data.handlers.close?.(ctx, code, reason)
+    } catch {}
   }
 
   private async _wsDrain(ws: Bun.ServerWebSocket<WsData>): Promise<void> {

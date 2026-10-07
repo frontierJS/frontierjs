@@ -81,7 +81,7 @@ describe('each change to how an account signs in tells the person', () => {
     const u = await makeUser()
     expect(await tell(() => h.auth.confirmPasswordReset!('not-a-token', 'new-pw-2').catch(() => {}))).toEqual([])
 
-    await h.auth.requestPasswordReset!(u.email)
+    await h.requestReset(u.email)
     const changes = await tell(() => h.auth.confirmPasswordReset!(h.resetToken(), 'new-pw-2'))
     expect(changes.map(c => c.event)).toEqual(['password.reset'])
     expect(changes[0]).toMatchObject({ userId: u.userId, email: u.email })

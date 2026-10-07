@@ -29,10 +29,10 @@ title: Plan
   import PlanVersion, { planVersions } from '@/resources/PlanVersion.mesa'
   import { plans }         from '@/resources/Plan.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
-  import { session } from '@/session.js'
+  import { session } from '@frontierjs/sierra/junction'
   import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'

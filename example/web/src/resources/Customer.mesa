@@ -29,7 +29,7 @@
   // screen's; nothing is written twice.
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import { withCustomFields } from '@/custom-fields.js'
+  import { withCustomFields } from '@/lib/custom-fields.js'
 
   export let record      = undefined   // absent → Form makes one from the schema
   export let method      = undefined   // Form's auto | create | patch

@@ -1349,6 +1349,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           lines.push(`--   • add a @default() to the field, or make it optional (?)`)
           lines.push(`--   • hand-write the copy below with a value expression for each blocked column`)
           lines.push(`--   • if the table is empty, uncomment the rebuild as-is`)
+          lines.push(`-- Then delete the BLOCKED line above; migrate apply refuses this file while it stands.`)
           lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
           lines.push(``)
           continue
@@ -1379,6 +1380,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           lines.push(`--   • recreate each one below the rebuild, then uncomment it`)
           lines.push(`--   • move it into the schema, where litestone regenerates it`)
           lines.push(`--   • if it is no longer wanted, drop it by hand and uncomment`)
+          lines.push(`-- Then delete the BLOCKED line above; migrate apply refuses this file while it stands.`)
           lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
           lines.push(``)
           continue
@@ -1428,7 +1430,8 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
 
       if (d.blockedAdds.length) {
         lines.push(`-- "${d.name}": blocked columns — NOT NULL with no DEFAULT`)
-        lines.push(`-- Fix: make optional (?), add a @default(), or do a manual rebuild.`)
+        lines.push(`-- Fix: make optional (?), add a @default(), or do a manual rebuild,`)
+        lines.push(`-- then delete each BLOCKED line; migrate apply refuses this file while one stands.`)
         for (const col of d.blockedAdds)
           lines.push(`-- ALTER TABLE "${d.name}" ADD COLUMN "${col.name}" ${col.type} NOT NULL;  -- BLOCKED`)
         lines.push(``)

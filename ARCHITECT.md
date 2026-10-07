@@ -179,6 +179,10 @@ vocabulary is mandatory for describing and fully open for challenging.
 - **Environment** and **Audience** in the Deployment realm — proposed in
   `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
   the gate ladder.
+- **State only the browser has** — a reader's toggles, a basket, preferences,
+  which device this browser is. It lives in `web/src/stores/`, which borrows the
+  ecosystem's folder word without making *store* a noun here (`FJS-D625`).
+  Screen-local state is left open until it causes a defect (`FJS-D390`).
 
 ---
 

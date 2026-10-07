@@ -67,7 +67,7 @@ import { createClient }  from '@frontierjs/litestone'
 import { db, ENCRYPTION_KEY } from '../../api/src/core/db.ts'
 import { compileSegment, matchesAudience }
   from '../../api/src/domain/shop/custom-fields.ts'
-import { withCustomFields, shownFields } from '../../web/src/custom-fields.js'
+import { withCustomFields, shownFields } from '../../web/src/lib/custom-fields.js'
 import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.ts'
 import { results, report } from './lib/report.mjs'
 

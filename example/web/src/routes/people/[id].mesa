@@ -33,10 +33,10 @@ title: Person
   import PayWindow, { payWindows } from '@/resources/PayWindow.mesa'
   import { employees } from '@/resources/Employee.mesa'
   import { payslips }  from '@/resources/Payslip.mesa'
-  import { session } from '@/session.js'
+  import { session } from '@frontierjs/sierra/junction'
   import { day, span } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { money } from '../../lib/money.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge         from '@frontierjs/ui/components/display/Badge.mesa'

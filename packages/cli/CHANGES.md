@@ -1,5 +1,13 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-07 — the web runner's busy button announces itself
+
+`web/index.html` added `.loading` to the run button and never set `aria-busy`, so the spinner was drawn and nothing told a screen reader. It now sets and removes `aria-busy`, which is also what draws the spinner since `@frontierjs/css` dropped the class.
+
+## 2026-10-06 — a generated CRUD page links the URL its directory is served at, so a two-word model's pages are reachable (`FJS-1821`)
+
+Sierra's scanner serves a static route segment lowercased, and `make:scaffold`, `make:route --resource` and `admin:generate` linked the directory as written — `routes/searchIndexes/` got `href="/searchIndexes/create/"`, which is the 404. `routeSegment` in `core/crud-templates.js` is now the one answer to what URL a generated directory has, and every generated link goes through it: `resourceRoutePage`'s `basePath`, the admin's `_routes.js`, nav, dashboard cards, page `basePath` and its summary lines (the layout's `models` entries carry an `href`). `make:scaffold` no longer keeps its own copy of the three pages; it writes what `resourceRoutePage` returns for `<plural>`, `<plural>/create` and `<plural>/[id]`, and its `toLabel` went with it. The directory keeps the service's spelling. `test/generators-run.test.js` executes `make:scaffold SearchIndex` and `admin:generate` over a `SearchIndex` app and grades every absolute link they wrote.
+
 ## 2026-10-06 — the scaffold uses css's Grid; the viewer and the rings map rename their `.band` (`FJS-D621`, `FJS-D622`)
 
 `fli new` wrote two hand copies of an auto-fit grid into the home and account routes, `--grid-min` and all; both now use `@frontierjs/css`'s `.grid`, and the account route keeps only its margin. `fli project:view`'s realm stripes were `.band`, which css now owns as a full-width page stripe with negative margins — they are `.realm-band`. The rings map's clickable circles are `circle.ring-band` (`.ring` was taken by the orbit drawing).
