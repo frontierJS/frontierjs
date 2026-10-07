@@ -1,13 +1,19 @@
 /*
  * layout.css
- * Four composition helpers. Plain CSS so the
+ * The composition helpers. Plain CSS so the
  * anatomy examples in bars.css, lists.css and feed.css work without a build
  * step.
  *
  *   stack     vertical rhythm
  *   cluster   horizontal group that wraps
+ *   group     horizontal group on one line
  *   center    both axes
  *   split     pushed to opposite ends
+ *   grid      equal columns, as many as fit
+ *
+ * Stack, Cluster and Group read the align axis (tokens.css § Align) for
+ * where their children sit; Center and Split are an alignment by definition
+ * and read nothing.
  *
  * ── Layer placement ─────────────────────────────────────────────────
  * These sit in the `layout` layer, which index.css orders *before*
@@ -24,14 +30,16 @@
 .stack {
   display:        flex;
   flex-direction: column;
+  align-items:    var(--align, normal);
   gap:            var(--space-2xl);
 }
 
 .cluster {
-  display:     flex;
-  flex-wrap:   wrap;
-  align-items: center;
-  gap:         var(--space-sm);
+  display:         flex;
+  flex-wrap:       wrap;
+  align-items:     center;
+  justify-content: var(--align, normal);
+  gap:             var(--space-sm);
 }
 
 /*
@@ -70,11 +78,12 @@
  * to wrapping.
  */
 .group {
-  display:     flex;
-  flex-wrap:   nowrap;
-  align-items: center;
-  gap:         var(--space-sm);
-  min-width:   0;
+  display:         flex;
+  flex-wrap:       nowrap;
+  align-items:     center;
+  justify-content: var(--align, normal);
+  gap:             var(--space-sm);
+  min-width:       0;
 }
 
 .center {
@@ -87,6 +96,31 @@
   justify-content: space-between;
   align-items:     center;
   gap:             var(--space-2xl);
+}
+
+/*
+ * Grid — equal columns, as many as fit, and one on a phone.
+ *
+ * Every Layout's Grid. The column count is DERIVED from the width, so there
+ * is no breakpoint and no `cols3`: a caller who wants wider cells raises the
+ * floor (`style="--grid-min: 20rem"`) and the count follows. ksite had four
+ * spellings for this (`grid-fit-cols`, `grid-odd`, `grid-even`, `matrix`) and
+ * three pages of the website each wrote it again by hand.
+ *
+ * `min(…, 100%)` is what makes one column on a phone: a 16rem floor in a
+ * 300px container would otherwise force a 256px track wider than its box.
+ *
+ * It does not read the align axis. The tracks are `1fr`, so there is no
+ * leftover space to place them in, and a Card stretched to its column is
+ * what a centered grid of cards means — the text inside follows text-align.
+ * `inline-size: 100%` because inside a centered Stack a grid would otherwise
+ * be shrunk to its content, which for auto-fit is one column.
+ */
+.grid {
+  display:               grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+  gap:                   var(--space-2xl);
+  inline-size:           100%;
 }
 
 /*
