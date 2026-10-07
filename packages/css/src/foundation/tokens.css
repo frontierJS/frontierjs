@@ -468,6 +468,38 @@
 .roomy { --density: 1.25; }
 
 /*
+ * ── Align ─────────────────────────────────────────────────────
+ *
+ * The fourth axis, and density's sibling: a fact about a REGION, so it
+ * inherits. A centered band centers its heading, its lede, the buttons under
+ * them and the text in every Card inside, with no component told anything.
+ * ksite spelled this four ways (`centered`, `headings-*`, `btn-*`, `brick-*`)
+ * because each one was a component's word for one axis.
+ *
+ * The class sets two things and they are the whole contract:
+ *
+ *   text-align  inherits natively, so text follows with no reader
+ *   --align     read by the helpers that place CHILDREN — Stack's cross
+ *               axis, Cluster, Group, Bar and Toolbar's main axis. A child
+ *               is a box, and text-align does not move a box.
+ *
+ * `.align-start` writes `normal`, not `start`, because it means THE DEFAULT:
+ * `align-items: normal` is stretch in a Stack and `justify-content: normal`
+ * packs a Cluster to the start. Written as `start`, undoing a centered band
+ * with `.align-start` would shrink every Stack child to its content — a
+ * different layout from the one the band's ancestors never touched.
+ *
+ * Unregistered on purpose. A registered property needs an initial value, and
+ * then `var(--align, space-between)` on Bar could never fall back: a Bar
+ * splits until something says otherwise, and "nothing said" has to be a
+ * state the property can be in. An Overlay leaves the flow it was declared
+ * in, so overlays.css puts both halves back.
+ */
+.align-start  { --align: normal; text-align: start; }
+.align-center { --align: center; text-align: center; }
+.align-end    { --align: end;    text-align: end; }
+
+/*
  * ── Derived density ───────────────────────────────────────────
  *
  * The same axis, answered by the box instead of by you: a Card in a narrow

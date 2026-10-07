@@ -66,6 +66,18 @@ dialog.drawer,
     overlay    var(--overlay-time, var(--motion-enter)) allow-discrete;
 }
 
+/*
+ * An Overlay is declared inside a region and drawn outside it, so it does not
+ * take the region's alignment (tokens.css § Align). Without this, a dropdown
+ * under a button in a centered band opens with its menu text centered. Zero weight, so Tooltip's own centered label still wins, and in
+ * this layer, so `.align-end` on a Popover places the popover (popovers.css)
+ * without end-aligning what is inside it.
+ */
+:where(.dialog, .drawer, .popover, .toast, .tooltip) {
+  --align:    initial;
+  text-align: start;
+}
+
 /* ── Dialog and Drawer — the open attribute is the state ──────── */
 
 dialog.dialog,

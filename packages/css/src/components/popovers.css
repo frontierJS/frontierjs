@@ -32,7 +32,9 @@
  * going to grow a placement ladder. `.align-end` is the one exception,
  * and it is here because it is the case the package's own demo needed:
  * a trigger at the end of a bar opens a menu that would otherwise run
- * off the viewport.
+ * off the viewport. It is the align axis (tokens.css) written on the
+ * popover itself, so it aligns the POPOVER; overlays.css keeps it from
+ * end-aligning the text inside.
  *
  * The placement is scoped to the anchor, not written on `.popover`, so a
  * popover placed by anchor positioning or a style attribute is untouched
