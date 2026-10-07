@@ -1,5 +1,17 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-07 — `make:scaffold` links the list from the layout's nav (`FJS-1808`)
+
+The scaffold ended on *Add a nav link to your layout* and nothing added one, so in 0 of 21 apps the base44 stressor generated did the page after sign-up reach a model's list. It now writes the link into the layout's `<nav aria-label="Main">`: `withNavLink` in `core/crud-templates.js`, with the list page's own URL and heading, behind `{#if session.user}` where the layout signs people in, as `fli new`'s Users link is. A second run adds nothing, and a layout with no main nav is left alone and named in the summary. `generators-run.test.js` runs the scaffold over both layouts `fli new` writes, read out of `new.md`, and compiles the result.
+
+## 2026-10-07 — `fli new --widgets` scaffolds whole, and the first commit holds the initial migration (`FJS-1900`, `FJS-1901`)
+
+`fli new --widgets` named its starter widget `Hello` under an empty prefix — the tag `<hello>`, which `scaffoldWidgetSurface`'s guard (`FJS-819`) refuses — so the scaffold stopped after its base files. The starter is now `HelloWidget` (`<hello-widget>`), in `new.md` and as `scaffoldWidgetSurface`'s default. The git step ran before the initial migration was written, so a fresh repo opened with `db/migrations/` untracked; it now runs after it. Both found by the ELA stressor's first command. `test/new-scaffold.test.js`.
+
+## 2026-10-07 — `fli check` reports a File column no FileStorage stores (`FJS-1898`)
+
+`fli new`'s `db.ts` installs only the gate, so an app that declares a `File` column parsed, migrated and passed `fli check`, and its first upload was refused. **`file-column-storage`** (warn, app) reports each `File` or `File[]` column in `db/` when no source in the app calls `FileStorage(` or declares a plugin with `fieldType = 'File'`. The finding is on the column's line and says where the plugin goes. Comments are blanked first, so a comment that only mentions `FileStorage` is not counted as installing it. The template is unchanged: `FileStorage` with no provider throws at boot outside development, so wiring it into every app would break production for apps that have no `File` column. In the base44 stressor it reports JazzHR's `resume`, Notion's `cover` and Ghost's two columns, and nothing in `example/` or Basecamp. `test/checks.test.js` § *a File column has a FileStorage to store it*; the clean tree gains `Lead.brief File?`, so the rule runs there instead of being skipped.
+
 ## 2026-10-07 — the web runner's busy button announces itself
 
 `web/index.html` added `.loading` to the run button and never set `aria-busy`, so the spinner was drawn and nothing told a screen reader. It now sets and removes `aria-busy`, which is also what draws the spinner since `@frontierjs/css` dropped the class.

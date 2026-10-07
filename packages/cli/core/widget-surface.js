@@ -289,7 +289,7 @@ CMD ["bun", "run", "widgets/deploy/serve.js"]
  * @returns {{ written: string[], skipped: string[] }} paths relative to `root`
  */
 export function scaffoldWidgetSurface({
-  root, dir = 'widgets', name = 'Hello', prefix = '', appName = 'app',
+  root, dir = 'widgets', name = 'HelloWidget', prefix = '', appName = 'app',
   devPort = 8200, servePort = 8300,
 } = {}) {
   if (!isWidgetName(name)) {

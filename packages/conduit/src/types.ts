@@ -197,6 +197,16 @@ export interface TargetDescriptor {
 
 export interface CredentialResolver {
   get(ref: string): Promise<string | null>
+
+  // The target refused `value` with a 401: forget it, so the next get() mints
+  // or fetches a fresh one, and the send is replayed once on that. A credential
+  // a login mints is the case — a session that expired answers 401 and nothing
+  // else. Forgets only when `value` is still what get() would return: twenty
+  // sends refused on one stale session each call this, and every one after the
+  // first arrives when the fresh session is already in place.
+  //
+  // Optional. A resolver without it answers a 401 as auth_failed, unreplayed.
+  invalidate?(ref: string, value: string): void
 }
 
 // Thrown internally when a target's credential cannot be resolved.

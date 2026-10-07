@@ -19,142 +19,6 @@
 
 import { pluralize } from '@frontierjs/toolbelt/inflect'
 
-/**
- * Every `$defs` entry, by name — models, enums, `type` declarations, FileRef.
- * This is the document's definition table, and it is kept whole because it is
- * what `$ref` points into. Dropping everything but the models is what left
- * `{"$ref":"#/$defs/Plan"}` dangling in the browser.
- * @type {Record<string, object>}
- */
-let _defs = {}
-
-/** @type {Record<string, object>} model name → definition (models only) */
-let _models = {}
-
-/**
- * The same models as `_models`, in UPDATE mode.
- *
- * Litestone generates a create schema and an update schema and they are
- * different documents. Three facts exist only in the update one, and every one
- * of them is about a WRITE the browser is about to make:
- *
- *   `@immutable`            → `readOnly` + `x-litestone-kind: 'immutable'`
- *   `@immutable` + `@seals` → `x-litestone-seal`
- *   `@version`              → the property at all, `readOnly`
- *
- * The build asked for one mode and got the default, `create`, so `stripReadOnly`
- * left an `@immutable` column in a patch payload and the Data boundary refused
- * it BY NAME — the person told to leave a field out of a payload they never
- * assembled, which is the failure `stripReadOnly` exists to end reappearing one
- * attribute along — and `sealedFields()` answered `[]` for every row of every
- * model, so the seal mechanism was inert in every real app (`FJS-807`).
- *
- * @type {Record<string, object>}
- */
-let _updateModels = {}
-
-/**
- * The same models in READ mode — what a row a caller RECEIVED can hold.
- *
- * The third mode, and the one no display surface can do without. Create and
- * update are both WRITE schemas, which is why the second ships as a delta off
- * the first; a read schema differs from either by the family of columns nobody
- * writes:
- *
- *   `@computed` / `@generated`  → the property at all, `readOnly`
- *   `@derived`, `@from`         → the property at all, plus its `x-litestone-*`
- *   server-assigned `@id`       → the property at all
- *
- * Without it a generated table can rank and render only what a caller may
- * WRITE, so a computed total — the example this exists for — reaches no screen,
- * and `columnList` cannot show a column its rule map was never given.
- *
- * **Read is not a superset of create**, which is why this is a third table
- * rather than a replacement: a `@transient` column is present in both write
- * modes and absent here, being written and never read back.
- *
- * @type {Record<string, object>}
- */
-let _readModels = {}
-
-/** @type {Record<string, string>} accessor / service name → model name */
-let _index = {}
-
-/** A definition that could be a model: an object type with fields. */
-function _looksLikeModel(def) {
-  return !!def && typeof def === 'object' && !!def.properties
-}
-
-/**
- * Install the generated schemas. Called once from `virtual:sierra`.
- *
- * Only `modelNames` become addressable as resources. An enum is a definition,
- * not a model — indexing `enum Plan` under 'Plan'/'plan'/'plans' meant
- * `createResource('plans')` resolved to it and `make()` then iterated a string,
- * throwing "Cannot use 'in' operator to search for 'default' in string".
- *
- * @param {object} defs          the whole `$defs` table from generateJsonSchema
- * @param {string[]} [modelNames] which of those entries are models. Omitted →
- *        fall back to "has properties", which is right for every case except a
- *        `type T { … }` declaration; the build always passes the real list.
- * @param {object} [updatePatch] what the UPDATE-mode schema differs by, per
- *        model — see `diffSchemaModes`. Omitted (an older build, or a schema
- *        passed by hand) → the update tables are the create ones, which is the
- *        behavior before `FJS-807` and degrades rather than fails.
- * @param {object} [readPatch] the same for READ mode. Omitted → the read tables
- *        are the create ones, which is what every build before this emitted: a
- *        display surface then sees the columns a caller may WRITE and no
- *        others, so a `@computed` total is missing from a table that otherwise
- *        looks finished.
- */
-export function registerSchemas(defs, modelNames, updatePatch, readPatch) {
-  _defs = defs ?? {}
-  _models = {}
-  _updateModels = {}
-  _readModels = {}
-  _index = {}
-
-  const names = modelNames ?? Object.keys(_defs).filter(n => _looksLikeModel(_defs[n]))
-
-  for (const modelName of names) {
-    const def = _defs[modelName]
-    if (!def) continue
-    _models[modelName] = def
-    _updateModels[modelName] = applySchemaModePatch(def, updatePatch?.[modelName])
-    _readModels[modelName]   = applySchemaModePatch(def, readPatch?.[modelName])
-
-    const accessor = modelName.charAt(0).toLowerCase() + modelName.slice(1)
-    // Every spelling a caller might reasonably use: the model name as declared,
-    // the Litestone accessor, and the conventional plural service name.
-    //
-    // English's regular rules plus toolbelt's irregular table, so `people`
-    // does index `Person`. What the table does not hold is still not guessed —
-    // name the model explicitly instead:
-    //   createResource('lenses', { model: 'Lens' })
-    _index[modelName] = modelName
-    _index[accessor]  = modelName
-
-    // The lenient spelling as well as the conventional one: `companys` is not
-    // English, and someone who names their service that should still resolve.
-    _index[accessor + 's'] = _index[accessor + 's'] ?? modelName
-
-    const plural = _pluralOf(accessor)
-    _index[plural] = _index[plural] ?? modelName
-
-    // The TABLE spelling, which is snake_case of the model name. A caller
-    // holding one is not hypothetical: litestone's `$tapQuery` reports the
-    // table, and the static-safety gate resolves what a prerendered route read
-    // through here — so without this row every MULTI-WORD model is
-    // unpublishable. It fails closed, which is the safe direction and the
-    // confusing one: `product_variant` was reported as a name "the schema does
-    // not describe" while `db/schema.lite` plainly declares `ProductVariant`.
-    // A single-word model resolved by accident, its table being its accessor.
-    const table = _tableOf(modelName)
-    _index[table] = _index[table] ?? modelName
-    const tablePlural = _pluralOf(table)
-    _index[tablePlural] = _index[tablePlural] ?? modelName
-  }
-}
 
 // ── The two schema modes, stated once and a delta ─────────────────────────────
 //
@@ -307,124 +171,292 @@ export function serviceNameFor(modelName) {
 }
 
 /**
- * The known model whose name most resembles `name`, or null.
+ * A table of model schemas — one app's, as the browser sees it.
  *
- * Only used to make a failed lookup say something useful. Deliberately a shared
- * prefix rather than an edit distance: it is right for children/Child and
- * statuses/Status, and honestly returns nothing for people/Person, where no
- * string rule could have known.
+ * The page's own app has one, filled from its `db/schema.lite` by the build,
+ * and every function exported below reads that one. A page that ALSO shows
+ * another FrontierJS app — a studio over the app it hosts — makes a second
+ * with `connectApp()`, because that app's models are not this one's: a
+ * relation resolved against the page's table names the wrong model, or none.
  */
-export function suggestModel(name) {
-  const known = Object.keys(_models)
-  if (!name || !known.length) return null
+export function createSchemaRegistry() {
+  /**
+   * Every `$defs` entry, by name — models, enums, `type` declarations, FileRef.
+   * This is the document's definition table, and it is kept whole because it is
+   * what `$ref` points into. Dropping everything but the models is what left
+   * `{"$ref":"#/$defs/Plan"}` dangling in the browser.
+   * @type {Record<string, object>}
+   */
+  let _defs = {}
 
-  const shared = (a, b) => {
-    let i = 0
-    while (i < a.length && i < b.length && a[i] === b[i]) i++
-    return i
+  /** @type {Record<string, object>} model name → definition (models only) */
+  let _models = {}
+
+  /**
+   * The same models as `_models`, in UPDATE mode.
+   *
+   * Litestone generates a create schema and an update schema and they are
+   * different documents. Three facts exist only in the update one, and every one
+   * of them is about a WRITE the browser is about to make:
+   *
+   *   `@immutable`            → `readOnly` + `x-litestone-kind: 'immutable'`
+   *   `@immutable` + `@seals` → `x-litestone-seal`
+   *   `@version`              → the property at all, `readOnly`
+   *
+   * The build asked for one mode and got the default, `create`, so `stripReadOnly`
+   * left an `@immutable` column in a patch payload and the Data boundary refused
+   * it BY NAME — the person told to leave a field out of a payload they never
+   * assembled, which is the failure `stripReadOnly` exists to end reappearing one
+   * attribute along — and `sealedFields()` answered `[]` for every row of every
+   * model, so the seal mechanism was inert in every real app (`FJS-807`).
+   *
+   * @type {Record<string, object>}
+   */
+  let _updateModels = {}
+
+  /**
+   * The same models in READ mode — what a row a caller RECEIVED can hold.
+   *
+   * The third mode, and the one no display surface can do without. Create and
+   * update are both WRITE schemas, which is why the second ships as a delta off
+   * the first; a read schema differs from either by the family of columns nobody
+   * writes:
+   *
+   *   `@computed` / `@generated`  → the property at all, `readOnly`
+   *   `@derived`, `@from`         → the property at all, plus its `x-litestone-*`
+   *   server-assigned `@id`       → the property at all
+   *
+   * Without it a generated table can rank and render only what a caller may
+   * WRITE, so a computed total — the example this exists for — reaches no screen,
+   * and `columnList` cannot show a column its rule map was never given.
+   *
+   * **Read is not a superset of create**, which is why this is a third table
+   * rather than a replacement: a `@transient` column is present in both write
+   * modes and absent here, being written and never read back.
+   *
+   * @type {Record<string, object>}
+   */
+  let _readModels = {}
+
+  /** @type {Record<string, string>} accessor / service name → model name */
+  let _index = {}
+
+  /** A definition that could be a model: an object type with fields. */
+  function _looksLikeModel(def) {
+    return !!def && typeof def === 'object' && !!def.properties
   }
 
-  const needle = String(name).toLowerCase()
-  let best = null
-  let bestLen = 0
-  for (const m of known) {
-    const n = shared(needle, m.toLowerCase())
-    if (n > bestLen) { bestLen = n; best = m }
+  /**
+   * Install the generated schemas. Called once from `virtual:sierra`.
+   *
+   * Only `modelNames` become addressable as resources. An enum is a definition,
+   * not a model — indexing `enum Plan` under 'Plan'/'plan'/'plans' meant
+   * `createResource('plans')` resolved to it and `make()` then iterated a string,
+   * throwing "Cannot use 'in' operator to search for 'default' in string".
+   *
+   * @param {object} defs          the whole `$defs` table from generateJsonSchema
+   * @param {string[]} [modelNames] which of those entries are models. Omitted →
+   *        fall back to "has properties", which is right for every case except a
+   *        `type T { … }` declaration; the build always passes the real list.
+   * @param {object} [updatePatch] what the UPDATE-mode schema differs by, per
+   *        model — see `diffSchemaModes`. Omitted (an older build, or a schema
+   *        passed by hand) → the update tables are the create ones, which is the
+   *        behavior before `FJS-807` and degrades rather than fails.
+   * @param {object} [readPatch] the same for READ mode. Omitted → the read tables
+   *        are the create ones, which is what every build before this emitted: a
+   *        display surface then sees the columns a caller may WRITE and no
+   *        others, so a `@computed` total is missing from a table that otherwise
+   *        looks finished.
+   */
+  function registerSchemas(defs, modelNames, updatePatch, readPatch) {
+    _defs = defs ?? {}
+    _models = {}
+    _updateModels = {}
+    _readModels = {}
+    _index = {}
+
+    const names = modelNames ?? Object.keys(_defs).filter(n => _looksLikeModel(_defs[n]))
+
+    for (const modelName of names) {
+      const def = _defs[modelName]
+      if (!def) continue
+      _models[modelName] = def
+      _updateModels[modelName] = applySchemaModePatch(def, updatePatch?.[modelName])
+      _readModels[modelName]   = applySchemaModePatch(def, readPatch?.[modelName])
+
+      const accessor = modelName.charAt(0).toLowerCase() + modelName.slice(1)
+      // Every spelling a caller might reasonably use: the model name as declared,
+      // the Litestone accessor, and the conventional plural service name.
+      //
+      // English's regular rules plus toolbelt's irregular table, so `people`
+      // does index `Person`. What the table does not hold is still not guessed —
+      // name the model explicitly instead:
+      //   createResource('lenses', { model: 'Lens' })
+      _index[modelName] = modelName
+      _index[accessor]  = modelName
+
+      // The lenient spelling as well as the conventional one: `companys` is not
+      // English, and someone who names their service that should still resolve.
+      _index[accessor + 's'] = _index[accessor + 's'] ?? modelName
+
+      const plural = _pluralOf(accessor)
+      _index[plural] = _index[plural] ?? modelName
+
+      // The TABLE spelling, which is snake_case of the model name. A caller
+      // holding one is not hypothetical: litestone's `$tapQuery` reports the
+      // table, and the static-safety gate resolves what a prerendered route read
+      // through here — so without this row every MULTI-WORD model is
+      // unpublishable. It fails closed, which is the safe direction and the
+      // confusing one: `product_variant` was reported as a name "the schema does
+      // not describe" while `db/schema.lite` plainly declares `ProductVariant`.
+      // A single-word model resolved by accident, its table being its accessor.
+      const table = _tableOf(modelName)
+      _index[table] = _index[table] ?? modelName
+      const tablePlural = _pluralOf(table)
+      _index[tablePlural] = _index[tablePlural] ?? modelName
+    }
   }
 
-  return bestLen >= 3 ? best : null
-}
+  /**
+   * The known model whose name most resembles `name`, or null.
+   *
+   * Only used to make a failed lookup say something useful. Deliberately a shared
+   * prefix rather than an edit distance: it is right for children/Child and
+   * statuses/Status, and honestly returns nothing for people/Person, where no
+   * string rule could have known.
+   */
+  function suggestModel(name) {
+    const known = Object.keys(_models)
+    if (!name || !known.length) return null
 
-/**
- * Look up a model's schema by model name, accessor, or service name.
- *
- * @param   {...string} names  candidates, first match wins
- * @returns {object|null}
- */
-export function schemaFor(...names) {
-  const key = modelNameFor(...names)
-  return key ? _models[key] : null
-}
+    const shared = (a, b) => {
+      let i = 0
+      while (i < a.length && i < b.length && a[i] === b[i]) i++
+      return i
+    }
 
-/**
- * The same model in UPDATE mode — what a PATCH may carry.
- *
- * Falls back to the create definition when the build emitted no delta, so a
- * caller can use this unconditionally.
- *
- * @param   {...string} names  candidates, first match wins
- * @returns {object|null}
- */
-export function updateSchemaFor(...names) {
-  const key = modelNameFor(...names)
-  return key ? (_updateModels[key] ?? _models[key] ?? null) : null
-}
+    const needle = String(name).toLowerCase()
+    let best = null
+    let bestLen = 0
+    for (const m of known) {
+      const n = shared(needle, m.toLowerCase())
+      if (n > bestLen) { bestLen = n; best = m }
+    }
 
-/**
- * The same model in READ mode — what a row a caller received can hold.
- *
- * What a TABLE and a DETAIL VIEW rank and render, where `schemaFor` is what a
- * create form fills in. Falls back the same way, so a caller can use it
- * unconditionally.
- *
- * @param   {...string} names  candidates, first match wins
- * @returns {object|null}
- */
-export function readSchemaFor(...names) {
-  const key = modelNameFor(...names)
-  return key ? (_readModels[key] ?? _models[key] ?? null) : null
-}
-
-/**
- * Resolve any spelling to the MODEL NAME as declared in the .lite file.
- *
- * `schemaFor` answers "what is the shape"; this answers "what is it called".
- * A resource addressed as `statuses` is backed by `Status`, and callers that
- * report a model — `ctx.model`, telemetry, an error message — want the name the
- * schema actually uses, not whichever plural the service happened to be given.
- *
- * @param   {...string} names  candidates, first match wins
- * @returns {string|null}
- */
-export function modelNameFor(...names) {
-  for (const n of names) {
-    if (!n) continue
-    const key = _index[n]
-    if (key && _models[key]) return key
+    return bestLen >= 3 ? best : null
   }
-  return null
+
+  /**
+   * Look up a model's schema by model name, accessor, or service name.
+   *
+   * @param   {...string} names  candidates, first match wins
+   * @returns {object|null}
+   */
+  function schemaFor(...names) {
+    const key = modelNameFor(...names)
+    return key ? _models[key] : null
+  }
+
+  /**
+   * The same model in UPDATE mode — what a PATCH may carry.
+   *
+   * Falls back to the create definition when the build emitted no delta, so a
+   * caller can use this unconditionally.
+   *
+   * @param   {...string} names  candidates, first match wins
+   * @returns {object|null}
+   */
+  function updateSchemaFor(...names) {
+    const key = modelNameFor(...names)
+    return key ? (_updateModels[key] ?? _models[key] ?? null) : null
+  }
+
+  /**
+   * The same model in READ mode — what a row a caller received can hold.
+   *
+   * What a TABLE and a DETAIL VIEW rank and render, where `schemaFor` is what a
+   * create form fills in. Falls back the same way, so a caller can use it
+   * unconditionally.
+   *
+   * @param   {...string} names  candidates, first match wins
+   * @returns {object|null}
+   */
+  function readSchemaFor(...names) {
+    const key = modelNameFor(...names)
+    return key ? (_readModels[key] ?? _models[key] ?? null) : null
+  }
+
+  /**
+   * Resolve any spelling to the MODEL NAME as declared in the .lite file.
+   *
+   * `schemaFor` answers "what is the shape"; this answers "what is it called".
+   * A resource addressed as `statuses` is backed by `Status`, and callers that
+   * report a model — `ctx.model`, telemetry, an error message — want the name the
+   * schema actually uses, not whichever plural the service happened to be given.
+   *
+   * @param   {...string} names  candidates, first match wins
+   * @returns {string|null}
+   */
+  function modelNameFor(...names) {
+    for (const n of names) {
+      if (!n) continue
+      const key = _index[n]
+      if (key && _models[key]) return key
+    }
+    return null
+  }
+
+  /**
+   * Resolve a JSON Schema `$ref` against the registered definition table.
+   *
+   * generateJsonSchema emits enum-typed fields as `{"$ref":"#/$defs/Plan"}` and
+   * `Json @type(T)` fields as `{"$ref":"#/$defs/T"}`. Without this, a consumer
+   * sees a field with no `type` and no `enum` and can say nothing about it — which
+   * is why every enum field defaulted to null and no select could be built from
+   * the schema. Junction's own mapProp does the same thing server-side.
+   *
+   * @param   {string} ref  e.g. '#/$defs/Plan'
+   * @returns {object|null}
+   */
+  function resolveRef(ref) {
+    if (typeof ref !== 'string') return null
+    const name = ref.replace(/^#\/(\$defs|definitions)\//, '')
+    const def = _defs[name]
+    return def && typeof def === 'object' ? def : null
+  }
+
+  /** All registered MODELS, keyed by model name. */
+  function allSchemas() {
+    return _models
+  }
+
+  /** The whole definition table — models, enums, types, FileRef. */
+  function allDefs() {
+    return _defs
+  }
+
+  /** True when the build generated schemas — false in a plain Node test. */
+  function hasSchemas() {
+    return Object.keys(_models).length > 0
+  }
+
+  return {
+    register: registerSchemas,
+    schemaFor, updateSchemaFor, readSchemaFor, modelNameFor, resolveRef,
+    suggestModel, allSchemas, allDefs, hasSchemas,
+  }
 }
 
-/**
- * Resolve a JSON Schema `$ref` against the registered definition table.
- *
- * generateJsonSchema emits enum-typed fields as `{"$ref":"#/$defs/Plan"}` and
- * `Json @type(T)` fields as `{"$ref":"#/$defs/T"}`. Without this, a consumer
- * sees a field with no `type` and no `enum` and can say nothing about it — which
- * is why every enum field defaulted to null and no select could be built from
- * the schema. Junction's own mapProp does the same thing server-side.
- *
- * @param   {string} ref  e.g. '#/$defs/Plan'
- * @returns {object|null}
- */
-export function resolveRef(ref) {
-  if (typeof ref !== 'string') return null
-  const name = ref.replace(/^#\/(\$defs|definitions)\//, '')
-  const def = _defs[name]
-  return def && typeof def === 'object' ? def : null
-}
+/** The page's own app — what `virtual:sierra` registers into. */
+export const defaultRegistry = createSchemaRegistry()
 
-/** All registered MODELS, keyed by model name. */
-export function allSchemas() {
-  return _models
-}
-
-/** The whole definition table — models, enums, types, FileRef. */
-export function allDefs() {
-  return _defs
-}
-
-/** True when the build generated schemas — false in a plain Node test. */
-export function hasSchemas() {
-  return Object.keys(_models).length > 0
-}
+export const registerSchemas = defaultRegistry.register
+export const schemaFor       = defaultRegistry.schemaFor
+export const updateSchemaFor = defaultRegistry.updateSchemaFor
+export const readSchemaFor   = defaultRegistry.readSchemaFor
+export const modelNameFor    = defaultRegistry.modelNameFor
+export const resolveRef      = defaultRegistry.resolveRef
+export const suggestModel    = defaultRegistry.suggestModel
+export const allSchemas      = defaultRegistry.allSchemas
+export const allDefs         = defaultRegistry.allDefs
+export const hasSchemas      = defaultRegistry.hasSchemas

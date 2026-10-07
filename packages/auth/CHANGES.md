@@ -1,5 +1,11 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-07 — an agent over `/mcp` cannot change the credentials of the person it acts for (`FJS-1795`, `FJS-D628`)
+
+The five services declared their methods as bare names, so `/mcp` listed all of them as `ungraded` and every app that mounted it printed them in the boot warning. A USER agent called `api-keys_create` and got a fresh `fjs_` bearer back, a credential that outlives the session the agent was handed. `refuseInSupport` is now `refuseDelegated(ctx, user, what)`. It refuses the same eleven writes when `ctx.transport === 'mcp'` as it does inside a support episode, with a message telling the agent the person can do it in the app. Every method now declares `gate: VISITOR` and every service `model: null`. The `model: null` is needed because `sessions` reaches this package's own `model Session` by name: with the gate declared and no `model: null`, `GET /sessions` answered 500. `account-recovery` keeps its SYSADMIN floor in its body.
+
+`test/agent-refusals.test.ts` runs a real app with `@frontierjs/mcp` mounted and makes every call over `/mcp`. Each refusal is paired with the same call over HTTP succeeding, and the credential is read again afterwards. Removing the transport check fails four tests, dropping `model: null` fails two and dropping the gates fails two. 542 pass.
+
 ## 2026-10-06 — changing a password signs out every other session (`FJS-1831`)
 
 `confirmPasswordReset` revoked every session of the account. `changePassword` rewrote the hash and revoked none, so a session stolen before the change stayed valid for its whole 30-day TTL after the owner changed the password to get rid of it. The same call made through an unscoped API key also left every browser session alive. `changePassword(userId, current, next, { exceptSessionId })` now deletes every session but the one named, as `revokeSessions` does, and records `sessionsRevoked` on the `password.changed` event. `account.changePassword` passes the caller's `sessionId`. An API key has none, so a change made through one ends every session.

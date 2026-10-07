@@ -73,6 +73,11 @@ ksite's Phase 4 step 1 stalled on them, and nothing has re-run it since. In
 `fjs-prototypes/ksite`: `vite build`, the four baselines, then the same from
 a packed tarball. File what breaks. This costs one session and decides whether
 Phase 2 starts from a working engine package or from new rows.
+**Done 2026-10-07: a working engine.** One row broke it, `FJS-1902` (the
+prerender skipped a `_module.md` layout), fixed in the same session; after it
+the build is 4/4 pixel-exact from the workspace and from a tarball install.
+Grade with `baseline/playwright.port.config.ts`: ksite's own config falls back
+to serving the legacy site, so a dead port server passes.
 
 **Phase 2 — ksite runs on site-kit's shell.** ksite deletes its own
 `index.html`, entry, Vite config and `ksite(import.meta.url)` and runs

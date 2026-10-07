@@ -2,7 +2,7 @@
 //
 // AUDIT 2026-10-05 — what an operator inside a live episode can make happen
 // to the SUBJECT that outlives the episode, through the services and the raw
-// routes that read `ctx.user`. The comment on `refuseInSupport` claims none.
+// routes that read `ctx.user`. The comment on `refuseDelegated` claims none.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '@frontierjs/junction'

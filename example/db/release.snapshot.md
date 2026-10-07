@@ -322,7 +322,7 @@ table `flow` · db `main` · gate `4.4.4.5`
 transition status.activate: draft, paused → active @gate(5)
 transition status.archive: active, draft, paused → archived
 transition status.pause: active → paused
-transition status.restore: archived → draft
+transition status.unarchive: archived → draft
 ```
 
 ### `FlowCredential`

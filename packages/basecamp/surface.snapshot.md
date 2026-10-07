@@ -23,27 +23,19 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (12)
+### Nothing in front of the body but the floor (4)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
 
 | Method | Who may call it |
 | --- | --- |
-| `account.changePassword` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account.totpStatus` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account.setupTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account.confirmTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account.disableTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account.regenerateRecoveryCodes` | **any signed-in caller** — floor, read gate 6; standing not graded |
-| `account-recovery.resetTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `blueprints.categories` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `flowCredentials.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 
-### A service hook runs in front of the body (91)
+### A service hook runs in front of the body (98)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -83,6 +75,10 @@ name, and is as unread as the body.
 | `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.build` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.succeed` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.fail` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -99,8 +95,11 @@ name, and is as unread as the body.
 | `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `jobs.start` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `jobs.idle` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `jobs.fail` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
@@ -163,44 +162,33 @@ construction; a name that stopped being one is a line that disappears here.
 `model` is what the service reports for the result envelope, which is its own
 name when it declares none.
 
-### `account` · model `account`
+### `account`
 
 - **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **who may call** —
-  - `changePassword` — **any signed-in caller** — floor, read gate 6; standing not graded
-  - `totpStatus` — **any signed-in caller** — floor, read gate 6; standing not graded
-  - `setupTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
-  - `confirmTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
-  - `disableTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
-  - `regenerateRecoveryCodes` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `get` — standing 1 or above — declared `gate: 1`
+  - `changePassword` — standing 1 or above — declared `gate: 1`
+  - `totpStatus` — standing 1 or above — declared `gate: 1`
+  - `setupTotp` — standing 1 or above — declared `gate: 1`
+  - `confirmTotp` — standing 1 or above — declared `gate: 1`
+  - `disableTotp` — standing 1 or above — declared `gate: 1`
+  - `regenerateRecoveryCodes` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
-### `account-recovery` · model `account-recovery`
+### `account-recovery`
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
 - **who may call** —
-  - `resetTotp` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `resetTotp` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `alerts` · model `AlertRule`
 
@@ -403,19 +391,16 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `connections` · model `connections`
+### `connections`
 
 - **methods** — `find`, `remove`
+- **who may call** —
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `dashboards` · model `Dashboard`
 
@@ -448,10 +433,14 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rollback`, `startRun`, `stepStatus`, `finishRun`
-- **custom methods** — `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `build`, `succeed`, `fail`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **custom methods** — `build`, `succeed`, `fail`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `build` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `succeed` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fail` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -596,15 +585,15 @@ name when it declares none.
 
 ### `flows` · model `Flow`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
-- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
 - **who may call** —
-  - `restore` — standing 4 or above — declared `gate: 4`
   - `save` — standing 4 or above — declared `gate: 4`
   - `versions` — standing 4 or above — declared `gate: 4`
   - `activate` — standing 4 or above — declared `gate: 4`
   - `pause` — standing 4 or above — declared `gate: 4`
   - `archive` — standing 4 or above — declared `gate: 4`
+  - `unarchive` — standing 4 or above — declared `gate: 4`
   - `run` — standing 4 or above — declared `gate: 4`
   - `dryRun` — standing 4 or above — declared `gate: 4`
   - `export` — standing 4 or above — declared `gate: 4`
@@ -716,12 +705,15 @@ name when it declares none.
 
 ### `jobs` · model `Job`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`, `startRun`, `finishRun`
-- **custom methods** — `trigger`, `cancel`, `startRun`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `start`, `idle`, `fail`, `cancel`, `trigger`, `startRun`, `finishRun`
+- **custom methods** — `start`, `idle`, `fail`, `cancel`, `trigger`, `startRun`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `start` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `idle` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `fail` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
 - **broadcasts on** — `(computed)`
@@ -994,22 +986,18 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
 
-### `sessions` · model `sessions`
+### `sessions`
 
 - **methods** — `find`, `remove`, `revokeOthers`
 - **custom methods** — `revokeOthers`
 - **who may call** —
-  - `revokeOthers` — **any signed-in caller** — floor, read gate 8; standing not graded
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
+  - `revokeOthers` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `trash` · model `trash`
 

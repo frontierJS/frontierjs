@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-07 — a service declared over no model is not reported as unresolved (`FJS-D628`)
+
+`ServiceShape.model` is now `string | null`. The projection treats `describe().model === null` as a service over no model: its CRUD verbs are graded by their declared `gate:`, or listed as `ungraded`, and the service is not added to `unresolved`. This is what lets `@frontierjs/auth`'s five services be graded here (`FJS-1795`). The proving test is `packages/auth/test/agent-refusals.test.ts`, which mounts this plugin over a real auth app.
+
 ## 2026-10-06 — a tool result withholds protected columns under `strategy database` too (`FJS-1835`)
 
 `run` read the protected list off `app.db`, which a tenant-per-database app does not have, so the list came back empty and `credentials.mint` handed the agent its decrypted `@secret` and its `@guarded` column. With no `app.db` it now reads the list through `app.withDb`, which is the tenant client the call itself just opened, so no database file is created. `audit-withhold-tenant.test.ts` now drives a real registry over a real port, and is no longer `test.failing`. 145 pass; `example` `verify:mcp` 27/27.

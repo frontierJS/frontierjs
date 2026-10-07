@@ -146,8 +146,11 @@
   const _sync = rule?.options ?? rule?.enum ?? null
   let _total = null
   let _error = null
+  // A rule naming no source, a `String[]` a person types into, has nothing to
+  // fetch, and asking the resource anyway logs a warning on every form.
+  const _fetches = !rule || !!(rule.references || rule.values)
   if (_sync) optionsMap = { ...mapOf(_sync), ...optionsMap }
-  else if (!options?.length && name && form?.optionsFor)
+  else if (!options?.length && name && _fetches && form?.optionsFor)
     form.optionsFor(name).then(r => {
       optionsMap = { ...mapOf(r?.options ?? []), ...optionsMap }
       _total = r?.total ?? null
@@ -542,7 +545,7 @@
             <li class="item text-muted" aria-disabled="true">
               {allowNew && inputValue.trim()
                 ? `Press Enter to add "${inputValue.trim()}"`
-                : 'No options'}
+                : allowNew ? 'Type a value and press Enter' : 'No options'}
             </li>
           {:else}
             {#each filtered as opt, i (opt.value)}

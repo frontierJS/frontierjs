@@ -3,7 +3,7 @@
  *
  * Roles:
  *   'route'      — navigable page (lowercase .mesa / .md)
- *   'layout'     — _module.mesa (wraps descendant routes)
+ *   'layout'     — _module.mesa / _module.md (wraps descendant routes)
  *   'component'  — co-located component (PascalCase or _ prefix, not a route)
  *   'companion'  — .meta.js data file
  *   'ignored'    — everything else
@@ -11,7 +11,7 @@
 
 import { basename, extname } from 'path'
 
-const ROUTE_EXTENSIONS = new Set(['.mesa', '.md'])
+export const ROUTE_EXTENSIONS = new Set(['.mesa', '.md'])
 
 /**
  * @param {string} relativePath — path relative to routesDir, e.g. 'leads/[leadId].mesa'

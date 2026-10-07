@@ -5144,3 +5144,209 @@ describe('broker target', () => {
     await c.destroy()
   })
 })
+
+// ─── A credential the target refuses: minted, shared, re-minted on 401 ───
+
+// A system of record with no API key: a login mints a cookie session, and a
+// session it no longer honors answers 401. Service Autopilot is the case.
+function sessionServer() {
+  const valid = new Set<string>()
+  let minted  = 0
+  let logins  = 0
+  const hits: Array<{ path: string; method: string; cookie: string | null }> = []
+
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url)
+      if (url.pathname === '/login') {
+        logins++
+        // Slow enough that a burst of sends arrives while it is in flight.
+        await Bun.sleep(20)
+        const body = await req.json() as { User?: string; Password?: string }
+        if (body.Password !== 'hunter2') return Response.json({ d: false })
+        const sid = `s${++minted}`
+        valid.add(sid)
+        const headers = new Headers({ 'content-type': 'application/json' })
+        // Two cookies, the first with a comma in its Expires — what a
+        // comma-joined header cannot carry.
+        headers.append('set-cookie', `sid=${sid}; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT; HttpOnly`)
+        headers.append('set-cookie', 'lang=en; Path=/')
+        return new Response('{"d":true}', { headers })
+      }
+      const cookie = req.headers.get('cookie')
+      hits.push({ path: url.pathname, method: req.method, cookie })
+      const sid = /sid=(\w+)/.exec(cookie ?? '')?.[1]
+      if (!sid || !valid.has(sid) || !cookie!.includes('lang=en')) return new Response('', { status: 401 })
+      return Response.json({ ok: true, sid })
+    },
+  })
+
+  return {
+    url:    `http://localhost:${server.port}`,
+    hits,
+    logins: () => logins,
+    expire: () => valid.clear(),
+    stop:   () => server.stop(true),
+  }
+}
+
+// The cookie header a session's Set-Cookie lines become: each name=value,
+// attributes dropped.
+function cookieHeader(setCookie: string | undefined): string | null {
+  if (!setCookie) return null
+  return setCookie.split('\n').map(line => line.split(';')[0].trim()).join('; ')
+}
+
+async function sessionConduit(url: string, password = 'hunter2') {
+  // The login goes through conduit too, as its own target, so it is observed
+  // and policed like any other call.
+  const c = createConduit({
+    credentials: withCache({
+      async get(ref) {
+        if (ref !== 'SA_SESSION') return null
+        const res = await c.send({
+          target: 'sa-login', method: 'POST', path: '/login',
+          body:   { User: 'ops', Password: password },
+        })
+        if (res.error) return null
+        return cookieHeader(res.meta.headers?.['set-cookie'])
+      },
+    }, { ttl_ms: Infinity }),
+    targets: [
+      { id: 'sa-login', kind: 'provider', protocol: 'http', address: url,
+        auth: { type: 'none' }, registered_at: 0, last_seen_at: null },
+      { id: 'sa', kind: 'provider', protocol: 'http', address: url,
+        auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie' },
+        registered_at: 0, last_seen_at: null },
+    ],
+    retry_limit: 0,
+  })
+  await c.init()
+  return c
+}
+
+describe('a minted credential', () => {
+  it('meta.headers keeps every Set-Cookie, one per line', async () => {
+    const sa = sessionServer()
+    try {
+      const c = await sessionConduit(sa.url)
+      const res = await c.send({ target: 'sa-login', method: 'POST', path: '/login', body: { Password: 'hunter2' } })
+      expect(res.meta.headers?.['set-cookie']).toBe(
+        'sid=s1; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT; HttpOnly\nlang=en; Path=/',
+      )
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a burst against a cold session logs in once', async () => {
+    const sa = sessionServer()
+    try {
+      const c = await sessionConduit(sa.url)
+      const all = await Promise.all(Array.from({ length: 20 }, () =>
+        c.send({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 0 } })))
+      expect(all.every(r => r.error === null)).toBe(true)
+      expect(sa.logins()).toBe(1)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a session that expires between pages is re-minted and the POST replayed once', async () => {
+    const sa = sessionServer()
+    try {
+      const c = await sessionConduit(sa.url)
+      const page1 = await c.send<{ sid: string }>({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 0 } })
+      expect(page1.data?.sid).toBe('s1')
+
+      sa.expire()
+      const page2 = await c.send<{ sid: string }>({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 50 } })
+
+      expect(page2.error).toBeNull()
+      expect(page2.data?.sid).toBe('s2')
+      expect(sa.logins()).toBe(2)
+      // page 1, page 2 refused, page 2 replayed
+      expect(sa.hits.map(h => h.method)).toEqual(['POST', 'POST', 'POST'])
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('sends racing an expired session re-mint it once, not once each', async () => {
+    const sa = sessionServer()
+    try {
+      const c = await sessionConduit(sa.url)
+      await c.send({ target: 'sa', method: 'GET', path: '/warm' })
+      sa.expire()
+
+      const all = await Promise.all(Array.from({ length: 20 }, () =>
+        c.send({ target: 'sa', method: 'GET', path: '/query' })))
+
+      expect(all.every(r => r.error === null)).toBe(true)
+      expect(sa.logins()).toBe(2)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a 401 on a freshly minted credential is auth_failed, not a loop', async () => {
+    const s = recorder(() => new Response('', { status: 401 }))
+    let mints = 0
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, withCache({ async get() { return `token-${++mints}` } }), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'GET', path: '/x' })
+
+      expect(res.error?.kind).toBe('auth_failed')
+      expect(s.seen.length).toBe(2)
+      expect(mints).toBe(2)
+    } finally { s.stop() }
+  })
+
+  it('a resolver that cannot forget sends once and answers auth_failed', async () => {
+    const s = recorder(() => new Response('', { status: 401 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'GET', path: '/x' })
+
+      expect(res.error?.kind).toBe('auth_failed')
+      expect(s.seen.length).toBe(1)
+    } finally { s.stop() }
+  })
+
+  it('a 403 is not re-minted — the credential was accepted and the answer is no', async () => {
+    const s = recorder(() => new Response('', { status: 403 }))
+    let mints = 0
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, withCache({ async get() { return `token-${++mints}` } }), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'GET', path: '/x' })
+
+      expect(res.error?.kind).toBe('auth_failed')
+      expect(s.seen.length).toBe(1)
+      expect(mints).toBe(1)
+    } finally { s.stop() }
+  })
+
+  it('a wrong password fails closed as auth_failed and sends nothing to the target', async () => {
+    const sa = sessionServer()
+    try {
+      const c = await sessionConduit(sa.url, 'wrong')
+      const res = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(res.error?.kind).toBe('auth_failed')
+      expect(sa.hits.length).toBe(0)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('withCache.invalidate forgets only the value it was handed', async () => {
+    let calls = 0
+    const cached = withCache({ async get() { return `v${++calls}` } })
+
+    expect(await cached.get('A')).toBe('v1')
+    cached.invalidate!('A', 'v1')
+    expect(await cached.get('A')).toBe('v2')
+    // A second send refused on v1 arrives after v2 replaced it.
+    cached.invalidate!('A', 'v1')
+    expect(await cached.get('A')).toBe('v2')
+    expect(calls).toBe(2)
+  })
+})

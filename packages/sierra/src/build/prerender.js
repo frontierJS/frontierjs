@@ -60,6 +60,7 @@ import { fileURLToPath } from 'url'
 import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { importAppModule }           from './app-import.js'
+import { ROUTE_EXTENSIONS }          from '../scanner/classify.js'
 import {
   installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
@@ -80,6 +81,10 @@ function flatten(node) {
  * the NEAREST layout — a page under `/leads/` is wrapped by both
  * `routes/_module.mesa` and `routes/leads/_module.mesa`, and rendering only the
  * inner one would drop the outer chrome from every prerendered page.
+ *
+ * A layout is `_module` in any route extension, as the scanner classifies it:
+ * looking for `_module.mesa` alone rendered a `_module.md` site's pages with no
+ * shell at all, while dev wrapped them (FJS-1902).
  */
 export function layoutChainFor(routeFile, routesDirAbs) {
   const chain = []
@@ -87,8 +92,8 @@ export function layoutChainFor(routeFile, routesDirAbs) {
   const stop = resolve(routesDirAbs)
 
   while (dir.startsWith(stop)) {
-    const candidate = join(dir, '_module.mesa')
-    if (existsSync(candidate)) chain.unshift(candidate)
+    const candidate = [...ROUTE_EXTENSIONS].map(ext => join(dir, '_module' + ext)).find(existsSync)
+    if (candidate) chain.unshift(candidate)
     if (dir === stop) break
     dir = dirname(dir)
   }

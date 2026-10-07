@@ -1,5 +1,25 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-07 — a Resource over another FrontierJS app: `connectApp()` and `createResource(name, { app })` (`FJS-1907`)
+
+A studio showing the app it hosts had only the page's own client and schema table, so columns, filters, `can()` and moves had to be rebuilt by hand. `connectApp({ url, apiPrefix, schema, user })` answers a handle: a second Junction client and a registry holding that app's schema. `createResource(name, { app })` reads every lookup from that registry (fields, `$ref`s, relations, `children()`, the foreign-key references) and makes every call through that client. A related resource inherits the handle.
+
+- **Credential.** The client sends the page's own credential and follows its sign-in, with no token storage of its own. So `url` must be a route on the page's API that forwards to the other app, and a `url` on another origin is refused, since it would be sent the page's session.
+- **What stays off.** `@@sync`, `offlineQuery` and the local database stay off, because they belong to the page's app.
+- **Seeding.** A create seeds a column pinned to `auth()` from `app.user`, never from `session.user`.
+- **Schema payload.** `generateSchemas` is now exported from `@frontierjs/sierra/build`, so a server can make the `schema` payload from the other app's `.lite`.
+- **Registry.** `schema-registry.js` is `createSchemaRegistry()`, and its old exports read the default instance.
+- **`buildFieldRules` signature.** It takes a third `resolveName`, which it hands to `buildRelations`.
+- **Tests.** `test/connect-app.test.js` runs against a real hosted Junction app behind a forward that swaps the bearer. Reverting the client, the relation registry or the inherited handle each turns a test red. The browser drive is `FJS-1908`.
+
+## 2026-10-07 — a static build wraps a page in its `_module.md` layout (`FJS-1902`)
+
+`layoutChainFor` looked for `_module.mesa` alone, so a site whose shell is `_module.md` prerendered every page with no layout while dev wrapped it. It now reads the scanner's `ROUTE_EXTENSIONS`, exported from `scanner/classify.js`, and the scanner pairs a `_module.meta.js` with a `_module.md` as it did with a `_module.mesa`.
+
+## 2026-10-07 — a scalar list is a list control, not a JSON box (`FJS-1822`)
+
+`buildFieldRules` carries a scalar list's item type as `rule.items` (`String[]`, `Int[]`, a `Float[]`), and `controlFor` answers it with `{ control: 'multiselect', allowNew: true, itemType }` where it answered `json`. As a JSON box, the first tag a person typed was refused as not JSON, in five of the 21 apps the base44 stressor generated. A list of a declared `type T` is still a document and still `json`. `form-fields.test.js` grades both, off a schema litestone emits.
+
 ## 2026-10-06 — AGENTS.md names the signed-in person's id `session.user.userId` (`FJS-1827`)
 
 `session.user` is the server's SessionContext, which spells the id `userId` and has no `id`, and no guide said so. Pages written from the guides alone compared a row's owner column to `session.user.id`, always undefined, and hid the owner's own moves and edit form in 9 of 21 base44 stressor apps. The *Wrong guesses* table now carries that spelling and the shape. `test/agents-md-session.test.js` reads the field list out of junction's `SessionContext` and fails when the guide names no `userId`, or names a `session.user` field the interface does not have.

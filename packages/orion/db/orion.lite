@@ -60,10 +60,10 @@ model Flow {
   // `archived` is the way to retire a flow and keep its history.
   @@gate("4.4.4.5")
   @@transitions(status,
-    activate: [draft, paused]         -> active @gate(5),
-    pause:    active                  -> paused,
-    archive:  [draft, active, paused] -> archived,
-    restore:  archived                -> draft
+    activate:  [draft, paused]         -> active @gate(5),
+    pause:     active                  -> paused,
+    archive:   [draft, active, paused] -> archived,
+    unarchive: archived                -> draft
   )
   // A create is evaluated before its defaults are stamped, so an absent owner
   // is legitimate here and the `!= null` is what keeps it so. Where a flow

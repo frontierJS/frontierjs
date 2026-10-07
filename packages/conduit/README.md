@@ -249,6 +249,7 @@ The reference is resolved at send time by a `CredentialResolver`, so secret mate
 ```ts
 interface CredentialResolver {
   get(ref: string): Promise<string | null>
+  invalidate?(ref: string, value: string): void   // the target answered 401 to `value`
 }
 ```
 
@@ -270,6 +271,35 @@ app.configure(conduit({
 **Unresolvable refs fail closed.** If `get()` returns `null` or an empty string, the request is not sent — `send()` returns `error.kind === 'auth_failed'` with `retryable: false`. The error names the target and the ref, never the value.
 
 Transports resolve once per attempt, so a retried request calls the resolver up to `retry_limit + 1` times. Wrap anything networked in `withCache`.
+
+**A 401 is answered once by a fresh credential.** When the resolver has `invalidate`, the transport hands it the value the target refused and replays the send once — any method, since a 401 means the request was not acted on — on whatever `get()` returns next. A second 401 is `auth_failed`. The replay is not an attempt: it does not count against `retry_limit`. A 403 is never replayed. `withCache` implements `invalidate` as a compare-and-set: it forgets the value only if it is still the cached one, so twenty sends refused on one stale credential fetch one fresh one, not twenty.
+
+#### A credential a login mints
+
+A system with no API key — a username and password that mint a cookie session — is `withCache` with no expiry around a `get()` that logs in. The login is its own target, so it is observed and policed like any other call:
+
+```ts
+const c = createConduit({
+  credentials: withCache({
+    async get(ref) {
+      if (ref !== 'SA_SESSION') return env.get(ref)
+      const res = await c.send({
+        target: 'sa-login', method: 'POST', path: '/WebServices/UserLogin.asmx/Login',
+        body:   { Data: { User: await env.get('SA_USER'), Password: await env.get('SA_PASSWORD') } },
+      })
+      if (res.error) return null   // fails closed as auth_failed
+      return res.meta.headers?.['set-cookie']
+        ?.split('\n').map(line => line.split(';')[0]).join('; ') ?? null
+    },
+  }, { ttl_ms: Infinity }),
+  targets: [
+    { id: 'sa-login', /* … */ auth: { type: 'none' } },
+    { id: 'sa',       /* … */ auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie' } },
+  ],
+})
+```
+
+A burst against a cold session logs in once (`withCache` collapses concurrent misses); a session that expires is answered by one login and one replay. A throw from `get()` is a retryable `connection_failed`; a `null` is a permanent `auth_failed`.
 
 ### Protocols
 
@@ -300,7 +330,7 @@ if (result.error) {
 }
 ```
 
-`meta.headers` is where the answers a caller cannot get any other way live — RFC 5988 `Link` for the next page, `ETag`/`Last-Modified` for a conditional request, `X-Total-Count`. It is present on failures too (a 429's `Retry-After`, a 5xx's request id) and absent only when nothing was sent.
+`meta.headers` is where the answers a caller cannot get any other way live — RFC 5988 `Link` for the next page, `ETag`/`Last-Modified` for a conditional request, `X-Total-Count`. It is present on failures too (a 429's `Retry-After`, a 5xx's request id) and absent only when nothing was sent. `set-cookie` holds every line, joined by `\n` — a comma cannot separate them, since an `Expires` date carries one.
 
 **A `304 Not Modified` is a success**, not an error: `data` is `null`, `meta.status` is 304, and the validator headers come back. Send `If-None-Match` off the previous response's `ETag` and serve your own copy when you get one.
 

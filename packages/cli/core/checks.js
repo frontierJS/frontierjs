@@ -88,6 +88,8 @@ export const RULES = [
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
     title: 'a static root serving uploads says so' },
+  { id: 'file-column-storage', scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a File column has a FileStorage to store it' },
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'db/ at the app root, and each surface a directory beside it' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
@@ -867,6 +869,43 @@ const CHECKS = {
       })
     }
     return { findings }
+  },
+
+  // A `File` column holds a storage reference, and FileStorage is what turns an
+  // upload into one. `fli new` does not install it — it throws at boot outside
+  // development with no provider configured, so an app with no `File` column
+  // would pay for it in production — and an app that then declares one parses,
+  // migrates and passes everything else until its first upload is refused
+  // (`FJS-1898`). A warning: the scan sees a `FileStorage(` call in the app's own
+  // source, and a client assembled by a package it imports is invisible to it.
+  'file-column-storage': ({ root }) => {
+    const columns = []
+    for (const file of sources(root, ['.lite'], 'db')) {
+      const lines = readCode(file).split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/^\s*([A-Za-z_][\w]*)\s+File(\[\])?\??(?=\s|$)/)
+        if (m) columns.push({ file, line: i + 1, name: m[1], type: `File${m[2] ?? ''}` })
+      }
+    }
+    if (!columns.length) return { skipped: 'no File column in db/' }
+
+    let stored = false
+    walk(root, 5, dir => {
+      for (const name of readdirSync(dir)) {
+        if (stored || !/\.[cm]?[jt]s$/.test(name)) continue
+        const src = readCode(join(dir, name))
+        if (/\bFileStorage\s*\(/.test(src) || /fieldType\s*=\s*['"]File['"]/.test(src)) stored = true
+      }
+    })
+    if (stored) return { findings: [] }
+
+    return { findings: columns.map(c => ({
+      file: c.file, line: c.line,
+      message: `${c.name} is a ${c.type} column and nothing in this app installs FileStorage, so the first ` +
+               `upload into it is refused. Add \`FileStorage({ provider: 'local' })\` beside the gate in the ` +
+               `client's \`plugins\` (api/src/core/db.ts in an app \`fli new\` made). \`local\` writes to this ` +
+               `machine's disk; \`r2\` or \`s3\` is the provider for an app that is deployed.`,
+    })) }
   },
 
   // A command compiles when it is run, so one nobody has run is broken with

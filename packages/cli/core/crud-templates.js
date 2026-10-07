@@ -542,6 +542,47 @@ ${kids.markup}{#if record}
  */
 export const routeSegment = (dir) => dir.toLowerCase()
 
+/**
+ * The layout with a link to a generated list page in its main nav, the layout
+ * unchanged where the nav already links it, or null where it has no
+ * `<nav aria-label="Main">` to put one in. make:scaffold used to end on *Add a
+ * nav link to your layout* and nothing added one, so in 0 of 21 generated apps
+ * did the page after sign-up reach a model's list (`FJS-1808`).
+ *
+ * A layout that signs people in draws the link under `{#if session.user}`, as
+ * `fli new` draws its Users link: a nav offering a stranger a page that answers
+ * *Authentication required* reads as a broken app.
+ *
+ * The href and the label are the list page's own, so the link and the heading
+ * it opens on say the same thing.
+ *
+ * @param {string} layout   the `_module.mesa` text
+ * @param {string} service  the list's route directory, `searchIndexes`
+ * @returns {string|null}
+ */
+export function withNavLink(layout, service) {
+  const href  = `/${routeSegment(service)}/`
+  const label = labelOf(service)
+  const open = /<nav\b[^>]*\baria-label="Main"[^>]*>/.exec(layout)
+  const close = open ? layout.indexOf('</nav>', open.index) : -1
+  if (close < 0) return null
+  if (layout.slice(open.index, close).includes(`href="${href}"`)) return layout
+
+  const lineStart = layout.lastIndexOf('\n', close) + 1
+  const outer = layout.slice(lineStart, close)
+  if (outer.trim()) return null
+  const inner = outer + '  '
+  // `aria-current` only where the layout already reads the route, since a
+  // reference to an import it does not hold would stop it compiling.
+  const current = layout.includes('isActive(') && layout.includes('page.route')
+    ? ` aria-current={(page.route, isActive('${href}')) ? 'page' : null}` : ''
+  const a = `<a class="navlink" href="${href}"${current}>${label}</a>`
+  const lines = layout.includes('session.user')
+    ? [`${inner}{#if session.user}`, `${inner}  ${a}`, `${inner}{/if}`]
+    : [`${inner}${a}`]
+  return layout.slice(0, lineStart) + lines.join('\n') + '\n' + layout.slice(lineStart)
+}
+
 const labelOf = (name) => name
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
   .replace(/[_-]/g, ' ')

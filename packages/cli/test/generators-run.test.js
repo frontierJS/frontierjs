@@ -144,3 +144,51 @@ describe('a generated link names the URL its directory is served at', () => {
     }, 30000)
   }
 })
+
+// make:scaffold ended on *Add a nav link to your layout* and nothing added one,
+// so in 0 of 21 apps the base44 stressor generated did the page after sign-up
+// reach a model's list (`FJS-1808`). The layout here is the one `fli new`
+// writes, read out of new.md, so a change to it is graded too.
+describe('make:scaffold links the list from the layout fli new writes', () => {
+  const NEW_MD = Bun.file(join(CLI, 'commands/project/new.md')).text()
+  const layoutOf = async (useAuth) => {
+    const src = (await NEW_MD).match(/\nfunction makeRouteModule\(appName, useAuth\) \{[\s\S]*?\n\}\n/)[0]
+    return new Function('sc', `${src}\nreturn makeRouteModule`)('</' + 'script>')('demo', useAuth)
+  }
+  const SCHEMA = { 'db/schema.lite': 'model SearchIndex { id Int @id  name String }\n' }
+  const LAYOUT = 'web/src/routes/_module.mesa'
+
+  for (const useAuth of [true, false]) {
+    test(useAuth ? 'behind the signed-in check, as the Users link is' : 'with no sign-in, for everyone', async () => {
+      const root = makeApp({ ...SCHEMA, [LAYOUT]: await layoutOf(useAuth) })
+      try {
+        await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
+        const layout = await Bun.file(join(root, LAYOUT)).text()
+        const nav = layout.slice(layout.indexOf('aria-label="Main"'), layout.indexOf('</nav>'))
+        expect(nav).toContain(`<a class="navlink" href="/searchindexes/" aria-current={(page.route, isActive('/searchindexes/')) ? 'page' : null}>Search Indexes</a>`)
+        expect(/\{#if session\.user\}\s*<a class="navlink" href="\/searchindexes\/"/.test(nav)).toBe(useAuth)
+
+        // Run again, and the link is not added a second time.
+        await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
+        expect((await Bun.file(join(root, LAYOUT)).text()).split('href="/searchindexes/"').length).toBe(2)
+
+        const { compileSource } = await import(resolve(CLI, '../mesa/src/compiler.js'))
+        const ctx = await compileSource(layout.replace(/^---[\s\S]*?\n---\n/, ''), { filename: '_module.mesa', css: false, debug: false })
+        expect(ctx.analysis.errors).toEqual([])
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+
+  test('a layout with no main nav is left alone', async () => {
+    const own = '<div class="shell"><slot /></div>\n'
+    const root = makeApp({ ...SCHEMA, [LAYOUT]: own })
+    try {
+      await run(root, 'make:scaffold', ['SearchIndex'], { 'skip-schema': true })
+      expect(await Bun.file(join(root, LAYOUT)).text()).toBe(own)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30000)
+})

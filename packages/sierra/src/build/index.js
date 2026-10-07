@@ -721,6 +721,10 @@ function flattenTree(node) {
 // Named exports for unit testing
 export { deepMerge as _deepMerge }
 
+// What `connectApp({ schema })` takes, made on the server for the OTHER app's
+// `db/schema.lite` — the same tables this build registers for its own.
+export { generateSchemas } from './schema-plugin.js'
+
 /**
  * Filenames currently in the build's `assets/` directory.
  *

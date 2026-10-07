@@ -649,7 +649,8 @@ try {
     };
     set('[name="reference"]', 'ord-cdp-1');
     set('[name="total"]', '42.5');
-    set('[name="status"]', 'pending');
+    // No status: a @@transitions column is written by its moves, so the form
+    // leaves it out and the row is born at its @default, pending (FJS-1433).
     // Not set(): writing an input's value and firing an input event types into
     // the search box, it does not CHOOSE a row. A picker's value is the option
     // the person clicked, which is the whole difference between the label on

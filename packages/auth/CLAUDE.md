@@ -73,7 +73,7 @@ index.ts     public API
   replay by somebody who already holds the session. State it before changing it.
 - **The second factor's caller-facing half is on `account`, not a service of its
   own.** Five methods beside `changePassword`, named exactly as the provider names
-  them so `need()` reads the key a caller typed. Four are `refuseInSupport` and
+  them so `need()` reads the key a caller typed. Four are `refuseDelegated` and
   `totpStatus` is not — a read is what an episode is FOR, and the pair is asserted
   both ways. `confirmTotp` refuses at 403 before the provider is reached: a 404
   there would tell an operator whether the subject has an enrollment in flight,
@@ -90,6 +90,18 @@ index.ts     public API
   an owner. `revokeSession` and `revokeApiKey` put `userId` into the delete
   rather than checking after a read — the id is what a UI hands back from a list,
   and matching on it alone ends anyone's session whose id can be guessed.
+- **A support operator and an agent over `/mcp` are refused the same writes.**
+  `refuseDelegated(ctx, user, what)` throws for `user.support` and for
+  `ctx.transport === 'mcp'`: every credential change outlives the episode or the
+  session it came from, and a key minted by an agent is the session ceiling
+  escaped (`FJS-1795`, `FJS-D628`). A new method that changes a credential calls
+  it; a read does not. The tools stay LISTED to an agent and refuse when called.
+- **Every service says `model: null`, and every method `gate: VISITOR`.** The
+  names are not models — `sessions` reaches this package's own `Session` and
+  `account` an app's `Account` — and a name that reaches a model is graded by its
+  `@@gate`, which refuses a declared level on a CRUD verb (`GET /sessions`
+  answered 500). Without the gates `/mcp` lists every method `ungraded` and the
+  boot warning names them in every app that mounts it.
 - **The three names are options, and a collision is refused at BOOT.** The
   registry is a Map, so the alternative is one of the two silently replacing the
   other depending on registration order — basecamp has its own `api-keys` (a

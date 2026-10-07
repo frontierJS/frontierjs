@@ -97,7 +97,8 @@ src/
     warnings.js, dev-overlay.js, devtools-plugin.js
 
   junction/              — the API seam
-    index.js             WebSocket client integration
+    index.js             WebSocket client integration; `connectApp()`, the
+                         handle a Resource over ANOTHER app is built from
     session.js           who the browser thinks you are — the reactive object,
                          the boot restore, signIn/submitCode/signOut, and `ready`
     resource.js          createResource — coerce → blankToNull → validate
@@ -105,7 +106,9 @@ src/
                          and re-run, and the window. Imports the router
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
-    schema-registry.js   modelNameFor / schemaFor
+    schema-registry.js   modelNameFor / schemaFor, over `createSchemaRegistry()` —
+                         the page's own app is the default instance, and
+                         `connectApp()` (index.js) makes one per other app
     pending.js           the writes this device made and the server has not
                          confirmed — queue-first, cleared on an ACK and never on
                          a send, drained on the socket's `connect`. Held only for

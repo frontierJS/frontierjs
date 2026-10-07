@@ -772,6 +772,32 @@ leads.fields.accountId.references
 // { model: 'Account', field: 'id', relation: 'account' }
 ```
 
+### Another app
+
+A page that shows a FrontierJS app it is not, such as a studio over the app it
+hosts, builds the resource from a handle on that app:
+
+```js
+import { connectApp, createResource } from '@frontierjs/sierra/junction'
+
+const hosted = connectApp({ url: `/hosted/${id}`, apiPrefix: '/api', schema, user })
+export const leads = createResource('leads', { app: hosted })
+```
+
+`schema` is what `generateSchemas(path)` from `@frontierjs/sierra/build`
+answers for that app's `db/schema.lite`, made on the server. Fields,
+relations, `can()` and moves are read from it, every call goes to that app, and
+a related resource built for a picker inherits the handle.
+
+**The client sends the page's own credential.** So `url` is a route on the
+page's API that forwards to the other app and swaps the credential for one that
+app accepts, which stays on the server. A `url` on another origin is refused.
+The socket is `url` + `/ws`, so the forward bridges that path too, or the live
+stores never move. `user` is who that app sees, and a create seeds a column
+pinned to `auth()` from it. `@@sync` and `offlineQuery` stay off, because what
+a device holds belongs to the page's own app. `hosted.close()` stops following
+the page's sign-in.
+
 ### Gate
 
 `resource.gate` is the model's `@@gate` levels, and `can()` compares a level

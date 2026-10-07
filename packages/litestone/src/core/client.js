@@ -3001,6 +3001,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
+  // A `File` column is a storage reference, and turning the bytes a caller
+  // hands it into one is FileStorage's work. With no FileStorage installed a
+  // single File reached `refuseUnbindable` and was refused about atomic
+  // operators, naming neither the type nor the plugin; a `File[]` was worse —
+  // it went through the Json path and stored `[{}]` (`FJS-1898`).
+  const _fileFields = (ctx.models?.[modelName]?.fields ?? []).filter(f => f.type?.name === 'File').map(f => f.name)
+  const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
+  function refuseFileWithoutStorage(data) {
+    if (!_fileFields.length || plugins?.handles('File')) return
+    for (const k of _fileFields) {
+      const v = data[k]
+      if (!(Array.isArray(v) ? v.some(_needsStorage) : _needsStorage(v))) continue
+      throw new ValidationError([{ path: [k], message:
+        `${k} is a File column, and storing what it was given takes FileStorage, which this client does not install. ` +
+        `Add FileStorage({ provider }) to the client's plugins: the bytes go to the provider and the column keeps the reference` }])
+    }
+  }
+
   function refuseUnbindable(row) {
     for (const [k, v] of Object.entries(row)) {
       if (typeof v === 'function')
@@ -3282,6 +3300,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // the stored row.
     if (!ctx.isSystem && fieldWrite === 'js') dropFieldWriteDenied(transformed)
 
+    refuseFileWithoutStorage(transformed)
     const row = serializeRow(
       serializeBooleans(
         stripVirtual(transformed, generatedFields, computedFields, _hasFrom ? Object.keys(fromFields) : null),

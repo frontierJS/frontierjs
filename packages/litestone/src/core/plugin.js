@@ -118,6 +118,13 @@ export class PluginRunner {
     return this._plugins.map(p => p?.name ?? p?.constructor?.name ?? 'anonymous')
   }
 
+  // Whether an installed plugin stores this scalar type — `File` reaching a
+  // write with nothing installed to store it is refused by name, not as the
+  // unbindable object it otherwise is.
+  handles(fieldType) {
+    return this._plugins.some(p => p?.fieldType === fieldType)
+  }
+
   // Called once at client init
   init(schema, ctx) {
     for (const p of this._plugins) p.onInit?.(schema, ctx)

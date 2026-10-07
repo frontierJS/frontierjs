@@ -20,6 +20,8 @@ const CT_JSON        = 'application/json'
 const CT_TEXT_JSON   = 'text/json'
 const CT_URLENCODED  = 'application/x-www-form-urlencoded'
 const CT_MULTIPART   = 'multipart/form-data'
+/** The part the junction client puts a write's non-string values in. */
+export const MULTIPART_JSON = '$json'
 const CT_TEXT        = 'text/plain'
 const CT_XML_APP     = 'application/xml'
 const CT_XML_TEXT    = 'text/xml'
@@ -236,6 +238,18 @@ export async function parseBody(
       .trim()
       .replace(/^"(.*)"$/, '$1')
     const { fields, files } = parseMultipart(buffer, boundary, MAX_FILE_SIZE)
+    // The junction client sends what is not a string (a list, a Json value, a
+    // number, a null) as one JSON part, since a text part cannot say `[]` from
+    // "[]" (FJS-1897). It is read back over the text fields; one that does not
+    // parse to an object is a malformed body, as an unparseable JSON one is.
+    if (MULTIPART_JSON in fields) {
+      const { [MULTIPART_JSON]: json, ...text } = fields
+      let typed: unknown
+      try { typed = JSON.parse(json) } catch { typed = null }
+      if (!typed || typeof typed !== 'object' || Array.isArray(typed))
+        return { type: 'multipart', data: null, files, size, bytes: buffer }
+      return { type: 'multipart', data: { ...text, ...typed as Record<string, unknown> }, files, size, bytes: buffer }
+    }
     return { type: 'multipart', data: fields, files, size, bytes: buffer }
   }
 

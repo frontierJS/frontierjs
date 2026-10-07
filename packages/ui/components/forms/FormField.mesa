@@ -95,14 +95,16 @@
         value: v, onchange: (next) => onvalue(next),
       }),
     },
-    // The array form of the same thing. An unbound array is still `json` — the
-    // schema stops describing it — but a bound one has a list behind it, which
-    // is the whole difference.
+    // The array form of the same thing, and a scalar list (`String[]`, `Int[]`)
+    // with no set behind it: nothing to choose from, so every item is typed and
+    // `itemType` says whether it is a number.
     multiselect: {
       component: MultiSelect,
       props: ({ field: f, value: v, onvalue, options: rows, total: n, optionsError: e }) => ({
         name: f.name, options: rows ?? [], multiple: true, total: n, optionsError: e,
         allowNew: f.allowNew === true,
+        type: f.itemType === 'integer' || f.itemType === 'number' ? 'number' : 'string',
+        ...(f.itemType ? { placeholder: 'Add…' } : {}),
         value: Array.isArray(v) ? v : (v == null ? [] : [v]),
         onchange: (next) => onvalue(next),
       }),

@@ -222,6 +222,7 @@ describe('checkAnswer refuses', () => {
     inferred:  a => { a.entities[5].why = 'inferred from the hiring process' },
     field:     a => { a.entities[2].fields[0].type = 'varchar' },
     state:     a => { a.entities[5].fields.push({ name: 'status', type: 'enum', values: ['draft', 'submitted', 'final'] }) },
+    document:  a => { a.entities[5].fields.push({ name: 'rubric', type: 'json', required: true }) },
     link:      a => { a.entities[5].links[1].actor = undefined },
     lifecycle: a => { a.entities[2].lifecycle.moves.pop(); a.entities[2].lifecycle.moves.pop() },
     access:    a => { a.entities[5].links.pop(); a.entities[5].access = {} },
@@ -244,6 +245,26 @@ describe('checkAnswer refuses', () => {
     })
   }
 
+  test('a required json with no document to start from, and takes one that states it', () => {
+    // A person cannot type JSON, so a required document with no default is a
+    // row nobody can create from a form: Calendly's weeklyHours and
+    // Dragonfly's data in the base44 stressor (`FJS-1823`).
+    const answer = (rubric) => {
+      const a = base()
+      a.entities[5].fields.push({ name: 'rubric', type: 'json', required: true, ...rubric })
+      return a
+    }
+    expect(checkAnswer(answer({})).refusals.map(x => x.at)).toContain('Scorecard.rubric')
+    expect(checkAnswer(answer({ default: 'later' })).refusals.map(x => x.rule)).toContain('document')
+    expect(checkAnswer(answer({ system: true })).refusals).toEqual([])
+    for (const [stated, written] of [[{}, '"{}"'], [[], '"[]"'], ['[]', '"[]"'], [{ scale: 5 }, '"{\\"scale\\":5}"']]) {
+      const out = emit(answer({ default: stated }), { scaffold: SCAFFOLD })
+      expect(out.refusals).toEqual([])
+      expect(out.text).toContain(`@default(${written})`)
+      expect(parses(out.text)).toBe(true)
+    }
+  })
+
   test('an entity nobody reaches', () => {
     const r = checkAnswer({ entities: [{ name: 'Department', rung: 'novel', why: 'a team', fields: [{ name: 'name', type: 'text', required: true }] }] })
     expect(r.refusals.map(x => x.message).join('\n')).toContain('Nobody reaches a Department row')
@@ -259,6 +280,18 @@ describe('checkAnswer refuses', () => {
     const a = base()
     a.entities[2].access = { shared: 'every recruiter reads every job' }
     expect(checkAnswer(a).refusals.map(x => x.message).join('\n')).toContain('admits everybody')
+  })
+
+  test('a move named for a CRUD verb, and takes the same move named for what the person does', () => {
+    // Junction answers `restore` as the verb and refuses to start beside such a
+    // move; six base44 Phase 2 schemas wrote it as archive's inverse (`FJS-1909`).
+    const answer = (name) => {
+      const a = base()
+      a.entities[2].lifecycle.moves[2].name = name
+      return a
+    }
+    expect(checkAnswer(answer('restore')).refusals.map(x => x.message).join('\n')).toContain('`restore` is a service method')
+    expect(checkAnswer(answer('reopen')).refusals).toEqual([])
   })
 
   test('a declared scaffold model', () => {

@@ -77,7 +77,8 @@ export interface ModelDef {
 /** The half of `describe()` this module reads. */
 export interface ServiceShape {
   name:    string
-  model:   string
+  /** `null` is a service declared over no model, which no name resolves. */
+  model:   string | null
   /** Policy already applied — a method absent here does not exist to anybody. */
   methods: string[]
   /**
@@ -635,10 +636,10 @@ export function projectTools(
   const unresolved: string[]   = []
 
   for (const svc of services) {
-    const model = resolveModel(svc.model, defs)
+    const model = svc.model === null ? null : resolveModel(svc.model, defs)
     const def   = model ? defs[model] : undefined
     const gate  = def?.['x-gate']
-    if (!model) unresolved.push(svc.model)
+    if (!model && svc.model !== null) unresolved.push(svc.model)
 
     for (const method of svc.methods) {
       // `model` rather than `svc.model`, so the row says which definition

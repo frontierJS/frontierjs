@@ -17,7 +17,7 @@ frontmatter until 2026-09-08; it is struck rather than kept, per `PHILOSOPHY.md`
 § VII.** What is built, read off the tree on that date: `Session` carries
 `impersonatingUserId`, `impersonationReason` and `impersonationEndsAt`;
 `packages/auth/services.ts` refuses five operations inside an episode through
-`refuseInSupport`; the actor swap is pinned by `litestone/test/support-attribution.test.ts`;
+`refuseDelegated`; the actor swap is pinned by `litestone/test/support-attribution.test.ts`;
 and `example`'s `verify:support` drives an episode end to end. The remainder is
 the declared-trail silence that test's fifth row asserts as still-broken.
 
@@ -299,7 +299,7 @@ Four phases. The first lands with no behavior change and no app edit.
    `endSupport` on the provider and on `IAuth` as optional methods;
    `POST /auth/support/{start,end}` in `packages/auth/plugin.ts`; `verifySession` following
    the columns and enforcing the expiry there; `SessionContext.support`; and
-   `refuseInSupport()` at six call sites in `packages/auth/services.ts`.
+   `refuseDelegated()` at six call sites in `packages/auth/services.ts`.
    `test/support-mode.test.ts` (12) and `test/support-refusals.test.ts` (9) — the second
    over a real Junction app, because the refusals are only true where a request meets them.
    Measured with each half stubbed: **3 of 12 fail without the resolution branch, exactly 1

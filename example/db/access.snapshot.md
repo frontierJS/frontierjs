@@ -310,7 +310,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Flow` | `status` | `activate` | draft, paused → active | caller | 5 ADMINISTRATOR | — |
 | `Flow` | `status` | `pause` | active → paused | caller | — | — |
 | `Flow` | `status` | `archive` | draft, active, paused → archived | caller | — | — |
-| `Flow` | `status` | `restore` | archived → draft | caller | — | — |
+| `Flow` | `status` | `unarchive` | archived → draft | caller | — | — |
 | `Invoice` | `status` | `issue` | draft → issued | **application** | — | **yes** |
 | `Invoice` | `status` | `settle` | issued → paid | **application** | — | — |
 | `Invoice` | `status` | `void` | issued → void | caller | 5 ADMINISTRATOR | — |

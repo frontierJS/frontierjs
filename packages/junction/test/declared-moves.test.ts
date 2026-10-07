@@ -207,3 +207,48 @@ describe('one table', () => {
     expect(plain.describe().customMethods).toEqual([])
   })
 })
+
+// A move named for a CRUD verb was dropped, the button stayed drawn, and the
+// call answered as the verb (`FJS-1909`). Paired with the same machine under a
+// name that is free, so the refusal is about the name and nothing else.
+describe('a move named for what a service already answers refuses start()', () => {
+  const machine = (inverse: string) => `
+database main { path "./a.db" }
+enum ProjectState { active  archived }
+model Project {
+  id     Int          @id @default(autoincrement())
+  status ProjectState @default(active)
+  @@allow('all', true)
+  @@transitions(status, archive: active -> archived, ${inverse}: archived -> active)
+  @@db(main)
+}
+`
+  async function boot(inverse: string) {
+    const pdb = await createClient({ databases: ':memory:', schema: machine(inverse) })
+    const { createApp, defaultConfig } = await import('../index.ts')
+    const a = createApp({
+      db: pdb,
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+                http: { ...defaultConfig.http, drainTimeout: 50 } },
+    } as never)
+    const svc = createService({ name: 'projects', model: 'Project' })
+    a.services.register(svc)
+    return { a, svc }
+  }
+
+  test('restore is reported by name and start() refuses', async () => {
+    const { a, svc } = await boot('restore')
+    expect(svc._authoringFindings).toHaveLength(1)
+    expect(svc._authoringFindings![0]).toContain(`move 'restore'`)
+    await expect(a.start()).rejects.toThrow(/move 'restore'/)
+    await a.stop()
+  })
+
+  test('the same move named unarchive is served', async () => {
+    const { a, svc } = await boot('unarchive')
+    expect(svc._authoringFindings).toEqual([])
+    expect(svc.describe().customMethods).toContain('unarchive')
+    await a.start()
+    await a.stop()
+  })
+})

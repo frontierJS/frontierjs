@@ -26,7 +26,10 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   `test/hook-ordering.test.ts`).
 - **A custom method takes the model's read gate as a floor**, and a `gate:` on a
   CRUD verb is graded only over no model (`FJS-826`, `FJS-D408`,
-  `test/custom-method-gate.test.ts`).
+  `test/custom-method-gate.test.ts`). **An omitted `model:` resolves from the
+  service's NAME**, so a model-less service named like a model is graded by that
+  model; `model: null` says there is none, and `serviceAccessor()` is the one
+  reader — never write `model ?? name` (`FJS-D628`).
 - **A filtered bulk PATCH/REMOVE writes one row at a time through `update()`**,
   under `bulkMax` (`FJS-044`, `test/bulk-partial-success.test.ts`).
 - **An `Idempotency-Key` needs a principal and names ONE request** — a stranger's

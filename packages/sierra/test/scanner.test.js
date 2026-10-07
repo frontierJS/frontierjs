@@ -472,6 +472,17 @@ describe('_module.mesa frontmatter inheritance', () => {
     expect(tree.meta.title).toBe('Home')
   })
 
+  it('_module.meta.js pairs with a _module.md layout too (FJS-1902)', async () => {
+    const cwd = await makeTmpFixture({
+      'src/routes/_module.md': '---\nsection: From Md\n---\n\n<slot />',
+      'src/routes/_module.meta.js': 'export const meta = { section: "From MetaJs" }',
+      'src/routes/index.md': '---\ntitle: Home\n---\n\nHello',
+    })
+    const files = ['src/routes/_module.md', 'src/routes/_module.meta.js', 'src/routes/index.md']
+    const tree = await buildTree(files, 'src/routes', { cwd })
+    expect(tree.meta.section).toBe('From MetaJs')
+  })
+
   it('Sierra-internal fields (reset) are not propagated from layout', async () => {
     const cwd = await makeTmpFixture({
       'src/routes/_module.mesa': '---\nreset: true\nsiteName: My App\n---\n<slot />',

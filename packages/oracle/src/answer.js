@@ -52,7 +52,7 @@ export const RESERVED = ['User', 'Notification', 'Credential', 'Session', 'Verif
 const EMITTED = ['id', 'createdAt', 'updatedAt']
 
 // A move is called by name next to the service's own methods.
-const MOVE_RESERVED = ['create', 'read', 'update', 'delete', 'find', 'findMany', 'list', 'get', 'remove', 'patch', 'save', 'count', 'transition', 'transitions']
+const MOVE_RESERVED = ['create', 'read', 'update', 'delete', 'find', 'findMany', 'list', 'get', 'remove', 'restore', 'aggregate', 'patch', 'save', 'count', 'transition', 'transitions']
 
 // The states a status field names. A free enum under one of these names is
 // the lifecycle the doctrine says to declare (§ 5).
@@ -62,6 +62,15 @@ const IDENT = /^[a-z][a-zA-Z0-9]*$/
 const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
 const VALUE = /^[a-z][a-z0-9_]*$/
 const GUESS = /\binferred\b|\bnot (explicitly )?stated\b/i
+
+// A json default as the JSON text of an object or an array, or null. An answer
+// is JSON, so it says `{}` as a value, and the catalog's field spec says it as
+// the text `=[]`.
+function jsonDefault(v) {
+  let doc = v
+  if (typeof v === 'string') { try { doc = JSON.parse(v) } catch { return null } }
+  return doc !== null && typeof doc === 'object' ? JSON.stringify(doc) : null
+}
 
 /**
  * Every rule `checkAnswer` holds, with what it says. `brief.js` renders this
@@ -76,8 +85,9 @@ export const RULES = {
   inferred:    'Anything whose own reasoning says inferred or not stated goes in `open`, never in the answer. So does what you left out: `why` argues for what is in the answer, and an omission is a question in `open`.',
   field:       'A field has a camelCase name no other column on the entity has, a type from the type table, and an enum has two or more lowercase values.',
   state:       'A field named status, state, stage or phase with more than two values is a lifecycle, not an enum field.',
+  document:    'A required json field states the document a new row starts with as `default`, `{}` or `[]`, unless it is `system`: no form a person fills can type JSON, so without one nobody can create the row.',
   link:        'A link names an entity in the answer or User; a link to User names the actor reaching the row through it, and a link to anything else names none.',
-  lifecycle:   'A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase and unique.',
+  lifecycle:   `A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase, unique, and none of ${MOVE_RESERVED.join(', ')}.`,
   access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
   pattern:     'A cited pattern is one the catalog lists.',
@@ -187,6 +197,14 @@ export function checkAnswer(answer) {
         if (STATE_NAMES.includes(f.name) && f.values?.length > 2) refuse('state', fat, `\`${f.name}\` names ${f.values.length} states of one thing. Declare it as the entity's \`lifecycle\` with the moves between them, so a move nobody declared is refused.`)
       } else if (f.values != null) refuse('field', fat, 'Only an enum lists values.')
       if (typeof f.why === 'string' && GUESS.test(f.why)) refuse('inferred', fat, `This field's reason reads as a guess. Ask it in \`open\` instead.`)
+      if (f.type === 'json') {
+        const doc = jsonDefault(f.default)
+        if (f.default != null && doc == null) { refuse('document', fat, `The default of a json field is a document, \`{}\` or \`[]\` or one with content; \`${JSON.stringify(f.default)}\` is not one.`); continue }
+        if (f.required && !f.system && doc == null) { refuse('document', fat, `\`${f.name}\` is a required json field, and no form a person fills can type JSON. State the document a new row starts with, \`default: {}\` or \`default: []\`, or mark it \`system\` if the application writes it.`); continue }
+        // The emitter writes a string default as `@default("…")`, which is the
+        // spelling a Json column takes its document in.
+        if (doc != null) { fields.push({ ...f, default: doc }); continue }
+      }
       fields.push(f)
     }
 

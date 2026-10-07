@@ -73,7 +73,7 @@ export interface AppMeta {
 
 export interface ServiceManifest {
   name:       string
-  model:      string
+  model:      string | null
   methods:    string[]      // CRUD + custom methods, after the `methods:` policy
   hooks:      HookManifest
   softDelete: boolean

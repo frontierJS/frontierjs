@@ -37,6 +37,7 @@ import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markPublishHook } from '../core/events.
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
 import { MADE_AT_HEADER, SENT_AT_HEADER } from '../core/context.ts'
+import { serviceAccessor }      from '../core/service.ts'
 import { wsSend }               from './send-queue.ts'
 import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from './bridge.ts'
@@ -967,10 +968,10 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       // a fallback: grading resolved from the name alone refused everybody, in
       // silence, for every service whose name maps to no model — `orders2` over
       // `Order`, a modelless service, any Invariant-19 irregular (`FJS-700`).
-      const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string } | undefined
+      const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string | null } | undefined
       const graded = await gradeRecipients(targets, event, payload, {
         db:       (ctx as { locals?: { db?: unknown } }).locals?.db,
-        accessor: svc?.model ?? (ctx as { service?: string }).service ?? '',
+        accessor: serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',
         label:    (ctx as { service?: string }).service,
       }, 'row', claimsFor, channelsOf)
       if (graded) {

@@ -1,5 +1,14 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-07 — a File column on a client with no FileStorage is refused by name, and a File[] upload stores (`FJS-1898`, `FJS-1899`)
+
+With no `FileStorage` installed, an upload into a `File?` column was refused about atomic operators, a message that names neither the column's type nor the plugin. An upload into a `File[]` was not refused at all: it took the Json path and stored `[{}]`.
+
+- **`writeData` refuses a `File` or `File[]` column given an object when no installed plugin stores `File`**, before the row is serialized. The message names the column and `FileStorage`. `PluginRunner.handles(fieldType)` answers whether one is installed. A string, a `null` and an absent key are unaffected.
+- **`ExternalRefPlugin` hands an array field's refs on as an array.** It wrote them as JSON text, and `validate` checks an array column's shape before `writeData` serializes it, so with `FileStorage` installed every `File[]` upload was refused *must be an array*. The column is a Json field, so it is still stored as JSON text.
+
+`test/file-without-storage.test.ts` covers both: the refusal for `File?`, `File[]` and an update, a row with no file still written, and a `File[]` create and update through a plugin that stores `File`.
+
 ## 2026-10-07 — advise leaves out the models a package ships (`FJS-1887`)
 
 `advise` treated a model from `import "@frontierjs/auth/schema.lite"` as the app's own. So auth's `OauthFlow.link`, an invitation token, was reported to every app as a likely URL column with no `@url`, on a field the app cannot edit. In base44's edit stressor, that one finding kept every turn from settling.

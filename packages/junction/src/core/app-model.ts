@@ -29,7 +29,8 @@ export interface SurfaceService {
   // camel service name now (`FJS-570`), and the filename's own spelling stays
   // mounted — which is a fact about the wire and therefore belongs here.
   aliases:       string[]
-  model:         string
+  /** `null` is a service declared over no model (`FJS-D628`). */
+  model:         string | null
   methods:       string[]
   customMethods: string[]
   /** The `type` in the seed each method's payload must satisfy, keyed by method. */
@@ -113,12 +114,14 @@ export function describeSurface(app: App): Surface {
  * same answer as a model with no `@@gate`.
  */
 function gradeCustomMethods(
-  d:      { name: string; model: string; methods: string[]; methodGates?: Record<string, number>; hooks: unknown },
+  d:      { name: string; model: string | null; methods: string[]; methodGates?: Record<string, number>; hooks: unknown },
   client: unknown,
 ): Record<string, CustomMethodGrade> {
   const around  = (serializeHookMap(d.hooks as never) as unknown as Record<string, Record<string, string[]>>).around ?? {}
   const gated   = (around.all ?? []).includes('gateAuth')
-  const levels  = !gated ? null : client ? gateLevels(client, d.model || d.name) : undefined
+  // `d.model` is already `serviceAccessor`'s answer, so `null` is no model and
+  // never the name again.
+  const levels  = !gated || d.model === null ? null : client ? gateLevels(client, d.model) : undefined
   const declared = d.methodGates ?? {}
 
   const out: Record<string, CustomMethodGrade> = {}

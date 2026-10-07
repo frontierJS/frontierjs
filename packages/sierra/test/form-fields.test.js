@@ -223,7 +223,10 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor(rules.meta, { field: 'meta', model: 'Doc' }).control).toBe('json')
     expect(controlFor(rules.opt, { field: 'opt', model: 'Doc' }).control).toBe('json')
 
-    expect(controlFor(rules.tags, { field: 'tags', model: 'Doc' }).control).toBe('json')
+    // A `String[]` states its item type, so it is a list a person adds to one
+    // value at a time, and not a document (`FJS-1822`).
+    expect(rules.tags.items).toEqual({ type: 'string' })
+    expect(controlFor(rules.tags, { field: 'tags', model: 'Doc' })).toMatchObject({ control: 'multiselect', allowNew: true, itemType: 'string' })
     expect(controlFor(rules.title, { field: 'title', model: 'Doc' }).control).toBe('input')
 
     // A File column derefs to FileRef — an object with eight properties — so a
@@ -253,13 +256,25 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor(blind.meta, { field: 'meta', model: 'Doc' }).control).toBe('json')
   })
 
-  test('the two types the schema stops describing are edited as their own syntax', () => {
-    // A `Json` column and a `String[]` have no field list under them, so there
-    // is nothing to generate a row of controls from and the only editor that
-    // covers every value they may hold is the document's own text.
+  test('a document the schema stops describing is edited as its own syntax', () => {
+    // A `Json` column and a list of a declared shape have no field list under
+    // them, so there is nothing to generate a row of controls from and the only
+    // editor that covers every value they may hold is the document's own text.
     // `@frontierjs/ui` binds this name to JsonInput.
     expect(controlFor(rules().notes).control).toBe('json')
-    expect(controlFor(rules().tags).control).toBe('json')
+    expect(controlFor({ type: 'array' }).control).toBe('json')
+  })
+
+  test('a scalar list is typed one item at a time, never as JSON', () => {
+    // As a JSON box, the first tag a person typed was refused as not JSON, in
+    // five of the 21 apps the base44 stressor generated (`FJS-1822`).
+    expect(controlFor(rules().tags)).toEqual({ control: 'multiselect', task: 'text', allowNew: true, itemType: 'string' })
+    expect(controlFor(buildFieldRules({ properties: { n: { type: 'array', items: { type: 'integer' } } } }).n))
+      .toMatchObject({ control: 'multiselect', itemType: 'integer' })
+    // A list of a declared shape is still a document.
+    const shaped = buildFieldRules({ properties: { stops: { type: 'array', items: { $ref: '#/$defs/Stop' } } } }, () => ({ type: 'object' }))
+    expect(shaped.stops.items).toBeUndefined()
+    expect(controlFor(shaped.stops).control).toBe('json')
   })
 
   test('a column with no control answers with a reason, not with nothing', () => {
@@ -535,8 +550,8 @@ describe('registerControl — the half of a contribution that names the control'
   test('a resolver takes a column the built-in table already answers', () => {
     // The registry is asked BEFORE the table, so this is the same mechanism a
     // brand-new type uses — an app that wants chips for a `String[]` beats the
-    // json editor the table falls back to, without forking Sierra.
-    expect(controlFor(rules().tags).control).toBe('json')
+    // list the table answers, without forking Sierra.
+    expect(controlFor(rules().tags).control).toBe('multiselect')
 
     registerControl('tags', (rule) => (rule.type === 'array' ? 'tag-input' : null))
 

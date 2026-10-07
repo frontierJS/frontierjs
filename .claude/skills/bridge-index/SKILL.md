@@ -101,6 +101,7 @@ Detail: `references/api-ui.md`
 - `publish()` hook + `app.channel(name)` — real-time; `callService` is the one announcement point — `junction/src/transport/channels.ts`
 - **Transport: WebSocket when one is connected, HTTP as the fallback.** — `verifyTransportParity()` asks whether they agree
 - `createJunctionClient()` / `client.resource(name)` — the browser client — `junction/src/client/index.ts`
+- `connectApp()` / `createResource(name, { app })` — a Resource over ANOTHER app: its client, its schema table — `sierra/src/junction/index.js`
 - `resource.save(data, { mode })` — the one owner of *write this record* — `sierra/src/junction/resource.js`
 - `client.auth.*` — the browser half of `@frontierjs/auth` — `junction/src/client/index.ts`
 - `signIn` → `completeSignIn(code)` — a session or a challenge; the client holds the ticket — `junction/src/client/index.ts`

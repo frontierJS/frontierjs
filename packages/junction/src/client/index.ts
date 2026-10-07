@@ -2973,19 +2973,28 @@ function _hasFiles(body: unknown): boolean {
   )
 }
 
+// A multipart text part is only a string, so a value that is not one travels
+// in a single `$json` part that the server parses back over the text fields
+// (MULTIPART_JSON in transport/body.ts). Sent as a string, `tags: []` arrived
+// as the text "[]" and was refused as not an array, a Date arrived with its
+// JSON quotes, and a null (clearing a column) was dropped: every write that
+// carried a file beside a list, a Json value or a cleared field (FJS-1897).
 function _toFormData(body: Record<string, unknown>): FormData {
   const fd = new FormData()
+  const typed: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(body)) {
     if (val instanceof File) {
       // Preserve the original filename so Junction's body parser surfaces it correctly
       fd.append(key, val, val.name)
     } else if (val instanceof Blob) {
       fd.append(key, val)
-    } else if (val !== undefined && val !== null) {
-      // Non-file fields are stringified — Junction will parse them from the form
-      fd.append(key, typeof val === 'object' ? JSON.stringify(val) : String(val))
+    } else if (typeof val === 'string') {
+      fd.append(key, val)
+    } else if (val !== undefined) {
+      typed[key] = val
     }
   }
+  if (Object.keys(typed).length) fd.append('$json', JSON.stringify(typed))
   return fd
 }
 

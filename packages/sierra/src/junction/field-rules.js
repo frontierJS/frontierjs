@@ -178,9 +178,11 @@ const _CARRIED = [
  *
  * @param {object} schema  a model definition ({ properties, required })
  * @param {(ref: string) => object|null} [resolve]
+ * @param {(...names: string[]) => string|null} [resolveName]  which app's model
+ *        a foreign key references — see `buildRelations`
  * @returns {Record<string, object>} field name → { type, required, nullable, enum?, … }
  */
-export function buildFieldRules(schema, resolve = resolveRef) {
+export function buildFieldRules(schema, resolve = resolveRef, resolveName = modelNameFor) {
   const properties = schema?.properties
   if (!properties || typeof properties !== 'object') return {}
 
@@ -233,6 +235,12 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     // cannot import this module, so the shape it consumes is settled here.
     if (def['x-values'] && typeof def['x-values'] === 'object') rule.values = def['x-values']
 
+    // A scalar list (`String[]`, `Int[]`) states its item type, and that is
+    // what separates it from a `Json` document: a person can add one item at a
+    // time without writing JSON. Only a scalar is carried, because a list of a
+    // declared `type T` is still a document no row of controls describes.
+    if (type === 'array' && _SCALAR_ITEMS.includes(def.items?.type)) rule.items = { type: def.items.type }
+
     // `title` is the FIELD's label (@label) and is read off the field's OWN
     // schema, never the deref'd target. Litestone titles every enum $def with
     // the type name, so following the ref would make `status OrderStatus`
@@ -274,7 +282,7 @@ export function buildFieldRules(schema, resolve = resolveRef) {
   // Mark foreign keys. `accountId` is emitted as a plain integer, so without
   // this a form generator renders a number input for what is a reference — the
   // one field where a picker is obviously right and a spinner obviously wrong.
-  for (const rel of Object.values(buildRelations(schema))) {
+  for (const rel of Object.values(buildRelations(schema, resolveName))) {
     if (rel.type !== 'belongsTo') continue
     rel.foreignKeys.forEach((fk, i) => {
       if (!out[fk]) return
@@ -360,6 +368,7 @@ export function buildRelations(schema, resolveName = modelNameFor) {
 
 /** The one syntax that is prose a person writes, so it gets a text box rather than a code editor. */
 const _PROSE = 'md'
+const _SCALAR_ITEMS = ['string', 'integer', 'number']
 
 // ── Registered controls ───────────────────────────────────────────────────────
 //
@@ -712,10 +721,16 @@ function _builtinControl(rule) {
       return { control: 'input', task: 'text' }
     }
 
-    // An array column and a declared `type T` shape stop being described by the
-    // schema at the point a form would need a field list, so the only editor
-    // that covers every value they may hold is the value's own syntax.
-    case 'array':  return { control: 'json', task: 'text' }
+    // A scalar list is a set of values a person types one at a time, which is
+    // the MultiSelect with `allowNew` and no list behind it. As a JSON box it
+    // refused the first tag anybody typed, since `design` is not JSON.
+    //
+    // A list of a declared `type T`, like a `type T` shape, stops being
+    // described by the schema at the point a form would need a field list, so
+    // the only editor that covers every value it may hold is its own syntax.
+    case 'array':
+      if (rule.items) return { control: 'multiselect', task: 'text', allowNew: true, itemType: rule.items.type }
+      return { control: 'json', task: 'text' }
     case 'object': return { control: 'json', task: 'text' }
 
     // A `Json` column arrives here, and NOT at `case 'object'`. Litestone

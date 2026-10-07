@@ -67,6 +67,11 @@ export function createNullResolver(): CredentialResolver {
 // Concurrent misses on one ref share one inner call: a burst against a
 // cold cache otherwise sends one vault request per send(). The in-flight
 // entry clears when the call settles, so a rejection is not remembered.
+//
+// A credential minted by a login — a cookie session — is this with
+// `ttl_ms: Infinity` and an inner get() that logs in: one login per burst,
+// held until the target answers 401, then one login again. The same 401 is
+// what picks up a rotated vault secret before its TTL runs out.
 export function withCache(
   inner: CredentialResolver,
   opts: { ttl_ms?: number } = {}
@@ -96,6 +101,11 @@ export function withCache(
         inflight.set(ref, pending)
       }
       return pending
-    }
+    },
+
+    invalidate(ref, value) {
+      if (cache.get(ref)?.value === value) cache.delete(ref)
+      inner.invalidate?.(ref, value)
+    },
   }
 }

@@ -281,8 +281,8 @@ a hand-written one cannot disagree about what a `Float` is.
 ### Contributing a control
 
 The kit ships a control per field rule — select, picker, combobox, multiselect,
-checkbox, textarea, input, json, file, geo, money and datetime — so the columns it cannot place — a `String[]`,
-a `@scale` number, a rating, a rich editor — are controls your app owns. Two
+checkbox, textarea, input, json, file, geo, money and datetime — so the columns it cannot place — a list of a
+declared `type`, a `@scale` number, a rating, a rich editor — are controls your app owns. Two
 registrations, in one place, at startup:
 
 ```js

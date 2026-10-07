@@ -6,7 +6,7 @@
  * and a patch are graded by `orion.lite`'s gates and row policies like any
  * other; the methods below are the verbs a row write cannot say.
  *
- *   flows            save a version · activate · pause · archive · restore
+ *   flows            save a version · activate · pause · archive · unarchive
  *                    run · dryRun · versions · export · import · layout · saveLayout
  *   runs             find · get · steps · cancel · metrics
  *   flowCredentials  the derived verbs alone, at ADMINISTRATOR(5)
@@ -144,7 +144,7 @@ export function createOrionServices(deps: {
     channel: names.flows,
     methods: [
       "find", "get", "create", "patch", "remove",
-      ...signedIn("save", "versions", "activate", "pause", "archive", "restore", "run", "dryRun", "export", "import", "layout", "saveLayout", "nodeTypes"),
+      ...signedIn("save", "versions", "activate", "pause", "archive", "unarchive", "run", "dryRun", "export", "import", "layout", "saveLayout", "nodeTypes"),
     ],
 
     // A patch moving the status or the version, and a removal, reach this
@@ -232,9 +232,9 @@ export function createOrionServices(deps: {
       })
     },
 
-    async pause(ctx: ServiceContext)   { return move(ctx, "pause",   "pause it") },
-    async archive(ctx: ServiceContext) { return move(ctx, "archive", "archive it") },
-    async restore(ctx: ServiceContext) { return move(ctx, "restore", "restore it") },
+    async pause(ctx: ServiceContext)     { return move(ctx, "pause",     "pause it") },
+    async archive(ctx: ServiceContext)   { return move(ctx, "archive",   "archive it") },
+    async unarchive(ctx: ServiceContext) { return move(ctx, "unarchive", "unarchive it") },
 
     /** Starts a run by hand, as the flow's owner (`FJS-D292`). The active version must declare a `trigger.manual`. */
     async run(ctx: ServiceContext) {
@@ -316,7 +316,7 @@ export function createOrionServices(deps: {
     if (!compiled.ok) throw new Conflict(`The current version does not compile: ${compiled.errors.map(e => e.message).join("; ")}`, { errors: compiled.errors })
   }
 
-  async function move(ctx: ServiceContext, name: "pause" | "archive" | "restore", what: string) {
+  async function move(ctx: ServiceContext, name: "pause" | "archive" | "unarchive", what: string) {
     const flow = await readableFlow(ctx, ctx.id)
     await writerFor(ctx, flow, what).flow.transition(flow.id, name)
     runner.deactivate(flow.id)

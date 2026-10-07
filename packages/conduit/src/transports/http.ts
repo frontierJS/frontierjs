@@ -184,6 +184,12 @@ export class HttpTransport extends BaseTransport {
 
     const replayable = IDEMPOTENT_METHODS.has(method) || key !== undefined || req.replayable === true
 
+    // A 401 is answered once by a fresh credential, whatever the method: the
+    // target refused the request before acting on it, so the replay is safe
+    // where a retry of a POST is not. Not an attempt — a session expiring
+    // between pages is not the target failing.
+    let reminted = false
+
     while (attempt <= retries) {
       // Between attempts, including a sleep the signal cut short. Only a
       // replayable request reaches a second attempt, so nothing here is one
@@ -203,7 +209,15 @@ export class HttpTransport extends BaseTransport {
 
       // The per-attempt timeout is also capped by what is left of the total
       // budget, so a long tail of retries cannot outlive the deadline.
-      const result = await this.attempt<T>(sent, remaining)
+      const spent  = {} as { value?: string }
+      const result = await this.attempt<T>(sent, remaining, spent)
+
+      if (result.meta.status === 401 && !reminted && spent.value !== undefined
+        && this.credentials.invalidate && this.descriptor.auth.type !== 'none') {
+        reminted = true
+        this.credentials.invalidate(this.descriptor.auth.ref, spent.value)
+        continue
+      }
 
       if (result.error === null)        return result  // success
       if (!result.error.retryable)      return result  // permanent failure
@@ -295,7 +309,7 @@ export class HttpTransport extends BaseTransport {
     }
   }
 
-  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity): Promise<ConduitResult<T>> {
+  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: { value?: string }): Promise<ConduitResult<T>> {
     const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
     const timeout  = Math.min(
       req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS,
@@ -365,6 +379,7 @@ export class HttpTransport extends BaseTransport {
             path:  new URL(target).pathname,
             query: new URL(target).search,
             body:  rawBody,
+            spent,
           }),
         ),
         // `Uint8Array<ArrayBufferLike>` does not structurally satisfy this

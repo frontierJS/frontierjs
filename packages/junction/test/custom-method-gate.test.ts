@@ -383,6 +383,40 @@ describe('a CRUD verb over no model is graded by its declared gate (FJS-D408)', 
   })
 })
 
+// `model: null` — a service whose NAME reaches a model it is not over. Auth's
+// `sessions` reaches its own `model Session`, and its `account` reaches any
+// row-tenanted app's `model Account` (`FJS-1795`). The rows are the one above,
+// with the name resolving `Order` and the declaration graded anyway.
+describe('a service declared over no model is never resolved by its name', () => {
+
+  const overNone = (s: Awaited<ReturnType<typeof shop>>) => s.app.services.register(createService({
+    name: 'order', model: null,
+    methods: [{ method: 'find', gate: 5 }, 'get'],
+    async find() { s.ran.push('find'); return [] },
+  }))
+
+  test('the declared gate grades the verb: below it refused before the body, at it the body runs', async () => {
+    const s = await shop()
+    overNone(s)
+    expect(await s.rest('nobody',  'GET', '/order')).toEqual({ status: 401, ran: [] })
+    expect(await s.rest('shopper', 'GET', '/order')).toEqual({ status: 403, ran: [] })
+    expect(await s.rest('staff',   'GET', '/order')).toEqual({ status: 200, ran: ['find'] })
+    await s.close()
+  })
+
+  test('a verb it did not write is a 405 naming why, not a read of the model its name reaches', async () => {
+    const s = await shop()
+    overNone(s)
+    expect(await s.rest('staff', 'GET', '/order/1')).toEqual({ status: 405, ran: [] })
+    await s.close()
+  })
+
+  test('describe() reports no model, where an omitted one reports the name', () => {
+    expect(createService({ name: 'order', model: null, methods: ['find'] }).describe().model).toBeNull()
+    expect(createService({ name: 'order', methods: ['find'] }).describe().model).toBe('order')
+  })
+})
+
 describe('a declared gate is a level, and is refused otherwise', () => {
 
   test('reads the levels off a methods list', () => {

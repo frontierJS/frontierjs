@@ -306,7 +306,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `versions` — hasMany `FlowVersion`
 - relation `layout` — hasMany `FlowLayout` · optional
-- transitions on `status` — `activate`: draft|paused → active @5 · `pause`: active → paused · `archive`: draft|active|paused → archived · `restore`: archived → draft
+- transitions on `status` — `activate`: draft|paused → active @5 · `pause`: active → paused · `archive`: draft|active|paused → archived · `unarchive`: archived → draft
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |

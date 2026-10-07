@@ -1,5 +1,21 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-07 — a move named for a CRUD verb refuses start() (`FJS-1909`)
+
+A `@@transitions` move whose name a service already answers (`restore`, `remove`, `create`, a service option) was dropped from the method table without a word. The screen still drew its button, and the call reached the verb: base44's `Project` declared `archive`/`restore`, and restore answered 400 *the model declares no @@softDelete*. `resolveTable` now reports each such move as an authoring finding, so `check-authoring` refuses start, naming the move.
+
+Routing the move ahead of the verb was not chosen: `restore` would then mean two things, depending on whether the model declares `@@softDelete`, under one `X-Service-Method`. `test/declared-moves.test.ts` § *a move named for what a service already answers* boots `restore` (refused, red before) against `unarchive` (served). 2645 pass, typecheck clean.
+
+## 2026-10-07 — `createService({ model: null })` is a service over no model (`FJS-D628`)
+
+When `model:` is omitted, the service name is resolved to a model, so a model-less service whose name happens to reach one is graded by that model's `@@gate`. A `gate:` declared on its CRUD verbs is then refused as a second number beside `@@gate` (`FJS-D408`). Auth's `sessions` reaches `model Session` this way, and `GET /sessions` answered 500 once its levels were declared. `null` now says there is no model. `serviceAccessor(service)` in `core/service.ts` is the one reader: it answers `null` for such a service and `model ?? name` otherwise. The gate, the announcement payload and index, broadcast grading, declared moves and `describe()` all ask it instead of writing `model ?? name`. Over no model the gate is the whole derived layer, and a CRUD verb the service did not write is a 405 saying the service is over no model. `ServiceDescription.model` is now `string | null`. Three rows in `test/custom-method-gate.test.ts`.
+
+## 2026-10-07 — a write with a file keeps its other values' types (`FJS-1897`)
+
+A body holding a File goes multipart, and `_toFormData` sent every other value as a text part: a String[] column's `[]` arrived as the text "[]" and was refused as *must be an array*, a Date arrived with its JSON quotes, and a null that clears a column was dropped. Strings stay text parts; every other value now travels in one `$json` part, which `parseBody` reads back over the text fields (`MULTIPART_JSON`). A `$json` that does not parse to an object is a malformed body, as an unparseable JSON one is. A form posted by hand, with text parts only, reads as before.
+
+`test/multipart-json.test.ts` round-trips a list, a Json value, a number, a boolean, a null and a Date beside a file, and through the validator; 2640 pass.
+
 ## 2026-10-06 — a commitment fire that cannot see its row fails, naming the principal (`FJS-1788`)
 
 `fireCommitment` reads what is owed as system and moves on the app's scoped client, and a move on a row that client cannot see answers null (`FJS-1093`). The fire counted the null as made, so on a model whose row policy admits no system principal (Oracle's `Booking`, `@@allow('update', hostId == auth().id)`) the job went done and the row stayed owed forever. A null move on a row `due()` still names is now a thrown error naming the commitment, the row, and that a fire runs as `createApp({ system })` and needs a row policy admitting it; under a hook it is thrown inside the transaction, so the hook does not run on a null record. A row no longer owed by then is still a lapse. When the app declares no system principal, the plugin's `fire()` appends that to any refusal, since a gate's own message names the level it wanted and not the principal nobody declared.

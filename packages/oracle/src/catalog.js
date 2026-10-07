@@ -145,14 +145,14 @@ export const ENTITIES = [
     name: 'Form', category: 'capture',
     desc: 'A structured input template defining what to collect',
     rules: ['Must have at least one field', 'Owner controls visibility'],
-    fields: F('title text!', 'description longtext', 'questions json!', 'isPublished bool =false'),
+    fields: F('title text!', 'description longtext', 'questions json! =[]', 'isPublished bool =false'),
     links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
   },
   {
     name: 'Submission', category: 'capture',
     desc: 'An instance of a Form filled out at a specific time',
     rules: ['Cannot be edited after submission', 'Validated against Form schema'],
-    fields: F('answers json!', 'submittedAt datetime system'),
+    fields: F('answers json! ={}', 'submittedAt datetime system'),
     links: [
       { name: 'form', to: 'Form', required: true },
       { name: 'submitter', to: 'User', actor: 'author' },
@@ -279,7 +279,7 @@ export const ENTITIES = [
       { name: 'owner', to: 'User', actor: 'owner', required: true },
       { name: 'location', to: 'Location' },
     ],
-    lifecycle: lifecycle('deploy: acquired -> in_service; service: in_service -> maintenance; restore: maintenance -> in_service; retire: in_service -> retired; dispose: [acquired, in_service, maintenance, retired] -> disposed'),
+    lifecycle: lifecycle('deploy: acquired -> in_service; service: in_service -> maintenance; reinstate: maintenance -> in_service; retire: in_service -> retired; dispose: [acquired, in_service, maintenance, retired] -> disposed'),
   },
 
   // ── communication ──
@@ -320,7 +320,7 @@ export const ENTITIES = [
     name: 'Dashboard', category: 'read_surfaces',
     desc: 'A live aggregated view for decision-making. Its numbers are read from other rows; the row holds the layout',
     rules: ['Updates on refresh or schedule'],
-    fields: F('name text!', 'widgets json!', 'filters json', 'refreshSeconds count'),
+    fields: F('name text!', 'widgets json! =[]', 'filters json', 'refreshSeconds count'),
     links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
   },
   {
@@ -336,7 +336,7 @@ export const ENTITIES = [
     name: 'Webhook', category: 'integration',
     desc: 'An inbound payload from another system, kept so it can be processed and replayed',
     rules: ['Source must be authenticated', 'Idempotency expected'],
-    fields: F('source text!', 'deliveryId text unique', 'payload json!', 'receivedAt datetime system'),
+    fields: F('source text!', 'deliveryId text unique', 'payload json! system', 'receivedAt datetime system'),
     links: [{ name: 'integration', to: 'Integration' }],
   },
   {
@@ -413,7 +413,7 @@ export const ENTITIES = [
     name: 'Flow', category: 'operations',
     desc: 'The DEFINITION of a stage progression that instances move through — a pipeline, a workflow. Rows move through it by a link to the current stage or by a lifecycle; this row holds the stages',
     rules: ['Transitions follow rules', 'Owner controls stage definitions'],
-    fields: F('name text!', 'stages json!'),
+    fields: F('name text!', 'stages json! =[]'),
     links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
   },
   {
@@ -435,7 +435,7 @@ export const ENTITIES = [
       { name: 'owner', to: 'User', actor: 'owner', required: true },
       { name: 'organization', to: 'Organization' },
     ],
-    lifecycle: lifecycle('launch: draft -> published; takeDown: published -> maintenance; restore: maintenance -> published; archive: [draft, published, maintenance] -> archived'),
+    lifecycle: lifecycle('launch: draft -> published; takeDown: published -> maintenance; republish: maintenance -> published; archive: [draft, published, maintenance] -> archived'),
   },
   {
     name: 'Page', category: 'content_public',

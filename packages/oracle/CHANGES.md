@@ -1,5 +1,13 @@
 # Changes — @frontierjs/oracle
 
+## 2026-10-07 — A move named `restore` is refused (`FJS-1909`)
+
+`restore` is a CRUD verb, and Junction now refuses to start with a move of that name. Six base44 Phase 2 answers wrote it as the inverse of `archive`, because `MOVE_RESERVED` lacked it and `aggregate`. Both are on the list now, and the `lifecycle` rule text renders the list, so the brief names them before an answer is written. In the catalog, the Asset lifecycle's `maintenance -> in_service` is `reinstate` and the Site lifecycle's `maintenance -> published` is `republish`. A new case in `checkAnswer refuses` refuses `restore` and takes `reopen` (red before); 38 pass.
+
+## 2026-10-07 — A required json field states the document a row starts with (`FJS-1823`)
+
+A required `json` field had no form that could fill it, since a person cannot type JSON, and nothing said so: Calendly's `weeklyHours` and Dragonfly's `data` stopped every create in the base44 stressor. `checkAnswer`'s new rule `document` refuses a required json field that is not `system` unless it states `default: {}` or `[]` (or a document with content), and the emitter writes it as `@default("…")`, which litestone hands the form as the document itself. The catalog's own required json fields carry one: `questions`, `widgets` and `stages` start at `[]`, `answers` at `{}`, and a webhook's `payload` is `system`.
+
 ## 2026-10-06 — A child of a published parent is not published with it (`FJS-1789`)
 
 A row reached `via` a parent delegated its read to `check(parent)`, and the parent's read policy holds its `publicWhen` clause, so every signed-in caller read every order of a published shop, every application to an open job, and filed rows under them through `check(parent, 'read')`. Under a parent read at gate 0 the child now delegates to `check(parent, 'update')` — the parent's owners, members and whoever changes ITS parent — and to nothing when the parent holds no update policy, which leaves the op at gate 8. A create that names its caller still asks only `check(parent, 'read')`, so a buyer orders from a published shop; a create naming nobody asks what the read asks. A membership row under a public container follows the same rule. Measured in base44 Phase 4 on the etsy app. Proof: `test/oracle.test.js`, *a published parent opens itself and none of its children* (a real client: a stranger reads the open job and no application, and files no scorecard or application under it) and *a child of a public parent delegates to whoever may change it*.

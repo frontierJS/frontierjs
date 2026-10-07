@@ -17,6 +17,7 @@ export {
   registerSchemas, schemaFor, modelNameFor, allSchemas, allDefs, hasSchemas,
   resolveRef, suggestModel,
 } from './schema-registry.js'
+import { createSchemaRegistry } from './schema-registry.js'
 import { createJunctionClient, localTokenStore } from '@frontierjs/junction/client'
 
 // The session — who the browser thinks you are. Re-exported here rather than
@@ -75,6 +76,7 @@ import { resetResourcesForIdentityChange } from './resource.js'
 /** @type {object|null} */
 let _client = null
 let _tokenKey = 'junction_token'
+let _cookieAuth = false
 
 /**
  * Resolves once the Junction WebSocket has been confirmed by the server, or
@@ -381,6 +383,7 @@ export function initJunction(config) {
   // Capture for the session module and the navigation guard
   _client = client
   _tokenKey = tokenKey
+  _cookieAuth = config.cookieAuth === true
 
   // Request logger — opt-in via `junction: { debug: true }`.
   //
@@ -551,5 +554,70 @@ export function initJunction(config) {
     client.on('*', (event, ...args) => {
       console.log(`[Junction] ${event}`, ...args)
     })
+  }
+}
+
+// ─── Another app ──────────────────────────────────────────────────────────────
+
+/**
+ * A handle on ANOTHER FrontierJS app, for `createResource(name, { app })`.
+ *
+ * For a page that shows an app it is not — a studio over the app it hosts. The
+ * handle is that app's client and that app's schema table together, because a
+ * resource built from one app's client and the other's schema validates
+ * against models the server does not have.
+ *
+ * **The page's own credential is what this client sends**, and it follows the
+ * page's sign-in and sign-out. So `url` is a route on THIS page's API that
+ * forwards to the other app as whoever the server decides — the token for the
+ * other app stays on the server — and a `url` on any other origin is refused:
+ * it would hand that origin this page's session. The socket is `url` + `/ws`,
+ * so the forward bridges that path too, or every live store stays still.
+ *
+ * @param {object} opts
+ * @param {string} opts.url  where the other app is reached, on this page's API
+ *        origin — `/hosted/abc` is resolved against it
+ * @param {string} [opts.apiPrefix]   that app's `apiPrefix`
+ * @param {string} [opts.authPrefix]  that app's auth plugin prefix
+ * @param {{ defs: object, models?: string[], updatePatch?: object, readPatch?: object }} opts.schema
+ *        that app's schema, as `generateSchemas()` (`@frontierjs/sierra/build`)
+ *        answers it for that app's `db/schema.lite`
+ * @param {object|null} [opts.user]  who that app sees — what a create seeds a
+ *        column pinned to `auth()` from. Null seeds nothing.
+ * @returns {{ client: object, registry: object, user: object|null, close(): void }}
+ */
+export function connectApp({ url, apiPrefix, authPrefix, schema, user = null } = {}) {
+  if (!_client) throw new Error('connectApp() needs the page\'s own Junction client — call it after boot')
+  if (!schema?.defs) throw new TypeError('connectApp({ schema }) — schema is { defs, models, updatePatch, readPatch }, from generateSchemas()')
+
+  const own    = new URL(_client.origin)
+  const target = new URL(String(url ?? ''), own)
+  if (target.origin !== own.origin) {
+    throw new Error(
+      `connectApp({ url: '${url}' }) — ${target.origin} is not this page's API origin (${own.origin}), ` +
+      `and this client would send it the page's session. Forward to the other app from this page's API.`)
+  }
+
+  const client = createJunctionClient({
+    url:        target.href.replace(/\/$/, ''),
+    apiPrefix,
+    authPrefix,
+    // No storage: the token is the page's, and a 401 here must not clear it.
+    token:      _client.token,
+    cookieAuth: _cookieAuth,
+  })
+  const follow = (token) => client.setToken(token)
+  _client.on('token', follow)
+  if (client.hasCredential) client.connect?.()
+
+  const registry = createSchemaRegistry()
+  registry.register(schema.defs, schema.models, schema.updatePatch, schema.readPatch)
+
+  return {
+    client, registry, user,
+    close() {
+      _client?.off?.('token', follow)
+      client.disconnect?.()
+    },
   }
 }

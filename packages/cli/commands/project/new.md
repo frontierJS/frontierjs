@@ -2487,7 +2487,7 @@ log.success(`Wrote ${written.length} base files`)
 
 if (useWidgets) {
   const { written: widgetFiles } = scaffoldWidgetSurface({
-    root: finalTarget, name: 'Hello', appName,
+    root: finalTarget, name: 'HelloWidget', appName,
   })
   log.success(`Wrote ${widgetFiles.length} files in widgets/`)
 }
@@ -2640,20 +2640,6 @@ if (useDeploy && useApi) {
 // directly to the workspace target). So this is a no-op for now; project lives
 // in the workspace by virtue of where we wrote it.
 
-// ─── 11. Git init + initial commit ────────────────────────────────────────────
-
-if (useGit) {
-  try {
-    log.info('→ git init')
-    $.exec({ command: 'git init', cwd: finalTarget, stdio: 'pipe' })
-    $.exec({ command: 'git add .', cwd: finalTarget, stdio: 'pipe' })
-    $.exec({ command: 'git commit -m "init"', cwd: finalTarget, stdio: 'pipe' })
-    log.success('Git repository initialized')
-  } catch (e) {
-    log.warn(`git init step failed: ${e.message} — skipping`)
-  }
-}
-
 // ─── 12b. The initial migration ───────────────────────────────────────────────
 //
 // The container's entrypoint is `bun run db:migrate && bun run start`, and
@@ -2683,6 +2669,23 @@ if (useInstall) {
     // scaffold that stops here over a deploy-time concern is the worse trade.
     log.warn(`could not write the initial migration: ${e.message}`)
     log.warn('run `fli db:migrate --create-only` before deploying')
+  }
+}
+
+// ─── 12c. Git init + initial commit ────────────────────────────────────────────
+
+// After the migration, so the first commit holds it — committed before, the
+// scaffold's own migration was the one untracked thing in a fresh repo.
+
+if (useGit) {
+  try {
+    log.info('→ git init')
+    $.exec({ command: 'git init', cwd: finalTarget, stdio: 'pipe' })
+    $.exec({ command: 'git add .', cwd: finalTarget, stdio: 'pipe' })
+    $.exec({ command: 'git commit -m "init"', cwd: finalTarget, stdio: 'pipe' })
+    log.success('Git repository initialized')
+  } catch (e) {
+    log.warn(`git init step failed: ${e.message} — skipping`)
   }
 }
 

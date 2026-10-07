@@ -134,9 +134,7 @@
  */
 
 import { getClient } from '@frontierjs/sierra/junction'
-import {
-  schemaFor, updateSchemaFor, readSchemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
-} from './schema-registry.js'
+import { defaultRegistry, serviceNameFor, resolveRef } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
@@ -611,6 +609,19 @@ export function resetResourcesForIdentityChange() {
  * cross-tenant tier or a projection built from several tables has nothing in
  * the schema to resolve, and saying so is what keeps the warning meaningful
  * for the resource that is merely misspelt.
+ *
+ * **`app`** points the resource at ANOTHER FrontierJS app — the handle
+ * `connectApp()` answers, a client and that app's schema table together:
+ *
+ *   const hosted = connectApp({ url: `/hosted/${id}`, apiPrefix: '/api', schema })
+ *   export const leads = createResource('leads', { app: hosted })
+ *
+ * Everything the resource derives — fields, relations, `can()`, moves — is
+ * read from that app's schema and every call goes to that app, so a page shows
+ * it exactly as its own pages would. A related resource inherits the handle;
+ * resolved against this page's table, a relation names the wrong model or
+ * none. The device machinery (`@@sync`, `offlineQuery`, the local database)
+ * belongs to this page's app and stays off.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   let serviceName, model, optionsQuery, detailQuery, listQuery, offlineQuery, columnDefaults, initialHooks, schema, idField, opts
@@ -686,6 +697,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // means something.
   const modelless = opts.model === null
 
+  // Thrown rather than warned: a handle missing either half falls back to
+  // this page's own app, and every write the screen makes lands there.
+  const app = opts.app ?? null
+  if (app && !(app.client && app.registry)) {
+    throw new TypeError(
+      `[resource:${serviceName}] app must be the handle connectApp() answers — { client, registry }`)
+  }
+  const registry = app?.registry ?? defaultRegistry
+
   // No schema passed — take it from the registry, which Sierra's build fills
   // from db/schema.lite. This is why a resource file names a model and nothing
   // else: hand-writing the field shape here duplicated the .lite file and was
@@ -714,17 +734,17 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // 'statuses' — the service name wearing the label of the model name, which
     // is what this field is documented to be. It also normalizes an accessor
     // spelling ({ model: 'person' }) to the declared 'Person'.
-    const resolvedName = modelNameFor(model, serviceName, singular)
+    const resolvedName = registry.modelNameFor(model, serviceName, singular)
     if (resolvedName) {
-      schema      = schemaFor(resolvedName)
-      updateModel = updateSchemaFor(resolvedName)
-      readModel   = readSchemaFor(resolvedName)
+      schema      = registry.schemaFor(resolvedName)
+      updateModel = registry.updateSchemaFor(resolvedName)
+      readModel   = registry.readSchemaFor(resolvedName)
       model       = resolvedName
     }
 
-    if (!schema && hasSchemas() && !modelless) {
-      const known   = Object.keys(allSchemas())
-      const guess   = suggestModel(model) ?? suggestModel(serviceName)
+    if (!schema && registry.hasSchemas() && !modelless) {
+      const known   = Object.keys(registry.allSchemas())
+      const guess   = registry.suggestModel(model) ?? registry.suggestModel(serviceName)
       const example = guess ?? known[0] ?? 'ModelName'
 
       console.warn(
@@ -738,7 +758,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     }
   }
 
-  const client = getClient()
+  const client = app?.client ?? getClient()
   if (!client) {
     console.warn(`[resource:${serviceName}] Junction client not ready — returning empty resource`)
     return _emptyResource(serviceName)
@@ -767,14 +787,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const fkFields = (modelDef?.['x-relations'] ?? []).flatMap(r => r?.fields ?? [])
     // `required` is what separates a column the caller leaves blank from one
     // the server fills, which make() must not seed.
-    make = createMakeFromSchema(modelDef?.properties ?? modelDef, undefined, undefined, fkFields, modelDef?.properties ? modelDef.required : undefined)
+    make = createMakeFromSchema(modelDef?.properties ?? modelDef, undefined, registry.resolveRef, fkFields, modelDef?.properties ? modelDef.required : undefined)
   } else {
     make = (spec) => Object.assign({}, spec)
   }
 
   // Per-field rules — empty when there is no schema, so a resource without one
   // reports no constraints rather than pretending everything is optional.
-  const fields    = schema ? buildFieldRules(modelDef)  : {}
+  const fields    = schema ? buildFieldRules(modelDef, registry.resolveRef, registry.modelNameFor) : {}
 
   // ── The two write modes ─────────────────────────────────────────────────────
   //
@@ -797,7 +817,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // screen and an edit screen and the field SET is the same question for both.
   // What an edit form needs beyond it is which columns are frozen for the row
   // it opened on, and that is `sealedFields(record)`.
-  const updateFields = schema ? buildFieldRules(updateModel ?? modelDef) : {}
+  const updateFields = schema ? buildFieldRules(updateModel ?? modelDef, registry.resolveRef, registry.modelNameFor) : {}
 
   // ── And the read mode ───────────────────────────────────────────────────────
   //
@@ -812,7 +832,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // read-only column its rule map holds, so a table given the write table ranks
   // a model that appears to have no computed columns and renders a screen that
   // looks finished.
-  const readFields = schema ? buildFieldRules(readModel ?? modelDef) : {}
+  const readFields = schema ? buildFieldRules(readModel ?? modelDef, registry.resolveRef, registry.modelNameFor) : {}
 
   /** Which rule table judges this method's payload. */
   function rulesFor(method) {
@@ -822,7 +842,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // ABSENCE is the refusal (`FJS-D298`): a model that declares nothing is not
   // syncable and its writes are not held, so silence costs a failure the person
   // sees rather than a row nobody knows was lost.
-  const syncPolicy = schema?.['x-sync'] ?? null
+  //
+  // Another app's rows are never this device's: the queue, the list cache and
+  // the local tables all belong to this page's app, and a held write would
+  // drain into it.
+  const syncPolicy = app ? null : (schema?.['x-sync'] ?? null)
 
   // `read` says the rows are HELD here and never written here (`FJS-D488`), so
   // it keeps the device read path and holds no write: a write to such a model
@@ -842,7 +866,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // nothing else does.
   const mint = modelDef?.['x-mint'] ?? null
 
-  const relations = schema ? buildRelations(modelDef)   : {}
+  const relations = schema ? buildRelations(modelDef, registry.modelNameFor) : {}
   const gate      = schema ? buildGate(modelDef)        : null
   const stateSpec = schema ? buildTransitions(modelDef) : null
   const owedSpec  = schema ? buildCommitments(modelDef) : null
@@ -1135,7 +1159,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // A column the create policy pins to the caller is filled here, before the
       // checks below see the payload: the form drew no control for it, and a
       // hand-written save never named it (`FJS-1229`).
-      if (method === 'create') ctx.data = seedDetermined(rules, ctx.data, session.user)
+      // The principal is the one THAT app sees, never this page's.
+      if (method === 'create') ctx.data = seedDetermined(rules, ctx.data, app ? app.user : session.user)
 
       // Coercion first: '' must still look blank to normalize() below, and
       // Number('') is 0 — so this deliberately leaves empty strings alone.
@@ -1968,7 +1993,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     for (const rel of Object.values(relations)) {
       if (rel.type !== 'hasMany') continue
 
-      const childDef = schemaFor(rel.model)
+      const childDef = registry.schemaFor(rel.model)
       if (!childDef) {
         out.push({ field: rel.field, model: rel.model, service: null, foreignKey: null,
                    reason: `no schema registered for ${rel.model}` })
@@ -1977,7 +2002,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
       // The back-reference, by MODEL rather than by name: a child may call the
       // relation anything, and two children of one parent is ordinary.
-      const back = Object.values(buildRelations(childDef))
+      const back = Object.values(buildRelations(childDef, registry.modelNameFor))
         .find(r => r.type === 'belongsTo' && r.model === model)
 
       if (!back?.foreignKeys?.length) {
@@ -2141,7 +2166,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const key = `${modelName ?? ''}|${service}`
     let r = _related.get(key)
     if (!r) {
-      r = createResource(service, { model: modelName })
+      r = createResource(service, { model: modelName, ...(app ? { app } : {}) })
       _related.set(key, r)
     }
     return r
@@ -2777,7 +2802,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // which is built above — and it is `find` rather than `load` on purpose: a
   // warm runs under a question nobody is looking at, and `load` writes the
   // store the screen is rendering (`offline.js`).
-  if (offlineQuery) {
+  if (offlineQuery && app) {
+    console.warn(
+      `[Sierra] ${serviceName}: offlineQuery is ignored on a resource over another app.\n` +
+      `  What a device holds belongs to the app this page is, and nothing is warmed here.`)
+  } else if (offlineQuery) {
     if (!syncPolicy) {
       // Warned rather than thrown, which is what the other refusals in this
       // file do — a throw in a `<script module>` is a white screen. The

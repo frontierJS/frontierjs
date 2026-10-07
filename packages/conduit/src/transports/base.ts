@@ -87,10 +87,19 @@ export abstract class BaseTransport {
     }
   }
 
-  /** A response's headers as a plain lowercased object. */
+  /**
+   * A response's headers as a plain lowercased object.
+   *
+   * `set-cookie` is every line joined by a newline, which no header value can
+   * contain. Bun's forEach hands each one over under the same key, so a map
+   * kept the last — a login's session cookie was lost behind its `lang=`. A
+   * comma join cannot stand in: an `Expires` date carries one.
+   */
   protected readHeaders(res: { headers: Headers }): Record<string, string> {
     const out: Record<string, string> = {}
     res.headers.forEach((v, k) => { out[k.toLowerCase()] = v })
+    const cookies = res.headers.getSetCookie()
+    if (cookies.length) out['set-cookie'] = cookies.join('\n')
     return out
   }
 
@@ -173,15 +182,22 @@ export abstract class BaseTransport {
     // either — stringifying bytes first would sign something never sent, and
     // the far side would compute a different digest.
     body?:   string | Uint8Array
+    // Filled with the secret these headers carry, so a 401 can name the one
+    // the target refused to `CredentialResolver.invalidate`.
+    spent?:  { value?: string }
   } = {}): Promise<Record<string, string>> {
     const auth = this.descriptor.auth
+    if (auth.type === 'none') return {}
+
+    const secret = await this.secret(auth.ref)
+    if (ctx.spent) ctx.spent.value = secret
 
     switch (auth.type) {
       case 'bearer':
-        return { 'Authorization': `Bearer ${await this.secret(auth.ref)}` }
+        return { 'Authorization': `Bearer ${secret}` }
 
       case 'api_key':
-        return { [auth.header]: await this.secret(auth.ref) }
+        return { [auth.header]: secret }
 
       case 'hmac': {
         const { method, path, query, body } = this.authContext(ctx)
@@ -197,7 +213,7 @@ export abstract class BaseTransport {
         // because it computes nothing it is not given, and CI fails a
         // `Date.now()` inside it.
         return signRequest({
-          secret:    await this.secret(auth.ref),
+          secret,
           method:    method ?? 'GET',
           path:      path ?? '/',
           query,
@@ -207,9 +223,6 @@ export abstract class BaseTransport {
           nonce:     crypto.randomUUID(),
         })
       }
-
-      case 'none':
-        return {}
     }
   }
 

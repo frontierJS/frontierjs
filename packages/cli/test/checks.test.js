@@ -67,6 +67,9 @@ model Lead {
   // RUNS over the clean tree against the digest job below, which reads leads
   // and moves none.
   followUpOn  DateTime
+  // A File column, so \`file-column-storage\` RUNS over the clean tree against
+  // the FileStorage api/src/app.ts installs, and finds nothing.
+  brief       File?
   @@gate("2.4.4.5")
   @@transitions(status,
     qualify: new              -> qualified,
@@ -493,6 +496,51 @@ describe('a static root serving uploads says so (FJS-D314)', () => {
                         "const plugins = [FileStorage({ provider: 'local', localPath: STORAGE_ROOT })]\n",
     })
     expect(only(root, 'untrusted-upload-root').skipped.length).toBe(1)
+  })
+})
+
+describe('a File column has a FileStorage to store it (FJS-1898)', () => {
+  const schema = (type) => `model Doc {\n  id     Int @id\n  resume ${type}\n}\n`
+  const DB = "import { createClient } from '@frontierjs/litestone'\n" +
+             'export const db = await createClient({ plugins: [gate] })\n'
+
+  test('a File column in an app that installs no FileStorage names the column and its line', () => {
+    const root = tree('fcs-bad', { 'db/schema.lite': schema('File?'), 'api/src/core/db.ts': DB })
+    const { findings } = only(root, 'file-column-storage')
+    expect(findings.length).toBe(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toContain('resume is a File column')
+    expect(findings[0].message).toContain('FileStorage')
+  })
+
+  test('a File[] column fires the same way', () => {
+    const root = tree('fcs-array', { 'db/schema.lite': schema('File[]'), 'api/src/core/db.ts': DB })
+    expect(only(root, 'file-column-storage').findings[0].message).toContain('resume is a File[] column')
+  })
+
+  test('installing FileStorage fires nothing', () => {
+    const root = tree('fcs-good', {
+      'db/schema.lite':     schema('File?'),
+      'api/src/core/db.ts': DB.replace('[gate]', "[gate, FileStorage({ provider: 'local' })]"),
+    })
+    expect(only(root, 'file-column-storage').findings).toEqual([])
+  })
+
+  test('FileStorage named only in a comment is not an install', () => {
+    // The paragraph explaining the hazard is written in the words the rule
+    // matches, and a rule that read it as the fix would never fire.
+    const root = tree('fcs-comment', {
+      'db/schema.lite':     schema('File?'),
+      'api/src/core/db.ts': '// add FileStorage({ provider }) here once a File column exists\n' + DB,
+    })
+    expect(only(root, 'file-column-storage').findings.length).toBe(1)
+  })
+
+  test('a column named for a file but typed otherwise is not a File column, so the rule SKIPS', () => {
+    const root = tree('fcs-none', { 'db/schema.lite': schema('String  // a File? later'), 'api/src/core/db.ts': DB })
+    const { findings, skipped } = only(root, 'file-column-storage')
+    expect(findings).toEqual([])
+    expect(skipped.length).toBe(1)
   })
 })
 

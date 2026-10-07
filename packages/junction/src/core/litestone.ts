@@ -27,7 +27,7 @@
 
 import { createSchema } from './schema.ts'
 import type { Schema, FieldDef } from './schema.ts'
-import { createService, createBaseService } from './service.ts'
+import { createService, createBaseService, serviceAccessor } from './service.ts'
 import type { CacheDeclaration } from './service.ts'
 import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
@@ -2799,7 +2799,8 @@ const OP_FOR_METHOD: Record<string, GateOp> = {
 }
 
 export function gateAuthAround(
-  accessor: string | undefined,
+  /** `null` is a service over no model: only what `methods:` declares grades it. */
+  accessor: string | null | undefined,
   /** Levels declared per method — `methods: [{ method, gate }]`. */
   declared: Record<string, number> = {},
   /** Claims declared per method — `methods: [{ method, claims }]` (`FJS-D514`). */
@@ -2820,17 +2821,22 @@ export function gateAuthAround(
     // beside it would be a declaration that decides nothing — refused rather
     // than ignored, since ignoring it is the silent open this rule closes.
     const crudDeclared = op !== undefined && declared[method] !== undefined
-    if (crudDeclared && accessorIfModel(ctx.locals.db, accessor ?? ctx.service))
+    if (crudDeclared && accessor !== null && accessorIfModel(ctx.locals.db, accessor ?? ctx.service))
       throw new Error(
         `[Junction] '${ctx.service}.${method}' declares gate ${declared[method]}, but ${method} on a ` +
         `service over a model is graded by the model's @@gate. Move the level into @@gate, or drop it from methods:.`)
 
     if (op && !crudDeclared) {
-      let check = checks.get(op)
-      if (!check) { check = make(accessor, op); checks.set(op, check) }
-      check(ctx)
+      // Over no model an undeclared verb has no gate to read; the projection
+      // lists it `ungraded`, which is the boot warning's to name.
+      if (accessor !== null) {
+        let check = checks.get(op)
+        if (!check) { check = make(accessor, op); checks.set(op, check) }
+        check(ctx)
+      }
     } else {
-      const grade = customMethodGrade(method, declared, _gateLevels(ctx.locals.db, accessor ?? ctx.service))
+      const grade = customMethodGrade(method, declared,
+        accessor === null ? null : _gateLevels(ctx.locals.db, accessor ?? ctx.service))
       if (grade.source !== 'unchecked') {
         const need = grade.level as number
         if (need > 0) {
@@ -2859,7 +2865,7 @@ export function gateAuthAround(
           // number this refusal names is the number every read and write in the
           // call would have been graded with.
           if (grade.graded) {
-            const has = callerGateLevel(ctx.locals.db, accessor ?? ctx.service, ctx.auth.user)
+            const has = callerGateLevel(ctx.locals.db, accessor === null ? undefined : accessor ?? ctx.service, ctx.auth.user)
             if (!levelPasses(need, has))
               throw new Forbidden(
                 `'${ctx.service}.${method}' requires level ${need}, caller has level ${has}`)
@@ -4120,9 +4126,11 @@ export function announceDataWrites(
       // standing, so a service named `orders` over `model: 'Invoice'` went on
       // receiving `Order` writes — harmless while one name won a key and an
       // extra wrong announcement now that every claimant gets one.
+      // A service over no model claims nothing: its name reaching a model is
+      // the coincidence `model: null` was written to refuse.
       for (const name of app.services.list()) {
-        const svc = app.services.get(name) as { model?: string } | undefined
-        claim(svc?.model ?? name, name)
+        const svc = app.services.get(name) as { model?: string | null } | undefined
+        claim(serviceAccessor({ name, model: svc?.model }) ?? undefined, name)
       }
     }
     const key = model.toLowerCase()
@@ -4150,7 +4158,7 @@ export function announceDataWrites(
   // service whose name maps to no model still grades rather than refusing
   // everybody (`FJS-700`).
   const sendToChannel = (name: string, event: string, payload: unknown, mode: 'row' | 'gate' = 'row'): void => {
-    const svc = app.services.get(name) as { channel?: unknown; model?: string } | undefined
+    const svc = app.services.get(name) as { channel?: unknown; model?: string | null } | undefined
     const decl = svc?.channel
     if (decl === undefined || decl === false) return
     if (typeof decl !== 'string') {
@@ -4177,7 +4185,7 @@ export function announceDataWrites(
       // implementation predating grading still receives the announcement.
       manager.sendGraded(decl, `${name} ${event}`, payload, {
         db:       db,
-        accessor: svc?.model ?? name,
+        accessor: serviceAccessor({ name, model: svc?.model }) ?? '',
         label:    name,
       }, mode).catch(() => { /* a dead socket is not a background job's problem */ })
       return

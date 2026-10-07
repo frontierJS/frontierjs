@@ -185,7 +185,7 @@ title: Flow
     ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', 'primary']] : []),
     ...(flow.status === 'active' && mayChange ? [['pause', 'Pause', 'ghost']] : []),
     ...(flow.status !== 'archived' && mayChange ? [['archive', 'Archive', 'ghost']] : []),
-    ...(flow.status === 'archived' && mayChange ? [['restore', 'Restore', 'ghost']] : []),
+    ...(flow.status === 'archived' && mayChange ? [['unarchive', 'Unarchive', 'ghost']] : []),
   ]
 
   async function act(label, fn) {

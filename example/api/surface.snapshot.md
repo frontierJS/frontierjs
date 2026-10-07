@@ -23,20 +23,13 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (17)
+### Nothing in front of the body but the floor (9)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
 
 | Method | Who may call it |
 | --- | --- |
-| `account.changePassword` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account.totpStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account.setupTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account.confirmTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account.disableTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account.regenerateRecoveryCodes` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `account-recovery.resetTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `customers.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
@@ -45,7 +38,6 @@ and what it does.
 | `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 | `shopfront.settings` | **nothing at the API boundary** — the model declares no `@@gate` |
 
 ### A service hook runs in front of the body (21)
@@ -95,58 +87,45 @@ construction; a name that stopped being one is a line that disappears here.
 `model` is what the service reports for the result envelope, which is its own
 name when it declares none.
 
-### `account` · model `account`
+### `account`
 
 - **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **who may call** —
-  - `changePassword` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `totpStatus` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `setupTotp` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `confirmTotp` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `disableTotp` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `regenerateRecoveryCodes` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `get` — standing 1 or above — declared `gate: 1`
+  - `changePassword` — standing 1 or above — declared `gate: 1`
+  - `totpStatus` — standing 1 or above — declared `gate: 1`
+  - `setupTotp` — standing 1 or above — declared `gate: 1`
+  - `confirmTotp` — standing 1 or above — declared `gate: 1`
+  - `disableTotp` — standing 1 or above — declared `gate: 1`
+  - `regenerateRecoveryCodes` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
-### `account-recovery` · model `account-recovery`
+### `account-recovery`
 
 - **methods** — `resetTotp`
 - **custom methods** — `resetTotp`
 - **who may call** —
-  - `resetTotp` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `resetTotp` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
-### `api-keys` · model `api-keys`
+### `api-keys`
 
 - **methods** — `find`, `create`, `remove`
+- **who may call** —
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `create` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `carts` · model `Cart`
 
@@ -199,19 +178,16 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `connections` · model `connections`
+### `connections`
 
 - **methods** — `find`, `remove`
+- **who may call** —
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `creditNotes` · model `CreditNote`
 
@@ -327,15 +303,15 @@ name when it declares none.
 
 ### `flows` · model `Flow`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
-- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `unarchive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
 - **who may call** —
-  - `restore` — standing 4 or above — declared `gate: 4`
   - `save` — standing 4 or above — declared `gate: 4`
   - `versions` — standing 4 or above — declared `gate: 4`
   - `activate` — standing 4 or above — declared `gate: 4`
   - `pause` — standing 4 or above — declared `gate: 4`
   - `archive` — standing 4 or above — declared `gate: 4`
+  - `unarchive` — standing 4 or above — declared `gate: 4`
   - `run` — standing 4 or above — declared `gate: 4`
   - `dryRun` — standing 4 or above — declared `gate: 4`
   - `export` — standing 4 or above — declared `gate: 4`
@@ -792,22 +768,18 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
-### `sessions` · model `sessions`
+### `sessions`
 
 - **methods** — `find`, `remove`, `revokeOthers`
 - **custom methods** — `revokeOthers`
 - **who may call** —
-  - `revokeOthers` — **any signed-in caller** — floor, read gate 8; standing not graded
+  - `find` — standing 1 or above — declared `gate: 1`
+  - `remove` — standing 1 or above — declared `gate: 1`
+  - `revokeOthers` — standing 1 or above — declared `gate: 1`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `find` | `autoFilter` → `autoSort` |
-| before | `get` | `autoFilter` |
-| before | `aggregate` | `autoFilter` |
-| before | `create` | `autoValidate` |
-| before | `patch` | `autoValidate` |
-| before | `update` | `autoValidate` |
 
 ### `shippingMethods` · model `ShippingMethod`
 

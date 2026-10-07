@@ -1,0 +1,40 @@
+<script>
+  // form-list.mesa — a generated <Form> over two scalar lists.
+  //
+  // `tags String[]` and `scores Int[]` as litestone emits them: an array whose
+  // `items` names a scalar. Sierra's control table answers the MultiSelect for
+  // both, and the record is printed so the spec can read what a typed item
+  // became: a string, or a number for the integer list.
+  import Form from '../../../components/forms/Form.mesa'
+  import { buildFieldRules, formFieldList } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = buildFieldRules({
+    properties: {
+      title:  { type: 'string', title: 'Title' },
+      tags:   { type: 'array', items: { type: 'string' }, default: [], title: 'Tags' },
+      scores: { type: 'array', items: { type: 'integer' }, default: [], title: 'Scores' },
+    },
+    required: ['title'],
+  })
+
+  let asked = []
+
+  const RESOURCE = {
+    context: { model: 'Candidate', service: 'candidates', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    // Counted: a list with no source behind it has nothing to ask for.
+    options: (name) => { asked = [...asked, name]; return Promise.resolve([]) },
+    make: () => ({ title: '', tags: [], scores: [] }),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    validate: () => [],
+    service: {},
+  }
+
+  let record = RESOURCE.make()
+</script>
+
+<Form resource={RESOURCE} bind:record={record} auto />
+
+<output id="asked">{asked.join(',')}</output>
+<output id="record">{JSON.stringify({ tags: record.tags, scores: record.scores })}</output>

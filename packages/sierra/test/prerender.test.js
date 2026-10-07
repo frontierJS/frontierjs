@@ -169,6 +169,19 @@ describe('layoutChainFor', () => {
     expect(layoutChainFor(resolve(routes, 'index.mesa'), routes)).toHaveLength(1)
   })
 
+  test('a _module.md is a layout, as the scanner classifies it (FJS-1902)', () => {
+    const dir = tmpDir('sierra-md-layouts-')
+    const routes = resolve(dir, 'content/pages')
+    mkdirSync(resolve(routes, 'services'), { recursive: true })
+    writeFileSync(resolve(routes, '_module.md'), '---\nlayout: Page\n---\n\n<slot />')
+    writeFileSync(resolve(routes, 'services/_module.md'), '<slot />')
+    writeFileSync(resolve(routes, 'services/index.md'), '# Services')
+    const chain = layoutChainFor(resolve(routes, 'services/index.md'), routes)
+    expect(chain).toHaveLength(2)
+    expect(chain[0]).toMatch(/pages\/_module\.md$/)
+    expect(chain[1]).toMatch(/pages\/services\/_module\.md$/)
+  })
+
   test('returns an empty chain when there are no layouts', () => {
     const dir = tmpDir('sierra-nolayout-')
     const routes = resolve(dir, 'src/routes')

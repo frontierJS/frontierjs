@@ -1,5 +1,21 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-07 — A credential a login mints: a 401 forgets it and replays once, and every `Set-Cookie` survives (`FJS-1905`, `FJS-1904`)
+
+A system of record with no API key — Service Autopilot, ELA's: a username and password that mint a cookie
+session — had no seam. `CredentialResolver` gains an optional `invalidate(ref, value)`; on a 401 the http
+transport hands it the credential the target refused and replays the send once, whatever the method, outside
+`retry_limit`. A second 401 is `auth_failed`, a 403 is never replayed, and a resolver without `invalidate`
+behaves as before. `withCache` implements it as a compare-and-set, so twenty sends refused on one stale
+session log in once; with `ttl_ms: Infinity` around a `get()` that logs in, it is the session holder (README
+§ Credentials). `buildAuthHeaders` resolves the secret once per call and reports it through `spent`. No new
+auth type: the session goes out as `api_key` with `header: 'Cookie'`.
+
+`meta.headers['set-cookie']` kept only the last line — Bun's `forEach` yields each under one key — so the
+login's session cookie was lost behind the `lang=` set after it. It is now every line joined by `\n`.
+Nine tests in `conduit.test.ts` § a minted credential, against a stand-in login server; six were red first,
+and dropping the compare-and-set turns one red.
+
 ## 2026-10-05 — A request's own `timeout_ms` shorter than the target's no longer opens the target's breaker (`FJS-1409`)
 
 `timeout` is a target fault whichever timer produced it, so five sends with `timeout_ms: 100` against a

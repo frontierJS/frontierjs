@@ -1,6 +1,10 @@
 # Changes
 
 
+## 2026-10-07 — a `String[]` on a generated form takes typed items (`FJS-1822`)
+
+`FormField`'s `multiselect` row passes `type: 'number'` for an `Int[]` and the placeholder *Add…* where no set stands behind the list, and `MultiSelect` with `allowNew` says *Type a value and press Enter* where it said *No options*. `MultiSelect` asks the form for options only where its rule names a relation or a value set: a free list asked anyway, and the resource logged a warning on every form that held one. `form-list.spec` types two tags and a score into a generated form and reads the record: `["design","urgent"]` and `[3]`.
+
 ## 2026-10-07 — `Button` draws its spinner from `aria-busy` alone
 
 `@frontierjs/css` dropped `.loading` (the attribute draws the spinner now), so `Button` stops adding the class; `loading` and a submitting form still set `aria-busy` and `disabled` as before. `actions.spec` grades the spinner from the computed `::after` rather than the class list, and `form.mjs` drops its class assertion.

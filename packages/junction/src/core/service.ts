@@ -219,7 +219,8 @@ export type PublishDeclaration =
  */
 export interface ServiceDescription {
   name:       string
-  model:      string
+  /** The accessor this service is over, `null` for one declared `model: null`. */
+  model:      string | null
   /** Declared custom methods, before the method policy. */
   customMethods: string[]
   /** What the service will answer, policy applied. */
@@ -286,7 +287,8 @@ export type TransactionalDeclaration = boolean | string[]
 
 export interface Service {
   name:     string
-  model?:   string   // model name — used in result envelope object field
+  /** The accessor, or `null` for a service declared over no model — read through `serviceAccessor`. */
+  model?:   string | null
   /** Channel(s) to broadcast mutations to. Omitted = no broadcast. */
   channel?: PublishDeclaration
   /** Methods wrapped in a transaction, resolved from the declaration. */
@@ -828,9 +830,10 @@ async function _callService(
       // about that. Skipped when the app stated the payload itself; ctx.dispatch
       // is a declaration of what to send, and second-guessing it would make the
       // switch mean two things.
-      if (ctx.dispatch === undefined) {
+      const accessor = serviceAccessor(service)
+      if (ctx.dispatch === undefined && accessor !== null) {
         payload = await announcementPayload(
-          ctx, payload, (service as { model?: string }).model ?? service.name,
+          ctx, payload, accessor,
           (service as { idField?: string }).idField ?? 'id'
         )
       }
@@ -997,8 +1000,14 @@ export interface BaseServiceOptions {
    *
    * The literal spelling is always tried first, so an `@@external` model
    * mirroring a genuinely-plural foreign table still resolves to itself.
+   *
+   * `null` says the service is over NO model, and its name is never resolved
+   * to one. Without it a service whose name happens to reach a model — auth's
+   * `sessions` and `model Session`, its `account` and an app's `model Account`
+   * — is graded by that model's `@@gate`, and a `gate:` declared on its CRUD
+   * verbs is refused as a second number beside it (`FJS-D408`, `FJS-1795`).
    */
-  model?:    string
+  model?:    string | null
 
   /**
    * Service name. Optional — the autoloader derives it from the filename
@@ -1863,7 +1872,7 @@ export function createBaseService(
 
   const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, channel, methods, methodGates, methodClaims, transactional } = opts
 
-  const base = createLitestoneBase({
+  const base = model === null ? overNoModel(name) : createLitestoneBase({
     model,
     idField,
     softDelete,
@@ -1988,7 +1997,9 @@ export function createBaseService(
   const claims = methodClaims ?? collectMethodClaims(methods, name ?? model ?? 'service')
   const gateHook = markDerived(gateAuthAround(model, levels, claims))
 
-  const derivedHooks: HookMap = {
+  // Over no model the gate is the whole derived layer: every other hook here
+  // resolves a model from the service's name, which is what `null` refuses.
+  const derivedHooks: HookMap = model === null ? { around: { all: [gateHook] } } : {
     around: { all: [gateHook] },
     before: {
       find:   derived(autoFilter(model), autoSort(model)),
@@ -2236,9 +2247,10 @@ export interface ServiceDefinition {
    *
    * OPTIONAL, on the same terms as createBaseService: omitted, it resolves per
    * call from the service name, so `createService({ name: 'leads' })` reaches
-   * `model Lead` and `createService({})` in leads.service.ts does too.
+   * `model Lead` and `createService({})` in leads.service.ts does too. `null`
+   * is a service over no model, whatever its name reaches.
    */
-  model?:     string
+  model?:     string | null
   db?:        () => unknown
   paginate?:  { default: number; max: number }
   allowBulk?: boolean
@@ -2638,7 +2650,7 @@ export function createService(def: ServiceDefinition): Service {
 
   const service: Service = {
     name:  defName,
-    model: def.model ?? def.name,
+    model: def.model === null ? null : def.model ?? def.name,
     // Seeded empty and REPLACED below, once collectCustomMethods has resolved the
     // table off the built object. Declared here because Service requires it and
     // a literal that omits it is not one.
@@ -2691,7 +2703,7 @@ export function createService(def: ServiceDefinition): Service {
       const schemas = (service as unknown as { _schemas?: { create?: unknown; patch?: unknown } })._schemas
       return {
         name:       service.name,
-        model:      service.model ?? service.name,
+        model:      serviceAccessor(service),
         customMethods: customMethodNames(service),
         // Policy applied: advertising a verb the service answers 405 to is
         // worse than not advertising it, because a generated client calls it.
@@ -2748,6 +2760,18 @@ export function createService(def: ServiceDefinition): Service {
     const serviceName = service.name ?? defName ?? '(unnamed)'
     const seen = new Map<string, string>()
     const report = (key: string, f: string) => { if (!seen.has(key)) seen.set(key, f) }
+
+    // A move named for a CRUD verb or a service key was dropped by the scan, so
+    // the screen drew its button and the call reached the verb instead: an
+    // `archive`/`restore` pair answered restore() with a refusal about
+    // @@softDelete, a feature the schema never named (`FJS-1909`).
+    for (const [move, fn] of Object.entries(moves)) {
+      if (isCustomMethod(move, fn)) continue
+      report(`move:${serviceName}:${move}`,
+        `service '${serviceName}': the @@transitions move '${move}' is named for ` +
+        `what a service already answers, so '${move}' reaches that and never the ` +
+        `move. Rename the move in the schema — e.g. 'unarchive' for the inverse of 'archive'.`)
+    }
 
     // The moves sit UNDER the definition: a method the author wrote with a
     // move's name wins, exactly as a written `get` wins over the generated one.
@@ -2820,8 +2844,8 @@ export function createService(def: ServiceDefinition): Service {
   resolveTable({})
 
   Object.defineProperty(service, SERVE_MOVES, {
-    value: (schema: unknown) => resolveTable(declaredMoveMethods(
-      schema, service.model ?? service.name, service.name,
+    value: (schema: unknown) => resolveTable(serviceAccessor(service) === null ? {} : declaredMoveMethods(
+      schema, serviceAccessor(service) as string, service.name,
       (def.idField as string | undefined) ?? 'id')),
   })
 
@@ -2941,6 +2965,32 @@ export class ServiceRegistry {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * The accessor a service is over: its declared `model`, else its own name, and
+ * `null` for one declared `model: null`. Every reader asks here, because a
+ * `model ?? name` written at the reader turns `null` back into the name and
+ * grades a model-less service by whatever model that name reaches.
+ */
+export function serviceAccessor(service: { name: string; model?: string | null }): string | null {
+  if (service.model === null) return null
+  return service.model ?? service.name
+}
+
+/**
+ * The CRUD half of a service over no model: each verb it did not write is a
+ * 405 naming why, rather than a lookup of a model by the service's name.
+ */
+function overNoModel(name: string | undefined) {
+  const refuse = (verb: string) => async () => {
+    throw new MethodNotAllowed(`'${name ?? 'service'}' is over no model and does not implement ${verb}`)
+  }
+  return {
+    find: refuse('find'), get: refuse('get'), aggregate: refuse('aggregate'),
+    create: refuse('create'), update: refuse('update'), patch: refuse('patch'),
+    remove: refuse('remove'), restore: refuse('restore'), declaredFields: refuse('declaredFields'),
+  } as unknown as ReturnType<typeof createLitestoneBase>
+}
 
 // (notImplementedBase removed: createService builds the real base
 // unconditionally, since the accessor resolves per call from

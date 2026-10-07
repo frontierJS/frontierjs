@@ -19,7 +19,10 @@ on 8113). Everything else in this file is still an idea and must not be cited as
 behavior: legs one and three — a principal in `CredentialResolver.get()`, an
 expiry in the return, an OAuth-shaped `TargetAuth`, refresh under a lock, and the
 scope derivation in § The move that makes this FJS — are unbuilt, deliberately and
-in that order.
+in that order. One piece of the refresh is behavior since 2026-10-07 (`FJS-1905`): a
+401 hands the refused value to `CredentialResolver.invalidate`, and `withCache`
+re-mints it once for every send racing it, in-process. That covers a login-minted
+session. A rotating refresh token still needs the expiry and the principal.
 
 Claims about the current tree were probed rather than read (`VERIFYING.md`) and the
 evidence is named inline. One defect was found while probing and is carried at the

@@ -127,28 +127,34 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   }
 
   /**
-   * SUPPORT MODE — the refusals, and they are what makes an episode bounded.
+   * DELEGATION — the refusals, and they are what makes a delegated caller
+   * bounded.
    *
-   * An operator inside an episode resolves as the subject, so every method here
-   * would act on the subject's own account, which is mostly the point: reading
-   * their sessions and their connections is how you see what they see. What is
-   * NOT the point is the door out of the episode — a password changed, an API
-   * key minted, a session revoked — because each of those outlives the episode
-   * that produced it. Mint a key while impersonating and the ceiling has been
-   * escaped permanently, with the trail showing an ordinary key issue.
+   * Two callers act for somebody without being them. An operator inside a
+   * support episode resolves as the subject, and an agent over `/mcp` holds the
+   * person's session (`FJS-D258`). Reading through either is the point —
+   * seeing what somebody sees is what an episode is for, and an agent reading
+   * its person's sessions is the person reading them. What is NOT the point is
+   * the door out: a password changed, an API key minted, a session revoked —
+   * each outlives the episode or the session that produced it. Mint a key from
+   * either and the ceiling has been escaped permanently, with the trail showing
+   * an ordinary key issue (`FJS-1795`).
    *
-   * A caller with no episode is unaffected, which is what every test of this
+   * A caller who is neither is unaffected, which is what every test of this
    * asserts beside the refusal: a guard that refused everybody would look
    * identical from the refused side (`FJS-351`).
    *
-   * The subject is named in the message, because the operator has to know whose
-   * account they are being kept out of.
+   * The operator is told whose account they are kept out of, and the agent is
+   * told where the person can do it themselves.
    */
-  function refuseInSupport(user: SessionContext, what: string): void {
-    if (!user.support) return
-    throw new Forbidden(
+  function refuseDelegated(ctx: ServiceContext, user: SessionContext, what: string): void {
+    if (user.support) throw new Forbidden(
       `Cannot ${what} while acting as another user. End the support session first ` +
       `(POST /auth/support/end) — this account's credentials are not yours to change.`
+    )
+    if (ctx.transport === 'mcp') throw new Forbidden(
+      `Cannot ${what} from an agent's tool call — it would outlive the session the agent ` +
+      `was handed. The person signed in to the app can do it there.`
     )
   }
 
@@ -161,17 +167,36 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     return fn.bind(auth) as NonNullable<AuthSurface[K]>
   }
 
+  /**
+   * A method's declared level: a session the app grades at all.
+   *
+   * Every service here is over no model, so a bare method name is graded by
+   * nothing and `/mcp` lists it as `ungraded` — permissive, and named in the
+   * boot warning of every app that mounts it (`FJS-D408`, `FJS-1795`). VISITOR
+   * is the floor and not a role: an unverified person still manages their own
+   * credentials, and one the app grades STRANGER — suspended — does not.
+   * `account-recovery`'s SYSADMIN floor is graded in its body by
+   * `standingLevel`, which is not the resolver a declared level is graded by.
+   *
+   * Every service here says `model: null`. Its name is not a model: `sessions`
+   * reaches this package's own `model Session` and `account` an app's
+   * `model Account`, and a name that reaches a model is graded by its
+   * `@@gate` — which refuses a declared level on a CRUD verb (`FJS-D408`).
+   */
+  const signedIn = (...methods: string[]) => methods.map(method => ({ method, gate: LEVELS.VISITOR }))
+
   const services: Service[] = []
 
   // ─── account ──────────────────────────────────────────────────────────────
 
   if (names.account !== false) services.push(createService({
     name: names.account as string,
+    model: null,
 
     // Without `methods` the base service answers every CRUD verb it was not
     // given, and on a service with no model that is a 500 rather than a
     // refusal. It also throws at construction on a name not defined below.
-    methods: [
+    methods: signedIn(
       'get', 'changePassword',
       // The second factor. On `account` rather than a service of its own for the
       // reason `changePassword` is here: it is a credential this account
@@ -180,7 +205,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // configurable name, a fourth collision check and a fourth thing to
       // document, for one fact about one account.
       'totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes',
-    ],
+    ),
 
     // GET /account/me — the SessionContext the server built, not a User row.
     // A UI needs what the request will be graded as, which is the session; the
@@ -207,7 +232,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // beside the hash it compares against.
     async changePassword(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'change a password')
+      refuseDelegated(ctx, user, 'change a password')
       const { currentPassword, newPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
       if (!newPassword)     throw new BadRequest('newPassword is required')
@@ -240,7 +265,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
      */
     async setupTotp(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'enroll a second factor')
+      refuseDelegated(ctx, user, 'enroll a second factor')
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
@@ -260,7 +285,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
      */
     async confirmTotp(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'enable a second factor')
+      refuseDelegated(ctx, user, 'enable a second factor')
       const { code } = (ctx.data ?? {}) as Record<string, string>
       if (!code) throw new BadRequest('code is required')
 
@@ -270,7 +295,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     /** Switch it off and forget the secret and every recovery code. */
     async disableTotp(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'disable a second factor')
+      refuseDelegated(ctx, user, 'disable a second factor')
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
@@ -282,7 +307,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     /** Fresh recovery codes; the old ones stop working. Answered once. */
     async regenerateRecoveryCodes(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'regenerate recovery codes')
+      refuseDelegated(ctx, user, 'regenerate recovery codes')
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
@@ -295,7 +320,8 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   if (names.sessions !== false) services.push(createService({
     name: names.sessions as string,
-    methods: ['find', 'remove', 'revokeOthers'],
+    model: null,
+    methods: signedIn('find', 'remove', 'revokeOthers'),
 
     // An array is a list, which is what `find` must answer. No token on any
     // row — see AuthSessionInfo.
@@ -309,7 +335,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async remove(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'revoke a session')
+      refuseDelegated(ctx, user, 'revoke a session')
       const id   = String(ctx.id)
       await need('revokeSession')(user.userId, id)
       // Ending the session that is asking is allowed — "sign out this device"
@@ -321,7 +347,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async revokeOthers(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'revoke sessions')
+      refuseDelegated(ctx, user, 'revoke sessions')
       const revoked = await need('revokeSessions')(user.userId, { exceptSessionId: user.sessionId })
       return { revoked }
     },
@@ -331,7 +357,8 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   if (names.apiKeys !== false) services.push(createService({
     name: names.apiKeys as string,
-    methods: ['find', 'create', 'remove'],
+    model: null,
+    methods: signedIn('find', 'create', 'remove'),
 
     async find(ctx: ServiceContext) {
       const user = caller(ctx)
@@ -344,7 +371,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const user = caller(ctx)
       // The sharpest one. A key minted here authenticates as the subject for as
       // long as it lives, which is the episode's ceiling escaped for good.
-      refuseInSupport(user, 'create an API key')
+      refuseDelegated(ctx, user, 'create an API key')
       const { name, scopes, expiresAt } = (ctx.data ?? {}) as {
         name?: string; scopes?: string[]; expiresAt?: string
       }
@@ -364,7 +391,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
     async remove(ctx: ServiceContext) {
       const user = caller(ctx)
-      refuseInSupport(user, 'revoke an API key')
+      refuseDelegated(ctx, user, 'revoke an API key')
       const id   = String(ctx.id)
       // The owner goes into the delete rather than being checked after a read:
       // the id comes from the caller, and matching on it alone revokes any key
@@ -382,7 +409,8 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   if (names.connections !== false) services.push(createService({
     name: names.connections as string,
-    methods: ['find', 'remove'],
+    model: null,
+    methods: signedIn('find', 'remove'),
 
     async find(ctx: ServiceContext) {
       const user = caller(ctx)
@@ -393,7 +421,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const user = caller(ctx)
       // Detaching a provider is a way somebody signs in, so it is the same
       // class as the two above it.
-      refuseInSupport(user, 'remove a connection')
+      refuseDelegated(ctx, user, 'remove a connection')
       // The caller's own id, never one from the payload — the same rule the
       // three services above hold to.
       return need('removeConnection')(user.userId, String(ctx.id))
@@ -418,13 +446,14 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
   if (names.accountRecovery !== false) services.push(createService({
     name: names.accountRecovery as string,
-    methods: ['resetTotp'],
+    model: null,
+    methods: signedIn('resetTotp'),
 
     async resetTotp(ctx: ServiceContext) {
       const operator = caller(ctx)
       // An episode resolves as the subject, so the operator would be graded as
       // somebody else — and a reset outlives the episode that made it.
-      refuseInSupport(operator, "reset somebody's second factor")
+      refuseDelegated(ctx, operator, "reset somebody's second factor")
 
       if (!standingLevel) {
         throw new Forbidden(

@@ -241,7 +241,7 @@ export class ExternalRefPlugin extends Plugin {
               : Promise.resolve(item)
           )
         )
-        args.data[field] = JSON.stringify(refs)
+        args.data[field] = refs
         continue
       }
 
@@ -298,7 +298,7 @@ export class ExternalRefPlugin extends Plugin {
               : Promise.resolve(item)
           )
         )
-        args.data[field] = JSON.stringify(refs)
+        args.data[field] = refs
         continue
       }
 

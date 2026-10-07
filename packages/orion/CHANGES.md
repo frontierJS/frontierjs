@@ -1,5 +1,9 @@
 # Changes — @frontierjs/orion
 
+## 2026-10-07 — the move out of `archived` is `unarchive`
+
+`Flow`'s `restore: archived -> draft` collided with the CRUD verb of the same name, and the hand-written `flows.restore` worked only by overriding that verb. Junction now refuses to start with a move named for a CRUD verb (`FJS-1909`). The move, the method, the service's signed-in list and the flow page's button are `unarchive`. The access, release and jsonschema snapshots of example and basecamp are regenerated.
+
 ## 2026-10-06 — `DEFAULT_SERVICE_NAMES` is exported from `./plugin`
 
 `flows` and `runs` broadcast on a channel of their own name, and a host joins its connections to it by that name; basecamp now joins them through the constant rather than restating the strings (`FJS-1772`).

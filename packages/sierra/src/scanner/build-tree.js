@@ -3,7 +3,7 @@
  *
  * Implements the Sierra routing spec:
  * - PascalCase and _ prefix files are co-located components, not routes
- * - _module.mesa files are layouts
+ * - _module.mesa / _module.md files are layouts
  * - (group)/ folders are organizational — zero URL impact
  * - [param] → :param in URL, [...rest] → *
  * - index.mesa is the index route for a folder
@@ -73,7 +73,7 @@ export async function buildTree(files, routesDir, options = {}) {
   // e.g. 'src/routes/leads' → 'src/routes/leads/_module.meta.js'
   const layoutCompanionMap = new Map()
   for (const [dir, layoutFile] of layoutMap) {
-    const layoutBase = layoutFile.replace(/\.mesa$/, '')
+    const layoutBase = layoutFile.slice(0, -extname(layoutFile).length)
     if (companionMap.has(layoutBase)) {
       layoutCompanionMap.set(dir, companionMap.get(layoutBase))
     }
