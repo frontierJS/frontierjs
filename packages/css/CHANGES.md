@@ -1,6 +1,19 @@
 # Changes — @frontierjs/css
 
 
+## 2026-10-06 — Band, Grid, `.bleed` and the align axis (`FJS-D620`, `FJS-D621`, `FJS-D622`)
+
+Four pieces a website page needed and an app had been writing by hand.
+
+- **Band** (Region tier, `<section>`) — a stripe of a page: a Surface that reaches both viewport edges, block padding from density (`--space-6xl`), no corners and no side edges (`.outlined` brings the block rules back). It holds no width — a `.container` inside does — and no arrangement. `.band-media` puts a photo behind it under two coats of `--scrim` with the ink turned light; one coat over a white photo leaves white text at 3.4:1. In `patterns/bands.css`.
+- **`.bleed`** — the same escape for anything else (an image in Prose, a table on a phone). ONE rule, `.bleed, .band`, in the `patterns` layer so it beats a component's margin. `html:has(.band, .bleed) { overflow-x: clip }` in reset.css, because `50vw` counts a classic scrollbar.
+- **Grid** (Layout tier) — Every Layout's: `repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr))`, `inline-size: 100%` so a centered Stack cannot shrink it to one column. Joins the flow rule's exclusion list.
+- **The align axis** — `.align-start`, `.align-center`, `.align-end` in tokens.css beside density, inheriting: each sets `text-align` and an unregistered `--align` that Stack (cross axis), Cluster, Group, Bar and Toolbar read. `align-start` writes `normal`, so it restores each helper's default rather than shrinking a Stack's children. Overlays reset both halves (overlays.css), so `.align-end` on a Popover places the popover and leaves its text alone.
+
+**Removed:** `.bar.start`/`.center`/`.end` and the Toolbar's — the axis replaces them (`bar align-center`). The guide's topbar, the Bar page and the demo moved. Consumers that had their own `.grid` or `.band` moved too: fli's scaffold and the website's pitch and vs-laravel pages drop their hand-written grids for the term; example/web's variant table, the website's seams board, fli's viewer and the rings map rename theirs; example/site's two padded stripes become `band ghost`.
+
+`decisions.spec.js`'s treatment check split selector lists on every comma, which cut `:where(…, .band).raised` into fragments; it splits on top-level commas now, and the tone check reads lineage enrollment from the CSSOM, since Band is a Region term with a Surface's tone. `layout.spec.js` and the new `band.spec.js` grade the geometry and the scrim arithmetic. 530 passing.
+
 ## 2026-10-05 — a block's flow spacing no longer restyles the page on every DOM removal (`FJS-1621`)
 
 The rule that spaces the children of `.card`, `.screen`, `.container` and `.pane` selected them as `* + *` and now selects `:where(:not(:first-child))`. Both match the same elements at the same weight. Written the first way under its `:is()` owners, the rule was tried against every element on the page and recorded every parent's children as depending on their siblings, so removing one child anywhere restyled everything under that parent: 300 ms of style recalc a keystroke in a `CodeInput` holding 22,000 lines.

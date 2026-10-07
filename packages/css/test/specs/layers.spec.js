@@ -72,18 +72,16 @@ test('layers: every import lands in a declared layer', function () {
 
 /* ── What the order actually buys ────────────────────────────────────*/
 
-test('layers: .bar.center stays a flex bar, not a centering grid', function () {
+test('layers: a term beside a layout helper keeps its own display', function () {
   /*
-   * `.center` (layout.css) is "center on both axes, via grid".
-   * `.bar.center` (bars.css) is "center this bar's contents, still flex".
-   * Both are single-class selectors on `display`, so specificity cannot
-   * separate them — only `layout` sitting before `patterns` does.
-   *
-   * This is the collision that the naming question is really about; until
-   * it is resolved, this test is what holds the answer in place.
+   * `.center` (layout.css) is "center on both axes, via grid"; `.bar` states
+   * flex. Both are single-class selectors on `display`, so specificity cannot
+   * separate them — only `layout` sitting before `patterns` does. A Bar
+   * centers its contents with `.align-center`, so `bar center` is a mistake,
+   * and this is what keeps the mistake a flex Bar.
    */
   var bar = el('<div class="bar center"><button class="btn">A</button></div>');
-  assert.equal(style(bar, 'display'), 'flex', '.bar.center collapsed into the .center grid');
+  assert.equal(style(bar, 'display'), 'flex', 'a Bar beside .center collapsed into the .center grid');
 
   var plain = el('<div class="center">x</div>');
   assert.equal(style(plain, 'display'), 'grid', '.center is no longer a centering grid');
@@ -296,7 +294,7 @@ test('layers: every composite is actually enrolled in its base', function () {
 
   var LINEAGES = {
     'chip.css': ['.btn', '.pill', '.badge', '.pagination-link', '.tooltip', '.avatar', '.step-marker'],
-    'surface.css': ['.card', '.tile', '.alert', '.toast', '.dialog', '.popover', '.drawer'],
+    'surface.css': ['.card', '.tile', '.alert', '.toast', '.dialog', '.popover', '.drawer', '.band'],
   };
 
   Object.keys(LINEAGES).forEach(function (file) {

@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-06 — the blueprint catalog is a css Grid (`FJS-D621`)
+
+`<div class="grid cols-3">` named two classes nothing defined, so the catalog's cards stacked in one column. `.grid` is now `@frontierjs/css`'s Grid and lays them out in as many columns as fit; the dead `cols-3` is gone. `verify:build` 9/9.
+
 ## 2026-10-06 — the Fable audit's gate-parity tests, under `test/audit-*`
 
 The Fable audit of 2026-10-05, run 2.2, checks five models against their `@@gate` over HTTP, WS, mcp and the two job callers. The broadcast and mcp `internalOnly()` findings it proved have since closed (`FJS-1771`/`1772`, `FJS-1817`), so those files are plain tests. The roster row is `test.failing` for `FJS-1862`, which waits on `FJS-D619`. A flake was reported in *secrets via mcp* and did not recur in 13 runs. The suite passes 647/647.

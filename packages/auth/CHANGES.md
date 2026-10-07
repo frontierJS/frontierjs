@@ -1,5 +1,11 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-06 — a cross-site form POST to `/auth/*` is refused in cookie mode (`FJS-1818`, `FJS-D610`)
+
+`cookieAuth: true` now installs junction's `csrf()` at start, so a cross-site form POST to `/auth/login`, `/auth/register` or `/auth/password-reset/request` is a 403 and mints no session. The defense is junction's, because the cookie mode that opens the exposure is junction's (`FJS-D610`). The six `test.failing` cases in `test/audit-routes-login-csrf.test.ts` are plain tests now, and the text/plain control expects the 403 that csrf now answers before `body()` refuses the shape.
+
+522 pass, typecheck at baseline.
+
 ## 2026-10-06 — the Fable audit's repro tests, under `test/audit-*`
 
 The Fable audit of 2026-10-05 wrote 18 `test/audit-*.test.ts` files plus the `test/audit-routes-http.ts` helper. A test that names an attack the code survives is a plain `test`. One that names a defect still open is `test.failing`, with the row it proves above it: `FJS-1818`, `1819`, `1820`, `1831`, `1832`, `1838`–`1841`, `1846`–`1855`, and `FJS-D615` for the unscoped-key cases. A fix is done when its test passes, which turns `.failing` red, so the fix drops the marker. `ttl` splits the one 20-digit case out of its `test.each`. The suite passes 522/522.

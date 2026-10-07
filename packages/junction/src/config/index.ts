@@ -302,10 +302,10 @@ export interface JunctionMiddlewareConfig {
   rateLimit?:     { max: number; window: string | number; message?: string }
   bodyLimit?:     { maxSize?: number }
   /**
-   * `true` derives its origin list from `middleware.cors.origins`, which is
-   * what `csrf()`'s own note already tells an app to do by hand — and with no
-   * cors list to borrow, `start()` refuses rather than guessing, because the
-   * guess a CSRF guard makes when it has no list is *allow*.
+   * `true` borrows `middleware.cors.origins` as the origins besides the app's
+   * own, and with no cors list allows the app's own origin only. Cookie mode
+   * installs it undeclared (`FJS-D610`). A cors `'*'` is not borrowed, since
+   * it names who may read; a `'*'` in `csrf.origins` refuses to start.
    */
   csrf?:          boolean | { origins?: string[]; methods?: string[]; allowMissingOrigin?: boolean }
 }

@@ -1,5 +1,17 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-06 — cookie mode installs `csrf()`, and `csrf()` needs no list (`FJS-D610`, `FJS-1818`)
+
+In cookie mode a cross-site form POST to `/auth/login` or `/auth/register` was answered with `Set-Cookie: session`, signing the victim's browser into the attacker's account. `SameSite=Lax` never applied, because the request carries no cookie and sets one.
+
+- **`csrf()` has a same-origin default.** `Sec-Fetch-Site: same-origin` or `none` passes. An origin on the list passes. `cross-site` and `same-site` are refused, the latter because a sibling subdomain is the same site. A browser that sends no `Sec-Fetch-Site` passes when its `Origin` names the request's `Host`. `origins` is now optional and names the OTHER origins allowed.
+- **A request with no origin information passes by default**, listed or not. `allowMissingOrigin` defaults to `true`, and `false` restores the refusal. The attack needs a browser, and a browser names the origin of a cross-origin POST.
+- **`applyConfiguredMiddleware` installs it when cookie mode is on** (`http.authCookie`, set by the auth plugin's `register()` or by `config.auth.cookie`), with `middleware.csrf.origins`, else `middleware.cors.origins`, as the list. An app that also declares `middleware.csrf` gets one guard.
+- **`csrf: true` with no list to borrow now starts**, since no list means same-origin rather than allow-all. A cors `'*'` is dropped when borrowed, because it names who may read and cors() refuses it beside credentials; example's dev config is `['*']` with cookie mode on, and refused to start until it was. A `'*'` in `middleware.csrf.origins` still refuses to start.
+- **`HttpTransport.authCookie`** is a getter for the cookie name, read at start.
+
+`test/index.test.ts` § csrf middleware (two cases flipped to the new default, six new), `test/config-surface.test.ts`; 2625 pass, typecheck clean. Drives: example `verify:oauth` 22/0 (cookie mode, so the guard is live). `example verify` threw at an order-form step under Bearer, where this code does not run, and `basecamp verify` wants `--reset` of a database holding 4 users, so it was not run.
+
 ## 2026-10-06 — an mcp call is transport `'mcp'`, and an in-process call is refused an unknown `$` key (`FJS-D609`, `FJS-1816`, `FJS-1817`)
 
 `app.service()` stamped every call `'internal'` and put its query on `ctx.query` without asking the directive table, so an mcp tool passed basecamp's `internalOnly()` and carried `$raw` to Litestone.

@@ -3298,19 +3298,64 @@ describe('csrf middleware', () => {
 
   // ── Missing origin header ─────────────────────────────────────────────
 
-  it('blocks mutating request with no origin by default', async () => {
+  // The attack needs a browser, and a browser names the origin of a
+  // cross-origin POST — so no origin information is a server or curl (FJS-D610).
+  it('allows a mutating request with no origin by default', async () => {
     const app = await makeApp({ origins: ['https://myapp.com'] })
-    // No origin or referer header
+    const res = await request(app).post('/notes').send({ title: 'Server call' })
+    expect(res.status).toBe(201)
+  })
+
+  it('blocks missing origin when allowMissingOrigin is false', async () => {
+    const app = await makeApp({
+      origins:            ['https://myapp.com'],
+      allowMissingOrigin: false,
+    })
     const res = await request(app).post('/notes').send({ title: 'No origin' })
     expect(res.status).toBe(403)
   })
 
-  it('allows missing origin when allowMissingOrigin is true', async () => {
-    const app = await makeApp({
-      origins:            ['https://myapp.com'],
-      allowMissingOrigin: true,
-    })
-    const res = await request(app).post('/notes').send({ title: 'Server call' })
+  // ── Same-origin default (FJS-D610) ────────────────────────────────────
+
+  it('with no list, an Origin naming the request host passes', async () => {
+    const app = await makeApp(undefined)
+    const res = await request(app).post('/notes')
+      .set('host', 'app.test').set('origin', 'https://app.test').send({})
+    expect(res.status).toBe(201)
+  })
+
+  it('with no list, an Origin naming another host is refused', async () => {
+    const app = await makeApp(undefined)
+    const res = await request(app).post('/notes')
+      .set('host', 'app.test').set('origin', 'https://evil.test').send({})
+    expect(res.status).toBe(403)
+  })
+
+  it('Sec-Fetch-Site: same-origin passes whatever Origin says', async () => {
+    const app = await makeApp(undefined)
+    const res = await request(app).post('/notes')
+      .set('sec-fetch-site', 'same-origin').set('origin', 'https://dev-proxy.test').send({})
+    expect(res.status).toBe(201)
+  })
+
+  it('Sec-Fetch-Site: cross-site is refused with no Origin at all', async () => {
+    const app = await makeApp(undefined)
+    const res = await request(app).post('/notes').set('sec-fetch-site', 'cross-site').send({})
+    expect(res.status).toBe(403)
+  })
+
+  // A sibling subdomain is the same SITE, so SameSite=Lax sends it the cookie.
+  it('Sec-Fetch-Site: same-site is refused even when its Origin matches the host', async () => {
+    const app = await makeApp(undefined)
+    const res = await request(app).post('/notes')
+      .set('host', 'app.test').set('origin', 'https://app.test').set('sec-fetch-site', 'same-site').send({})
+    expect(res.status).toBe(403)
+  })
+
+  it('Sec-Fetch-Site: cross-site from a listed origin passes', async () => {
+    const app = await makeApp({ origins: ['https://admin.myapp.com'] })
+    const res = await request(app).post('/notes')
+      .set('sec-fetch-site', 'same-site').set('origin', 'https://admin.myapp.com').send({})
     expect(res.status).toBe(201)
   })
 
@@ -3371,8 +3416,8 @@ describe('csrf middleware', () => {
       origins: ['https://myapp.com'],
       methods: ['GET', 'POST'],
     })
-    // GET is now in the protected list — no origin → blocked
-    const res = await request(app).get('/notes')
+    // GET is now in the protected list — a foreign origin → blocked
+    const res = await request(app).get('/notes').set('origin', 'https://evil.com')
     expect(res.status).toBe(403)
   })
 

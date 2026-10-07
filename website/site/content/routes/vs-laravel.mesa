@@ -438,9 +438,9 @@ section { padding: 4rem 0; border-top: 1px solid var(--rule); }
   .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
   .lede { font-size: 1.08rem; color: var(--ink-soft); max-width: 62ch; line-height: 1.6; }
 
-  .grid { display: grid; gap: 1.25rem; }
-  .cols2 { grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr)); }
-  .cols3 { grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .grid { gap: 1.25rem; }
+  .cols2 { --grid-min: 21rem; }
+  .cols3 { --grid-min: 17rem; }
 
   /* honesty callout */
   .callout {

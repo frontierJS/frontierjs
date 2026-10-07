@@ -190,8 +190,8 @@
  * cost the ability to compose. `components` is a LATER layer than `layout`,
  * and both selectors are (0,1,0), so `display: block` here beat `.stack` and
  * `.cluster` outright: `class="pane stack"` laid out as a block, silently,
- * with the gap doing nothing. Same collision the header of layout.css
- * documents for `.bar.center`, resolved the other way — a Pane that wants
+ * with the gap doing nothing. The layer order the header of layout.css
+ * describes, resolved the other way — a Pane that wants
  * to ARRANGE its children says so with a layout class.
  *
  * Spacing them is not arranging them: a bare Pane spaces its blocks at

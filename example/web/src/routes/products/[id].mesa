@@ -383,7 +383,7 @@ title: Product
   <SectionHeader title="Variants" level={2} sub="one row per (color, size) — the composite @@unique in db/schema.lite" />
 
   <div class="table-scroll">
-    <table class="grid">
+    <table class="variants">
       <thead>
         <tr>
           <th scope="col">Color</th>
@@ -475,14 +475,14 @@ title: Product
   .buy-price { font-size: var(--text-xl); font-weight: 700 }
 
   .table-scroll { overflow-x: auto }
-  .grid { width: 100%; border-collapse: collapse }
-  .grid th, .grid td {
+  .variants { width: 100%; border-collapse: collapse }
+  .variants th, .variants td {
     padding: var(--space-md);
     border-bottom: 1px solid var(--rule);
     text-align: left;
     vertical-align: top;
   }
-  .grid td { display: table-cell }
+  .variants td { display: table-cell }
   .cell-price { display: block; font-weight: 600 }
 
   @media (max-width: 48rem) {

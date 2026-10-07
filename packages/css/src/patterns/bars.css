@@ -47,11 +47,10 @@
  * operate it. If you are not providing the keys, use `.bar` — it is the
  * same strip and it promises nothing.
  *
- * NOTE on `.bar.center`: `center` here is a Bar-scoped alignment modifier
- * (the flexbox value), not the Center layout term. Writing both on one
- * element happens to be harmless — Center's `place-items` lands on a flex
- * container where `.bar` already centers, and patterns beats layout on
- * `display` — but they are two different words that share three letters.
+ * Alignment is the align axis (tokens.css § Align), read here as the main
+ * axis: `.align-center` on the Bar, or on any region holding it, centers its
+ * contents. The fallback IS the default, so a Bar splits and a Toolbar packs
+ * to the start until something says otherwise.
  */
 
 /* Shared layout at zero specificity, so either class's own rules win. */
@@ -62,12 +61,8 @@
   padding:     var(--space-sm) 0;
 }
 
-.bar     { justify-content: space-between; }
-.toolbar { justify-content: flex-start; }
-
-.bar.start,  .toolbar.start  { justify-content: flex-start; }
-.bar.center, .toolbar.center { justify-content: center; }
-.bar.end,    .toolbar.end    { justify-content: flex-end; }
+.bar     { justify-content: var(--align, space-between); }
+.toolbar { justify-content: var(--align, flex-start); }
 
 /* Bordered variant — a contained strip with a bottom rule */
 .bar.bordered,

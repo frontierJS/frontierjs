@@ -17,14 +17,9 @@
  *
  * ── Layer placement ─────────────────────────────────────────────────
  * These sit in the `layout` layer, which index.css orders *before*
- * `components` and `patterns`. That matters for one real collision:
- * `.center` here sets `display: grid`, while `.bar` in patterns sets
- * `display: flex` and uses `.bar.center` to mean "center the bar's
- * contents". Both are single-class selectors, so specificity can't
- * separate them — the layer order does, and `.bar` wins.
- *
- * The underlying name overlap is still worth resolving; see the naming
- * note in PROJECT_STATE.md.
+ * `components` and `patterns`, so a term that states its own `display`
+ * beats a helper written beside it: `class="bar center"` is a flex Bar,
+ * not Center's grid. A Bar centers its contents with the align axis.
  */
 
 .stack {
@@ -104,8 +99,8 @@
  * Every Layout's Grid. The column count is DERIVED from the width, so there
  * is no breakpoint and no `cols3`: a caller who wants wider cells raises the
  * floor (`style="--grid-min: 20rem"`) and the count follows. ksite had four
- * spellings for this (`grid-fit-cols`, `grid-odd`, `grid-even`, `matrix`) and
- * three pages of the website each wrote it again by hand.
+ * spellings for this (`grid-fit-cols`, `grid-odd`, `grid-even`, `matrix`), and
+ * the website's pages and fli's scaffold each wrote it again by hand.
  *
  * `min(…, 100%)` is what makes one column on a phone: a 16rem floor in a
  * 300px container would otherwise force a 256px track wider than its box.

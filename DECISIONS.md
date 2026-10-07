@@ -11281,17 +11281,23 @@ Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open qu
 
 The paper's recommendation, taken as written: a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px.
 
+*Lives in:* `packages/css/src/patterns/bands.css` (the `.bleed, .band` rule, `.band-media`), `packages/css/src/foundation/reset.css` (`html:has(.band, .bleed)` clips sideways overflow — the harness hides scrollbars, so the overflow is guarded by that rule rather than measured at 360px), `packages/css/test/specs/band.spec.js`.
+
 ### <a id="fjs-d621"></a>2026-10-07 · `FJS-D621` — Who owns the band and its arrangement — Css: `Band` (question 4) with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit `band` + one helper and ship no CSS.
 
 Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **B** was picked over **A** (css: one band term with a structure modifier (`page-composition.md`'s guess)), **C** (site-kit: `Section.mesa`'s scoped styles own all of it).
 
 The paper's recommendation, taken as written: the Layout tier already owns arrangement ("one arrangement each, no skin, compose onto anything"), so a structure modifier would be a second owner of it; an app gets the band and Grid without site-kit.
 
+*Lives in:* `packages/css/src/foundation/layout.css` (`.grid`, `--grid-min`). site-kit's half — templates emitting `band` + one helper — is unbuilt.
+
 ### <a id="fjs-d620"></a>2026-10-07 · `FJS-D620` — Where does `align` live — A css axis beside tone, treatment and density: an inheriting custom property that the Layout helpers and the band read, with `text-align` following it.
 
 Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (a site-kit frontmatter key that emits css's existing `start`/`end`/`center` modifiers).
 
 The paper's recommendation, taken as written: ksite spelled alignment four ways (`centered`, `headings-*`, `btn-*`, `brick-*`), and an app centers an empty state or a sign-in card the same way a site centers a band.
+
+*Lives in:* `packages/css/src/foundation/tokens.css` (`.align-start` / `-center` / `-end`, `--align` unregistered so a Bar's split can be the fallback); read in `layout.css` and `patterns/bars.css`; reset for overlays in `components/overlays.css`. It replaced Bar and Toolbar's scoped `start`/`center`/`end`.
 
 ### <a id="fjs-d614"></a>2026-10-07 · `FJS-D614` — Positional roles — does build-time emission of the named part answer `page-composition.md` § Risks — Yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`.
 

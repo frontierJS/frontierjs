@@ -64,7 +64,7 @@ carried by an HTML element and has no class of its own.
 `screen`<sup>main</sup> · `pane`<sup>section aria-labelledby</sup> · `view`<sup>article role=tabpanel</sup> · `tabs`
 
 **Region** — grouping and wayfinding
-Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `kicker` · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
+Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `band`<sup>section</sup> · `kicker` · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
 
 **Block** — the main content citizens
 `card` · `tile` · `item` · `list-row`<sup>Row</sup> · `feed` · `alert` · `steps` · `facts`<sup>dl</sup> · `code`<sup>pre</sup> · `table` · `disclosure`<sup>details</sup> · `empty`
@@ -76,7 +76,7 @@ Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `kicker
 `dialog` · `drawer` · `popover` · `tooltip`<sup>span</sup> · `toast`
 
 **Layout** — the only classes that are purely spatial
-`stack` (vertical) · `cluster` (horizontal, wraps) · `center` · `split` · `container`
+`stack` (vertical) · `cluster` (horizontal, wraps) · `center` · `split` · `grid` (equal columns, `--grid-min`) · `container`
 
 **The parent owns the space between its children.** `card`, `screen`,
 `container` and `pane` space bare sibling blocks at Stack's rung (`--space-2xl`), so a page
@@ -109,6 +109,14 @@ Tones are element-scoped (`inherits: false`) — an untoned button inside a
 **Density** `dense` · `roomy` — these **inherit**, unlike tones. `dense` on a
 Pane reaches every Card, Row and Field inside it. That asymmetry is deliberate:
 a tone is a fact about one element, density is a fact about a region.
+**Align** `align-start` · `align-center` · `align-end` — inherits too. Sets
+`text-align`, and Stack, Cluster, Group, Bar and Toolbar place their children by
+it. `align-start` is the default, so it undoes an ancestor's centering. Overlays
+do not inherit it.
+
+**Escape** `bleed` — reaches both viewport edges from inside a held-width
+parent (an image in Prose, a table on a phone). A `band` does the same by
+itself; they are one rule.
 
 ---
 

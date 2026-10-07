@@ -469,122 +469,107 @@ export function correlationId(opts: CorrelationIdOptions = {}) {
 // ─── CSRF ─────────────────────────────────────────────────────────────────
 // Origin-checking CSRF protection for cookie-session APIs.
 //
-// The bearer-token pattern (Authorization: Bearer ...) used by Junction
-// is inherently CSRF-safe — a cross-origin page cannot set arbitrary request
-// headers. This middleware is only needed when your auth provider (e.g.
-// Better Auth) is configured to use cookie-based sessions, because browsers
-// attach cookies automatically to cross-origin requests.
+// A Bearer token is CSRF-safe — a cross-origin page cannot set the header. A
+// cookie is attached by the browser, so cookie mode installs this guard
+// itself (`FJS-D610`). SameSite=Lax is not enough: a cross-site form POST to
+// /auth/login carries no cookie and SETS one, signing the victim's browser
+// into the attacker's account (`FJS-1818`).
 //
-// Strategy: for every state-mutating request (POST/PUT/PATCH/DELETE), check
-// the Origin header (set by browsers on all cross-origin requests). If absent
-// — same-origin requests from some browsers don't send it — fall back to
-// the Referer header. If neither is present and allowMissingOrigin is false
-// (the default), the request is rejected.
+// For every mutating request, in order:
+//   1. `Sec-Fetch-Site: same-origin` or `none` passes. A browser sets it and a
+//      page cannot.
+//   2. The request's origin is `Origin`, else the origin of `Referer`. A
+//      listed origin passes.
+//   3. `Sec-Fetch-Site: cross-site` or `same-site` is refused. `same-site` is
+//      a sibling subdomain, which SameSite counts as the same site.
+//   4. A browser too old to send Sec-Fetch-Site: an origin whose host is the
+//      request's `Host` passes, any other is refused.
+//   5. No origin information at all passes unless allowMissingOrigin is false.
+//      The attack needs a browser, and a browser names the origin of a
+//      cross-origin POST.
 //
-// This is sometimes called the "origin header check" or "same-site cookie
-// check" pattern. It's simpler than synchronizer tokens and sufficient for
-// API endpoints that don't serve HTML.
+// Behind a proxy, step 4 needs the Host header to survive the hop.
 //
 // Usage:
-//   app.configure(csrf({ origins: ['https://myapp.com'] }))
-//   app.configure(csrf({ origins: ['https://myapp.com', 'https://admin.myapp.com'] }))
+//   app.configure(csrf())                                   // same origin only
+//   app.configure(csrf({ origins: ['https://admin.myapp.com'] }))
 //   app.configure(csrf({ origins: (o) => o.endsWith('.myapp.com') }))
 //
 // Relationship to cors():
-//   csrf() and cors() both check origins, but they serve different purposes.
 //   cors() controls which origins the browser exposes the response to.
 //   csrf() controls which origins are allowed to trigger server-side mutations.
-//   Run both together — cors() first:
-//     app.configure(cors({ origins: ['https://myapp.com'] }))
-//     app.configure(csrf({ origins: ['https://myapp.com'] }))
+//   Run both together — cors() first, so a preflight is answered before the
+//   origin check refuses it.
 
 
 export interface CsrfOptions {
-  // Which origins are allowed to make mutating requests.
-  // Same format as cors() origins, but '*' is not accepted (it would
-  // defeat the purpose). Use combineOrigins() to share a list with cors().
-  origins: string[] | ((origin: string) => boolean)
+  // Origins besides the app's own that may make mutating requests. Same
+  // format as cors() origins, but '*' is not accepted (it would defeat the
+  // purpose). Use combineOrigins() to share a list with cors().
+  origins?: string[] | ((origin: string) => boolean)
 
   // Methods considered state-mutating. Default: POST, PUT, PATCH, DELETE.
   methods?: string[]
 
-  // If true, requests with no Origin AND no Referer header are allowed through.
-  // Useful for server-to-server calls or curl during development.
-  // Default: false — missing origin is rejected.
+  // If false, a request with no Sec-Fetch-Site, Origin or Referer is refused.
+  // Default: true — it is a server-to-server call or curl, not a browser.
   allowMissingOrigin?: boolean
 
   // Custom rejection handler. Default: throws Forbidden.
   onRejected?: (ctx: TransportContext, reason: string) => void | Promise<void>
 }
 
-export function csrf(opts: CsrfOptions) {
+export function csrf(opts: CsrfOptions = {}) {
 
   const mutateMethods = new Set(
     (opts.methods ?? ['POST', 'PUT', 'PATCH', 'DELETE']).map(m => m.toUpperCase())
   )
+  const allowMissingOrigin = opts.allowMissingOrigin ?? true
 
-  function isAllowed(origin: string): boolean {
-    if (Array.isArray(opts.origins)) {
-      return opts.origins.includes(origin) || opts.origins.includes('*')
-    }
-    return opts.origins(origin)
+  function isListed(origin: string): boolean {
+    const listed = opts.origins
+    if (!listed) return false
+    if (Array.isArray(listed)) return listed.includes(origin) || listed.includes('*')
+    return listed(origin)
   }
 
-  // Extract the scheme+host from a full URL string.
-  // 'https://myapp.com/some/path' → 'https://myapp.com'
-  function originFromUrl(url: string): string | null {
-    try {
-      const u = new URL(url)
-      return `${u.protocol}//${u.host}`
-    } catch {
-      return null
-    }
+  // 'https://myapp.com/some/path' → URL, or null for 'null' and garbage
+  function parse(url: string): URL | null {
+    try { return new URL(url) } catch { return null }
   }
 
   const middleware: MiddlewareFn = async (ctx, next) => {
-    // Only check mutating methods
-    if (!mutateMethods.has(ctx.method.toUpperCase())) {
-      return next()
-    }
+    if (!mutateMethods.has(ctx.method.toUpperCase())) return next()
 
-    const originHeader  = ctx.headers['origin']
+    const site = ctx.headers['sec-fetch-site']?.trim().toLowerCase()
+    if (site === 'same-origin' || site === 'none') return next()
+
+    const originHeader  = ctx.headers['origin']?.trim()
     const refererHeader = ctx.headers['referer'] ?? ctx.headers['referrer']
+    const referer       = refererHeader ? parse(refererHeader) : null
+    const requestOrigin = originHeader || (referer ? `${referer.protocol}//${referer.host}` : null)
 
-    // Determine the effective request origin
-    let requestOrigin: string | null = null
-
-    if (originHeader) {
-      // Origin header is set by the browser for all cross-origin requests
-      // and for same-origin requests in modern browsers — most reliable source
-      requestOrigin = originHeader.trim()
-    } else if (refererHeader) {
-      // Referer fallback — older browsers and some same-origin navigations
-      // only send Referer. Strip the path to get just the origin.
-      requestOrigin = originFromUrl(refererHeader)
+    let reason: string | null = null
+    if (requestOrigin && isListed(requestOrigin)) {
+      reason = null
+    } else if (site === 'cross-site' || site === 'same-site') {
+      reason = `CSRF: a ${site} request from '${requestOrigin ?? 'no origin'}' is not allowed`
+    } else if (requestOrigin) {
+      const host = ctx.headers['host']?.trim().toLowerCase()
+      if (!host || parse(requestOrigin)?.host.toLowerCase() !== host) {
+        reason = `CSRF: origin '${requestOrigin}' is not allowed`
+      }
+    } else if (!allowMissingOrigin) {
+      reason = 'CSRF: request has no Origin or Referer header'
     }
 
-    // No origin information at all
-    if (!requestOrigin) {
-      if (opts.allowMissingOrigin) return next()
-
-      const reason = 'CSRF: request has no Origin or Referer header'
+    if (reason) {
       if (opts.onRejected) {
         await opts.onRejected(ctx, reason)
         return next()
       }
       throw new Forbidden(reason)
     }
-
-    // Check against allowed origins
-    if (!isAllowed(requestOrigin)) {
-      const reason = `CSRF: origin '${requestOrigin}' is not allowed`
-      if (opts.onRejected) {
-        await opts.onRejected(ctx, reason)
-        return next()
-      }
-      throw new Forbidden(reason)
-    }
-
     return next()
   }
 

@@ -84,6 +84,7 @@ const VOCAB = [
       ["Prose", "<div>", "A region of authored long-form copy, styled by element — the one place the package touches a bare <p>. Sets measure, ink and list indentation only; a Heading or Code inside keeps its own term. Spacing is the parent's: compose with Stack"],
       ["Bar", "<div>", "A horizontal strip. Layout only — no role, no keyboard contract, contents are whatever you put there"],
       ["Toolbar", '<div role="toolbar">', "A strip whose contents are controls, presented as ONE tab stop. The role promises arrow-key movement and the app owes it (Principle 6) — if you are not providing the keys, use Bar"],
+      ["Band", "<section>", "A full-width stripe of a page: a Surface reaching both viewport edges, padded by density, with a .container inside for width. It states no arrangement — put a Grid or a Split inside it. A .band-media photo sits behind it under the scrim"],
       ["Divider", "<hr>", "A labeled or plain break between groups"],
       ["Kicker", "<div>", "The short uppercase label ABOVE a title — publishing's word for it. Not a Badge (a status, inline) and not a Divider label (a break between things, not a label on one). It is muted and carries no color of its own — the guide's accent-colored copy was drift, not a variant"],
       ["Nav", "<ul> + <li> + <a>", "A list of navigation links. The link is .navlink; a heading above it is .navlist-label", "navlist"],
@@ -149,6 +150,7 @@ const VOCAB = [
       ["Center", "<div>", "One child, dead center in both axes"],
       ["Split", "<div>", "Two-up: first item left, last item right"],
       ["Container", "<div>", "A max-width column with responsive padding"],
+      ["Grid", "<div>", "Equal columns, as many as fit at --grid-min each, and one on a phone. The count is derived from the width, so there is no breakpoint to write"],
     ],
   ],
 ];
@@ -223,12 +225,13 @@ const NOT_A_TERM = {
 
   /*
    * The escape hatch. Every other utility the package ships is hyphenated
-   * and answers for itself in NOT_ANATOMY; `relative` is the one that is a
-   * bare word and so has to be classified here. It establishes a containing
-   * block and places nothing — the package still ships no positioning
-   * ladder, which is why this is not a group that will grow.
+   * and answers for itself in NOT_ANATOMY; these are the bare words.
+   * `relative` establishes a containing block and places nothing — the
+   * package still ships no positioning ladder. `bleed` reaches both viewport
+   * edges from inside a held-width parent, and is one rule with Band's
+   * (bands.css), so an image in Prose and a Band escape the same way.
    */
-  utility: ['relative'],
+  utility: ['relative', 'bleed'],
 };
 
 
@@ -604,6 +607,19 @@ const ANATOMY = {
     ],
   },
 
+  Band: {
+    markup: `<section class="band" aria-labelledby="b-1">
+  <img class="band-media" src="/media/team.jpg" alt="">
+  <div class="container stack">
+    <h2 id="b-1">Meet the team</h2>
+    <p>&hellip;</p>
+  </div>
+</section>`,
+    parts: [
+      ['.band-media', 'A photo behind the Band, covering it under two coats of --scrim, with the ink turned light. Decoration, so alt=""', 'optional'],
+    ],
+  },
+
   Toast: {
     markup: `<div class="toast-stack">
   <article class="toast success">Invoice sent.</article>
@@ -683,7 +699,9 @@ const NOT_ANATOMY = {
   'from-right': 'A direction modifier on Drawer',
   'from-bottom': 'A direction modifier on Drawer',
   'from-left': 'A direction modifier on Drawer',
-  'align-end': 'An alignment modifier on Popover, and only inside .popover-anchor: it opens the dropdown against the trigger\u2019s end edge instead of its start. Named for what it does rather than reusing `end`, which on Tooltip means the SIDE the attachment sits on',
+  'align-start': 'The align axis (tokens.css), beside tone, treatment and density, and like density it inherits. `start` is the default, so this is how a region undoes an ancestor\u2019s alignment',
+  'align-center': 'The align axis (tokens.css): text-align, plus the --align that Stack, Cluster, Group, Bar and Toolbar read to place their children. Inherits',
+  'align-end': 'The align axis (tokens.css). On a Popover inside .popover-anchor it aligns the POPOVER, opening it against the trigger\u2019s end edge; an Overlay does not inherit a region\u2019s alignment',
   'text-xs': 'A size utility', 'text-sm': 'A size utility', 'text-md': 'A size utility',
   'text-lg': 'A size utility', 'text-xl': 'A size utility',
   'gap-0': 'A gap utility', 'gap-3xs': 'A gap utility', 'gap-2xs': 'A gap utility',

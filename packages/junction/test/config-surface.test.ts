@@ -100,6 +100,7 @@ async function serve(file: Record<string, unknown>, config: Record<string, unkno
   const port = (app as unknown as { http: { port: number } }).http.port
   return {
     app,
+    origin: `http://127.0.0.1:${port}`,
     get:  (path = '/probe', headers: Record<string, string> = {}) =>
       fetch(`http://127.0.0.1:${port}${path}`, { headers }),
     post: (path = '/probe', headers: Record<string, string> = {}, body = '{}') =>
@@ -195,11 +196,27 @@ describe('middleware declared in config is installed', () => {
     expect((await s.post('/probe', { origin: 'https://shop.test' })).status).not.toBe(403)
   })
 
-  // A CSRF guard with no origin list has one possible behavior and it is
-  // allow. Refused at start rather than installed permissive.
-  test('csrf with no list to borrow refuses to start', async () => {
-    const app = createApp({ config: { port: 0, http: { csrf: true } } as never, logLevel: 'silent' })
-    await expect(app.start()).rejects.toThrow(/csrf .*no origin list/i)
+  // With no list to borrow, the guard is same-origin (FJS-D610): the app's own
+  // host passes and every other origin is refused.
+  test('csrf with no list to borrow allows the app\'s own origin only', async () => {
+    const s = await serve({ middleware: { csrf: true } })
+    expect((await s.post('/probe', { origin: 'https://evil.test' })).status).toBe(403)
+    expect((await s.post('/probe', { origin: s.origin })).status).not.toBe(403)
+  })
+
+  // A wildcard written for csrf lets every origin through, which is no guard.
+  // Refused at start rather than installed permissive.
+  test('csrf with a wildcard origin refuses to start', async () => {
+    const app = createApp({ config: { port: 0, http: { csrf: { origins: ['*'] } } } as never, logLevel: 'silent' })
+    await expect(app.start()).rejects.toThrow(/csrf\.origins includes '\*'/i)
+  })
+
+  // A cors '*' names who may read, not who may write with a cookie, so
+  // borrowing it leaves the guard same-origin rather than refusing to start.
+  test('csrf borrowing a wildcard cors list stays same-origin', async () => {
+    const s = await serve({ middleware: { cors: { origins: ['*'] }, csrf: true } })
+    expect((await s.post('/probe', { origin: 'https://evil.test' })).status).toBe(403)
+    expect((await s.post('/probe', { origin: s.origin })).status).not.toBe(403)
   })
 
   test('bodyLimit refuses an oversized body and passes one that fits', async () => {

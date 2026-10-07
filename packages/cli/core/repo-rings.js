@@ -347,8 +347,8 @@ code { font-family: var(--font-mono); font-size: .86em; background: color-mix(in
 .brand { font-family: var(--font-display, var(--font-primary)); font-weight: 800; font-size: 1.05rem; letter-spacing: -.01em; cursor: pointer; background: none; border: 0; padding: 0; text-align: left }
 .brand small { display: block; font-weight: 500; font-size: .78rem; color: var(--ink-mute); letter-spacing: 0 }
 .ringmap { width: 100%; max-width: 240px; height: auto; display: block }
-.ringmap circle.band { fill: none; cursor: pointer; pointer-events: stroke; transition: stroke-opacity .15s, stroke-width .15s }
-.ringmap circle.band:hover { stroke-opacity: .9 }
+.ringmap circle.ring-band { fill: none; cursor: pointer; pointer-events: stroke; transition: stroke-opacity .15s, stroke-width .15s }
+.ringmap circle.ring-band:hover { stroke-opacity: .9 }
 .ringmap .split path { fill: none; stroke-width: 1.8; pointer-events: none }
 .ringmap .split .seg { cursor: pointer }
 .ringmap .split path.hit { stroke: transparent; stroke-width: 6; pointer-events: stroke }
@@ -1450,7 +1450,7 @@ function client(D) {
       const on = activeId === r.id
       const rr = hole + gap * (i + 1) + band * (i + .5)
       const w  = on ? band : band - 3
-      out += `<circle class="band" data-go="${r.go}" cx="${cx}" cy="${cy}" r="${rr.toFixed(2)}" stroke="${r.color}" stroke-width="${w.toFixed(2)}" stroke-opacity="${on ? 1 : activeId ? .22 : .45}"><title>${esc(r.name)}: ${esc(r.title)}${esc(splitTitle(r.split))}</title></circle>`
+      out += `<circle class="ring-band" data-go="${r.go}" cx="${cx}" cy="${cy}" r="${rr.toFixed(2)}" stroke="${r.color}" stroke-width="${w.toFixed(2)}" stroke-opacity="${on ? 1 : activeId ? .22 : .45}"><title>${esc(r.name)}: ${esc(r.title)}${esc(splitTitle(r.split))}</title></circle>`
       out += splitArc(r.split, cx, cy, rr + w / 2 - 2.2)
       out += `<text x="${cx}" y="${(cy - rr + 2.4).toFixed(2)}" text-anchor="middle" style="fill:${on ? 'var(--bg)' : 'var(--ink-soft)'}">${r.label}</text>`
     })

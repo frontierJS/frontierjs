@@ -26,12 +26,14 @@ src/
                    not a `.hover` class: an <a href> IS the interaction, so
                    the affordance cannot be misattached or forgotten
                    tokens.css owns TWO ladders now — --text-* and --space-*
-                   — plus --density, the axis that multiplies the second
+                   — plus --density, the axis that multiplies the second,
+                   and the align axis beside it (`.align-*`, `--align`)
   components/      buttons · cards · tables · dialogs · drawers · popovers ·
                    tooltips · toasts · alerts · badges · pills · avatar ·
                    form-core · feedback · frame · icon · typography · code ·
                    overlays (how the whole Overlay tier enters and leaves)
-  patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure
+  patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure ·
+                   prose · bands (Band, and the `.bleed, .band` escape rule)
   a11y/            a11y.css · focus.css
   themes/          default · dark · midnight · forest · sunset · elite · basecamp
                    · notebook · press · field · dracula · twilight. press.css is the token-surface
@@ -220,7 +222,7 @@ test/run.js        the harness
   page reports the whole vocabulary. Measured at 54/54 on all five routes,
   which reads as success. Scan the roots BESIDE the Screen (`.topbar`,
   `.sidebar`, the dialogs, the toast stack) and test App/Shell/Screen as
-  ancestors. Correct is 28–35 per route, union 54.
+  ancestors. The union is every term.
 - **A wizard sample is markup nothing else owns, and four of them did not
   render.** `anatomy.spec.js` checks ANATOMY's canonical block; the wizard's
   is a second, smaller block in `decisions.js`, and the only check on it asked
@@ -386,6 +388,16 @@ test/run.js        the harness
   past every `.dense`. Silent, because the token still holds a good value —
   just the wrong one everywhere. Same mechanism `tones.css` uses for the
   tint ramp, and `space.spec.js` goes red in three places if it moves back.
+- **`--align` is unregistered, and that is what lets a Bar split.** A
+  registered property needs an initial value, and then `var(--align,
+  space-between)` could never fall back. `.align-start` writes `normal`, not
+  `start`: `start` on a Stack shrinks every child to its content, which is
+  not the layout of a region nobody aligned. Overlays reset it, so a
+  Popover's `.align-end` places the popover and not its text.
+- **Spec helpers share one global scope.** Every spec is inlined as a classic
+  script, so a top-level `function css()` in one spec replaces another's —
+  the band spec's contrast test passed alone and threw in the full run.
+  Prefix a helper with its spec's subject.
 - **A tone does not inherit; density does.** That is the whole difference
   between the two axes, and both are deliberate: a danger Card must not turn
   its button red, and `.dense` on a Pane must reach every Card inside it.

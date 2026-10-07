@@ -144,6 +144,7 @@ var QUESTIONS = {
       { label: 'Yes — it has a heading', on: 'Section' },
       { label: 'No — it is visual grouping only', on: 'Group' },
       { label: 'It holds written copy — paragraphs and lists', on: 'Prose' },
+      { label: 'A stripe of a page, edge to edge', hint: 'a website band — its own background, content held to the page width', on: 'Band' },
     ],
   },
 
@@ -220,6 +221,7 @@ var QUESTIONS = {
       { label: 'Children flow across and wrap', on: 'Cluster' },
       { label: 'One child, dead center both ways', on: 'Center' },
       { label: 'Two things pushed to opposite ends', on: 'Split' },
+      { label: 'Equal columns, as many as fit', hint: 'a grid of cards, one column on a phone', on: 'Grid' },
       { label: 'A max-width page column', on: 'Container' },
     ],
   },
@@ -812,7 +814,7 @@ var OUTCOMES = {
       return '<div class="' + c + '">\n  <h2>Deployments</h2>\n  <button class="btn primary" type="button">New</button>\n</div>'
     },
     tones: false,
-    treatments: ['start', 'center', 'end', 'bordered'],
+    treatments: ['align-center', 'align-end', 'bordered'],
     states: [],
     instead: [
       { term: 'Toolbar', when: 'the contents are controls AND you will wire arrow-key movement' },
@@ -826,7 +828,7 @@ var OUTCOMES = {
       return '<div class="' + c + '" role="toolbar" aria-label="Formatting">\n  <button class="btn ghost square" type="button">B</button>\n  <button class="btn ghost square" type="button">I</button>\n</div>'
     },
     tones: false,
-    treatments: ['start', 'center', 'end', 'bordered'],
+    treatments: ['align-center', 'align-end', 'bordered'],
     states: [],
     instead: [
       { term: 'Bar', when: 'you are not implementing arrow-key movement. The role is a promise, and an unkept one leaves the strip harder to use than a plain div' },
@@ -845,6 +847,22 @@ var OUTCOMES = {
       { term: 'Divider', when: 'it labels the break BETWEEN two groups rather than the thing below it' },
       { term: 'Heading', when: 'it names the section and a reader should be able to jump to it. A Kicker is not outline structure' },
     ],
+  },
+
+  Band: {
+    page: 'layouts',
+    lead: 'A full-width stripe of a page.',
+    markup: function (c) {
+      return '<section class="' + c + '" aria-labelledby="why-h">\n  <div class="container stack">\n    <h2 id="why-h">Why it works</h2>\n    <p>…</p>\n  </div>\n</section>'
+    },
+    tones: true,
+    treatments: ['raised', 'outlined', 'align-center', 'roomy'],
+    states: [],
+    instead: [
+      { term: 'Section', when: 'it is a subdivision inside a Screen rather than a stripe across a page' },
+      { term: 'Container', when: 'you only want the width held, with no background to the edges' },
+    ],
+    note: 'A Band holds no width and no arrangement: the .container inside it holds the width, and a Grid or a Split inside that arranges. To make one thing escape its parent without a Band — an image in Prose, an edge-to-edge table on a phone — write .bleed on it.',
   },
 
   Divider: {
@@ -902,7 +920,7 @@ var OUTCOMES = {
     lead: 'Children flow down with an even gap.',
     markup: function (c) { return '<div class="' + c + '">\n  <p>One</p>\n  <p>Two</p>\n</div>' },
     tones: false,
-    treatments: [],
+    treatments: ['align-center'],
     states: [],
     instead: [{ term: 'Cluster', when: 'they should flow across and wrap' }],
   },
@@ -941,6 +959,22 @@ var OUTCOMES = {
     instead: [
       { term: 'Bar', when: 'you also want the vertical rhythm and optional border of a strip' },
     ],
+  },
+
+  Grid: {
+    page: 'layouts',
+    lead: 'Equal columns, as many as fit, and one on a phone.',
+    markup: function (c) {
+      return '<div class="' + c + '" style="--grid-min: 14rem">\n  <article class="card">…</article>\n  <article class="card">…</article>\n  <article class="card">…</article>\n</div>'
+    },
+    tones: false,
+    treatments: ['align-center'],
+    states: [],
+    instead: [
+      { term: 'Cluster', when: 'the children keep their own widths and wrap like words' },
+      { term: 'Split', when: 'there are exactly two and they go to opposite ends' },
+    ],
+    note: 'The column count is derived from the width: raise --grid-min for wider cells and the count follows. There is no breakpoint to write and no cols-3.',
   },
 
   Container: {

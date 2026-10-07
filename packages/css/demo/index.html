@@ -771,7 +771,7 @@
                 payment record in it. Exports stay available for 30 days,
                 after which the data is unrecoverable.
               </p>
-              <div class="bar start">
+              <div class="bar align-start">
                 <button class="btn danger outlined">Delete workspace</button>
               </div>
             </div>
@@ -866,6 +866,31 @@
             </div>
           </article>
         </div>
+
+        <!--
+          Band and Grid are here for the reason Prose is: an invoicing app has
+          no marketing page, and a Band is a website's word for a stripe of
+          one. The inline style holds it to the Pane. A Band reaches the
+          VIEWPORT edges, so inside an app Shell it would run under the
+          Sidebar. That is the escape doing its job in the wrong place, and
+          the reason a Screen is not built out of Bands.
+        -->
+        <h3 class="h6">A website band</h3>
+        <section class="band primary align-center" aria-labelledby="h-band"
+                 style="inline-size: auto; margin-inline: 0">
+          <div class="container stack">
+            <div class="kicker">Invoicing</div>
+            <h4 id="h-band">Paid in eighteen days, on average</h4>
+            <div class="grid" style="--grid-min: 12rem">
+              <article class="card">Send it</article>
+              <article class="card">Chase it</article>
+              <article class="card">Reconcile it</article>
+            </div>
+            <div class="cluster">
+              <button class="btn primary">Start free</button>
+            </div>
+          </div>
+        </section>
 
         <!--
           Prose is here for the same reason the two lineages are: an

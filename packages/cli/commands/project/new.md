@@ -1658,11 +1658,6 @@ ${sc}
 
 <style>
   .tour, .next { margin-top: var(--space-3xl) }
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--grid-min, 20rem)), 1fr));
-    gap: var(--space-lg);
-  }
   h3 { margin: 0 }
   p  { margin: 0 }
 </style>
@@ -2016,12 +2011,7 @@ ${withName ? `      <input class="field" bind:value={name} placeholder="Your nam
 {/if}
 
 <style>
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--grid-min, 20rem)), 1fr));
-    gap: var(--space-lg);
-    margin-top: var(--space-2xl);
-  }
+  .grid { margin-top: var(--space-2xl) }
   .sessions { margin-top: var(--space-lg) }
   h1, h2, p { margin: 0 }
 </style>

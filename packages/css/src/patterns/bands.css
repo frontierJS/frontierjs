@@ -1,0 +1,116 @@
+/*
+ * bands.css
+ * Band — a full-width stripe of a page — and `.bleed`, the escape it shares.
+ *
+ *   <section class="band primary" aria-labelledby="why">
+ *     <div class="container stack">
+ *       <h2 id="why">Why it works</h2>
+ *       …
+ *     </div>
+ *   </section>
+ *
+ * A Band is a Surface (surface.css), so tone and treatment work on it with
+ * nothing here: the background slot is the Surface's. What a Band adds is
+ * the reach to both viewport edges, block padding from density, and a photo
+ * slot. It holds no width of its own — the `.container` inside does, which
+ * is why a Band and a Container are two words and not one.
+ *
+ * It states no arrangement either (FJS-D621): a Band of cards is a Band
+ * holding a `.grid`, a two-up is a Band holding a `.split`. A structure
+ * modifier here would be a second owner of what layout.css owns.
+ */
+
+/*
+ * ── The escape ───────────────────────────────────────────────────────
+ *
+ * ONE rule for both, the way `.kicker, .navlist-label` share one: reaching
+ * the viewport edge from inside a held-width parent is a mechanism, and an
+ * image in Prose, a Divider and an edge-to-edge table on a phone need it as
+ * much as a Band does. Two copies would drift on the first fix.
+ *
+ * `50%` is the parent's width and `50vw` the viewport's, so the margin is
+ * exactly the distance from the parent's edge to the screen's. `inline-size`
+ * is stated because an `<img>` is a replaced element whose `auto` width is
+ * its intrinsic one, not what the margins leave. reset.css stops the half
+ * scrollbar `vw` counts from scrolling the page sideways.
+ *
+ * In the `patterns` layer so it beats a component's own margin on the
+ * element it lands on — `.bleed` on a `.table-wrap` must win.
+ */
+.bleed,
+.band {
+  inline-size:     100vw;
+  max-inline-size: none;
+  margin-inline:   calc(50% - 50vw);
+}
+
+/*
+ * A stripe has no corners and no side edges. The block edges come back for
+ * `.outlined`, which is the treatment that means "drawn by its rule".
+ */
+.band {
+  position:      relative;
+  isolation:     isolate;
+  padding-block: var(--space-6xl);
+  border-width:  0;
+  border-radius: 0;
+}
+.band.outlined {
+  border-block-width: var(--border-width);
+}
+
+/*
+ * ── The photo ────────────────────────────────────────────────────────
+ *
+ *   <section class="band">
+ *     <img class="band-media" src="team.jpg" alt="">
+ *     <div class="container">…</div>
+ *   </section>
+ *
+ * A tone fill knows its own luminance and derives its ink (`--_on-fill` in
+ * chip.css). A photo's luminance is unknown, so the Band assumes the worst
+ * case and makes it dark: `--scrim` over the photo, and light ink over that.
+ * The scrim is painted TWICE because one coat is tuned to dim a page behind
+ * a dialog, and over a white photo it leaves white text at 3.4:1; two coats
+ * put the same worst case past AA (band.spec.js does the arithmetic). A theme retuning `--scrim` moves both.
+ *
+ * The inks are literals for the reason `--scrim` is: the ground is always
+ * dark whatever the theme. A Surface inside a photo Band inherits them, so
+ * a Card there carries a theme class of its own (`theme-default`) to get its
+ * page's inks back.
+ *
+ * Paint order is DOM order at one z-index: the photo, then the scrim (an
+ * `::after` is the last child), then the content lifted to 1. 0 and 1 are
+ * the two values a component orders its own parts with (tokens.css).
+ */
+.band-media {
+  position:    absolute;
+  inset:       0;
+  z-index:     0;
+  inline-size: 100%;
+  block-size:  100%;
+  object-fit:  cover;
+}
+
+.band:has(> .band-media) {
+  --ink:      #fff;
+  --ink-soft: rgb(255 255 255 / 0.9);
+  --ink-mute: rgb(255 255 255 / 0.78);
+  --rule:     rgb(255 255 255 / 0.3);
+  color:      var(--ink);
+}
+
+.band:has(> .band-media)::after {
+  content:        '';
+  position:       absolute;
+  inset:          0;
+  z-index:        0;
+  background:     linear-gradient(var(--scrim), var(--scrim)),
+                  linear-gradient(var(--scrim), var(--scrim));
+  pointer-events: none;
+}
+
+.band:has(> .band-media) > :not(.band-media) {
+  position: relative;
+  z-index:  1;
+}

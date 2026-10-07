@@ -307,7 +307,7 @@ result wants Uno's `text-sm` as the body class.
 &nbsp;&nbsp;— one lineage, shared layout and auto-contrast
 
 **Surfaces** `card` `tile` `alert` `toast` `dialog` `popover` (+
-`popover-anchor`, `align-end`) `drawer`
+`popover-anchor`, `align-end`) `drawer` `band`
 &nbsp;&nbsp;— one lineage, shared background/border/radius and the tone recipe.
 Wrap a popover and its trigger in `popover-anchor`: it is the positioning
 context and opens the panel below the trigger. A native `[popover]` is in the
@@ -328,7 +328,7 @@ top layer and escapes it — place that one with anchor positioning
 &nbsp;&nbsp;— current state comes from `[aria-current]` / `[aria-selected]`,
 never a class
 
-**Patterns** `bar` `toolbar` `section-header` `divider-label` · `items` `rows`
+**Patterns** `bar` `toolbar` (+ the align axis) `section-header` `divider-label` · `items` `rows`
 `list-row` · `feed` · `disclosure` · `avatars` · `<hr>` / `divider`
 · `<pre class="code">` and inline `<code>`
 
@@ -337,7 +337,11 @@ never a class
 
 **States** `spinner` `progress` `skeleton` `empty` · `btn.loading`
 
-**Layout** `container` `stack` `cluster` `center` `split`
+**Layout** `container` `stack` `cluster` `group` `center` `split` `grid` (+ `--grid-min`)
+
+**Axes** `align-start` `align-center` `align-end` — inherit, like `dense`/`roomy`
+
+**Page** `band` (+ `band-media`) · `bleed` — a full-width stripe, and the escape it shares
 
 **Type** `h1`–`h6` · `text-xs` `text-sm` `text-md` `text-lg` `text-xl` ·
 `text-body` `text-muted` `text-primary` … 

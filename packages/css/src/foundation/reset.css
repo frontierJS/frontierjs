@@ -101,3 +101,19 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
 :where(.feed, .steps, .facts) {
   margin: 0;
 }
+
+/*
+ * ── A page with a Band does not scroll sideways ──────────────────────
+ *
+ * `.bleed` and `.band` reach the viewport edge with `50vw`, and `vw` counts
+ * a classic scrollbar: on a desktop that draws one, each escape is half a
+ * scrollbar wider than the page and the page scrolls sideways by it. The
+ * UA's `overflow: visible` on the root is the default that fights the term,
+ * and the term cannot fix it from inside. `clip` on the root reaches the
+ * viewport as `hidden` on that axis only, so vertical scrolling and `sticky`
+ * are untouched. Keyed on `:has()` so a page with no escape keeps every UA
+ * default it had.
+ */
+html:has(.band, .bleed) {
+  overflow-x: clip;
+}

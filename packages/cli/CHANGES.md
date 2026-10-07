@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-06 — the scaffold uses css's Grid; the viewer and the rings map rename their `.band` (`FJS-D621`, `FJS-D622`)
+
+`fli new` wrote two hand copies of an auto-fit grid into the home and account routes, `--grid-min` and all; both now use `@frontierjs/css`'s `.grid`, and the account route keeps only its margin. `fli project:view`'s realm stripes were `.band`, which css now owns as a full-width page stripe with negative margins — they are `.realm-band`. The rings map's clickable circles are `circle.ring-band` (`.ring` was taken by the orbit drawing).
+
 ## 2026-10-06 — `fli db:backup` writes a new directory each run, and `fli db:restore` puts one back (`FJS-1786`, `FJS-1784`)
 
 `fli db:backup` passed the fixed `db/backups/` to `litestone backup`, so every backup overwrote the last. It now passes no destination, so litestone writes a new `db/backups/<stamp>/` beside the schema. It takes an optional `dest` and passes `--schema`. The `db:backup` script that `fli new` writes into an app drops the fixed directory too. **`fli db:restore <dir> [--force] [--db <name>]`** is `litestone restore --from-backup`. `fli db:migrate` changes no code: litestone's apply now refuses a file whose DESTRUCTIVE box says `Accept data loss: no`, so the command stops at exit 1 after creating such a file, and the `db:` list says so.

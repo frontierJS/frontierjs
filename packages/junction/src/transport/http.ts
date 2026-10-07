@@ -457,6 +457,13 @@ export class HttpTransport {
     this._opts.authCookie = name
   }
 
+  /** The cookie the session is read from, or null when cookie mode is off.
+   *  Read at start, because the mode that opens the CSRF exposure is the one
+   *  that installs `csrf()` (`FJS-D610`). */
+  get authCookie(): string | null {
+    return this._opts.authCookie ?? null
+  }
+
   /**
    * Stop listening, and actually let go of the socket.
    *
@@ -1497,11 +1504,10 @@ function toResponse(result: unknown, ctx: TransportContext): Response {
  * decision rather than caution about breaking things. A Bearer token has to be
  * attached by script, so a cross-site request cannot forge one. A cookie is
  * attached by the browser automatically, which is what makes CSRF possible at
- * all — so an app only gets that exposure when it asks for it. What makes it
- * safe when asked for is `SameSite=Lax`, which @frontierjs/auth sets: the
- * browser withholds the cookie from cross-site POST/PUT/PATCH/DELETE, and those
- * are the requests that change something. An app that sets its own session
- * cookie with `SameSite=None` re-opens the hole and Junction cannot tell.
+ * all — so an app only gets that exposure when it asks for it, and asking
+ * installs `csrf()` at start (`FJS-D610`). `SameSite=Lax`, which
+ * @frontierjs/auth sets, withholds the cookie from a cross-site write, but a
+ * cross-site POST to /auth/login carries no cookie and sets one (`FJS-1818`).
  */
 function extractToken(
   headers:    Record<string, string>,

@@ -389,7 +389,7 @@ title: Blueprints
       : 'This installation has no catalog yet. A sysadmin curates it.'}
   </EmptyState>
 {:else}
-  <div class="grid cols-3" id="blueprint-grid">
+  <div class="grid" id="blueprint-grid">
     {#each shown as bp}
       <Card>
         <div class="section-header">

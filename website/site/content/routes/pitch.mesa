@@ -303,9 +303,9 @@ render: static
      to what code looks like, and a scoped one would not reach the
      samples anyway: they arrive through {@html} and carry no hash. */
 
-  .grid  { display: grid; gap: 1.5rem; }
-  .cols3 { grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); }
-  .cols2 { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+  .grid  { gap: 1.5rem; }
+  .cols3 { --grid-min: 19rem; }
+  .cols2 { --grid-min: 22rem; }
   .hero  { display: grid; gap: 2.5rem; grid-template-columns: minmax(0,1fr); align-items: center; }
   @media (min-width: 60rem) { .hero { grid-template-columns: 1.05fr .95fr; } }
 

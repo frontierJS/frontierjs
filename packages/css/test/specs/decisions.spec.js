@@ -213,16 +213,27 @@ test('decisions: an outcome that offers a tone belongs to a lineage that has one
   /*
    * A tone chip that changes nothing teaches that tones are decorative.
    * Only the two lineages read --bg-mix, so a Layout or Frame term offering
-   * a tone is a bug in the data rather than a matter of taste.
+   * a tone is a bug in the data rather than a matter of taste. The tier is
+   * the default answer and enrollment is the exception: Band is a Region
+   * term enrolled in surface.css, so it takes a tone like any Card.
    */
   var terms = termIndex();
   var TONELESS = { Layout: 1, Frame: 1, Page: 1, Region: 1 };
+  var bases = '';
+  allRules().forEach(function (rule) {
+    if (!(window.CSSStyleRule && rule instanceof CSSStyleRule)) return;
+    var file = ((rule.parentStyleSheet && rule.parentStyleSheet.href) || '').split('/').pop();
+    if (file !== 'chip.css' && file !== 'surface.css') return;
+    if ((rule.selectorText || '').indexOf(':where(') === 0) bases += rule.selectorText;
+  });
   var bad = [];
 
   Object.keys(DECIDE.outcomes).forEach(function (name) {
     if (!DECIDE.outcomes[name].tones) return;
     var tier = terms[name].tier;
-    if (TONELESS[tier]) bad.push(name + ' (' + tier + ' tier)');
+    var cls = TERM_CLASS[name];
+    var enrolled = cls && new RegExp('\\.' + cls + '(?![\\w-])').test(bases);
+    if (TONELESS[tier] && !enrolled) bad.push(name + ' (' + tier + ' tier)');
   });
 
   assert.equal(bad.length, 0, 'offers a tone but cannot render one: ' + bad.join(', '));
@@ -255,11 +266,26 @@ test('decisions: every treatment it offers actually does something', function ()
       .map(function (sel) { return sel.replace(PSEUDO, ''); });
   }
 
+  /* Top-level commas only: a nested rule resolves to `:where(.surface, …,
+     .band).raised`, and a plain split cuts that into fragments that either
+     fail to parse or match without the treatment at all. */
+  function splitList(sel) {
+    var out = [], depth = 0, start = 0;
+    for (var i = 0; i < sel.length; i++) {
+      var ch = sel[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      else if (ch === ',' && depth === 0) { out.push(sel.slice(start, i)); start = i + 1; }
+    }
+    out.push(sel.slice(start));
+    return out;
+  }
+
   function anyMatch(html, selectors) {
     var box = el('<div>' + html + '</div>');
     var nodes = [box].concat(Array.prototype.slice.call(box.querySelectorAll('*')));
     return selectors.some(function (sel) {
-      return sel.split(',').some(function (one) {
+      return splitList(sel).some(function (one) {
         try {
           return nodes.some(function (n) { return n.matches(one.trim()); });
         } catch (e) {

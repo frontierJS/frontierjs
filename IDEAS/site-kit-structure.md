@@ -1,6 +1,6 @@
 ---
 id: site-kit-structure
-status: proposed
+status: partial
 dated: 2026-10-04
 ---
 
@@ -162,10 +162,10 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
    - **B** — the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`
    - **C** — give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)
    - **Recommend A** — a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px
-5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code.
+5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code. *Grid and `align` passed it and shipped in css on 2026-10-06 (`.grid`, `.align-start`/`-center`/`-end`); the template and role names wait for `Section.mesa`.*
 
-**The first pieces to build are in css**: the band, Grid and the align axis,
-each named in `vocabulary.js` so the spec checks it both ways. Then ksite's
+**The first pieces to build are in css** — built 2026-10-06: Band, `.bleed`,
+Grid and the align axis, each named in `vocabulary.js`. Then ksite's
 `Block.mesa` moves to site-kit as `Section.mesa`, reading typed keys and
 emitting those words — what `website/packages/site-kit/PROJECT_STATE.md` § Next
 names.

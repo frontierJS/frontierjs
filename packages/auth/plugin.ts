@@ -169,8 +169,10 @@ export function createAuthPlugin(
       //
       // Junction keeps the cookie off by default because a cookie travels
       // automatically and a Bearer token does not — the CSRF exposure is
-      // opt-in. What makes it safe here is the `SameSite=Lax` set in respond()
-      // below: the browser withholds the cookie from cross-site writes.
+      // opt-in, and turning it on installs junction's csrf() at start
+      // (`FJS-D610`). `SameSite=Lax`, set in respond() below, is not enough on
+      // its own: a cross-site form POST to /auth/login carries no cookie and
+      // sets one (`FJS-1818`).
       if (cookieAuth) app.http?.setAuthCookie?.('session')
 
       // ── POST /auth/register ──────────────────────────────────────────

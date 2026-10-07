@@ -2,7 +2,7 @@
  * surface.css
  *
  * The block visual base. Every block primitive that wants the surface
- * treatment — card, alert, toast, dialog, popover, drawer — gets it from
+ * treatment — card, alert, toast, dialog, popover, drawer, band — gets it from
  * the single rule below. Adding a composite = add its name to the
  * :where() list, once.
  *
@@ -25,7 +25,7 @@
  * rules in their own file.
  */
 
-:where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer) {
+:where(.surface, .card, .tile, .alert, .toast, .dialog, .popover, .drawer, .band) {
   /*
    * The percentages are not here — they are the --tint-* ramp in tones.css,
    * so a toned Card and an app's own tinted element cannot drift apart.

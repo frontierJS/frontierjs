@@ -2239,26 +2239,30 @@ function applyConfiguredMiddleware(app: App, config: AppConfig): void {
   applyConfiguredCors(app, config)
 
   // After cors, because a preflight carries no session and must be answered
-  // before an origin check refuses it.
+  // before an origin check refuses it. Cookie mode installs it undeclared: the
+  // mode that opens the exposure brings the defense (`FJS-D610`). The auth
+  // plugin turns cookie mode on from register(), which has run by now.
   const csrfCfg = http.csrf
-  if (csrfCfg) {
+  if (csrfCfg || app.http?.authCookie) {
     const declared = typeof csrfCfg === 'object' ? csrfCfg as Record<string, unknown> : {}
-    const corsOrigins = ((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined
+    // A cors '*' says who may READ a response, and cors() refuses it beside
+    // credentials, so it names no origin that may write with the cookie.
+    // Borrowed without it, or a dev app with an open cors list cannot start.
+    const corsOrigins = (((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined)
+      ?.filter(o => o !== '*')
     const origins = (declared.origins as string[] | undefined) ?? corsOrigins
 
-    // A CSRF guard with no origin list has one possible behavior, and it is
-    // *allow*. Refused by name rather than installed permissive, because an
-    // app that declared csrf believes it has one.
-    if (!origins || origins.length === 0 || origins.includes('*')) {
+    // A '*' written for csrf lets every origin through, which is no guard.
+    // Refused by name rather than installed permissive, because an app that
+    // declared it believes it is guarded.
+    if (origins?.includes('*')) {
       throw new Error(
-        `[Junction] middleware.csrf is declared with no origin list to use. ` +
-        `\`csrf: true\` borrows middleware.cors.origins, which is ` +
-        `${origins ? `\`${JSON.stringify(origins)}\`` : 'not set'} — and a CSRF guard ` +
-        `that cannot name its origins allows every one of them. Give ` +
-        `middleware.csrf an \`origins\` list, or set middleware.cors.origins.`
+        `[Junction] middleware.csrf.origins includes '*', which allows every origin. ` +
+        `With no list csrf allows the app's own origin only; list the others by name.`
       )
     }
-    app.configure(csrf({ origins, ...(declared.methods ? { methods: declared.methods as string[] } : {}),
+    app.configure(csrf({ ...(origins?.length ? { origins } : {}),
+      ...(declared.methods ? { methods: declared.methods as string[] } : {}),
       ...(declared.allowMissingOrigin !== undefined ? { allowMissingOrigin: declared.allowMissingOrigin as boolean } : {}) }))
   }
 

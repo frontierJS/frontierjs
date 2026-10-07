@@ -98,7 +98,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
 | exports | `./themes/*.css` | `src/themes/*.css` | 12 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
-| exports | `./patterns/*.css` | `src/patterns/*.css` | 9 files |
+| exports | `./patterns/*.css` | `src/patterns/*.css` | 10 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
 | exports | `./bundle.css` | `dist/frontier.css` | yes |
 | exports | `./bundle.min.css` | `dist/frontier.min.css` | yes |

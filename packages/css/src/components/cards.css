@@ -48,7 +48,7 @@
  * 22,000 lines (FJS-1621). `.field-row > * + *`, behind a plain class, does
  * not. `:where` keeps the weight `* + *` had, which is none.
  */
-:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .bar, .toolbar, .navlist, .pagination)) > :where(:not(:first-child)) {
+:is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .bar, .toolbar, .navlist, .pagination)) > :where(:not(:first-child)) {
   margin-block-start: var(--space-2xl);
 }
 

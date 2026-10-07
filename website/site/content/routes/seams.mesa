@@ -31,7 +31,7 @@ render: static
         <div class="l3">Data layer <small>Litestone</small></div>
         <div class="l4">Database <small>SQLite</small></div>
       </div>
-      <div class="grid" data-grid>
+      <div class="lanes" data-grid>
         <div class="lanebg" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <svg class="wires" data-wires aria-hidden="true"></svg>
         {#each d.steps as s}
@@ -142,7 +142,7 @@ render: static
 }
 /* Four lanes squeezed under a phone's width clip every card, so below this
    the board scrolls sideways instead. */
-.lanehead, .grid { min-width: 42rem; }
+.lanehead, .lanes { min-width: 42rem; }
 .lanehead { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--rule); }
 .lanehead div {
   padding: .7rem .85rem; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
@@ -155,7 +155,9 @@ render: static
 .lanehead .l4 { color: var(--color-primary); }
 .lanehead small { display: block; font-size: .64rem; letter-spacing: .04em; text-transform: none; color: var(--ink-mute); font-weight: 400; }
 
-.grid {
+/* Own class, not .grid: @frontierjs/css owns that one as equal auto-fit
+   columns, and these are exactly four. */
+.lanes {
   position: relative; display: grid; grid-template-columns: repeat(4, 1fr);
   gap: .5rem .75rem; padding: 1.1rem .85rem 0;
 }

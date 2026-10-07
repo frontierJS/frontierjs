@@ -104,9 +104,8 @@ people have already written, so they still work.
 > **Consequence for naming.** Because Treatment classes are *meant* to be
 > applied broadly, generic unprefixed names are a bigger liability here than in
 > a component framework, not a smaller one. `.center`, `.hover`, `.start`,
-> `.end`, `.item`, `.icon` and the seven tone names are all global. `.bar.center` already
-> depends on layer order to survive the collision with `.center`. See the naming
-> constraint below — this taxonomy is the principle to resolve it against.
+> `.end`, `.item`, `.icon` and the seven tone names are all global. See the
+> naming constraint below — this taxonomy is the principle to resolve it against.
 
 ---
 
@@ -762,14 +761,8 @@ The general rule, since this is now 2-for-2: **an alias token in `:root` is
 always wrong.** If token A should follow token B, write the fallback at the use
 site. There is no case where the `:root` form does what it looks like it does.
 
-### `.center` and `.bar.center` mean different things
-`.center` (layout.css) is "center on both axes, via grid". `.bar.center` (bars.css)
-is "center this bar's contents, still flex". Both are single-class selectors on
-the `display` property, so specificity cannot separate them — the layer order
-does, with `layout` before `patterns` so `.bar` wins.
-
-That works, but it is load-bearing on layer order for what is really a name
-collision. The system has no namespace: `.center`, `.hover`, `.start`, `.end`,
+### Class names are global
+The system has no namespace: `.center`, `.hover`, `.start`, `.end`,
 `.item`, `.card`, `.field`, `.table` and the seven tone names are all global.
 `.row` was already renamed to `.list-row` to dodge Bootstrap.
 
@@ -785,7 +778,7 @@ have. So the likely answer is not "prefix everything" but:
 - **Element** — keep short; collisions here are real but rare and obvious.
 - **Anatomy** — already effectively namespaced by their parent
   (`.alert-icon`, `.feed-dot`, `.surface-header`). Keep that pattern.
-- **Scoped modifiers** — the actual problem. `.bar.center`, `.table.hover`,
+- **Scoped modifiers** — the actual problem. `.table.hover`,
   `.rows.divided`, `.items.menu` read as Treatments and aren't.
 
 There are currently zero consumers, so renaming is free right now and won't be

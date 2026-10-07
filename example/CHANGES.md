@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-06 — local `.grid` and `.band` move off the names `@frontierjs/css` now owns (`FJS-D621`, `FJS-D622`)
+
+web's variant table was `<table class="grid">`, and css's Grid would have made it `display: grid`; it is `.variants`. site's two padded stripes on the home page were `<div class="container stack band">` with a local padding rule, which is the Band term: each is now `<section class="band ghost">` around its container, the local rule is gone, and the padding is the Band's `--space-6xl`. `verify:ui` 35/35.
+
 ## 2026-10-05 — chokidar dropped from devDependencies
 
 It was here for jetty's dev server, which now watches with `fs.watch`.

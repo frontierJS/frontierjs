@@ -97,7 +97,8 @@
  * three realms readable across a lane: the API realm is four nodes wide on the
  * way out and the eye needs to see that as one stretch.
  */
-.band {
+/* Not .band: @frontierjs/css owns that as a full-width page stripe. */
+.realm-band {
   display:       flex;
   align-items:   stretch;
   gap:           var(--space-2xs);
@@ -107,7 +108,7 @@
   border-radius: var(--card-radius);
   background:    color-mix(in srgb, var(--bg-mix, var(--color-primary)) 8%, transparent);
 }
-.band > .node-slot { flex: 1 1 0; min-inline-size: 0; }
+.realm-band > .node-slot { flex: 1 1 0; min-inline-size: 0; }
 
 /*
  * The flow itself: a rule with a head on it. Written in CSS rather than as a
@@ -789,7 +790,7 @@ function bands(nodes) {
 function laneHtml(nodes, dir) {
   const ordered = dir === 'rtl' ? [...nodes].reverse() : nodes
   return bands(ordered)
-    .map(b => `<div class="band ${REALM_TONE[b.realm]}">${b.nodes.map(node).join(flow(dir))}</div>`)
+    .map(b => `<div class="realm-band ${REALM_TONE[b.realm]}">${b.nodes.map(node).join(flow(dir))}</div>`)
     .join(flow(dir))
 }
 

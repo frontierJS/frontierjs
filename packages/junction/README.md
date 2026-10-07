@@ -654,15 +654,16 @@ app.configure(csrf({ origins: ['https://myapp.com'] }))
 
 ## CSRF protection
 
-The bearer token pattern (`Authorization: Bearer ...`) is **inherently CSRF-safe** — a cross-origin page cannot set arbitrary request headers, so it can never forge a bearer-token request on behalf of a victim. `csrf()` is only needed if your auth provider is configured to use **cookie-based sessions**.
+The bearer token pattern (`Authorization: Bearer ...`) is **inherently CSRF-safe** — a cross-origin page cannot set arbitrary request headers, so it can never forge a bearer-token request on behalf of a victim. `csrf()` is needed with **cookie-based sessions**, and **cookie mode installs it for you** (`FJS-D610`): `createAuthPlugin(auth, { cookieAuth: true })` or `config.auth.cookie` turns it on at start, with `middleware.csrf` (or else `middleware.cors.origins`) as the list of other origins allowed. `SameSite=Lax` alone is not enough — a cross-site form POST to `/auth/login` carries no cookie and *sets* one.
 
 ```typescript
 // Run cors() first so preflight is handled before csrf() checks the origin
 app.configure(cors({ origins: ['https://myapp.com'] }))
-app.configure(csrf({ origins: ['https://myapp.com'] }))
+app.configure(csrf())                                       // the app's own origin only
+app.configure(csrf({ origins: ['https://admin.myapp.com'] })) // and these
 ```
 
-For every `POST/PUT/PATCH/DELETE` request it reads the `Origin` header, falls back to `Referer` if absent, and rejects with 403 if neither matches your allowed list.
+For every `POST/PUT/PATCH/DELETE` request: `Sec-Fetch-Site: same-origin` or `none` passes; an `Origin` (else the origin of `Referer`) on the list passes; `Sec-Fetch-Site: cross-site` or `same-site` is refused, the latter because a sibling subdomain is the same *site* and `SameSite` sends it the cookie; a browser with no `Sec-Fetch-Site` passes when its `Origin` names the request's `Host`; and a request with no origin information at all passes, since only a browser can be made to send a forged request. Behind a proxy the `Host` comparison needs the host header to survive the hop.
 
 **`combineOrigins()` — share one list between cors and csrf:**
 
@@ -681,8 +682,8 @@ app.configure(csrf(origins.forCsrf()))   // same list, '*' coerced to allow-all
 // Function predicate — wildcard subdomains etc.
 app.configure(csrf({ origins: (o) => o.endsWith('.myapp.com') }))
 
-// Allow server-to-server calls with no origin (curl, internal services)
-app.configure(csrf({ origins: ['https://myapp.com'], allowMissingOrigin: true }))
+// Refuse a request with no Origin, Referer or Sec-Fetch-Site (the default allows it)
+app.configure(csrf({ allowMissingOrigin: false }))
 
 // Custom rejection handler — log instead of throwing
 app.configure(csrf({
@@ -937,10 +938,10 @@ Three rules worth knowing:
 - **It is off by default for a security reason, not caution.** A bearer token has
   to be attached by script, so a cross-origin page cannot forge one. A cookie is
   attached by the browser automatically, which is what makes CSRF possible at
-  all — so an app takes that exposure deliberately. What makes it safe once on is
-  `SameSite=Lax` (which `@frontierjs/auth` sets): the browser withholds the
-  cookie from cross-site writes. Set your own session cookie `SameSite=None` and
-  you re-open the hole — see `csrf()` below.
+  all — so an app takes that exposure deliberately, and turning it on installs
+  `csrf()` at start (`FJS-D610`). `SameSite=Lax` (which `@frontierjs/auth` sets)
+  withholds the cookie from cross-site writes, but a cross-site POST to
+  `/auth/login` needs no cookie: it sets one. See `csrf()` below.
 
 **`SessionContext` shape** — what `ctx.auth.user` looks like inside hooks and services:
 

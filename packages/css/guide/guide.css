@@ -111,7 +111,7 @@
 }
 
 /*
- * `bar start` — the row, the centering, nowrap and the --space-lg gap all come
+ * `bar align-start` — the row, the centering, nowrap and the --space-lg gap all come
  * from the term, so this class declares nothing. It survives only as the hook
  * the theme menu and the version badge are positioned against.
  *
@@ -298,7 +298,7 @@
  * to bind against. Brand and actions measured identical with and without it.
  */
 
-/* `bar start` — the row, the centering, nowrap and the gap are the term's, so
+/* `bar align-start` — the row, the centering, nowrap and the gap are the term's, so
    the mark, the name and the rule-divided sub-label need nothing here. The
    class stays as the hook the three spans below are addressed through. */
 .sg-brand-mark {

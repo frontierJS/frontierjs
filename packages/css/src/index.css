@@ -33,7 +33,7 @@
  *   themes      .theme-* overrides of those tokens
  *   tones       tone vocabulary (.primary, .danger, …)
  *   base        the two lineage bases — chip (inline), surface (block)
- *   layout      composition helpers (stack, cluster, center, split)
+ *   layout      composition helpers (stack, cluster, center, split, grid)
  *   components  btn, pill, badge, card, field, table, dialog, …
  *   patterns    block-tier layout patterns (bar, list, feed, disclosure)
  *   utilities   the escape hatch — .text-* size and color. After
@@ -120,6 +120,7 @@
 @import './patterns/tabs.css'       layer(patterns);
 @import './patterns/nav.css'        layer(patterns);
 @import './patterns/prose.css'      layer(patterns);
+@import './patterns/bands.css'      layer(patterns);
 
 /*
  * The escape hatch — after every component and pattern, before a11y.

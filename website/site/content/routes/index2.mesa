@@ -58,7 +58,7 @@ render: static
         </div>
       </div>
 
-      <div class="grid" style="display:grid; gap:1.25rem">
+      <div class="stack" style="gap:1.25rem">
         <div class="card stack">
           <h3>Everything you came for</h3>
           <ul class="kl keep">

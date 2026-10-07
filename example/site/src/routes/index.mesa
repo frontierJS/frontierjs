@@ -119,26 +119,28 @@ render: static
   </div>
 </section>
 
-<div class="container stack band">
-  <section class="stack">
-    <p class="eyebrow">The three archetypes</p>
-    <h2>One source of truth</h2>
-    <ul class="archetypes">
-      {#each ARCHETYPES as a}
-        <li class="archetype stack">
-          <!--
-            The disc is decorative: the name is the <h3> right beside it, so an
-            alt describing the same thing is read twice. Empty alt, not a
-            missing one.
-          -->
-          <img class="archetype-art" src={a.art} alt="" width="120" height="120" loading="lazy" />
-          <h3 class="h5">{a.name}</h3>
-          <p class="text-sm text-muted">{a.line}</p>
-        </li>
-      {/each}
-    </ul>
-  </section>
-</div>
+<section class="band ghost">
+  <div class="container stack">
+    <section class="stack">
+      <p class="eyebrow">The three archetypes</p>
+      <h2>One source of truth</h2>
+      <ul class="archetypes">
+        {#each ARCHETYPES as a}
+          <li class="archetype stack">
+            <!--
+              The disc is decorative: the name is the <h3> right beside it, so an
+              alt describing the same thing is read twice. Empty alt, not a
+              missing one.
+            -->
+            <img class="archetype-art" src={a.art} alt="" width="120" height="120" loading="lazy" />
+            <h3 class="h5">{a.name}</h3>
+            <p class="text-sm text-muted">{a.line}</p>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  </div>
+</section>
 
 <!-- ── Get the merch ──────────────────────────────────────────────────────
      `#home-featured` and one `[data-slug]` per product are what `verify:site`
@@ -199,14 +201,16 @@ render: static
   </div>
 </section>
 
-<div class="container stack band">
-  <p class="closing">
-    Every page on this storefront was written ahead of time and the parts that
-    have to be current — stock, your basket, the price on the shelf — ask the
-    shop when you open it.
-  </p>
-  <p><a class="btn" href="/catalog/">Browse the whole catalog</a></p>
-</div>
+<section class="band ghost">
+  <div class="container stack">
+    <p class="closing">
+      Every page on this storefront was written ahead of time and the parts that
+      have to be current — stock, your basket, the price on the shelf — ask the
+      shop when you open it.
+    </p>
+    <p><a class="btn" href="/catalog/">Browse the whole catalog</a></p>
+  </div>
+</section>
 
 <style>
   /* ── Shared ─────────────────────────────────────────────────────────── */
@@ -223,10 +227,6 @@ render: static
     text-transform: var(--label-text-transform);
     letter-spacing: var(--label-letter-spacing);
     color:          var(--ink-mute);
-  }
-
-  .band {
-    padding-block: var(--space-5xl);
   }
 
   /* ── Hero ───────────────────────────────────────────────────────────── */

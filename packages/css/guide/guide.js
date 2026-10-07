@@ -4441,7 +4441,7 @@ function layoutsPage() {
       ${pageHeader({
         eyebrow: 'Utilities',
         title: 'Layouts',
-        lead: 'Four primitive layout classes. Stack, cluster, center, split. Cover most of what most apps need.'
+        lead: 'The arrangement helpers — stack, cluster, center, split, grid — the align axis they read, and the Band a website page is built from.'
       })}
 
       ${section(
@@ -4557,6 +4557,99 @@ function layoutsPage() {
       )}
 
       ${section(
+        'Grid — equal columns, as many as fit',
+        `
+        <p>
+          <code>grid</code> is Every Layout's Grid: columns of at least
+          <code>--grid-min</code> (16rem unless you set it), as many as the
+          width holds, and one on a phone. The count is derived, so there is no
+          breakpoint and no <code>cols-3</code> — raise the floor and the count
+          follows.
+        </p>
+        ${preview(`
+          <div class="grid" style="--grid-min: 10rem; min-width: 320px">
+            <article class="card">One</article>
+            <article class="card">Two</article>
+            <article class="card">Three</article>
+            <article class="card">Four</article>
+          </div>`)}
+        ${code(`<div class="grid" style="--grid-min: 12rem">
+  <article class="card">…</article>
+  <article class="card">…</article>
+  <article class="card">…</article>
+</div>`)}`
+      )}
+
+      ${section(
+        'Align — the fourth axis',
+        `
+        <p>
+          <code>align-start</code>, <code>align-center</code> and
+          <code>align-end</code> sit beside tone, treatment and density, and
+          like density they <strong>inherit</strong>: alignment is a fact about
+          a region. The class sets <code>text-align</code>, and an
+          <code>--align</code> that Stack, Cluster, Group, Bar and Toolbar read
+          to place their children — a button is a box, and
+          <code>text-align</code> does not move a box.
+        </p>
+        <p>
+          <code>align-start</code> is the default, so it is how a region undoes
+          an ancestor's centering. An Overlay does not inherit it: a dropdown
+          opened inside a centered region keeps its menu text at the start.
+        </p>
+        ${preview(`
+          <div class="stack align-center" style="min-width: 320px">
+            <div class="kicker">Pricing</div>
+            <h3>One plan, every feature</h3>
+            <p class="text-muted">Centered by one class on the region.</p>
+            <div class="cluster">
+              <button class="btn primary">Start</button>
+              <button class="btn outlined">Talk to us</button>
+            </div>
+          </div>`)}
+        ${code(`<div class="stack align-center">
+  <div class="kicker">Pricing</div>
+  <h3>One plan, every feature</h3>
+  <div class="cluster">
+    <button class="btn primary">Start</button>
+  </div>
+</div>`)}`
+      )}
+
+      ${section(
+        'Band — a stripe of a page',
+        `
+        <p>
+          A <code>band</code> is a <code>&lt;section&gt;</code> that reaches
+          both viewport edges. It is a Surface, so a tone or a treatment gives
+          it its background, and its block padding moves with density. It
+          holds no width — the <code>.container</code> inside does — and no
+          arrangement: a Band of cards is a Band holding a Grid.
+        </p>
+        <p>
+          <code>.band-media</code> puts a photo behind it, under
+          <code>--scrim</code>, with the ink turned light. To make one thing
+          escape its parent without a Band — an image in Prose, an
+          edge-to-edge table on a phone — write <code>.bleed</code> on it. The
+          two share one rule.
+        </p>
+        ${code(`<section class="band primary align-center" aria-labelledby="why">
+  <div class="container stack">
+    <h2 id="why">Why it works</h2>
+    <div class="grid">
+      <article class="card">…</article>
+      <article class="card">…</article>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <img class="band-media" src="/media/team.jpg" alt="">
+  <div class="container">…</div>
+</section>`)}`
+      )}
+
+      ${section(
         'When to use each',
         `
         <table class="table">
@@ -4568,26 +4661,25 @@ function layoutsPage() {
             <tr><td>Tags, chips, button groups, filter rows</td><td><code>cluster</code></td></tr>
             <tr><td>Page header with title + actions</td><td><code>split</code></td></tr>
             <tr><td>Modal centered on screen, empty states</td><td><code>center</code></td></tr>
-            <tr><td>Grids with N columns</td><td>Uno's <code>grid grid-cols-N</code></td></tr>
+            <tr><td>Cards in columns, one column on a phone</td><td><code>grid</code></td></tr>
+            <tr><td>A stripe of a website page</td><td><code>band</code> holding a <code>container</code></td></tr>
             <tr><td>Anything else</td><td>Compose Uno utilities directly</td></tr>
           </tbody>
         </table>`
       )}
 
       ${section(
-        'The four rules, in full',
+        'The rules, in full',
         `
         ${code(
           ['/* layout.css — read from the live stylesheet, not copied */']
-            .concat(['.stack', '.cluster', '.center', '.split'].map(ruleText).filter(Boolean))
+            .concat(['.stack', '.cluster', '.center', '.split', '.grid'].map(ruleText).filter(Boolean))
             .join('\n\n')
         )}
         <p>
-          Four rules. Two flex columns, one flex row, one grid. Together
-          they cover ~80% of the layout work in a typical app. The
-          remaining 20% is a rule of your own — unlayered CSS beats every
-          layer here, so it needs no <code>!important</code> — or an atomic
-          utility from UnoCSS if you are running it.
+          What these do not cover is a rule of your own — unlayered CSS beats
+          every layer here, so it needs no <code>!important</code> — or an
+          atomic utility from UnoCSS if you are running it.
         </p>`
       )}
     `
@@ -8542,32 +8634,34 @@ function barPage() {
       )}
 
       ${section(
-        'Alignment modifiers',
+        'Alignment',
         `
         ${patternNote(`
-          <code>.start</code>, <code>.center</code> and <code>.end</code> re-align
-          a bar that has only one group.`)}
+          A Bar reads the align axis: <code>.align-start</code>,
+          <code>.align-center</code> and <code>.align-end</code> re-align a bar
+          that has only one group. The axis inherits, so a Bar inside a
+          centered Band is centered without being told.`)}
         ${preview(`
           <div class="stack">
-            <div class="bar start">
+            <div class="bar align-start">
               <div class="cluster">
                 <button class="btn outlined">Filter</button>
                 <button class="btn outlined">Sort</button>
               </div>
             </div>
-            <div class="bar center">
+            <div class="bar align-center">
               <div class="cluster">
                 <button class="btn outlined">Prev</button>
                 <button class="btn outlined">Next</button>
               </div>
             </div>
-            <div class="bar end">
+            <div class="bar align-end">
               <button class="btn primary">Save</button>
             </div>
           </div>`)}
-        ${code(`<div class="bar start">  … </div>
-<div class="bar center"> … </div>
-<div class="bar end">    … </div>`)}`
+        ${code(`<div class="bar align-start">  … </div>
+<div class="bar align-center"> … </div>
+<div class="bar align-end">    … </div>`)}`
       )}
 
       ${section(
@@ -11951,7 +12045,7 @@ function topbar() {
    * 1400px — measured, brand and actions land on the identical pixel with the
    * wrapper and without it. `split` restated what .topbar declares itself.
    *
-   * The two groups are `bar start`, not `cluster`. A Cluster WRAPS — that is
+   * The two groups are `bar align-start`, not `cluster`. A Cluster WRAPS — that is
    * its definition, not a default — and a Topbar has a fixed
    * --topbar-height, so a wrapped second line is drawn outside the bar
    * rather than growing it: at 640px the version badge landed on the page
@@ -11966,12 +12060,12 @@ function topbar() {
    */
   return `
     <header class="topbar" id="sg-topbar">
-        <div class="bar start sg-brand">
+        <div class="bar align-start sg-brand">
           <span class="sg-brand-mark"></span>
           <span class="sg-brand-name">FrontierJS</span>
           <span class="sg-brand-sub">Design System</span>
         </div>
-        <div class="bar start sg-topbar-actions">
+        <div class="bar align-start sg-topbar-actions">
           <button type="button" class="btn outlined sg-search-trigger" data-search-open>
             <span class="sg-search-trigger-glyph" aria-hidden="true">&#9906;</span>
             <span class="sg-search-trigger-label">Search</span>
