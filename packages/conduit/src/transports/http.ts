@@ -16,6 +16,7 @@ import type {
   ConduitErrorResponse,
   ConduitChunk,
   ConduitError,
+  CredentialRefusal,
   CredentialResolver,
   Protocol,
   TargetDescriptor
@@ -184,7 +185,8 @@ export class HttpTransport extends BaseTransport {
 
     const replayable = IDEMPOTENT_METHODS.has(method) || key !== undefined || req.replayable === true
 
-    // A 401 is answered once by a fresh credential, whatever the method: the
+    // A refused credential — a 401, or a shape `auth.refusal` declares — is
+    // answered once by a fresh one, whatever the method: the
     // target refused the request before acting on it, so the replay is safe
     // where a retry of a POST is not. Not an attempt — a session expiring
     // between pages is not the target failing.
@@ -212,7 +214,7 @@ export class HttpTransport extends BaseTransport {
       const spent  = {} as { value?: string }
       const result = await this.attempt<T>(sent, remaining, spent)
 
-      if (result.meta.status === 401 && !reminted && spent.value !== undefined
+      if (refusedCredential(result) && !reminted && spent.value !== undefined
         && this.credentials.invalidate && this.descriptor.auth.type !== 'none') {
         reminted = true
         this.credentials.invalidate(this.descriptor.auth.ref, spent.value)
@@ -411,6 +413,11 @@ export class HttpTransport extends BaseTransport {
       // resolved absolute form, since a relative `Location` is legal and common.
       if (REDIRECT_STATUSES.has(res.status)) {
         const location = headers['location'] ?? ''
+        if (this.refusedAs('redirect')) {
+          return this.fail('auth_failed', `Auth refused: ${res.status} → ${location || '(no Location)'} (auth.refusal 'redirect')`, {
+            retryable: false,
+          }, { status: res.status, headers: { ...headers, ...(location ? { location: absolute(location, finalUrl) } : {}) } })
+        }
         return this.fail('redirected', `Target answered ${res.status} → ${location || '(no Location)'}`, {
           retryable: false,
         }, { status: res.status, headers: { ...headers, ...(location ? { location: absolute(location, finalUrl) } : {}) } })
@@ -477,6 +484,12 @@ export class HttpTransport extends BaseTransport {
       // succeeded, so classifying it as connection_failed { retryable } was
       // both the wrong kind and three wasted attempts (§2.5).
       if (isMarkupType(contentType)) {
+        if (this.refusedAs('markup')) {
+          return this.fail('auth_failed', `Auth refused: ${res.status} answered '${contentType}' (auth.refusal 'markup')`, {
+            retryable: false,
+            raw:       text.slice(0, 512),
+          }, meta)
+        }
         return this.fail('invalid_response', `Expected a payload, got '${contentType}'`, {
           retryable: false,
           raw:       text.slice(0, 512),
@@ -558,6 +571,11 @@ export class HttpTransport extends BaseTransport {
       clearTimeout(timer)
       req.signal?.removeEventListener('abort', cancel)
     }
+  }
+
+  private refusedAs(shape: CredentialRefusal): boolean {
+    const auth = this.descriptor.auth
+    return auth.type !== 'none' && (auth.refusal?.includes(shape) ?? false)
   }
 
   /**
@@ -703,6 +721,13 @@ class SerializeError extends Error {
     super(`Request body could not be serialized: ${cause.message}`)
     this.name = 'SerializeError'
   }
+}
+
+// The target refused the credential itself: a 401, or a shape `auth.refusal`
+// declared. A 403 is `auth_failed` too, and is the credential accepted and the
+// answer no — minting another changes nothing.
+function refusedCredential(result: ConduitResult<unknown>): boolean {
+  return result.error?.kind === 'auth_failed' && result.meta.status !== 403
 }
 
 // application/json, application/vnd.api+json, text/json, …

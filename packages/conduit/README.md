@@ -249,7 +249,7 @@ The reference is resolved at send time by a `CredentialResolver`, so secret mate
 ```ts
 interface CredentialResolver {
   get(ref: string): Promise<string | null>
-  invalidate?(ref: string, value: string): void   // the target answered 401 to `value`
+  invalidate?(ref: string, value: string): void   // the target refused `value` — a 401, or a declared `auth.refusal`
 }
 ```
 
@@ -272,7 +272,16 @@ app.configure(conduit({
 
 Transports resolve once per attempt, so a retried request calls the resolver up to `retry_limit + 1` times. Wrap anything networked in `withCache`.
 
-**A 401 is answered once by a fresh credential.** When the resolver has `invalidate`, the transport hands it the value the target refused and replays the send once — any method, since a 401 means the request was not acted on — on whatever `get()` returns next. A second 401 is `auth_failed`. The replay is not an attempt: it does not count against `retry_limit`. A 403 is never replayed. `withCache` implements `invalidate` as a compare-and-set: it forgets the value only if it is still the cached one, so twenty sends refused on one stale credential fetch one fresh one, not twenty.
+**A refused credential is answered once by a fresh one.** When the resolver has `invalidate`, the transport hands it the value the target refused and replays the send once — any method, since a 401 means the request was not acted on — on whatever `get()` returns next. A second refusal is `auth_failed`. The replay is not an attempt: it does not count against `retry_limit`. A 403 is never replayed. `withCache` implements `invalidate` as a compare-and-set: it forgets the value only if it is still the cached one, so twenty sends refused on one stale credential fetch one fresh one, not twenty.
+
+**A target that never says 401 declares what it says instead.** Many systems that only have a login page answer a dead session with that page — a 200 carrying HTML, or a 302 to it. `auth.refusal` names those shapes, and each is then `auth_failed` and replayed exactly as a 401 is:
+
+| `refusal` | means |
+|---|---|
+| `'markup'` | a 2xx whose body is HTML where a payload was expected — otherwise `invalid_response` |
+| `'redirect'` | any 3xx this target does not follow — otherwise `redirected` |
+
+Undeclared, neither shape is a refusal: a captive portal answers 200 HTML too, and is not a credential problem. Refused at `register()` with `auth: 'none'`, on a protocol other than `http`/`unix`, or for a shape not in the table.
 
 #### A credential a login mints
 
@@ -294,12 +303,12 @@ const c = createConduit({
   }, { ttl_ms: Infinity }),
   targets: [
     { id: 'sa-login', /* … */ auth: { type: 'none' } },
-    { id: 'sa',       /* … */ auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie' } },
+    { id: 'sa',       /* … */ auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie', refusal: ['markup', 'redirect'] } },
   ],
 })
 ```
 
-A burst against a cold session logs in once (`withCache` collapses concurrent misses); a session that expires is answered by one login and one replay. A throw from `get()` is a retryable `connection_failed`; a `null` is a permanent `auth_failed`.
+A burst against a cold session logs in once (`withCache` collapses concurrent misses); a session that expires is answered by one login and one replay. Service Autopilot answers 200 to a wrong password and hands back a cookie that works for nothing, so a login that "succeeds" is not proof — `refusal` is: each send logs in once, is refused, and fails `auth_failed`, and a corrected password is picked up by the next send. A throw from `get()` is a retryable `connection_failed`; a `null` is a permanent `auth_failed`.
 
 ### Protocols
 
@@ -341,7 +350,7 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 | `error.kind` | retryable | meaning |
 |---|---|---|
 | `target_not_found` | no | no target registered under that ID |
-| `auth_failed` | no | 401/403 from the target, or a credential ref that would not resolve |
+| `auth_failed` | no | 401/403 from the target, a shape its `auth.refusal` declares, or a credential ref that would not resolve |
 | `invalid_request` | no | body would not serialize, or the method is not a valid HTTP verb |
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |

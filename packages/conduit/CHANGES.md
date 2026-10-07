@@ -1,5 +1,19 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-07 — A target that never says 401 declares what it says instead: `auth.refusal` (`FJS-1906`)
+
+Service Autopilot — the target `FJS-1905` was built for — answers a dead session with its login page as a
+200, and a wrong password with a 200 and a cookie that works for nothing. Conduit read the first as a
+permanent `invalid_response`, never called `invalidate`, and the session held at `ttl_ms: Infinity` failed
+every send until the process restarted. `TargetAuth` on `bearer`, `api_key` and `hmac` gains
+`refusal?: ('markup' | 'redirect')[]`: a 2xx carrying HTML, or a 3xx the target does not follow, is then
+`auth_failed` and forgotten and replayed once exactly as a 401 is. Undeclared, both keep their kinds — a
+captive portal answers 200 HTML and is not a credential problem. `assertRefusal` refuses an unknown shape,
+`auth: 'none'`, and a protocol other than `http`/`unix` by name. `auth` is stored as JSON, so the SQLite
+registry needed nothing. Ten tests in `conduit.test.ts` § a credential refused without a 401, the stand-in
+taught SA's two shapes and its always-200 login; three are red with `refusedAs` stubbed false, and the two
+controls without `refusal` show the bug as it was.
+
 ## 2026-10-07 — A credential a login mints: a 401 forgets it and replays once, and every `Set-Cookie` survives (`FJS-1905`, `FJS-1904`)
 
 A system of record with no API key — Service Autopilot, ELA's: a username and password that mint a cookie

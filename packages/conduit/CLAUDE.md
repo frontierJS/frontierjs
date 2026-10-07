@@ -225,11 +225,16 @@ src/
   owns the vendor's paths, payload shapes and webhook signature scheme, and gets
   its own package once a second one exists to design the interface against. The
   first is `example/api/src/providers/stripe/index.ts`.
-- **A 401 replays once, POST included, when the resolver can `invalidate`.**
-  The target refused before acting, so the replay is safe where a retry of a
-  POST is not; it sits outside `retry_limit` and `declineReplay`. `withCache`'s
-  `invalidate` is a compare-and-set on the refused value — an unconditional
-  forget turns twenty sends racing one expired session into twenty logins.
+- **A refused credential replays once, POST included, when the resolver can
+  `invalidate`.** The target refused before acting, so the replay is safe where
+  a retry of a POST is not; it sits outside `retry_limit` and `declineReplay`.
+  *Refused* is a 401 or a shape `auth.refusal` declares (`'markup'`,
+  `'redirect'`) — a login-page system never says 401, and undeclared its 200
+  HTML is `invalid_response`, so the dead session is cached forever
+  (`FJS-1906`). `refusedCredential()` in `http.ts` is the one test; a 403 is
+  never in it. `withCache`'s `invalidate` is a compare-and-set on the refused
+  value — an unconditional forget turns twenty sends racing one expired session
+  into twenty logins.
   A minted session is `withCache({ get: login }, { ttl_ms: Infinity })`;
   `meta.headers['set-cookie']` is newline-joined, since `Expires` holds a comma.
 - **The credential must really resolve.** `example`'s drive posts to a dev mail

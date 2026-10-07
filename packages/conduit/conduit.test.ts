@@ -31,6 +31,7 @@ import type {
   ConduitRequest,
   ConduitError,
   CredentialResolver,
+  CredentialRefusal,
 } from './src/types.ts'
 
 // ─── Fixtures ────────────────────────────────────────────────
@@ -5148,8 +5149,13 @@ describe('broker target', () => {
 // ─── A credential the target refuses: minted, shared, re-minted on 401 ───
 
 // A system of record with no API key: a login mints a cookie session, and a
-// session it no longer honors answers 401. Service Autopilot is the case.
-function sessionServer() {
+// session it no longer honors answers 401 — or, as Service Autopilot does,
+// never says 401 at all: `refuse` picks its login page as a 200 or a 302 to
+// it, and `sloppyLogin` answers a wrong password 200 with a cookie anyway.
+function sessionServer({ refuse = '401', sloppyLogin = false }: {
+  refuse?: '401' | 'markup' | 'redirect'
+  sloppyLogin?: boolean
+} = {}) {
   const valid = new Set<string>()
   let minted  = 0
   let logins  = 0
@@ -5164,9 +5170,9 @@ function sessionServer() {
         // Slow enough that a burst of sends arrives while it is in flight.
         await Bun.sleep(20)
         const body = await req.json() as { User?: string; Password?: string }
-        if (body.Password !== 'hunter2') return Response.json({ d: false })
+        if (body.Password !== 'hunter2' && !sloppyLogin) return Response.json({ d: false })
         const sid = `s${++minted}`
-        valid.add(sid)
+        if (body.Password === 'hunter2') valid.add(sid)
         const headers = new Headers({ 'content-type': 'application/json' })
         // Two cookies, the first with a comma in its Expires — what a
         // comma-joined header cannot carry.
@@ -5177,7 +5183,13 @@ function sessionServer() {
       const cookie = req.headers.get('cookie')
       hits.push({ path: url.pathname, method: req.method, cookie })
       const sid = /sid=(\w+)/.exec(cookie ?? '')?.[1]
-      if (!sid || !valid.has(sid) || !cookie!.includes('lang=en')) return new Response('', { status: 401 })
+      if (!sid || !valid.has(sid) || !cookie!.includes('lang=en')) {
+        if (refuse === 'markup')
+          return new Response('<!DOCTYPE html><html><body><form action="/login">', { headers: { 'content-type': 'text/html; charset=utf-8' } })
+        if (refuse === 'redirect')
+          return new Response(null, { status: 302, headers: { location: '/Login.aspx?ReturnUrl=%2fquery' } })
+        return new Response('', { status: 401 })
+      }
       return Response.json({ ok: true, sid })
     },
   })
@@ -5198,7 +5210,7 @@ function cookieHeader(setCookie: string | undefined): string | null {
   return setCookie.split('\n').map(line => line.split(';')[0].trim()).join('; ')
 }
 
-async function sessionConduit(url: string, password = 'hunter2') {
+async function sessionConduit(url: string, password: string | (() => string) = 'hunter2', refusal?: CredentialRefusal[]) {
   // The login goes through conduit too, as its own target, so it is observed
   // and policed like any other call.
   const c = createConduit({
@@ -5207,7 +5219,7 @@ async function sessionConduit(url: string, password = 'hunter2') {
         if (ref !== 'SA_SESSION') return null
         const res = await c.send({
           target: 'sa-login', method: 'POST', path: '/login',
-          body:   { User: 'ops', Password: password },
+          body:   { User: 'ops', Password: typeof password === 'function' ? password() : password },
         })
         if (res.error) return null
         return cookieHeader(res.meta.headers?.['set-cookie'])
@@ -5217,7 +5229,7 @@ async function sessionConduit(url: string, password = 'hunter2') {
       { id: 'sa-login', kind: 'provider', protocol: 'http', address: url,
         auth: { type: 'none' }, registered_at: 0, last_seen_at: null },
       { id: 'sa', kind: 'provider', protocol: 'http', address: url,
-        auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie' },
+        auth: { type: 'api_key', ref: 'SA_SESSION', header: 'Cookie', ...(refusal ? { refusal } : {}) },
         registered_at: 0, last_seen_at: null },
     ],
     retry_limit: 0,
@@ -5349,4 +5361,106 @@ describe('a minted credential', () => {
     expect(await cached.get('A')).toBe('v2')
     expect(calls).toBe(2)
   })
+})
+
+describe('a credential refused without a 401 (FJS-1906)', () => {
+  for (const shape of ['markup', 'redirect'] as const) {
+    it(`a session expired with ${shape === 'markup' ? 'a 200 login page' : 'a 302 to the login page'} is re-minted and the POST replayed once`, async () => {
+      const sa = sessionServer({ refuse: shape })
+      try {
+        const c = await sessionConduit(sa.url, 'hunter2', [shape])
+        const page1 = await c.send<{ sid: string }>({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 0 } })
+        expect(page1.data?.sid).toBe('s1')
+
+        sa.expire()
+        const page2 = await c.send<{ sid: string }>({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 50 } })
+
+        expect(page2.error).toBeNull()
+        expect(page2.data?.sid).toBe('s2')
+        expect(sa.logins()).toBe(2)
+        expect(sa.hits.map(h => h.method)).toEqual(['POST', 'POST', 'POST'])
+        await c.destroy()
+      } finally { sa.stop() }
+    })
+  }
+
+  // The control: the same server, nothing declared. What it shows is the bug
+  // itself — the dead session is kept and the shape keeps its old kind.
+  it('undeclared, a login page stays invalid_response and the session is kept', async () => {
+    const sa = sessionServer({ refuse: 'markup' })
+    try {
+      const c = await sessionConduit(sa.url)
+      await c.send({ target: 'sa', method: 'GET', path: '/warm' })
+      sa.expire()
+
+      const a = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      const b = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(a.error?.kind).toBe('invalid_response')
+      expect(b.error?.kind).toBe('invalid_response')
+      expect(sa.logins()).toBe(1)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('undeclared, a 302 stays redirected', async () => {
+    const sa = sessionServer({ refuse: 'redirect' })
+    try {
+      const c = await sessionConduit(sa.url)
+      await c.send({ target: 'sa', method: 'GET', path: '/warm' })
+      sa.expire()
+      const res = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(res.error?.kind).toBe('redirected')
+      expect(sa.logins()).toBe(1)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  // SA's login answers 200 to a wrong password and sets a cookie that works
+  // for nothing. Each send is one fresh login and then auth_failed, never a
+  // dead cookie served from the cache, so a corrected password is picked up
+  // by the next send rather than the next restart.
+  it('a wrong password behind a login that always says 200 is auth_failed, and a corrected one is picked up', async () => {
+    const sa = sessionServer({ refuse: 'markup', sloppyLogin: true })
+    let password = 'wrong'
+    try {
+      const c = await sessionConduit(sa.url, () => password, ['markup'])
+
+      const first = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(first.error?.kind).toBe('auth_failed')
+      expect(first.error?.retryable).toBe(false)
+      expect(sa.logins()).toBe(2)
+
+      password = 'hunter2'
+      const second = await c.send<{ sid: string }>({ target: 'sa', method: 'GET', path: '/query' })
+      expect(second.error).toBeNull()
+      expect(sa.logins()).toBe(3)
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a 403 carrying a login page is still not re-minted', async () => {
+    const s = recorder(() => new Response('<html>', { status: 403, headers: { 'content-type': 'text/html' } }))
+    let mints = 0
+    try {
+      const target = providerTarget({ address: s.url, auth: { type: 'bearer', ref: 'K', refusal: ['markup'] } })
+      const t = new HttpTransport(target, withCache({ async get() { return `token-${++mints}` } }), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'GET', path: '/x' })
+      expect(res.error?.kind).toBe('auth_failed')
+      expect(mints).toBe(1)
+    } finally { s.stop() }
+  })
+
+  const base = { kind: 'provider', protocol: 'http', address: 'http://127.0.0.1:1', registered_at: 0, last_seen_at: null } as const
+  for (const [why, target] of [
+    ['an unknown shape',   { ...base, id: 'r1', auth: { type: 'bearer', ref: 'K', refusal: ['html'] } }],
+    ['not an array',       { ...base, id: 'r2', auth: { type: 'bearer', ref: 'K', refusal: 'markup' } }],
+    ["auth 'none'",        { ...base, id: 'r3', auth: { type: 'none', refusal: ['markup'] } }],
+    ['a websocket target', { ...base, id: 'r4', protocol: 'websocket', address: 'ws://127.0.0.1:1', auth: { type: 'bearer', ref: 'K', refusal: ['markup'] } }],
+  ] as const) {
+    it(`auth.refusal is refused at register() for ${why}`, async () => {
+      const c = createConduit({ credentials: secrets() })
+      await expect(c.register(target as unknown as TargetDescriptor)).rejects.toThrow(/auth\.refusal/)
+      await c.destroy()
+    })
+  }
 })

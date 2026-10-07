@@ -20,7 +20,7 @@ import type {
   TargetDescriptor,
   BrokerHandler,
 } from './types.ts'
-import { ConduitStreamError } from './types.ts'
+import { ConduitStreamError, CREDENTIAL_REFUSALS } from './types.ts'
 import type { BaseTransport } from './transports/base.ts'
 import { BrokerTransport } from './transports/broker.ts'
 import { DEFAULT_TIMEOUT_MS } from './transports/http.ts'
@@ -66,11 +66,31 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
     )
   }
 
+  assertRefusal(descriptor)
   assertIdempotency(descriptor)
   assertPolicy(descriptor)
   assertPinnedCert(descriptor)
   assertRequestAddressed(descriptor)
   assertBroker(descriptor)
+}
+
+// A refusal shape the transport never reads would leave the session it was
+// declared for cached and dead, which is the failure it exists to end.
+function assertRefusal(descriptor: TargetDescriptor): void {
+  const refusal = (descriptor.auth as { refusal?: unknown }).refusal
+  if (refusal === undefined) return
+
+  const where = `Target '${descriptor.id}' auth.refusal`
+  if (descriptor.auth.type === 'none')
+    throw new TypeError(`${where}: auth 'none' has no credential to refuse`)
+  if (descriptor.protocol !== 'http' && descriptor.protocol !== 'unix')
+    throw new TypeError(`${where}: only an 'http' or 'unix' target reads a response's shape, this one is '${descriptor.protocol}'`)
+  if (!Array.isArray(refusal))
+    throw new TypeError(`${where}: expected an array of ${CREDENTIAL_REFUSALS.join(', ')}`)
+  for (const shape of refusal) {
+    if (!(CREDENTIAL_REFUSALS as readonly unknown[]).includes(shape))
+      throw new TypeError(`${where}: unknown shape '${String(shape)}'. Known shapes: ${CREDENTIAL_REFUSALS.join(', ')}`)
+  }
 }
 
 // The wire built for a broker is the websocket one, and a broker target on any

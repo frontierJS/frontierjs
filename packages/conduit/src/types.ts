@@ -27,13 +27,29 @@ export type { BodyEncoding }
 //
 // `ref` is resolver-defined: an env var name for the default env resolver,
 // a secret path for a vault-backed one, a key for createStaticResolver().
+//
+// `refusal` names what this target answers a refused credential with besides
+// a 401, and each one is then `auth_failed` and forgotten and replayed exactly
+// as a 401 is. A system that only has a login page usually never says 401:
+// Service Autopilot answers an expired session with its login page as a 200,
+// and a 302 to it is the other common spelling. Without the declaration the
+// first is `invalid_response`, the cached session is never forgotten, and
+// every send fails until the process restarts (`FJS-1906`). Declared rather
+// than assumed, because a captive portal answers 200 markup too and is not a
+// credential problem.
+//
+//   'markup'   — a 2xx whose body is HTML where a payload was expected
+//   'redirect' — any 3xx this target does not follow
+export const CREDENTIAL_REFUSALS = ['markup', 'redirect'] as const
+export type CredentialRefusal = typeof CREDENTIAL_REFUSALS[number]
+
 export type TargetAuth =
-  | { type: 'bearer';  ref: string }
-  | { type: 'api_key'; ref: string; header: string }   // header name is not secret
+  | { type: 'bearer';  ref: string; refusal?: CredentialRefusal[] }
+  | { type: 'api_key'; ref: string; header: string; refusal?: CredentialRefusal[] }   // header name is not secret
   // Signs a canonical string over method, path, timestamp, nonce and a
   // hash of the body. `header_prefix` names the three headers this emits
   // (default 'X-Fjs' → X-Fjs-Signature, X-Fjs-Timestamp, X-Fjs-Nonce).
-  | { type: 'hmac';    ref: string; header_prefix?: string }
+  | { type: 'hmac';    ref: string; header_prefix?: string; refusal?: CredentialRefusal[] }
   | { type: 'none' }
 
 export type FollowRedirects = 'never' | 'same-origin'
@@ -198,7 +214,8 @@ export interface TargetDescriptor {
 export interface CredentialResolver {
   get(ref: string): Promise<string | null>
 
-  // The target refused `value` with a 401: forget it, so the next get() mints
+  // The target refused `value` — a 401, or a shape the target's
+  // `auth.refusal` declares: forget it, so the next get() mints
   // or fetches a fresh one, and the send is replayed once on that. A credential
   // a login mints is the case — a session that expired answers 401 and nothing
   // else. Forgets only when `value` is still what get() would return: twenty
