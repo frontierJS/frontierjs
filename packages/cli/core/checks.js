@@ -2725,6 +2725,17 @@ const CHECKS = {
   // driving a pipeline is the ordinary case, and `deploy-run.job.ts` is where
   // `Deployment`'s machine actually moves. Comments are blanked first, so a
   // move named only in a comment about it does not count as driving it.
+  //
+  // ── A service over the model is a third spelling ──
+  //
+  // Junction serves every declared move as a method named for it on any
+  // service over the model (`FJS-1255`), so a one-line generated service
+  // reaches all of them and a `methods:` list reaches the moves it names. A
+  // model with NO service under api/ is graded on nothing: the schema is
+  // written first and the generator writes the service after it, so a rule
+  // that reported the gap between the two refused every machine until code
+  // existed, and the only schema-side reply was deleting the machine
+  // (`FJS-1778`, 12 of 21 corpus schemas).
   'transition-methods': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
@@ -2742,15 +2753,21 @@ const CHECKS = {
     // file under api/ names — a reminder's `remind` has no other caller.
     const owed     = new Set(declaredCommitments(schema).map(c => `${c.target}.${c.move}`))
     const findings = []
+    const served   = servingServices(root, files, code, schema)
 
     for (const m of moves) {
       if (owed.has(`${m.model}.${m.move}`)) continue
       if (literal(m.move) || literal(m.to)) continue
+      const over = served.get(m.model)
+      if (!over) continue
+      if (over.some(svc => svc.servesAll)) continue
       const gate = m.gate ? ` @gate(${m.gate})` : ''
       findings.push({
         file: schema.path, line: m.line,
-        message: `${m.model}.${m.move} -> ${m.to}${gate} is declared and nothing under api/ names either ` +
-                 `the move or the state it moves to, so no caller can reach it. A declared move nobody ` +
+        message: `${m.model}.${m.move} -> ${m.to}${gate} is declared, nothing under api/ names either ` +
+                 `the move or the state it moves to, and the methods: list of ` +
+                 `${over.map(svc => basename(svc.path)).join(', ')} leaves it out — so no caller can reach ` +
+                 `it. Name it in methods: to serve it by its own name. A declared move nobody ` +
                  `drives is not an error — the machine is still enforced — it reads as a feature nobody ` +
                  `got round to, and a screen rendering '${m.to}' is rendering a state that cannot occur.`,
       })
@@ -3899,6 +3916,30 @@ function declaredCommitments({ text }) {
 
   for (const c of out) c.target = c.relation ? fields[c.model]?.[c.relation] ?? null : c.model
   return out.filter(c => c.target)
+}
+
+/**
+ * The services over each model, each with whether it serves EVERY declared
+ * move (`FJS-1255`) — true unless it declares `methods:`. A declared list
+ * serves the moves it names, and a name in it is already a literal the
+ * either-spelling test counts, so the list needs no parse of its own.
+ * Junction resolves a service's model as `service-model` does: `model:` when
+ * stated, else the name its registry gives the file.
+ */
+function servingServices(root, files, code, schema) {
+  const { resolves } = modelResolver(schema, root)
+  const out = new Map()
+  for (let i = 0; i < files.length; i++) {
+    if (!/\.service\.[cm]?[jt]s$/.test(basename(files[i]))) continue
+    const src = code[i]
+    if (!/\bcreate(Base)?Service\b/.test(src)) continue
+    const stated = src.match(/\bmodel\s*:\s*['"`]([A-Za-z0-9_-]+)['"`]/)
+    const model  = resolves(stated ? stated[1] : camel(basename(files[i]).replace(/\.service\.[cm]?[jt]s$/, '')))
+    if (!model) continue
+    if (!out.has(model)) out.set(model, [])
+    out.get(model).push({ path: files[i], servesAll: !/\bmethods\s*:/.test(src) })
+  }
+  return out
 }
 
 function declaredMoves({ text }) {

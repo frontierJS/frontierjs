@@ -30,7 +30,7 @@ import { AUTO_EVENT_MAP, isPublishHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
-  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
+  jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload, declaredMoveMethods,
 } from './litestone.ts'
 
 // ─── Service-level cache ──────────────────────────────────────────────────
@@ -1909,11 +1909,13 @@ export function createBaseService(
 
   // Custom methods — declared by `methods:` when it is there, scanned for when it is
   // not. One parse step; everything downstream reads the table.
-  // Findings here ride the DEFINITION into createService, which grades the same
-  // list a second way and keys both, so one typo is one sentence.
-  const authoringFindings: string[] = []
-  const customMethods = collectCustomMethods(
-    opts, name ?? model ?? 'service', methods, (_k, f) => authoringFindings.push(f))
+  // No findings from here: `methods:` rides the definition into createService,
+  // which grades the same list under the service's real name — a name this
+  // call often does not know yet — and re-grades it once the model's moves are
+  // known (`FJS-1255`). Reporting here too said every typo twice, once of a
+  // service called 'service', and said a declared move was missing when it was
+  // not.
+  const customMethods = collectCustomMethods(opts, name ?? model ?? 'service', methods)
 
   // A CRUD method the definition WROTE wins over the generated one.
   //
@@ -2102,9 +2104,6 @@ export function createBaseService(
     // includes CRUD, `_meta` and every other runtime key.
     ...customMethods,
     _customMethods: customMethods,
-    // Read by start()'s `check-authoring` phase, which reports every one of
-    // them in one verdict rather than one boot at a time (`FJS-D199`).
-    _authoringFindings: authoringFindings,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
     // The last five of SERVICE_OPTION_KEYS this literal used to drop, and they
@@ -2405,6 +2404,22 @@ export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'validateInput
 // spread does NOT carry it — which is the correct answer: `{...svc}` is a copy
 // of the fields, not a built service, and the loader has to be able to tell.
 const BUILT = Symbol.for('junction.service')
+
+// Where a built service keeps the step that re-resolves its method table with
+// the moves its model declares. A symbol, so no spread carries it onto a
+// definition and no scan mistakes it for a method.
+const SERVE_MOVES = Symbol.for('junction.serveMoves')
+
+/**
+ * Serve every `@@transitions` move the service's model declares as a method
+ * named for the move (`FJS-1255`). Called by the registry, the first place a
+ * built service and the app's parsed schema meet. Idempotent; a no-op for an
+ * object createService did not build, and for a model with no machine.
+ */
+export function serveDeclaredMoves(svc: object, schema: unknown): void {
+  const serve = (svc as { [SERVE_MOVES]?: (schema: unknown) => void })[SERVE_MOVES]
+  if (typeof serve === 'function' && schema) serve(schema)
+}
 
 /** Has createService already built this? */
 export function isBuiltService(value: unknown): boolean {
@@ -2713,81 +2728,102 @@ export function createService(def: ServiceDefinition): Service {
     })(),
   }
 
-  // The custom methods, resolved once. A base reached through the loader's spread has
+  // The custom methods, resolved. A base reached through the loader's spread has
   // already built its own table and put it on `def`; taking that over rescanning
   // matters because by then `def` also carries CRUD, the bypass twins and
   // `_meta`, and the scan would have to be right about all of them again.
   // One sink for both graders — `collectCustomMethods` for a name that cannot
-  // be a method, `resolveMethodPolicy` for one this service cannot answer. A
-  // base reached through the loader's spread carries its own, so they join.
-  const seen = new Map<string, string>()
-  const report = (key: string, f: string) => { if (!seen.has(key)) seen.set(key, f) }
+  // be a method, `resolveMethodPolicy` for one this service cannot answer.
+  //
+  // A FUNCTION because it runs twice. The moves a model's `@@transitions`
+  // declares are methods of this service too (`FJS-1255`), and the schema that
+  // names them is not known here — a service module is imported before any
+  // client exists. The registry knows it, and hands it to `serveDeclaredMoves`
+  // at register(), which re-resolves this whole table with the moves as one
+  // more SOURCE. Everything downstream — dispatch, the 405 and its list, the
+  // manifest, OpenAPI, the findings — then reads one table, and a move listed
+  // in `methods:` or keyed in `hooks:` stops being a finding rather than being
+  // excused after the fact.
+  const resolveTable = (moves: CustomMethodMap): void => {
+    const serviceName = service.name ?? defName ?? '(unnamed)'
+    const seen = new Map<string, string>()
+    const report = (key: string, f: string) => { if (!seen.has(key)) seen.set(key, f) }
 
-  const custom: CustomMethodMap = {
-    ...((def as { _customMethods?: CustomMethodMap })._customMethods ?? {}),
-    ...collectCustomMethods(def, defName ?? '(unnamed)', def.methods, report),
+    // The moves sit UNDER the definition: a method the author wrote with a
+    // move's name wins, exactly as a written `get` wins over the generated one.
+    const custom: CustomMethodMap = {
+      ...((def as { _customMethods?: CustomMethodMap })._customMethods ?? {}),
+      ...collectCustomMethods({ ...moves, ...def }, serviceName, def.methods, report),
+    }
+
+    // On the object as well as in the table: a spread has to carry them, and
+    // `svc.reboot` is a shape callers already use.
+    for (const [key, fn] of Object.entries(custom)) {
+      (service as unknown as Record<string, unknown>)[key] = fn
+    }
+    ;(service as Service)._customMethods = custom
+
+    // Resolve the method policy AFTER the custom methods are on, because an allow-list
+    // may name one and the unknown-name check has to be able to see it.
+    ;(service as Service)._methods = resolveMethodPolicy(
+      def.methods,
+      serviceMethodNames(service),
+      serviceName,
+      report,
+    )
+    // A hook map keyed on a method this service does not have, or on a phase that
+    // is not a phase. Both were silent: `before: { creat: [requireAuth] }` built a
+    // pipeline nothing ever ran, the service answered normally, and the hook that
+    // was supposed to guard it simply did not exist — junction's own CLAUDE.md
+    // claimed this warned, and measured it did not.
+    //
+    // Graded against the service's OWN answerable names rather than CRUD, so a
+    // custom method is a legal key and a `methods:` policy that narrows the
+    // surface does not make a hook on a real method look like a typo.
+    if (def.hooks) {
+      const legal = new Set(['all', ...serviceMethodNames(service)])
+      for (const [phase, byMethod] of Object.entries(def.hooks)) {
+        if (!HOOK_STAGES.includes(phase as (typeof HOOK_STAGES)[number])) {
+          report(`hooks:${serviceName}:${phase}`,
+            `service '${serviceName}': hooks declares the phase '${phase}', which is not ` +
+            `one — nothing reads it. Phases: ${HOOK_STAGES.join(', ')}`)
+          continue
+        }
+        if (!byMethod || typeof byMethod !== 'object') continue
+        for (const key of Object.keys(byMethod)) {
+          if (legal.has(key)) continue
+          report(`hooks:${serviceName}:${phase}.${key}`,
+            `service '${serviceName}': hooks.${phase} is keyed on '${key}', which this ` +
+            `service does not answer — those hooks never run. ` +
+            `Available: ${['all', ...serviceMethodNames(service)].sort().join(', ')}`)
+        }
+      }
+    }
+
+    ;(service as Service)._authoringFindings = [
+      ...((def as { _authoringFindings?: string[] })._authoringFindings ?? []),
+      ...seen.values(),
+    ]
+
+    // Resolved for describe() only — the hook itself filters at call time. Read
+    // off the policy so the answer is what the service will actually answer.
+    ;(service as Service)._transactional = resolveTransactional(
+      def.transactional,
+      [...((service as Service)._methods ?? serviceMethodNames(service))],
+    )
   }
 
-
-  // On the object as well as in the table: a spread has to carry them, and
-  // `svc.reboot` is a shape callers already use.
-  for (const [key, fn] of Object.entries(custom)) {
-    (service as unknown as Record<string, unknown>)[key] = fn
-  }
-  ;(service as Service)._customMethods = custom
   ;(service as Service)._inputs = methodInputs
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
+  resolveTable({})
 
-  // Resolve the method policy AFTER the custom methods are on, because an allow-list
-  // may name one and the unknown-name check has to be able to see it.
-  ;(service as Service)._methods = resolveMethodPolicy(
-    def.methods,
-    serviceMethodNames(service),
-    defName ?? '(unnamed)',
-    report,
-  )
-  // A hook map keyed on a method this service does not have, or on a phase that
-  // is not a phase. Both were silent: `before: { creat: [requireAuth] }` built a
-  // pipeline nothing ever ran, the service answered normally, and the hook that
-  // was supposed to guard it simply did not exist — junction's own CLAUDE.md
-  // claimed this warned, and measured it did not.
-  //
-  // Graded against the service's OWN answerable names rather than CRUD, so a
-  // custom method is a legal key and a `methods:` policy that narrows the
-  // surface does not make a hook on a real method look like a typo.
-  if (def.hooks) {
-    const legal = new Set(['all', ...serviceMethodNames(service)])
-    for (const [phase, byMethod] of Object.entries(def.hooks)) {
-      if (!HOOK_STAGES.includes(phase as (typeof HOOK_STAGES)[number])) {
-        report(`hooks:${defName}:${phase}`,
-          `service '${defName ?? '(unnamed)'}': hooks declares the phase '${phase}', which is not ` +
-          `one — nothing reads it. Phases: ${HOOK_STAGES.join(', ')}`)
-        continue
-      }
-      if (!byMethod || typeof byMethod !== 'object') continue
-      for (const key of Object.keys(byMethod)) {
-        if (legal.has(key)) continue
-        report(`hooks:${defName}:${phase}.${key}`,
-          `service '${defName ?? '(unnamed)'}': hooks.${phase} is keyed on '${key}', which this ` +
-          `service does not answer — those hooks never run. ` +
-          `Available: ${['all', ...serviceMethodNames(service)].sort().join(', ')}`)
-      }
-    }
-  }
-
-  ;(service as Service)._authoringFindings = [
-    ...((def as { _authoringFindings?: string[] })._authoringFindings ?? []),
-    ...seen.values(),
-  ]
-
-  // Resolved for describe() only — the hook itself filters at call time. Read
-  // off the policy so the answer is what the service will actually answer.
-  ;(service as Service)._transactional = resolveTransactional(
-    def.transactional,
-    [...((service as Service)._methods ?? serviceMethodNames(service))],
-  )
+  Object.defineProperty(service, SERVE_MOVES, {
+    value: (schema: unknown) => resolveTable(declaredMoveMethods(
+      schema, service.model ?? service.name, service.name,
+      (def.idField as string | undefined) ?? 'id')),
+  })
 
   Object.defineProperty(service, BUILT, { value: true, enumerable: false })
 
@@ -2841,7 +2877,20 @@ export class ServiceRegistry {
     for (const svc of this._map.values()) svc.pipelines(this._appHooks)
   }
 
+  /**
+   * `schema` answers the app's parsed schema, or nothing. A thunk because a
+   * tenanted app's is on its registry, and because a registry built without an
+   * app (a test's) has none and serves no moves.
+   */
+  constructor(private _schema: () => unknown = () => null) {}
+
   register(service: Service, aliases: string[] = []): void {
+    // HERE, because this is the first place a built service and the schema meet:
+    // a service module is imported before any client exists, and every way a
+    // service reaches an app — the loader, a plugin, a test env — comes through
+    // this call. Before the warm below, so the pipelines are built for the
+    // table the service will answer with.
+    serveDeclaredMoves(service, this._schema())
     this._map.set(service.name, service)
     this._version++
     for (const alias of aliases) {

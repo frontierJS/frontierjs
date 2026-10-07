@@ -480,7 +480,8 @@ export type WhereOp<T> = T | {
 
 /** Base interface mixed into every generated `Where` type — adds the $raw escape hatch. */
 export interface WhereBase {
-  $raw?: RawClause | string
+  /** A sql`` tag value -- a string is refused at any depth (FJS-D613). */
+  $raw?: RawClause
 }
 
 export interface CursorResult<T> {

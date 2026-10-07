@@ -65,6 +65,14 @@ const GENERATED = {
     title: 'Order', heading: 'Order', submitLabel: 'Save',
     backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
   }),
+  // The admin's detail page: its own session module, the gate notice and the
+  // child links, none of which the scaffold's edit page carries.
+  'admin:generate — detail page': editPage({
+    title: 'Order', heading: 'Order', submitLabel: 'Save',
+    backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
+    gate: true, sessionImport: "import { session } from '../../session.js'",
+    childRoutesImport: "import { childRoutes } from '../_routes.js'",
+  }),
   'make:resource — resource file': resourceFile('Order', 'orders'),
   // `fli make:route <path> --resource Order`, one per shape the path can name.
   'make:route — list':   resourceRoutePage({ path: 'orders', model: 'Order', service: 'orders' }).content,
@@ -199,6 +207,54 @@ describe('what the generators write', () => {
       expect(source, `${what} never offers more rows`).toContain('{#if list.hasMore}')
     }
     expect(lists, 'no generated page renders a table at all').toBeGreaterThan(0)
+  })
+})
+
+// A model under `@@transitions` changes state by a MOVE, and the generated pages
+// had no way to take one: no button anywhere, while the form offered the state
+// column as a select of every member (`FJS-1433`). The buttons are read off the
+// schema when the page runs, so a template that named a move, a state or the
+// column would be a page frozen at the moment it was written.
+describe('the moves a row may make', () => {
+  const pages = Object.entries(GENERATED).filter(([what]) => /list|edit|detail/.test(what) && !/resource file/.test(what))
+
+  test('every list and detail page draws one button per move, from transitions() at runtime', () => {
+    expect(pages.length).toBeGreaterThan(4)
+    for (const [what, source] of pages) {
+      expect(source, `${what} does not ask the resource for the moves`).toMatch(/\.transitions\(rec, session\.level\)/)
+      expect(source, `${what} offers a @system move a browser can never make`).toContain('.filter(t => !t.system)')
+      expect(source, `${what} has no button per move`).toMatch(/\{#each movesOf\(record\) as t \(t\.name\)\}/)
+      expect(source, `${what} does not call the move by its name`).toContain('.service.invoke(t.name, key)')
+      expect(source, `${what} labels a button with the identifier`).toContain('>{t.label}</Button>')
+    }
+  })
+
+  test('a move shows at once and is put back on a refusal, and the refusal is said', () => {
+    for (const [what, source] of pages) {
+      expect(source, `${what} does not move the row's node`).toContain('.mutate(key, { [t.field]: t.to }')
+      expect(source, `${what} swallows a refused move`).toMatch(/catch \(e\) \{ (error|failed) = e\.message \}/)
+    }
+  })
+
+  test('a page with no session of its own grades against sierra\'s, and watches it once', () => {
+    for (const [what, source] of pages) {
+      const own = source.includes("from '../../session.js'")
+      expect(source.includes("import { session } from '@frontierjs/sierra/junction'"), what).toBe(!own)
+      expect(source.match(/^\s*\$: session\.level$/gm)?.length, `${what} watches the level ${source.match(/^\s*\$: session\.level$/gm)?.length} times`).toBe(1)
+    }
+  })
+
+  test('a detail page with no moves draws no empty cluster', () => {
+    for (const [what, source] of pages.filter(([w]) => /edit|detail/.test(w))) {
+      expect(source, what).toContain('{#if record && movesOf(record).length}')
+    }
+  })
+
+  test('the template names no move, state or column', () => {
+    for (const [what, source] of pages) {
+      expect(source, what).not.toMatch(/invoke\('/)
+      expect(source, what).not.toMatch(/\bstatus\b/)
+    }
   })
 })
 

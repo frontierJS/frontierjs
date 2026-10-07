@@ -297,6 +297,41 @@
 }
 
 .detail-slot:empty { display: none; }
+
+/* ─── a machine ──────────────────────────────────────────────────────────── */
+
+/*
+ * The second picture on the page. A line's color is its move's tone, set
+ * inline from MOVE_TONE so the legend and the board cannot disagree; what is
+ * here is the SHAPE of each kind, which is what still reads in a theme whose
+ * tones sit close together. Wider than a narrow pane on purpose: the figure
+ * scrolls inside itself rather than squeezing the states.
+ */
+.machine-figure { overflow-x: auto; }
+.machine-svg    { display: block; max-inline-size: none; }
+.machine-svg text { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; fill: currentColor; }
+
+.mv-line { fill: none; stroke-width: 1.8; }
+.mv-line.gated { stroke-dasharray: 7 4; }
+.mv-line.app,
+.mv-line.timed { stroke-dasharray: 2 4; stroke-linecap: round; stroke-width: 2.2; }
+
+.mv-state rect       { fill: var(--surface-raised, var(--surface)); stroke: var(--ink); stroke-width: 1.5; }
+.mv-state rect.ring  { fill: none; stroke-width: 1; }
+.mv-state.unreached rect { stroke: var(--ink-mute); stroke-dasharray: 4 4; }
+.mv-state-name       { font-weight: 600; font-size: 13px; color: var(--ink); }
+.mv-state-sub        { font-size: 10.5px; color: var(--ink-mute); }
+.mv-entry            { fill: var(--ink); }
+
+.mv-label            { cursor: pointer; }
+.mv-label rect       { fill: var(--surface); stroke: currentColor; stroke-opacity: 0.35; }
+.mv-label text       { font-weight: 600; }
+.mv-label:hover rect,
+.mv-label.on rect    { stroke-opacity: 1; stroke-width: 1.6; }
+.mv-label:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.faded               { opacity: 0.25; }
+
+.warden-glyphs { font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0.1em; }
 </style>
 </head>
 
@@ -464,6 +499,8 @@ function buildModel(map) {
     migrations: map.migrations ?? [],
     env:        map.env ?? null,
     atlas:      map.atlas ?? { skipped: true },
+    access:     map.access ?? null,
+    machines:   buildMachines(defs, services, map.access),
     issues:     collectIssues({ services, resources, surface, models, env: map.env, packages }),
   }
 }
@@ -1066,6 +1103,552 @@ function packageDetail(id, close) {
     </article>`
 }
 
+// ─── Machines and the Warden ──────────────────────────────────────────────────
+//
+// Two panels about how rows MOVE and who may move them, both read off the
+// schema and nothing placed by hand. A machine is one `@@transitions` column
+// with the `@@commitments` that fire its moves on a date; the Warden is
+// `litestone access` read for one model at one caller level. The tables the
+// schema panel already has answer *what is declared*; these answer *what does
+// that mean for a row, and for this caller*.
+
+// A move is drawn by who makes it. Status tones are kept for verdicts, so the
+// four kinds take the non-status tones plus warning — an @system move is one a
+// caller cannot ask for, which is the one a reader is most often surprised by.
+const MOVE_TONE = { person: 'primary', gated: 'secondary', app: 'warning', timed: 'info' }
+const MOVE_SAYS = {
+  person: 'a caller asks for it',
+  gated:  'only at a higher level',
+  app:    'the app makes it, nobody can ask',
+  timed:  'happens on a date',
+}
+
+// `services` reports the model as its service named it, which is sometimes the
+// accessor (`orders`) rather than the model (`Order`).
+function servicesFor(services, name) {
+  const lc = name.toLowerCase()
+  const spellings = [lc, lc + 's', lc + 'es', lc.replace(/y$/, 'ies')]
+  return services.filter(s => s.model === name || spellings.includes(String(s.model ?? '').toLowerCase()))
+}
+
+// The first paragraph of a model's `///` note — the schema's own words for it.
+function firstParagraph(desc) {
+  if (!desc) return ''
+  return desc.trim().split(/\n\s*\n| {2,}/)[0].replace(/\*\*|`/g, '').slice(0, 420)
+}
+
+function timerWhen(t) {
+  const o = t.offset
+  return t.on + (!o ? '' : o.field ? ` + ${o.field}` : ` + ${o.value}${o.unit}`)
+}
+
+function timerWords(t) {
+  const o   = t.offset
+  const src = t.owner === t.target ? '' : ` of its ${t.owner}`
+  const at  = t.kind === 'day' ? `on the day of ${t.on}${src}` : `at ${t.on}${src}`
+  const amt = !o ? '' : o.field ? `${o.field} days` : `${o.value} ${o.unit === 'd' ? 'days' : o.unit}`
+  const w   = t.while
+  const cond = !w ? ''
+    : w.type === 'compare' && w.left?.type === 'field' && w.right?.type === 'literal'
+      ? `, while the ${t.owner}'s ${w.left.name} is still ${w.right.value}`
+      : ', while a condition holds'
+  return (o ? `${amt} after ${t.on}${src}` : at) + cond
+}
+
+function buildMachines(defs, services = [], access = null) {
+  const timers = []
+  for (const [owner, def] of Object.entries(defs))
+    for (const [id, c] of Object.entries(def['x-commitments'] ?? {})) timers.push({ id, owner, ...c })
+
+  // `@seals` is in the access reading and not in the JSON Schema's moves.
+  const declared = (model, field, move) => (access?.models ?? [])
+    .find(m => m.name === model)?.transitions?.find(t => t.field === field && t.name === move) ?? null
+
+  const out = []
+  for (const [name, def] of Object.entries(defs)) {
+    if (def['x-litestone-kind'] !== 'model' || !def['x-transitions']) continue
+    const update = def['x-gate']?.update ?? null
+    const svc    = servicesFor(services, name)
+
+    for (const [field, movesByName] of Object.entries(def['x-transitions'])) {
+      const prop  = def.properties?.[field] ?? {}
+      const ref   = prop.$ref ? defs[prop.$ref.split('/').pop()] : null
+      const moves = Object.entries(movesByName).map(([mv, m]) => {
+        const timer = timers.find(t => t.target === name && t.field === field && t.transition === mv) ?? null
+        const kind  = timer ? 'timed'
+          // 8 is asSystem() and nothing else, so a move graded there is the app's
+          : m.system || Math.max(update ?? 0, m.gate ?? 0) >= 8 ? 'app'
+          : m.gate != null && m.gate > (update ?? 0) ? 'gated'
+          : 'person'
+        return {
+          name: mv, from: m.from.map(String), to: String(m.to),
+          gate: m.gate ?? null, system: !!m.system, seals: !!declared(name, field, mv)?.seals,
+          kind, timer,
+          methods: svc.filter(s => (s.customMethods ?? []).includes(mv)).map(s => `${s.name}.${mv}()`),
+        }
+      })
+      const named  = ref?.enum ?? (prop.type === 'boolean' ? [false, true] : [])
+      const states = [...new Set([...named.map(String), ...moves.flatMap(m => [...m.from, m.to])])]
+      const froms  = new Set(moves.flatMap(m => m.from))
+      const tos    = new Set(moves.map(m => m.to))
+      const entry  = prop.default != null ? String(prop.default) : null
+      out.push({
+        model: name, field, update, states, entry, moves,
+        terminal:  states.filter(s => tos.has(s) && !froms.has(s)),
+        unreached: states.filter(s => !tos.has(s) && s !== entry),
+        note:      firstParagraph(def.description),
+        services:  svc.map(s => s.name),
+        channel:   svc.find(s => s.channel)?.channel ?? null,
+        incoming:  timers.filter(t => t.target === name && t.field === field && t.owner !== name),
+        outgoing:  timers.filter(t => t.owner === name && t.target !== name),
+      })
+    }
+  }
+  return out
+}
+
+// ── the layout ──
+//
+// Layered, left to right, with no library: the page needs no network, and a
+// machine is a handful of states. A state's column is its distance from the
+// entry, every final state shares the last column, and each forward move takes
+// a slot in every column between its ends — the middle one holds its label —
+// so a long move bends around the states it passes instead of through them.
+// A move back, or between two states of one column, arcs outside the columns.
+const MONO_ADVANCE = 7.2   // px per character at 12px mono; boxes are sized from it
+
+function moveLabel(mv) {
+  return mv.name + (mv.kind === 'gated' ? ` · ${mv.gate}+` : '') + (mv.seals ? ' · seals' : '') +
+         (mv.timer ? ` · ${timerWhen(mv.timer)}` : '')
+}
+
+function layoutMachine(mc) {
+  const NODE_H = 40, LABEL_H = 22, GAP_X = 26, GAP_Y = 16, EMPTY_W = 36
+
+  const start = mc.entry ?? mc.states[0]
+  const rank  = new Map([[start, 0]])
+  for (const queue = [start]; queue.length;) {
+    const s = queue.shift()
+    for (const m of mc.moves) if (m.from.includes(s) && !rank.has(m.to)) { rank.set(m.to, rank.get(s) + 1); queue.push(m.to) }
+  }
+  const final = new Set(mc.terminal)
+  let last = 0
+  for (const [s, r] of rank) if (!final.has(s)) last = Math.max(last, r)
+  for (const s of mc.states) {
+    if (!rank.has(s)) rank.set(s, 0)
+    else if (final.has(s)) rank.set(s, last + 1)
+  }
+
+  const cols  = []
+  const items = new Map()
+  const add   = (c, it) => { (cols[c] ??= []).push(it); items.set(it.id, it); it.col = c; return it }
+  for (const s of mc.states)
+    add(2 * rank.get(s), { id: 's:' + s, kind: 'state', state: s, w: Math.max(84, s.length * 8 + 32), h: NODE_H, preds: [] })
+
+  const forward = [], back = [], side = []
+  for (const mv of mc.moves) {
+    const b    = 2 * rank.get(mv.to)
+    const text = moveLabel(mv)
+    const lw   = text.length * MONO_ADVANCE + 16
+    const ahead = []
+    for (const f of mv.from) {
+      const a = 2 * rank.get(f)
+      const e = { mv, from: [f], to: mv.to, key: `${mv.name}:${f}`, text, lw }
+      if (b < a) back.push(e)
+      else if (b === a) {
+        e.label = add(a + 1, { id: `l:${mv.name}:${f}`, kind: 'label', w: lw, h: LABEL_H, preds: ['s:' + f] })
+        side.push(e)
+      } else ahead.push(f)
+    }
+    if (!ahead.length) continue
+    // Every forward from-state converges on ONE label in the gap before the
+    // target, so a move out of three states reads as one move and not three.
+    const label = add(b - 1, { id: `l:${mv.name}`, kind: 'label', w: lw, h: LABEL_H, preds: [] })
+    const legs  = ahead.map(f => {
+      const via = []
+      let prev = 's:' + f
+      for (let c = 2 * rank.get(f) + 1; c < b - 1; c++) {
+        const it = add(c, { id: `d:${mv.name}:${f}:${c}`, kind: 'dummy', w: 0, h: 2, preds: [prev] })
+        via.push(it)
+        prev = it.id
+      }
+      label.preds.push(prev)
+      return { from: f, via }
+    })
+    items.get('s:' + mv.to).preds.push(label.id)
+    forward.push({ mv, from: ahead, to: mv.to, key: `${mv.name}:${ahead[0]}`, text, lw, label, legs })
+  }
+
+  // One barycenter sweep: each item sits near the items that lead into it.
+  const pos = (it) => cols[it.col].indexOf(it) - (cols[it.col].length - 1) / 2
+  for (let c = 1; c < cols.length; c++) {
+    if (!cols[c]) continue
+    const bary = new Map(cols[c].map((it, i) => [it, it.preds.length
+      ? it.preds.reduce((n, p) => n + pos(items.get(p)), 0) / it.preds.length
+      : i - (cols[c].length - 1) / 2]))
+    cols[c].sort((x, y) => bary.get(x) - bary.get(y))
+  }
+
+  let cursor = 0
+  for (let c = 0; c < cols.length; c++) {
+    const col   = cols[c] ?? []
+    const width = Math.max(c % 2 ? EMPTY_W : 0, ...col.map(it => it.w))
+    const total = col.reduce((n, it) => n + it.h, 0) + GAP_Y * Math.max(0, col.length - 1)
+    let y = -total / 2
+    for (const it of col) { it.cx = cursor + width / 2; it.cy = y + it.h / 2; y += it.h + GAP_Y }
+    cursor += width + GAP_X
+  }
+
+  const st     = (s) => items.get('s:' + s)
+  const states = mc.states.map(s => st(s))
+  const top    = Math.min(...[...items.values()].map(it => it.cy - it.h / 2))
+  const curve  = (p, q) => {
+    const dx = (q[0] - p[0]) / 2
+    return p[1] === q[1] ? ` L${q[0]},${q[1]}` : ` C${p[0] + dx},${p[1]} ${q[0] - dx},${q[1]} ${q[0]},${q[1]}`
+  }
+
+  const edges = []
+  for (const e of forward) {
+    const b = st(e.to), lab = e.label
+    let d = ''
+    for (const leg of e.legs) {
+      const a   = st(leg.from)
+      const pts = [[a.cx + a.w / 2, a.cy], ...leg.via.map(it => [it.cx, it.cy]), [lab.cx - lab.w / 2, lab.cy]]
+      d += `M${pts[0][0]},${pts[0][1]}`
+      for (let i = 1; i < pts.length; i++) d += curve(pts[i - 1], pts[i])
+    }
+    const p = [lab.cx + lab.w / 2, lab.cy], q = [b.cx - b.w / 2 - 2, b.cy]
+    edges.push({ ...e, d: d + `M${p[0]},${p[1]}` + curve(p, q), lx: lab.cx, ly: lab.cy })
+  }
+
+  // A move within one column leaves its state on the right, turns at its
+  // label in the gap column, and comes back into the target's right edge.
+  for (const e of side) {
+    const a = st(e.from[0]), b = st(e.to), lab = e.label
+    const self = e.from[0] === e.to ? 8 : 0
+    const p = [a.cx + a.w / 2, a.cy - self], m = [lab.cx - lab.w / 2, lab.cy], q = [b.cx + b.w / 2 + 2, b.cy + self]
+    edges.push({ ...e, d: `M${p[0]},${p[1]}` + curve(p, m) + curve(m, q), lx: lab.cx, ly: lab.cy })
+  }
+
+  // A move backward arcs over the top. A cubic's apex is three quarters of
+  // the way to its control points.
+  let over = 0
+  for (const e of back) {
+    const a = st(e.from[0]), b = st(e.to)
+    const y0 = a.cy - a.h / 2, y3 = b.cy - b.h / 2
+    const apex = top - 20 - 30 * over++
+    const ctl  = (apex - 0.125 * (y0 + y3)) / 0.75
+    const d = `M${a.cx},${y0} C${a.cx},${ctl} ${b.cx},${ctl} ${b.cx},${y3 - 2}`
+    edges.push({ ...e, d, lx: (a.cx + b.cx) / 2, ly: apex })
+  }
+
+  const entry = st(start)
+  const placed = [...items.values()]
+  const xs = [...placed.map(it => it.cx - it.w / 2), entry.cx - entry.w / 2 - 34, ...edges.map(e => e.lx - e.lw / 2)]
+  const xe = [...placed.map(it => it.cx + it.w / 2), ...edges.map(e => e.lx + e.lw / 2)]
+  const ys = [...placed.map(it => it.cy - it.h / 2), ...edges.map(e => e.ly - LABEL_H / 2)]
+  const ye = [...placed.map(it => it.cy + it.h / 2), ...edges.map(e => e.ly + LABEL_H / 2)]
+  const M = 16
+  return {
+    dx: M - Math.min(...xs), dy: M - Math.min(...ys),
+    width:  Math.max(...xe) - Math.min(...xs) + 2 * M,
+    height: Math.max(...ye) - Math.min(...ys) + 2 * M,
+    labelH: LABEL_H,
+    entry:  { x: entry.cx - entry.w / 2, y: entry.cy },
+    states: states.map(it => ({
+      state: it.state, cx: it.cx, cy: it.cy, w: it.w, h: it.h,
+      entry: it.state === mc.entry, final: final.has(it.state), unreached: mc.unreached.includes(it.state),
+    })),
+    edges,
+  }
+}
+
+function machineSvg(mc, selected) {
+  const L   = layoutMachine(mc)
+  const arrows = Object.values(MOVE_TONE).concat('ink').map(t => `
+    <marker id="mv-${t}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: ${t === 'ink' ? 'var(--ink)' : `var(--color-${t})`}"/></marker>`).join('')
+
+  const lines = L.edges.map(e => `<path class="mv-line ${e.mv.kind}${selected && selected !== e.mv.name ? ' faded' : ''}"
+      d="${e.d}" style="stroke: var(--color-${MOVE_TONE[e.mv.kind]})" marker-end="url(#mv-${MOVE_TONE[e.mv.kind]})"/>`).join('')
+
+  const labels = L.edges.map(e => `
+    <g class="mv-label${selected === e.mv.name ? ' on' : ''}${selected && selected !== e.mv.name ? ' faded' : ''}"
+       tabindex="0" role="button" data-move="${esc(e.key)}" aria-pressed="${selected === e.mv.name}"
+       aria-label="${esc(`${e.mv.name}, from ${e.from.join(' or ')} to ${e.to}: ${MOVE_SAYS[e.mv.kind]}`)}"
+       onclick="pickMove('${esc(e.mv.name)}', '${esc(e.key)}')"
+       onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pickMove('${esc(e.mv.name)}', '${esc(e.key)}') }"
+       style="color: var(--color-${MOVE_TONE[e.mv.kind]})">
+      <rect x="${e.lx - e.lw / 2}" y="${e.ly - L.labelH / 2}" width="${e.lw}" height="${L.labelH}" rx="${L.labelH / 2}"/>
+      <text x="${e.lx}" y="${e.ly + 4}" text-anchor="middle">${esc(e.text)}</text>
+    </g>`).join('')
+
+  const states = L.states.map(s => {
+    const x = s.cx - s.w / 2, y = s.cy - s.h / 2
+    const sub = s.entry ? 'starts here' : s.final ? 'final' : s.unreached ? 'nothing moves here' : ''
+    return `<g class="mv-state${s.final ? ' final' : ''}${s.unreached ? ' unreached' : ''}">
+      ${s.final ? `<rect class="ring" x="${x - 4}" y="${y - 4}" width="${s.w + 8}" height="${s.h + 8}" rx="${(s.h + 8) / 2}"/>` : ''}
+      <rect x="${x}" y="${y}" width="${s.w}" height="${s.h}" rx="${s.h / 2}"/>
+      <text class="mv-state-name" x="${s.cx}" y="${s.cy + (sub ? 0 : 4)}" text-anchor="middle">${esc(s.state)}</text>
+      ${sub ? `<text class="mv-state-sub" x="${s.cx}" y="${s.cy + 13}" text-anchor="middle">${sub}</text>` : ''}
+    </g>`
+  }).join('')
+
+  const entry = mc.entry == null ? '' : `
+    <circle class="mv-entry" cx="${L.entry.x - 28}" cy="${L.entry.y}" r="6"/>
+    <path d="M${L.entry.x - 22},${L.entry.y} H${L.entry.x - 3}" style="stroke: var(--ink)" stroke-width="1.5" marker-end="url(#mv-ink)"/>`
+
+  return `<svg class="machine-svg" viewBox="0 0 ${L.width} ${L.height}" width="${L.width}" height="${L.height}" role="group"
+      aria-label="${esc(`${mc.model}.${mc.field}: states ${mc.states.join(', ')}`)}">
+    <defs>${arrows}</defs>
+    <g transform="translate(${L.dx},${L.dy})">${lines}${entry}${states}${labels}</g>
+  </svg>`
+}
+
+// ── the panel ──
+let machineIdx = 0
+let moveSel    = null   // { name, key } — the move whose detail is open
+
+function pickMachine(i) { machineIdx = i; moveSel = null; selectPanel('machines') }
+function pickMove(name, key) {
+  moveSel = moveSel?.name === name ? null : { name, key }
+  selectPanel('machines')
+  document.querySelector(`.mv-label[data-move="${CSS.escape(key)}"]`)?.focus()
+}
+
+function levelName(n) {
+  const levels = MODEL.access?.levels
+  const hit = levels && Object.entries(levels).find(([, v]) => v === n)
+  return hit ? hit[0] : (REF.TRUST[n] ?? `level ${n}`)
+}
+const levelWord = (n) => `${levelName(n)} (${n})`
+
+function machinesPanel() {
+  const all = MODEL.machines
+  if (!all.length)
+    return empty('No state machines', 'No model declares @@transitions, so every status column is written freely and nothing says which change is allowed.')
+
+  const mc   = all[Math.min(machineIdx, all.length - 1)]
+  const sel  = moveSel && mc.moves.find(m => m.name === moveSel.name)
+  const kinds = Object.keys(MOVE_TONE)
+  const byKind = Object.fromEntries(kinds.map(k => [k, mc.moves.filter(m => m.kind === k)]))
+  const whoLabel = {
+    person: `Callers at ${mc.update != null ? levelWord(mc.update) : 'any level'}`,
+    gated:  'Only higher',
+    app:    'The app does',
+    timed:  'On a date',
+  }
+
+  const tabs = `<div class="tablist pills" role="tablist" aria-label="State machines">${all.map((m, i) => `
+    <button class="tab" role="tab" aria-selected="${m === mc}" onclick="pickMachine(${i})">
+      ${esc(m.model)}<span class="text-muted">.${esc(m.field)}</span></button>`).join('')}</div>`
+
+  const summary = `<dl class="facts">${kinds.filter(k => byKind[k].length).map(k => `
+    <dt>${esc(whoLabel[k])}</dt>
+    <dd>${byKind[k].map(m => `<span class="badge ${MOVE_TONE[k]}">${esc(m.name)}${
+      k === 'gated' ? ` · ${esc(levelName(m.gate))}` : k === 'timed' ? ` · ${esc(timerWhen(m.timer))}` : ''}</span>`).join(' ')}</dd>`).join('')}
+  </dl>`
+
+  const legend = `<div class="cluster gap-md text-xs text-muted">
+    ${kinds.map(k => `<span class="cluster gap-2xs"><svg width="34" height="10" aria-hidden="true"><path class="mv-line ${k}" d="M1,5 H33" style="stroke: var(--color-${MOVE_TONE[k]})"/></svg>${esc(MOVE_SAYS[k])}</span>`).join('')}
+    <span class="cluster gap-2xs"><svg width="24" height="16" aria-hidden="true" class="machine-svg"><g class="mv-state final"><rect class="ring" x="1" y="1" width="22" height="14" rx="7"/><rect x="4" y="4" width="16" height="8" rx="4"/></g></svg>final: nothing moves it again</span>
+  </div>`
+
+  const detail = sel ? moveDetail(mc, sel) : machineDetail(mc)
+
+  return `
+    ${tabs}
+    <section class="stack gap-md">
+      <div class="stack gap-2xs">
+        <h3 class="h5">${esc(mc.model)}<span class="text-muted">.${esc(mc.field)}</span></h3>
+        <p class="text-sm ${mc.note ? '' : 'text-muted'}">${mc.note ? esc(mc.note) : `No /// note on ${esc(mc.model)} in db/schema.lite.`}</p>
+      </div>
+      ${summary}
+      <div class="machine-figure">${machineSvg(mc, sel?.name ?? null)}</div>
+      ${legend}
+      ${detail}
+    </section>
+    ${machinesGap()}`
+}
+
+function machineDetail(mc) {
+  return `<article class="card outlined"><div class="stack gap-sm">
+    <p class="text-sm">${mc.states.length} states and ${mc.moves.length} moves. A write that changes <code>${esc(mc.field)}</code>
+      any other way is refused at the Data boundary whoever sends it, so a job, a seed and an agent meet the same picture.
+      Click a move for what it means.</p>
+    ${mc.incoming.length ? `<p class="text-sm"><strong>Moved from outside:</strong> ${mc.incoming.map(t =>
+      `a <code>${esc(t.owner)}</code> makes <code>${esc(t.transition)}</code> ${esc(timerWords(t))}`).join('; ')}.</p>` : ''}
+    ${mc.outgoing.length ? `<p class="text-sm"><strong>Moves other machines:</strong> ${mc.outgoing.map(t =>
+      `<code>${esc(t.target)}.${esc(t.transition)}</code> ${esc(timerWords(t))}`).join('; ')}.</p>` : ''}
+    <dl class="facts">
+      <dt>service</dt><dd>${mc.services.length ? mc.services.map(s => `<code>${esc(s)}</code>`).join(', ') : '<span class="text-muted">none</span>'}</dd>
+      <dt>announced</dt><dd>${mc.channel ? `on <code>${esc(mc.channel)}</code>, graded per listener` : '<span class="text-muted">no channel</span>'}</dd>
+    </dl>
+  </div></article>`
+}
+
+const article = (noun) => /^[aeiou]/i.test(noun) ? 'an' : 'a'
+
+function moveDetail(mc, mv) {
+  const a = `${article(mc.model)} ${mc.model}`
+  const who = {
+    person: `Anyone who may update ${a}: ${levelWord(mc.update ?? 0)} and above.`,
+    gated:  `Only ${levelWord(mv.gate)} and above. Everyone else who may edit ${a} is refused this one move.`,
+    app:    'Nobody can ask for it. The app makes this move itself, through a system call.',
+    timed:  `Nobody can ask for it. It happens on its own, ${mv.timer ? timerWords(mv.timer) : ''}.`,
+  }[mv.kind]
+  const decl = `${mv.name}: ${mv.from.join(' | ')} -> ${mv.to}` + (mv.gate != null ? ` @gate(${mv.gate})` : '') +
+               (mv.system ? ' @system' : '') + (mv.seals ? ' @seals' : '')
+  return `<article class="card outlined"><div class="stack gap-sm">
+    <div class="cluster gap-sm"><span class="badge ${MOVE_TONE[mv.kind]}">${esc(MOVE_SAYS[mv.kind])}</span><strong>${esc(mv.name)}</strong></div>
+    <p class="text-sm">Moves ${esc(a)} from ${mv.from.map(f => `<code>${esc(f)}</code>`).join(' or ')} to <code>${esc(mv.to)}</code>. ${esc(who)}</p>
+    ${mv.seals ? `<p class="text-sm"><strong>It seals the row.</strong> After this move every <code>@immutable</code> column is frozen for everybody, the app included, and its <code>@sealed</code> children can no longer change.</p>` : ''}
+    <dl class="facts">
+      <dt>declared</dt><dd><code>${esc(decl)}</code></dd>
+      ${mv.timer ? `<dt>timer</dt><dd><code>${esc(mv.timer.id)}</code> on <code>${esc(mv.timer.owner)}</code>: ${esc(timerWhen(mv.timer))}</dd>` : ''}
+      <dt>asked by</dt><dd>${mv.methods.length ? mv.methods.map(m => `<code>${esc(m)}</code>`).join(', ') : '<span class="text-muted">no service method of this name</span>'}</dd>
+      <dt>announced</dt><dd>${mc.channel ? `on <code>${esc(mc.channel)}</code>, graded per listener` : '<span class="text-muted">no channel</span>'}</dd>
+    </dl>
+  </div></article>`
+}
+
+// What the board cannot draw, said once rather than drawn as a guess: a job or
+// a notification names no move, so a link between them is a match on names.
+function machinesGap() {
+  const a = MODEL.atlas
+  if (!a?.jobs && !a?.notifications) return ''
+  const jobs  = [...(a.jobs?.durable ?? []), ...(a.jobs?.timers ?? [])].map(j => j.name)
+  const notes = (a.notifications?.declared ?? []).map(n => n.type)
+  if (!jobs.length && !notes.length) return ''
+  return `<p class="text-xs text-muted">Not on the board: ${jobs.length} job${jobs.length === 1 ? '' : 's'} and
+    ${notes.length} notification${notes.length === 1 ? '' : 's'}. Neither declares the move it makes or follows, so the
+    link would be a guess from names.</p>`
+}
+
+// ── the Warden ──
+//
+// One model at one caller level, through the layers `docs/warden.md` names.
+// Pure, so the verdicts have a test; the panel only lays them out.
+const OPS = ['read', 'create', 'update', 'delete']
+
+function wardenAt(m, level) {
+  const system = level >= 8
+  const ops = Object.fromEntries(OPS.map(op => {
+    const need = m.gate?.[op]
+    if (need == null) return [op, { ok: true, says: 'open' }]
+    if (need === 9)   return [op, { ok: false, says: 'locked' }]
+    if (level < need) return [op, { ok: false, says: `needs ${need}` }]
+    if (system)       return [op, { ok: true, says: 'every row' }]
+    const p = m.policies?.[op]
+    return p && (p.allows?.length || p.denies?.length)
+      ? [op, { ok: true, filtered: true, says: op === 'create' ? 'checked' : 'some rows' }]
+      : [op, { ok: true, says: 'every row' }]
+  }))
+  // A move's gate is a FLOOR on the update level (`FJS-D511`), and an @system
+  // move is the application's alone.
+  const moves = (m.transitions ?? []).map(t => {
+    const need = Math.max(m.gate?.update ?? 0, t.gate ?? 0)
+    const ok   = t.system ? system : level >= need
+    return { name: t.name, field: t.field, ok, says: t.system ? 'app only' : `needs ${need}` }
+  })
+  return { system, ops, moves }
+}
+
+let wardenModel = null
+let wardenLevel = 4
+function pickWardenModel(name) { wardenModel = name; selectPanel('warden') }
+function pickWardenLevel(n)    { wardenLevel = n;    selectPanel('warden') }
+
+function wardenPanel() {
+  const acc = MODEL.access
+  if (!acc) return empty('No access reading', 'Run project:map without --layer to read the Warden off db/schema.lite.')
+  if (acc.error) return `<article class="alert warning"><div class="alert-content">
+    <strong>The Warden could not be read.</strong><p>${esc(acc.error)}</p></div></article>`
+
+  const models = [...acc.models].sort((a, b) =>
+    (!!b.transitions?.length - !!a.transitions?.length) || a.name.localeCompare(b.name))
+  const m = models.find(x => x.name === wardenModel) ?? models[0]
+  if (!m) return empty('No models', 'litestone access found no model in db/schema.lite.')
+  const L = wardenLevel
+  const v = wardenAt(m, L)
+
+  const yes   = (t) => `<span class="badge success">${esc(t)}</span>`
+  const no    = (t) => `<span class="badge danger">${esc(t)}</span>`
+  const some  = (t) => `<span class="badge info">${esc(t)}</span>`
+  const quiet = (t) => `<span class="badge muted">${esc(t)}</span>`
+  const opBadge = (op) => { const o = v.ops[op]; return !o.ok ? no(`${op} ✕`) : o.filtered ? some(`${op}: ${o.says}`) : yes(`${op}: ${o.says}`) }
+  const none  = (t) => `<span class="text-muted">${esc(t)}</span>`
+
+  const pols = Object.entries(m.policies ?? {})
+  const tenancy = MODEL.atlas?.principal?.tenancy
+  const unknownClaims = acc.claims?.unknown ?? []
+  const channel = servicesFor(MODEL.services, m.name).find(s => s.channel)?.channel
+
+  const rows = [
+    ['1', 'principal', 'who is asking',
+      `A caller at <strong>${esc(levelWord(L))}</strong>.` +
+      (tenancy?.strategy ? ` Tenancy is <code>${esc(tenancy.strategy)}</code>${tenancy.resolve ? `, resolved from ${esc(tenancy.resolve)}` : ''}.` : '') +
+      (unknownClaims.length ? `<div class="text-xs text-muted">Read by a rule and declared by no resolver: ${unknownClaims.map(c => `<code>${esc(c)}</code>`).join(', ')} — a rule reading one treats it as unknown.</div>` : ''),
+      quiet(v.system ? 'system call' : 'signed in')],
+    ['2', 'gate', 'what kind of caller',
+      m.gate ? `<code>@@gate("${esc(m.gateSource)}")</code>` : none('No gate: open to every caller.'),
+      OPS.map(op => { const need = m.gate?.[op]; return need == null || (need !== 9 && L >= need) ? yes(`${op} ✓`) : no(`${op} ✕`) }).join(' ')],
+    ['3', 'capability', 'which action',
+      m.capabilities ? `<code>${esc(JSON.stringify(m.capabilities))}</code>` : none('None declared; the gate alone decides.'),
+      quiet(m.capabilities ? 'declared' : 'none')],
+    ['4', 'row policy', 'whose row',
+      pols.length ? pols.map(([op, p]) => `<div><strong>${esc(op)}</strong> ${
+        p.allows?.length ? `admits ${p.allows.map(a => `<code>${esc(a.expr)}</code>`).join(' or ')}` : ''}${
+        p.denies?.length ? ` · refuses ${p.denies.map(a => `<code>${esc(a.expr)}</code>`).join(' or ')}` : ''}</div>`).join('')
+        : none('No row policy: whoever passes the gate reaches every row.'),
+      v.system ? yes('lifted for system') : OPS.filter(op => v.ops[op].ok).map(opBadge).join(' ') || quiet('nothing reached')],
+    ['5', 'field', 'which columns',
+      (m.fields ?? []).length ? m.fields.map(f => `<code>${esc(f.name)}</code> <span class="text-xs text-muted">${esc(f.protection ?? '')}${
+        f.allows?.length ? ' · ' + f.allows.map(a => `@allow('${a.operations.join("','")}', ${a.expr})`).map(esc).join(' ') : ''}</span>`).join('<br>')
+        : none('No column is protected.'),
+      (m.fields ?? []).length ? (v.system ? yes('writes @system') : some(`${m.fields.length} held back`)) : quiet('none')],
+    ['6', 'validate', 'is it well-formed', none('Field rules and unknown keys — integrity, the same for every caller.'), quiet('everyone')],
+    ['7', 'transition', 'is this move allowed',
+      v.moves.length ? `${v.moves.map(x => `<code>${esc(x.name)}</code>`).join(' · ')}<div class="text-xs text-muted">${
+        v.system ? 'A system call may make any move, but only along the graph: which moves exist is never lifted.'
+                 : 'Which moves exist holds for everyone; who may ask is what changes with level.'}</div>`
+        : none('No state machine on this model.'),
+      v.moves.length ? v.moves.map(x => x.ok ? yes(`${x.name} ✓`) : no(`${x.name} ✕`)).join(' ') : quiet('none')],
+    ['8', 'execute', 'SQLite', none('CHECK, unique, foreign keys — never lifted, not for the app either.'), quiet('everyone')],
+    ['9', 'announce', 'who hears about it',
+      channel ? `Announced on <code>${esc(channel)}</code>; each listener is graded as themselves.` : none('No service channel announces this model.'),
+      quiet(channel ? 'per listener' : 'none')],
+  ]
+
+  const ladder = `<div class="tablist pills" role="tablist" aria-label="Caller level">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => `
+    <button class="tab" role="tab" aria-selected="${n === L}" onclick="pickWardenLevel(${n})">${n} <span class="text-xs">${esc(levelName(n))}</span></button>`).join('')}</div>`
+
+  const glyph = (o) => !o.ok ? '·' : o.filtered ? '◐' : '●'
+  const reach = models.map(x => {
+    const w = wardenAt(x, L)
+    const any = OPS.some(op => w.ops[op].ok)
+    return `<button class="btn ${x === m ? 'primary' : 'outlined'} text-xs${any ? '' : ' muted'}" onclick="pickWardenModel('${esc(x.name)}')"
+      aria-label="${esc(`${x.name}: ${OPS.map(op => `${op} ${w.ops[op].ok ? w.ops[op].says : 'refused'}`).join(', ')}`)}">
+      ${esc(x.name)} <span class="warden-glyphs" aria-hidden="true">${OPS.map(op => glyph(w.ops[op])).join('')}</span></button>`
+  }).join('')
+
+  return `
+    <div class="cluster gap-lg">
+      <label class="stack gap-2xs text-sm">model
+        <select class="field" onchange="pickWardenModel(this.value)">${models.map(x =>
+          `<option value="${esc(x.name)}"${x === m ? ' selected' : ''}>${esc(x.name)}${x.transitions?.length ? ' ⇄' : ''}</option>`).join('')}</select>
+      </label>
+      <div class="stack gap-2xs text-sm"><span>who is asking</span>${ladder}</div>
+    </div>
+    ${table(['', 'layer', 'declared on ' + m.name, 'at ' + levelName(L)], rows.map(([n, name, asks, decl, verdict]) => [
+      `<strong>${n}</strong>`, `<strong>${esc(name)}</strong><div class="text-xs text-muted">${esc(asks)}</div>`, decl, verdict]))}
+    <section class="stack gap-sm">
+      <h3 class="h6">What ${esc(levelWord(L))} reaches</h3>
+      <p class="text-xs text-muted">Read · create · update · delete for each model: ● every row, ◐ some rows, · refused. Click one to put it through the layers.</p>
+      <div class="cluster gap-2xs">${reach}</div>
+    </section>`
+}
+
 // ─── Panels ───────────────────────────────────────────────────────────────────
 //
 // `source` is the whole contract of this page. `project` is read off the tree
@@ -1075,6 +1658,8 @@ function packageDetail(id, close) {
 const PANELS = [
   { id: 'issues',     label: 'issues',     source: 'project',   render: () => issuesPanel() },
   { id: 'schema',     label: 'schema',     source: 'project',   render: () => schemaPanel() },
+  { id: 'machines',   label: 'machines',   source: 'project',   render: () => machinesPanel() },
+  { id: 'warden',     label: 'warden',     source: 'project',   render: () => wardenPanel() },
   { id: 'services',   label: 'services',   source: 'project',   render: () => servicesPanel() },
   { id: 'routes',     label: 'routes',     source: 'project',   render: () => routesPanel() },
   { id: 'plugins',    label: 'plugins',    source: 'project',   render: () => pluginsPanel() },

@@ -129,6 +129,25 @@ describe('internal callers can finally paginate', () => {
   })
 })
 
+describe('an in-process caller is refused an unknown `$` key too (FJS-D609)', () => {
+
+  // An mcp tool and a custom method handing its input to find both carry a
+  // wire's query through app.service(), which asked the directive table
+  // nothing -- so `$raw` reached Litestone as SQL (FJS-1816).
+  test('app.service().find refuses `$raw` by name, as the bridge does', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const call = app.service('things').find({ $raw: '1=1', status: 'open' })
+    await expect(call).rejects.toMatchObject({ code: 400 })
+    await expect(call).rejects.toThrow(/\$raw is not a directive/)
+  })
+
+  test('the control: a filter with no `$` is answered', async () => {
+    const app = await createTestApp({ services: [() => echoService()] })
+    const res = await app.service('things').find({ status: 'open' }) as { data: Array<{ query: unknown }> }
+    expect(res.data[0]!.query).toEqual({ status: 'open' })
+  })
+})
+
 describe('$wrap is tri-state', () => {
 
   const listService = () => createService({

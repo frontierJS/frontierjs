@@ -107,13 +107,17 @@ describe('the real tag still works, everywhere it worked before', () => {
     expect(rows.map((r: any) => r.name)).toEqual(['ada'])
   })
 
-  it('the plain-string $raw escape hatch is untouched', async () => {
-    // Deliberate, and a different question: `$raw` never claimed to tell a
-    // developer's SQL from a caller's. A `$` key is transport syntax and the
-    // bridge routes it to directives, so it cannot arrive from a request.
+  it('a plain-string $raw is refused, at any depth (FJS-D613)', async () => {
+    // The bridge refuses a TOP-LEVEL `$` key, and `?NOT[$raw]=…` parses to
+    // `{ NOT: { $raw } }`, which it never sees. Answered, these two counts read
+    // the @guarded salary one comparison at a time.
     const { as } = await seeded()
-    const rows = await as.employee.findMany({ where: { $raw: 'bonus > 2000' } })
-    expect(rows.map((r: any) => r.name)).toEqual(['ada'])
+    for (const where of [
+      { $raw: 'bonus > 2000' },
+      { NOT: { $raw: 'salary > 50000' } },
+      { OR: [{ id: 0 }, { $raw: 'salary > 50000' }] },
+      { NOT: { $raw: { _litestoneRaw: true, sql: 'salary > 50000', params: [] } } },
+    ]) await expect(as.employee.findMany({ where: where as any })).rejects.toThrow(ValidationError)
   })
 
   it('the tag still carries the public shape it declares', async () => {

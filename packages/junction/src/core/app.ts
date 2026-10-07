@@ -4,7 +4,7 @@
 // Plugin system: Option C hybrid — simple fn or full lifecycle object.
 
 import { HttpTransport }            from '../transport/http.ts'
-import { bridge, errorResponse } from '../transport/bridge.ts'
+import { bridge, errorResponse, refuseUnknownDirectives } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
@@ -912,7 +912,16 @@ export function createApp(opts: AppOptions = {}): App {
 
   // ── Subsystems ───────────────────────────────────────────────────────
   const logger    = opts.logger ?? createLogger({ level: opts.logLevel })
-  const services  = new ServiceRegistry()
+  // The parsed schema, for the moves a model declares (`FJS-1255`). A tenanted
+  // app has no `app.db`, and its registry carries the schema every tenant
+  // shares. Read guarded: an unknown property off a Litestone client throws by
+  // design, and a plain client has no schema to give.
+  const services  = new ServiceRegistry(() => {
+    try {
+      return (app.db as { $schema?: unknown } | undefined)?.$schema
+        ?? (app.tenants as { schema?: unknown } | undefined)?.schema
+    } catch { return null }
+  })
   // app.service(name) caller memo — see service() below.
   const _serviceCallers = new Map<string, ServiceCaller>()
   // Signal handler installed by start(), removed by stop() — kept here so
@@ -1134,6 +1143,11 @@ export function createApp(opts: AppOptions = {}): App {
       async function call(ctx: ServiceContext): Promise<unknown> {
         const svc = services.get(name)
         if (!svc) throw new NotFound(`Service '${name}' not found`)
+        // The bridge's own refusal, because an in-process caller can be
+        // carrying a wire's query -- an mcp tool, or a custom method handing
+        // its input to find (`FJS-D609`, Invariant 10). Here rather than in
+        // makeCtx so it rejects the promise instead of throwing past a .catch().
+        refuseUnknownDirectives(ctx.query)
         await callService(svc, ctx, app._appHooks, app.events, app.telemetry)
         // Same rule as the HTTP boundary: a list keeps its envelope, a single
         // unwraps to the record.

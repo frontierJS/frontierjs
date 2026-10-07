@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-06 — the Job forms stop restating that `status` is a machine (`FJS-1543`)
+
+The create and edit drawers in `web/src/routes/jobs/` passed `except={['status']}` so the form would not offer the `@@transitions` column as a select. Sierra's `formFieldList` now leaves a machine's column out of every generated form, so both call sites drop the restatement. The edit page's move buttons are unchanged.
+
 ## 2026-10-06 — the shell's notices move to a right rail
 
 The NoticeBar sat above every screen and pushed the page down by one alert per unreachable machine. From 1536px up it is a 20rem column to the right of the content, sticky under the topbar. Below that width it still stacks above the content, because a rail there squeezes every table to ~700px. The rail is first in source order either way, so a screen reader reaches it before the content. When every notice is dismissed it collapses and leaves no gap and no empty column (`:has()`). `_module.mesa` now has a `<style>` block for this, and it is layout only. `verify:screens` measures both widths; 240/240.

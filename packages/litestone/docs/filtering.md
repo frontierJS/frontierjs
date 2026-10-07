@@ -294,6 +294,8 @@ db.user.findMany({
 
 `$raw` works everywhere `where:` is accepted: `findMany`, `findFirst`, `count`, `exists`, `update`, `updateMany`, `remove`, `removeMany`, `aggregate`, `groupBy`.
 
+**Only a `sql` tag value is accepted, at any depth.** A plain string, or an object shaped like the tag's result, is refused with a `ValidationError` naming its path (`FJS-D613`). A string is how a caller's text arrives — `?NOT[$raw]=…` parses to `{ NOT: { $raw: '…' } }`, below where the API's `$` refusal looks — and JSON cannot produce the tag's brand. With nothing to interpolate, the tag is still the spelling: ``sql`deletedAt IS NULL` ``.
+
 ### The clock — `now()`
 
 **`datetime('now')` is refused by name, and this is why.** `DateTime` is stored
@@ -321,9 +323,9 @@ evaluator, and a test that needs a frozen instant binds its own ISO string.
 Modifiers are **bound as parameters**, not spliced, so a caller-supplied string
 never enters the SQL pattern.
 
-`now()` also works written as a **token** in raw SQL, which is the only spelling
-available to the two callers that cannot interpolate — a plain-string `$raw`,
-and a `@from(where: …)` string in the schema:
+`now()` also works written as a **token** — in the `sql` tag, and in a
+`@from(where: …)` string in the schema, which is the one caller that cannot
+interpolate:
 
 ```prisma
 model Account {
@@ -332,24 +334,18 @@ model Account {
 ```
 
 ```js
-db.task.findMany({ where: { $raw: `dueAt < now()` } })
+db.task.findMany({ where: { $raw: sql`dueAt < now()` } })
 ```
 
 Six spellings are refused — `datetime('now')`, `date('now')`, `time('now')`,
-`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME` — in the `sql` tag, in a
-plain-string `$raw`, and in a `@from(where: …)` string at client construction.
+`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME` — in the `sql` tag and in a
+`@from(where: …)` string at client construction.
 Each produces a format no stored `DateTime` can equal, so a comparison against
 one does not return too few rows; it answers a different question.
 
 **`julianday()` is untouched.** It answers a number, so
 `julianday('now') - julianday(createdAt) > 30` compares like with like — which is
 why the date-arithmetic example above is correct as written.
-
-Plain string also works for parameterless expressions:
-
-```js
-db.user.findMany({ where: { $raw: 'deletedAt IS NULL' } })
-```
 
 ## Row-level policies
 

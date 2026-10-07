@@ -23,7 +23,7 @@ import { AccessDeniedError }              from '../src/core/plugin.js'
 // substring: the prefix moved once (`v1.` → `v2.<kid>.`, FJS-714) and every
 // one of these read as a green test against a format that no longer existed.
 import { parseEnvelope, keyId }           from '../src/core/encryption.js'
-import { buildWhere, buildOrderBy, sql, now,
+import { buildWhere, buildOrderBy, sql, now, schemaRaw,
          encodeCursor, decodeCursor,
          normalizeOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr,
@@ -796,18 +796,11 @@ describe('query helpers', () => {
     expect(() => sql`a = time('now')`).toThrow(/time\('now'\)/)
   })
 
-  test('the plain-string $raw is checked too — it skips the tag, not the rule', () => {
-    const p: any[] = []
-    expect(() => buildWhere({ $raw: `dueAt < datetime('now')` }, p)).toThrow(/where\.\$raw/)
-  })
-
-  test('now() also works as a token, for the two callers that cannot interpolate', () => {
-    // A @from(where: …) is a string in the schema and a plain-string $raw has no
-    // interpolation either — without this the refusal would name a spelling
-    // neither of them can write.
-    const p: any[] = []
-    expect(buildWhere({ $raw: `dueAt < now()` }, p)).toBe(`(dueAt < strftime('%Y-%m-%dT%H:%M:%fZ','now'))`)
-    expect(buildWhere({ $raw: `dueAt > now('-7 days')` }, [])).toContain(`'now','-7 days'`)
+  test('now() also works as a token, for the caller that cannot interpolate', () => {
+    // A @from(where: …) is a string in the schema — without this the refusal
+    // would name a spelling it cannot write. The tag reads the same token.
+    expect(schemaRaw(`dueAt < now()`).sql).toBe(`dueAt < strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
+    expect(sql`dueAt > now('-7 days')`.sql).toContain(`'now','-7 days'`)
   })
 
   test('julianday() is untouched — it answers a number, so it compares like with like', () => {
@@ -836,11 +829,21 @@ describe('query helpers', () => {
     expect(p).toEqual(['active', 3])
   })
 
-  test('buildWhere — $raw plain string (no params)', () => {
+  test('buildWhere — $raw with no params is still the tag', () => {
     const p: any[] = []
-    const w = buildWhere({ $raw: 'deletedAt IS NULL' }, p)
+    const w = buildWhere({ $raw: sql`deletedAt IS NULL` }, p)
     expect(w).toBe('(deletedAt IS NULL)')
     expect(p).toEqual([])
+  })
+
+  test('buildWhere — a plain-string $raw is refused, at any depth (FJS-D613)', () => {
+    // A string is how a caller's text arrives; JSON has no symbol to forge the
+    // tag's brand with, and NOT/OR/AND are where the bridge's refusal cannot see.
+    for (const where of [
+      { $raw: 'deletedAt IS NULL' },
+      { NOT: { $raw: 'salary > 5' } },
+      { OR: [{ id: 1 }, { $raw: '1=1' }] },
+    ]) expect(() => buildWhere(where, [])).toThrow(/must be a sql`` tag, not a string/)
   })
 
   test('buildWhere — $raw invalid value throws', () => {
@@ -24850,9 +24853,11 @@ describe('$checkWhere', () => {
     db.$close()
   })
 
-  test('$raw is an escape hatch, not an unknown key', async () => {
+  test('$raw is an escape hatch, not an unknown key — as the tag only', async () => {
     const db = await makeDb(SCHEMA, 'checkwhere-raw')
-    expect(db.$checkWhere('product', { $raw: 'price > 1' })).toEqual([])
+    expect(db.$checkWhere('product', { $raw: sql`price > ${1}` })).toEqual([])
+    expect(db.$checkWhere('product', { NOT: { $raw: 'price > 1' } }).map((p: any) => p.reason))
+      .toEqual(['raw-untagged'])
     db.$close()
   })
 

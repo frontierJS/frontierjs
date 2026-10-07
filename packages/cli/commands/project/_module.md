@@ -22,6 +22,19 @@ const freshJsonSchema = ($) => {
   return JSON.parse(readFileSync(schemaJson, 'utf8'))
 }
 
+// ─── freshAccess ──────────────────────────────────────────────────────────────
+// The Warden's own reading of the schema — the same object `access.snapshot.md`
+// renders. The JSON Schema says only THAT a model has row policies
+// (`x-litestone-policies: true`), never what they admit, and field protection
+// is not in it at all, so a page asking *what can a level-4 caller do* has to
+// read it here. Shelled out for the reason the schema is: this package imports
+// no litestone.
+
+const freshAccess = ($) => JSON.parse(execSync(
+  `${$.bin('litestone')} access --schema db/schema.lite --json --stdout`,
+  { cwd: $.paths.root, stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 },
+).toString())
+
 // ─── scanFiles ────────────────────────────────────────────────────────────────
 // Returns all files under a directory matching one or more extensions.
 // Recursive: an app may group a service in its own folder
@@ -326,6 +339,14 @@ const buildProjectMap = async ($, { layer = '', atlas = true, log } = {}) => {
     catch (e) { return { error: `litestone jsonschema failed: ${e.message}` } }
   }
 
+  // Degraded rather than fatal, like the atlas: the warden panel says why, and
+  // every other section stands.
+  let access = null
+  if (want('schema')) {
+    try { access = freshAccess($) }
+    catch (e) { access = { error: `litestone access failed: ${String(e.stderr || e.message).split('\n')[0]}` } }
+  }
+
   let packages = []
   if (want('api')) packages = extractServerMeta(root).packages
 
@@ -369,6 +390,7 @@ const buildProjectMap = async ($, { layer = '', atlas = true, log } = {}) => {
 
   const map = { meta: { generatedAt: new Date().toISOString(), root } }
   if (schema)            map.schema     = schema
+  if (access)            map.access     = access
   if (services.length)   map.services   = services
   if (resources.length)  map.resources  = resources
   if (migrations.length) map.migrations = migrations

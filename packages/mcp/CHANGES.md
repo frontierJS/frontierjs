@@ -1,5 +1,10 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-06 — a tool call is stamped `transport: 'mcp'` (`FJS-D609`, `FJS-1817`)
+
+`run` passed only the principal, so the call defaulted to `'internal'` and an *is this from inside* check — basecamp's `internalOnly()` — let a viewer finish a release and a developer forge a server event. With junction's in-process `$` refusal and Litestone's tag-only `$raw`, a smuggled `$raw` at any depth is refused rather than answered (`FJS-1816`).
+
+`test/plugin.test.ts` § *a tool call is a call from outside*, the transport and four `$raw` shapes with a control; 142 pass, typecheck clean.
 
 ## 2026-09-29 — a money column always names its currency (`FJS-D556`)
 

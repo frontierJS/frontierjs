@@ -1,5 +1,25 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-06 — an mcp call is transport `'mcp'`, and an in-process call is refused an unknown `$` key (`FJS-D609`, `FJS-1816`, `FJS-1817`)
+
+`app.service()` stamped every call `'internal'` and put its query on `ctx.query` without asking the directive table, so an mcp tool passed basecamp's `internalOnly()` and carried `$raw` to Litestone.
+
+- **`Transport`** is exported from `core/context.ts` — `'http' | 'websocket' | 'internal' | 'mcp'` — and `ServiceContext.transport` and `CallOptions.transport` both read it.
+- **The in-process `call()` runs the bridge's own `refuseUnknownDirectives`** (now exported) over `ctx.query`. In `call()` rather than `makeCtx` so it rejects the promise rather than throwing past a `.catch()`. A nested `$raw` is Litestone's to refuse (`FJS-D613`).
+
+`test/query-directives.test.ts`; 2617 pass, typecheck clean.
+
+## 2026-10-06 — a service over a model serves every `@@transitions` move by its own name (`FJS-1255`)
+
+A screen draws its buttons from `@@transitions` and can only call `invoke(move, id)`, so a service that wrote no method of that name answered every button with a 405, and a generated one-line service writes none. Every built service now serves each move its model declares as a custom method of the same name, implemented as `transition(id, move)` on `ctx.locals.db`, the caller's client, so the gate, the row policy, `@system` and the move's `@gate(n)` are graded at the Data boundary as they are for a hand-written `return $.db.order.transition($.id, 'ship')`.
+
+- **The registry is the seam.** A service module is imported before any client exists, so `createService` keeps its method-table step as a function and `ServiceRegistry.register()` re-runs it with the moves as one more source, read off the app's parsed schema (`app.db.$schema`, or `app.tenants.schema`). Dispatch, the 405 and its list, `describe()`, the manifest and OpenAPI read the one table that results.
+- **A written method of the same name wins**, as a written `get` wins over the generated one. A `methods:` list still governs, so a move it does not name is not offered, and a move it names with no function written is no longer an authoring finding. The same goes for a `hooks:` key on a move.
+- **A null from `transition()` is no longer a 200** (`FJS-1790`, for the served moves only). A row the caller cannot read answers 404, as `patch` does. A row they can read but not update answers 403 by name.
+- **`createBaseService` no longer reports `methods:` findings of its own.** `createService` grades the same list under the service's real name, so every typo was said twice, once of a service called `service`.
+
+`test/declared-moves.test.ts`, 10 cases; 2615 pass, typecheck clean.
+
 ## 2026-10-06 — a write before the services register no longer silences every background write after it (`FJS-1739`)
 
 `announceDataWrites` built its model → service index on the first write the tap heard and kept it. A seed or boot-time write before `app.start()` registered the services froze an empty index, so every later `asSystem()`, job or cross-model hook write announced nothing for the life of the process. `ServiceRegistry` now has a `version` that moves on every `register()`, and the index rebuilds when it moves, so a service registered after the index exists is announced too. Two cases in `data-write-announcement.test.ts`, both red before; 2605 pass.

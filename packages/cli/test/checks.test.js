@@ -2391,16 +2391,26 @@ describe('transition-methods', () => {
   // clause list; `drives` replaces the service body. The clean tree's
   // `@@commitment(close)` makes `close` the commitment's to drive, so it is
   // dropped unless a case is about exactly that.
-  const app = (moves, drives, { owed = false } = {}) => ({
-    ...CLEAN,
-    'db/schema.lite': CLEAN['db/schema.lite'].replace(
-      /@@transitions\(status,[\s\S]*?\)\n/,
-      `@@transitions(status,\n    ${moves})\n`)
-      .replace(owed ? /$^/ : /\n\s*@@commitment\(close[^\n]*/, ''),
-    'api/src/services/leads.service.ts':
-      "import { createBaseService } from '@frontierjs/junction'\n" +
-      'export default () => createBaseService({})\n' + drives,
-  })
+  //
+  // The service declares a `methods:` list naming no move, because a service
+  // over the model serves every move it does not narrow away (`FJS-1255`) — so
+  // these cases grade the literal spellings and nothing else. `service`
+  // replaces the declaration for the cases about that third spelling.
+  const NARROW = "createBaseService({ methods: ['find', 'get'] })"
+  const app = (moves, drives, { owed = false, service = NARROW } = {}) => {
+    const files = {
+      ...CLEAN,
+      'db/schema.lite': CLEAN['db/schema.lite'].replace(
+        /@@transitions\(status,[\s\S]*?\)\n/,
+        `@@transitions(status,\n    ${moves})\n`)
+        .replace(owed ? /$^/ : /\n\s*@@commitment\(close[^\n]*/, ''),
+      'api/src/services/leads.service.ts':
+        "import { createBaseService } from '@frontierjs/junction'\n" +
+        `export default () => ${service}\n` + drives,
+    }
+    if (service === null) delete files['api/src/services/leads.service.ts']
+    return files
+  }
 
   test('the clean tree drives every move it declares', () => {
     const root = tree('tm-clean', CLEAN)
@@ -2563,6 +2573,58 @@ describe('transition-methods', () => {
       "export const q = () => $.db.lead.transition($.id, 'qualified')\n" +
       "export const c = () => $.db.lead.transition($.id, 'close')\n"))
     expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  // ── A service over the model serves the moves by name (FJS-1255) ──────
+  //
+  // Paired throughout: the same machine behind a `methods:` list that leaves
+  // the move out still reports it, so a rule that went silent for any tree
+  // holding a service could not pass.
+
+  const MOVES = 'qualify: new -> qualified,\n    close: qualified -> closed'
+  const QUALIFY = "export const q = () => $.db.lead.transition($.id, 'qualify')\n"
+
+  test('a base service with no methods: list reaches every move by its own name', () => {
+    expect(only(tree('tm-served', app(MOVES, '', { service: 'createBaseService({})' })),
+      'transition-methods').findings).toHaveLength(0)
+    const narrowed = only(tree('tm-served-narrow', app(MOVES, QUALIFY)), 'transition-methods').findings
+    expect(narrowed).toHaveLength(1)
+    expect(narrowed[0].message).toMatch(/Lead\.close -> closed/)
+    expect(narrowed[0].message).toMatch(/leads\.service\.ts leaves it out/)
+  })
+
+  test('a methods: list reaches the moves it names, bare or as { method }', () => {
+    for (const [name, service] of [
+      ['tm-list-bare', "createBaseService({ methods: ['find', 'close'] })"],
+      ['tm-list-obj',  "createBaseService({ methods: ['find', { method: 'close', gate: 5 }] })"],
+    ]) expect(only(tree(name, app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test("'readOnly' serves no move", () => {
+    const service = "createBaseService({ methods: 'readOnly' })"
+    expect(only(tree('tm-readonly', app(MOVES, QUALIFY, { service })), 'transition-methods').findings).toHaveLength(1)
+  })
+
+  test('a model with no service yet is graded on nothing — the schema is written first', () => {
+    // FJS-1778: a schema written before its services was never clean, and the
+    // only reply was deleting the machine. The other direction still holds: a
+    // transition() naming no move is reported with no service in sight.
+    const root = tree('tm-schema-first', {
+      ...app(MOVES, '', { service: null }),
+      'api/src/jobs/sweep.job.ts': "export const x = () => $.db.lead.transition($.id, 'archive')\n",
+    })
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'archive'\) names no move/)
+  })
+
+  test('a hand-written method naming a move the schema dropped is still reported', () => {
+    const root = tree('tm-dropped', app(MOVES,
+      QUALIFY + "export const r = () => $.db.lead.transition($.id, 'reopen')\n",
+      { service: 'createBaseService({})' }))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'reopen'\) names no move/)
   })
 
   test('a schema with no machine skips rather than passing', () => {

@@ -29,6 +29,8 @@ let base: string
 // What the app's `narrow` answers, swapped per test. Absent is every tool, so
 // every other describe here grades the list with the guard allowing all.
 let narrowBy: McpOptions['narrow'] | null = null
+// What a `customers.find` hook last saw as the call's transport.
+let seenTransport: string | null = null
 
 beforeAll(async () => {
   // `Credential.value` is `@encrypted`, so the client refuses to open without a
@@ -76,6 +78,7 @@ beforeAll(async () => {
   app.services.register(createService({
     name: 'customers', model: 'Customer',
     methods: ['find', 'get'],
+    hooks: { before: { find: [(c: { transport: string }) => { seenTransport = c.transport }] } },
   }))
 
   app.configure(mcpPlugin({ name: 'shop', narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
@@ -331,6 +334,38 @@ describe('a call goes through the service, as the caller', () => {
     await callTool('orders_pay', { id }, 'staff')
     const ok = await callTool('orders_refund', { id }, 'staff')
     expect(ok.body.result?.isError ?? false).toBe(false)
+  })
+})
+
+describe('a tool call is a call from outside (FJS-D609, FJS-D613)', () => {
+
+  test('it is stamped mcp, so an is-this-from-inside check refuses it', async () => {
+    // `'internal'` here opened every internalOnly() method to whoever the tool
+    // list offered it (FJS-1817).
+    seenTransport = null
+    await callTool('customers_find', {}, 'shopper')
+    expect(seenTransport).toBe('mcp')
+  })
+
+  // A hit/miss pair over a @guarded column: answered at all, the two counts
+  // read `scope` one comparison at a time (FJS-1816).
+  const smuggled = {
+    'a top-level $raw':        (like: string) => ({ $raw: `scope LIKE '${like}%'` }),
+    'a $raw under NOT':        (like: string) => ({ NOT: { $raw: `scope NOT LIKE '${like}%'` } }),
+    'a $raw under OR':         (like: string) => ({ OR: [{ id: -1 }, { $raw: `scope LIKE '${like}%'` }] }),
+    'a forged tag under NOT':  (like: string) => ({ NOT: { $raw: { _litestoneRaw: true, sql: `scope NOT LIKE '${like}%'`, params: [] } } }),
+  }
+  for (const [label, where] of Object.entries(smuggled)) {
+    test(`${label} is refused, never answered`, async () => {
+      const r = await callTool('credentials_find', { query: where('scope') }, 'shopper')
+      expect(r.body.result?.isError).toBe(true)
+      expect(JSON.stringify(r.body)).toMatch(/\$raw/)
+    })
+  }
+
+  test('the control: the same caller\'s plain find is answered', async () => {
+    const r = await callTool('credentials_find', {}, 'shopper')
+    expect(r.body.result?.isError ?? false).toBe(false)
   })
 })
 

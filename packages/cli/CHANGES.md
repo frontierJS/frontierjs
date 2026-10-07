@@ -1,5 +1,25 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-06 — `transition-methods` counts a move a service serves, and grades no model before its service exists (`FJS-1778`)
+
+Junction now serves every declared move by its own name on any service over the model (`FJS-1255`), so a service with no `methods:` list reaches every move and a list reaches the moves it names, which the either-spelling test already counts. A model with no service under `api/` is graded on nothing. The schema is written first and the generator writes the service after it, so the rule refused every machine until code existed, and the only schema-side reply was deleting the machine. Still reported: a move that a `methods:` list (or `'readOnly'`) leaves out and nothing else names, and a `transition()` naming a move the schema does not declare. Five cases in `test/checks.test.js` § transition-methods. The helper the older cases share now declares a narrow `methods:` list, so they still grade the literal spellings.
+
+## 2026-10-06 — generated list and detail pages draw a button per move (`FJS-1433`)
+
+`make:scaffold` and `admin:generate` pages had no way to take a `@@transitions` move. `core/crud-templates.js` now draws one button per move each row's state allows, in the list's row actions and above the detail page's form, from `resource.transitions(row, session.level)` when the page runs — the template names no move, state or column, and a model with no machine draws nothing. A `@system` move gets no button; a gated move the level cannot make is drawn disabled. A button calls `resource.mutate(id, { [field]: to }, () => service.invoke(move, id))`, so every view of the row moves at once and a refusal is put back and shown in the page's Alert. A scaffold page grades against `session` from `@frontierjs/sierra/junction`; the admin keeps its `_session.js`, and its detail page now watches the level once whatever `gate` says. `test/generated-mesa.test.js` § *the moves a row may make*, plus the admin detail page compiled and parsed.
+
+## 2026-10-06 — `project:map --as=serve` draws the state machines and walks the Warden
+
+Two panels in the served map, beside `schema`.
+
+**machines** draws each `@@transitions` column as a graph laid out from the schema. Nothing is placed by hand. A move's line says who makes it: a caller at the update level, only a higher level, the app (`@system`, or anything graded at 8), or a date (a `@@commitments` entry, including one declared on another model). The entry state, the final states and a state nothing moves into are marked. Clicking a move opens it in words: who may ask, the declaration, the service method of the same name and the channel it is announced on. Jobs and notifications are counted but not drawn, because neither declares the move it makes.
+
+**warden** puts one model through the nine layers of `litestone/docs/warden.md` for a caller level picked from 0 to 8. It shows the gate per operation, the row policies, the protected fields, which moves that level may make, and the announce channel. Under the table, every model shows read · create · update · delete at that level.
+
+- **The map carries `access`**, the output of `litestone access --json --stdout`. The JSON Schema says only that a model has row policies, never what they admit, and it has no field protection. The map shells out for it as it does for the schema, and a failure degrades to a panel saying why.
+- **The layout is hand-rolled**, so the page still needs no network. A state's column is its distance from the entry and the final states share the last column. A forward move takes a slot in each column it crosses, with every from-state converging on one label. A move within a column turns at a label in the gap beside it, and a move backward arcs over the top.
+- **`test/viewer-page.js`** is the page loader `viewer-issues.test.js` had inline, now shared. `test/viewer-machines.test.js` grades `buildMachines`, `layoutMachine` and `wardenAt`, with each negative paired with a positive. Mutation-checked: a gated comparison off by one fails two tests, and a label put in a state's column fails the overlap test.
+
 ## 2026-10-06 — `fli ws:atlas --as=rings` writes the work map beside the rings and links it
 
 `core/repo-work.js` draws how work moves through the registers on one page. It shows where defects and ideas come from, the three register files, the issue loop through `/fix-next` and `fix:loop`, and the decision loop through `/frame-next` and `fli decide`. Along the bottom is what keeps them honest. Each box is clickable for its command, its file and today's count.

@@ -49,6 +49,53 @@ const KIT = {
 // a duplicate row instead of editing one (`FJS-316`).
 const idFieldLine = (res) => `  const idField = ${res}.context.idField`
 
+// A page with moves needs a level to grade them against. The admin hands over
+// its own session module; a scaffold has none, and sierra's session is what a
+// sign-in fills -- 0 for a stranger, null where the server publishes no level,
+// which `transitions()` reads as permissive.
+const SIERRA_SESSION = `import { session } from '@frontierjs/sierra/junction'`
+const sessionLine = (o) => `  ${o.sessionImport ?? SIERRA_SESSION}\n`
+
+// The moves a row may make, one button each, read off `@@transitions` when the
+// page RUNS -- this file names no machine, no state and no move. A model with
+// none draws nothing. A @system move is the application's, so no caller gets a
+// button for it; a gated move this level cannot make is drawn disabled, and the
+// server grades every one regardless (Invariant 6).
+//
+// mutate() rather than a bare invoke: a custom method's answer is not written
+// into the row's node, so over HTTP with no socket a bare invoke leaves every
+// view of the row in its old state. mutate() shows the new state at once,
+// settles it with the row the move answers, and a refusal puts it back.
+function moveScript(o, error) {
+  return `
+  // The moves this row's state allows, as the schema's @@transitions declares
+  // them -- a model with no machine answers none and draws nothing.
+  const movesOf = (rec) => ${o.res}.transitions(rec, session.level).filter(t => !t.system)
+
+  let moving = null
+
+  async function move(rec, t) {
+    const key = rec[idField]
+    ${error} = null
+    moving = key
+    try { await ${o.res}.mutate(key, { [t.field]: t.to }, () => ${o.res}.service.invoke(t.name, key)) }
+    catch (e) { ${error} = e.message }
+    finally { moving = null }
+  }
+`
+}
+
+const moveButtons = (indent, row, busy) => `{#each movesOf(${row}) as t (t.name)}
+${indent}  <Button
+${indent}    variant="outlined"
+${indent}    size="sm"
+${indent}    data-move={t.name}
+${indent}    disabled={!t.allowed || ${busy}}
+${indent}    title={t.allowed ? undefined : 'Needs gate level ' + t.gate}
+${indent}    onclick={() => move(${row}, t)}
+${indent}  >{t.label}</Button>
+${indent}{/each}`
+
 /** The gate notice — admin pages only. A refusal belongs to the server, so the
  *  button is NOT disabled; this says what will come back and why. */
 function gateNotice(res, op) {
@@ -94,7 +141,7 @@ export function listPage(o) {
     ? `{ only: ${JSON.stringify(o.only)} }`
     : ''
 
-  const session = o.sessionImport ? `  ${o.sessionImport}\n` : ''
+  const session = sessionLine(o)
 
   const gateState = o.gate
     ? `
@@ -201,7 +248,9 @@ ${idFieldLine(o.res)}
   const list = ${o.res}.list()
 
   let error = null
-${gateState}${removeFn}${SC}
+
+  $: session.level
+${moveScript(o, 'error')}${gateState}${removeFn}${SC}
 
 <div class="stack">
 <SectionHeader title="${o.heading}" level={1}>
@@ -221,7 +270,8 @@ ${gateState}${removeFn}${SC}
     <tr>
       {#each cols as c}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
       <td class="cluster">
-        <Button variant="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>${rowDelete}
+        <Button variant="link" href={'${o.basePath}' + record[idField] + '/'}>Open</Button>
+        ${moveButtons('        ', 'record', 'moving === record[idField]')}${rowDelete}
       </td>
     </tr>
   {/snippet}
@@ -307,8 +357,8 @@ ${o.gate ? gateNotice(o.res, 'create') : ''}<${o.form}
  * @param {string} o.deleteLabel
  */
 export function editPage(o) {
-  const session = o.sessionImport ? `  ${o.sessionImport}\n` : ''
-  const watch   = o.gate ? '\n  $: session.level\n' : ''
+  const session = sessionLine(o)
+  const watch   = '\n  $: session.level\n'
 
   // A child link needs the ROUTE its model landed on, and that is the one thing
   // this page cannot derive: a child knows its model and its foreign key, and
@@ -413,7 +463,7 @@ ${idFieldLine(o.res)}${watch}
   // by rule — this is the surface controlFor names when it refuses a value for
   // being the server's.
   const { columns: facts } = ${o.res}.summary()
-${kids.script}
+${moveScript(o, 'failed')}${kids.script}
   async function remove() {
     if (!confirm('Delete ' + id + '?')) return
     failed   = null
@@ -446,6 +496,12 @@ ${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record && facts.length}
       </div>
     {/each}
   </dl>
+{/if}
+
+{#if record && movesOf(record).length}
+  <p class="cluster">
+    ${moveButtons('    ', 'record', 'moving != null')}
+  </p>
 {/if}
 
 ${kids.markup}{#if record}

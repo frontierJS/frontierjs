@@ -259,6 +259,18 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     out[name].required   = false
   }
 
+  // A `@@transitions` column is written by its MOVES, not by a value a person
+  // picks. The enum still lists every state, so without this a generated form
+  // offers a select whose every choice but one is a refusal: a create is born
+  // at the column's @default and naming any other state is a 409
+  // (`FJS-D470`), and an edit that picks a state skips the move's own name,
+  // gate and audit. Not `readOnly`, because it is not: a direct update to a
+  // state a declared move reaches is a write the boundary grades and admits,
+  // and `stripReadOnly` would drop it from a hand-written save in silence.
+  for (const [name, moves] of Object.entries(schema['x-transitions'] ?? {})) {
+    if (out[name] && moves && typeof moves === 'object') out[name].transitions = moves
+  }
+
   // Mark foreign keys. `accountId` is emitted as a plain integer, so without
   // this a form generator renders a number input for what is a reference — the
   // one field where a picker is obviously right and a spinner obviously wrong.
@@ -783,8 +795,12 @@ export function formFieldList(fields, { only, except, model } = {}) {
   for (const name of names) {
     if (removed.has(name)) continue
     // Left out of the generated set and still reachable by name: `only` is the
-    // person saying they will draw it.
-    if (rules[name]?.determined && names === known) continue
+    // person saying they will draw it. A determined column has no choice to
+    // offer, and a machine's column changes by a move -- a button over
+    // `transitions(row)` -- so a detail page shows it with the other columns a
+    // form does not offer (`summary()`), read-only.
+    const rule = rules[name]
+    if ((rule?.determined || rule?.transitions) && names === known) continue
     if (!(name in rules)) {
       out.push({ name, rule: null, control: null, reason: 'no such field on this model' })
       continue
@@ -1347,6 +1363,7 @@ export function buildTransitions(schema) {
  * @param {object|null} spec   from buildTransitions()
  * @param {object} row         the record to evaluate
  * @param {number} [level]     the current user's gate level (0–9)
+ * @returns {{name:string, label:string, field:string, from:string, to:string, gate:number|null, system:boolean, allowed:boolean, refusedBy:'system'|'gate'|null}[]}
  */
 export function transitionsAt(spec, row, level) {
   if (!spec || !row) return []
@@ -1372,7 +1389,9 @@ export function transitionsAt(spec, row, level) {
         refusedBy = allowed ? null : 'gate'
       }
 
-      out.push({ name, field, from: current, to: t.to, gate, system, allowed, refusedBy })
+      // `label` is the move's name for a READER, the axis `columnLabel` is for
+      // a column -- a button saying `markShipped` is an identifier on screen.
+      out.push({ name, label: humanize(name), field, from: current, to: t.to, gate, system, allowed, refusedBy })
     }
   }
   return out

@@ -95,8 +95,7 @@ title: Jobs
 
 <Drawer open={creating} title="New job" onclose={() => creating = false}>
   {#if creating}
-    <!-- `status` moves by transition, never by a box — a job is born pending. -->
-    <Job method="create" except={['status']} submitLabel="Create job" submitId="job-create-save"
+    <Job method="create" submitLabel="Create job" submitId="job-create-save"
          oncancel={() => creating = false} ondone={created} />
   {/if}
 </Drawer>

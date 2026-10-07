@@ -122,8 +122,7 @@ title: Job
 
   <Drawer open={editing} title={`Edit ${job.name}`} onclose={() => editing = false}>
     {#if editing}
-      <!-- `status` moves by the buttons above, which read the machine. -->
-      <Job record={job} except={['status']} oncancel={() => editing = false} ondone={saved} submitId="job-edit-save" />
+      <Job record={job} oncancel={() => editing = false} ondone={saved} submitId="job-edit-save" />
     {/if}
   </Drawer>
 

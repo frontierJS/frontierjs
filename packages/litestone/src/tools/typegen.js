@@ -92,8 +92,8 @@ export function generateTypeScript(schema, opts = {}) {
     ``,
     `/** Base type mixed into every Where interface — adds the $raw escape hatch. */`,
     `export interface WhereBase {`,
-    `  /** Raw SQL predicate. Use the sql\`\` tag for safe parameter binding. */`,
-    `  $raw?: { _litestoneRaw: true; sql: string; params: unknown[] } | string`,
+    `  /** Raw SQL predicate, as a sql\`\` tag value -- a string is refused (FJS-D613). */`,
+    `  $raw?: { _litestoneRaw: true; sql: string; params: unknown[] }`,
     `}`,
     ``,
   )

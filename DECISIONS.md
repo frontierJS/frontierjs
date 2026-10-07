@@ -1077,6 +1077,18 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d612"></a>2026-10-06 · `FJS-D612` — May an OAuth sign-in create an account on an address nobody proved — No account on an unproven address: it takes FJS-D611's path, a mail to the address, and the account is made on the click after the provider re-check. Branches 3 and 4 then answer an unproven address one way. A trusted provider with a verified claim still creates at once.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep creating, and a later register or reset by the holder evicts the squat. An eviction rule with its own edges, and an amendment to `FJS-D265`), **C** (refuse outright with no mail path, so an untrusted provider can never create an account).
+
+The paper's recommendation, taken as written: not making the row is simpler than an eviction rule, and the mechanism is FJS-D611's.
+
+### <a id="fjs-d611"></a>2026-10-06 · `FJS-D611` — How does an OAuth link invitation prove the person clicking it holds the identity being linked — The link starts the provider flow, carrying the invitation in its state, and the callback links only when the subject returned equals the one stored. The clicker proves the mailbox and the provider identity. A scanner stops at the redirect, so the GET changes nothing, and it works across devices.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the invitation is bound to the browser that ran the flow, by a cookie, as sign-in binds `fjs_oauth_state`. A mail opened on another device or in an in-app browser fails, and the GET still needs a page that POSTs), **C** (only a signed-in user may link, through a connect flow that does not exist yet, and branch 4 says *sign in first*).
+
+The paper's recommendation, taken as written: it closes the hijack and the scanner together and costs one round trip to a provider the person is usually already signed in to.
+
 ### <a id="fjs-d576"></a>2026-10-04 · `FJS-D576` — a foreign key is a read: a parent the caller cannot read answers as missing, and a refused delete names only a child the caller can read
 
 **The write half.** A non-system write naming a parent the caller cannot read
@@ -3191,6 +3203,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d613"></a>2026-10-06 · `FJS-D613` — Where is a `$raw` refused when it sits below the top of a `where` — Litestone drops the plain-string `where.$raw` and takes only a `sql` tag value, which `orderBy.$raw` already requires. Nothing off a wire can produce one, at any depth, through any transport or custom method. The Data boundary owns it (Invariants 6 and 8), and `where` stops behaving unlike its sibling. In-tree string uses are tests only (`litestone.test.ts`, `raw-clause-brand.test.ts`'s *untouched* case, toolbelt `match.spec.js`). The tag already runs the bare-clock check and expands a `now()` token, so nothing moves with it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the refusal walks the whole filter tree and refuses a `$` key at any depth, in the bridge's owner, so HTTP, WS and `makeCtx` all get it. A custom method calling Litestone directly with user input stays open), **C** (both).
+
+The paper's recommendation, taken as written: the string form is the only way a caller's text becomes SQL, and removing it closes every path at once. `FJS-D609` still lands as ruled, for `FJS-1817` and the top-level `$` refusal.
 
 ### <a id="fjs-d366"></a>2026-10-05 · `FJS-D366` — Q1 — is *ordered within a scope, stable under concurrent insert* a column trait the framework owns, or an app pattern with a toolbelt helper? (`FJS-D366`) — `@rank(scope: [col, …])` on a `String` column: the scope is a column list compared with `IS`, so NULL is one scope. Litestone validates the key, defaults a create (or a write that changes the scope without stating `rank`) to the end of the scope, orders by `(rank, id)` and owns `rebalance()`. The toolbelt mints keys. Sierra gets `resource.move(id, { after, before, into })`.
 
@@ -6388,6 +6406,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d610"></a>2026-10-06 · `FJS-D610` — Does cookie mode bring its own CSRF defense, and how does it know the app's origin with no list — Cookie mode installs `csrf()`, which gains a same-origin default that needs no list: `Sec-Fetch-Site` of `same-origin` or `none` passes, `cross-site` or `same-site` is refused unless `Origin` is in `cors.origins`, a request without it compares `Origin` with the host, and a request with no `Origin` at all passes, since the attack needs a browser. Every mutating route is covered, including a POST from a sibling subdomain, which `SameSite` counts as the same site.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the auth plugin checks `Origin` and `Sec-Fetch-Site` on its own `/auth/*` POSTs only. Other cookie-authenticated writes keep `SameSite=Lax` alone), **C** (both).
+
+The paper's recommendation, taken as written: one owner, and the mode that opens the exposure installs the defense. Behind a proxy the host comparison depends on the host header surviving, which is the trustProxy question.
+
+### <a id="fjs-d609"></a>2026-10-06 · `FJS-D609` — What transport does an mcp tool call carry, and where is a `$`-key refused for an in-process caller — A fourth transport value, `'mcp'`, which mcp passes on every call, and `makeCtx` runs the bridge's own `refuseUnknownDirectives` on the query. One owner, Invariants 4 and 10. The refusal also covers a custom method that hands user input to an in-process `find`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`'mcp'` as in A, and mcp runs `splitParams` over the tool's query before dispatch. A second translation beside the owner, and every other in-process caller stays open), **C** (`internalOnly()` reads a marker an in-process caller sets and a tool call cannot. Every later *is this call from inside* check has to learn it, and `$raw` needs its own fix).
+
+The paper's recommendation, taken as written: `makeCtx` already reads `opts.transport`, so the transport is one line, and the refusal belongs where the bridge's refusal already lives.
 
 ### <a id="fjs-d587"></a>2026-10-05 · `FJS-D587` — A conduit response over `max_response_bytes` is `invalid_response`, not `invalid_request`.
 
@@ -11209,6 +11239,12 @@ hash is the only thing keeping one component's rules off another's markup.
 ---
 
 ## Design system (`@frontierjs/css`)
+
+### <a id="fjs-d614"></a>2026-10-07 · `FJS-D614` — Positional roles — does build-time emission of the named part answer `page-composition.md` § Risks — Yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`.
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (no: every article names its role (`===|media`) and nothing is inferred from position).
+
+The paper's recommendation, taken as written: the rendered page carries only named parts, so the CSS never selects by position and the anatomy spec can check the output.
 
 ### <a id="fjs-d524"></a>2026-09-28 · `FJS-D524` — A colored region with no term — the kanban lane — Coin a term in `vocabulary.js` (a Lane or a Board).
 

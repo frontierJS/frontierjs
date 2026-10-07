@@ -513,6 +513,73 @@ export function accessorIfModel(client: unknown, accessor: string): string | nul
   return model ? camel(model.name) : null
 }
 
+type ParsedModel = { name: string; attributes?: Array<{ kind: string; transitions?: Record<string, unknown> }> }
+
+/**
+ * The service methods a parsed schema owes a service over its model: one per
+ * declared `@@transitions` move, named for the move (`FJS-1255`).
+ *
+ * The move and the method were two namespaces joined by an author remembering.
+ * A screen draws its buttons from `@@transitions` and can only call
+ * `invoke(move.name, id)`, so a model whose service wrote no method of that
+ * name answered every button with a 405 — which is every generated service,
+ * because a generated service is one line.
+ *
+ * Each one is `transition(id, move)` on `ctx.locals.db`, the CALLER's client:
+ * the gate, the row policy, `@system` and the move's own `@gate(n)` are graded
+ * at the Data boundary exactly as for the hand-written
+ * `return $.db.order.transition($.id, 'ship')`. Nothing here decides access.
+ *
+ * `{}` for a schema that names no such model or a model with no machine.
+ */
+export function declaredMoveMethods(
+  schema:      unknown,
+  accessor:    string,
+  serviceName: string,
+  idField:     string,
+): Record<string, (ctx: ServiceContext) => Promise<unknown>> {
+  const resolved = accessorIfModel({ $schema: schema }, accessor)
+  if (!resolved) return {}
+  const models = (schema as { models: ParsedModel[] }).models
+  const model  = models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === resolved)
+  const out: Record<string, (ctx: ServiceContext) => Promise<unknown>> = {}
+  for (const attr of model?.attributes ?? []) {
+    if (attr.kind !== 'transitions' || !attr.transitions) continue
+    for (const move of Object.keys(attr.transitions)) {
+      if (!out[move]) out[move] = moveMethod(resolved, model!.name, move, serviceName, idField)
+    }
+  }
+  return out
+}
+
+function moveMethod(accessor: string, modelName: string, move: string, serviceName: string, idField: string) {
+  return async function declaredMove(ctx: ServiceContext): Promise<unknown> {
+    if (ctx.id == null || ctx.id === '')
+      throw new BadRequest(`${serviceName}.${move} moves one ${modelName} — call it with that row's id`)
+    const db = ctx.locals?.db as Record<string, {
+      transition: (id: unknown, name: string) => Promise<unknown>
+      findFirst:  (args: unknown) => Promise<unknown>
+    }> | undefined
+    const table = db?.[accessor]
+    if (!table || typeof table.transition !== 'function')
+      throw new Error(`${serviceName}.${move}: no request-scoped Litestone client on this call — ` +
+        `the move is made on the caller's client, which createApp({ db }) installs`)
+
+    const row = await table.transition(ctx.id, move)
+    if (row != null) return row
+
+    // Litestone answers null rather than refusing, so a move is no existence
+    // oracle (`FJS-1093`) — and passed through, that null was a 200 telling the
+    // caller's screen the move happened when nothing moved (`FJS-1790`). A row
+    // the caller cannot read is a 404, as `patch` answers. A row they CAN read
+    // is refused by name: the refusal leaks nothing they could not already see,
+    // and a 404 for a row on their screen is a lie in the other direction.
+    const visible = await table.findFirst({ where: { [idField]: ctx.id } })
+    if (visible == null) throw new NotFound(`${modelName} with ${idField}=${ctx.id} not found`)
+    throw new Forbidden(`${serviceName}.${move}: this ${modelName} is not one you may move`)
+  }
+}
+
 export interface LitestoneServiceOptions {
   /**
    * Litestone accessor for the model — `'post'` for `model Post`.

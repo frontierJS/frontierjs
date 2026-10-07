@@ -140,9 +140,7 @@ export function createOrdersService() {
       validated: { create: [async (ctx) => { /* a rule that reads the database */ }] },
     },
 
-    async ship() {
-      return $.db.order.transition($.id, 'ship')
-    },
+    // No `ship()` to write: `ship` is a move in `@@transitions`, served by name.
 
     async recordTracking() {
       const { trackingCode } = $.data as { trackingCode: string }
@@ -156,6 +154,13 @@ export function createOrdersService() {
 answers every CRUD verb and finds custom methods by scanning; the moment one
 entry exists — including one added only to carry an `input:` — every verb it
 does not name is a 405.
+
+**Every `@@transitions` move is already a method, named for the move.** It is
+`transition(id, move)` on the caller's client, so the gate, the row policy,
+`@system` and `@gate(n)` grade it at the Data boundary, and a row the caller
+cannot see is a 404, not 200 null. A list declares which moves are offered,
+like any method. Write a method of the same name only when the move does more
+than move; yours replaces the served one.
 
 **A custom method takes the model's READ gate as a floor** and runs nothing for
 a caller below it. `gate: n` raises that floor for one method. A method called by

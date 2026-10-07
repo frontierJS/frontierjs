@@ -424,7 +424,7 @@ function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
  * would go stale on the next directive added, which is the exact failure that
  * table was built to end.
  */
-function refuseUnknownDirectives(params: unknown): void {
+export function refuseUnknownDirectives(params: unknown): void {
   const unknown = unknownDirectives(params as Record<string, unknown>)
   if (!unknown.length) return
 

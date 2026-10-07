@@ -31,7 +31,7 @@ export interface ServiceContext {
   service:   string
   method:    AnyMethod     // 'find'|'get'|'create'|'update'|'patch'|'remove'|'restore'|custom
   type:      HookType      // set by hook pipeline
-  transport: 'http' | 'websocket' | 'internal'
+  transport: Transport
   model:     string        // set by createService from ServiceDefinition.name
 
   // ── call inputs ───────────────────────────────────────────────────────
@@ -330,6 +330,11 @@ export interface ServiceContextLocals {
 
 export type { QueryDirectives, Page } from './directives.ts'
 
+/** What carried the call. `'mcp'` is an agent's tool call: in-process like
+ *  `'internal'`, and from outside like `'http'`, so an *is this call from
+ *  inside* check refuses it (`FJS-D609`). */
+export type Transport = 'http' | 'websocket' | 'internal' | 'mcp'
+
 // ─── Hook type ────────────────────────────────────────────────────────────
 // `method` is the phase where the service method itself runs. It is not a hook
 // slot anyone registers into, but `runPipeline` DOES set `ctx.type = 'method'`
@@ -356,7 +361,7 @@ export interface CallOptions {
   // Provenance. Default 'internal'. Hooks branch on this — a re-entrant
   // 'http'-flagged call fires webhooks/notifications; a plain
   // 'internal' call is background work that shouldn't.
-  transport?: 'http' | 'websocket' | 'internal'
+  transport?: Transport
 
   // Explicitly seed the callee's scratch. RARE. The one real use: pass
   // a db transaction handle so the sub-call runs in the same tx.

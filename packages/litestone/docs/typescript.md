@@ -72,7 +72,7 @@ All generated `Where` types extend `WhereBase`:
 
 ```ts
 export interface WhereBase {
-  $raw?: RawClause | string
+  $raw?: RawClause
 }
 ```
 

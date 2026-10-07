@@ -1,5 +1,15 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-06 — `where.$raw` takes only a `sql` tag value, at any depth (`FJS-D613`, `FJS-1816`)
+
+A plain-string `$raw` ran as SQL for any caller, and the API's `$` refusal reads top-level keys only, so `?NOT[$raw]=salary > 50000` reached `buildWhere` and a stranger's `findMany` answered by a `@guarded` column — over HTTP, WS and mcp alike. A string is how a caller's text arrives and JSON cannot produce the tag's symbol brand, so the string form is gone and `where` keeps the rule `orderBy.$raw` already kept.
+
+- **Refused in `collectWhereKeyProblems`**, which already walks `AND`/`OR`/`NOT` and relation filters, so it answers a `ValidationError` with its path (`raw-untagged`) like every other bad key. A JSON look-alike `{ _litestoneRaw: true, … }` is refused the same way. `buildWhere` refuses too, for a caller that skips validation.
+- **The types drop `| string`** — `index.d.ts` and the typegen's `WhereBase`; basecamp's and junction's example `schema.d.ts` regenerated.
+- **No `now()` behavior moves**: the tag already ran the bare-clock check and expanded the token. Docs (`filtering.md`, `internals.md`, README) stop teaching the string form.
+
+`test/raw-clause-brand.test.ts` (nested string and forged tag refused as a stranger), `test/litestone.test.ts` (`buildWhere` and `$checkWhere`); 5731 pass, typecheck clean.
+
 ## 2026-10-06 — `@@extensible` refuses a declaring model scoped through a parent (`FJS-1754`)
 
 A declarer under `@@tenant(via: …)`, or scoped by the delegation that finds a parent through its foreign key, carries no tenant column, so `_extTenantCol` was null and every raw read of the declaring table was installation-wide: one key namespace across tenants (a 409 naming another tenant's key), one slot pool, and one tenant's values mirrored through another's declarations. The parse now refuses the pairing, naming the column to give it or `@@tenant(none)` for one set of declarations on purpose. Narrowing through the relation is the larger alternative and is not built: the pool's allocation, mirror and filter would each need the join, where the refusal costs a copy column the schema can state once. `test/extensible.test.ts`, § *a declaring model scoped through a parent*.

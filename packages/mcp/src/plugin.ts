@@ -356,7 +356,9 @@ const VERB: Record<string, string> = {
 async function run(app: App, tool: Tool, args: unknown, user: unknown, call: CallScope, ctx?: HandlerCtx): Promise<CallResult> {
   const caller = app.service(tool.service) as Record<string, (...a: unknown[]) => Promise<unknown>>
   const a      = (args ?? {}) as Record<string, unknown>
-  const opts   = { auth: { user } } as Record<string, unknown>
+  // `'mcp'`, never the `'internal'` an in-process caller defaults to: an agent
+  // is outside, and an *is this call from inside* check must say so (`FJS-D609`).
+  const opts   = { auth: { user }, transport: 'mcp' } as Record<string, unknown>
   const since  = Date.now()
 
   try {

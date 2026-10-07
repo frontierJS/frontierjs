@@ -178,7 +178,9 @@ service that accepts a shape the model does not describe.
 **`<Form resource={r}>` with no default children IS the form** — every writable
 column in schema order. Buttons go in `slot="actions"`, which keeps generation
 on; `only` and `except` narrow it. Default children mean *I am writing this form*
-and turn generation off.
+and turn generation off. A `@@transitions` column is left out: it changes by a
+move, one button per entry of `orders.transitions(row, session.level)` calling
+`orders.service.invoke(t.name, id)`.
 
 **A `409` from a `@version` column is the right answer**, not a bug to retry
 around: `orders.conflict(err)` gives `{ model, field, expected, actual }`.

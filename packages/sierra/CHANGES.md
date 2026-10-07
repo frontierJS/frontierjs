@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-06 — a generated form leaves a `@@transitions` column out, and a move carries its label (`FJS-1433`, `FJS-1543`)
+
+`buildFieldRules` marks the column `x-transitions` names with `rule.transitions` (its moves), and `formFieldList` leaves it out of the generated set the way it leaves out a determined column — `only` naming it still draws it. A create is born at the column's `@default` (`FJS-D470`), so the select offered states the boundary refuses; an edit changes the state by a move. `summary()` is the columns a form does not offer, so a detail page shows the state read-only with no change of its own. The column is deliberately not `readOnly`: a direct update to a state a declared move reaches is admitted by the boundary, and `stripReadOnly` would drop it from a hand-written save without saying so. `transitionsAt()` answers `label`, the move's name humanized (`markShipped` → *Mark Shipped*), so a button does not show an identifier. `test/machine-column.test.js`, `test/resource-transitions.test.js`.
+
 ## 2026-10-06 — the theme script reaches a page with no `<head>` tag (`FJS-1775`)
 
 `injectThemeScript` anchored on the literal `<head>`, which HTML makes optional and both apps' `index.html` omit, so no build in the repo carried the no-flash script and none said so. It now anchors on `<head …>`, then `<meta charset>`, `<html>`, the doctype.

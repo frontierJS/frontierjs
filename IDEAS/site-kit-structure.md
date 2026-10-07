@@ -116,19 +116,51 @@ the objection is the first question for review.
 - **`filter-*` on icons** — dropped. An inline SVG drawn in `currentColor`
   takes a tone with no filter.
 
+## Where each piece lives — css, site-kit, the site
+
+**css gets what an app with no markdown would also write. site-kit gets what
+exists only because an author writes markdown, plus website nouns. The site
+gets one client's brand.** site-kit therefore coins no styling words: it maps
+frontmatter onto css words, and each block styles itself in its own `.mesa`.
+
+Sorted from ksite's UnoCSS preset (`uno-preset.frontier.ts`) and `blocks.scss`:
+
+| Lives in | What | ksite spelling |
+| --- | --- | --- |
+| css, shipped | Surface, Stack, Cluster, Card, Kicker, Divider, Prose, Container, tone, treatment, density, `.pills` | `brick`, `box`, `flexed`, `card`, `preheading`, `mx-text-width`, `mx-content-width`, `danger`, `outlined`, `gap-square`, `padding-*` |
+| css, missing | A full-bleed band: background to the viewport, content held to the container width | `bg-block`, `surface-*`, `vw-centered`, `bg-before` |
+| | The align axis | `centered`/`lefted`/`righted`, `headings-*`, `btn-*`, `brick-*` |
+| | Grid: auto-fit columns, the Layout helper css lacks | `grid-fit-cols`, `grid-odd`, `grid-even`, `matrix` |
+| | Media fill and a photo background under `--scrim` | `.img`, `.image`, `bg-image`, `image-background` |
+| site-kit | Template → css words, `===` splitting, role emission, Kicker detection | `block-with-*`, `article:`, `nth-1:` |
+| | Website blocks, each scoped in its `.mesa` | Marquee, Reviews, Stars, Hours, ServicesTable, SiteMap, LeadForm, the modals, carousel, image-compare, FAQs |
+| | Site header, footer, the script-free mobile menu | `.main-header`, `.mobile-menu`, `#nav` |
+| | Decoration | `motif-*`, `content-*`, `lock-*`, `rotate-*`, `wiggle` |
+| the site, `content/settings/site.css` | Brand color, fonts, one client's one-offs | `theme.scss`, `fonts.scss`, the gradient `hr` |
+| dropped | Per-component spacing variables, text-shadow, hover utilities | `gap-x`, `margin-*`, `text-shadow`, `hover-*` |
+
+**Unsure: the site header and footer.** css's Frame tier is app chrome only. They
+stay site-kit blocks built from Bar and Nav until a second consumer wants them.
+
 ## Open questions
 
-1. **Positional roles** — does build-time emission of the named part answer
-   `page-composition.md` § Risks? (above)
-2. **`align`** is the one axis css lacks: `Center` places one child, and
-   `start`/`end` are scoped modifiers that do not compose. site-kit's key, or a
-   css axis beside tone, treatment and density?
-3. **Who owns the templates** — site-kit classes, or a css `Band` term with a
-   structure modifier (`page-composition.md`'s guess)? A css term would make
-   them available to `@frontierjs/ui` too.
-4. **New nouns** — the template names, the role names and `align` go through
-   `decision-rules` before any code.
+1. ~~**Positional roles — does build-time emission of the named part answer `page-composition.md` § Risks?**~~ **Answered 2026-10-07 (`FJS-D614`): A — yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`.**
+   - **A** — yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`
+   - **B** — no: every article names its role (`===|media`) and nothing is inferred from position
+   - **Recommend A** — the rendered page carries only named parts, so the CSS never selects by position and the anatomy spec can check the output
+2. **Where does `align` live?** `Center` places one child, and `start`/`end` are scoped modifiers that do not compose.
+   - **A** — a css axis beside tone, treatment and density: an inheriting custom property that the Layout helpers and the band read, with `text-align` following it
+   - **B** — a site-kit frontmatter key that emits css's existing `start`/`end`/`center` modifiers
+   - **Recommend A** — ksite spelled alignment four ways (`centered`, `headings-*`, `btn-*`, `brick-*`), and an app centers an empty state or a sign-in card the same way a site centers a band
+3. **Who owns the band and its arrangement?**
+   - **A** — css: one band term with a structure modifier (`page-composition.md`'s guess)
+   - **B** — css: a band term with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit band + one helper and ship no CSS
+   - **C** — site-kit: `Section.mesa`'s scoped styles own all of it
+   - **Recommend B** — the Layout tier already owns arrangement ("one arrangement each, no skin, compose onto anything"), so a structure modifier would be a second owner of it; an app gets the band and Grid without site-kit
+4. **New nouns** — the band's name, Grid, the template names, the role names and `align` go through `decision-rules` before any code. css's `Section` term (no class, the bare element) is the first candidate the band's name has to beat.
 
-**The first piece to build** is ksite's `Block.mesa` moving to site-kit as
-`Section.mesa`, with typed keys in place of `classes` — what
-`website/packages/site-kit/PROJECT_STATE.md` § Next already names.
+**The first pieces to build are in css**: the band, Grid and the align axis,
+each named in `vocabulary.js` so the spec checks it both ways. Then ksite's
+`Block.mesa` moves to site-kit as `Section.mesa`, reading typed keys and
+emitting those words — what `website/packages/site-kit/PROJECT_STATE.md` § Next
+names.

@@ -6,7 +6,7 @@
 // `$checkWhere`/`$checkOrderBy` before a call exists.
 
 import {
-  centerOf, filterableKeysFor, sortableKeysFor, OPAQUE_SORT, rawClause, isNamedAgg, quoteIdent,
+  centerOf, filterableKeysFor, sortableKeysFor, OPAQUE_SORT, rawClause, isRawClause, isNamedAgg, quoteIdent,
 } from './query.js'
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
@@ -476,7 +476,19 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
       }
       continue
     }
-    if (k === '$raw') continue
+    // Only the tag's brand may reach the pattern, at any depth (`FJS-D613`).
+    // A string or a JSON look-alike is refused HERE rather than in the compiler
+    // so it answers as every other bad key does, with its path -- a plain Error
+    // is a 500.
+    if (k === '$raw') {
+      if (!isRawClause(v)) out.push({
+        key: '$raw', path: at('$raw'), reason: 'raw-untagged', allowed: [], suggestion: null,
+        message: `where.$raw on %MODEL% must be a sql\`\` tag` +
+                 (typeof v === 'string' ? ', not a string — the tag binds its values, a string would put them in the pattern' : '') +
+                 `. Write: where: { $raw: sql\`…\` }`,
+      })
+      continue
+    }
     if (filterable.has(k)) {
       // A relation is filterable AND carries a nested where. Grade that where
       // against the TARGET's columns, or the inner key reaches SQL ungraded.

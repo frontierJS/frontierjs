@@ -196,9 +196,8 @@ const BARE_CLOCK = [
 ]
 
 // `now()` written as a TOKEN rather than interpolated. A `@from(where: …)` is a
-// string in the schema and a plain-string `$raw` has no interpolation either, so
-// without this the refusal below would name a spelling those two callers cannot
-// write. Litestone's own text replaces litestone's own token — nothing reaches
+// string in the schema with no interpolation, so without this the refusal below
+// would name a spelling that caller cannot write. Litestone's own text replaces litestone's own token — nothing reaches
 // the pattern that was not already in it.
 const NOW_TOKEN     = /\bnow\s*\(\s*\)/gi
 const NOW_TOKEN_ARG = /\bnow\s*\(/gi
@@ -685,22 +684,20 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
       }
     }
     if (key === '$raw') {
-      // val is a RawClause from the sql tag: { _litestoneRaw: true, sql, params }
-      // or a plain string for simple parameterless expressions
-      if (isRawClause(val)) {
-        if (val.sql) {
-          clauses.push(`(${val.sql})`)
-          params.push(...val.params)
-        }
-      } else if (typeof val === 'string' && val) {
-        // A plain string skips the sql tag, so it skips the tag's clock check
-        // with it. Same rule, asked again — the string form is the one written
-        // when there is nothing to interpolate, which is exactly the shape
-        // `dueAt < datetime('now')` takes.
-        assertNoBareClock(val, 'where.$raw')
-        clauses.push(`(${expandNowTokens(val)})`)
-      } else {
-        throw new Error('where.$raw must be a value returned by the sql`` tag or a plain SQL string')
+      // Only the tag's brand reaches the pattern. A string is how a caller's
+      // text arrives -- JSON has no symbol -- and the bridge's `$` refusal reads
+      // top-level keys only, so `NOT: { $raw }` from a query string or a WS
+      // frame lands here at any depth (`FJS-D613`). The rule `orderBy.$raw`
+      // already keeps.
+      if (typeof val === 'string')
+        throw new Error(
+          `where.$raw must be a sql\`\` tag, not a string — the tag binds its values, ` +
+          `a string would put them in the pattern. Write: where: { $raw: sql\`…\` }`)
+      if (!isRawClause(val))
+        throw new Error(`where.$raw must be a sql\`\` tag result, got ${val === null ? 'null' : typeof val}`)
+      if (val.sql) {
+        clauses.push(`(${val.sql})`)
+        params.push(...val.params)
       }
       continue
     }

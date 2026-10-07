@@ -101,7 +101,12 @@ describe('transitionsAt — the button list', () => {
 
   test('carries where it came from and where it goes', () => {
     const pay = transitionsAt(spec(), { status: 'pending' }, 4).find(t => t.name === 'pay')
-    expect(pay).toEqual({ name: 'pay', field: 'status', from: 'pending', to: 'paid', gate: null, system: false, allowed: true, refusedBy: null })
+    expect(pay).toEqual({ name: 'pay', label: 'Pay', field: 'status', from: 'pending', to: 'paid', gate: null, system: false, allowed: true, refusedBy: null })
+  })
+
+  test('labels the move for a reader, so a button does not show an identifier', () => {
+    const spec = { status: { markShipped: { from: ['paid'], to: 'shipped', gate: null, system: false } } }
+    expect(transitionsAt(spec, { status: 'paid' })[0].label).toBe('Mark Shipped')
   })
 
   test("a @system move is refused at every level, and that verdict is not a guess", () => {

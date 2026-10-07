@@ -1160,7 +1160,7 @@ db.user.findMany({
 const n = await db.product.count({ where: { $raw: sql`stock < ${10}` } })
 ```
 
-The `sql` tag pulls interpolated values out as params and substitutes `?` placeholders — values are never concatenated into the SQL string. For simple parameterless expressions a plain string also works: `where: { $raw: 'deletedAt IS NULL' }`.
+The `sql` tag pulls interpolated values out as params and substitutes `?` placeholders — values are never concatenated into the SQL string. Only a tag value is accepted, at any depth — a plain string is refused, because a string is how a caller's text arrives (`FJS-D613`). With nothing to interpolate it is still the tag: ``where: { $raw: sql`deletedAt IS NULL` }``.
 
 ### Cursor pagination
 
