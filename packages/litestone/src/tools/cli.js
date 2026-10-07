@@ -26,7 +26,8 @@ import { buildPristine, introspect, diffSchemas,
 import { create, apply, status, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
-         baseline, historyGap, driftAgainstLive }      from '../core/migrations.js'
+         baseline, historyGap, driftAgainstLive,
+         unacceptedLoss }                              from '../core/migrations.js'
 import { backupSqliteTo }                              from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
@@ -198,6 +199,7 @@ const HELP = `
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
     ${dim('  --backup[=dir]')}                       copy every database first — there is no down
+    ${dim('  refuses a file whose DESTRUCTIVE box still says "Accept data loss: no"')}
     ${cyan('litestone migrate status')}            show applied / pending / modified
     ${cyan('litestone migrate verify')}            check if live db matches schema
     ${cyan('litestone db push')}                    apply schema directly — no migration files (dev)
@@ -228,7 +230,7 @@ const HELP = `
     ${cyan('litestone replicate')} [config.js]       stream every SQLite db's WAL to S3/R2 via litestream
     ${cyan('litestone restore')} [config.js]         bring every db back from its replica — all or nothing
     ${dim('  --at=<instant>')}                          one point in time for every file
-    ${dim('  --from-backup=<dir>')}                     jsonl/logger dbs from a litestone backup destination
+    ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/logger only)')}
     ${dim('  --force')}                                 replace files that exist (stop the app first)
     ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
     ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
@@ -630,6 +632,7 @@ async function cmdCreate(label, cfg) {
       console.log(`  ${green('✓')}  ${cyan(rel(result.filePath))}\n`)
       console.log(result.summary.split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
+      printLoss(result)
     }
   } finally {
     for (const { rawDb } of dbs) rawDb.close()
@@ -637,6 +640,14 @@ async function cmdCreate(label, cfg) {
 
   if (anyCreated)
     console.log(`  ${dim(`Run ${cyan('litestone migrate apply')} to apply.`)}\n`)
+}
+
+// Said where the file is named, because `migrate dev` goes on to apply and the
+// refusal that follows reads as a failure unless this came first.
+function printLoss(result) {
+  if (!result.loss?.length) return
+  console.warn(`  ${yellow('!')}  deletes the values in ${result.loss.map(l => cyan(`${l.table}.${l.columns.join(', ')}`)).join(', ')}`)
+  console.warn(`     ${dim('apply refuses this file until its DESTRUCTIVE box is answered in the file')}\n`)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -697,12 +708,22 @@ function defaultBackupRoot(cfg) {
   return cfg?.schema ? join(dirname(resolve(cfg.schema)), 'backups') : './backups'
 }
 
+// A new directory every run: to the second, suffixed when that second is taken.
+// Cut to the minute, two backups in one minute shared a directory and the
+// second replaced the first (FJS-1786). A zip counts, since its directory is
+// removed once the archive is written.
+function newBackupDir(root) {
+  const base = resolve(root, new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 17))
+  let dir = base
+  for (let n = 2; existsSync(dir) || existsSync(`${dir}.zip`); n++) dir = `${base}-${n}`
+  return dir
+}
+
 // Every database is copied before the FIRST one is migrated. A run that fails
 // on the second database has already changed the first, so a per-database
 // backup taken inside the loop is a backup of a half-migrated fleet.
 async function preApplyBackup(dbs, cfg) {
-  const stamp   = new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 15)
-  const destDir = resolve(getFlag('backup') ?? join(defaultBackupRoot(cfg), stamp))
+  const destDir = resolve(getFlag('backup') ?? newBackupDir(defaultBackupRoot(cfg)))
 
   mkdirSync(destDir, { recursive: true })
 
@@ -920,6 +941,7 @@ async function cmdDev(label, cfg) {
       console.log(`  ${green('✓')}  ${cyan(rel(result.filePath))}\n`)
       console.log(result.summary.split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
+      printLoss(result)
     }
   } finally {
     for (const { rawDb } of dbs) rawDb.close()
@@ -962,7 +984,9 @@ async function cmdApply(cfg) {
       const pending    = listMigrationFiles(migrationsDir).filter(f => !appliedSet.has(f))
 
       if (!wantsBackup) {
-        const risky = irreversibleMigrations(migrationsDir, pending)
+        // A file apply is about to refuse runs nothing, so it is no risk of this run.
+        const held  = new Set(unacceptedLoss(migrationsDir, pending))
+        const risky = held.size ? [] : irreversibleMigrations(migrationsDir, pending)
         if (risky.length) {
           console.warn(`  ${yellow('!')}  no way back from this run without a copy of the database:`)
           for (const r of risky) console.warn(`       ${r}`)
@@ -6389,14 +6413,21 @@ async function cmdBackup(dest, cfg) {
   const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
 
   // ── Destination: timestamped directory ─────────────────────────────────────
-  const stamp        = new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 15)
   // When zipping, we still write to a temp dir first, then zip it
   const resolvedDest = dest
     ? (zip ? resolve(dest.replace(/\.zip$/, '')) : resolve(dest))
-    : resolve(defaultBackupRoot(cfg), stamp)
+    : newBackupDir(defaultBackupRoot(cfg))
   const zipPath      = zip
-    ? (dest ? resolve(dest.endsWith('.zip') ? dest : dest + '.zip') : resolve(defaultBackupRoot(cfg), `${stamp}.zip`))
+    ? (dest ? resolve(dest.endsWith('.zip') ? dest : dest + '.zip') : `${resolvedDest}.zip`)
     : null
+
+  // Written into, an earlier backup keeps every file this run does not replace —
+  // a database since emptied comes back from it on restore.
+  if (dest && existsSync(resolvedDest) && readdirSync(resolvedDest).length)
+    fatal(`${cyan(rel(resolvedDest))} already holds files, and a backup written over another is neither.\n` +
+          `     Name a new directory, or leave the destination off for a new ${cyan(rel(defaultBackupRoot(cfg)) + '/<stamp>/')}.`)
+  if (zip && existsSync(zipPath))
+    fatal(`${cyan(rel(zipPath))} already exists, and zip adds to an archive rather than replacing it.`)
 
   mkdirSync(resolvedDest, { recursive: true })
 
@@ -6714,7 +6745,9 @@ async function cmdReplicate(cfg) {
 //
 //   litestone restore --url s3://bucket/myapp          → every database, latest
 //   litestone restore --at 2026-09-27T10:00:00Z        → one instant, for every file
-//   litestone restore --from-backup ./backups/<stamp>  → jsonl/logger from a `backup`
+//   litestone restore --from-backup ./backups/<stamp>  → every database from a `backup`
+//   litestone restore --url … --from-backup <dir>      → SQLite from the replica, jsonl/logger from the backup
+//                                                        (--at and --verify name the replica too)
 //   litestone restore --force                          → over files that exist
 //
 // All or nothing. Every file is restored beside its destination first, and
@@ -6734,6 +6767,13 @@ async function cmdRestore(cfg) {
   const fromBackup  = getFlag('from-backup')
   const force       = flag('force')
   const verifyDir   = getFlag('verify') ? resolve(getFlag('verify')) : null
+
+  // A backup and no replica word on the line: everything comes from the backup.
+  // `replicate.url` in the config does not count — a developer putting back a
+  // local checkpoint must not be handed the production replica. With --url,
+  // --at or --verify, the replica brings the SQLite files and the backup brings
+  // what litestream never streamed.
+  if (fromBackup && !getFlag('url') && !at && !verifyDir) return restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force })
 
   if (verifyDir && force) fatal(`${cyan('--verify')} restores beside the app and never over it, so ${cyan('--force')} has nothing to replace.`)
   if (verifyDir) await confirmKeyless(loadSchema(cfg.schema))
@@ -6847,6 +6887,111 @@ async function cmdRestore(cfg) {
   console.log()
 
   if (verifyDir) await verifyRestored({ parseResult, cfg, jobs, other, files, dir: verifyDir, binary })
+}
+
+// ─── restore --from-backup: a `litestone backup` directory, put back ─────────
+// The layout `backup` writes is the map: `<name>.db` for a SQLite database,
+// `<name>/` for a jsonl or logger one, `tenant-files/` and `tenant-registry/`
+// for the per-tenant files, `db-<path>.db` for a SQLite file under db/ that no
+// schema names. All or nothing, as a replica restore is: every copy is staged
+// beside its destination before any is moved into place.
+//
+// A database the backup does not hold is left as it is, and named. `backup`
+// writes nothing for a database nothing had written to yet, and nothing for one
+// a `--db` left out, and the directory cannot say which — deleting a live audit
+// trail on the strength of an absence is the wrong way round.
+//
+// `db-files/` is not put back: it holds the schema and the migrations beside
+// any stored bytes, and those are the repo's to restore. A database whose
+// history is behind the files applies the rest on the next migrate.
+async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }) {
+  const { rmSync, renameSync, cpSync } = await import('fs')
+
+  const src = resolve(fromBackup)
+  if (src.endsWith('.zip')) fatal(`${cyan(rel(src))} is a zip. Unzip it into a directory and pass that.`)
+  if (!existsSync(src) || !statSync(src).isDirectory()) fatal(`No backup directory at ${cyan(rel(src))}.`)
+
+  header('litestone restore')
+
+  const { sqlite, other, dirs, layout } = await copyTargets(parseResult, cfg, onlyDb)
+  const jobs = [], absent = []
+
+  for (const t of sqlite) {
+    const from = join(src, `${t.name}.db`)
+    if (existsSync(from)) jobs.push({ name: t.name, from, dest: t.path })
+    else absent.push(t.name)
+  }
+  for (const o of other) {
+    const from = join(src, o.name)
+    if (existsSync(from)) jobs.push({ name: o.name, from, dest: resolve(o.path), dir: true })
+    else absent.push(o.name)
+  }
+  for (const d of dirs) {
+    const from = join(src, d.name)
+    if (!existsSync(from)) { absent.push(d.name); continue }
+    for (const f of matchingFiles({ dir: from, pattern: d.pattern }))
+      jobs.push({ name: `${d.name}/${f}`, from: join(from, f), dest: join(d.dir, f) })
+  }
+
+  // Found by the name the live walk gives a file: `db-<path>` turns the path's
+  // slashes into hyphens, so `db-a-b.db` alone is `a/b.db` or `a-b.db`.
+  if (!onlyDb) {
+    const live     = new Map((layout?.sqlite ?? []).map(t => [`${t.name}.db`, t.path]))
+    const unplaced = []
+    for (const f of readdirSync(src).filter(f => /^db-.+\.db$/.test(f))) {
+      if (live.has(f)) jobs.push({ name: f.slice(0, -3), from: join(src, f), dest: live.get(f) })
+      else unplaced.push(f)
+    }
+    if (unplaced.length)
+      fatal(`The backup holds ${unplaced.map(f => cyan(f)).join(', ')} — a SQLite file under db/ that no schema names — ` +
+            `and nothing on this machine is at the path it came from, so its name cannot say where it goes.\n` +
+            `     Pass ${cyan('--db <name>')} to restore one declared database and leave it out.`)
+  }
+
+  if (!jobs.length)
+    fatal(`The backup at ${cyan(rel(src))} holds none of the databases this schema declares${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+
+  const occupied = jobs.map(j => j.dest).filter(p => existsSync(p))
+  if (occupied.length && !force)
+    fatal(`Restoring would replace what is already there:\n` +
+          occupied.map(p => `       ${rel(p)}`).join('\n') + '\n' +
+          `     Stop the app first, then pass ${cyan('--force')}.`)
+
+  console.log()
+  console.log(`  ${dim('backup:')}      ${cyan(rel(src))}`)
+  console.log()
+
+  const stage  = dest => join(dirname(dest), `.${basename(dest)}.restoring`)
+  const staged = []
+  try {
+    for (const j of jobs) {
+      mkdirSync(dirname(j.dest), { recursive: true })
+      rmSync(stage(j.dest), { recursive: true, force: true })
+      cpSync(j.from, stage(j.dest), { recursive: !!j.dir })
+      staged.push(stage(j.dest))
+    }
+  } catch (e) {
+    for (const s of staged) rmSync(s, { recursive: true, force: true })
+    fatal(`Copying out of the backup failed — nothing was restored.\n     ${e.message}`)
+  }
+
+  // An old -wal beside a restored file is replayed onto it, which is the half
+  // of a hand-rolled `cp` that comes back wrong; litestream's own state
+  // describes the database being replaced.
+  for (const j of jobs) {
+    const companions = j.dir ? [] : [`${j.dest}-wal`, `${j.dest}-shm`, join(dirname(j.dest), `.${basename(j.dest)}-litestream`)]
+    for (const p of [j.dest, ...companions]) rmSync(p, { recursive: true, force: true })
+    renameSync(stage(j.dest), j.dest)
+    console.log(`  ${green('✓')}  ${cyan(j.name)}  ${dim(`${rel(j.dest)} ← ${rel(j.from)}`)}`)
+  }
+  for (const name of absent)
+    console.log(`  ${dim('·')}  ${cyan(name)}: ${dim('not in the backup — left as it is')}`)
+  if (existsSync(join(src, 'db-files')))
+    console.log(`  ${dim('·')}  ${cyan('db-files')}: ${dim('not restored — the schema and migrations are the repo\'s; copy stored files back by hand')}`)
+
+  console.log()
+  console.log(`  ${green(bold('✓  restore complete'))}  ${dim(`${jobs.length} file${jobs.length !== 1 ? 's' : ''} from the backup`)}`)
+  console.log()
 }
 
 // ─── restore --verify: who says it runs without the key ───────────────────────

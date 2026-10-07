@@ -590,7 +590,12 @@ A decrypt that fails **raises** (`FJS-716`). The one column that degrades is
   the `ALTER TABLE … RENAME COLUMN` to use instead; that guess changes the
   SENTENCE and never the decision, so being wrong costs a reader nothing. **The
   file path still applies** and gets a boxed DESTRUCTIVE banner instead: the
-  file IS the review step, which is the whole difference between the two.
+  file IS the review step, which is the whole difference between the two. The
+  box ends in `Accept data loss: no`, which `apply()` reads from the file and
+  refuses on for the whole run (`FJS-1784`). Without it, `migrate dev` created
+  the file and applied it in the same call, so nobody ever read it. The answer
+  is a line in the file and not a flag, because the file is what a deploy
+  replays.
 - **A rebuild SQLite refuses answers `state: 'failed'` rather than throwing.**
   A STRICT table takes no TEXT into an INTEGER column, so `String` → `Int` over a
   populated table threw `cannot store TEXT value in INTEGER column

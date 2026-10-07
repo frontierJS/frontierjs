@@ -148,16 +148,21 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
    - **A** — yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`
    - **B** — no: every article names its role (`===|media`) and nothing is inferred from position
    - **Recommend A** — the rendered page carries only named parts, so the CSS never selects by position and the anatomy spec can check the output
-2. **Where does `align` live?** `Center` places one child, and `start`/`end` are scoped modifiers that do not compose.
+2. ~~**Where does `align` live?**~~ **Answered 2026-10-07 (`FJS-D620`): A — a css axis beside tone, treatment and density: an inheriting custom property that the Layout helpers and the band read, with `text-align` following it.** `Center` places one child, and `start`/`end` are scoped modifiers that do not compose.
    - **A** — a css axis beside tone, treatment and density: an inheriting custom property that the Layout helpers and the band read, with `text-align` following it
    - **B** — a site-kit frontmatter key that emits css's existing `start`/`end`/`center` modifiers
    - **Recommend A** — ksite spelled alignment four ways (`centered`, `headings-*`, `btn-*`, `brick-*`), and an app centers an empty state or a sign-in card the same way a site centers a band
-3. **Who owns the band and its arrangement?**
+3. ~~**Who owns the band and its arrangement?**~~ **Answered 2026-10-07 (`FJS-D621`): B — css: `Band` (question 4) with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit `band` + one helper and ship no CSS.**
    - **A** — css: one band term with a structure modifier (`page-composition.md`'s guess)
-   - **B** — css: a band term with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit band + one helper and ship no CSS
+   - **B** — css: `Band` (question 4) with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit `band` + one helper and ship no CSS
    - **C** — site-kit: `Section.mesa`'s scoped styles own all of it
    - **Recommend B** — the Layout tier already owns arrangement ("one arrangement each, no skin, compose onto anything"), so a structure modifier would be a second owner of it; an app gets the band and Grid without site-kit
-4. **New nouns** — the band's name, Grid, the template names, the role names and `align` go through `decision-rules` before any code. css's `Section` term (no class, the bare element) is the first candidate the band's name has to beat.
+4. ~~**What is the full-width stripe called, and who owns reaching the viewport edge?**~~ **Answered 2026-10-07 (`FJS-D622`): A — both: a `Band` term (a `<section>` over Surface owning the background slot, a photo under `--scrim`, and block padding from density, with a `.container` inside for width) and a `.bleed` utility for anything else that escapes its parent (an image in Prose, a Divider, an edge-to-edge table on a phone); the escape is ONE rule, `.bleed, .band`, the way `.kicker, .navlist-label` share one.**
+   - **A** — both: a `Band` term (a `<section>` over Surface owning the background slot, a photo under `--scrim`, and block padding from density, with a `.container` inside for width) and a `.bleed` utility for anything else that escapes its parent (an image in Prose, a Divider, an edge-to-edge table on a phone); the escape is ONE rule, `.bleed, .band`, the way `.kicker, .navlist-label` share one
+   - **B** — the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`
+   - **C** — give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)
+   - **Recommend A** — a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px
+5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code.
 
 **The first pieces to build are in css**: the band, Grid and the align axis,
 each named in `vocabulary.js` so the spec checks it both ways. Then ksite's

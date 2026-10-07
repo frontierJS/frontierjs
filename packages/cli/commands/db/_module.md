@@ -129,14 +129,15 @@ The `db:` commands manage a **Litestone** SQLite database defined in `db/schema.
 
 ```
 fli db:push        — apply schema.lite to the database directly (no migration file)
-fli db:migrate     — create + apply a migration file from schema changes
+fli db:migrate     — create + apply a migration file; one that deletes values waits to be accepted in it
 fli db:status      — show pending migrations
 fli db:studio      — open Litestone Studio in the browser
 fli db:explain     — what a .lite word is (aliased `fli explain`; needs no schema)
 fli db:advise      — what this schema says wrong, and what it never said at all
 fli db:seed        — run db/seeders/seed.ts
 fli db:jsonschema  — generate JSON Schema from schema.lite → db/.json/schema.json
-fli db:backup      — back up the database file
+fli db:backup      — back up every declared database into a new db/backups/<stamp>/
+fli db:restore     — put a db:backup directory back, all or nothing
 fli db             — open an interactive SQLite REPL
 ```
 

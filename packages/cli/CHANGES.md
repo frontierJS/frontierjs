@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-06 — `fli db:backup` writes a new directory each run, and `fli db:restore` puts one back (`FJS-1786`, `FJS-1784`)
+
+`fli db:backup` passed the fixed `db/backups/` to `litestone backup`, so every backup overwrote the last. It now passes no destination, so litestone writes a new `db/backups/<stamp>/` beside the schema. It takes an optional `dest` and passes `--schema`. The `db:backup` script that `fli new` writes into an app drops the fixed directory too. **`fli db:restore <dir> [--force] [--db <name>]`** is `litestone restore --from-backup`. `fli db:migrate` changes no code: litestone's apply now refuses a file whose DESTRUCTIVE box says `Accept data loss: no`, so the command stops at exit 1 after creating such a file, and the `db:` list says so.
+
 ## 2026-10-06 — `transition-methods` counts a move a service serves, and grades no model before its service exists (`FJS-1778`)
 
 Junction now serves every declared move by its own name on any service over the model (`FJS-1255`), so a service with no `methods:` list reaches every move and a list reaches the moves it names, which the either-spelling test already counts. A model with no service under `api/` is graded on nothing. The schema is written first and the generator writes the service after it, so the rule refused every machine until code existed, and the only schema-side reply was deleting the machine. Still reported: a move that a `methods:` list (or `'readOnly'`) leaves out and nothing else names, and a `transition()` naming a move the schema does not declare. Five cases in `test/checks.test.js` § transition-methods. The helper the older cases share now declares a narrow `methods:` list, so they still grade the literal spellings.

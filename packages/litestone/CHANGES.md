@@ -1,5 +1,26 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-06 — a migration that deletes values waits for its loss to be accepted in the file (`FJS-1784`)
+
+`migrate dev`, which `fli db:migrate` runs, created a rename as a drop plus an add and applied it in the same call. In the base44 stressor that deleted 3 of 3 values with exit 0, and the DESTRUCTIVE banner was a review nobody had to hold. `apply` read no file's banner, and `create` computed the loss and returned none of it.
+
+- **The box ends in `Accept data loss: no`.** Accepting is an act on the file after it exists, and the file is what a deploy replays, so no command takes a flag for it. To keep the values, write the rename the box gives and delete the box. To lose them, change `no` to `yes`.
+- **`apply()` refuses every pending file while one box still says no**, before any statement runs, with `refused`, `failed` and `held`. It refuses the whole run, so the files before that one cannot leave the database between two schemas. Every caller gets it: the CLI, `tenants.migrate()`, and `tenants.create()`. A refused or failed apply in `create()` now throws and removes the new file, where it used to register a tenant with no tables.
+- **`create()` returns `loss`**, `[{ table, columns, renameTo }]`, the list the box names. `migrate create` and `migrate dev` print it under the file name, and `migrate apply` drops its *no way back* warning for a run it is about to refuse.
+- The rebuild tests in `migrations-fixes` and `cli-smoke` whose loss is the point now accept it in the file.
+
+`test/migrations-fixes.test.ts` § *a destructive file waits for its loss to be accepted in it* (refused with an additive file pending before it, applied after `yes`, the rename kept, no box when nothing is lost) and `test/cli-smoke.test.ts` § *migrate dev* (exit 1, value kept, applied after `yes`).
+
+## 2026-10-06 — a backup is a new directory every run, and `restore --from-backup` puts one back (`FJS-1786`)
+
+The default backup directory was stamped to the minute, so two backups in one minute shared it and the second replaced the first. No command restored a SQLite file from a local backup: `restore` read a litestream replica, and `--from-backup` covered jsonl and logger only. A checkpoint was therefore put back by hand, and the hand had to remember the `-wal`.
+
+- **`backup` with no destination writes a new `<schema dir>/backups/<stamp>/`**, stamped to the second, with a suffix when that name or its `.zip` is taken. A named destination that already holds files is refused, because an earlier backup keeps every file this one does not replace. `migrate apply --backup` uses the same stamp.
+- **`restore --from-backup <dir>` with no `--url`, `--at` or `--verify` restores every database from the backup** and needs no litestream. That covers `<name>.db`, a jsonl or logger directory, the tenant files, and a `db-<path>.db` matched to the live file of that name. It is all or nothing, staged beside each destination, and replaces only with `--force`. Each file's `-wal`, `-shm` and litestream state is removed. `replicate.url` in the config does not count as a replica word, so a local checkpoint never reaches for the production replica.
+- A database the backup does not hold is left as it is and named, because `backup` writes nothing for a database nobody has written to yet and the directory cannot say which case it is. `db-files/` is not restored: it holds the schema and the migrations, which are the repo's.
+
+`test/cli-smoke.test.ts` § *the rest of db/*: two backups are two directories; a restore without `--force` is refused; with it, `app.db` and the queue come back and a stale `-wal` is gone; a backup into a directory that holds files is refused.
+
 ## 2026-10-06 — `where.$raw` takes only a `sql` tag value, at any depth (`FJS-D613`, `FJS-1816`)
 
 A plain-string `$raw` ran as SQL for any caller, and the API's `$` refusal reads top-level keys only, so `?NOT[$raw]=salary > 50000` reached `buildWhere` and a stranger's `findMany` answered by a `@guarded` column — over HTTP, WS and mcp alike. A string is how a caller's text arrives and JSON cannot produce the tag's symbol brand, so the string form is gone and `where` keeps the rule `orderBy.$raw` already kept.

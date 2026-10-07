@@ -275,7 +275,9 @@ function makePackageJson(spec) {
   // `--schema` also fixes the migrations directory: litestone resolves it as a
   // sibling of the schema, so this finds db/migrations without a second flag.
   scripts['db:migrate'] = 'litestone migrate apply --schema db/schema.lite'
-  scripts['db:backup']  = 'litestone backup db/backups --schema db/schema.lite'
+  // No destination: litestone writes a new db/backups/<stamp>/ each run, where a
+  // fixed one made every backup overwrite the last (FJS-1786).
+  scripts['db:backup']  = 'litestone backup --schema db/schema.lite'
 
   // The schema's own TypeScript. Two files because they are two AUDIENCES and
   // the difference is what a caller may read: the API holds a system client and

@@ -136,6 +136,32 @@ check for you:
   adapter's files are outside it (`FJS-1391`).
 - **A restore nothing has read is a rumor** — § Proving a copy.
 
+### From a local backup
+
+```bash
+litestone restore --from-backup db/backups/2026-10-06_1422 --force   # fli db:restore <dir> --force
+```
+
+With `--from-backup` and no replica word on the line — `--url`, `--at` or
+`--verify` — every database comes from the backup directory, and litestream is
+not needed. `replicate.url` in the config does not count, so a local checkpoint
+never reaches for the production replica. The directory's layout is the map:
+`<name>.db`, `<name>/` for jsonl and logger, `tenant-files/` and
+`tenant-registry/`, and `db-<path>.db` for a SQLite file under `db/` no schema
+names, which goes back to the live file of that name. It is all or nothing, and
+replaces files only with `--force`, the way a replica restore does, `-wal` and
+`-shm` removed.
+
+- **A database the backup does not hold is left as it is**, and named. `backup`
+  writes nothing for a database nothing had written to, and nothing for one
+  `--db` left out, and the directory cannot say which.
+- **`db-files/` is not restored.** It holds `schema.lite` and the migrations
+  beside any stored files, and those are the repo's. A database whose history is
+  behind the files applies the rest at the next `migrate apply`.
+- **A `db-<path>.db` with no live file of that name is refused.** The name turns
+  the path's slashes into hyphens, so it cannot say where the file goes; `--db
+  <name>` restores the declared databases without it.
+
 ## Proving a copy
 
 ```bash

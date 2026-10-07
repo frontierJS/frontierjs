@@ -6007,6 +6007,41 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d603"></a>2026-10-06 · `FJS-D603` — How does an edit say what happens to the rows it reshapes — In the migration, never the seed. Litestone owns a short, fixed set of row-keeping operations (`rename`, `backfill`, `split`). `migrate create` takes them from a prompt, a flag or a document, and Oracle's answer emits the same document. Litestone writes their SQL into the `.sql` file and names each one in its header. A change that needs an operation nobody gave is created with a placeholder, and apply refuses it. The shadow shows the rows carried over before the file may apply.
+
+Raised by base44 PLAN § Phase 3, where a rename deleted 3 of 3 values, a new required link half-applied (`FJS-1785`), and a content split dropped 8 of 8 bodies (`FJS-1787`). **D** was picked over:
+
+- **A**, a schema word such as `@was("description")`. The seed says what is, not how it got there. The word means nothing on a fresh database and has to be removed later, and a backfill or a split would put a value expression in the seed. The owner ruled it out outright.
+- **B alone**, flags on `migrate create` that write SQL. A split does not fit on a command line, and the intent survives only as SQL.
+- **C alone**, a field in Oracle's answer. It reaches Oracle's callers and nobody else, and it needs A or B to reach SQL.
+
+**Why.** The field has landed on this shape. Prisma 6 and 7 leave a rename as a drop plus an add, fixed by hand-editing the SQL after `--create-only`. ZenStack v3 wraps Prisma Migrate and inherits that. Prisma Next (Prisma 8) moved to a typed `migration.ts`:
+
+- each operation is classed `additive`, `widening`, `destructive` or `data`
+- the planner leaves a `placeholder()` wherever rows need a value
+- a `dataTransform` carries a `check` that proves no work remains
+- rename is still not inferred
+
+Litestone goes one step further. It already guesses a rename (`renameTo` in `migrations.js`), so the guess becomes the prompt that writes the file rather than a sentence beside it. A fixed set is what a model fills correctly, and what an approval screen can say in words: *8 bodies go to Block*.
+
+**What it narrows.** [`FJS-D518`](#fjs-d518) stands: `migrations/` holds `.sql` only, and a data change lives in an app script after `migrate apply`. Its *a data change is not a migration* now reads *a data change the schema change does not need*. A row-keeping operation is the part of a schema change it cannot apply without. It compiles to SQL in the same file, so the history stays replayable and the shadow sees it.
+
+**The shape:**
+
+- Each step in a created file carries its class (`additive`, `widening`, `destructive`, `data`), which the history and approval screens sort by.
+- Raw SQL stays the escape for anything outside the set, flagged in the header as hand-written.
+- The collective noun is not ruled. *Move* is a transition's ([`FJS-D353`](#fjs-d353), `VOCABULARY.md`).
+
+**Build order:**
+
+1. `rename`, through the prompt and the flag
+2. `backfill` (a constant, the only or first parent row, or one new parent every row links to), with the shadow's count check
+3. `split` (a column copied into one row per source in a new model)
+4. Oracle's answer gains the document (`FJS-1787`)
+
+It pairs with `FJS-1784`: a destructive file is not applied in the call that creates it. The placeholder refusal replaces `FJS-1785`'s half-apply.
+— `packages/litestone/src/core/migrations.js` · `packages/oracle/src/answer.js` · `packages/oracle/src/emit.js` · [base44 PLAN](../fjs-prototypes/base44/PLAN.md) · [Prisma — customizing migrations](https://www.prisma.io/docs/orm/prisma-migrate/workflows/customizing-migrations) · [Prisma Next — generating a migration](https://www.prisma.io/docs/orm/next/migrations/generating-a-migration) · [ZenStack — migration](https://zenstack.dev/docs/orm/migration).
+
 ### <a id="fjs-d518"></a>2026-09-29 · `FJS-D518` — Where does a data migration live — A data change is not a migration. `migrations/` holds `.sql` only, and the docs name the home for a data change: an app script chained after `migrate apply` and made idempotent by the rows it expects, which is what remnant chose (`remnant/PLAN.md` Q2). `.js` in the history becomes a refusal with a nonzero exit.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep `.js` migrations and have them declare rows-only (e.g. `export const touches = 'rows'`). The shadow skips a declared file, and an undeclared one still stops derivation. This coins a declaration, and nothing enforces it: a file that says rows-only can still run DDL through `sys.sql`).
@@ -11239,6 +11274,24 @@ hash is the only thing keeping one component's rules off another's markup.
 ---
 
 ## Design system (`@frontierjs/css`)
+
+### <a id="fjs-d622"></a>2026-10-07 · `FJS-D622` — What is the full-width stripe called, and who owns reaching the viewport edge — Both: a `Band` term (a `<section>` over Surface owning the background slot, a photo under `--scrim`, and block padding from density, with a `.container` inside for width) and a `.bleed` utility for anything else that escapes its parent (an image in Prose, a Divider, an edge-to-edge table on a phone); the escape is ONE rule, `.bleed, .band`, the way `.kicker, .navlist-label` share one.
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`), **C** (give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)).
+
+The paper's recommendation, taken as written: a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px.
+
+### <a id="fjs-d621"></a>2026-10-07 · `FJS-D621` — Who owns the band and its arrangement — Css: `Band` (question 4) with no structure, and arrangement from the Layout helpers plus a new Grid; site-kit's templates are authoring words that emit `band` + one helper and ship no CSS.
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **B** was picked over **A** (css: one band term with a structure modifier (`page-composition.md`'s guess)), **C** (site-kit: `Section.mesa`'s scoped styles own all of it).
+
+The paper's recommendation, taken as written: the Layout tier already owns arrangement ("one arrangement each, no skin, compose onto anything"), so a structure modifier would be a second owner of it; an app gets the band and Grid without site-kit.
+
+### <a id="fjs-d620"></a>2026-10-07 · `FJS-D620` — Where does `align` live — A css axis beside tone, treatment and density: an inheriting custom property that the Layout helpers and the band read, with `text-align` following it.
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (a site-kit frontmatter key that emits css's existing `start`/`end`/`center` modifiers).
+
+The paper's recommendation, taken as written: ksite spelled alignment four ways (`centered`, `headings-*`, `btn-*`, `brick-*`), and an app centers an empty state or a sign-in card the same way a site centers a band.
 
 ### <a id="fjs-d614"></a>2026-10-07 · `FJS-D614` — Positional roles — does build-time emission of the named part answer `page-composition.md` § Risks — Yes: position is authoring syntax only, and the build emits `<hgroup>`, `<figure>` or `.card`, the way an ALL-CAPS line before a heading is emitted as `.kicker`.
 

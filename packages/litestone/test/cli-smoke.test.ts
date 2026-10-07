@@ -694,6 +694,14 @@ model Vault {
       }
     `, 'utf8')
     await runCli(dir, ['migrate', 'create', 'drop_views'])
+    // The drop is the point, so it is accepted in the file (FJS-1784).
+    const accept = () => {
+      for (const f of readdirSync(join(dir, 'migrations'))) {
+        const p = join(dir, 'migrations', f)
+        writeFileSync(p, readFileSync(p, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
+      }
+    }
+    accept()
 
     const backed = await runCli(dir, ['migrate', 'apply', '--backup'])
     expect(backed.exit).toBe(0)
@@ -714,6 +722,7 @@ model Vault {
       }
     `, 'utf8')
     await runCli(dir, ['migrate', 'create', 'drop_title'])
+    accept()
     const bare = await runCli(dir, ['migrate', 'apply'])
     expect(bare.exit).toBe(0)
     expect(bare.stderr).toContain('no way back from this run')
@@ -1328,6 +1337,34 @@ describe('a schema importing a package by name', () => {
 // Every row here is a PAIR, because a fix that simply stopped refusing would
 // satisfy any test that only asked about the first deploy. The unreachable case
 // must still exit 1, and the present case must still be copied.
+describe('migrate dev — a file that deletes values is created and not applied', () => {
+  // `fli db:migrate` is `migrate dev`, and it created a rename as drop plus add
+  // and applied it in the same call: 3 of 3 values gone, exit 0 (FJS-1784).
+  const V1 = `model Post {\n  id    Int    @id\n  title String\n}\n`
+  const V2 = `model Post {\n  id      Int    @id\n  heading String @default("")\n}\n`
+
+  test('stops at exit 1, names the columns, and applies once the file says yes', async () => {
+    const dir = makeFixtureDir('dev-loss', { schema: V1 })
+    expect((await runCli(dir, ['migrate', 'dev', 'initial'])).exit).toBe(0)
+    const db = new Database(join(dir, 'test.db'))
+    db.run(`INSERT INTO post VALUES (1, 'Hello')`)
+    db.close()
+
+    writeFileSync(join(dir, 'schema.lite'), V2, 'utf8')
+    const r = await runCli(dir, ['migrate', 'dev', 'rename'])
+    expect(r.exit).toBe(1)
+    expect(r.stdout + r.stderr).toContain('deletes the values in post.title')
+    expect(r.stdout + r.stderr).toContain('Accept data loss: no')
+    const kept = new Database(join(dir, 'test.db'), { readonly: true })
+    expect(kept.query('SELECT title FROM post').all()).toEqual([{ title: 'Hello' }])
+    kept.close()
+
+    const file = join(dir, 'migrations', readdirSync(join(dir, 'migrations')).filter(f => f.endsWith('_rename.sql'))[0])
+    writeFileSync(file, readFileSync(file, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
+    expect((await runCli(dir, ['migrate', 'apply'])).exit).toBe(0)
+  })
+})
+
 describe('backup — a declared logger directory that is not there', () => {
   const SCHEMA = (auditPath: string) => `
 database main  { path "main.db" }
@@ -1573,6 +1610,50 @@ describe('backup / replicate — the rest of db/', () => {
     expect(r.stdout).not.toContain('db-app')
     expect(r.stdout).toContain('not replicated')
     expect(r.stdout).toContain('db/public/storage/ProductImage/a.png')
+  })
+
+  // A second checkpoint overwrote the first, and nothing put one back but a
+  // hand-rolled cp that has to remember the -wal (FJS-1786).
+  test('every backup is a new directory, and restore --from-backup puts one back', async () => {
+    const dir     = appFixture('layout-restore')
+    const backups = join(dir, 'db', 'backups')
+    expect((await runCli(dir, ['backup'])).exit).toBe(0)
+    expect((await runCli(dir, ['backup'])).exit).toBe(0)
+    const taken = readdirSync(backups).filter(d => d !== 'earlier').sort()
+    expect(taken).toHaveLength(2)
+    const first = join(backups, taken[0])
+
+    const app = new Database(join(dir, 'db', 'app.db'))
+    app.run(`INSERT INTO post VALUES (1, 'after the backup')`)
+    app.close()
+    const jobs = new Database(join(dir, 'db', 'jobs.db'))
+    jobs.run('DELETE FROM jobs')
+    jobs.close()
+    writeFileSync(join(dir, 'db', 'app.db-wal'), 'a log from the database being replaced')
+
+    const refused = await runCli(dir, ['restore', '--from-backup', first])
+    expect(refused.exit).toBe(1)
+    expect(refused.stdout + refused.stderr).toContain('already there')
+
+    const r = await runCli(dir, ['restore', '--from-backup', first, '--force'])
+    expect(r.exit).toBe(0)
+    expect(r.stdout).toContain('restore complete')
+    expect(r.stdout).toContain('db-files')
+    expect(existsSync(join(dir, 'db', 'app.db-wal'))).toBe(false)
+    const back = new Database(join(dir, 'db', 'app.db'), { readonly: true })
+    expect(back.query('SELECT * FROM post').all()).toEqual([])
+    back.close()
+    const queue = new Database(join(dir, 'db', 'jobs.db'), { readonly: true })
+    expect(queue.query('SELECT id FROM jobs').all()).toEqual([{ id: 'pending-1' }])
+    queue.close()
+  })
+
+  test('a backup written over another is refused', async () => {
+    const dir = appFixture('layout-over')
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    const again = await runCli(dir, ['backup', 'out'])
+    expect(again.exit).toBe(1)
+    expect(again.stdout + again.stderr).toContain('already holds files')
   })
 
   test('a schema outside db/ copies its declared set and nothing beside it', async () => {

@@ -225,7 +225,7 @@ Run a named data seed (e.g. calendar table). `--force` re-runs even if already a
 ```bash
 litestone backup [dest] [--vacuum]
 ```
-Create a hot backup. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db).
+Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db).
 
 ```bash
 litestone optimize [table]
@@ -242,7 +242,7 @@ Start Litestream WAL replication. Runs as a managed subprocess — signal-forwar
 ```bash
 litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]
 ```
-Bring every database `replicate` streams back from its replica — all or nothing. `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
+Bring every database `replicate` streams back from its replica — all or nothing. `--from-backup` with no `--url`, `--at` or `--verify` restores every database from a `litestone backup` directory instead, with no litestream (§ From a local backup). `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
 
 ```bash
 litestone transform [config.js] [--preview] [--dry-run]

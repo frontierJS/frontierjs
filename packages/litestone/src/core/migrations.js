@@ -357,6 +357,12 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   // and `autoMigrate`, which refuses outright — so the review is owed a banner
   // it cannot skim past rather than a `- col body` at the same weight as
   // everything else (`FJS-641`).
+  //
+  // A banner alone was a review nobody had to hold: `migrate dev` created the
+  // file and applied it in one call, so a rename deleted 3 of 3 values with exit
+  // 0 (`FJS-1784`). The box therefore ends in the answer apply reads, and it is
+  // written `no` — accepting is an act on the file after it exists, and the file
+  // is what a deploy replays, so a flag on any command could not carry it there.
   const loss   = describeDataLoss(diffResult.tableDiffs)
   const rename = loss.find(l => l.renameTo)
   const banner = loss.length ? [
@@ -365,11 +371,15 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
     ...loss.map(l => `-- ║     ${lossLine(l)}`),
     `-- ║`,
     ...(rename ? [
-      `-- ║ To keep them, replace the rebuild below with a rename:`,
+      `-- ║ To keep them, replace the rebuild below with a rename, then delete this box:`,
       `-- ║     ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}";`,
     ] : [
-      `-- ║ To keep them, copy the values somewhere before the old table is dropped.`,
+      `-- ║ To keep them, copy the values before the old table is dropped, then delete this box.`,
     ]),
+    `-- ║ To lose them, change the "no" below to "yes".`,
+    `-- ║ migrate apply refuses this file until one of the two is done.`,
+    `-- ║`,
+    `-- ║ Accept data loss: no`,
     `-- ╚${'═'.repeat(74)}╝`,
   ].join('\n') : ''
 
@@ -387,7 +397,30 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const filePath = join(resolve(dir), name)
   writeFileSync(filePath, header + sql, 'utf8')
 
-  return { created: true, name, filePath, summary, sql }
+  return { created: true, name, filePath, summary, sql, loss }
+}
+
+// The box create writes over a loss, and the line in it that answers the box.
+// Read from the file and never recomputed, so the answer apply reads is the one
+// the reviewer wrote — and a file whose rebuild became a rename says so by
+// losing its box.
+const LOSS_BOX      = /^--\s*║\s*DESTRUCTIVE\b/m
+const LOSS_ACCEPTED = /^--\s*║\s*Accept data loss:\s*yes\s*$/mi
+
+// The pending files whose loss nobody has accepted.
+export function unacceptedLoss(dir, files) {
+  return files.filter(f => {
+    if (!f.endsWith('.sql')) return false
+    const { sql } = loadMigrationSql(join(resolve(dir), f))
+    return LOSS_BOX.test(sql) && !LOSS_ACCEPTED.test(sql)
+  })
+}
+
+export function lossRefusal(files) {
+  return `${files.join(', ')} ${files.length > 1 ? 'delete' : 'deletes'} column values and nobody has accepted ` +
+         `the loss, so nothing was applied. Read the DESTRUCTIVE box in the file: keep the values ` +
+         `(a rename, then delete the box), or change its "Accept data loss: no" to "yes" — the line ` +
+         `a deploy replays`
 }
 
 // A data change belongs in an app script chained after `migrate apply` and made
@@ -589,6 +622,14 @@ export async function apply(db, dir = './migrations') {
 
   if (pending.length === 0) {
     return { applied: [], pending: 0, skipped, message: '✓ all migrations already applied' }
+  }
+
+  // Refused for the whole run, not from that file on: the files before it would
+  // apply and leave the database between two schemas nobody declared.
+  const held = unacceptedLoss(absDir, pending)
+  if (held.length) {
+    const message = lossRefusal(held)
+    return { applied: [], pending: pending.length, skipped, refused: true, failed: held[0], error: message, message, held }
   }
 
   const results = []

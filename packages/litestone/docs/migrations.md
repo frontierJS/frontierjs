@@ -38,6 +38,12 @@ command names the columns, prints `✗  DB not pushed` and **exits 1**.
 **The file path still applies.** `litestone migrate create` writes the migration
 with a boxed `DESTRUCTIVE` banner naming the columns whose values go — the file
 is the review step, which is the whole difference between it and `autoMigrate`.
+The box ends in `Accept data loss: no`, and `migrate apply` refuses every
+pending file while one box still says no, before any statement runs. So
+`migrate dev` (`fli db:migrate`) creates such a file and stops there, exit 1.
+Answer it in the file: keep the values (the rename the box gives, then delete the
+box) or change `no` to `yes`. The answer is in the file, so a deploy replays it.
+`create()` returns the same list as `loss`, `[{ table, columns, renameTo }]`.
 
 ### A rebuild SQLite refuses is graded, not thrown
 

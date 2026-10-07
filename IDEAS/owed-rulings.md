@@ -18,6 +18,32 @@ not here.
 
 ## Open questions
 
+- **FJS-D615 — Is an empty or blank scope list an unscoped key, and does an unscoped key reach the credential services at all?** The Fable audit 2026-10-05 (run 1.1). `api-keys.create` stores `scopes` as given, so `['']` mints a key that `caller()` reads as unscoped, with its owner's whole standing (`FJS-1850`). `FJS-1446` refused a SCOPED key at `account`, `sessions` and `api-keys` and left an unscoped one as its owner, so a leaked unscoped key can mint a child key before it is revoked and outlive the revocation. `audit-services-api-keys.test.ts` asserts the refusal in both cases.
+  - **A** — a blank or non-string entry is refused at `create`. An unscoped key stays its owner at the credential services.
+  - **B** — a blank entry means unscoped, as today, and is documented.
+  - **C** — A, and the credential services refuse every API key, scoped or not: managing credentials takes a session.
+  - **Recommend C** — the normalization fails open, and a key that can mint keys cannot be contained by revoking it.
+
+- **FJS-D616 — Should `GET /auth/email/verify` change anything?** The Fable audit 2026-10-05 (run 1.1). The GET consumes the single-use token and answers the whole `SessionContext`, so a mail scanner's prefetch burns the link (`FJS-1839`).
+  - **A** — the link stays a GET that lands on a page, and the page POSTs the token.
+  - **B** — the GET keeps consuming the token, for mail ergonomics.
+  - **Recommend A** — scanners already consume the token, and a GET that writes breaks HTTP's own contract.
+
+- **FJS-D617 — Who sets `http.trustProxy` when `fli deploy` writes the nginx that appends `X-Forwarded-For`?** The Fable audit 2026-10-05 (run 1.1). `fli new` writes no `trustProxy` and the deploy's nginx appends the header, so every caller is keyed on the proxy's address and the login limiter is one bucket for the site (`FJS-1841`, `FJS-D449`).
+  - **A** — the deploy that writes the proxy also writes `http.trustProxy` for it.
+  - **B** — the operator sets it, and the deploy says so.
+  - **Recommend A** — the one that adds the hop knows it is there. B leaves the scaffold broken by default.
+
+- **FJS-D618 — Does `FJS-D345`'s *a port is an origin* mean each app on 8181 is its own origin, so the path fallback runs only when the host label names no app?** The Fable audit 2026-10-05 (run 1.3). `shop.fleet.test/admin/index.html` serves admin's files as origin `shop` (`FJS-1834`). `FJS-1615` is the open row for the Caddy route that would put a host label in front of 8181.
+  - **A** — yes: when the host label names an app, the path reading is not tried.
+  - **B** — no: slugs on 8181 share one origin, and this is documented.
+  - **Recommend A** — the hostname reading exists only to give each app its own origin.
+
+- **FJS-D619 — Is a workspace roster meant for viewers, and if so what of a colleague's `User` row does it carry?** The Fable audit 2026-10-05 (run 2.2). `workspaces.members` hands a viewer each colleague's whole `User` row, which the `User` read policy reserves to level 4 (`FJS-1862`).
+  - **A** — yes: the roster projects `User` to name, email and avatar.
+  - **B** — no: the roster is graded at the `User` read policy.
+  - **Recommend A** — colleagues see colleagues. The defect is that the whole row goes out.
+
 - ~~**FJS-D613 — Where is a `$raw` refused when it sits below the top of a `where`?**~~ **Answered 2026-10-06 (`FJS-D613`): A — Litestone drops the plain-string `where.$raw` and takes only a `sql` tag value, which `orderBy.$raw` already requires. Nothing off a wire can produce one, at any depth, through any transport or custom method. The Data boundary owns it (Invariants 6 and 8), and `where` stops behaving unlike its sibling. In-tree string uses are tests only (`litestone.test.ts`, `raw-clause-brand.test.ts`'s *untouched* case, toolbelt `match.spec.js`). The tag already runs the bare-clock check and expands a `now()` token, so nothing moves with it.** Found starting the `FJS-D609` fix. `refuseUnknownDirectives` and `splitParams` read top-level keys only, while Litestone's `buildWhere` recurses through `AND`, `OR`, `NOT` and relation filters and executes a plain-string `$raw` at any depth for any caller. Measured on main: `parseQuery('?NOT[$raw]=salary > 50000')` is `{ NOT: { $raw: … } }`, the bridge refusal sees nothing, and a stranger's `findMany` over it answers by the `@guarded` column. So `FJS-1816` is open over HTTP and WS too, and `FJS-D609` as written closes only the top-level repro. The `sql` tag's brand is a symbol (`FJS-955`), so a JSON value can never be one.
   - **A** — Litestone drops the plain-string `where.$raw` and takes only a `sql` tag value, which `orderBy.$raw` already requires. Nothing off a wire can produce one, at any depth, through any transport or custom method. The Data boundary owns it (Invariants 6 and 8), and `where` stops behaving unlike its sibling. In-tree string uses are tests only (`litestone.test.ts`, `raw-clause-brand.test.ts`'s *untouched* case, toolbelt `match.spec.js`). The tag already runs the bare-clock check and expands a `now()` token, so nothing moves with it.
   - **B** — the refusal walks the whole filter tree and refuses a `$` key at any depth, in the bridge's owner, so HTTP, WS and `makeCtx` all get it. A custom method calling Litestone directly with user input stays open.

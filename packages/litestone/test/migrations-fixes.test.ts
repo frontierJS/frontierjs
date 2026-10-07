@@ -32,6 +32,11 @@ const freshLab = () => {
   return { dir: join(dir, 'migrations'), db }
 }
 
+// A file whose loss is the point of the test, accepted the way a reviewer
+// would — in the file (FJS-1784).
+const acceptLoss = (path: string) =>
+  writeFileSync(path, readFileSync(path, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
+
 const seedV1 = async (db: Database, dir: string) => {
   const pr1 = parse(V1)
   expect(pr1.valid).toBe(true)
@@ -80,6 +85,7 @@ model Post {
     expect(made.created).toBe(true)
     // The copy step must not name the added column
     expect(made.sql).not.toMatch(/SELECT[^;]*"bio"/)
+    acceptLoss(made.filePath!)
 
     const res = await apply(db, dir)
     expect(res.failed).toBeUndefined()
@@ -101,7 +107,7 @@ model Post {
   stars  Int    @default(5)
 }
 `)
-    create(db, pr2, 'stars', dir)
+    acceptLoss(create(db, pr2, 'stars', dir).filePath!)
     const res = await apply(db, dir)
     expect(res.failed).toBeUndefined()
 
@@ -123,6 +129,7 @@ model Post {
     const made = create(db, pr2, 'blocked', dir)
     expect(made.created).toBe(true)
     expect(made.sql).toContain('BLOCKED')
+    acceptLoss(made.filePath!)
 
     const res = await apply(db, dir)
     expect(res.failed).toBeUndefined()   // applies as a recorded no-op
@@ -167,6 +174,7 @@ model Post {
     // A migration file is meant to be reviewed and edited — this is the edit
     // that used to destroy a row and report success.
     const tampered = readFileSync(made.filePath!, 'utf8')
+      .replace('Accept data loss: no', 'Accept data loss: yes')
       .replace(/ SELECT (.*) FROM "post";/, ' SELECT $1 FROM "post" WHERE "id" > 1;')
     expect(tampered).toContain('WHERE "id" > 1')
     writeFileSync(made.filePath!, tampered, 'utf8')
@@ -762,6 +770,66 @@ describe('create — a destructive migration is banner-marked in the file', () =
     create(db, parse(`model Post { id Int @id  title String  views Int @default(0)  extra String? }`), 'add', dir)
     const files = readdirSync(dir).filter(f => f.endsWith('.sql')).sort()
     expect(readFileSync(join(dir, files[files.length - 1]), 'utf8')).not.toContain('DESTRUCTIVE')
+  })
+})
+
+describe('apply — a destructive file waits for its loss to be accepted in it', () => {
+  // `migrate dev` created the file and applied it in one call, so the banner was
+  // a review nobody had to hold: a rename deleted 3 of 3 values, exit 0 (FJS-1784).
+  const RENAMED = `model Post { id Int @id  heading String @default("")  views Int @default(0) }`
+  const latest  = (dir: string) => join(dir, listMigrationFiles(dir).at(-1)!)
+  const titles  = (db: Database) => db.query('SELECT * FROM post ORDER BY id').all()
+
+  it('create returns the loss it wrote, and apply runs nothing while the box says no', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    // A pending additive file before it: refused for the whole run, so the
+    // database is never left between two schemas.
+    create(db, parse(`model Post { id Int @id  title String  views Int @default(0)  extra String? }`), 'add', dir)
+    const r = create(db, parse(RENAMED), 'rename', dir)
+    expect(r.loss).toEqual([{ table: 'post', columns: ['title', 'extra'], renameTo: null }])
+    expect(readFileSync(r.filePath!, 'utf8')).toContain('Accept data loss: no')
+
+    const before = titles(db)
+    const a = await apply(db, dir)
+    expect(a.refused).toBe(true)
+    expect(a.applied).toEqual([])
+    expect(a.failed).toBe(r.name)
+    expect(a.error).toContain('Accept data loss: no')
+    expect(titles(db)).toEqual(before)
+    expect(appliedMigrations(db).map(m => m.name)).toHaveLength(1)
+  })
+
+  it('applies once the box says yes — the line a deploy replays', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const r = create(db, parse(RENAMED), 'rename', dir)
+    writeFileSync(r.filePath!, readFileSync(r.filePath!, 'utf8').replace('Accept data loss: no', 'Accept data loss: yes'))
+    const a = await apply(db, dir)
+    expect(a.error).toBeUndefined()
+    expect(titles(db)).toEqual([{ id: 1, heading: '', views: 42 }, { id: 2, heading: '', views: 7 }])
+  })
+
+  it('applies the rename the box suggests once the box is gone, and keeps the values', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const r = create(db, parse(RENAMED), 'rename', dir)
+    writeFileSync(r.filePath!, [
+      `-- Litestone migration`,
+      `ALTER TABLE "post" RENAME COLUMN "title" TO "heading";`,
+    ].join('\n'))
+    const a = await apply(db, dir)
+    expect(a.error).toBeUndefined()
+    expect(titles(db)).toEqual([{ id: 1, heading: 'Hello', views: 42 }, { id: 2, heading: 'World', views: 7 }])
+  })
+
+  it('an additive file carries no box and returns no loss', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+    const r = create(db, parse(`model Post { id Int @id  title String  views Int @default(0)  extra String? }`), 'add', dir)
+    expect(r.loss).toEqual([])
+    expect((await apply(db, dir)).error).toBeUndefined()
+    expect(readFileSync(latest(dir), 'utf8')).not.toContain('Accept data loss')
   })
 })
 

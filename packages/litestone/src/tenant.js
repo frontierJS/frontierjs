@@ -493,7 +493,14 @@ class TenantRegistry {
     if (this.#migrationsDir && existsSync(this.#migrationsDir)) {
       // Apply migration files — same as running `litestone migrate apply`.
       // MUST be awaited: apply() is async, and the raw handle closes below.
-      await apply(raw, this.#migrationsDir)
+      // A refusal or a failure registered a tenant whose file held none of the
+      // schema, and the first query said `no such table`.
+      const result = await apply(raw, this.#migrationsDir)
+      if (result.error) {
+        raw.close()
+        for (const f of [path, `${path}-wal`, `${path}-shm`]) if (existsSync(f)) unlinkSync(f)
+        throw new Error(`Tenant "${id}" was not created — migration "${result.failed}": ${result.error}`)
+      }
     } else {
       // Fall back to fresh DDL from schema. A tenant's single file holds ALL
       // of the schema's sqlite databases (main + analytics + …), so generate
