@@ -94,14 +94,46 @@ divertible at the same seam.
   doubles the predicate on every read. Probably the honest answer is yes — and it is
   then a real reason to prefer `strategy database`, which is worth saying in
   `packages/litestone/docs/multi-tenancy.md` rather than discovering later.
+  - **A** — `strategy database` only: `--sandbox-of` refuses under `strategy row` by
+    name, and `multi-tenancy.md` states it as a reason to choose `database`.
+  - **B** — Both strategies: under `strategy row` the sandbox becomes a second
+    tenancy axis, a second `@@deny` on every model.
+  - **Recommend A** — under `database` a sandbox is a file and a registry row, and
+    under `row` it doubles the predicate on every read of every model. A refusal by
+    name tells the developer which strategy to pick rather than costing every query.
 - **Does a sandbox appear in `db/access.snapshot.md`?** It changes no declared
   access, so probably not — but *which models copy* is a disclosure decision and
   `compliance-from-the-seed.md` may want it.
+  - **A** — No: `@@sandbox(...)` is visible in `db/schema.lite` and changes no
+    declared access.
+  - **B** — Yes: one column per model in `access.snapshot.md` naming `copy`, `empty`
+    or `sample`.
+  - **Recommend B** — a model marked `copy` puts its rows where a test credential
+    reads them, which widens who can read them, and the access snapshot is where a
+    reviewer checks who reads what. With `empty` the default, the column only says
+    something when somebody typed `copy`.
 - **What does the dashboard show?** A mode a person can be in without noticing is
   the failure mode every provider with a test mode has shipped at least once. That
   is a UI-realm answer and it belongs with `status`/`theme` rather than here.
+  - **A** — Sierra owns it, the way it owns the theme: a class on `<html>` derived
+    from the session's tenant, and `@frontierjs/css` styles the page's frame for it,
+    so no app can forget it.
+  - **B** — The app's own concern: the client exposes the mode on the session and
+    each app draws its own banner.
+  - **C** — A `@frontierjs/ui` banner component that an app places.
+  - **Recommend A** — the failure is a mode a person is in without noticing, so the
+    signal cannot depend on an app remembering to draw it, which rules out B and C.
+    The theme switch is the existing owner of a page-wide class on `<html>`.
 - **Cost.** One SQLite file per sandbox per tenant is cheap; a thousand abandoned
   ones are not. Ties to expiry above.
+  - **A** — Expiry: `expiresAt` on the registry row and a Caravan job that deletes
+    expired sandboxes, the retention primitive owned by 2.11.
+  - **B** — A cap: a stated number of sandboxes per parent, refused at create.
+  - **C** — One sandbox per tenant, reset in place by `fli tenant reset`.
+  - **Recommend C** — it bounds the cost at one extra file per tenant with no job and
+    no retention to declare, and reset is the operation the paper says people want.
+    It is Stripe's shape: one test mode per account. A comes back if somebody needs
+    more than one.
 
 ## See also
 

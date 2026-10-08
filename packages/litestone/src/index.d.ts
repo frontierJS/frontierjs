@@ -753,7 +753,7 @@ export interface LitestoneClient {
    * refuses it by name. The cutoff is a rolling instant — the duration back from
    * the moment it runs, `d` a flat 24 hours — with no calendar and no zone.
    */
-  $retain(): RetentionResult[]
+  $retain(): RetainResult[]
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
@@ -1575,6 +1575,16 @@ export interface RetentionResult {
   table:    string
   removed:  number
   error?:   string
+}
+
+/**
+ * One row of `$retain()`: a RetentionResult and which database it swept. A
+ * schema with two retained databases answers a row per model in each, so the
+ * model name alone does not say which policy removed what.
+ */
+export interface RetainResult extends RetentionResult {
+  database: string
+  driver:   'sqlite' | 'jsonl' | 'logger'
 }
 
 // Both of these were declared with the wrong arity — `runSqliteRetention(db,

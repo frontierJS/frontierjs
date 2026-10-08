@@ -222,7 +222,7 @@ GET /openapi.json
     from:"channel: 'leads' on the service",
     blurb:'One announcement point. Every mutation fans out to the event bus and to the declared channel — no second publish path to forget.',
     code:
-`const live = publish(() => app.channel('leads'))
+`const live = announce(() => app.channel('leads'))
 
 createService({
   name: 'leads', model: 'lead',

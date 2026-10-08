@@ -226,7 +226,7 @@ render: static
 
     <div class="grid cols3" style="margin-top:1.5rem">
       <article class="card stack">
-        <h3>Slices — installable full-stack modules</h3>
+        <h3>Rigs — installable full-stack modules</h3>
         <p class="text-sm text-muted">
           One package that ships a Model, a Service, a Resource and its own conformance
           tests — install only the parts you want. Take the API without the frontend, and

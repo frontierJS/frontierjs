@@ -24,7 +24,7 @@ import {
   createLogger,
   channels,
   authenticate,
-  publish,
+  announce,
   correlationId,
   requestLogger,
   defaultConfig,
@@ -207,9 +207,9 @@ app.services.register(
         remove: [authenticate],
       },
       after: {
-        create: [publish((_r, ctx) => app.channel?.('leads') ?? null)],
-        patch:  [publish((_r, ctx) => app.channel?.('leads') ?? null)],
-        remove: [publish((_r, ctx) => app.channel?.('leads') ?? null)],
+        create: [announce((_r, ctx) => app.channel?.('leads') ?? null)],
+        patch:  [announce((_r, ctx) => app.channel?.('leads') ?? null)],
+        remove: [announce((_r, ctx) => app.channel?.('leads') ?? null)],
       },
     },
   })

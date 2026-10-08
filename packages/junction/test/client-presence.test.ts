@@ -13,12 +13,12 @@
 // What is asserted here is the three things that seam needs and nothing else
 // can supply:
 //
-//   1. `client.presence.announce()` reaches the server and comes back as a
-//      roster, and `release()` stops it.
+//   1. `client.presence.set()` reaches the server and comes back as a
+//      roster, and `clear()` stops it.
 //   2. `presence:sync` names WHICH member the recipient is (`you`) — the only
 //      way a browser can split a roster into self and others, because nothing
 //      else ever tells it its connection id.
-//   3. An announcement made while the socket is DOWN is sent on connect, and
+//   3. Meta set while the socket is DOWN is sent on connect, and
 //      re-sent on every RE-connect — a reconnect is a new connection with no
 //      meta and no roster, and nothing above this layer sees one happen.
 //
@@ -68,7 +68,7 @@ async function serve(port: number) {
     },
   })
   // Membership is the APP's — a browser cannot join itself, which is the whole
-  // reason `announce` is not called `subscribe`. Only ROOM is ever joined, so
+  // reason `set` is not called `subscribe`. Only ROOM is ever joined, so
   // OTHER is the negative control for every roster assertion below.
   app.configure(channels((a: any) => {
     a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
@@ -104,14 +104,14 @@ const settle = (ms = 200) => new Promise(r => setTimeout(r, ms))
 
 describe('client.presence — the verb sierra could not call (FJS-811)', () => {
 
-  it('announce() reaches the server and comes back as a roster', async () => {
+  it('set() reaches the server and comes back as a roster', async () => {
     const port = 3510
     await serve(port)
     const alice = await connect(port, 'tok-alice')
     await settle()
     alice.seen.length = 0
 
-    alice.client.presence.announce(ROOM, { name: 'Alice' })
+    alice.client.presence.set(ROOM, { name: 'Alice' })
     await settle()
 
     const sync = alice.last('presence:sync')
@@ -130,7 +130,7 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     await settle()
     alice.seen.length = 0
 
-    alice.client.presence.announce(OTHER, { name: 'Alice' })
+    alice.client.presence.set(OTHER, { name: 'Alice' })
     await settle()
 
     expect(alice.of('presence:sync')).toEqual([])
@@ -158,30 +158,30 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     expect(self.userId).toBe('bob')
   })
 
-  it('two sockets see each other, and a release by one does not blind the other', async () => {
+  it('two sockets see each other, and a clear by one does not blind the other', async () => {
     const port = 3513
     await serve(port)
     const alice = await connect(port, 'tok-alice')
-    alice.client.presence.announce(ROOM, { name: 'Alice' })
+    alice.client.presence.set(ROOM, { name: 'Alice' })
     const bob = await connect(port, 'tok-bob')
-    bob.client.presence.announce(ROOM, { name: 'Bob' })
+    bob.client.presence.set(ROOM, { name: 'Bob' })
     await settle()
 
     expect(bob.last('presence:sync')!.data.members.map((m: any) => m.userId).sort())
       .toEqual(['alice', 'bob'])
 
     // Bob's tab closes its avatar strip. Alice is still rendering hers.
-    bob.client.presence.release(ROOM)
+    bob.client.presence.clear(ROOM)
     await settle()
     alice.seen.length = 0
-    alice.client.presence.announce(ROOM, { name: 'Alice' })
+    alice.client.presence.set(ROOM, { name: 'Alice' })
     await settle()
 
     expect(alice.last('presence:sync')!.data.members.map((m: any) => m.userId).sort())
       .toEqual(['alice', 'bob'])
   })
 
-  it('an announcement made before the socket is up is sent on connect', async () => {
+  it('meta set before the socket is up is sent on connect', async () => {
     // The ordinary case: a component mounts at boot, long before the socket.
     // The old sierra module gated its send on `client.token || client.connected`
     // and therefore sent nothing at all in cookie mode.
@@ -194,7 +194,7 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
       if (name === 'presence:sync') seen.push(data)
     })
 
-    client.presence.announce(ROOM, { name: 'Early' })   // socket is not open
+    client.presence.set(ROOM, { name: 'Early' })   // socket is not open
     expect(seen).toEqual([])
 
     client.setToken('tok-alice')
@@ -207,10 +207,10 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     expect(seen.at(-1).members[0].meta).toEqual({ name: 'Early' })
   })
 
-  it('and it is announced AGAIN on a reconnect, where a released one is not', async () => {
+  it('and it is sent AGAIN on a reconnect, where a cleared one is not', async () => {
     // A reconnect is a new connection: the server keys presence by connection
-    // id, so nothing carries over and the announcement has to be re-made. The
-    // released channel is the pair — a client that replayed everything it had
+    // id, so nothing carries over and the meta has to be sent again. The
+    // cleared channel is the pair — a client that replayed everything it had
     // ever been handed would pass the first half alone.
     const port = 3515
     await serve(port)
@@ -223,9 +223,9 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     client.setToken('tok-alice')
     await new Promise<void>(r => client.once('connect', () => r()))
 
-    client.presence.announce(ROOM,  { name: 'Alice' })
-    client.presence.announce(OTHER, { name: 'Alice' })
-    client.presence.release(OTHER)
+    client.presence.set(ROOM,  { name: 'Alice' })
+    client.presence.set(OTHER, { name: 'Alice' })
+    client.presence.clear(OTHER)
     await settle()
 
     // Drop the socket the way a deploy does, and let the client reconnect.
@@ -255,14 +255,14 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     await serve(port)
     const anon  = await connect(port, null)
     const alice = await connect(port, 'tok-alice')
-    alice.client.presence.announce(ROOM, { name: 'Alice' })
+    alice.client.presence.set(ROOM, { name: 'Alice' })
     await settle()
     anon.seen.length = 0
     alice.seen.length = 0
 
     // Somebody arrives, and then says something about themselves.
     const bob = await connect(port, 'tok-bob')
-    bob.client.presence.announce(ROOM, { status: 'typing' })
+    bob.client.presence.set(ROOM, { status: 'typing' })
     await settle()
 
     expect(alice.of('presence:join').length).toBeGreaterThan(0)
@@ -271,7 +271,7 @@ describe('client.presence — the verb sierra could not call (FJS-811)', () => {
     expect(anon.seen).toEqual([])
 
     // And asking for the roster itself gets an anonymous caller nothing either.
-    anon.client.presence.announce(ROOM, { name: 'Nobody' })
+    anon.client.presence.set(ROOM, { name: 'Nobody' })
     await settle()
     expect(anon.seen).toEqual([])
   })

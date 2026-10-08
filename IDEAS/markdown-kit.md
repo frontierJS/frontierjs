@@ -28,4 +28,20 @@ Patched there with `white-space: pre-line` so the line breaks survive.
 ## Open questions
 
 - Which parser, and whether it ships in `ui` or `toolbelt`.
+  - **A** — unified and remark, the chain mesa's `compiler-md.js` already uses,
+    plus `rehype-sanitize`, as an optional peer of `ui`.
+  - **B** — `marked` plus DOMPurify in `ui`.
+  - **C** — a small safe subset written as `@frontierjs/toolbelt/markdown`, zero
+    dependencies, emitting no raw HTML so there is nothing to sanitize.
+  - **Recommend C** — the text is written by strangers and shown in public, and
+    a renderer that never emits raw HTML cannot be talked into a script, where
+    A and B are only as safe as a sanitizer's configuration. A pure function in
+    the substrate runs on the server and in the browser, which answers the next
+    question too. Page `.md` keeps remark, since it needs Mesa components
+    inside the markup and its author is trusted.
 - Server-side render for prerendered pages vs. client-only.
+  - **A** — client-only: `Cell` renders the markdown in the browser.
+  - **B** — the same function at prerender and in the browser.
+  - **Recommend B** — a prerendered careers page that shows `## About the role`
+    until hydration is the defect that found this. B costs nothing once the
+    renderer is the pure function the first question recommends.

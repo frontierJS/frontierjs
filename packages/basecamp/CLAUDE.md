@@ -504,9 +504,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   taking the after from the result reported an `@encrypted` column as REMOVED on
   every rotation. Protected column names come from `db.$protectedFields()`, never
   a list here.
-- **A service DECLARES its channel; it does not run a publish hook.**
+- **A service DECLARES its channel; it does not run a announce hook.**
   `channel: workspaceChannel(app)` on the definition. Junction announces in one
-  place and excludes `find`/`get` there; an `after: { all: [publish(…)] }` hook
+  place and excludes `find`/`get` there; an `after: { all: [announce(…)] }` hook
   cannot, and broadcast every read to the whole workspace (`FJS-031`). Declaring
   both is refused at construction.
 - **A connection carries no workspace, so `channels({ claims })` says which one

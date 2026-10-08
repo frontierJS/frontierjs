@@ -3,7 +3,7 @@
 **`@frontierjs/oracle`** — the step before `db/schema.lite`. A model reads a
 person's words and writes an ANSWER: which catalog entries the domain already
 contains, what each adds, who reaches each row, how each thing moves. This
-package grades the answer and writes the seed. **No model runs here**
+package grades the answer and writes the schema. **No model runs here**
 (`FJS-D601`): whatever runs the model calls this module, so CI runs all of it
 and the same answer is graded and emitted the same way twice.
 

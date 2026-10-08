@@ -35,7 +35,7 @@
  */
 
 import { McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
-import { CALL_OPTIONS_AT, principalGateLevel, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
+import { CALL_OPTIONS_AT, LEVELS, principalGateLevel, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -89,6 +89,7 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
 
   let views:  SchemaViews | null = null
   let shapes: ServiceShape[]     = []
+  let trail:  string | null      = null
 
   return {
     name: 'mcp',
@@ -96,7 +97,7 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
     register(app: App) {
       const handler = async (ctx: RouteCtx<typeof app>) => {
         if (!views) return ctx.json({ error: 'The MCP surface is not ready yet.' }, 503)
-        return answer(app, ctx, views, shapes, opts)
+        return answer(app, ctx, views, shapes, opts, trail)
       }
 
       // No `app.all`, so the verbs are listed. DELETE is the client ending a
@@ -105,6 +106,13 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
       app.post(path, handler)
       app.get(path, handler)
       app.delete(path, handler)
+
+      app.get(`${path}/levels`, async (ctx: RouteCtx<typeof app>) => {
+        if (!views) return ctx.json({ error: 'The MCP surface is not ready yet.' }, 503)
+        return levels(app, ctx, views, shapes)
+      })
+
+      app.get(`${path}/calls`, async (ctx: RouteCtx<typeof app>) => calls(app, ctx, trail))
     },
 
     // Services register during `autoload-services`, which is above `boot-plugins`
@@ -113,6 +121,7 @@ export function mcpPlugin(opts: McpOptions = {}): Plugin {
     async boot(app: App) {
       views  = await buildViews(app)
       shapes = describeAll(app)
+      trail  = trailOf((app as { db?: unknown }).db)
       if (views) disclose(app, projectTools(shapes, views, 8))
     },
   }
@@ -187,6 +196,7 @@ async function answer(
   views:  SchemaViews,
   shapes: ServiceShape[],
   opts:   McpOptions,
+  trail:  string | null,
 ): Promise<Response> {
   const user  = ctx.user ?? null
   const level = await standingOf(app, user)
@@ -204,7 +214,7 @@ async function answer(
     version: opts.version ?? '0.0.0',
   })
 
-  const call = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full }
+  const call = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full, trail }
   for (const tool of tools) register(server, app, tool, user, call)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
@@ -222,6 +232,61 @@ async function answer(
   await server.connect(transport)
 
   return transport.handleRequest((ctx.$raw as { $req: Request }).$req)
+}
+
+/**
+ * What an agent at each level is offered, and what it is not, with the rule
+ * that decided each — `GET {path}/levels`, for an operator's *who can do what*.
+ *
+ * The same `projectTools` and `dispatchable` the endpoint serves from, over the
+ * same `describe()` shapes, so a level's `tools` is the list `tools/list` would
+ * answer an agent standing there. Only the app's own services can say what a
+ * custom method is and what gate it declared — which is why this is asked of
+ * the running app and not worked out from the schema file.
+ *
+ * `narrow` is not applied: it grades a principal's key or plan, not a level,
+ * and an operator asking *what does a USER see* is asking about the level.
+ *
+ * ADMINISTRATOR and above, since it lays out every rule at every rung and a
+ * lower standing has its own list from the endpoint itself. Not a boundary
+ * (Invariant 6): it reads declarations, never a row.
+ */
+async function levels(app: App, ctx: RouteCtx<App>, views: SchemaViews, shapes: ServiceShape[]): Promise<Response> {
+  const standing = await standingOf(app, ctx.user ?? null)
+  if (standing < LEVELS.ADMINISTRATOR) {
+    return ctx.json({ error: 'Only an administrator can see what every level is offered.' }, 403)
+  }
+
+  const out: Projection[] = []
+  for (let level = LEVELS.STRANGER; level <= LEVELS.SYSTEM; level++) {
+    const p = projectTools(shapes, views, level)
+    out.push({ ...p, tools: dispatchable(p).tools })
+  }
+  return ctx.json({ standing, levels: out })
+}
+
+/**
+ * What agents did here, newest first — `GET {path}/calls?limit=`, for an
+ * operator's *history*. The `mcp.call` entries `recordCall` wrote, read back
+ * from the same logger database.
+ *
+ * ADMINISTRATOR and above, as `/levels` is: it names who called what on which
+ * row, across every caller. An app with no logger database records nothing,
+ * and says so rather than answering an empty list that reads as *no agent has
+ * been here*.
+ */
+async function calls(app: App, ctx: RouteCtx<App>, trail: string | null): Promise<Response> {
+  const standing = await standingOf(app, ctx.user ?? null)
+  if (standing < LEVELS.ADMINISTRATOR) {
+    return ctx.json({ error: 'Only an administrator can see what every agent did.' }, 403)
+  }
+  const limit = Math.min(Math.max(Number(ctx.query.limit) || 100, 1), 500)
+  if (!trail) return ctx.json({ recorded: false, calls: [] })
+  const rows = await app.withDb(async (db: unknown) => {
+    const sys = (db as { asSystem(): Record<string, { findMany(a: unknown): Promise<TrailRow[]> }> }).asSystem()
+    return sys[trail]!.findMany({ where: { operation: CALL_OPERATION }, orderBy: { createdAt: 'desc' }, limit })
+  })
+  return ctx.json({ recorded: true, calls: rows.map(callOf) })
 }
 
 /** The tools `narrow` allows, in their order. Only removes. */
@@ -288,6 +353,8 @@ interface CallScope {
   /** This caller's tool list, which every breadcrumb must name a tool from. */
   offered:       Tool[]
   defs:          SchemaViews['full']
+  /** The log model tool calls are recorded in, or null for none. */
+  trail:         string | null
 }
 
 /** Whether this request is a `tools/call` asking to be held until its jobs finish. */
@@ -374,6 +441,7 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
       locals: { db } as never, model: tool.model ?? undefined, service: tool.service,
     })
     const result = appDb ? withhold(appDb) : await app.withDb(withhold)
+    await recordCall(app, call.trail, tool, a, user, { outcome: 'done', result })
     const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
     if (answersOneRow(tool)) {
       // Read off the row the CALLER was answered, so a foreign key their read
@@ -390,10 +458,110 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
     // *which* field, *which* level. A 5xx message is not: it can carry a table
     // name or a file path, and `sanitizeError` only runs on the transport's own
     // error path, never on one re-emitted here.
-    const text = (fe.code ?? 500) < 500
+    const code = fe.code ?? 500
+    const text = code < 500
       ? fe.message
       : `${tool.name} failed. The API logged the reason.`
+    await recordCall(app, call.trail, tool, a, user, {
+      outcome: code === 401 || code === 403 ? 'refused' : code < 500 ? 'rejected' : 'failed',
+      code, ...(code < 500 ? { message: fe.message } : {}),
+    })
     return { content: [{ type: 'text', text }], isError: true }
+  }
+}
+
+// ─── the trail ────────────────────────────────────────────────────────────────
+
+/** The one `operation` every tool call is filed under. */
+const CALL_OPERATION = 'mcp.call'
+
+type Outcome = 'done' | 'refused' | 'rejected' | 'failed'
+
+interface TrailRow {
+  records?:   string | null
+  actorId?:   string | null
+  meta?:      string | null
+  createdAt?: string
+}
+
+/**
+ * The log model of the app's first logger database — the one `$audit` writes
+ * to when no `database` is named — or null when it declares none. A logger
+ * database's model is always `<name>Logs`; only a SQL one may rename it.
+ *
+ * Asked of the app-wide client at boot: a scoped client answers `$databases`
+ * by throwing. Under `tenancy { strategy database }` there is none, so calls
+ * there go unrecorded and `/calls` says so.
+ */
+function trailOf(db: unknown): string | null {
+  let dbs: Record<string, { driver?: string }> = {}
+  // A Litestone client THROWS on an unknown property (`FJS-673`).
+  try { dbs = (db as { $databases?: typeof dbs }).$databases ?? {} } catch { return null }
+  const name = Object.entries(dbs).find(([, d]) => d?.driver === 'logger')?.[0]
+  return name ? `${name}Logs` : null
+}
+
+/**
+ * Put one tool call in the app's audit trail: who, which tool, how it ended,
+ * and which rows it named. `@@log` records a write and cannot say it came from
+ * an agent, nor see a call that was refused — and the refused call is the one
+ * an operator most needs to find.
+ *
+ * Field NAMES only, never values: an argument can carry anything, and `meta`
+ * is written as given with nothing redacting it. Never throws — the call has
+ * already been answered, and a trail that cannot be written must not turn a
+ * done call into a failed one. It warns instead.
+ */
+async function recordCall(
+  app:   App,
+  trail: string | null,
+  tool:  Tool,
+  a:     Record<string, unknown>,
+  user:  unknown,
+  how:   { outcome: Outcome; result?: unknown; code?: number; message?: string },
+): Promise<void> {
+  if (!trail) return
+  const data    = tool.method === 'create' ? a : (a.data && typeof a.data === 'object' ? a.data as Record<string, unknown> : {})
+  const fields  = Object.keys(data)
+  const row     = how.result && typeof how.result === 'object' && !Array.isArray(how.result) ? how.result as { id?: unknown } : null
+  const id      = a.id ?? (tool.method === 'create' ? row?.id : undefined)
+  const actor   = toDataPrincipal(user as never) as { id?: unknown } | null
+  const key     = (user as { credentialId?: string } | null)?.credentialId
+  // A find answers its page in an envelope, `{ data, total }`.
+  const list    = Array.isArray(how.result) ? how.result
+    : Array.isArray((row as { data?: unknown } | null)?.data) ? (row as { data: unknown[] }).data : null
+  try {
+    await app.withDb(async (db: unknown) => {
+      await (db as { $audit(e: Record<string, unknown>): Promise<unknown> }).$audit({
+        operation: CALL_OPERATION,
+        ...(tool.model ? { model: tool.model } : {}),
+        records:   id == null ? [] : [String(id)],
+        ...(actor?.id != null ? { actorId: String(actor.id), actorType: 'user' } : {}),
+        meta: {
+          tool: tool.name, kind: tool.kind, method: tool.method, outcome: how.outcome,
+          ...(fields.length ? { fields } : {}),
+          ...(list ? { count: list.length } : {}),
+          ...(how.code ? { code: how.code } : {}),
+          ...(how.message ? { message: how.message } : {}),
+          ...(key ? { key } : {}),
+        },
+      })
+    })
+  } catch (err) {
+    const log = (app as { log?: { warn?: (m: string) => void } }).log
+    const m   = `mcp: could not record ${tool.name} in the audit trail: ${(err as Error)?.message}`
+    log?.warn ? log.warn(m) : console.warn(`[mcp] ${m}`)
+  }
+}
+
+/** One trail row as `/calls` answers it. */
+function callOf(r: TrailRow) {
+  const meta = JSON.parse(r.meta ?? '{}') as Record<string, unknown>
+  return {
+    at:      r.createdAt ?? null,
+    actorId: r.actorId ?? null,
+    records: JSON.parse(r.records ?? '[]') as string[],
+    ...meta,
   }
 }
 

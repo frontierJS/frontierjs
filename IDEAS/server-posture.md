@@ -260,19 +260,58 @@ two routes, which stays severable inside the one file that already runs commands
 - **Q1 — Host firewall: nftables directly, or ufw?** **Recommend nftables**: one ruleset
   the Outpost reads as JSON, and `DOCKER-USER` is plain iptables-nft anyway. ufw is
   more familiar but adds a layer the grader would have to see through.
+  - **A** — nftables directly: one ruleset written by `installScript()`, read by the
+    Outpost as `nft -j list ruleset`.
+  - **B** — ufw, whose rules the grader reads through `ufw status` and the
+    iptables-nft tables beneath it.
+  - **Recommend A** — the grader reads one layer, not two, and `DOCKER-USER` is
+    plain iptables-nft whichever is chosen, so ufw adds a translation the pairing
+    test would have to grade as well.
 - **Q2 — `PatchRun` model, or widen `CleanupRun` into a maintenance run?**
   **Recommend its own model**: a cleanup records bytes freed and a patch records
   package versions, so one row type would carry two half-empty shapes.
+  - **A** — Its own `PatchRun` model, shaped like `CleanupRun` and recording
+    package, from-version and to-version.
+  - **B** — Widen `CleanupRun` into a `MaintenanceRun` with a `kind` and both
+    payloads.
+  - **Recommend A** — a cleanup records bytes freed and a patch records versions, so
+    B is one row type with two half-empty shapes and a `kind` every reader has to
+    branch on. `RunStatus` is already shared, which is the part that is common.
 - **Q3 — fail2ban?** **Recommend no**: with password auth off, brute force cannot
   succeed, and `MaxAuthTries` plus the provider firewall cover the noise. One fewer
   daemon to grade.
+  - **A** — No fail2ban: password auth off, `MaxAuthTries 3`, and the provider
+    firewall.
+  - **B** — fail2ban on the sshd jail, installed by `installScript()` and graded as
+    a control.
+  - **Recommend A** — with password auth off, a brute force cannot succeed, so B
+    adds a daemon to install, grade and keep running against noise rather than risk.
 - **Q4 — A no-hostname app on `0.0.0.0` (`FJS-D565`).** Keep it and let the firewall
   allow its declared port, or publish everything on loopback and make exposure an
   explicit per-app declaration? **Recommend the second**: exposure becomes a stated
   fact the grader reads, not a side effect of having no domain.
+  - **A** — Keep `FJS-D565` as ruled: an app with no hostname publishes its port on
+    every interface, and the firewall allows that declared port.
+  - **B** — Every published port binds `127.0.0.1`, and exposure on a raw port is an
+    explicit per-app declaration on `App` that the grader reads.
+  - **Recommend B** — exposure becomes a stated fact rather than a side effect of
+    having no domain, and an app reachable around Caddy is exactly what `FJS-D565`
+    exists to stop. It amends that ruling's no-hostname clause, so it lands as a
+    ruling naming it.
 - **Q5 — Pin the installs?** Docker and Caddy from their apt repos with a pinned
   major, and Bun by version. **Recommend yes**, with the versions in `config.js` and
   reported, so the screen can say which machines are behind.
+  - **A** — As built: Bun and the Outpost pinned in `enrollment.ts`
+    (`BUN_VERSION`, `OUTPOST_VERSION`), Docker and Caddy whatever their signed apt
+    repositories serve on the day.
+  - **B** — Also pin a major for Docker and Caddy with an apt preference, keep every
+    version beside `BUN_VERSION`, and report the installed versions in the heartbeat.
+  - **C** — Pin exact versions for all four.
+  - **Recommend B** — two machines enrolled a month apart should differ only by
+    patches, and the heartbeat report is what lets the screen say which are behind.
+    The versions belong in `enrollment.ts`, where the install script is and where
+    the two pinned today already live, not in the Outpost's `config.js`. C makes
+    every security patch a code change.
 
 ## See also
 

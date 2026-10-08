@@ -327,7 +327,7 @@ Everything above is loud. These are not.
   `find({}, { limit: 1 })` returns every row; directives go under `directives:`
   and filters in the first argument.
 
-- **A publish reaches only connections that joined the channel.** `channel:
+- **A broadcast reaches only connections that joined the channel.** `channel:
   'orders'` announces every write; nothing arrives until something calls
   `app.channel('orders').join(conn)`. The scaffold's `api/src/core/channels.ts`
   joins every declared channel on connect. Each frame is then graded per

@@ -381,20 +381,69 @@ was written to apply.
 - **Where the artefact store lives when there is no registry.** On the Basecamp host
   is the obvious answer and makes Basecamp a single point of failure for deploys —
   acceptable for a control plane, but it should be stated rather than discovered.
+  - **A** — Nowhere: the builder ships the bytes with `docker save | docker load`,
+    as `deploy.builder` does today, and each target's own image store is the store.
+  - **B** — A content-addressed store on the Basecamp host that every Outpost pulls
+    from by digest, with Basecamp stated as the single point of failure for deploys.
+  - **C** — A registry: a `registry:2` container on the Basecamp host when the user
+    has none, mirrored by `RegistryImage` and pulled by the Outpost's `/pull`.
+  - **Recommend A** — then C once a fleet deploy needs one artefact on many machines.
+    A ships and needs no new infrastructure. B is a registry under another name, so
+    when a store is owed, the existing one (`registry:2`) is the cheaper concept and
+    the Outpost's `/pull` already speaks it.
 - **Whether `fli deploy` grows a pull-a-digest mode, and whether that is the same
   mode ring 0 uses to install Basecamp from an image.** It knows one mode today —
   build on the target — and both build-once and ring 0 want the other one. Doing it
   once is the whole argument; doing it twice is what happens if nobody asks.
+  - **A** — One mode: `fli deploy --image <digest>` replaces `02-pull` and the two
+    build steps with a fetch of that digest, then runs `04c-journal` onward unchanged,
+    and ring 0 installs Basecamp through the same flag.
+  - **B** — Two: build-once stays `deploy.builder`, and ring 0 gets its own
+    `fli basecamp:install` that pulls a published image.
+  - **C** — Neither: ring 0 keeps building Basecamp from source on the target.
+  - **Recommend A** — `deploy.builder` already proved that everything after the build
+    is addressed by digest, so the mode is one step swapped for a fetch. B is the
+    *twice* this question exists to prevent, and C keeps bun and a source tree on
+    the box a control plane is meant to arrive on.
 - **What ring 0 does about the Basecamp database.** `fli deploy`'s SQLite swap window
   is the control plane's own downtime, and it is the one application where somebody
   is likely watching a deploy through the thing being deployed.
+  - **A** — Accept the window: `05-backup`, stop, start, health, as for any app.
+    Basecamp is down for seconds and the fleet's heartbeats miss for that long.
+  - **B** — Declare the window: ring 0 runs the upgrade inside `fli deploy:pause`,
+    so the edge answers a stated pause and Caravan stops the queues (`FJS-D262`),
+    then unpauses after health.
+  - **C** — A zero-downtime swap for Basecamp alone, starting the new container
+    beside the old one on the same database.
+  - **Recommend B** — the pieces exist, and it turns the control plane's downtime
+    from something an operator discovers mid-click into something the edge says.
+    C runs two writers on one SQLite file, which is the reason `06-swap` stops
+    before it starts.
 - **Whether the Outpost is an FJS application.** If it is, it inherits the whole stack
   on every fleet server, which is heavy for something whose job is to run Docker
   commands and report health. If it is not, it is the first thing in the repo that
   does not derive from a seed.
+  - **A** — Not an FJS application: plain Bun ESM with `@frontierjs/toolbelt` as its
+    one dependency, no schema and no ORM.
+  - **B** — An FJS application with a schema of its own, so its routes are services
+    and its state is Litestone rows.
+  - **C** — Junction without Litestone: services and the hook pipeline, no seed.
+  - **Recommend A** — A is what ships in `packages/outpost`, and its README states
+    why: a schema, a migration runner and an ORM on every fleet server, to run argv
+    arrays. Its state is Basecamp's rows, so the seed it would derive from is
+    Basecamp's, and it already does.
 - **Whether a build-role server is a `Server` row.** Modeling it as one is free and
   makes the builder visible in the fleet; it also means Basecamp's build capacity is
   fleet state, with everything that implies for the tenancy work.
+  - **A** — Yes: a `Server` with `role: build`, enrolled, heartbeating and graded like
+    any other, belonging to one workspace.
+  - **B** — No: a builder is `deploy.builder` in the app's config, a host `fli`
+    reaches and the fleet never sees.
+  - **C** — No builder machine at all: the image is built in CI and arrives by digest.
+  - **Recommend A** — `ServerRole` already has the `build` member, so the schema has
+    chosen. A builder is the machine whose drift decides which bytes ship, so it
+    belongs where posture and heartbeats are graded. Workspace-scoped is the same
+    tenancy every other `Server` already has.
 - **How ring 0 and ring 2 stay one implementation.** Two deployers is how a framework
   ends up shipping two behaviors — the same argument `core/checks.js` settled for
   architecture rules. Whether the Outpost can literally reuse `_steps-docker` is the
@@ -404,6 +453,17 @@ was written to apply.
   **nothing holds them together yet**. The candidate is one test that drives
   `swapContainer` and `/deploy` against the same recorded docker and compares what
   each did after a failed run and a failed health check.
+  - **A** — Two implementations and one conformance test: `swapContainer` and the
+    Outpost's `/deploy` driven against the same recorded docker, compared after a
+    failed start and a failed health check.
+  - **B** — One implementation: ring 0 installs an Outpost first and deploys through
+    its `/deploy` route.
+  - **C** — One plan: the swap and put-back become a pure argv sequence in
+    `@frontierjs/toolbelt`, run by `fli` over ssh and by the Outpost locally.
+  - **Recommend A** — then C if the test catches a drift. The two runners differ
+    (ssh against a local spawn), so a shared plan saves less than it looks, and the
+    test is the artefact that makes a drift visible. B makes ring 0 depend on a
+    process that needs `BASECAMP_URL`, before Basecamp exists.
 - ~~**Where does a fleet release get its pivot verdict?**~~ **Answered 2026-10-06 (`FJS-D599`): A — The build computes it, and the release records it on `Deployment` alongside `builtImage`.** Basecamp sees an image and no
   source, so it cannot run `litestone release` itself.
   - **A** — The build computes it, and the release records it on `Deployment`

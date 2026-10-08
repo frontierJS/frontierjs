@@ -219,7 +219,7 @@ render: static
           </div>
           <div class="body">
             <p>
-              A <strong>Plugin</strong> attaches a capability to the application and claims a
+              A <strong>Plugin</strong> extends the application and claims a
               name on it. Everything a Hook can then reach for — the queue, the mailer, the
               outbound boundary — arrived this way.
             </p>

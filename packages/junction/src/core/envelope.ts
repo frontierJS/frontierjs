@@ -8,7 +8,7 @@
 //   bridge.toResponse   list → keep whole, single → unwrap unless $wrap
 //   app.service()       flat .data — silently dropped total/limit/offset
 //   callService         flat .data, for auto-events
-//   channels.publish    list → keep, else .data ?? raw   ("mirror HTTP bridge")
+//   channels.announce   list → keep, else .data ?? raw   ("mirror HTTP bridge")
 //   channels ws handler the same rule, hand-copied
 //   client find()       flat .data — browser could not paginate either
 //   client resource()   flat .data

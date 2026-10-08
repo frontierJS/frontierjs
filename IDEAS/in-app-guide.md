@@ -84,13 +84,40 @@ with routes and moves. A guide that answers *where is the column for Y* does.
 - **Where do intent words live?** On the route (an export in its
   `<script module>`), on the service method, or in one table beside the palette.
   Wherever they live, they should be beside the thing they describe.
+  - **A** — on the route, an export in its `<script module>`.
+  - **B** — on the service method, read through `svc.describe()`.
+  - **C** — one table beside the palette.
+  - **D** — on whichever thing the catalog entry derives from: a Navigate
+    entry's words on its route, a Create or act entry's on its service method.
+  - **Recommend D** — tier 2 builds entries from both routes and methods, so
+    each half's words sit on the thing they describe, and the method's words
+    reach the MCP tool list through `describe()` at no cost. C is the
+    hand-written third copy tier 2 exists to remove.
 - **Is a miss logged?** Logging every unmatched query is free, and it is the only
   corpus that says what people actually type. It decides whether tier 3 is worth
   building at all.
+  - **A** — yes, as a log line through `$.log`.
+  - **B** — yes, as a row in a model the app's box owns, with the query, the
+    caller's standing and the nearest entries offered.
+  - **C** — no.
+  - **Recommend B** — the corpus is read by counting and grouping, which a
+    rotated log does not support, and an unmatched query is the workaround
+    measuring the road (*paved road vs. the workaround*). The row is the app's,
+    so whether a query typed by a person is kept is the app's call too.
 - **Framework or app?** The derived catalog (tier 2) is framework-shaped, a
   lookup over artifacts the build already produces. The box in the corner is an
   app's own screen, the same split `intent-recognizer.md` § *What this is and is
   not* draws, with `FJS-D14` as the ruling.
+  - **A** — all framework: the graded catalog and a guide component in `ui`.
+  - **B** — split: the graded catalog is framework, beside `projectTools` in
+    `@frontierjs/mcp`, and the box, its synonyms and its miss log are the app's.
+  - **C** — all app.
+  - **Recommend B** — the graded move list already has one owner, the one that
+    grades MCP tools per standing, and the palette reading the same list is what
+    keeps the guide from offering a move the gate refuses. The box is a screen
+    and its words are the app's. `FJS-D14` rules the box half (an app built on
+    the framework is not a gap in it) and says nothing about the catalog, and its
+    orion half has since been amended by `FJS-D269`.
 
 ## See also
 

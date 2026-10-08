@@ -27,6 +27,90 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d634"></a>2026-10-07 · `FJS-D634` — What unfolds over time — a **Flow** declares a multi-step process and a **Run** is one bounded, resumable execution. *Pivot* is the step past which a Run only goes forward, and a Release's pivot is its instance. *Saga* and *workflow* are refused. Work a person owes is a transition with a declared owed-by party, and adds no noun.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 3. Model, Service and Resource each describe one moment. Anything that spans several moments (a checkout, an approval, a deploy, a backfill) had no word for the thing itself: Run was an `open` row, `IDEAS/operational-edge.md` called it the one genuinely unnamed noun, and orion's schema had already chosen `model Flow` and `model Run` without any ruling. That is *doctrine vs. discovery*: the code had the words first.
+
+**Flow and Run are Automation-realm nouns, not a fourth realm.** A Run's state is a Model and its steps are Service methods, so it combines the three realms rather than standing beside them. That keeps the three-realm mental model intact. A fourth realm was the alternative and would have rewritten the triad for one noun.
+
+**Flow — a declared sequence of steps that a Run executes.** It is declared either in code or as data. Orion's Flow is the data kind: an owner edits it as rows, and each version is immutable (`FJS-D277`). A code-declared Flow takes the file-naming rule `<name>.job.ts` already follows, and the spelling is fixed when the first one is built.
+
+**Run — one bounded execution that finishes, and that can be interrupted and resumed.** Examples: an orion run, a backfill (`FJS-D157`), a deploy's journal. **A Run is not a Job.** A Job is one unit of work, retried. A Run spans many steps and survives a restart. Orion and the backfill run their steps as Caravan jobs, while a deploy's journal runs in fli without Caravan, which is why the Run row's parent is no longer Job. Queue stays the standing, unbounded counterpart (`FJS-D198`).
+
+**This names the noun and builds no engine.** `FJS-D503` withdrew a shared durable-run primitive. It reopens when a second realm needs claimed, ordered steps resumed after a crash, and this ruling does not reopen it. Orion, the backfill and the journal are each a Run with its own executor. They share the word and `occurrenceKey`, and nothing else until D503's condition holds.
+
+**Pivot is generalized: the step past which a Run can only go forward.** Before the pivot, a failed Run can be taken back. After it, recovery is forward and idempotent only. **A Release's pivot is the deploy instance**: the transition at which N-1 compatibility ends, the test `fli release:check` derives and `FJS-D599` records. The word now has one definition, and Deployment's is an instance of it rather than a second sense.
+
+**Compensate is the verb, compensable a property of a step, and neither is a noun.** A compensable step is one a Run can take back when a later step fails. Where a host executes compensation, each step declares its own, so the undo sits beside the action it undoes, and no step after the pivot may declare one. No realm executes compensation today (`FJS-D503`): a Release's revert is a single transition that restores serving state (`IDEAS/release-transitions.md` rule 5), not a per-step undo.
+
+**Saga and workflow are refused.** A saga is a Run whose steps compensate. The saga literature is the prior art (Garcia-Molina & Salem, 1987; the *pivot transaction* of the compensating-transaction pattern), and its words for the parts (pivot, compensable, forward-only) are kept. *Workflow* is the ecosystem's word for a Flow, and it half-fits: a GitHub Actions file, a BPMN diagram and a Temporal function are three different things under it. That is *familiarity vs. precision*.
+
+**The cli's `runnable` is not renamed.** It is fli's catalog of launch targets (dev surfaces, tools, drives, suites, package scripts, snapshot generators; `packages/cli/core/runnables.js`). It records no execution and resumes nothing, so it shares letters with Run and not a meaning. A runnable is never called *a Run*. *Executable* was considered and refused, because the tree uses it for a compiled binary (litestone's `build-binary.js`).
+
+**Work a person owes is a Transition with a declared owed-by party, and `FJS-D353` stands.** Approving, reviewing, or picking an item off an inbox is a move on `@@transitions` that a person owes, not one the clock fires. The breach is a separate commitment the system owes: `approve: submitted -> approved` is owed by the reviewer, and `@@commitment(escalate, on: submittedAt + 2d)` fires if they don't act. Claiming and reassigning are writes to the owed-by column. **The owed-by party is DECLARED in the schema**, as a modifier on the move beside `@gate` and `@system`. That lets the framework derive an inbox (what a user owes, across every model) instead of scanning every model's `x-transitions`, which cannot tell *may approve* from *owes approval*. Under `FJS-D633` the party is a User, named by a column, or a gate level for a pool: *Party* is not coined. **The spelling, and whether owing implies may, are fixed when the first app needs an inbox.** If claiming from a pool cannot be expressed this way, that is when to coin **Assignment**. *Task* is never the word, because it is already refused for Job and spent on Interaction task. Prior art: BPMN's user task and its candidate groups.
+
+*Lives in:* `ARCHITECT.md` § 2 · `VOCABULARY.md` (Flow, Run, Pivot, Commitment).
+
+### <a id="fjs-d633"></a>2026-10-07 · `FJS-D633` — Who acts, who answers for it, and whose data is it — **Principal** is whose standing a Call is graded at, **Actor** is who answers for a write, **Tenant** is the unit of data isolation, **User** is auth's model. *Account* and *Party* are not terms.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 2. Tenant, Principal and Actor each ran in over a hundred files with no row, and User, Account and Bearer were `open`. **Actor blessed narrowly** was picked over refusing it as a synonym of Principal, and **Account not a term** over blessing it for a login or for an organization.
+
+**Principal — whose standing a Call is graded at: what the Warden reads a gate level and claims off.** It is the code's word (`toDataPrincipal`, `PrincipalClaims`, `registry.tenantFor({ principal })`). A user's session, an API key and a Bearer are its kinds. An agent over MCP calls with an API key, so it is one of those and not a fourth. `asSystem()` lifts the Warden, so a system write has no principal.
+
+**Actor — who answers for an act: the audit trail's `actorId`.** It is usually the principal, and **two cases are why it is a second word and not a synonym.** In support mode the operator is the actor, and the principal they stand behind is filed as `subjectId`. A Bearer principal carries no id, so its actor is the grant row that admitted it. Oracle's `ACTORS` (owner, author, performer and the rest) are the actors a row names, and an orion run's actor is the user its writes are filed under. Both are this sense. Actor never names whose standing is graded, because that is Principal. Prior art: an audit log's *actor* (GitHub's), and PROV's *responsible agent*.
+
+**Tenant — the unit of data isolation a `tenancy { }` block declares**: a database file under `strategy database`, a tenant column's value under `strategy row`. A Call resolves at most one. A tenant is not a customer: an app's `Account`, `Workspace` or `Organization` model may be one, or not.
+
+**User — the model auth resolves a principal from** (`model User` in auth's fragment, `authUserModel(db)`), one row per person who signs in.
+
+**Account is not a term.** In apps it is an organization that owns users: basecamp's `Account { type organization, users[] }`, litestone's example `Account { plan }`, the gate ladder's *account/tenant owner*. Blessing it for a login would make the framework's word contradict the app model a reader has open. Auth's `account` service and *create an account* are ordinary English, and framework prose says *user* where it means the person who signs in. It is excluded in `packages/cli/core/terms.js`.
+
+**Party is not coined.** Nothing in the tree is a person-or-organization supertype: oracle's catalog keeps `User`, `Contact` and `Organization` apart, and every other use is *third party*. The Party pattern (Silverston; Fowler, *Analysis Patterns*) is the prior art if oracle ever unifies them, and that is when to rule.
+
+*Lives in:* `ARCHITECT.md` § 2 · `VOCABULARY.md` (Principal, Actor, Tenant, User, Bearer) · `packages/cli/core/terms.js`.
+
+### <a id="fjs-d632"></a>2026-10-07 · `FJS-D632` — What are the thesis words — **Schema** names `db/schema.lite` and *seed* keeps the ecosystem's meaning. A **Declaration** is what an app states and the framework enforces. A **Projection** is a second shape of a truth, derived and never written, and a `view` is the kind the schema language spells.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 2. PHILOSOPHY's three load-bearing claims (*the schema is the seed*, *declaration is a contract*, *everything is a projection*) had no register row, and the spine's first spec, the model description, cannot be written over undefined nouns. **Schema** was picked over **Seed** (bless *seed* for the schema and move data seeding off the word) and over keeping both senses, qualified.
+
+**Schema, because *seed* already means something it fits exactly.** Litestone's `Seeder`, `litestone seed`, `_litestone_seeds` and basecamp's `db/seed.js` are rows written into a database before anyone uses it. That is the meaning Rails, Laravel and Prisma give the word, and the shape this framework took from them. *Familiarity vs. precision* rejects an ecosystem word that half-fits. This one fits whole, and it was the thesis that borrowed it. So a **Seed** is that data, and the **Schema** declares what is true about the data over its whole life. *The schema is the seed* and *schema-seeded* stay as the metaphor PHILOSOPHY § VIII explains, never as a term, and no sentence that means the file calls it *the seed*. A seeded PRNG is ordinary English.
+
+**Declaration — what an app states for the framework to enforce or derive from, as opposed to a Hook, which is code that runs.** Examples: a model and its attributes, a gate, a policy, a `@@transitions` set, a `view`, a `tenancy { }` block, a Conduit Target, a service's `methods:` list. `FJS-D45` already used the word this way to refuse a third sense of *policy*, and this blesses it. PHILOSOPHY § III's *Declaration is a contract* is what one promises: it binds from the first request, and its absence implies nothing.
+
+**Projection — a second shape of a truth, derived from its origin and never written.** It comes in two kinds, by origin. A `view` projects rows. It is the kind the schema language spells, with `@@materialized` when it is stored. Everything the framework generates from a declaration projects the schema: the DDL, the JSON Schema, client types, a default form, the device schema `@@sync` selects, and an MCP tool set (mcp's `Projection` type). The word earns its row by what it predicts: **a projection is never writable**, because a written one is a second origin (PHILOSOPHY § III). The code already reasons from that: typegen's *a projection gets a Row and a Where and nothing else*, and the locked writes on a view's JSON Schema.
+
+**This answers the ground `FJS-D46` withdrew from, and does not reverse it.** D46 made Projection a second name for `view`. This makes `view` one kind of Projection, so the keyword keeps its one name and the umbrella names what nothing else did. After the withdrawal the word stayed in some thirty comments across litestone, junction and basecamp, each meaning a view. That is *doctrine vs. discovery*: the code kept the better word. Two senses are refused. A column subset is a `select` (the Directive), never a projection, though relational algebra spells it π. What a component computes is *derived*, the adjective, never a noun. Prior art: projectional editing (one model, several notations, none edited as text — JetBrains MPS) and event sourcing's projection (a read model rebuilt from the log and never edited).
+
+*Lives in:* `ARCHITECT.md` § 2 · `VOCABULARY.md` (Schema, Declaration, Projection, and the row for seed).
+
+### <a id="fjs-d631"></a>2026-10-07 · `FJS-D631` — Four words that broke a ruling in the tree are renamed: conduit's per-target numbers are `resilience`, the broadcast hook is `announce()`, presence is `set`/`clear`, toolbelt's fixtures are vectors — and *capability* is the Warden's alone.
+
+Found by the vocabulary atlas of 2026-10-07, each one checked against the code before it was ruled on. **Nothing here has shipped, so each is a rename with every caller moved and no alias** (*preservation vs. evolution*).
+
+**Conduit — `TargetDescriptor.policy` becomes `resilience`, `TargetPolicy` becomes `TargetResilience`.** Seven numbers (timeouts, retries, deadline, response cap, breaker, concurrency) were a third sense of *policy*, which `FJS-D45` refuses. *Resilience* is the word conduit already spent on the type these fields shadow (`ResilienceOptions`), so it adds no noun. *Limits* was the alternative and half-fits: a breaker threshold is not a limit. The other non-Data `*Policy` identifiers the sweep turned up are filed rather than renamed here.
+
+**Junction — the `publish()` hook becomes `announce()`.** `FJS-D393` made *announce* the verb for an Event, and `FJS-D79` already said *publish* is an ordinary action name (publishing a draft). The family moves with it: `AnnounceFn`, `app.channels.announceDefault()`, the manager's `announce()`, the `junction.channel.announce` telemetry event, and `ChannelDeclaration` for the type of `channel:`. The `publish as publishToChannels` export alias is gone. As a noun in prose, the word is *broadcast*.
+
+**Presence — `client.presence.announce()` / `release()` become `set()` / `clear()`.** Renaming the hook alone would have left two meanings of `announce` in one package. `track`/`untrack` (Phoenix's words) were refused: mesa exports `untrack()` as a reactive primitive and sierra exports `track()` for analytics. `set`/`clear` are the verbs the client's internals already used (`_presenceSet`, `_presenceClear`), and `join`/`leave` would name membership, which the server owns.
+
+**Toolbelt — `datetime-oracle.*` becomes `datetime-vectors.*`, and `frontmatter-oracle.mjs` becomes `frontmatter-compare.mjs`.** `oracle` is a package. Conformance data is a *vector*, the word `IDEAS/specifications.md` uses; the frontmatter script compares against js-yaml and emits no vectors, so it is named for what it does. *The oracle problem* and *an enumeration oracle* stay — established terms of art, the way *retry policy* is.
+
+**`FJS-D06` is amended: a Plugin EXTENDS what it is installed into — Junction's app, Litestone's client, Vite's build.** It said a Plugin *attaches a capability*, while `FJS-D139`–`FJS-D151` made a capability the Warden's reference to a declared move, with `auth().capabilities` and `@@capabilities` as identifiers. One word was doing both jobs. Naming the three hosts also settles the Litestone and Vite plugins without another ruling: the same concept, each on its own host. Where the host is unclear in prose, name it (*a Vite plugin*).
+
+*Lives in:* `packages/conduit/src/types.ts` · `packages/junction/src/transport/channels.ts` · `packages/junction/src/client/index.ts` (`PresenceClient`) · `packages/toolbelt/test/fixtures/` · `ARCHITECT.md` § 2 · `VOCABULARY.md` (Capability, Plugin).
+
+### <a id="fjs-d630"></a>2026-10-07 · `FJS-D630` — Does `Slice` get adopted in `ARCHITECT.md` §2, and what happens to `Plugin` — Adopt *Rig*: a package assembled from realm parts, any subset of which an app installs; a Rig's `service/` part is a Plugin.
+
+Asked in [`IDEAS/rigs.md`](IDEAS/rigs.md) § Open questions. **C** was picked over **A** (not yet: `FJS-D06` § 7 stands, and Plugin keeps its slot), **B** (adopt *Slice*, the word this file already uses).
+
+FJS-D06 § 7's test is met: the installer (overview 3.2) is the next thing to build and `fli add <rig>` is what it ships, so deferring further only lets the unnamed unit gather a second name. Rig over Slice: the format partitions by realm and an app installs any subset, so `--parts model,service` is a smaller rig and an ejected `resource/` is the app rigging it its own way, where Slice says crosses-every-realm and collides with Redux's `createSlice`. Rejected beside it: Kit, which already means four things here (a toolbelt subpath, `@frontierjs/ui`, email-kit, site-kit); Battery, ordinary English by `FJS-D394` and a ring that holds API-only packages; Cartridge, sealed and all-or-nothing against an ejected UI, with a cart short form beside example's `Cart` model; Wing and Pack. Rig has no other use in the tree.
+
+**Rig, Plugin and the ring are three levels, not three words for one thing.** A Rig is a distributable package; a Plugin is what its `service/` part attaches to a running app; the `batteries` ring in the Packages table is every optional package around the spine, a rig or not. Caravan and conduit are batteries and not rigs — API-only infrastructure, no feature a person sees.
+
+**The rigs today are notifications, orion and auth** — auth for its `people` and `account-recovery` services, the operator half that manages other people's accounts. **Notifications is the reference rig**, the one the format is taught with: small, every part present for a reason (a model, a plugin, `requires: ['mailer']`, an env key, a bell). Its UI half is an example file today, and growing a real `resource/` is what makes it the reference. Orion is the stress case, already laid out across all three realms.
+
+**A rig is named for its feature, never its vendor.** `@frontierjs/billing` uses `@frontierjs/conduit-stripe`; it is not `frontier-stripe-billing`. A connector is `conduit-<vendor>`, a third-party rig is `@scope/frontier-<feature>` carrying a `frontierjs-rig` keyword, and `fli add <name>` resolves a bare name only to `@frontierjs/<name>` — anyone else's rig is installed by its full package name, because a shorthand that resolves to an unscoped package is a typosquat.
+
 ### <a id="fjs-d606"></a>2026-10-06 · `FJS-D606` — Is a site's page folder `content/routes` or `content/pages` — `content/routes`, as the website has it: Sierra's `routesDir` word, and every Sierra surface's `src/routes`.
 
 Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (`content/pages`, as ksite has it, and the word a markdown author uses).
@@ -668,9 +752,12 @@ the shape is not what needed a word.
 **What `Provider` must never mean here is the registration unit.** That is
 Laravel's Service Provider — `register()` + `boot()` — which is this repo's
 **Plugin**, protocol and all. Anyone arriving from Laravel will read the two
-backwards, so the boundary is stated rather than assumed: **a Plugin attaches a
+backwards, so the boundary is stated rather than assumed: ~~**a Plugin attaches a
 capability to the app; a Provider is a party outside the app that a capability
-speaks to.**
+speaks to.**~~ *Amended 2026-10-07 by `FJS-D631`:* **a Plugin extends what it is
+installed into — Junction's app, Litestone's client, Vite's build; a Provider is
+a party outside the app that the app speaks to.** *Capability* is the Warden's
+word (`FJS-D139`).
 
 **Two in-tree collisions are cleared by this ruling rather than tolerated.**
 `app.provide(name, value)` never provided anything — it claims a name on the app
@@ -9835,7 +9922,7 @@ with a verb-shaped action.
 created/patched/removed handlers each take one record, so a single event
 carrying an array lands as one malformed upsert.
 *Lives in:* `packages/junction/src/core/service.ts` — `callService`,
-`publishToChannels`, `PublishDeclaration`.
+`announceToChannels`, `ChannelDeclaration`.
 
 ### <a id="fjs-d80"></a>2026-08-02 · `FJS-D80` — Broadcasting is opt-in in the framework, opt-out in the scaffold.
 `createService({ name, model })` broadcasts nothing. `@@allow` row policies are
@@ -9848,7 +9935,7 @@ tell you to replace. `fli make:model` / `make:scaffold` emit `channel: '<name>'`
 with the scoping warning attached, so a generated app is live out of the box and
 the line is in front of the developer who has to narrow it.
 *Since (2026-08-18, `FJS-334`):* an app may register ONE fallback,
-`app.channels.publishDefault(fn)`, consulted only where a service declares
+`app.channels.announceDefault(fn)`, consulted only where a service declares
 nothing — so the opt-in above is unchanged (there is no default until an app
 writes one) while an app with one scoping rule for twenty services writes it
 once. It is a default and not a second broadcaster: `channel:` is never asked
@@ -9861,8 +9948,8 @@ rule — the plugin names at boot which services fall through, and `channel: fal
 takes them off the list.
 
 *Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
-rationale in `publishToChannels()`, the fallback in
-`packages/junction/src/transport/channels.ts` (`publishDefault`).
+rationale in `announceToChannels()`, the fallback in
+`packages/junction/src/transport/channels.ts` (`announceDefault`).
 
 ### <a id="fjs-d74"></a>2026-08-01 · `FJS-D74` — Custom service actions stay on `X-Service-Method` header dispatch.
 
@@ -14322,7 +14409,7 @@ that way and its code did not. The ISO week's year is `GGGG`, because
 are English and refuse another locale; numbers are Latin digits in every locale;
 `t` is the offset and `tt`/`ttt` the zone's names.
 
-*Lives in:* `packages/toolbelt/src/datetime/` · `test/fixtures/datetime-oracle.json`,
+*Lives in:* `packages/toolbelt/src/datetime/` · `test/fixtures/datetime-vectors.json`,
 generated from the Temporal polyfill · `packages/toolbelt/CLAUDE.md` § What bites here.
 
 ### <a id="fjs-d235"></a>2026-09-07 · `FJS-D235` — a broker the business already runs is a conduit target of kind `broker`, and the message's own id is the dispatch id. Delivery semantics stay the broker's, and both existing refusals stand untouched.

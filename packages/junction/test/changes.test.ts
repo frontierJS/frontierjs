@@ -788,7 +788,7 @@ describe('Hook-bypass _ methods', () => {
     expect(ctx.result).toBeNull()   // pipeline didn't run, result not wrapped
   })
 
-  it('_create skips after hooks (publish, audit, cache-bust)', async () => {
+  it('_create skips after hooks (announce, audit, cache-bust)', async () => {
     const afterCalled = { value: false }
 
     const svc = createService({

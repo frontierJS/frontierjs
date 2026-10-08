@@ -109,7 +109,7 @@ packages/junction/
 │   ├── http.ts           ← Bun.serve wrapper + public fetch() for tests
 │   ├── router.ts         ← two-tier route cache (O(1) fixed + linear dynamic)
 │   ├── bridge.ts         ← THE hard boundary between transport and services
-│   ├── channels.ts       ← WebSocket channels, publish() hook, channels() plugin
+│   ├── channels.ts       ← WebSocket channels, announce() hook, channels() plugin
 │   ├── presence.ts       ← presence tracking + heartbeat
 │   ├── health.ts         ← /health + /metrics endpoints (healthPlugin)
 │   ├── body.ts           ← JSON / multipart / urlencoded parser
@@ -317,7 +317,7 @@ createService({
       create: [requireRole('developer'), validate],
     },
     after: {
-      all: [publish((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
+      all: [announce((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
     },
     error: { all: [logError] },
   },
@@ -510,7 +510,7 @@ app.configure(channels(app => {
 
 // In a service hook
 after: {
-  create: [publish((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
+  create: [announce((_, ctx) => app.channel(`workspace:${ctx.auth.user?.workspaceId}`))],
 }
 ```
 
@@ -1307,7 +1307,7 @@ createService({
     after: {
       provision: [
         // Publish once after the whole transaction succeeds
-        publish((_r, ctx) => app.channel('accounts')),
+        announce((_r, ctx) => app.channel('accounts')),
         // Bust cache for affected services explicitly
         async () => { bustServiceCache('users'); bustServiceCache('workspaces') },
       ]

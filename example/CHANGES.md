@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-07 — prose follows junction's `announce()` rename (`FJS-D631`)
+
+`api/src/services/payments.service.ts` names `announceDefault`, and `api/src/core/channels.ts` says *broadcast* where it said *publish*; `web/test/verify-live.mjs` likewise. No behavior changes.
+
 ## 2026-10-07 — `web/src/` is laid out by kind (`FJS-1894`, `FJS-D625`)
 
 `cart.js` and `prefs.js` moved to `stores/`; `money.js`, `status-tone.js` and `custom-fields.js` to `lib/`; `MoneyCell.mesa` and `StatusPill.mesa` to `components/`. `datetime.js` and `displays.js` stay in the root: one is what `fli new` scaffolds, the other sits where `FJS-1892` will scaffold `controls.js`.

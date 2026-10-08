@@ -269,19 +269,63 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
 - **Is a checkpoint a Data-realm noun, or a Release-realm one?** `fli db:checkpoint`
   puts it in Data. But "the state this deploy started from" is a Release concept, and
   `IDEAS/offline-first-and-release.md` already wants artifact kinds first-class.
+  - **A** — Data: `fli db:checkpoint` owns it end to end, and a deploy that wants one
+    calls it like any other caller.
+  - **B** — Release: a checkpoint is what a deploy takes before it migrates, owned by
+    the deploy plane next to `05-backup`.
+  - **C** — Data owns it and Release references it: a checkpoint is a named
+    `litestone backup` directory plus its registry row, and a release records the
+    id of the one its migration took.
+  - **Recommend C** — capture already has an owner, `litestone backup`, and `05-backup`
+    already calls it, so B would be a second owner of the same copy. A release
+    naming a checkpoint by id is a reference, not a restatement.
 - **What is the boundary of a restore?** Restoring the database does not un-send an
   email (`conduit`), un-run a job (`caravan`), or un-notify a client. The honest
   answer is that a checkpoint restores the *Data realm only*, and that this must be
   said loudly in the CLI output — the trap is someone assuming it restores the world.
+  - **A** — the Data realm only, said in the CLI output and nothing more.
+  - **B** — the Data realm only, and `--dry-run` lists what it cannot undo, read from
+    the stores that recorded it: outbox rows delivered and jobs completed since the
+    checkpoint.
+  - **C** — restore holds the outbox and job state at the present, so nothing
+    re-fires.
+  - **Recommend B** — the outbox and Caravan already record each handoff and run, so
+    the list is derived where A's warning is a sentence. It matters more than the
+    paper says: the outbox lives in the app database, so a row delivered after the
+    checkpoint comes back undelivered and the relay sends it again. B's list has
+    to name those rows.
 - **Does a multi-database app checkpoint atomically?** Tenants are db-per-tenant, and
   a logger database is a database. A checkpoint of "the app" is a set of files, and a
   partial restore across them is a new failure mode.
+  - **A** — the set is the unit: capture every declared database, tenants and
+    logger included, into one directory, and restore stages them all and swaps all
+    or none, as `litestone restore` already does. Capture is not one instant; each
+    file records its own.
+  - **B** — a true instant: hold the write lock on every database while the set is
+    copied.
+  - **C** — per database: a checkpoint names one file, and the caller assembles a set.
+  - **Recommend A** — all-or-none restore ships in `cmdRestore`'s staging, so A adds
+    nothing new to the failure model. B stalls every tenant for the length of the
+    largest copy, to close a skew that only a cross-database read can see.
 - **Should the audit log gain an entry for a checkpoint itself?** It is a write, it
   has an actor, and it wants to appear in the same narrative — but it is not a row
   change and the entry shape assumes a model.
+  - **A** — yes: an entry with `operation: 'checkpoint'`, no records, and the
+    checkpoint's id.
+  - **B** — no: the registry row already holds the actor, the instant and the audit
+    offset, and `db:log` interleaves registry rows at their offsets.
+  - **Recommend B** — the offset is the checkpoint's position in the narrative, so an
+    audit entry would restate the registry and bend the entry shape to fit a
+    non-row. One store holds it; the reader merges.
 - **Does replay want to be one of Litestone's existing extension points?** It is a
   plugin-shaped thing, and `ISSUES.md` `FJS-D19` is already reconsidering what a
   Litestone Plugin is called and whether it has a name.
+  - **A** — a Litestone `Plugin`, installed on the client.
+  - **B** — a tool module under `src/tools/` that the CLI drives: it reads the
+    logger through the ORM and writes through `asSystem()`.
+  - **Recommend B** — replay runs over history after the fact and intercepts no
+    query, which is the one thing a Plugin's `on*` surface is for. The premise has
+    also closed: `FJS-D19` gave Plugin a `name` and kept the noun.
 
 ## See also
 

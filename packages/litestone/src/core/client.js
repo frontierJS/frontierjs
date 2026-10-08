@@ -1928,7 +1928,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // the entry was written with actor and clock and `records: []`, a trail with
   // a hole a reviewer cannot see (FJS-1422). So the STATEMENT selects the id,
   // and `finalize` with the caller's own parse strips it again. `distinct`
-  // keeps the caller's projection, since an id would make every row distinct.
+  // keeps the caller's select, since an id would make every row distinct.
   function logReadParse(select, include, ps, distinct) {
     if (!tableHasLogWork || tableAnonymous || !select || select[idField] || distinct === true) return ps
     return parseArgs({ ...select, [idField]: true }, include)

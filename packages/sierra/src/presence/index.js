@@ -12,7 +12,7 @@
  *
  *   · Channel MEMBERSHIP is the app's, decided in its own `channels()` setup.
  *     Nothing a browser sends joins a channel, so nothing here can. What
- *     `client.presence.announce()` sends is *here is my meta, send me the
+ *     `client.presence.set()` sends is *here is my meta, send me the
  *     roster*, and a channel this connection was never joined to answers
  *     nothing — in silence, which is why a screen showing no members is the
  *     shape to expect when a channel is misspelled or presence is not enabled
@@ -63,7 +63,7 @@ function buildSnapshot(memberList, connectionId) {
 // several views of the same one — an avatar strip in the header and a list in
 // the sidebar is the obvious pair. The first of those to unmount used to send
 // `unsubscribe` for the channel the other one is still showing (`FJS-824`), so
-// the count is held here: the release goes out when the LAST holder leaves.
+// the count is held here: the clear goes out when the LAST holder leaves.
 //
 // Module-level rather than per-client because there is one client per page.
 
@@ -73,7 +73,7 @@ function _hold(channelId) {
   _holders.set(channelId, (_holders.get(channelId) ?? 0) + 1)
 }
 
-/** True when this was the last holder — i.e. the caller should release. */
+/** True when this was the last holder — i.e. the caller should clear. */
 function _drop(channelId) {
   const n = (_holders.get(channelId) ?? 0) - 1
   if (n > 0) { _holders.set(channelId, n); return false }
@@ -179,7 +179,7 @@ export function presence(channelId, options = {}) {
     HANDLERS[name]?.(data)
   }
 
-  // ── Announce with Junction ───────────────────────────────────────────────
+  // ── Set presence with Junction ────────────────────────────────────────────
 
   if (client) {
     client.on('event', onEvent)
@@ -187,9 +187,9 @@ export function presence(channelId, options = {}) {
     // Unconditional. This used to be gated on `client.token || client.connected`
     // — which is false for every cookie-mode app, and false for the ordinary
     // case of a component mounting before the socket is up. The client queues
-    // the announcement and re-sends it on every connect, because a reconnect is
+    // the meta and re-sends it on every connect, because a reconnect is
     // a new connection with no meta and no roster.
-    client.presence.announce(channelId, options.meta ?? {})
+    client.presence.set(channelId, options.meta ?? {})
   }
 
   // ── leave() ──────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ export function presence(channelId, options = {}) {
       clearTimeout(_debounceTimer)
       _debounceTimer = null
       if (client && _pendingMeta !== null) {
-        client.presence.announce(channelId, _pendingMeta)
+        client.presence.set(channelId, _pendingMeta)
         _pendingMeta = null
       }
     }
@@ -211,7 +211,7 @@ export function presence(channelId, options = {}) {
     if (client) {
       client.off('event', onEvent)
       // Only when nothing else on this page is still showing the channel.
-      if (_drop(channelId)) client.presence.release(channelId)
+      if (_drop(channelId)) client.presence.clear(channelId)
     }
 
     push([])
@@ -229,10 +229,10 @@ export function presence(channelId, options = {}) {
         _debounceTimer = null
         const m = _pendingMeta
         _pendingMeta = null
-        if (!_left) client.presence.announce(channelId, m)
+        if (!_left) client.presence.set(channelId, m)
       }, debounce)
     } else {
-      client.presence.announce(channelId, meta)
+      client.presence.set(channelId, meta)
     }
   }
 

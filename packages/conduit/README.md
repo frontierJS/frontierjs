@@ -88,7 +88,7 @@ interface TargetDescriptor {
   auth:          TargetAuth
   encoding?:     'json' | 'form'   // how bodies go on the wire; default 'json'
   idempotency?:  { header?: string; auto?: boolean }
-  policy?:       TargetPolicy // what this one costs when it misbehaves
+  resilience?:   TargetResilience // what this one costs when it misbehaves
   registered_at: number      // unix ms
   last_seen_at:  number | null
 }
@@ -117,15 +117,15 @@ origin, and observers see the origin, never the path. Such a target takes
 `none` or `hmac` auth and follows no redirect. A stored key would go
 wherever the row says.
 
-### Policy
+### Resilience
 
 One conduit carries a card processor, a mail sink and a health probe, and 10s
 with three retries is generous for one, thin for another and absurd for the
-third. Every policy number can be stated on the target, and each falls back to
+third. Every resilience number can be stated on the target, and each falls back to
 the conduit-wide option of the same name — state one and the rest are unchanged.
 
 ```ts
-interface TargetPolicy {
+interface TargetResilience {
   timeout_ms?:         number   // per attempt
   retry_limit?:        number   // retries after the first attempt
   deadline_ms?:        number   // total wall clock for one send()
@@ -137,8 +137,8 @@ interface TargetPolicy {
 ```
 
 ```ts
-{ id: 'provider:stripe', /* … */ policy: { timeout_ms: 20_000, retry_limit: 1 } }
-{ id: 'local:mail',      /* … */ policy: { timeout_ms: 2_000,  max_concurrent: 8 } }
+{ id: 'provider:stripe', /* … */ resilience: { timeout_ms: 20_000, retry_limit: 1 } }
+{ id: 'local:mail',      /* … */ resilience: { timeout_ms: 2_000,  max_concurrent: 8 } }
 ```
 
 ### Retries and idempotency
@@ -172,7 +172,7 @@ inside one send carries the same one — it is off by default, because minting a
 key for a target that ignores it turns one refused retry into four charges.
 
 An unknown field, or a value that cannot mean anything, is refused by name at
-`register()` — a policy field is written by hand, and being quietly ignored is
+`register()` — a resilience field is written by hand, and being quietly ignored is
 how a target declared with a 1ms timeout answers a 300ms request as a success.
 
 ### Auth
@@ -387,7 +387,7 @@ const result = await app.conduit.send<ServerResponse>({
   query:      { page: 2, tag: ['a', 'b'] },  // ?page=2&tag=a&tag=b
   body:       { name: 'web-01' },   // JSON-serializable
   headers:    { 'X-Custom': '1' },  // merged with auth headers — auth wins
-  timeout_ms: 5_000,                // per attempt — overrides the target's policy
+  timeout_ms: 5_000,                // per attempt — overrides the target's resilience
   signal:     ac.signal,            // ends the call — see Canceling below
 })
 ```
@@ -408,7 +408,7 @@ Backoff is jittered, so N callers hitting the same degraded provider don't retry
 
 `signal` ends the call: the attempt in flight is closed at the socket, no further attempt starts, and a backoff sleep wakes early. The answer is `aborted`, and it never counts against the target's breaker. A signal that is already aborted sends nothing and takes no concurrency slot.
 
-It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `policy.deadline_ms` is still the ceiling. A per-request `timeout_ms` shorter than the target's own is the same patience: its miss answers `timeout` and the breaker does not count it.
+It is also how a caller sets a deadline for the whole call. `AbortSignal.timeout(400)` bounds every attempt and every sleep, and `AbortSignal.any([quorum.signal, AbortSignal.timeout(400)])` cancels the rest of a fan-out once it has its answer. There is no per-request `deadline_ms`. A caller's budget answered as `timeout` would open the breaker on a healthy target for every other caller (`FJS-1409`), and the target's own `resilience.deadline_ms` is still the ceiling. A per-request `timeout_ms` shorter than the target's own is the same patience: its miss answers `timeout` and the breaker does not count it.
 
 ```ts
 const ac      = new AbortController()

@@ -126,7 +126,7 @@ it, so these stay green through every migration and every test.
 would have said it better: a `deletedAt` with no `@@softDelete` behind it, a
 token column stored as text, an enum lifecycle any write may set to any value,
 the same columns written out in five models. Nothing else can produce this list,
-because every other artefact is derived from the seed and a word absent from the
+because every other artefact is derived from the schema and a word absent from the
 seed is absent from all of them.
 
 **Three of them are about a decision that cannot be taken back**, which is why

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-45 services · 49 routes · 15 plugins · prefix /api
+45 services · 51 routes · 15 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -959,6 +959,8 @@ once; everything else was registered by hand or by a plugin.
 | DELETE | `/api/mcp` | raw |
 | GET | `/api/mcp` | raw |
 | POST | `/api/mcp` | raw |
+| GET | `/api/mcp/calls` | raw |
+| GET | `/api/mcp/levels` | raw |
 | GET | `/api/metrics` | raw |
 | GET | `/api/migrations` | raw |
 | POST | `/api/orion/hooks/{path}` | raw |

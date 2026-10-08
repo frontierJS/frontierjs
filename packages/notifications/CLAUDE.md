@@ -1,6 +1,6 @@
 # notifications — package map
 
-**A vertical slice, not a layer.** A notification fans out to an in-app
+**A rig, not a layer.** A notification fans out to an in-app
 record, a WebSocket event and an email — `app.notify`. It sits on Junction,
 Litestone, conduit and (for email bodies) mesa/email-kit. `bun run test` (bun).
 

@@ -465,7 +465,7 @@ const expected = {
 
   // `FJS-631`. The anonymous socket receives NO order frame while the same
   // caller is answered 401 over HTTP — and the staff socket receives the very
-  // same publish, which is what separates a working grader from one that
+  // same broadcast, which is what separates a working grader from one that
   // delivers to nobody.
   'leak.anonymous':  { httpStatus: 401, frames: 0 },
   'leak.staff':      { received: true },

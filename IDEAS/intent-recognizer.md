@@ -500,6 +500,10 @@ the customer-facing word can be loose while the verdict stays precise.
 - **Verdict only, or does it write?** V1 is the verdict. Whether the recognizer then
   drafts the schema line is what separates an architect from a builder, and they are
   different machines.
+  - **A** — Verdict only: `packages/cli/core/intent.js` answers a verdict with a citation and a cost class, and writes nothing.
+  - **B** — Verdict plus a draft: a Data-realm `needs us` carries the `.lite` line `packages/oracle/src/emit.js` would write, shown for a developer to accept and never applied.
+  - **C** — A builder: the recognizer writes the schema line and runs the migration.
+  - **Recommend A** — then B once a real run, not the synthetic run 1, shows single-declaration Data verdicts are common enough to be worth drafting. A is what ships. B reuses the emitter `FJS-D601` already put in `oracle` rather than a second writer. C is the builder this paper says is a different machine.
 - ~~**What fraction never reaches Data?**~~ **72%**, synthetic (run 1): 25 of 60
   needed no change at all, 12 UI, 6 API, 17 Data — five of those a single
   declaration. A screen index moves ahead of the Data work.
@@ -509,16 +513,28 @@ the customer-facing word can be loose while the verdict stays precise.
   grade, and run 1's one wrong answer lived there. Whether that belongs in
   `surface.snapshot.md` or in what `@frontierjs/mcp` projects is the same question
   for both readers.
+  - **Recommend A** — FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/surface.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.
 - **Where does the request register live?** An app's own model, or a hosted thing one
   tier up that reads many apps' registers. The second is a product; the first is a
   weekend.
+  - **A** — In the app: a model in the app's own `db/schema.lite`, keyed by the identifier each request resolved to, as `FJS-D14` rules for an intake.
+  - **B** — Hosted one tier up: one service reads many apps' registers, which makes it a product rather than a feature.
+  - **C** — A committed file in the app's repo that `fli intent` appends to, read like the other snapshots.
+  - **Recommend A** — The intake is an app under `FJS-D14`, and a model gets the gate, the audit trail and *read it backwards* as a query for free. B is a product with no first customer yet. C is a register that is neither regenerated nor gated, so it can drift without anything saying so.
 - **Is a stretch its own verdict, or a qualifier on `needs us`?** § *What the app is
   FOR* argues for a qualifier, since the cost class is unchanged. That is untested,
   and a customer told *that is outside what this app is for* may read it as a refusal
   whichever way it is modeled. Unmeasured until a run carries a purpose file.
+  - **A** — A qualifier: `needs us` carries `stretch` beside its cost class and cites the purpose file.
+  - **B** — Its own verdict: `stretch`, beside `exists`, `needs us` and `incident`.
+  - **Recommend A** — The cost class is unchanged by scope, so a separate verdict would be two answers to one question. § *What the app is FOR* already argues for a qualifier, and the next run with a `PURPOSE.md` is what tests it.
 - **Where do the headings live once there are two readers?** They are litestone's
   today, but the recognizer lives in the cli and a purpose file describes the whole
   app, not the Data realm. A second caller is what moves an owner.
+  - **A** — They stay as `PURPOSE_SECTIONS` in `packages/litestone/src/tools/assistant.js` until the recognizer actually reads `PURPOSE.md`.
+  - **B** — They move to `@frontierjs/toolbelt`, which litestone and the cli may both import.
+  - **C** — They move to the cli, and litestone's assistant is handed the headings.
+  - **Recommend A** — then B once `packages/cli/core/intent.js` reads the purpose file. Today there is one caller, so there is nothing to move yet. When the second arrives, toolbelt is where a fact two packages must agree on lives (`FJS-D26`), and `intent.js` deliberately takes no dependency on litestone. C makes a tooling package the owner of something litestone needs.
 
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of

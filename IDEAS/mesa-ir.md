@@ -262,6 +262,19 @@ built.
   no click, but it has an activation. Whether `FJS-D385`'s Gesture becomes a
   small closed set the IR carries, with `click` lowering to `activate`, is owed
   before a second backend, not before step 1.
+  - **A** — DOM event names pass through the IR, and each non-DOM backend lowers
+    them through its own table (`click` → activation), as the first question's A
+    does for tags.
+  - **B** — a small closed set of Gestures the IR carries (`activate`, `input`,
+    `focus`, `dismiss`); the compiler lowers `on:click` to `activate`, and a DOM
+    name outside the set is a web-only escape.
+  - **C** — authors write Gestures in source (`on:activate`), and DOM names are
+    the escape.
+  - **Recommend A** — then B once the terminal backend's table shows which names
+    it lowers and which it cannot. Under `FJS-D545` the IR is cut with that
+    backend, so the closed set should be read off its table rather than guessed
+    before it, and A matches the tag answer. C rewrites 216 handlers to
+    anticipate a set nobody has measured.
 
 ---
 

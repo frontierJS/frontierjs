@@ -144,7 +144,7 @@ artifact kinds* rather than one deploy command:
   Junction host
 - **offline-capable PWA** — service worker, precached shell, local SQLite, sync
 
-A Slice (`IDEAS/slices.md`) should be able to contribute to a release — migrations,
+A Rig (`IDEAS/rigs.md`) should be able to contribute to a release — migrations,
 secrets, ports — which is the open question that document already raised. These
 two ideas meet here.
 
@@ -205,6 +205,6 @@ rewritten.
 ## See also
 
 - `IDEAS/homestead.md` — **the engine and its build order**, lifted out of this paper
-- `IDEAS/slices.md` — slices contributing to a release is the shared open question
+- `IDEAS/rigs.md` — rigs contributing to a release is the shared open question
 - `PHILOSOPHY.md` — the axioms these constraints should be reconciled against
 - `packages/jetty/` — the existing offline-shell + relay prior art

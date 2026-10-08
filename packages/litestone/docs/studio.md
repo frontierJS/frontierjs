@@ -163,7 +163,7 @@ attribute, which is what that file exists to make visible.
   refused by name
 
 **Preview** answers the question no panel could: what does this word do to my
-app. The seed fans out into four things computed in four places, and the preview
+app. The schema fans out into four things computed in four places, and the preview
 asks all of them against the *proposed* text, before anything is written —
 
 | Realm | Pane |

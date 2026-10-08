@@ -234,7 +234,7 @@ does not decide which line of a split bill gets the leftover penny; a rounding
 policy is not a fact about a table. Both live in `@frontierjs/toolbelt/units` as
 pure functions over minor units — `roundMinor(value, { mode })` and
 `allocate(amount, ratios)` — ruled as `FJS-D154`, with no value object and
-nothing handed out by the seed. `example/api/src/domain/shop/pricing.ts` is the worked
+nothing handed out by the schema. `example/api/src/domain/shop/pricing.ts` is the worked
 caller: one rounding for the whole shop, applied at the two multiplications a
 basket cannot avoid — a percentage discount and a tax rate.
 

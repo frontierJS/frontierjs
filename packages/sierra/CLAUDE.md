@@ -549,7 +549,7 @@ src/
   module heard nothing for its whole life; frames arrive under their own names —
   `presence:sync`, `:join`, `:diff`, `:leave`, `:update` — with the channel inside
   the payload. **Membership is the APP's**, decided in its `channels(setup)`: what
-  `client.presence.announce()` sends is *here is my meta, send me the roster*, and
+  `client.presence.set()` sends is *here is my meta, send me the roster*, and
   a channel this connection was never joined to answers nothing, in SILENCE, which
   is the shape to expect from a misspelt channel or presence not enabled for it.
   An anonymous connection is never tracked — junction's tracker returns early

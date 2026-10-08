@@ -27,7 +27,7 @@ step on its own.
 | `fli tutor:ui` | The form nobody wrote: every control read off the schema, then one attribute added to one column and the same form refusing before it makes a request | Chrome |
 | `fli tutor:tools` | The four tools that show you what the app is doing — the GUI as the front door, the database as it really is, the call feed with a refusal in it, and the chain that handled the request | — |
 | `fli tutor:access` | The gate, the row policy and the field policy, each watched refusing somebody — and every refusal paired with an identical call that is allowed | — |
-| `fli tutor:live` | A write reaching a client that asked for nothing — then two sockets against one publish, and the gate deciding which of them is told | — |
+| `fli tutor:live` | A write reaching a client that asked for nothing — then two sockets against one broadcast, and the gate deciding which of them is told | — |
 | `fli tutor:jobs` | Work that outlives the request: a queue that is a SQLite file, a job named by its own filename, and a response that comes back before the work is done | — |
 | `fli tutor:notify` | Telling somebody something once, across every way you reach them: one send, two transports, a name that is a database column — and a transport with no formatter refusing before anything is delivered | — |
 | `fli tutor:site` | A public site built ahead of time — one HTML file per page with the data in it, and a build that refuses to publish anything gated | — |

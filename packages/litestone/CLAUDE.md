@@ -213,7 +213,7 @@ src/
     plugin.js — Plugin, PluginRunner, AccessDeniedError
     validate.js — field validators, ValidationError, EXACT_INT_MAX
     valuesets.js — @values, enforced through the caller's accessor
-    capabilities.js — what a capability IS, derived from the seed (FJS-D139)
+    capabilities.js — what a capability IS, derived from the schema (FJS-D139)
     cardinality.js — @minItems/@maxItems on a relation, graded at the outermost commit (FJS-D347)
     commitment.js — @@commitment due times, in SQL and in JS, graded against each other
     seal.js — which states of a machine are sealed, derived from @seals

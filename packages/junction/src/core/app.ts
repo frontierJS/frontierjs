@@ -428,7 +428,9 @@ export interface App {
    * separate argument because it is a separate fact: WHO is re-resolved and
    * WHERE is stated. Under `strategy database` it selects the client every
    * call inside `fn` runs through; under `strategy row` it is what the
-   * principal resolver reads when a job has no header to read one from. A
+   * principal resolver reads when a job has no header to read one from, and
+   * the app's own principal holds it as its tenancy claim — a person named
+   * here is granted nothing by it. A
    * tenant is a pointer to a set of rows and never an authority — the standing
    * that decides what may be done with them is still re-derived from the
    * principal, which is why storing one alongside a job is not the captured
@@ -837,7 +839,7 @@ export interface ServiceCaller {
 
   // ── Hook-bypass methods ────────────────────────────────────────────────────
   // Skip the hook pipeline — call the raw method directly.
-  // Use when you explicitly don’t want side-effects (publish, audit, cache-bust).
+  // Use when you explicitly don’t want side-effects (announce, audit, cache-bust).
   // For everything else, use the unprefixed methods.
   _find(query?: Record<string, unknown>, opts?: CallOptions): Promise<unknown>
   _get(id: string | number, opts?: CallOptions): Promise<unknown>
@@ -1723,7 +1725,7 @@ export function createApp(opts: AppOptions = {}): App {
     // committed access snapshot compares against (`FJS-514`).
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
   } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
-    dataHook = withLitestoneDb(db as never, opts.principal)
+    dataHook = withLitestoneDb(db as never, opts.principal, opts.system)
     app.hooks({ around: { all: [dataHook] } })
     // Where a write came from, for the audit trail. Not a decision either: the
     // trail recorded who and what and nothing about the request, so an audit

@@ -8,7 +8,7 @@
 // It exists because both halves of the decision fail silently.
 //
 //   · **A channel nobody joined broadcasts into nothing.** No error, no log,
-//     no dropped frame — the publish succeeds and reaches an empty set, and
+//     no dropped frame — the broadcast succeeds and reaches an empty set, and
 //     the symptom is a screen that never updates. 28 services here declare a
 //     channel and three are joined below; the other 25 announce to nobody,
 //     which is correct and is stated rather than discovered (see the list).

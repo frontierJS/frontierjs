@@ -83,8 +83,8 @@ Each tool also carries its argument schema and where that came from:
 | `declared-type` | the `type T { … }` the service named for this method (`describe().inputs`) |
 | `id` | one identifier — `get`, `remove`, `restore` |
 | `query` | filters plus the directive names, read off `@frontierjs/toolbelt/directives` |
-| `call-args` | `call(id, data)`'s shape, where the seed describes no payload — `data` stays open rather than guessed shut |
-| `null` | nothing in the seed describes one |
+| `call-args` | `call(id, data)`'s shape, where the schema describes no payload — `data` stays open rather than guessed shut |
+| `null` | nothing in the schema describes one |
 
 `input.schema` is **`null`** rather than `{}` where the source is null. An empty
 object schema accepts anything, which is a claim; null is the absence of one, and

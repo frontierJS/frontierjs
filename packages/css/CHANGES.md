@@ -1,6 +1,10 @@
 # Changes — @frontierjs/css
 
 
+## 2026-10-07 — a Drawer's or Modal's close button draws its × (`FJS-1943`)
+
+`.dialog-close` joins the parents `icon.css` sizes. Drawer and Modal put an `<svg>` in it, and it was the one owner of an icon the list missed, so the svg rendered 0×0 and the button was an empty box with a focus ring — found in the ela shell's phone drawer. `core-gaps.spec.js` grades a drawer header's close icon among the icon contexts. 532 passing.
+
 ## 2026-10-07 — `aria-busy="true"` draws the button spinner; `.loading` is gone
 
 A busy button took the attribute and a class: `aria-busy` announced it, `.loading` drew it, and either could be written without the other. The class without the attribute is a spinner a screen reader is never told about, and that is the half a sighted author cannot see is missing — fli's run page did exactly that. The spinner is now `.btn[aria-busy="true"]`, Pico's spelling, so the attribute that announces the state is the one that paints it, as `disabled` already was. Scoped to `.btn`, because `aria-busy` also marks a region of skeletons and a card, a form or a list row must draw nothing. `loading` leaves the modifier vocabulary; the guide's Bootstrap table states the spinner as Pico's idea rather than a concession. `components.spec.js` grades that a busy `.btn` spins, and that `.loading`, `aria-busy="false"` and a busy `.card` do not. 531 passing.

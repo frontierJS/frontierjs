@@ -324,13 +324,29 @@ written down.
   an opinion; `fli doctor` is an enforcement. Whether `fli lint` should exist at all,
   or whether that is one indirection too many over a tool the user already ran, is
   unasked.
+  - **Recommend A** — `FJS-D33` already answers this: the app lints itself, with a
+    `biome.json` that extends `@frontierjs/config/biome` and a `lint` script running
+    `biome check`, and its `bun run check` runs `fli check` first; there is no `fli lint`.
 - **Do the `.lite` and `.mesa` diagnostics that exist in the VS Code extension belong in
   a terminal?** The compiler already emits them and only an editor listens. That is
   either fine or a third of `fli doctor` already built.
+  - **A** — yes, through `fli check`: the `.mesa` errors already arrive there as
+    `mesa-compiles`, and the `.lite` parser's errors and warnings join as a rule
+    of the same shape, Mesa's warnings with them.
+  - **B** — one terminal command per language (`litestone check`, `mesa check`).
+  - **C** — editor only; the build already stops on an error.
+  - **Recommend A** — `FJS-D133` makes `fli check` the one registry for *what is
+    wrong with this app*, and the half for `.mesa` is built. The compiler stays
+    the one owner of each diagnostic and the rule only relays it, so the editor
+    and the terminal show the same list. C leaves every warning silent for anyone
+    not in VS Code, including CI.
 - **Is a formatting change a reviewable diff?** `IDEAS/overview.md` 5.7 (`shift`) makes
   exactly this argument about codemods — *a reviewable diff, never a silent rewrite* —
   and a repo-wide first format run is the largest silent rewrite this project will ever
   do. If the rule is real it applies here.
+  - **Recommend A** — `FJS-D32` already answers this: FrontierJS refuses a formatter
+    (Biome with `formatter.enabled: false`), so there is no repo-wide format run to
+    review.
 
 ## See also
 

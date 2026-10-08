@@ -15,7 +15,7 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   background tap alike, with the DECLARED `model:` as the accessor (`FJS-D175`,
   `FJS-672`, `FJS-700`) — `test/realtime-grading.test.ts`. A connection's claims
   are the app's to state, per channel (`FJS-749`, `test/channel-claims.test.ts`).
-- **A service broadcasts through `channel:` or the `publish()` hook, never
+- **A service broadcasts through `channel:` or the `announce()` hook, never
   both**, matched on the hook's mark rather than its name (`FJS-045`,
   `test/double-broadcast.test.ts`).
 - **A write is done when the OUTERMOST transaction commits.** The commit scope in
@@ -77,7 +77,7 @@ bun run test:browser    # the devtools console, in Chrome
 ```
 
 Then `example` `bun run verify` and `verify:jobs`, and `basecamp` `bun run verify`.
-A change to channels or `publish` also needs `example` `verify:live`, the only
+A change to channels or `announce` also needs `example` `verify:live`, the only
 drive that watches a SECOND tab and so tells a broadcast from a tab's own echo.
 A change to either transport's context also needs `@frontierjs/testing`'s
 `bun run test`, whose parity runner puts one call down both.

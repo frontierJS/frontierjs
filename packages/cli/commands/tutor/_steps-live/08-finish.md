@@ -24,11 +24,11 @@ if ($.config.abort) {
 
 $.config.journal.settle('succeeded')
 
-log.success('Lesson 5 done — a publish that reaches one client and not the other')
+log.success('Lesson 5 done — a broadcast that reaches one client and not the other')
 log.info('')
 log.info(`  ${app}`)
 log.info('')
-log.info('  api/src/services/notes.service.ts   channel: the name a publish goes out on')
+log.info('  api/src/services/notes.service.ts   channel: the name a broadcast goes out on')
 log.info('  db/schema.lite                      the rule that decides who receives it')
 log.info('')
 log.info('  fli tutor:jobs                      next — work that outlives the request')

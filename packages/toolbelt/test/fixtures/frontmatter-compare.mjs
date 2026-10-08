@@ -1,12 +1,12 @@
 /*
- * frontmatter-oracle.mjs — reads every real frontmatter block under the roots
+ * frontmatter-compare.mjs — reads every real frontmatter block under the roots
  * given and compares the kit's answer with js-yaml's core schema.
  *
- * js-yaml is the oracle and never a dependency: this package declares none, so
+ * js-yaml is the reference and never a dependency: this package declares none, so
  * it is installed somewhere else and resolved from the working directory.
  *
  *   cd "$(mktemp -d)" && npm i js-yaml@4
- *   node <repo>/packages/toolbelt/test/fixtures/frontmatter-oracle.mjs <repo> <other roots…>
+ *   node <repo>/packages/toolbelt/test/fixtures/frontmatter-compare.mjs <repo> <other roots…>
  *
  * Core schema rather than js-yaml's default, because the kit resolves scalars by
  * YAML 1.2 core and the default adds 1.1's timestamps. What it prints is every
@@ -28,7 +28,7 @@ const yaml = createRequire(join(process.cwd(), 'noop.js'))('js-yaml')
 
 const roots = process.argv.slice(2)
 if (!roots.length) {
-  console.error('usage: node frontmatter-oracle.mjs <root> [root…]')
+  console.error('usage: node frontmatter-compare.mjs <root> [root…]')
   process.exit(2)
 }
 

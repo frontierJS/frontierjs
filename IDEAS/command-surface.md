@@ -57,7 +57,7 @@ config; the FJS version is narrower and better, because the dependency tree is
 already the declaration and no second install step is needed.
 
 **Why it ranks first.** It converts *keep two copies in sync* into *there is one
-copy*. It is also the same mechanism `IDEAS/slices.md` needs — a slice that
+copy*. It is also the same mechanism `IDEAS/rigs.md` needs — a rig that
 contributes a model, a service and a Resource should be able to contribute the
 command that installs it, and 3.1 (bare-specifier `.lite` imports) kills the auth
 hand-copy from the schema side while this kills it from the command side. Do both
@@ -257,6 +257,6 @@ command is written in.
 ## See also
 
 - `IDEAS/agent-surface.md` — item 2 is its CLI half; the registry is already a tool catalog with the descriptions written
-- `IDEAS/slices.md` — item 1 is the command-shaped part of the same mechanism (3.1, 3.2)
+- `IDEAS/rigs.md` — item 1 is the command-shaped part of the same mechanism (3.1, 3.2)
 - `packages/cli/CLAUDE.md` — the traps each of these is aimed at
 - `ISSUES.md` `FJS-158` — the temp-root defect found during this audit. Closed; it is not one of these five, it is what a global install does today

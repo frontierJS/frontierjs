@@ -73,7 +73,7 @@ without a hand-written processor. Those two files are where an FJS application's
 real mistakes live, which draws the boundary this package is one half of:
 
 > A linter owns generic JavaScript correctness. **`fli check` owns everything
-> derived from the seed** — a model name that is not PascalCase singular, a
+> derived from the schema** — a model name that is not PascalCase singular, a
 > resource file that is not named for its noun, a Vite config without
 > `strictPort`, the body tag mentioned inside a comment. Neither reimplements
 > the other, and the VS Code extension surfaces both rather than implementing

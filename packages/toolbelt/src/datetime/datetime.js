@@ -22,7 +22,7 @@
  * The one hard function is `resolveWall`: a wall clock names 0, 1 or 2 instants,
  * and nothing in the platform answers the inverse. It reads the zone's offset a
  * day either side and keeps the projections that round-trip — Temporal's own
- * method, graded against its polyfill in `test/fixtures/datetime-oracle.json`.
+ * method, graded against its polyfill in `test/fixtures/datetime-vectors.json`.
  */
 
 import { unitInfo } from '../units/units.js'

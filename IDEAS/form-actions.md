@@ -126,13 +126,46 @@ Three reasons, in order of how much they matter to this framework:
   `ctx` is a `ServiceContext` and the action wants request-shaped things
   (redirect, status), which is the `TransportContext`/`ServiceContext` asymmetry
   `CLAUDE.md` already calls the whole trap.
+  - **A** — through it: an action calls a service method, and the
+    request-shaped half (the 303, the re-render with `errors`) belongs to the
+    runner that called the action, so `ServiceContext` never gains a redirect.
+  - **B** — bypass: an action is a raw handler with the request in hand,
+    writing through the db directly.
+  - **C** — no action function at all: `<Form action>` posts to the service's
+    own route, and the bridge answers a form-encoded POST with a 303 or a
+    re-render.
+  - **Recommend A** — gates, hooks and validation stay where Invariant 6 puts
+    them, and the asymmetry is resolved by keeping request-shaped things out of
+    the service rather than letting them in. B is a second write path around
+    the hook pipeline. C needs junction to render a sierra page, which runs
+    Invariant 1 backward.
 - **What re-renders?** Server-rendering the route through `renderComponent` is
   the SvelteKit answer and Sierra has the machinery (`prerender.js` composes
   route + layout chain). Whether that path is fast enough per request, and what
   it does about a layout that reads a store, is unexplored.
+  - **A** — the route and its layout chain, server-rendered per failed request
+    through the prerender path, with `errors` and the posted values filled in.
+  - **B** — post/redirect/get: a 303 back to the page with the errors carried in
+    a flash cookie or the query, and the page renders them.
+  - **C** — a minimal error page that lists the messages with a link back.
+  - **Recommend A** — it is the only one that shows a field's own message beside
+    the field with no JavaScript, since a static page cannot read B's cookie
+    without a bundle. The per-request cost lands only on the failure path,
+    because success is a redirect, and a layout that reads a store is the same
+    question prerender already answers.
 - **Does `<Form>` keep two code paths forever**, or does the enhanced path
   become a thin wrapper over the native one? SvelteKit chose the latter and it
   is why `use:enhance` is small.
+  - **A** — two submit paths that end at one service method: enhanced calls the
+    service over the client's transport, and native posts to the action, which
+    calls it.
+  - **B** — the enhanced path is a `fetch` of the native POST, as `use:enhance`
+    is.
+  - **Recommend A** — under the first question's A the logic already has one
+    owner, the service, so what is duplicated is a submit, not a behavior. B
+    routes every enhanced form through the action runner, which gives up the
+    WebSocket transport and the resource's own update of its live store, and
+    makes a form with no declared action need a server it does not need today.
 
 ## Relationship to the other files
 

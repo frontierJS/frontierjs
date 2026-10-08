@@ -138,9 +138,22 @@ code saying the contract belongs in the seed. **Tier:** Assessment.
 ## Open questions
 
 - **Is `method` the word?** Junction says *custom method*; Ash says *action*; `@@transitions` says *move*. Run `decision-rules` on the noun before any grammar.
+  - **Recommend A** — FJS-D02 already answers this: a custom service method is a `method`, there is no fourth noun, and `action` is refused by name.
 - **How coarse may a scope be?** `self`, a relation from `self`, a model, or a named `@@scope` — and which of those is too broad to grade.
+  - **A** — `self` and a relation path from `self` only; anything wider is a declared `asSystem`.
+  - **B** — A, plus a whole model, read as the caller.
+  - **C** — B, plus a named `@@scope` block a method can cite.
+  - **Recommend B** — every reach in B is read as the caller, so the row policy bounds it and the grade is the policy's grade; the one reach too broad to grade is the system client, which is declared by name and is what the `fli check` rule in § Decision rules reports. C is a new noun for what a relation path already names.
 - **Does `announces` need declaring**, or is it derived from `moves` and `FJS-D267`'s write event?
+  - **A** — derived entirely: a method announces the write events its declared writes and moves emit, under its own name (`FJS-D21`).
+  - **B** — declared: an `announces` clause lists every event, writes included.
+  - **C** — derived for writes, and declared only for an `announce()` of an event that is not a write.
+  - **Recommend C** — `FJS-D267` makes a write's announcement an observer of the write event, so declaring it restates the seed; an `announce()` of a custom event is no write and nothing can derive it, and that is the case an undeclared effect would hide.
 - **Sequencing.** After `kernel-and-projections.md` §1, since §3 here is a pipeline input.
+  - **A** — after the pipeline: the declared scope lands as one more input to litestone's operation pipeline.
+  - **B** — before it: a junction-side scoped client per method enforces the declaration without the pipeline.
+  - **C** — the declaration first, read only by the derivations (MCP grades, access diffs), and enforcement once the pipeline exists.
+  - **Recommend A** — §3 says an unenforced declaration makes every derivation a confident wrong answer, which rules out C, and B builds the scope check once per verb, beside the fifteen insertion sites the pipeline exists to retire. `FJS-D267` says neither is owed before alpha.
 
 ---
 

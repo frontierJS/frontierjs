@@ -35,7 +35,7 @@ Detail: `references/data-api.md`
 
 **Schema → API/UI**
 Detail: `references/schema.md`
-- `generateJsonSchema(schema)` — the seed as JSON Schema; `$defs` stays whole; snapshot-gated — `litestone/src/jsonschema.js`
+- `generateJsonSchema(schema)` — the schema as JSON Schema; `$defs` stays whole; snapshot-gated — `litestone/src/jsonschema.js`
 - `ctx.system` — the `@system` columns this call supplies; hooks add to the Set — `junction/src/core/context.ts`
 - `ctx.transients` — the `@transient` half of a payload, lifted off `ctx.data` — `junction/src/core/litestone.ts`
 - `ServiceTypes` — the schema's types on the far side of the wire, audience-split — `litestone/src/tools/typegen.js`
@@ -43,7 +43,7 @@ Detail: `references/schema.md`
 - `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` — client-side coerce → blankToNull → validate — `sierra/src/junction/field-rules.js`
 - `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` — the one place a field becomes a control; `registerControl` is the way in — `sierra/src/junction/field-rules.js`
 - `labelFieldInfo(fields, fallback, declared)` — which column identifies a row to a person — `sierra/src/junction/field-rules.js`
-- `x-values` — a declared value set, from the seed to the request a picker sends — `litestone/src/jsonschema.js`
+- `x-values` — a declared value set, from the schema to the request a picker sends — `litestone/src/jsonschema.js`
 - `resource.options(field)` — what a picker offers; `error` separates *none* from *could not ask* — `sierra/src/junction/resource.js`
 - `toFieldErrors(err)` — a thrown value → per-field messages — `sierra/src/junction/field-rules.js`
 - `$context.form` — the form context every control resolves from; `reportInvalid` goes the other way — `ui/components/forms/Form.mesa`
@@ -98,7 +98,7 @@ Detail: `references/api-ui.md`
 - `x-fjs-build` + the `connected` frame's `build` → `client.stale` — which build the browser is on — `junction/src/core/build-id.ts`
 - `wsSend()` / `flushSendQueue()` — put this frame on that socket — `junction/src/transport/send-queue.ts`
 - **A broadcast is GRADED per recipient, in cohorts** — `gradeRecipients` asks `$readAs` once per principal, and on a channel whose resolver answers no claim, again under each claim it answers for that principal on their other channels — `junction/src/transport/channels.ts`
-- `publish()` hook + `app.channel(name)` — real-time; `callService` is the one announcement point — `junction/src/transport/channels.ts`
+- `announce()` hook + `app.channel(name)` — real-time; `callService` is the one announcement point — `junction/src/transport/channels.ts`
 - **Transport: WebSocket when one is connected, HTTP as the fallback.** — `verifyTransportParity()` asks whether they agree
 - `createJunctionClient()` / `client.resource(name)` — the browser client — `junction/src/client/index.ts`
 - `connectApp()` / `createResource(name, { app })` — a Resource over ANOTHER app: its client, its schema table — `sierra/src/junction/index.js`

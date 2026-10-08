@@ -383,6 +383,7 @@ is which subset earns a name.
   joins `sessionFields` and `toDataPrincipal()` — both halves of that hand-copied
   pair, so a bridge-index change rather than a schema one. The *tenant's* answer
   does not go there: it is `$.config` (`FJS-D126`).
+  - **Recommend A** — FJS-D143 already answers this: the viewer's zone is a claim on the principal through `sessionFields` and `toDataPrincipal()`, and the tenant's is `$.config` under `FJS-D126`. Nothing in `packages/auth` carries the claim yet, so the ruling is unbuilt.
 - ~~**Can a row policy compare against a zoned column at all?**~~ **Answered by
   measurement 2026-08-25 — not as a predicate, ever.**
   `datetime('now','America/New_York')` answers **NULL** in SQLite: not an error, a

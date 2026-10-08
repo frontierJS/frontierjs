@@ -33,10 +33,10 @@ model Lead {
   @@gate("0.4.4.5")
   @@allow('read', ownerId == auth().id)
 }`],
-  API: ['js', `import { createApp, createService, publish } from '@frontierjs/junction'
+  API: ['js', `import { createApp, createService, announce } from '@frontierjs/junction'
 
 const app = createApp({ db, auth, config: { port: 3200 } })
-const live = publish(() => app.channel('leads'))
+const live = announce(() => app.channel('leads'))
 
 app.services.register(createService({
   name:  'leads',

@@ -37,7 +37,7 @@ rather than about scaffolding:
 
 ```
 my-app/
-├── db/schema.lite          the seed — everything else derives from it
+├── db/schema.lite          the schema — everything else derives from it
 ├── api/                    Junction services, hooks, plugin wiring
 ├── web/                    Sierra routes and Mesa resources
 ├── cli/src/routes/         the project's own fli commands

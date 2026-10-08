@@ -1,6 +1,6 @@
 // ─── the broadcast vocabulary ────────────────────────────────────────────────
 //
-// What a mutation's event is CALLED, and which hooks publish one. Two facts,
+// What a mutation's event is CALLED, and which hooks announce one. Two facts,
 // both of which the service layer and the transport layer have to agree on —
 // and both of which used to live on the far side of the wall from one of their
 // readers, so `core/service.ts` and `transport/channels.ts` imported each other
@@ -14,7 +14,7 @@
  * Auto-event names for the CRUD write methods.
  *
  * Read by BOTH emitters. It has to be: this map produced `posts:created` on
- * `app.events` while `publish()` derived its own name straight from
+ * `app.events` while `announce()` derived its own name straight from
  * `ctx.method` and put `posts create` on the wire. The browser client listens
  * for the past-tense form, so every WS consumer was matching names the server
  * never sent.
@@ -38,20 +38,20 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
  */
 export const REMOVAL_EVENTS: ReadonlySet<string> = new Set([AUTO_EVENT_MAP.remove])
 
-// Every hook `publish()` ever produced. A service that declares `channel:` is
-// already announced by callService, so a publish hook on the same service sends
+// Every hook `announce()` ever produced. A service that declares `channel:` is
+// already announced by callService, so a announce hook on the same service sends
 // the frame a second time — and a name check cannot tell the two apart, because
-// an app is free to call its own hook `publish`. Marking is what makes the
+// an app is free to call its own hook `announce`. Marking is what makes the
 // conflict detectable (`FJS-045`).
-const publishHooks = new WeakSet<Function>()
+const announceHooks = new WeakSet<Function>()
 
-/** Mark a hook as one `publish()` made. Returns it, so it can wrap the return. */
-export function markPublishHook<T extends Function>(hook: T): T {
-  publishHooks.add(hook)
+/** Mark a hook as one `announce()` made. Returns it, so it can wrap the return. */
+export function markAnnounceHook<T extends Function>(hook: T): T {
+  announceHooks.add(hook)
   return hook
 }
 
-/** Did `publish()` make this hook? */
-export function isPublishHook(fn: unknown): boolean {
-  return typeof fn === 'function' && publishHooks.has(fn as Function)
+/** Did `announce()` make this hook? */
+export function isAnnounceHook(fn: unknown): boolean {
+  return typeof fn === 'function' && announceHooks.has(fn as Function)
 }

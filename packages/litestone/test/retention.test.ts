@@ -100,6 +100,14 @@ describe('$retain() — because startup is not a schedule', () => {
     expect(second.map((r: { model: string }) => r.model).sort()).toEqual(['AuditEvent', 'Log'])
   })
 
+  test('each row names the database it swept and its driver, as RetainResult declares', async () => {
+    const { sys } = await seeded()
+    for (const r of sys.$retain()) {
+      expect(typeof r.database).toBe('string')
+      expect(['sqlite', 'jsonl', 'logger']).toContain(r.driver)
+    }
+  })
+
   test('the cutoff is a rolling instant, so a row inside the window stays', async () => {
     const dir = tmp()
     const db  = await createClient({ schema: SCHEMA(dir) })

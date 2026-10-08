@@ -26,7 +26,7 @@ import { wrapResult, isServiceResult, resultData, refuseStream } from './envelop
 // litestone imports createService (used only inside functions) and this
 // module imports createLitestoneBase (used only inside createBaseService).
 import { createSchema } from './schema.ts'
-import { AUTO_EVENT_MAP, isPublishHook } from './events.ts'
+import { AUTO_EVENT_MAP, isAnnounceHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   watchFilterReads, markDerived, isDerivedHook, isCrudGatedMethod,
@@ -205,10 +205,10 @@ function buildCacheHooks(
  *   (rows, ctx) => a channel, an array of channels, or null to skip this one
  *   false          declared opt-out (documents intent; same effect as omitting)
  *
- * Omitted means no broadcast. See publishToChannels() for why the default is
+ * Omitted means no broadcast. See announceToChannels() for why the default is
  * off rather than on.
  */
-export type PublishDeclaration =
+export type ChannelDeclaration =
   | string
   | false
   | ((data: unknown, ctx: ServiceContext) => unknown)
@@ -266,7 +266,7 @@ export interface ServiceDescription {
    * can hold: the channel name for the string form, `true` for a function
    * target, `false` for the declared opt-out, and `null` for a service that
    * declares nothing — which falls through to the app-level
-   * `publishDefault()` if one is registered.
+   * `announceDefault()` if one is registered.
    */
   channel:    string | boolean | null
   /** Present when the service was given an explicit schema. */
@@ -290,7 +290,7 @@ export interface Service {
   /** The accessor, or `null` for a service declared over no model — read through `serviceAccessor`. */
   model?:   string | null
   /** Channel(s) to broadcast mutations to. Omitted = no broadcast. */
-  channel?: PublishDeclaration
+  channel?: ChannelDeclaration
   /** Methods wrapped in a transaction, resolved from the declaration. */
   _transactional?: readonly string[]
   /**
@@ -393,7 +393,7 @@ export interface Service {
   //   • Reading inside a before hook without re-triggering hooks
   //   • Job handlers that explicitly don’t want side-effects
   //   • Low-level seeding / migration scripts
-  // If you want side-effects (publish, audit, cache-bust) use service() instead.
+  // If you want side-effects (announce, audit, cache-bust) use service() instead.
   _find:    (ctx: ServiceContext) => Promise<unknown>
   _get:     (ctx: ServiceContext) => Promise<unknown>
   _aggregate: (ctx: ServiceContext) => Promise<unknown>
@@ -757,7 +757,7 @@ async function _callService(
   // manager (browsers).
   //
   // They used to be independent. callService emitted 'posts:created' on
-  // app.events while a separately-wired publish() after-hook put
+  // app.events while a separately-wired announce() after-hook put
   // 'posts created' on the wire, which meant:
   //   • two places derived the event name, and they disagreed (fixed earlier)
   //   • ctx.dispatch = false suppressed the socket but not the bus
@@ -825,7 +825,7 @@ async function _callService(
       let payload = ctx.dispatch !== undefined ? ctx.dispatch : resultData(ctx.result)
 
       // An announcement is about a ROW, so it carries one — see
-      // announcementPayload. A method free to answer a projection is not free
+      // announcementPayload. A method free to answer a partial row is not free
       // to broadcast one: the subscriber has nowhere to put it and says nothing
       // about that. Skipped when the app stated the payload itself; ctx.dispatch
       // is a declaration of what to send, and second-guessing it would make the
@@ -850,7 +850,7 @@ async function _callService(
 
         for (const row of rows) {
           events?.emit(`${service.name}:${past}`, row)
-          await publishToChannels(service, ctx, `${service.name} ${past}`, row)
+          await announceToChannels(service, ctx, `${service.name} ${past}`, row)
         }
       }
     }
@@ -1017,7 +1017,7 @@ export interface BaseServiceOptions {
   name?:     string
 
   /** Channel(s) to broadcast mutations to. See ServiceDefinition.channel. */
-  channel?:  PublishDeclaration
+  channel?:  ChannelDeclaration
 
   /** See ServiceDefinition.transactional. */
   transactional?: TransactionalDeclaration
@@ -1162,8 +1162,8 @@ export type ServiceDefinitionValue =
 export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
   'name', 'model', 'db', 'paginate', 'allowBulk', 'bulkMax',
   'idField', 'softDelete', 'cache', 'schema', 'hooks',
-  // `publish` accepts a function, so without this a service declaring
-  // `publish: (rows, ctx) => …` would have had it copied on as a callable
+  // `channel` accepts a function, so without this a service declaring
+  // `channel: (rows, ctx) => …` would have had it copied on as a callable
   // custom method and routed over HTTP as one.
   'channel',
   'methods',
@@ -1447,7 +1447,7 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
 //
 // Two mechanisms broadcast, and a service can carry both: `channel:` is
 // announced by callService at the single announcement point, and the exported
-// `publish()` hook sends its own frame from `after`. Together they put the same
+// `announce()` hook sends its own frame from `after`. Together they put the same
 // record on the wire twice — every subscribed tab applies it twice, and a
 // non-idempotent client handler (an append, a counter, a toast) shows it twice.
 //
@@ -1455,31 +1455,31 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
 // be relied on to follow and which no test can check. This is the same question
 // asked where it can be answered: the resolved pipeline is the only place the
 // FULL effective chain is known — service hooks, and the app-level hooks a
-// `after: { all: [publish(…)] }` would apply to every service at once.
+// `after: { all: [announce(…)] }` would apply to every service at once.
 //
-// Marked hooks, never names: an app is free to call its own hook `publish`, and
+// Marked hooks, never names: an app is free to call its own hook `announce`, and
 // suppressing a real one on a name match would silently stop broadcasting.
 function refuseDoubleBroadcast(
   name:      string,
-  channel:   PublishDeclaration | undefined,
+  channel:   ChannelDeclaration | undefined,
   pipelines: Record<string, ResolvedPipeline>
 ): void {
   if (channel === undefined || channel === false) return
   for (const [method, p] of Object.entries(pipelines)) {
-    if (!p.after?.some(isPublishHook)) continue
+    if (!p.after?.some(isAnnounceHook)) continue
     throw new Error(
-      `Service '${name}' declares channel: and also runs a publish() hook on '${method}'. ` +
+      `Service '${name}' declares channel: and also runs a announce() hook on '${method}'. ` +
       `Both broadcast, so every mutation would go out twice and each subscriber would apply it twice. ` +
       `Keep channel: and drop the hook, or drop channel: and keep the hook — not both.`
     )
   }
 }
 
-// A PublishDeclaration is a string, `false`, or a function — and a function
+// A ChannelDeclaration is a string, `false`, or a function — and a function
 // cannot cross the wire, so describe() answers a summary rather than the value.
 // `null` is a service that declares nothing, which is not the same as `false`:
 // one asks the app-level default, the other refuses it.
-function describeChannel(decl: PublishDeclaration | undefined): string | boolean | null {
+function describeChannel(decl: ChannelDeclaration | undefined): string | boolean | null {
   if (decl === undefined) return null
   if (decl === false)     return false
   return typeof decl === 'string' ? decl : true
@@ -2309,7 +2309,7 @@ export interface ServiceDefinition {
    *   channel: (rows, ctx) => app.channel(`w:${…}`)  dynamic target
    *   channel: false                                declared opt-out
    *
-   * Replaces the three-step wiring this used to require — import publish(),
+   * Replaces the three-step wiring this used to require — import announce(),
    * build the hook, attach it per write method (and remember `after: { all }`
    * would broadcast every READ to every socket).
    *
@@ -2317,7 +2317,7 @@ export interface ServiceDefinition {
    * is live out of the box — the same split Feathers has between its core
    * (publishes nothing without a publisher) and its generator (writes one).
    */
-  channel?:   PublishDeclaration
+  channel?:   ChannelDeclaration
 
   /**
    * Run every mutating method inside one database transaction that spans the
@@ -2644,7 +2644,7 @@ export function createService(def: ServiceDefinition): Service {
     memoKey     = key
     memoVersion = hookVersion
     memo = resolvePipelines(key ? mergeHookMaps(key, mergedMap) : mergedMap)
-    refuseDoubleBroadcast(defName, def.channel as PublishDeclaration | undefined, memo)
+    refuseDoubleBroadcast(defName, def.channel as ChannelDeclaration | undefined, memo)
     return memo
   }
 
@@ -2657,7 +2657,7 @@ export function createService(def: ServiceDefinition): Service {
     _customMethods: {},
     // Carried through so callService can find it after the pipeline. Reserved
     // in SERVICE_OPTION_KEYS, so a function form never becomes a custom method.
-    ...(def.channel !== undefined ? { channel: def.channel as PublishDeclaration } : {}),
+    ...(def.channel !== undefined ? { channel: def.channel as ChannelDeclaration } : {}),
     // Same reason: declared, honored internally, but previously not carried
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
@@ -2719,7 +2719,7 @@ export function createService(def: ServiceDefinition): Service {
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
-        channel:    describeChannel(service.channel as PublishDeclaration | undefined),
+        channel:    describeChannel(service.channel as ChannelDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
       }
@@ -3008,7 +3008,7 @@ function overNoModel(name: string | undefined) {
  * Broadcast one record to the channels a service declares.
  *
  * No-ops unless BOTH are true: the channels plugin is loaded (it stamps the
- * manager on every context), and the service declared `publish`. Broadcasting
+ * manager on every context), and the service declared `channel:`. Broadcasting
  * is opt-in because a channel name is a decision about WHO is listening that
  * only the app can make, not because a frame would be ungraded: a broadcast is
  * not a SELECT, so `@@allow` — which compiles into a WHERE — cannot reach one,
@@ -3018,31 +3018,31 @@ function overNoModel(name: string | undefined) {
  * you. Junction's `fli make:*` scaffolds do the same.
  *
  * A service declaring NOTHING falls through to the app-level default
- * (`app.channels.publishDefault(fn)`), which is null unless an app registered
+ * (`app.channels.announceDefault(fn)`), which is null unless an app registered
  * one — so the opt-in above is unchanged, and an app that wants one scoping
  * rule for twenty services writes it once (FJS-334). `channel: false` is the
  * declared opt-out and is not asked; it means this service broadcasts nothing,
  * default included.
  */
-async function publishToChannels(
+async function announceToChannels(
   service: Service,
   ctx:     ServiceContext,
   event:   string,
   payload: unknown
 ): Promise<void> {
-  const decl = service.channel as PublishDeclaration | undefined
+  const decl = service.channel as ChannelDeclaration | undefined
   if (decl === false) return
 
   const manager = ctx.locals.__channels as {
     channel:  (name: string) => unknown
-    publish:  (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown) => Promise<void>
-    defaultPublisher?: ((data: unknown, ctx: ServiceContext) => unknown) | null
+    announce: (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown) => Promise<void>
+    defaultAnnouncer?: ((data: unknown, ctx: ServiceContext) => unknown) | null
   } | undefined
   if (!manager) return
 
   // The manager has to be resolved before this question can be asked, which is
   // why the undefined case is not an early return beside `false` any more.
-  const target = decl ?? manager.defaultPublisher ?? undefined
+  const target = decl ?? manager.defaultAnnouncer ?? undefined
   if (target === undefined || target === null) return
 
   const resolve = typeof target === 'string'
@@ -3050,7 +3050,7 @@ async function publishToChannels(
     : target
 
   try {
-    await manager.publish(event, payload, ctx, resolve as never)
+    await manager.announce(event, payload, ctx, resolve as never)
   } catch {
     // A broadcast failure must not fail the write. The record is already
     // committed; a dead socket is not the caller's problem.

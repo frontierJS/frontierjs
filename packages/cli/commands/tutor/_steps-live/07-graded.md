@@ -12,7 +12,7 @@ One character in `db/schema.lite`:
 ```
 
 Reads now need a signed-in caller. Push it, restart the API, and run **the same
-two sockets against the same publish**.
+two sockets against the same broadcast**.
 
 The signed-in one still hears it. The anonymous one hears nothing — and no line
 of application code was written to make that happen. The rule is the one you
@@ -98,6 +98,6 @@ if (!await must($, {
 
 log.info('')
 log.info(`  signed in   ${heard.signedIn.length} frame(s)`)
-log.info(`  anonymous   ${heard.anonymous.length} frame(s) — the same publish`)
+log.info(`  anonymous   ${heard.anonymous.length} frame(s) — the same broadcast`)
 log.info('')
 ```

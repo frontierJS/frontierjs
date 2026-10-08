@@ -246,7 +246,7 @@ prototype only**. C stays the target.
   `fjs-prototypes/transit`, never committed here. **Every framework feature or fix it needs lands in FJS**, and
   that is the point of building it: the Keep rows above are the framework's
   worklist, and the product is what proves each one. **After V1, the likely
-  next step is a vertical slice** — as `orion` is for automations — baked into
+  next step is a rig** — as `orion` is for automations — baked into
   `example` and `basecamp`. Nothing before V1 waits on it.
 - **A source's schema is a row — the owner's direction, 2026-10-03, probed.** A
   `Source` row holds `.lite` text, and the landing database is built from it on

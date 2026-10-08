@@ -10,7 +10,7 @@
 //   • 400s from the schema's own rules (@length, @email, @gte)
 //   • 401s from the model's @@gate     (read public, write user, delete admin)
 //   • Pagination + result envelope     ($limit/$offset, { object, data, total })
-//   • Live WebSocket events            (publish hook → 'leads' channel)
+//   • Live WebSocket events            (announce hook → 'leads' channel)
 //   • /health and /metrics             (healthPlugin)
 //
 // ─── Try ──────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@
 //   curl -X POST http://localhost:3200/api/leads \
 //     -H 'x-service-method: getStats'                            # custom method
 
-import { createApp, createService, publish, channels, healthPlugin } from '../index.ts'
+import { createApp, createService, announce, channels, healthPlugin } from '../index.ts'
 import type { App, IAuth, ServiceContext } from '../index.ts'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
 import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
@@ -124,7 +124,7 @@ app.configure(channels((a: App) => {
 // CRUD, validation, auth, and pagination are derived from the model.
 // `live` broadcasts every mutation to WebSocket subscribers.
 
-const live = publish(() => app.channel!('leads'))
+const live = announce(() => app.channel!('leads'))
 
 app.services.register(createService({
   name:  'leads',

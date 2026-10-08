@@ -28,6 +28,7 @@ var ICON_CONTEXTS = [
   { name: '.field-addon', html: '<div class="field-row"><span class="field-addon">' + SVG + '</span><input class="field"></div>' },
   { name: '.pagination-link', html: '<nav class="pagination"><a class="pagination-link" href="#x" aria-label="Next">' + SVG + '</a></nav>' },
   { name: '.tab', html: '<div class="tablist" role="tablist"><button class="tab" role="tab" aria-selected="true">' + SVG + ' One</button></div>' },
+  { name: '.dialog-close', html: '<dialog class="drawer from-left" open><div class="surface-header"><h2>Menu</h2><button type="button" class="dialog-close" aria-label="Close">' + SVG + '</button></div></dialog>' },
   { name: '.pill-close', html: '<span class="pill removable">tag<button class="pill-close" aria-label="Remove">' + SVG + '</button></span>' },
   { name: '.empty-icon', html: '<div class="empty"><div class="empty-icon">' + SVG + '</div></div>' },
   { name: '.list-row', html: '<ul class="rows"><li class="list-row">' + SVG + ' Acme</li></ul>' },

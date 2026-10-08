@@ -250,11 +250,19 @@ and evaluable by piece 2.
   legitimately absent on create because the stamp has not happened yet
   (`packages/litestone/docs/multi-tenancy.md`). A `@requiredWhen` evaluated at the
   same point would refuse a create that is about to be filled in.
+  - **A** — Moot as built: `@required(where:)` expands to a table CHECK (`packages/litestone/src/core/ddl.js`), which SQLite evaluates on the row as inserted, after every stamp, so it never runs at `checkCreatePolicy`'s point.
+  - **B** — Also evaluate the predicate in JS for an earlier refusal, placed after `applyAuthDefaults` and stated as such.
+  - **C** — Refuse at parse a predicate that names a stamped column (an `auth()` default or the tenant column), so the browser affordance, which sees the record before the stamp, cannot disagree with the boundary.
+  - **Recommend A** — A is what ships, and the CHECK is the one place the rule is enforced, so it has no ordering to get wrong. B adds a second evaluation point whose order would have to be maintained by hand. C is owed only once a predicate on a stamped column appears, and none in the tree does.
 - **What a HAND-WRITTEN `@@check` does about attribution.** The expansion knows
   its field and carries it, so `@required(where:)` renders beside its control.
   A `@@check` somebody wrote still cannot, and two of them on one model produce
   two unattributed form-level errors. A `field:` argument is the obvious answer
   and is a separate question from this one.
+  - **A** — A `field:` argument: `@@check("startsAt < endsAt", "an end must come after its start", field: endsAt)` puts the refusal on that control's path.
+  - **B** — Derive it: the refusal is attributed to every column the expression names, so `startsAt < endsAt` puts its message under both controls, with no new spelling.
+  - **C** — Leave it form-level: a cross-column rule is about the row, and its message is what a person reads.
+  - **Recommend B** — The columns are already in the expression, so attribution can be derived rather than restated, and `client.js` already matches a CHECK by its source text to find `@required(where:)`'s field. A is a second statement of which field the rule concerns, and it can name a field the expression does not read. Add A as an override only if a derived blame proves wrong in a real form.
 - ~~**Bulk writes.**~~ **Closed by the expansion**: a CHECK is evaluated per row
   by SQLite, so `updateMany` over a `where` matching many rows needs no answer
   here at all. That was a point in the expansion's favor and was not visible

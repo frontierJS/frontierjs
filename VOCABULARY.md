@@ -67,16 +67,16 @@ before you meet it.
 | --- | --- | --- | --- | --- | --- |
 | Resource | blessed | UI | | | |
 | Relator | blessed | Data | Model | a relationship that is a ROW — existentially dependent on the two or more things it relates, so it cannot outlive one of them | `.lite`'s `@@relator`, [`FJS-D350`](DECISIONS.md#fjs-d350). Exact and from ontology work (UFO, Guizzardi 2005); *join table* half-fits and implies the absence of identity, which is the one thing being denied. A row whose foreign keys are OWNERSHIP rather than mediation is not one — `ApiKey` |
-| Commitment | blessed | Data | Transition | a transition the system owes a row at a time derived from that row — the clock causing a WRITE, where a window is the clock changing what counts | `.lite`'s `@@commitment`, [`FJS-D353`](DECISIONS.md#fjs-d353) / [`FJS-D354`](DECISIONS.md#fjs-d354). REA's word (McCarthy 1982), whose commitment is fulfilled by an event; here it is fulfilled by a transition |
+| Commitment | blessed | Data | Transition | a transition the system owes a row at a time derived from that row — the clock causing a WRITE, where a window is the clock changing what counts | `.lite`'s `@@commitment`, [`FJS-D353`](DECISIONS.md#fjs-d353) / [`FJS-D354`](DECISIONS.md#fjs-d354). REA's word (McCarthy 1982), whose commitment is fulfilled by an event; here it is fulfilled by a transition. Work a PERSON owes is a transition with a declared owed-by party, and its breach is a commitment ([`FJS-D634`](DECISIONS.md#fjs-d634)) |
 | Transition | blessed | Data | Model | a named edge of a `@@transitions` state machine — what `db.x.transition(id, name)` makes | The word the code types; see *Move* |
 | Move | alias | Data | Transition | Transition | Prose's second name for a transition, folded by [`FJS-D353`](DECISIONS.md#fjs-d353) |
 | Observer | blessed | Shared | Hook | | |
 | Release | blessed | Deployment | | | |
 | Hook | blessed | Shared | | | |
 | Service | blessed | API | | | |
-| Plugin | blessed | API | | | |
+| Plugin | blessed | API | | what extends the thing it is installed into — Junction's app, Litestone's client, Vite's build | `FJS-D06`, `FJS-D631`. Name the host where it is unclear: *a Vite plugin* |
 | Provider | blessed | Integrations | | | |
-| Event | blessed | API | | what Junction announces — after a write, or by `publish()` — carried on a Channel to whoever may read it | `FJS-D44`, `FJS-D393`. *Announce* is its verb, and it has no second noun: *Announcement* and *Mutation* are not terms, and *a write* is the plain phrase |
+| Event | blessed | API | | what Junction announces — after a write, or by `announce()` — carried on a Channel to whoever may read it | `FJS-D44`, `FJS-D393`. *Announce* is its verb, and it has no second noun: *Announcement* and *Mutation* are not terms, and *a write* is the plain phrase |
 | Channel | blessed | API | | | |
 | Job | blessed | Automation | | | |
 | Component | blessed | UI | | a `.mesa` file — a page, a layout and a Button alike; what kind is said by its parent | `FJS-D382` |
@@ -85,16 +85,17 @@ before you meet it.
 | Empty state | open | UI | Block tier | | the condition a screen is in with nothing to show; `EmptyState` is the component that renders it |
 | Data boundary | open | Data | Boundary | | where access is enforced; the widest phrase in the tree |
 | Warden | blessed | Data | | the whole access system: everything that decides whether a call may touch a row or a column — principal and claims, gate, capabilities, row policies, field protection, a transition's authority half. `asSystem()` lifts it and holds the integrity rules | `FJS-D546`. The Data boundary is where it enforces. Prior art is the *reference monitor* (Anderson 1972): cited, not used, because it names the mediator and not the declarations, and reads as an OS kernel |
+| Capability | blessed | Data | Warden | a reference to a move the seed already declares, held by a principal per tenant — `auth().capabilities`, `@@capabilities` | `FJS-D139`, `FJS-D149`, `FJS-D151`. Never what a Plugin adds: that is *extends* (`FJS-D631`) |
 | Invariant | blessed | Framework | | a rule the framework does not break without a ruling — numbered in `CLAUDE.md` § Invariants and graded by `fli ws:invariants` | a CONTRIBUTOR word: cited by number in comments and registers, where the reader has the list. An app developer does not have it, so nothing an app sees cites one by number ([`FJS-1282`](ISSUES.md#fjs-1282)) — it states the rule |
 | State | open | Data | Transition | | |
 | PascalCase | open | | | | |
 | Phase | blessed | Shared | | a named step of an ordered list something runs — qualified at every use, *startup phase* or *CI phase*, never bare | `FJS-D395`. Junction's startup phases are one list both entry points run (Invariant 4); CI's are `scripts/ci.mjs`'s table. A Plugin's `register`/`boot`/`ready`/`shutdown` are not phases — `boot-plugins` and `ready-hooks` are the phases that call them |
-| User | open | Auth | | | |
+| User | blessed | Auth | | the model auth resolves a principal from — one row per person who signs in | `model User` in auth's fragment, `authUserModel(db)`. `FJS-D633`. *Account* is not its second name: in apps that word is usually an organization, and it is excluded in `terms.js` |
 | Table | open | Data | Model | | |
 | File | open | Data | Field | | |
 | Step | open | Automation | Run | | |
 | Card | open | UI | | | |
-| Bearer | open | Auth | | | |
+| Bearer | blessed | Auth | Principal | a principal with no session, admitted by a token that names a grant row — it carries claims and no id | `bearerClaim()`, `FJS-D633`. The grant row is its Actor |
 | Web | open | Framework | Surface | | |
 | Litestone Studio | blessed | Data | | The browser UI `litestone studio` serves — the Data realm read and edited by hand | |
 | Studio | alias | Data | Litestone Studio | `Litestone Studio`. The bare word is shorthand once a page has named it in full | |
@@ -145,7 +146,6 @@ before you meet it.
 | Sidebar | open | UI | | | |
 | Text | open | UI | | | |
 | Tier | open | Shared | Hook | | |
-| Account | open | Auth | | | |
 | DatePicker | open | UI | Quantify task | | |
 | Input | open | UI | Text task | | |
 | Progress | open | UI | | | |
@@ -172,13 +172,21 @@ before you meet it.
 | Context | blessed | Shared | | plural by realm; each package documents its own by lifetime | `FJS-D03` |
 | Chain of Responsibility | blessed | API | Hook | the hook pipeline | ARCHITECT.md § 2 |
 | Queue | blessed | Automation | Job | what a Job runs on | `FJS-D198` |
-| Run | open | Automation | Job | bounded work that finishes and can be resumed — a backfill, a pay run, a deploy | ARCHITECT.md § 2 *Not yet named* |
+| Run | blessed | Automation | | one bounded execution that finishes and can be interrupted and resumed — an orion run, a backfill, a deploy's journal. Not a Job: its host may or may not run its steps as Jobs | [`FJS-D634`](DECISIONS.md#fjs-d634). The noun is shared and the engine is not ([`FJS-D503`](DECISIONS.md#fjs-d503)). *Saga* is refused (a Run whose steps compensate), and the cli's *runnable* is a launch target, never a Run |
+| Flow | blessed | Automation | Run | a declared sequence of steps a Run executes, declared in code or stored as data (orion's) | [`FJS-D634`](DECISIONS.md#fjs-d634). *Workflow* is refused because it half-fits three different things in the ecosystem |
 | Target | blessed | Integrations | Provider | a Conduit declaration of a third party | ARCHITECT.md § 2 |
 | Transport | blessed | API | Channel | the delivery medium — not the broadcast set | `FJS-D06` |
-| Pivot | blessed | Deployment | Release | the transition at which N-1 compatibility ends | `FJS-D06` |
+| Pivot | blessed | Automation | Run | the step past which a Run only goes forward; a step before it may be compensable. A Release's pivot is the transition at which N-1 compatibility ends | [`FJS-D634`](DECISIONS.md#fjs-d634), generalizing `FJS-D06`'s Deployment sense into one definition with the release as its instance. *Pivot transaction* is the saga literature's word |
 | Realm | blessed | Framework | | Data, API, UI, Deployment, Testing | ARCHITECT.md § 1 |
 | Surface | blessed | Framework | | a directory beside `db/` with its own config, tests and release — `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` | CLAUDE.md Invariant 3. `@frontierjs/css` spells its base block shape the same way (`.surface`, the lineage of Card, Alert and Dialog); that sense is the css register's and is written `.surface` where the two could meet |
-| Slice | open | Framework | | a package that crosses every realm on purpose — auth, notifications | `FJS-D06` § 7 |
+| Rig | blessed | Framework | | a package assembled from realm parts — `model/`, `service/`, `resource/`, `suite/` — any subset of which an app installs; its `service/` part is a Plugin. Notifications, orion, auth | `FJS-D630` |
+| Schema | blessed | Data | | `db/schema.lite` — the declaration of what is true about the data over its whole life, and the app's one origin | `FJS-D632`. *The schema is the seed* is the thesis's metaphor (PHILOSOPHY § VIII); no sentence that means the file calls it *the seed* |
+| Seed | blessed | Data | | rows written into a database before anyone uses it — development, test or reference data | `litestone seed`, litestone's `Seeder`, `FJS-D632`. The ecosystem's word, and it fits whole, so the schema gave it back. A seeded PRNG is ordinary English |
+| Declaration | blessed | Framework | | what an app states for the framework to enforce or derive from — a model, a gate, a policy, a `view`, a `tenancy { }` block, a Conduit Target, a service's `methods:` | `FJS-D632`, `FJS-D45`. A Hook is code that runs. One binds from the first request, and its absence implies nothing (PHILOSOPHY § III) |
+| Projection | blessed | Framework | | a second shape of a truth, derived from its origin and never written — so never writable | `FJS-D632`. A `view` projects rows; the DDL, JSON Schema, client types, a default form and mcp's tool set project the Schema. A column subset is a `select`, and a component's computed value is *derived* |
+| Principal | blessed | Data | Warden | whose standing a Call is graded at — what the Warden reads a gate level and claims off | `FJS-D633`. A session, an API key and a Bearer are its kinds; an agent over MCP is one of those. `asSystem()` has none |
+| Actor | blessed | Data | | who answers for an act — the audit trail's `actorId` | `FJS-D633`. Usually the principal; in support mode the operator (the principal is `subjectId`), and for a Bearer the grant row. Oracle's owner, performer and the rest are actors a row names. Never whose standing is graded |
+| Tenant | blessed | Data | | the unit of data isolation a `tenancy { }` block declares — a database file, or a tenant column's value | `FJS-D633`. A Call resolves at most one. Not a customer: an app's `Account` or `Workspace` may be one, or not |
 | Method | blessed | API | Service | a custom service method — never an Action | `FJS-D02` |
 | Call | blessed | API | Service | one run of a service method through the pipeline — what `$` is inside, from the first hook to the announcement | `FJS-D391`. Not a Request: one request can make several Calls, and a Job makes one with none |
 | Envelope | blessed | API | Call | the result shape `{ kind, object, data, errors, total?, limit?, offset? }` a Call answers in | `FJS-D391`. One owner, `junction/src/core/envelope.ts` (Invariant 4) |

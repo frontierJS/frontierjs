@@ -630,7 +630,7 @@ export function createPaymentsService() {
     // Not this one: `Payment` reads at ADMINISTRATOR(5), a socket connection is
     // not graded by anything, and joining every one would put a gated row on a
     // stranger's socket — the exact shape junction reports about an app-level
-    // `publishDefault` (FJS-334). A screen that wants these joins the channel
+    // `announceDefault` (FJS-334). A screen that wants these joins the channel
     // knowing what it is asking for.
     //
     // The seller's ORDER list is not affected and does not need this: the

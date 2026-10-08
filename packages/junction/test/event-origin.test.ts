@@ -4,7 +4,7 @@
 // the in-process bus (server-side reactions) and the channel manager (browsers).
 //
 // They used to be independent origins. callService emitted 'posts:created' on
-// app.events; a separately-wired publish() after-hook put 'posts created' on the
+// app.events; a separately-wired announce() after-hook put 'posts created' on the
 // wire. Consequences, in order of how much they cost:
 //
 //   • two places derived the event name, and they disagreed — the wire got
@@ -32,7 +32,7 @@ function harness() {
   const events  = { emit: (event: string, data: unknown) => { bus.push({ event, data }) } }
   const manager = {
     channel: (name: string) => ({ name }),
-    publish: async (event: string, data: unknown) => { channels.push({ event, data }) },
+    announce: async (event: string, data: unknown) => { channels.push({ event, data }) },
   }
   return { bus, channels, events, manager }
 }
@@ -86,7 +86,7 @@ describe('one decision, two consumers', () => {
   })
 
   test('reads announce nothing', async () => {
-    // Why this is per-method and not an `all` hook: `after: { all: [publish] }`
+    // Why this is per-method and not an `all` hook: `after: { all: [announce] }`
     // would broadcast every find to every connected socket.
     const h = harness()
     await callService(svc({ channel: 'posts' }), ctx(h, 'find'), undefined, h.events)
@@ -203,7 +203,7 @@ describe('bulk writes announce once per record', () => {
 
 describe('`channel` as an option does not steal `publish` as an action name', () => {
 
-  test('a service can still have a publish() action', async () => {
+  test('a service can still have a announce() action', async () => {
     // The reason the option is `channel` and not `publish`: publishing a draft
     // is an ordinary action, and the openapi suite has a posts service with
     // exactly that. A noun cannot collide with a verb.

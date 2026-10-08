@@ -87,7 +87,7 @@ Measured at 200,000 rows on a three-term query: **twelve single-column indexes, 
 
 A `VIRTUAL` generated column stores nothing and slows no read at any pool size. What costs is the **declared** count: SQLite parses the whole table definition per statement, roughly 0.25 µs per row per column, so ten slots is 12.6 µs an insert and two hundred is 62 µs — a 4.9× spread on write throughput.
 
-So the cap is a write-rate decision and belongs in the seed beside its reason. **An unused slot is a tax on every write to that table, forever, paid by every tenant including the ones who declared nothing.** Forty is nearly free on a table written once at checkout; ten is generous on an event log.
+So the cap is a write-rate decision and belongs in the schema beside its reason. **An unused slot is a tax on every write to that table, forever, paid by every tenant including the ones who declared nothing.** Forty is nearly free on a table written once at checkout; ten is generous on an event log.
 
 ### The order is a bet, and it is yours
 

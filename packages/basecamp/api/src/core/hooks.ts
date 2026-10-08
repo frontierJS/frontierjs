@@ -438,27 +438,27 @@ export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {})
 }
 
 // ─── workspaceChannel ────────────────────────────────────────────────────
-// Returns the channel publish target for the current workspace — the value a
+// Returns the channel announce target for the current workspace — the value a
 // service DECLARES, never a hook it runs:
 //
 //   createService({ name: 'apps', model: 'App', channel: workspaceChannel(app) })
 //
-// It was `after: { all: [publishToChannels(workspaceChannel(app))] }` on all
+// It was `after: { all: [announce(workspaceChannel(app))] }` on all
 // seventeen services, and `all` means all: a `find` broadcast every row it had
 // just read to every browser in the workspace (FJS-031). Junction decides what
 // to announce in one place — `callService` — and that place excludes reads by
 // name, which no per-service hook list can do for itself. Declaring both is
 // refused at construction rather than broadcasting twice.
 
-export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').PublishFn {
+export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').AnnounceFn {
   return (_data, ctx) => {
     const wsId    = ctx.locals.workspaceId as string | undefined
     if (!wsId) return null
-    // Typed as what a PublishFn may answer, rather than `unknown`: the manager
+    // Typed as what an AnnounceFn may answer, rather than `unknown`: the manager
     // is reached through a cast because `app.channels` is the plugin's, and a
     // cast that lands on `unknown` makes the return type unassignable to the
     // very signature this function declares.
-    type Channel  = ReturnType<import('@frontierjs/junction').PublishFn> & object
+    type Channel  = ReturnType<import('@frontierjs/junction').AnnounceFn> & object
     const manager = channelManager(app) as { channel: (name: string) => Channel } | undefined
     if (!manager?.channel) return null
     return manager.channel(workspaceChannelName(wsId))
@@ -766,7 +766,7 @@ export function outpostScope(): Hook {
 // entries today are outposts on a timer: fifty machines reporting every minute
 // would bury every action a person took. It is deliberately NOT
 // `ctx.dispatch = false` — that would also silence the channel, and the live
-// status pill on the server screen is fed by exactly that publish.
+// status pill on the server screen is fed by exactly that broadcast.
 
 /** What counts as a recordable mutation. Decided once, asked by both hooks. */
 function recordable(ctx: ServiceContext, skip: Set<string>): boolean {

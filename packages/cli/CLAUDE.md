@@ -249,7 +249,7 @@ core/
                 the ORDER only: spawning is `children.js`'s and every process is
                 injected. A server port that already answers fails the drive
                 rather than being reused (`FJS-740`)
-  intent.js     what a person asked, resolved against the app's seed — a
+  intent.js     what a person asked, resolved against the app's schema — a
                 CANDIDATE (a claim, facts in plain words) in, a verdict with a
                 citation out; `fli intent` is its first caller. Pure over the
                 parsed schema and three snapshot TEXTS, so the command loads the
@@ -1081,7 +1081,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   *is X broken* both name X and land in different registers — a router treating
   them as one returns the ruling that CLOSED the defect somebody is still
   hitting. It is not `core/intent.js`: that resolves a CUSTOMER against an APP's
-  seed, this a CONTRIBUTOR against the WORKSPACE's registers, and `ask.js`
+  schema, this a CONTRIBUTOR against the WORKSPACE's registers, and `ask.js`
   imports `terms()` from it rather than restating it. **The answer is a
   citation and never prose**, so grading is a string compare with no judge model
   in it. **The key is written against the TREE and lives in its own file**: an

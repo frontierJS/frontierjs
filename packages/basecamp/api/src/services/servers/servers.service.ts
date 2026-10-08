@@ -1123,7 +1123,7 @@ export function createServersService(app: BasecampApp) {
         app.logger.warn('conduit: outpost not registered — no https URL or no enrolled certificate', {
           server_id: id, url: data.outpost_url, has_cert: !!server.outpostCert })
       } else if (pinnable && (known?.address !== data.outpost_url || known?.pinned_cert !== server.outpostCert
-                              || known?.policy?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
+                              || known?.resilience?.deadline_ms !== DEPLOY_TIMEOUT_MS)) {
         await app.conduit.register({
           id:            target,
           kind:          'outpost',
@@ -1141,7 +1141,7 @@ export function createServersService(app: BasecampApp) {
           // so a deploy, a job's `timeout_s` and a cleanup sweep were all cut
           // at 45s whatever they asked for. The longest command is the bound;
           // each send still states its own.
-          policy:        { deadline_ms: DEPLOY_TIMEOUT_MS },
+          resilience:    { deadline_ms: DEPLOY_TIMEOUT_MS },
           registered_at: Date.now(),
           last_seen_at:  Date.now(),
         } as TargetDescriptor)

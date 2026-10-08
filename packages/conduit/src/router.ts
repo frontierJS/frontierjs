@@ -32,7 +32,7 @@ export class Router {
     private observers:   ConduitObservers = {},
     private safe:        (name: string, fn: () => unknown) => void = createObserverGuard(),
     // Fired with every descriptor this router reads out of the store, so the
-    // layer above learns a target's policy at the moment the target becomes
+    // layer above learns a target's resilience at the moment the target becomes
     // reachable — including one another replica registered, which this process
     // never saw a register() for.
     private onDescriptor: (d: TargetDescriptor) => void = () => {},
@@ -80,17 +80,17 @@ export class Router {
   private createTransport(descriptor: TargetDescriptor): BaseTransport {
     // Retries happen inside the transport, so the observer has to be handed
     // down — the conduit layer only ever sees the final result.
-    // A target's own policy wins over the conduit's, field by field, so a
+    // A target's own resilience wins over the conduit's, field by field, so a
     // descriptor that states one number keeps the conduit's answer for the
     // rest. The transport is built once per pooled connection and register()
-    // evicts, so a changed policy takes effect on the next resolve.
-    const policy = descriptor.policy ?? {}
+    // evicts, so changed resilience takes effect on the next resolve.
+    const own = descriptor.resilience ?? {}
 
     const httpOpts = {
-      timeout_ms:         policy.timeout_ms         ?? this.opts.timeout_ms,
-      retry_limit:        policy.retry_limit        ?? this.opts.retry_limit,
-      deadline_ms:        policy.deadline_ms        ?? this.opts.deadline_ms,
-      max_response_bytes: policy.max_response_bytes ?? this.opts.max_response_bytes,
+      timeout_ms:         own.timeout_ms            ?? this.opts.timeout_ms,
+      retry_limit:        own.retry_limit           ?? this.opts.retry_limit,
+      deadline_ms:        own.deadline_ms           ?? this.opts.deadline_ms,
+      max_response_bytes: own.max_response_bytes    ?? this.opts.max_response_bytes,
       onRetry: (req: ConduitRequest, err: ConduitError, attempt: number) =>
         this.safe('onRetry', () => this.observers.onRetry?.(observedRequest(req), err, attempt)),
     }

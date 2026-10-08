@@ -135,8 +135,8 @@ relative to `apiPrefix` for the same reason.
 ## Services
 
 Registered by the same plugin, at the app's own service root. Every method is
-scoped to the CALLER — nothing here takes a user id — except `account-recovery`,
-which is an operator acting on somebody else's account and has a floor of its
+scoped to the CALLER — nothing here takes a user id — except `account-recovery` and `people`,
+which are an operator acting on somebody else's account and have a floor of their
 own (§ *When a factor is lost*, below).
 
 | Method | Path | Description |
@@ -152,6 +152,10 @@ own (§ *When a factor is lost*, below).
 | `GET`  | `/connections` | Which OAuth providers are attached to the caller |
 | `DELETE` | `/connections/{id}` | Detach one |
 | `POST` | `/account-recovery/{userId}` + `X-Service-Method: resetTotp` | An operator resetting somebody else's lost second factor — SYSADMIN(7) |
+| `GET`  | `/people/{userId}` | An operator reading somebody else's sessions and API keys — ADMINISTRATOR(5) |
+| `POST` | `/people/{userId}` + `X-Service-Method: revokeSession` · `revokeApiKey` · `signOut` | An operator ending them. Refused over `/mcp` |
+| `DELETE` | `/people/{userId}` | An operator removing the account with its credentials and sessions. Refused over `/mcp` |
+| `POST` | `/people` + `X-Service-Method: invite` | An operator inviting somebody: `{ userId, token, expiresAt }`, the token sets a first password at `/auth/password-reset/confirm`. Nothing is mailed |
 
 `account` also answers `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp` and
 `regenerateRecoveryCodes` (§ *Two-factor authentication*).

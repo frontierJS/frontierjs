@@ -6,7 +6,7 @@ dated: 2026-08-30
 
 # Idea — subscription billing, in phases
 
-**Status: PARTIAL — phases 0–6 are built, in `example/`; phase 7 (the slice) is
+**Status: PARTIAL — phases 0–6 are built, in `example/`; phase 7 (the rig) is
 deferred; phase 8 (the instrument) is BUILT — the instrument on file and
 cancel-at-period-end on 2026-08-30, SCA on 2026-08-31.** Each built
 phase carries its own *It landed* section saying what it cost, so the plan and
@@ -26,20 +26,20 @@ proration is the one that arrives here.
 
 ## Phase 0 — where it lives, and it is a fork rather than a detail
 
-`proving-grounds.md` says billing is *the first real slice* and the strategic
+`proving-grounds.md` says billing is *the first real rig* and the strategic
 reason to build it. `IDEAS/overview.md` row 1.10 says *candidate C (billing) into
 `example/`*. Those are two different file trees and every path below depends on
 which one is meant, so it is settled before the first model rather than
 discovered at the fourth.
 
 **Decided 2026-08-30: it lives in `example/`**, as ordinary application code,
-with the slice extracted in Phase 7. `slices.md`'s own argument is that the format is
+with the rig extracted in Phase 7. `rigs.md`'s own argument is that the format is
 inferred from a directory layout rather than declared; a package boundary drawn
-before anything works is a guess about which files are the slice's, and the
-extraction is mechanical once they exist. The strategic prize — a slice
+before anything works is a guess about which files are the rig's, and the
+extraction is mechanical once they exist. The strategic prize — a rig
 contributing all five realms — is not lost by arriving one phase later, and
 `IDEAS/overview.md` row 3.8's objection (teams is the better *structural* first
-slice) is answerable either way.
+rig) is answerable either way.
 
 The counter-case is honest and should be recorded if the other branch is taken:
 an app grows shortcuts a package cannot take — reaching into a sibling service,
@@ -471,7 +471,7 @@ was asking for.
 
 ---
 
-## Phase 7 — the slice · **DEFERRED 2026-08-30**
+## Phase 7 — the rig · **DEFERRED 2026-08-30**
 
 **It stays application code in `example/` for a good while.** Not blocked and
 not abandoned — the phase is written and still right; what is missing is the
@@ -484,10 +484,10 @@ What deferring costs is stated so it is not rediscovered: an app grows shortcuts
 a package cannot take — reaching into a sibling service, sharing a helper across
 a boundary that will not exist — and the longer this runs as app code the more
 of them there are to unpick. `api/src/domain/billing/billing.ts` is the one to watch, since it
-is already the module a slice would be built around.
+is already the module a rig would be built around.
 
-Extract `@frontierjs/billing` in `slices.md`'s inferred layout — `model/`,
-`service/`, `resource/`, `suite/`, `.env.example` — with `slice.ts` carrying the
+Extract `@frontierjs/billing` in `rigs.md`'s inferred layout — `model/`,
+`service/`, `resource/`, `suite/`, `.env.example` — with `rig.ts` carrying the
 one thing no directory expresses: `after: ['mailer']`.
 
 What the extraction has to answer, and what makes it the first genuine test of
@@ -498,7 +498,7 @@ the format:
   to its own `User`/`Customer` — which is `extend model`'s direction, not the
   package's.
 - **`resource/` ejects and `model/` links.** Restyling an invoice is certain;
-  forking a migration is not wanted. That split is stated in `slices.md` and has
+  forking a migration is not wanted. That split is stated in `rigs.md` and has
   never been executed.
 - **The Suite part runs against the consuming app**, which is how *I installed
   only the Service part* becomes verified rather than assumed.

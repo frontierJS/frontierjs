@@ -148,16 +148,36 @@ stay written, in the place they are read.
 
 ## Open questions for the owner
 
-1. **What `fli done` asks instead.** **A** — nothing; the diff is the record.
-   **B** — a non-empty commit body per package touched. **Recommend A** — B grades
-   a commit that `fli done` runs before, and a body written to satisfy a gate is
-   the same padding this retires.
+1. **What `fli done` asks instead.**
+   - **A** — nothing; the diff is the record.
+   - **B** — a non-empty commit body per package touched.
+   - **Recommend A** — B grades a commit that `fli done` runs before, and a body
+     written to satisfy a gate is the same padding this retires.
 2. **A lesson with no hazard-skill realm** — a cli, css or toolbelt trap.
-   **Recommend** the package's own `CLAUDE.md`, which loads on first read of the
-   package — the same reach a realm skill buys.
+   - **A** — the package's own `CLAUDE.md`, which loads on first read of the
+     package.
+   - **B** — root `CLAUDE.md` § Live hazards → Repo, one line each.
+   - **C** — a fourth hazard skill for the tooling packages (cli, toolbelt,
+     config).
+   - **Recommend A** — it has the same reach a realm skill buys and an owner that
+     already exists. B loads every lesson into every session, and C is a new noun
+     for a handful of entries. A css trap is not in this set: `ui-hazards` already
+     fires on `@frontierjs/css`.
 3. **`IDEAS/release-notes.md`** names `CHANGES.md` as the developer changelog
    half. It becomes git plus `fli changelog`, which already writes one from
    commits — the file's claim is amended, not its proposal.
+   - **A** — amend `release-notes.md`'s claim in the retirement commit: the
+     developer half is git plus `fli changelog`.
+   - **B** — keep `CHANGES.md` as release notes' developer half and narrow this
+     retirement to the lesson extraction.
+   - **Recommend A** — `fli changelog` already derives that half from commits,
+     and B keeps a hand copy of git alive for a consumer that does not exist
+     pre-alpha.
 4. **`ISSUES.md` (2 MB) and `DECISIONS.md` (1 MB)** carry long narratives on
    closed rows — the same disease. Out of scope here; a separate pass after this
    one proves the extraction method.
+   - **A** — a separate pass, after the `CHANGES.md` extraction proves the method.
+   - **B** — the same pass, all three registers at once.
+   - **Recommend A** — the pilot on caravan exists to find what the classification
+     table gets wrong, and the registers carry ids that other files cite, so a
+     mistake there costs more than one in a file being deleted.

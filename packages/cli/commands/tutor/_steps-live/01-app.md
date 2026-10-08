@@ -27,7 +27,7 @@ const dir = appDir($)
 // Reuse is by the FILE, not by the journal: `--tmp` gives a fresh workspace
 // every run, and a person may also have deleted the app under a named one.
 //
-// And by what the model DECLARES. This lesson's headline is a publish that an
+// And by what the model DECLARES. This lesson's headline is a broadcast that an
 // anonymous socket receives because reads on Note are public — which stops
 // being true the moment `tutor:access` has run in the same workspace and left a
 // row policy on it. A policy filters a broadcast exactly as it filters a query,

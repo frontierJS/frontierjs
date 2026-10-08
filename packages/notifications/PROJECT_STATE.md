@@ -10,7 +10,7 @@ in `../../ISSUES.md`._
 
 ## What it is
 
-`@frontierjs/notifications` v0.1.4 — a **vertical slice**, not a horizontal
+`@frontierjs/notifications` v0.1.4 — a **rig**, not a horizontal
 layer. One notification class fans out to several **transports**: an in-app
 record, a WebSocket event, and an email.
 

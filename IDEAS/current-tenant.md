@@ -52,9 +52,20 @@ switcher's markup.
 - **The noun.** `workspaceId` is basecamp's word and the header's. The server
   says *tenant*. Pick one before code (`decision-rules`). The client's
   `setWorkspace` is renamed with it.
+  - **A** — `tenant`: `session.tenant`, `switchTenant(id)`, `client.setTenant(id)`, with the header name the app's own.
+  - **B** — `workspace`: `session.workspace`, `switchWorkspace(id)`, and `client.setWorkspace` keeps its name.
+  - **Recommend A** — the seed's `tenancy` block, `resolveTenancy`, `registry.tenantFor` and `FJS-D399`'s `tenant: { header }` key already say tenant, and `Workspace` is one app's model name; the next app's is `Organization` or `Account`. With the list derived from the schema, Sierra learns the app's own word from it rather than the framework adopting basecamp's.
 - **Where the list comes from.** All three call `/workspaces` and rely on the
   tenant model being `@@tenant(none)`. Is the tenant model always derivable from
   the schema (`resolveTenancy(schema)`), so Sierra can ask without the app
   naming the service?
+  - **A** — derived: the tenant model is the one the tenancy column relates to on the scoped models (basecamp's `workspaceId` → `Workspace`), and Sierra reads that model's service as the caller; boot refuses by name when no relation names one or two disagree.
+  - **B** — declared: the `tenancy` block gains `model Workspace`.
+  - **C** — the app names the service to Sierra, `session.tenant({ list: 'workspaces' })`.
+  - **Recommend A** — the relation already states which model the column points at, and basecamp's three relations on `workspaceId` show it is there to read; B restates it in a second place, and C leaves the three copies the paper counts as one option each. The refusal is what keeps A from guessing when a schema has no such relation.
 - **`FJS-D399`** settled how a CLI names its tenant (`cli/config/`). The browser
   answer should read the same config key, or say why it cannot.
+  - **A** — the browser build reads `cli/config/`'s `tenant.header`, the key `FJS-D399` names.
+  - **B** — the header name is stated once on the server, which already reads it (`tenantFrom`, `http.callHeaders`), and the browser and the CLI both learn it from the app's manifest.
+  - **C** — Sierra states its own `tenant: { header }`, spelled as `FJS-D399` spells it.
+  - **Recommend B** — the server is the one place a wrong header name is refused, so it is the origin, and both surfaces derive from it. A makes one surface's build read another surface's config, and C is a third statement of the same name. B amends `FJS-D399`'s key into a read of the manifest, so it lands as a ruling that says so.

@@ -677,7 +677,7 @@ const openSocket = async ($, { token, channels, settleMs = 250 }) => {
   if (!connected) return { ok: false, ws, events: () => [] }
 
   ws.send(JSON.stringify({ type: 'subscribe', channels }))
-  // Subscribing is a frame with no acknowledgement, so a publish sent in the
+  // Subscribing is a frame with no acknowledgement, so a broadcast sent in the
   // same millisecond can reach the server before the subscription does. The
   // wait is short and it is the difference between a lesson that is flaky and
   // one that teaches.
@@ -692,7 +692,7 @@ const openSocket = async ($, { token, channels, settleMs = 250 }) => {
 
 // The pair `tutor:live` asks every question with, and the reason it is here
 // rather than in a step: steps 5 and 6 open the same two clients against the
-// same publish, and two sockets built twice is how a lesson ends up proving
+// same broadcast, and two sockets built twice is how a lesson ends up proving
 // that two DIFFERENT connections behave differently.
 const bothSockets = async ($, { channels = ['notes'] } = {}) => {
   const signedIn  = await openSocket($, { token: $.config.userToken, channels })

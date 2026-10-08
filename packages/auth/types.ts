@@ -338,6 +338,13 @@ export interface AuthServicesOptions {
    * both options (`FJS-D264`).
    */
   accountRecovery?: string | false
+  /**
+   * An operator reading and ending OTHER people's sessions and API keys, and
+   * inviting somebody. Declared at ADMINISTRATOR(5), graded by the app's gate;
+   * with `standingLevel` (else `level`) the person must also grade below the
+   * operator. Every write is refused over `/mcp` and in a support episode.
+   */
+  people?: string | false
 
   /**
    * Grade the caller onto the app's own 0–7 ladder for `account.me`.

@@ -110,5 +110,11 @@ and is never enforced.
    **Recommend B.** It is the "one fact that must have one answer" that toolbelt's
    import license exists for, and the error then lands in the `.lite` file where the
    typo is.
+   - **A** — Litestone accepts any identifier, and sierra's `buildFieldRules()` refuses an unknown tone at build time.
+   - **B** — The tone list moves from `packages/css/vocabulary.js` into `@frontierjs/toolbelt`, which both litestone and css may import, and the parser refuses an unknown tone.
+   - **Recommend B** — It is the "one fact that must have one answer" that toolbelt's import license exists for (`FJS-D26`), and the error lands in the `.lite` file where the typo is. Under A, a schema that never passes through a sierra build is never checked.
 2. **Treatment as well as tone?** No call site in the corpus asked for one. Leave it out
    until one does.
+   - **A** — Tone only: `@tone(danger)`, and a treatment stays the template's choice.
+   - **B** — Both: `@tone(danger, outlined)`, carried as a second keyword beside `x-tones`.
+   - **Recommend A** — No call site in the corpus asks for a treatment, and a treatment is how a badge is drawn rather than what the value means, so it does not belong in the Data realm. Add B only when a corpus count shows status treatments mapped by hand.

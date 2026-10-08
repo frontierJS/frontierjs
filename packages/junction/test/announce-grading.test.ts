@@ -1,4 +1,4 @@
-// test/publish-grading.test.ts
+// test/announce-grading.test.ts
 //
 // `FJS-631`. A channel is a named set of connections, and joining one was an
 // ungraded GRANT: every row published there reached every member, whatever the
@@ -81,7 +81,7 @@ const ctxFor = (db: unknown, service = 'orders'): ServiceContext =>
 const ROW = { id: 1, reference: 'ORD-1001', total: 4194, userId: 'u-owner' }
 
 async function publishOnce(manager: Manager, db: unknown, row: unknown = ROW, service = 'orders') {
-  await manager.publish('orders patched', row, ctxFor(db, service), () => manager.channel('orders'))
+  await manager.announce('orders patched', row, ctxFor(db, service), () => manager.channel('orders'))
 }
 
 describe('a broadcast is graded per recipient', () => {
@@ -107,7 +107,7 @@ describe('a broadcast is graded per recipient', () => {
     expect(staff.rows()).toEqual([ROW])
   })
 
-  test('the two travel on ONE publish, which is the case a single-audience test cannot see',
+  test('the two travel on ONE broadcast, which is the case a single-audience test cannot see',
     async () => {
       const manager = createChannelManager()
       const anon    = subscriber(manager, 'orders', null)
@@ -195,7 +195,7 @@ describe('cohorts', () => {
     manager.channel('everything').join(s.conn as never)
     const { asked, db } = boundary(() => ROW)
 
-    await manager.publish('orders patched', ROW, ctxFor(db),
+    await manager.announce('orders patched', ROW, ctxFor(db),
       () => [manager.channel('orders'), manager.channel('everything')])
 
     expect(asked.length).toBe(1)
@@ -213,7 +213,7 @@ describe('what is not graded, and why that is not a hole', () => {
     const anon    = subscriber(manager, 'products', null)
     const { asked, db } = boundary(() => null, 'open')
 
-    await manager.publish('products patched', ROW, ctxFor(db, 'products'),
+    await manager.announce('products patched', ROW, ctxFor(db, 'products'),
       () => manager.channel('products'))
 
     expect(asked.length).toBe(0)
@@ -227,7 +227,7 @@ describe('what is not graded, and why that is not a hole', () => {
     const anon    = subscriber(manager, 'orders', null)
     const { asked, db } = boundary(() => null)
 
-    await manager.publish('orders changed', [{ id: 1 }, { id: 2 }], ctxFor(db),
+    await manager.announce('orders changed', [{ id: 1 }, { id: 2 }], ctxFor(db),
       () => manager.channel('orders'))
 
     expect(asked.length).toBe(0)
@@ -241,7 +241,7 @@ describe('what is not graded, and why that is not a hole', () => {
     const manager = createChannelManager()
     const anon    = subscriber(manager, 'orders', null)
 
-    await manager.publish('orders patched', ROW,
+    await manager.announce('orders patched', ROW,
       { service: 'orders', locals: {}, app: {} } as unknown as ServiceContext,
       () => manager.channel('orders'))
 

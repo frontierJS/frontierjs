@@ -204,6 +204,7 @@ const HELP = `
     ${cyan('litestone migrate verify')}            check if live db matches schema
     ${cyan('litestone db push')}                    apply schema directly — no migration files (dev)
     ${dim('  --accept-data-loss')}                  allow a change that drops a column and its values
+    ${dim('  at a terminal, a drop asks y/N instead; anywhere else it refuses')}
     ${cyan('litestone types')} [out.d.ts]            generate TypeScript declarations from schema
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
@@ -7208,9 +7209,22 @@ async function cmdDbPush(cfg) {
   // Open a temporary createClient just to get $rawDbs wired up correctly
   const db = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
 
-  const t0      = performance.now()
+  let t0        = performance.now()
   const results = autoMigrate(db, null, { acceptDataLoss: flag('accept-data-loss') })
-  const ms      = (performance.now() - t0).toFixed(0)
+  let elapsed   = performance.now() - t0
+
+  // Only a terminal is asked: a script, CI or an agent gets the refusal, which
+  // is what Prisma does too. The second pass takes only the databases the
+  // person answered for — the rest were already applied or refused for a
+  // reason a yes does not cover.
+  const lost = Object.entries(results).filter(([, r]) => r.state === 'blocked' && r.dataLoss?.length)
+  if (lost.length && process.stdin.isTTY && await confirmDataLoss(lost, hasDbs)) {
+    t0 = performance.now()
+    const again = autoMigrate(db, null, { acceptDataLoss: true })
+    elapsed += performance.now() - t0
+    for (const [dbName] of lost) results[dbName] = again[dbName]
+  }
+  const ms = elapsed.toFixed(0)
 
   let anyChanges = false
   let refused    = false
@@ -7269,6 +7283,31 @@ async function cmdDbPush(cfg) {
     console.log(`  ${green('✓')}  DB is already in sync with schema  ${dim(`(${ms}ms)`)}`)
   }
   console.log()
+}
+
+// A drops-only diff is also what a database migrated by a NEWER build looks
+// like, and a yes there deletes the column that build is writing — so the
+// question says so rather than leaving it to the warning above it.
+async function confirmDataLoss(lost, hasDbs) {
+  console.log(`  ${yellow('!')}  This push drops these columns and every value in them:\n`)
+  for (const [dbName, r] of lost) {
+    for (const l of r.dataLoss) {
+      const at   = hasDbs ? `${cyan(dbName)}  ` : ''
+      const hint = l.renameTo ? dim(`  — a rename to ${l.renameTo}? a yes drops the values instead`) : ''
+      console.log(`       ${at}${l.columns.map(c => `${l.table}.${c}`).join(', ')}${hint}`)
+    }
+  }
+  if (lost.some(([, r]) => r.onlyDrops))
+    console.log(`\n     ${dim('The change only removes. If a newer build migrated this database, answer no.')}`)
+  console.log()
+
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  let answer
+  try { answer = (await rl.question('  apply anyway? [y/N] ')).trim().toLowerCase() }
+  finally { rl.close() }
+  console.log()
+  return answer === 'y' || answer === 'yes'
 }
 
 

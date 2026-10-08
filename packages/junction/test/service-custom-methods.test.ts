@@ -65,7 +65,7 @@ describe('the action table', () => {
   })
 
   test('a `channel` FUNCTION is an option, not an action', () => {
-    // publish accepts a function, so the scan has to keep letting the deny-list
+    // `channel` accepts a function, so the scan has to keep letting the deny-list
     // win here — this is the case the list was widened for.
     const svc = createService({
       name: 'things', model: 'thing',

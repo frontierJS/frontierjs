@@ -18,6 +18,11 @@
 //   connections GET /connections      which providers are attached
 //               DEL /connections/{id} detach one
 //   account-recovery POST /account-recovery/{userId}  X-Service-Method: resetTotp
+//   people     GET  /people/{userId}               their sessions and API keys
+//              POST /people/{userId}               X-Service-Method: revokeSession ·
+//                                                  revokeApiKey · signOut
+//              DEL  /people/{userId}               the account and its credentials
+//              POST /people                        X-Service-Method: invite
 //
 // Four nouns are the caller's OWN: every method on them scopes to
 // `ctx.auth.user.userId` and nothing takes a user id from the caller.
@@ -47,6 +52,7 @@ export const DEFAULT_SERVICE_NAMES = {
   apiKeys:  'api-keys',
   connections: 'connections',
   accountRecovery: 'account-recovery',
+  people:   'people',
 } as const
 
 export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): Service[] {
@@ -81,6 +87,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     apiKeys:  opts.apiKeys  ?? DEFAULT_SERVICE_NAMES.apiKeys,
     connections: opts.connections ?? DEFAULT_SERVICE_NAMES.connections,
     accountRecovery: opts.accountRecovery ?? DEFAULT_SERVICE_NAMES.accountRecovery,
+    people:   opts.people   ?? DEFAULT_SERVICE_NAMES.people,
   }
 
   for (const [key, name] of Object.entries(names)) {
@@ -184,6 +191,31 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
    * `@@gate` — which refuses a declared level on a CRUD verb (`FJS-D408`).
    */
   const signedIn = (...methods: string[]) => methods.map(method => ({ method, gate: LEVELS.VISITOR }))
+
+  /**
+   * The operator and the person they are acting on. A write passes `what` and is
+   * refused when delegated; a read does not. Not the operator themselves —
+   * `sessions` and `api-keys` are that — and, where a resolver is given, not
+   * anybody standing at or above them.
+   */
+  async function aim(ctx: ServiceContext, what?: string): Promise<{ operator: SessionContext; person: SessionContext }> {
+    const operator = caller(ctx)
+    if (what) refuseDelegated(ctx, operator, what)
+    const userId = String(ctx.id ?? '')
+    if (!userId || userId === 'me' || userId === operator.userId) {
+      throw new Forbidden('That is your own account — manage it from sessions and api-keys')
+    }
+    const person = await need('sessionFor')(userId)
+    if (!person) throw new NotFound(`No user '${userId}'`)
+    if (standingLevel) {
+      const mine = standingLevel(operator)
+      const theirs = standingLevel(person)
+      if (!Number.isFinite(mine) || !Number.isFinite(theirs) || !(theirs < mine)) {
+        throw new Forbidden('That account stands at or above yours — it cannot be managed from here')
+      }
+    }
+    return { operator, person }
+  }
 
   const services: Service[] = []
 
@@ -483,6 +515,82 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       }
 
       return need('resetTotp')(userId, { actorId: operator.userId })
+    },
+  }))
+
+
+  // ─── people ───────────────────────────────────────────────────────────────
+  //
+  // An operator looking at, and ending, the ways OTHER people are signed in —
+  // the half of `sessions` and `api-keys` that is deliberately not the caller's
+  // own — and inviting somebody in. The floor is ADMINISTRATOR(5), DECLARED, so
+  // the app's own gate grades it and this states no second role→level mapping.
+  // Where `standingLevel` (else `level`) is given the person must also grade
+  // BELOW the operator, the rule `account-recovery` holds to: an administrator
+  // cannot sign out a peer. Where it is absent that one check is skipped and
+  // the floor is all there is.
+  //
+  // Reading is open to an agent over `/mcp`, as it is on `sessions`. Every write
+  // is refused there and in a support episode: a signed-out person, a revoked
+  // key and an invitation are each a way in or out that outlives the call. An
+  // invitation also returns the token that sets a first password, which is a
+  // credential in a response — so it is the sharpest of them.
+
+  if (names.people !== false) services.push(createService({
+    name: names.people as string,
+    model: null,
+    methods: ['get', 'revokeSession', 'revokeApiKey', 'signOut', 'remove', 'invite']
+      .map(method => ({ method, gate: LEVELS.ADMINISTRATOR })),
+
+    async get(ctx: ServiceContext) {
+      const { person } = await aim(ctx)
+      const [sessions, apiKeys] = await Promise.all([
+        need('listSessions')(person.userId),
+        need('listApiKeys')(person.userId),
+      ])
+      return { userId: person.userId, sessions, apiKeys }
+    },
+
+    async revokeSession(ctx: ServiceContext) {
+      const { operator, person } = await aim(ctx, 'sign somebody out')
+      const sessionId = String((ctx.data as { sessionId?: unknown } | undefined)?.sessionId ?? '')
+      if (!sessionId) throw new BadRequest('sessionId is required')
+      await need('revokeSession')(person.userId, sessionId, { actorId: operator.userId })
+      return { id: sessionId }
+    },
+
+    async revokeApiKey(ctx: ServiceContext) {
+      const { operator, person } = await aim(ctx, "revoke somebody's API key")
+      const keyId = String((ctx.data as { keyId?: unknown } | undefined)?.keyId ?? '')
+      if (!keyId) throw new BadRequest('keyId is required')
+      await auth.revokeApiKey(keyId, { userId: person.userId, actorId: operator.userId })
+      return { id: keyId }
+    },
+
+    async signOut(ctx: ServiceContext) {
+      const { operator, person } = await aim(ctx, 'sign somebody out')
+      const revoked = await need('revokeSessions')(person.userId, { actorId: operator.userId })
+      return { revoked }
+    },
+
+    // The account, its credentials and its sessions. `users.remove` deletes the
+    // row alone, which leaves a password hash with no one to belong to.
+    async remove(ctx: ServiceContext) {
+      const { operator, person } = await aim(ctx, 'remove somebody')
+      await need('deleteUser')(person.userId, { actorId: operator.userId })
+      return { id: person.userId }
+    },
+
+    // POST /people — no id: the person does not exist yet.
+    async invite(ctx: ServiceContext) {
+      const operator = caller(ctx)
+      refuseDelegated(ctx, operator, 'invite somebody')
+      const { email, name } = (ctx.data ?? {}) as { email?: unknown; name?: unknown }
+      if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BadRequest('email must be an address')
+      if (name !== undefined && name !== null && typeof name !== 'string') throw new BadRequest('name must be text')
+      return need('createInvitation')(email.trim().toLowerCase(), {
+        ...(name ? { name: name as string } : {}), actorId: operator.userId,
+      })
     },
   }))
 

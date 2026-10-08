@@ -111,15 +111,15 @@ a document. Same instinct as the schema — one artifact, read by both a human a
 
 ## Where the vision actually is
 
-### Slices are the payoff, and everything above is the setup
+### Rigs are the payoff, and everything above is the setup
 
-Because all three realms derive from one seed, a slice can be a *schema fragment* + services +
+Because all three realms derive from one seed, a rig can be a *schema fragment* + services +
 resources + routes + jobs, and installing it **merges into your schema** — your migration, your
 gates, your generated forms. `authSchemaFragments()` already proves the mechanism works: auth
 contributes models *into* your data model rather than living beside it.
 
 Nobody can do this. Rails engines cannot safely touch your schema. npm packages cannot ship data +
-API + UI as one unit. If `fli slice:install billing` gives you Stripe models in your schema,
+API + UI as one unit. If `fli rig:install billing` gives you Stripe models in your schema,
 webhook handlers, a customer portal route, and dunning jobs — all gated, all validated, all in your
 migration history — that is a category nobody occupies. **This is the thing to build next.**
 

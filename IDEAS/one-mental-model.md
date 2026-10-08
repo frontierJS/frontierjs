@@ -293,7 +293,7 @@ frameworks — comments explain *why*, not *what*. Specific issues:
   to return `void`, force async into `boot`.
 - **No ordering or dependency mechanism.** No `depends`/`after`/`priority` exists;
   order is just `configure()` call order. This need has now surfaced three times —
-  here, in `IDEAS/slices.md` as `after:`, and as a comment in
+  here, in `IDEAS/rigs.md` as `after:`, and as a comment in
   `packages/notifications/examples/wiring.ts` that nothing enforces. It belongs in
   the `Plugin` interface as `requires?: string[]`, checked at boot against
   `app._plugins`.
@@ -438,7 +438,7 @@ belongs in `DECISIONS.md`; an unwritten maybe is the thing to remove.
    collision.
 8. ~~**Settle the four extension concepts**~~ — Declaration / Hook / Plugin / Provider
    (§5) — **ruled**, `FJS-D06`: three hook tiers rather than five, Provider is a
-   third party, Slice waits for a second author.
+   third party, Slice waits for a second author (since ruled: *Rig*, `FJS-D630`).
 9. ~~**Narrow Junction's `register` to `() => void`; name the start phases**~~ (§5q)
    — **done**: `runStartPhases(bindHost)`.
 
@@ -446,10 +446,10 @@ belongs in `DECISIONS.md`; an unwritten maybe is the thing to remove.
 
 ## Interaction with the other ideas
 
-Item 4 changes what a Slice's `resource/` part means: a slice would contribute to
-a **target**, not to "the UI" generically — a slice could ship an `extension`
+Item 4 changes what a Rig's `resource/` part means: a rig would contribute to
+a **target**, not to "the UI" generically — a rig could ship an `extension`
 surface and a `spa` surface from one component set. That should be settled before
-`IDEAS/slices.md` specifies `resource/`.
+`IDEAS/rigs.md` specifies `resource/`.
 
 Item 3 is also the natural vehicle for the framework-shape assessment (since deleted) item 1
 (schema → UI): a schema-derived form is just another Mesa target consumer, and
@@ -460,4 +460,4 @@ building it as one keeps it target-independent — which is what
 
 - `ARCHITECT.md` §2 (mandatory vocabulary, and the "under review" list) and §5
 - `IDEAS/offline-first-and-release.md` — targets and artifacts are the same axis
-- `IDEAS/slices.md` — what a slice's `resource/` part contributes to
+- `IDEAS/rigs.md` — what a rig's `resource/` part contributes to

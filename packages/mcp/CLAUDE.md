@@ -1,6 +1,6 @@
 # @frontierjs/mcp — the inside view
 
-**The agent surface: an MCP server derived from the seed.** Ruled `FJS-D258` —
+**The agent surface: an MCP server derived from the schema.** Ruled `FJS-D258` —
 plain name, because it owns no realm and mints no noun. It is the API realm
 spoken to an agent.
 
@@ -133,7 +133,7 @@ is not must never be added to make a list look complete.
 to the request body before the handler saw it, and whether the level a route
 reads is the level the boundary grades with — against a Junction app on a real
 port. `verify:mcp` proves the ANSWERS: a real `@modelcontextprotocol/client`, a
-real seed, a real gate ladder, and an app with no `app.db` at all.
+real schema, a real gate ladder, and an app with no `app.db` at all.
 
 **The absolute counts in `CHANGES.md` are a dated measurement and are meant to
 be.** What the drive gates is the relations and the credential absence; a

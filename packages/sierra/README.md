@@ -362,12 +362,12 @@ import {
 
 ```js
 beforeNavigate(async ({ from, to }) => {
-  if (to.path.startsWith('/admin/') && !isAdmin()) return '/login/'  // redirect
+  if (to.pathname.startsWith('/admin/') && !isAdmin()) return '/login/'  // redirect
   if (unsavedChanges) return false                                    // cancel
   return true
 })
 
-afterNavigate(({ from, to }) => trackPageview(to.path))
+afterNavigate(({ from, to }) => trackPageview(to.pathname))
 ```
 
 Both return an unsubscribe function. Guards run on the boot navigation too — the initial

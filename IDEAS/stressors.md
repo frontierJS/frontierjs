@@ -189,6 +189,9 @@ shape): one row owned by both, which a single `tenancy { column }` cannot state.
 
 ### 5. Help desk — the direct sequel to the chatbot
 
+*Phase 0 done 2026-10-07 in `fjs-prototypes/chatwoot`, whose `PLAN.md` carries
+the run.*
+
 Conduit sends and `packages/conduit/CLAUDE.md` states plainly that receiving is
 not built. A help desk is mostly receiving: a mail drop, a webhook, a widget, and
 the same human across all three under three different identities. `chat-surface.md`
@@ -876,8 +879,8 @@ Transit breaks on intake, render and send. They share
 **Where this one departs from the list's rule.** The rule says a half-built
 product is not kept in the tree. Transit is not: its code stays in
 `fjs-prototypes/transit` and is never committed here, and every fix it needs
-lands in FJS. After V1, the likely next step is a vertical slice, as `orion` is
-for automations, built into `example` and `basecamp`. That slice is the design
+lands in FJS. After V1, the likely next step is a rig, as `orion` is
+for automations, built into `example` and `basecamp`. That rig is the design
 record, not a copy of the product.
 
 Build in `fjs-prototypes/transit`, with questions in its `PLAN.md`, as below.

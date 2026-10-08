@@ -57,11 +57,23 @@ ids without a second copy.
 - **Where does it live?** `docs/` (a reference), a generated section of
   `stressors.md` (the existing owner of the list), or the `website/` (the
   audience is outside the project).
+  - **A** — `docs/`, a reference page.
+  - **B** — a generated section of `IDEAS/stressors.md`, the existing owner of the list.
+  - **C** — `website/`, beside `comparisons.json` and the comparisons page.
+  - **Recommend C** — the audience is outside the project, and `website/` already holds the one other place this repo sets itself beside other stacks. B puts answers with a *declared* or *ruled* status into an assessment, which is never cited as behavior.
 - **The source is outside the repo.** A generator reading
   `../fjs-prototypes/*/PLAN.md` depends on a sibling directory that CI does not
   have. Options: commit a snapshot, move the plans in, or give the prototypes
   a remote.
+  - **A** — commit a snapshot: the generator runs where the sibling exists and writes a committed file CI reads.
+  - **B** — move the plans into this repo.
+  - **C** — give each prototype a remote CI can clone.
+  - **Recommend A** — it is the `exports.snapshot.md` shape, a generated file committed and diffed. B and C publish the plans whole, and some of them are client engagements (maid.tech, ELA) whose plans name a live client's data; a snapshot carries only the extracted questions.
 - **The comparison column cannot be derived, and it goes stale silently.** A
   claim about another framework said in public is expensive when wrong
   (Invariant 16's spirit), so each needs a cited source and version. Nothing
   flags it when that source moves; that is unenforced today.
+  - **A** — every claim carries a source URL, the version it was read against and the date it was checked, and a check flags one older than a stated horizon.
+  - **B** — the claims live in `website/comparisons.json`, which already names each system's version and a `graded` date, and one age check on `graded` covers them.
+  - **C** — no comparison column: the catalog publishes FrontierJS's answer and status only.
+  - **Recommend B** — one owner for *FrontierJS beside other systems* already exists, and a second file stating Laravel's version is the restatement that drifts. Age is the only staleness a check can see without reading the other project's docs, so the check grades the date, not the claim. C is the fallback if a row there cannot hold a prose answer.

@@ -25,18 +25,18 @@ import type { BaseTransport } from './transports/base.ts'
 import { BrokerTransport } from './transports/broker.ts'
 import { DEFAULT_TIMEOUT_MS } from './transports/http.ts'
 
-// What a policy field may say. A number here is refused at register() rather
+// What a resilience field may say. A number here is refused at register() rather
 // than clamped, for the reason `follow_redirects` beside `hmac` is: a
 // descriptor is written by hand, and a value that cannot mean anything is a
 // typo the author wants told about, not one to be quietly replaced by the
 // default it was written to override.
 //
 // The unknown-key refusal is the finding itself. `timeout_ms` on the descriptor
-// rather than under `policy` was accepted and ignored, so a target declared with
+// rather than under `resilience` was accepted and ignored, so a target declared with
 // a 1ms timeout answered a 300ms request as a success (`FJS-728`), and TypeScript
 // cannot see it: a descriptor read out of a store is `TargetDescriptor` by
 // assertion, and excess-property checking only fires on an object literal.
-const POLICY_FIELDS = {
+const RESILIENCE_FIELDS = {
   timeout_ms:         { min: 1,  integer: false, infinite: false },
   retry_limit:        { min: 0,  integer: true,  infinite: false },
   deadline_ms:        { min: 1,  integer: false, infinite: false },
@@ -68,7 +68,7 @@ function assertDescriptor(descriptor: TargetDescriptor): void {
 
   assertRefusal(descriptor)
   assertIdempotency(descriptor)
-  assertPolicy(descriptor)
+  assertResilience(descriptor)
   assertPinnedCert(descriptor)
   assertRequestAddressed(descriptor)
   assertBroker(descriptor)
@@ -171,21 +171,21 @@ function assertIdempotency(descriptor: TargetDescriptor): void {
   }
 }
 
-function assertPolicy(descriptor: TargetDescriptor): void {
-  const policy = descriptor.policy
-  if (policy === undefined) return
+function assertResilience(descriptor: TargetDescriptor): void {
+  const stated = descriptor.resilience
+  if (stated === undefined) return
 
-  const where = `Target '${descriptor.id}' policy`
+  const where = `Target '${descriptor.id}' resilience`
 
-  if (typeof policy !== 'object' || policy === null || Array.isArray(policy)) {
-    throw new TypeError(`${where}: expected an object of policy fields`)
+  if (typeof stated !== 'object' || stated === null || Array.isArray(stated)) {
+    throw new TypeError(`${where}: expected an object of resilience fields`)
   }
 
-  for (const [key, raw] of Object.entries(policy)) {
-    const rule = POLICY_FIELDS[key as keyof typeof POLICY_FIELDS]
+  for (const [key, raw] of Object.entries(stated)) {
+    const rule = RESILIENCE_FIELDS[key as keyof typeof RESILIENCE_FIELDS]
     if (!rule) {
       throw new TypeError(
-        `${where}: unknown field '${key}'. Known fields: ${Object.keys(POLICY_FIELDS).join(', ')}`,
+        `${where}: unknown field '${key}'. Known fields: ${Object.keys(RESILIENCE_FIELDS).join(', ')}`,
       )
     }
     if (raw === undefined) continue
@@ -238,13 +238,13 @@ export function createConduit(
 
   const resilience = new Resilience(opts.resilience)
 
-  // A target's policy reaches the breaker and the concurrency gate here, and
+  // A target's resilience reaches the breaker and the concurrency gate here, and
   // nowhere else. Two feeders, one writer: `put()` for what this process
   // registers, and the router for a descriptor it read out of the store —
   // which is the only way a target another replica registered is ever graded
   // by its own numbers.
   function learn(descriptor: TargetDescriptor): void {
-    resilience.setPolicy(descriptor.id, descriptor.policy)
+    resilience.setResilience(descriptor.id, descriptor.resilience)
   }
 
   // Live broker subscriptions, by target. Read by stats() and by the health
@@ -398,7 +398,7 @@ export function createConduit(
     // away work that a wait of one reset window would have completed.
     // A request-addressed target serves many counterparties, one per row, so
     // its breaker is per origin: one dead subscriber URL closes itself and
-    // not the target. Graded by the target's own policy either way.
+    // not the target. Graded by the target's own resilience either way.
     const key = req.address === undefined ? req.target : `${req.target} ${originOf(req.address)}`
     if (key !== req.target) resilience.inherit(key, req.target)
     const admission = resilience.admit(key)

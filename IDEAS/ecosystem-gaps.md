@@ -77,7 +77,7 @@ a callback is a browser redirect, so it runs in `cookieAuth` mode, and `example`
 lifecycle, invoices, proration, dunning and a card processor's webhooks live in
 `example/api/src/domain/billing/` and a Stripe connector in `providers/stripe/`,
 driven by `verify:billing`, `verify:proration`, `verify:collect` and `verify:stripe`.
-What is still open is whether it becomes a Slice (`IDEAS/slices.md`), which is the
+What is still open is whether it becomes a Rig (`IDEAS/rigs.md`), which is the
 canonical case for that format. Laravel's equivalent is Cashier.
 
 ### 3. Object storage driver — ~~missing~~ **shipped in the wrong package; the gap is a duplicate abstraction**
@@ -209,7 +209,7 @@ signature check.
 
 ### 7. Feature flags
 
-No equivalent to Laravel Pennant. Natural fit as a small slice over a Litestone
+No equivalent to Laravel Pennant. Natural fit as a small rig over a Litestone
 model plus a Junction plugin exposing `app.features`.
 
 ### 8. Browser / end-to-end testing — **in the repo, not offered to an app**
@@ -263,9 +263,9 @@ into `fli upgrade --to 1.1` plus a diff to read. **Treat that rename as the
 reference test case:** an upgrade tool that cannot do it automatically is not worth
 shipping.
 
-**Slices need this too.** A slice that bumps a major version has the same problem in
-miniature, which argues for an upgrade contribution in the slice format — see the
-open question added to `IDEAS/slices.md`.
+**Rigs need this too.** A rig that bumps a major version has the same problem in
+miniature, which argues for an upgrade contribution in the rig format — see the
+open question added to `IDEAS/rigs.md`.
 
 ### 11. Rate limiting — ~~missing~~ **shipped in junction**
 
@@ -340,8 +340,8 @@ still unwritten. Mostly not code:
   narrower than a scanner, because the app model knows which surfaces are *reachable*,
   not merely installed.
 
-Interaction with `IDEAS/slices.md`: the moment a third party can ship a slice, the
-advisory channel has to cover slices too, and a registry (item 3.6 in the overview)
+Interaction with `IDEAS/rigs.md`: the moment a third party can ship a rig, the
+advisory channel has to cover rigs too, and a registry (item 3.6 in the overview)
 without one is a supply chain with no way to say *stop using this*. Better to have the
 format before the registry than after.
 
@@ -566,7 +566,7 @@ Still needed:
 - **Starter kits.** `fli project:new` scaffolds; it does not produce an app with
   auth screens, a dashboard and billing already wired. Laravel Breeze and Jetstream
   are a significant share of why starting is easy there.
-- **A slice registry.** `IDEAS/slices.md` is the ecosystem answer — it is how a
+- **A rig registry.** `IDEAS/rigs.md` is the ecosystem answer — it is how a
   community fills tier 2 instead of this project building all of it.
 
 ---
@@ -588,7 +588,7 @@ So the sequencing that follows from that:
    ships without them and no community will fill them early. **i18n left this
    list on 2026-08-15** (`FJS-D12`): it is V2, and what alpha owes it is six
    constraints rather than a build.
-2. **Make slices real** (`IDEAS/slices.md`) so tier 2 can be filled by other people.
+2. **Make rigs real** (`IDEAS/rigs.md`) so tier 2 can be filled by other people.
 3. **Treat documentation as a product**, with the same seriousness as a package.
 4. **Repair or retire `admin:generate`.** It is either the fastest route to a
    schema→UI story or dead weight advertising a feature that does not run. Both are
@@ -604,6 +604,6 @@ line is true.
 
 ## See also
 
-- `IDEAS/slices.md` — the distribution format that lets others fill tier 2
+- `IDEAS/rigs.md` — the distribution format that lets others fill tier 2
 - `IDEAS/offline-first-and-release.md` — where the deployment story is going
 - `website/README.md` — the publication gate for the launch-voice copy

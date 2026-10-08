@@ -14,7 +14,7 @@
 //   • Mailer stub — IMail implementation, no external service
 //   • OpenAPI + Scalar UI at /api/docs
 //   • Health + metrics endpoints
-//   • App-level hooks for publish + audit logging
+//   • App-level hooks for announce + audit logging
 //   • Standard middleware (CORS, correlation IDs, request logger)
 //
 // The point of this file is to be a "show me what Junction looks like" demo
@@ -63,7 +63,7 @@ import {
   createService,
   createLogger,
   channels,
-  publish,
+  announce,
   authenticate,
   protect,
   openapi,
@@ -293,7 +293,7 @@ app.hooks({
 })
 
 // ─── Leads service ────────────────────────────────────────────────────────
-// Full CRUD on the `leads` model with a publish hook on every mutation.
+// Full CRUD on the `leads` model with a announce hook on every mutation.
 // Schema gate is "0.4.4.5": reads are public, writes require auth, delete
 // requires admin. The `authenticate` before-hook is technically redundant
 // with the gate (Litestone enforces it) but makes the contract explicit
@@ -305,7 +305,7 @@ app.hooks({
 //     find/get response. Useful for "list this publicly but don't leak PII"
 //     patterns. Tracked clients can still see the full record on their own
 //     authenticated endpoints; the public list is sanitized.
-//   • publish (after write) — broadcasts the change to WS subscribers.
+//   •   announce (after write) — broadcasts the change to WS subscribers.
 //
 // Custom method `getStats` demonstrates that services aren't only CRUD —
 // any function on the service options object becomes a callable method,
@@ -326,9 +326,9 @@ app.services.register(
       after: {
         find:   [protect('email')],
         get:    [protect('email')],
-        create: [publish((_r, _ctx) => app.channel?.('leads') ?? null)],
-        patch:  [publish((_r, _ctx) => app.channel?.('leads') ?? null)],
-        remove: [publish((_r, _ctx) => app.channel?.('leads') ?? null)],
+        create: [announce((_r, _ctx) => app.channel?.('leads') ?? null)],
+        patch:  [announce((_r, _ctx) => app.channel?.('leads') ?? null)],
+        remove: [announce((_r, _ctx) => app.channel?.('leads') ?? null)],
       },
     },
 
@@ -413,9 +413,9 @@ app.telemetry.on('junction.call.end', (ev: unknown) => {
   }
 })
 
-app.telemetry.on('junction.channel.publish', (ev: unknown) => {
+app.telemetry.on('junction.channel.announce', (ev: unknown) => {
   const e = ev as { channel?: string; recipients?: number }
-  log.debug(`[publish] ${e.channel} → ${e.recipients} clients`)
+  log.debug(`[announce] ${e.channel} → ${e.recipients} clients`)
 })
 
 // ─── Scheduled job ────────────────────────────────────────────────────────

@@ -454,7 +454,7 @@ await db.auditLogs.findMany({ where: { model: 'User' } })  // → audit/ (auto-c
 
 ## Multi-tenancy
 
-**Declared in the seed, one block, two strategies.** At most one per schema, and
+**Declared in the schema, one block, two strategies.** At most one per schema, and
 it may not arrive through an import — only the app knows what its own tenants are.
 
 ```prisma

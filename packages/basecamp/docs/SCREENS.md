@@ -382,7 +382,7 @@ What the three decided, each written at its call site:
 `info | warning | critical` — so **the schema's own default was a value the API
 refused**. Nothing had ever exercised it because nothing could reach the model.
 
-Fixed by making the schema the seed it is meant to be: `enum AlertSeverity {
+Fixed by making the schema the origin it is meant to be: `enum AlertSeverity {
 info warning critical }`, `@default(warning)`, migration regenerated. The
 service's hand-written check is **deleted** — the column carries a CHECK,
 `autoValidate` refuses a bad value before the method runs, and the UI's `<Select>`
@@ -868,7 +868,7 @@ the script into a terminal instead. Ruled in the repo's `DECISIONS.md`.
 **`targets ReclaimTarget[]` does not parse** — *array [] is only supported for
 Text, Integer, File, or a model name for many-to-many* (`FJS-141`). The parser
 is right that SQLite has no array type, but the consequence is that a
-set-valued vocabulary cannot be declared in the seed at all: a single-valued
+set-valued vocabulary cannot be declared in the schema at all: a single-valued
 enum gets a CHECK, a `$def` and one declaration feeding column, API and picker,
 and the set-valued case gets none of it.
 

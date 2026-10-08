@@ -197,26 +197,78 @@ useful.
   Note the shipped transition check *does* bypass under `ctx.isSystem`
   (`client.js:1950`), so "match transitions" currently means "bypass" — which may be
   the wrong precedent to inherit.
+  - **Recommend A** — `FJS-D502` already answers this: `asSystem()` lifts authority and
+    holds integrity rules, so a cascade holds under it, and `sys.sql` is the one
+    bypass that says it is one.
 - **Does `updateMany` cascade?** Transitions explicitly do not fire on bulk ops, by a
   documented decision. A cascade that silently does not propagate on `updateMany`
   reproduces exactly the drift the feature exists to prevent, so the answer here
   probably has to differ — and then two schema rules behave differently on the same
   call, which needs a ruling rather than an implementation choice.
+  - **A** — refuse the source key on a bulk write, as `FJS-D182` does for the
+    transitions key, and leave per-row writes to `update()` or junction's
+    `bulkByRow`.
+  - **B** — cascade on `updateMany`: take the matched parent ids by `RETURNING`, as a
+    bulk write on a logged model already does, and run the child statement over
+    them.
+  - **Recommend B** — transitions refuse a bulk write because it has no *from* state
+    to grade; a cascade needs only the parent ids, and both mode guards make the
+    child statement idempotent without the old value. The two rules then differ
+    for a reason the docs can state in one line, rather than by habit.
 - **Gates on the child.** The cascade writes rows the caller may have no level to
   write. Soft delete already made this choice implicitly (it does not check). Stating
   it is the point: a cascade is a system write caused by an authorized one.
+  - **A** — the child's gate is not checked: the parent's gate authorized the cause,
+    and each child audit entry names the caller as actor and the parent write as
+    the cause.
+  - **B** — the caller needs update level on every child model, and the whole write
+    is refused when it lacks one.
+  - **C** — children the caller cannot write are skipped.
+  - **Recommend A** — a cascade is integrity, and `FJS-D502` already splits integrity
+    from authority. B lets a child model's gate veto a parent write the caller is
+    allowed to make, and C is the silent drift the feature exists to end.
 - **How many hops?** BFS matches the cascade precedent; one hop is easier to reason
   about and easier to explain in an error message.
+  - **A** — one hop: the declaring model's direct children.
+  - **B** — the breadth-first walk with a cycle guard, as `@@softDelete(cascade)`
+    does.
+  - **C** — one hop per declaration, chained: a child that declares its own
+    `@@cascade` on the received field carries it a hop further, with a cycle guard.
+  - **Recommend C** — every hop is written on the model it leaves, so the walk can
+    reach no model that did not say so and each error names one hop. `@@softDelete(cascade)`
+    then desugars into one declaration per model on the walk, generated rather
+    than inferred at runtime.
 - **Direction.** Only parent → children is proposed. Child → parent (Rails' `touch`)
   is a different rule — an aggregate — and belongs with `@from(relation, max:)`.
+  - **A** — parent to children only; child to parent is an aggregate and stays with
+    `@from(relation, max:)`, which ships.
+  - **B** — both directions in `@@cascade`.
+  - **Recommend A** — the upward case is already derivable on read, so a stored copy
+    would restate it and could drift from it.
 - **Does `mirror` fight `@@transitions`?** A mirrored enum writes a child's status
   without going through its transition table. Either the cascade respects transitions
   on the child (and can therefore fail mid-write) or it is a declared bypass. The
   second is simpler and has to be written down.
+  - **A** — the cascade respects the child's transitions, and the whole write rolls
+    back when any child cannot move.
+  - **B** — a declared bypass: `mirror` writes the child's status off its machine.
+  - **C** — a schema error: `mirror` into a field the child's `@@transitions` governs
+    does not parse.
+  - **Recommend C** — B is the integrity bypass `FJS-D502` refused to give even
+    `asSystem()`, and A fails at runtime on data the schema could have refused at
+    parse. C stays until a product needs a mirrored status, and A is the answer then.
 - **Does this open the door to triggers generally?** It should not, and the boundary
   is type rule 2 plus: no computed values, no conditions beyond the mode guard, no
   side effects. A cascade that can send email is a framework inside the framework —
   the same line `state-machines.md` draws for transitions.
+  - **A** — the grammar is the boundary: `@@cascade` takes a source field, a relation
+    field path and a mode, so a computed value, a condition or a side effect has no
+    spelling.
+  - **B** — admit a `where:` on the child, the one extension a real case asks for
+    (*only open messages*), still with no computed values and no side effects.
+  - **Recommend A** — `once`'s guard already covers *only open* for the motivating
+    case, and a predicate turns a cascade into a conditional trigger. General
+    triggers already have an owner, Orion's flows (`FJS-D269`).
 
 ## See also
 

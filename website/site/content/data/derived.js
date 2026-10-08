@@ -10,7 +10,7 @@ export const derived = [
   { title: 'Validation',      line: 'Every write checked against the field rules in the schema.',        tag: 'autoValidate()' },
   { title: 'Authorization',   line: 'Who can read and write a row is declared on the model.',            tag: '@@gate' },
   { title: 'Pagination',      line: 'Limits, offsets and cursors on every list, with no slicing in memory.', tag: '$after' },
-  { title: 'Live updates',    line: 'Lists change on screen when the rows change.',                      tag: 'publish()' },
+  { title: 'Live updates',    line: 'Lists change on screen when the rows change.',                      tag: 'announce()' },
 
   { title: 'Migrations',      line: 'The schema is diffed against the live database. You never write a migration file.' },
   { title: 'Typed client',    line: 'The browser knows every service, field and filter.',                tag: 'ServiceTypes' },

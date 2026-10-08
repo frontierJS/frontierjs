@@ -31,6 +31,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | --- | --- | --- |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 12 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 6 |
@@ -39,7 +40,6 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
-| `publish()` | `packages/junction/src/transport/channels.ts` | 3 |
 
 ## Data → API
 
@@ -132,7 +132,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
 | `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
-| `publish()` | `packages/junction/src/transport/channels.ts` | yes | 3 |
+| `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/junction/index.js` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | yes | 6 |

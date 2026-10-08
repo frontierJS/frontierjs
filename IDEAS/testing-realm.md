@@ -667,7 +667,7 @@ The eleven, ranked by how likely they are to be wrong today rather than by size:
 | 2 | `buildFieldRules()` ⇄ junction's `autoValidate` | The canonical Rainsberger pair — client validates, server validates, they must agree. The sierra module was deliberately built leaf-shaped *so it could be compared rather than copied*, and the comparison was never written |
 | 3 | ~~`authSchemaFragments()` ⇄ `cli/commands/auth/install.md`~~ | **Closed 2026-08-15 (`FJS-038`).** Auth ships the models as `.lite` and the CLI reads those bytes; a scaffolded app gets the schema auth ships |
 | 4 | `x-messages` keyword table | One owner, two consumers looking up the keyword they failed. A rename in litestone silently loses a message in junction *and* sierra, and a missing validation message is invisible |
-| 5 | `publish()` event names ⇄ subscribers | The only entry with a drift already named in `CLAUDE.md`: jetty hardcodes Feathers-style names, and litestone's `onEvent` has no Junction subscriber |
+| 5 | `announce()` event names ⇄ subscribers | The only entry with a drift already named in `CLAUDE.md`: jetty hardcodes Feathers-style names, and litestone's `onEvent` has no Junction subscriber |
 | 6 | `$checkWhere` / `$checkOrderBy` | A real request/response shape, with a clause easy to get wrong: an unknown accessor answers `[]`, and *I cannot judge this* is not *this is wrong* |
 | 7 | `toFieldErrors()` | Three wire shapes reach it because each hop wraps once. Each is a contract with a different producer, and `err.data.data` exists because one of them was found by accident |
 | 8 | `IAuth` | Declared by junction, implemented by auth. The stub is trivially generatable from the interface, and there is a live hole to pin: junction calls `verifyApiKey` nowhere |
@@ -859,15 +859,49 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
 - What is a generated test's escape hatch when a model legitimately violates a
   generated expectation, and how loud is opting out? An escape hatch nobody can find
   gets answered by disabling the whole generated suite in month three.
+  - **A** — no hatch in the runner. `verifyGateLadder()` returns rows and the
+    caller's own test filters them, which is what basecamp's `schema.test.ts`
+    does with `skipped` today.
+  - **B** — a named `except: [{ model, op, level?, because }]` option on
+    `verifyGateLadder` and `verifyRowPolicies`. An excepted row stays in the
+    result as `got: 'excepted'` with its reason, the way `@@tenant(none)` already
+    comes back as `exempt`.
+  - **C** — declare the exception in the schema beside the gate, so it renders
+    into `db/access.snapshot.md` and is reviewed with the schema change.
+  - **Recommend B** — the paved-road adjudication says the hatch is
+    instrumentation as much as relief. A filter in a test file is silent, and
+    `rows.filter(() => false)` is exactly how the whole suite gets disabled in
+    month three. C puts a test noun into the Data language for a case not yet
+    seen once. B keeps every opt-out in the result with its reason, so the count
+    of them measures the road.
 - Do generated tests get deleted by developers in practice? Researched and **not
   answered** — web search found nothing usable, and the question needs repo
   archaeology rather than search. It matters, because it is the empirical test of
   whether Phase 1's output is trusted or tolerated. The snapshot is the first
   chance to watch this happen here: a stale one that keeps getting regenerated
   without its diff being read is the same failure wearing a smaller diff.
+  - **A** — keep it as research: repo archaeology over scaffold-generated tests
+    (Rails, Django, Prisma) before Phase 4 claims the output is trusted.
+  - **B** — close the file half as moot: Phase 1b derives at run time and emits
+    no test file, so there is nothing to delete. What is left is an app dropping
+    its `verifyGateLadder()` call or its `db/access.snapshot.md`, which a
+    `fli check` rule over the app can name.
+  - **C** — measure it from the escape hatch: count the excepted rows across
+    apps, once the first question's `except` exists.
+  - **Recommend B** — then C once `except` ships. Repo archaeology answers a
+    question about emitted files, and this framework does not emit them. The
+    remaining failure, a suite or snapshot quietly removed, is silent today and
+    § V's ninth question asks for the artefact that says so.
 - Does an app want the ladder in the snapshot as well as the required level? Today
   it renders `2 READER` per operation and the ladder is derivable from that.
   Rendering all nine columns would be the same information at nine times the diff.
+  - **A** — the required level per operation only, as `db/access.snapshot.md`
+    renders it today (`2 READER`).
+  - **B** — all nine levels per operation, allow or deny in each column.
+  - **Recommend A** — A is what ships, and the ladder is derived from the level
+    by `levelPasses`, so B restates it at nine times the diff. The one thing the
+    ladder showed that a single level hid, a delete easier than its update, is
+    visible side by side in the existing row.
 
 **Answered by Phase 5:**
 
@@ -875,18 +909,33 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
   Rainsberger's sense?~~ **About eleven**, two of them now built. See § The
   triage; the ranking is the useful part, and the top four are hand copies or
   lookup tables, which are the cheapest pairs to generate.
+  - **A** — about eleven, ranked in § The triage, generated top-down.
+  - **B** — treat every Bridge index entry as a boundary and pair each one.
+  - **Recommend A** — A is the paper's own answer, and two of the eleven are
+    built. Most entries are handoffs inside one owner, not two sides that can
+    drift apart.
 
 **Answered by Phase 1a:**
 
 - ~~Per app or per model file?~~ **Per app**, beside the schema
   (`db/access.snapshot.md`) — one reviewable artefact, landing in the same PR as
   the schema change that moved it.
+  - **A** — one per app, `db/access.snapshot.md` beside the schema.
+  - **B** — one per model file.
+  - **Recommend A** — A is what ships. One artefact lands in the same PR as the
+    schema change that moved it, and a per-model split multiplies the files a
+    reviewer has to open without adding a fact.
 - ~~Is `basecamp` the proving ground, ahead of `example`?~~ **Yes**, and it paid
   immediately: 37 models all gated, and the first run surfaced `Volume`
   (`@@gate("2.8.8.5")`) where delete is *easier* than update. `validateGate`
   permits it because 8 is a sentinel that does not advance the non-decreasing
   check, so `delete=5` is compared against `read=2` and passes. Intended or not,
   nothing else in the repo would have said it out loud.
+  - **A** — `basecamp` first, then `example`.
+  - **B** — `example` first, since it is the kitchen sink across every surface.
+  - **Recommend A** — A is what was done and it paid on the first run. Basecamp
+    gates every model, so it exercises the whole ladder, where `example` covers
+    more surfaces but fewer gates.
 
 ---
 
@@ -965,7 +1014,7 @@ all variations", which is `example/`'s ceiling named by someone who hit it first
 
 ## See also
 
-- `IDEAS/slices.md` — the `suite/` part and `fli slice:doctor` have nowhere to plug in
+- `IDEAS/rigs.md` — the `suite/` part and `fli rig:doctor` have nowhere to plug in
   until Phase 2 exists
 - `example/README.md` § *Found by building this* — the defect ledger § Method is
   argued against

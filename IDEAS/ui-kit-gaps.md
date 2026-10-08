@@ -64,7 +64,32 @@ site's, so `site-kit`'s rather than the kit's.
 - Does Tag Input replace `json` for every `String[]`, or only one that declares it?
   The `case 'array'` comment's reason — the schema stops describing the value — does
   not hold for an array of strings.
+  - **A** — every scalar list, with no new component: `case 'array'` answers a
+    list with `items` as `MultiSelect` with `allowNew` and no options, and the
+    Tag Input behaviors (comma, paste) are added to MultiSelect.
+  - **B** — every `String[]` gets a new `TagInput` component.
+  - **C** — only a column that declares it gets one; the rest stay `json`.
+  - **Recommend A** — A is what ships in `sierra/src/junction/field-rules.js`
+    `case 'array'`, which already stopped answering `json` for a scalar list.
+    What remains is MultiSelect learning comma and paste, not a second control
+    for the same value.
 - Is Toggle Group a `RadioGroup` treatment rather than a component? Single-select
   Toggle Group is radio semantics; multi-select is not.
+  - **A** — no component: a lone toggle is `Button` with `pressed`
+    (`aria-pressed`), single-select is a segmented treatment of `RadioGroup`, and
+    multi-select is the same treatment over a row of checkboxes.
+  - **B** — a `ToggleGroup` component of `aria-pressed` buttons with a
+    `multiple` prop.
+  - **Recommend A** — native inputs bring the keyboard, the form value and the
+    a11y with them, and the look is a treatment, which is how Invariant 13 says
+    a variant is spelled. B rebuilds radio and checkbox semantics on buttons and
+    adds a noun the kit does not need.
 - Gauge or Meter? Sivir's word is the ecosystem's; `<meter>` is the platform's and
   carries the thresholds. Choosing is a naming decision (*familiarity vs. precision*).
+  - **A** — `Gauge`, a new radial component.
+  - **B** — `Meter`, a new radial component over `<meter>`.
+  - **C** — `Meter` over `<meter>`, replacing `Bar`, with radial as a shape of it.
+  - **Recommend C** — `Bar` is already this component (*how full is this*, CPU
+    and memory and disk) built on `<progress>`, the element for task completion,
+    so a screen reader announces a disk as a task. One component on the
+    platform's element with the platform's word, and the drawing is a treatment.

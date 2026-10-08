@@ -1563,7 +1563,7 @@ describe('WebSocket transport — connection lifecycle', () => {
   })
 })
 
-// ─── Retry policy (§2.5, §2.6) ───────────────────────────────
+// ─── Retries (§2.5, §2.6) ─────────────────────────────────────
 
 // ─── duration_ms — the whole call ────────────────────────────
 //
@@ -1655,7 +1655,7 @@ describe('duration_ms is the whole call', () => {
   })
 })
 
-describe('retry policy', () => {
+describe('retries', () => {
   it('does not retry a POST without an idempotency key', async () => {
     let hits = 0
     const s = recorder(() => { hits++; return new Response('boom', { status: 500 }) })
@@ -3871,11 +3871,11 @@ describe('a connection failure names itself (FJS-710)', () => {
   })
 })
 
-// ─── Per-target policy ───────────────────────────────────────
-// Policy was conduit-wide, so one conduit carrying a card processor, a mail
+// ─── Per-target resilience ───────────────────────────────────
+// Resilience was conduit-wide, so one conduit carrying a card processor, a mail
 // sink and an outpost graded all three by one set of numbers — and a field
 // written onto a descriptor was dropped in silence (`FJS-728`). Every
-// assertion here is a PAIR: the target that declared a policy beside an
+// assertion here is a PAIR: the target that declared its own numbers beside an
 // otherwise identical target on the same conduit that did not, because a
 // change that applied the number to everything would look identical from the
 // declaring side.
@@ -3898,7 +3898,7 @@ function slowServer(delayMs: number) {
   }
 }
 
-describe('per-target policy', () => {
+describe('per-target resilience', () => {
   it('a target timeout applies to that target and not to its sibling', async () => {
     const server = slowServer(200)
     try {
@@ -3907,7 +3907,7 @@ describe('per-target policy', () => {
         targets: [
           providerTarget({
             id: 'slow', address: server.url,
-            policy: { timeout_ms: 20, retry_limit: 0 },
+            resilience: { timeout_ms: 20, retry_limit: 0 },
           }),
           providerTarget({ id: 'patient', address: server.url }),
         ],
@@ -3917,7 +3917,7 @@ describe('per-target policy', () => {
       const impatient = await conduit.send({ target: 'slow', method: 'GET', path: '/' })
       expect(impatient.error?.kind).toBe('timeout')
 
-      // The control. Same server, same 200ms, no policy — so a timeout here
+      // The control. Same server, same 200ms, nothing declared — so a timeout here
       // would mean the number leaked onto the whole conduit.
       const patient = await conduit.send({ target: 'patient', method: 'GET', path: '/' })
       expect(patient.error).toBeNull()
@@ -3938,7 +3938,7 @@ describe('per-target policy', () => {
         retry_limit: 0,
         targets: [providerTarget({
           id: 'flaky', address: `http://localhost:${server.port}`,
-          policy: { retry_limit: 2, deadline_ms: 10_000 },
+          resilience: { retry_limit: 2, deadline_ms: 10_000 },
         })],
       })
       await conduit.init()
@@ -3959,7 +3959,7 @@ describe('per-target policy', () => {
       const conduit = createConduit({
         credentials: secrets(),
         targets: [
-          providerTarget({ id: 'capped', address: server.url, policy: { max_concurrent: 1 } }),
+          providerTarget({ id: 'capped', address: server.url, resilience: { max_concurrent: 1 } }),
           providerTarget({ id: 'uncapped', address: server.url }),
         ],
       })
@@ -3988,9 +3988,9 @@ describe('per-target policy', () => {
       credentials: secrets(),
       targets: [
         providerTarget({ id: 'brittle', address: dead,
-          policy: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 } }),
+          resilience: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 } }),
         providerTarget({ id: 'tolerant', address: dead,
-          policy: { retry_limit: 0, timeout_ms: 200 } }),
+          resilience: { retry_limit: 0, timeout_ms: 200 } }),
       ],
     })
     await conduit.init()
@@ -4008,12 +4008,12 @@ describe('per-target policy', () => {
 
   it('grades a target this process never registered', async () => {
     // The shared-store case: another replica wrote the descriptor, so there is
-    // no register() here and the policy is learned when the router reads it.
+    // no register() here and the resilience is learned when the router reads it.
     const store = createMemoryStore()
     await store.init()
     await store.set(providerTarget({
       id: 'elsewhere', address: 'http://127.0.0.1:1',
-      policy: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 },
+      resilience: { failure_threshold: 1, retry_limit: 0, timeout_ms: 200 },
     }))
 
     const conduit = createConduit({ store, credentials: secrets() })
@@ -4024,7 +4024,7 @@ describe('per-target policy', () => {
     expect(shed.error?.kind).toBe('circuit_open')
   })
 
-  it('refuses an unknown policy field by name', async () => {
+  it('refuses an unknown resilience field by name', async () => {
     const conduit = createConduit({ credentials: secrets() })
     await conduit.init()
 
@@ -4032,27 +4032,27 @@ describe('per-target policy', () => {
     // place, and being ignored is what made a 1ms timeout answer a 300ms
     // request as a success.
     await expect(conduit.register(providerTarget({
-      id: 'typo', policy: { timeout: 1 } as unknown as Record<string, number>,
+      id: 'typo', resilience: { timeout: 1 } as unknown as Record<string, number>,
     }))).rejects.toThrow(/unknown field 'timeout'/)
 
     // The control — one character different and it is accepted.
-    await conduit.register(providerTarget({ id: 'typo', policy: { timeout_ms: 1 } }))
-    expect((await conduit.resolve('typo'))?.policy?.timeout_ms).toBe(1)
+    await conduit.register(providerTarget({ id: 'typo', resilience: { timeout_ms: 1 } }))
+    expect((await conduit.resolve('typo'))?.resilience?.timeout_ms).toBe(1)
   })
 
   it('refuses a value that cannot mean anything', async () => {
     const conduit = createConduit({ credentials: secrets() })
     await conduit.init()
 
-    await expect(conduit.register(providerTarget({ id: 'bad', policy: { timeout_ms: 0 } })))
+    await expect(conduit.register(providerTarget({ id: 'bad', resilience: { timeout_ms: 0 } })))
       .rejects.toThrow(/'timeout_ms' must be a number >= 1/)
-    await expect(conduit.register(providerTarget({ id: 'bad', policy: { retry_limit: -1 } })))
+    await expect(conduit.register(providerTarget({ id: 'bad', resilience: { retry_limit: -1 } })))
       .rejects.toThrow(/'retry_limit' must be an integer >= 0/)
     // Infinity is a documented value for this one field and no other.
-    await expect(conduit.register(providerTarget({ id: 'bad', policy: { timeout_ms: Infinity } })))
+    await expect(conduit.register(providerTarget({ id: 'bad', resilience: { timeout_ms: Infinity } })))
       .rejects.toThrow(/'timeout_ms'/)
-    await conduit.register(providerTarget({ id: 'ok', policy: { max_concurrent: Infinity } }))
-    expect((await conduit.resolve('ok'))?.policy?.max_concurrent).toBe(Infinity)
+    await conduit.register(providerTarget({ id: 'ok', resilience: { max_concurrent: Infinity } }))
+    expect((await conduit.resolve('ok'))?.resilience?.max_concurrent).toBe(Infinity)
   })
 
   it('survives a restart of the SQLite registry, Infinity included', async () => {
@@ -4061,18 +4061,18 @@ describe('per-target policy', () => {
     await write.init()
     await write.register(providerTarget({
       id: 'persisted',
-      policy: { timeout_ms: 250, max_concurrent: Infinity },
+      resilience: { timeout_ms: 250, max_concurrent: Infinity },
     }))
 
     const read = createConduit({ store: createSQLiteStore(db), credentials: secrets() })
     await read.init()
     const back = await read.resolve('persisted')
 
-    expect(back?.policy?.timeout_ms).toBe(250)
+    expect(back?.resilience?.timeout_ms).toBe(250)
     // JSON.stringify writes Infinity as `null`, which reads back as *field
     // absent* and silently restores the cap the target opted out of — the
     // `FJS-657` shape one value deep.
-    expect(back?.policy?.max_concurrent).toBe(Infinity)
+    expect(back?.resilience?.max_concurrent).toBe(Infinity)
   })
 })
 
@@ -4089,7 +4089,7 @@ describe('a request conduit will not replay', () => {
       const conduit = createConduit({
         credentials: secrets(),
         targets: [providerTarget({
-          id: 'psp', address: server.url, policy: { timeout_ms: 30 },
+          id: 'psp', address: server.url, resilience: { timeout_ms: 30 },
         })],
       })
       await conduit.init()
@@ -4125,7 +4125,7 @@ describe('a request conduit will not replay', () => {
         credentials: secrets(),
         targets: [providerTarget({
           id: 'psp', address: `http://localhost:${server.port}`,
-          policy: { retry_limit: 1, deadline_ms: 10_000 },
+          resilience: { retry_limit: 1, deadline_ms: 10_000 },
         })],
       })
       await conduit.init()
@@ -4147,7 +4147,7 @@ describe('a request conduit will not replay', () => {
       credentials: secrets(),
       targets: [providerTarget({
         id: 'gone', address: 'http://127.0.0.1:1',
-        policy: { retry_limit: 0, timeout_ms: 500 },
+        resilience: { retry_limit: 0, timeout_ms: 500 },
       })],
     })
     await conduit.init()
@@ -4205,7 +4205,7 @@ describe('the idempotency key', () => {
         targets: [providerTarget({
           id: 'auto', address: `http://localhost:${server.port}`,
           idempotency: { auto: true },
-          policy: { retry_limit: 1, deadline_ms: 10_000 },
+          resilience: { retry_limit: 1, deadline_ms: 10_000 },
         })],
       })
       await conduit.init()
@@ -4268,11 +4268,11 @@ describe('a static target is refused by the same rules as a registered one', () 
     await expect(conduit.init()).rejects.toThrow(/cannot be combined with auth type 'hmac'/)
   })
 
-  it('refuses an unknown policy field', async () => {
+  it('refuses an unknown resilience field', async () => {
     const conduit = createConduit({
       credentials: secrets(),
       targets: [providerTarget({
-        id: 'typo', policy: { timeout: 1 } as unknown as Record<string, number>,
+        id: 'typo', resilience: { timeout: 1 } as unknown as Record<string, number>,
       })],
     })
     await expect(conduit.init()).rejects.toThrow(/unknown field 'timeout'/)
@@ -4296,7 +4296,7 @@ describe('a caller may assert a POST is safe to repeat', () => {
         credentials: secrets(),
         targets: [providerTarget({
           id: 'psp', address: `http://localhost:${server.port}`,
-          policy: { retry_limit: 1, deadline_ms: 10_000 },
+          resilience: { retry_limit: 1, deadline_ms: 10_000 },
         })],
       })
       await conduit.init()
@@ -4326,7 +4326,7 @@ describe('a caller may assert a POST is safe to repeat', () => {
         credentials: secrets(),
         targets: [providerTarget({
           id: 'psp', address: `http://localhost:${server.port}`,
-          policy: { retry_limit: 1, deadline_ms: 10_000 },
+          resilience: { retry_limit: 1, deadline_ms: 10_000 },
         })],
       })
       await conduit.init()
@@ -4447,7 +4447,7 @@ describe('retryable (FJS-739)', () => {
   it('a timeout on an unkeyed POST is NOT either — the second FJS-733 control', async () => {
     const s = recorder(async () => { await Bun.sleep(200); return Response.json({ ok: 1 }) })
     try {
-      const target = providerTarget({ address: s.url, policy: { timeout_ms: 40, retry_limit: 0 } })
+      const target = providerTarget({ address: s.url, resilience: { timeout_ms: 40, retry_limit: 0 } })
       const c = createConduit({ credentials: creds(), targets: [target], retry_limit: 0 })
       await c.init()
       const e = (await c.send({ target: target.id, method: 'POST', path: '/x', body: { a: 1 } })).error!
@@ -4659,10 +4659,10 @@ describe('signal (FJS-1408)', () => {
     } finally { p.stop() }
   })
 
-  it('a timeout the target\'s own policy produced still opens the breaker, and a request timeout that is not shorter does not change that', async () => {
+  it('a timeout the target\'s own resilience produced still opens the breaker, and a request timeout that is not shorter does not change that', async () => {
     const p = holding()
     try {
-      const target = providerTarget({ address: p.url, policy: { timeout_ms: 30, retry_limit: 0, failure_threshold: 2, reset_ms: 10_000 } })
+      const target = providerTarget({ address: p.url, resilience: { timeout_ms: 30, retry_limit: 0, failure_threshold: 2, reset_ms: 10_000 } })
       const c = createConduit({ credentials: creds(), targets: [target] })
       await c.init()
       // No request timeout, then one equal to the target's own: neither is shorter.
@@ -4786,7 +4786,7 @@ describe('a target whose address comes per send (FJS-1667)', () => {
     return {
       id: 'hook:slack', kind: 'provider', protocol: 'http', address: '',
       auth: { type: 'none' }, address_from: 'request',
-      policy: { retry_limit: 0, failure_threshold: 2 },
+      resilience: { retry_limit: 0, failure_threshold: 2 },
       registered_at: 0, last_seen_at: null,
       ...overrides,
     }
@@ -5095,7 +5095,7 @@ describe('broker target', () => {
     // Accepts the TCP connection and says nothing, which is a dial that neither opens nor errors.
     const silent = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {}, open() {} } })
     const c = createConduit()
-    await c.register(brokerTarget(`ws://127.0.0.1:${silent.port}/`, { policy: { timeout_ms: 150 } }))
+    await c.register(brokerTarget(`ws://127.0.0.1:${silent.port}/`, { resilience: { timeout_ms: 150 } }))
     const settled = await Promise.race([
       c.subscribe('broker:orders', () => {}).then(() => 'settled'),
       new Promise(r => setTimeout(() => r('hung'), 1500)),
@@ -5109,7 +5109,7 @@ describe('broker target', () => {
   it('applies max_response_bytes as a frame cap: an oversize frame is not handled and not acked', async () => {
     const broker = fakeBroker()
     const c = createConduit()
-    await c.register(brokerTarget(broker.url, { policy: { max_response_bytes: 120 } }))
+    await c.register(brokerTarget(broker.url, { resilience: { max_response_bytes: 120 } }))
     const seen: string[] = []
     await c.subscribe('broker:orders', (m) => { seen.push(m.id) })
     broker.push('big', 'x'.repeat(500))

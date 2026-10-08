@@ -273,29 +273,109 @@ has copied it. `--check` matches the precedent already set by
   computation, no env reads, enforced by doctor (precedent: the workflow `meta` rule) —
   or drop to `.json`/`.toml` and stop pretending. Unresolved, but the status quo of
   "arbitrary JS" should not win by default.
+  - **A** — arbitrary JS, as built: `loadFrontierConfig` (`packages/cli/core/utils.js`)
+    `import()`s `frontier.config.js` and `junction.config.js` is loaded the same way.
+  - **B** — JS, but the default export must be a plain object literal — no imports,
+    no computation, no `process.env` reads — enforced by a `fli check` rule.
+  - **C** — `frontier.config.json` (or `.toml`), parsed rather than run.
+  - **Recommend B** — it makes the file readable without running it and keeps the
+    comments that carry basecamp's `frontier.config.js`, which JSON would strip. A
+    value that needs computing is a secret (env) or derivable (`.lite`), which is the
+    three-bucket test doing its job.
 - **Config sprawl is the default outcome.** webpack and Vite both got here. The
   three-bucket test is the only defense proposed and it needs teeth.
+  - **A** — the three-bucket test as prose, as today; nothing refuses an unknown key
+    in `frontier.config.js` or `junction.config.js`.
+  - **B** — each config file has a closed key table, and its loader refuses an
+    unknown key by name, pointing at the bucket it belongs in (`.lite`, env, or the
+    other config file).
+  - **C** — B, plus a `fli check` rule that flags a config key whose value a schema
+    read could produce (a model list, a plural).
+  - **Recommend B** — the closed table is the teeth: a key nothing reads is a typo
+    or a restated fact, and both are silent today. C is a heuristic over values and
+    would grade on guesses, so it waits until a real restated key shows up.
 - **Deploy config and shareability are enemies.** The moment `deploy: { host, domain,
   tenant }` lands inline, "pass this file around" becomes "leak your infrastructure."
   Reference it; do not inline it.
+  - **A** — as built: `frontier.config.js` IS the deploy file (`deploy.server`,
+    `deploy.web.domain` inline, basecamp's copy), the app's own config is
+    `junction.config.js`, and the shareable unit is `db/schema.lite` plus
+    `junction.config.js`, never `frontier.config.js`.
+  - **B** — split `frontier.config.js` into an intent half (shareable) and a deploy
+    file it references by path.
+  - **C** — keep `frontier.config.js` but move `server` and `domain` out to env or
+    the per-run `--server` alias, so the file holds no infrastructure.
+  - **Recommend A** — the name already went to deploy, and most of the intent block
+    this paper wanted is derivable or already lives in `junction.config.js`
+    (`FJS-D158`'s split). Calling the deploy file unshareable costs nothing; B builds
+    a third config file for keys that have no home yet.
 - **Lock merge conflicts.** `package-lock.json` is the most-hated file in the JS
   ecosystem for this reason alone. Stable key order, sorted arrays, one fact per line,
   and regenerate-on-conflict must always be correct — nobody hand-merges a lock.
+  - **A** — regenerate on conflict, as the committed `*.snapshot.md` registers work
+    today: the header names the generator and its flags, and the `snapshots` CI phase
+    fails a stale one.
+  - **B** — A, plus a git merge driver (`.gitattributes` `merge=fli-snapshot`) that
+    reruns the generator during the merge.
+  - **Recommend A** — the lock this paper describes already exists as
+    `surface`/`jobs`/`notifications`/`principal.snapshot.md`, sorted and regenerated,
+    and CI already refuses a hand-merged one. A merge driver is per-clone setup that
+    a fresh clone silently lacks.
 - **Do not repurpose borrowed segments.** `.server`/`.client` mean bundle-side
   everywhere (Remix, Vite, SvelteKit); `.test`/`.spec` are owned by runner globs;
   `.d.ts` by TypeScript; `.config.js` is already used 15× here.
+  - **A** — a closed segment list, derived from the loaders (`.service.ts`,
+    `.job.ts`, `.notification.ts`, …); a segment not on it means nothing to `fli`.
+  - **B** — a deny-list of borrowed segments that a `fli check` rule refuses.
+  - **Recommend A** — the list of loaders is the allow-list, so a borrowed segment
+    can only be repurposed by adding a loader for it, which is a reviewed change. A
+    deny-list is a second list that goes stale the day the ecosystem coins a segment.
 - **Lowercase always.** macOS and Windows filesystems are case-insensitive, so
   `Users.Service.ts` and `users.service.ts` are the same file.
+  - **A** — lowercase stem and segment always; `PaymentReceived.notification.ts`
+    becomes `payment-received.notification.ts`.
+  - **B** — the segment is always lowercase and the stem takes the case of the name it
+    registers: PascalCase for a type (`OrderPaid.notification.ts`, `Lead.mesa` per
+    Invariant 19), kebab for a routed name (`user-profiles.service.ts`,
+    `send-email.job.ts`); a `fli check` rule refuses two files that differ only in
+    case.
+  - **Recommend B** — the tree already does B and two rules depend on it
+    (notifications stamp the type from the stem; Invariant 19 names a resource file
+    for its model). The real hazard is the case collision, and the check names it
+    directly.
 - **Directory or segment, not both as truth.** `src/services/users.service.ts` is fine,
   but one of them has to be authoritative when they disagree. Segment is the better
   candidate; Invariant 18 currently locates `.mesa` resources by directory, so this
   needs settling rather than assuming.
+  - **A** — segment authoritative: a `*.service.ts` anywhere under `src/` loads.
+  - **B** — directory authoritative: every file in `services/` loads; the segment is
+    decorative.
+  - **C** — as built: both are required (the junction loader globs
+    `services/**/*.service.ts`, caravan `jobs/*.job.ts`), and `fli check` refuses a
+    loaded segment outside its kind's folder by name.
+  - **Recommend C** — `FJS-D625` already put every file in its kind's folder and
+    made an unsuffixed file in a loader's folder a private helper, so the two answer
+    different questions: the folder says where, the suffix says it registers. What
+    is missing is the refusal, because a stray `*.service.ts` today is never loaded
+    and nothing says so.
 - **Does the lock belong in version control?** Everything about the analogy says yes,
   and everything about "it is produced by booting" says it will be noisy. Possibly
   committed but coarse — registrations and baselines, not routes.
+  - **A** — committed, routes included, as the four `*.snapshot.md` registers are.
+  - **B** — committed but coarse: registrations and baselines only.
+  - **C** — never committed; generated on demand by `fli app:atlas`.
+  - **Recommend A** — that is what ships, and the noise is the point: a route that
+    appears in a diff is a change a reviewer should see. Coarsening it would hide the
+    routes, which are the claims most likely to be silently wrong.
 - **Overlap with `atlas` and `project:map --json`.** Same substrate as
   the diagnostics record's open question (since deleted). The lock may simply *be* `project:map`'s
   output, committed.
+  - **A** — the lock is the four committed `*.snapshot.md` registers; `fli app:atlas`
+    and `fli project:map` render them from one boot and commit nothing.
+  - **B** — a fifth file, `frontier.lock`, holding `project:map --json`, committed.
+  - **Recommend A** — A is what ships (`commands/app/atlas.md`: a fifth file derived
+    from four gated ones would be a second origin). `frontier.lock` as a name is
+    retired with it.
 
 ## See also
 

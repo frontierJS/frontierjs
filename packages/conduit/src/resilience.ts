@@ -9,7 +9,7 @@
 // handler for up to the full timeout, for as long as the outage lasts.
 // ============================================================
 
-import type { BreakerState, ConduitErrorKind, ResilienceOptions, TargetPolicy } from './types.ts'
+import type { BreakerState, ConduitErrorKind, ResilienceOptions, TargetResilience } from './types.ts'
 
 const DEFAULT_FAILURE_THRESHOLD = 5
 const DEFAULT_RESET_MS          = 30_000
@@ -53,9 +53,9 @@ type TargetState = {
   inFlight:  number
   // What this target declared, or undefined for one that declared nothing.
   // Kept beside the counts rather than resolved into them: a re-register may
-  // change the policy of a target that is already open, and a threshold copied
+  // change the resilience of a target that is already open, and a threshold copied
   // at first-touch would keep grading it by the old one.
-  policy?:   TargetPolicy
+  resilience?: TargetResilience
 }
 
 export type Admission =
@@ -80,12 +80,12 @@ export class Resilience {
    * target registered on another replica is graded by its own numbers from the
    * first request this process resolves it for.
    *
-   * Deliberately does not reset the counts: a policy change is not a statement
+   * Deliberately does not reset the counts: a resilience change is not a statement
    * about the target's health, and clearing the trip count on re-register would
    * make a heartbeat that re-registers a way to keep a broken target admitted.
    */
-  setPolicy(target: string, policy: TargetPolicy | undefined): void {
-    this.state(target).policy = policy
+  setResilience(target: string, resilience: TargetResilience | undefined): void {
+    this.state(target).resilience = resilience
   }
 
   /**
@@ -94,9 +94,9 @@ export class Resilience {
    */
   admit(target: string): Admission {
     const s = this.state(target)
-    const threshold     = s.policy?.failure_threshold ?? this.threshold
-    const resetMs       = s.policy?.reset_ms ?? this.resetMs
-    const maxConcurrent = s.policy?.max_concurrent ?? this.maxConcurrent
+    const threshold     = s.resilience?.failure_threshold ?? this.threshold
+    const resetMs       = s.resilience?.reset_ms ?? this.resetMs
+    const maxConcurrent = s.resilience?.max_concurrent ?? this.maxConcurrent
 
     if (threshold > 0 && s.openedAt !== null) {
       const elapsed = Date.now() - s.openedAt
@@ -140,16 +140,16 @@ export class Resilience {
 
   /**
    * A per-origin key of a request-addressed target is graded by that target's
-   * policy, learned under its id. Copied on every send, so a re-registered
-   * policy reaches origins already seen.
+   * resilience, learned under its id. Copied on every send, so re-registered
+   * resilience reaches origins already seen.
    */
   inherit(key: string, target: string): void {
-    this.state(key).policy = this.states.get(target)?.policy
+    this.state(key).resilience = this.states.get(target)?.resilience
   }
 
   /** The `timeout_ms` a target declared, or undefined for one that declared none. */
   declaredTimeout(target: string): number | undefined {
-    return this.states.get(target)?.policy?.timeout_ms
+    return this.states.get(target)?.resilience?.timeout_ms
   }
 
   /** Report the outcome of an admitted request and free its slot. */
@@ -157,7 +157,7 @@ export class Resilience {
     const s = this.state(target)
     s.inFlight = Math.max(0, s.inFlight - 1)
 
-    const threshold = s.policy?.failure_threshold ?? this.threshold
+    const threshold = s.resilience?.failure_threshold ?? this.threshold
     if (threshold <= 0) return
 
     if (outcome === 'success') {
@@ -227,7 +227,7 @@ export class Resilience {
 
   private stateNameOf(s: TargetState): BreakerState {
     if (s.openedAt === null) return 'closed'
-    return Date.now() - s.openedAt >= (s.policy?.reset_ms ?? this.resetMs) ? 'half_open' : 'open'
+    return Date.now() - s.openedAt >= (s.resilience?.reset_ms ?? this.resetMs) ? 'half_open' : 'open'
   }
 
   private state(target: string): TargetState {

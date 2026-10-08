@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-07 — the datetime fixtures are vectors, the frontmatter script compares (`FJS-D631`)
+
+`test/fixtures/datetime-oracle.{json,mjs}` are `datetime-vectors.{json,mjs}` and `frontmatter-oracle.mjs` is `frontmatter-compare.mjs`, because `oracle` is a package's name. The spec's `ORACLE` table is `VECTORS`. Proof: `bun run test` 610 pass, `node test/run.js datetime` 42 pass.
+
 ## 2026-10-06 — `verifyRequest`'s `seenNonce` contract names how long to remember (`FJS-1833`)
 
 The doc said a nonce is remembered "inside the window", and both callers read that as one tolerance. A timestamp is accepted up to `toleranceSeconds` either side, though, so a request signed at the limit ahead stays fresh for a second full tolerance. The doc now says a nonce must be remembered for twice `toleranceSeconds`. Only the doc changed, since the store belongs to the caller.

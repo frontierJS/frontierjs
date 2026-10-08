@@ -180,15 +180,55 @@ work (`IDEAS/map-packages.md`).
 - **Anonymize vs delete.** `LOCKED` models cannot be deleted at all, by design. So
   the schema needs to say what erasure *means* per model, and the honest default is
   probably "refuse, loudly" rather than a silent partial erasure.
+  - **A** — derive it from the gate: erasure deletes a row whose delete gate admits
+    SYSTEM, anonymizes it (each `@pii` field nulled, or blanked where required) where
+    only the update gate does, and refuses naming the model where neither does.
+  - **B** — declare it per model, `@@erasure(delete | anonymize | refuse)`, with
+    `refuse` the default for a model that declares nothing.
+  - **C** — no anonymize: erasure deletes what it can reach and refuses the whole
+    request when any reached model is undeletable; anything subtler is a hook.
+  - **Recommend A** — the gate already states what SYSTEM may do to a row, so a
+    per-model word restates it and can disagree with it. Refuse-loudly survives as
+    A's third branch, and the data map prints which branch each model takes, so a
+    derivation the owner did not intend is visible in the artifact rather than in
+    an audit.
 - **Is `@pii` a category or a boolean?** A category (contact, identifier, financial,
   special) is what a data map needs, and a boolean is what people will actually
   write. Probably accept both.
+  - **A** — category required: `@pii(contact)`, and a bare `@pii` is a parse error
+    naming the categories.
+  - **B** — the argument is optional: bare `@pii` parses, and the map lists the field
+    as *uncategorized*.
+  - **C** — boolean only, with categories assigned in a sidecar the map joins.
+  - **Recommend B** — one attribute with an optional argument, not two spellings. The
+    bare form is what people write first, and the map naming every uncategorized
+    field keeps the gap from being silent; a later `fli check` can grade it.
 - **Does retention interact with `@@softDelete`?** A soft-deleted row still holds the
   data. This is exactly the kind of thing that is obvious in hindsight and missed in
   every hand-rolled implementation.
+  - **A** — retention ignores soft deletion: the sweep runs unfiltered from
+    `createdAt`, so a soft-deleted row ages out like any other. This is what the
+    database-level pass in `packages/litestone/src/tools/retention.js` does, with a
+    raw `DELETE` that never reads `deletedAt`.
+  - **B** — soft deletion starts its own clock: a soft-deleted row is purged a
+    declared period after `deletedAt`, on top of the `createdAt` window.
+  - **Recommend A** — A is what ships, and it closes the gap the question names: no
+    row outlives its window by being hidden. B is a purge-after-delete policy, a
+    second retention noun, and waits for a product that wants deleted rows gone
+    sooner than live ones.
 - **Where does lawful basis live?** It is per-processing-purpose, not per-column, so
   it may not belong in the schema at all — possibly a sidecar file the map joins
   against. Resist putting non-derivable prose in the seed.
+  - **A** — a sidecar beside the seed (`db/purposes.*`): each purpose names its basis
+    and the models or fields it covers; the map joins it and refuses a name the
+    schema does not have.
+  - **B** — in the seed, as an argument: `@pii(contact, basis: contract)`.
+  - **C** — nowhere in the tree: the map leaves a basis column for the owner to fill
+    in the exported document.
+  - **Recommend A** — basis is per purpose and not derivable, so it stays out of the
+    seed, and a sidecar the map validates against the schema cannot drift silently
+    the way C's exported copy does. The map also lists every `@pii` field no purpose
+    covers.
 - **Does the map read a method's `input:` type?** A value that is processed and
   never kept already has a noun in the seed: a `type`, which has no table, named
   by a custom method's `input:` and enforced there by `validateInput`. Portal's
@@ -201,20 +241,43 @@ work (`IDEAS/map-packages.md`).
   a *never keep* word on the input, is left with two consumers that do not exist
   yet: this map line and a `fli check` rule for an answer that echoes its input
   (`FJS-1403`, closed).
+  - **A** — the rule as proposed: every field of a `type` reached through an `input:`
+    is listed *processed, not stored*, citing `read: true` where the method has it.
+  - **B** — split by `read: true`: a field reached through a `read: true` method is
+    *processed, not stored*; one reached through any other method is *processed,
+    may be stored*.
+  - **C** — no: the map covers stored columns only, until `FJS-D505`'s deferred
+    *never keep* word exists.
+  - **Recommend B** — `read: true` is the only evidence that no framework store keeps
+    the value, so stating *not stored* for a write method's input is the map being
+    wrong without saying so. B costs nothing over A: `isReadMethod` already answers.
 - **How does the map learn what a send carries?** § 5 says a target that
   receives a `@pii` field is a processor, and nothing in the seed or in conduit
   says which fields a send carries. This holds for every field, stored or not.
   Portal's query, which reaches five providers, is only the first case where it
-  shows. **A** — a conduit target declares what it receives, as field paths the
-  map resolves against the schema. A new entry shows up in a diff, but a
-  forgotten one is silent. **B** — record at runtime what a send carried. More
-  machinery, and it only sees paths that actually ran. **C** — the map does not
-  answer this, and says so per target. **Recommend A, with B as its test**: § 4's
-  diff grades a new `receives` as a widening, and a drive that records a send
-  carrying a field its target never declared turns A's silent case red.
-- **Does a Slice declare its own PII?** It must — a billing slice contributes
+  shows.
+  - **A** — a conduit target declares what it receives, as field paths the map
+    resolves against the schema. A new entry shows up in a diff, but a forgotten
+    one is silent.
+  - **B** — record at runtime what a send carried. More machinery, and it only sees
+    paths that actually ran.
+  - **C** — the map does not answer this, and says so per target.
+  - **Recommend A** — with B as its test: § 4's diff grades a new `receives` as a
+    widening, and a drive that records a send carrying a field its target never
+    declared turns A's silent case red.
+- **Does a Rig declare its own PII?** It must — a billing rig contributes
   personal data to the consuming app's data map, and if that does not flow through,
-  the map is wrong the moment anyone installs anything (`IDEAS/slices.md`).
+  the map is wrong the moment anyone installs anything (`IDEAS/rigs.md`).
+  - **A** — on its own fields: the rig's imported `.lite` fragment carries `@pii`
+    like any model, and the map reads the composed schema, so it flows with no
+    new mechanism.
+  - **B** — a rig manifest listing its personal data, which the map merges.
+  - **C** — the consuming app annotates the rig's fields itself, through
+    `extend model X { … }`.
+  - **Recommend A** — then C for a field the rig left unmarked. The fragment is
+    already imported rather than pasted (`IDEAS/rigs.md` § build item 1), so the
+    annotation travels with the field it describes; B restates the schema in a
+    second file that drifts from it.
 
 ## See also
 

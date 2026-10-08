@@ -53,7 +53,7 @@ test/            the claims above, asserted
   reason it is worth paying only for rules that catch bugs.
 - **What it cannot see is the interesting half.** Biome reads neither `.mesa` nor
   `.lite`, and neither can ESLint or dprint without a hand-written processor.
-  `fli check` owns everything derived from the seed; neither reimplements the
+  `fli check` owns everything derived from the schema; neither reimplements the
   other. A scaffolded app's `bun run check` runs `fli check` first.
 
 ## Proving a change

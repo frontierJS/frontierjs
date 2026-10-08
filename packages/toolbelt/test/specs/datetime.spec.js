@@ -2,11 +2,11 @@
  * datetime.spec.js
  *
  * Two halves, graded differently. The zone arithmetic is graded against Temporal:
- * `fixtures/datetime-oracle.json` is the polyfill's answer for every wall clock
- * around every transition in twelve zones, and each oracle test carries a
+ * `fixtures/datetime-vectors.json` is the polyfill's answer for every wall clock
+ * around every transition in twelve zones, and each vector test carries a
  * NEGATIVE CONTROL — the obvious one-line inverse, run over the same rows, must
  * fail some of them, or the fixture has stopped sampling the edges and grades
- * nothing. The formatter has no oracle, so its rows are the prototype's measured
+ * nothing. The formatter has no reference, so its rows are the prototype's measured
  * failures, each beside the ordinary spelling that must keep working.
  *
  * Every row names its zone. No assertion here may depend on the host's zone —
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
-const ORACLE = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-oracle.json'), 'utf8'))
+const VECTORS = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-vectors.json'), 'utf8'))
 
 const wallFields = (s) => {
   const [date, time] = s.split('T')
@@ -35,15 +35,15 @@ const wallFields = (s) => {
 
 const JULY_4 = Date.UTC(2026, 6, 4, 16, 5, 3)   // a Saturday; 10:05:03 in Denver
 
-/* ── The oracle ─────────────────────────────────────────────────────── */
+/* ── The vectors ────────────────────────────────────────────────────── */
 
-test('datetime: offsetSpans puts every oracle instant in the span holding its own offset', function () {
-  // Per zone, the spans over the instants the oracle names around its
+test('datetime: offsetSpans puts every vector instant in the span holding its own offset', function () {
+  // Per zone, the spans over the instants the vectors name around its
   // transitions, then each instant's span offset against Temporal's offset for
-  // it (via partsIn, itself graded against the oracle above). Negative control:
+  // it (via partsIn, itself graded against the vectors above). Negative control:
   // one fixed offset per zone — the first span alone — must be wrong for some.
   const byZone = new Map()
-  for (const [zone, , , , , reject] of ORACLE.resolve)
+  for (const [zone, , , , , reject] of VECTORS.resolve)
     if (reject !== null) (byZone.get(zone) ?? byZone.set(zone, []).get(zone)).push(reject)
   const wrong = []
   let controlWrong = 0
@@ -71,8 +71,8 @@ test('datetime: offsetSpans is one span where the zone keeps one offset, and ref
 
 test('datetime: fromWall agrees with Temporal in all four disambiguation modes', function () {
   const wrong = []
-  for (const [zone, wall, ...expected] of ORACLE.resolve) {
-    ORACLE.modes.forEach((disambiguation, i) => {
+  for (const [zone, wall, ...expected] of VECTORS.resolve) {
+    VECTORS.modes.forEach((disambiguation, i) => {
       let got
       try { got = fromWall(wallFields(wall), zone, { disambiguation }) } catch { got = null }
       if (got !== expected[i]) wrong.push(`${zone} ${wall} ${disambiguation}: expected ${expected[i]}, got ${got}`)
@@ -84,7 +84,7 @@ test('datetime: fromWall agrees with Temporal in all four disambiguation modes',
 test('datetime: resolveWall answers two instants in an overlap, none in a gap, one otherwise', function () {
   let overlaps = 0
   let gaps     = 0
-  for (const [zone, wall, , earlier, later, reject] of ORACLE.resolve) {
+  for (const [zone, wall, , earlier, later, reject] of VECTORS.resolve) {
     const hits = resolveWall(wallFields(wall), zone)
     if (reject !== null) {
       assert.deepEqual(hits, [reject], `${zone} ${wall}`)
@@ -101,7 +101,7 @@ test('datetime: resolveWall answers two instants in an overlap, none in a gap, o
 
 test('datetime: the obvious inverse fails the same rows (negative control)', function () {
   let wrong = 0
-  for (const [zone, wall, compatible] of ORACLE.resolve) {
+  for (const [zone, wall, compatible] of VECTORS.resolve) {
     const f  = wallFields(wall)
     const ms = Date.UTC(f.year, f.month - 1, f.day, f.hour, f.minute)
     if (ms - partsIn(ms, zone).offset * 60_000 !== compatible) wrong++
@@ -111,7 +111,7 @@ test('datetime: the obvious inverse fails the same rows (negative control)', fun
 
 test('datetime: partsIn agrees with Temporal, including the millisecond before each transition', function () {
   const wrong = []
-  for (const [zone, ms, ...expected] of ORACLE.parts) {
+  for (const [zone, ms, ...expected] of VECTORS.parts) {
     const p   = partsIn(ms, zone)
     const got = [p.year, p.month, p.day, p.hour, p.minute, p.second, p.millisecond, p.weekday, p.offset]
     if (JSON.stringify(got) !== JSON.stringify(expected)) wrong.push(`${zone} ${ms}: expected ${expected}, got ${got}`)
@@ -121,7 +121,7 @@ test('datetime: partsIn agrees with Temporal, including the millisecond before e
 
 test('datetime: W and GGGG agree with Temporal at both ends of every year', function () {
   let differs = 0
-  for (const [date, week, weekYear] of ORACLE.weeks) {
+  for (const [date, week, weekYear] of VECTORS.weeks) {
     const ms = Date.parse(date + 'T12:00:00Z')
     assert.equal(format(ms, 'W GGGG', { timeZone: 'UTC' }), `${week} ${weekYear}`, date)
     if (format(ms, 'YYYY', { timeZone: 'UTC' }) !== String(weekYear)) differs++
@@ -131,7 +131,7 @@ test('datetime: W and GGGG agree with Temporal at both ends of every year', func
 
 test('datetime: addToDate agrees with Temporal, clamping into the month it lands in', function () {
   const wrong = []
-  for (const [date, duration, expected] of ORACLE.added) {
+  for (const [date, duration, expected] of VECTORS.added) {
     const got = addToDate(date, duration)
     if (got !== expected) wrong.push(`${date} + ${JSON.stringify(duration)}: expected ${expected}, got ${got}`)
   }
@@ -140,7 +140,7 @@ test('datetime: addToDate agrees with Temporal, clamping into the month it lands
 
 test('datetime: a month added the Date way rolls over on the same rows (negative control)', function () {
   let wrong = 0
-  for (const [date, duration, expected] of ORACLE.added) {
+  for (const [date, duration, expected] of VECTORS.added) {
     if (!duration.months || Object.keys(duration).length > 1) continue
     const d = new Date(date + 'T00:00:00Z')
     d.setUTCMonth(d.getUTCMonth() + duration.months)
@@ -150,13 +150,13 @@ test('datetime: a month added the Date way rolls over on the same rows (negative
 })
 
 test('datetime: daysBetween agrees with Temporal', function () {
-  const wrong = ORACLE.between.filter(([a, b, days]) => daysBetween(a, b) !== days)
+  const wrong = VECTORS.between.filter(([a, b, days]) => daysBetween(a, b) !== days)
   assert.equal(wrong.length, 0, wrong.slice(0, 5).map(String).join('\n      '))
 })
 
 test('datetime: startOfDay agrees with Temporal on every transition day', function () {
   const wrong = []
-  for (const [zone, date, expected] of ORACLE.days) {
+  for (const [zone, date, expected] of VECTORS.days) {
     const got = startOfDay(date, zone)
     if (got !== expected) wrong.push(`${zone} ${date}: expected ${expected}, got ${got}`)
   }
@@ -165,7 +165,7 @@ test('datetime: startOfDay agrees with Temporal on every transition day', functi
 
 test('datetime: midnight minus the day\'s noon offset misses a day that does not start at midnight (negative control)', function () {
   let wrong = 0
-  for (const [zone, date, expected] of ORACLE.days) {
+  for (const [zone, date, expected] of VECTORS.days) {
     const noon = Date.parse(date + 'T12:00:00Z')
     if (Date.parse(date + 'T00:00:00Z') - partsIn(noon, zone).offset * 60_000 !== expected) wrong++
   }
@@ -174,7 +174,7 @@ test('datetime: midnight minus the day\'s noon offset misses a day that does not
 
 test('datetime: plainDateIn is the calendar half of partsIn', function () {
   const pad = (n, w = 2) => String(n).padStart(w, '0')
-  for (const [zone, ms, year, month, day] of ORACLE.parts) {
+  for (const [zone, ms, year, month, day] of VECTORS.parts) {
     assert.equal(plainDateIn(ms, zone), `${pad(year, 4)}-${pad(month)}-${pad(day)}`, `${zone} ${ms}`)
   }
   assert.equal(plainDateIn('2026-01-31T01:00:00Z', 'America/New_York'), '2026-01-30', 'an evening in New York is the next day in UTC')

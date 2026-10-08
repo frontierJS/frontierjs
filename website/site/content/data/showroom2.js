@@ -288,10 +288,10 @@ DELETE /api/leads/7    (level 4 user) → 403  needs ADMINISTRATOR
     say:'One announcement point. Every mutation fans out to the event bus and to the declared channel — there is no second publish path to forget.',
     file:'api/server.ts',
     code:[
-      "import { createApp, createService, publish } from '@frontierjs/junction'",
+      "import { createApp, createService, announce } from '@frontierjs/junction'",
       "",
       "const app = createApp({ db, auth, config: { port: 3200, apiPrefix: '/api' } })",
-      "const live = publish(() => app.channel('leads'))",
+      "const live = announce(() => app.channel('leads'))",
       "",
       "app.services.register(createService({",
       "  name:    'leads',",

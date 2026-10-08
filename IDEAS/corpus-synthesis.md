@@ -189,8 +189,8 @@ coined.
   `app-cli.md`, `list-controller.md`, `untrusted-bytes.md`, `restore-verify.md` and
   `review-coherence.md` (which still calls `FJS-D06` open).
 - **A cluster's keystone sits unread in another.** `orion-port.md` built the first real
-  slice, and `slices.md` and `map-packages.md` still ask which slice comes first —
-  while orion LINKED its UI where `slices.md` says a resource is ejected.
+  rig, and `rigs.md` and `map-packages.md` still ask which rig comes first —
+  while orion LINKED its UI where `rigs.md` says a resource is ejected.
   `stored-templates.md` is blocked on moving the parser out of litestone, which
   `orion-port.md` did. `@retain` (`compliance-from-the-seed.md`) is a commitment
   (`ontology.md`). Support mode's `actorId` / `subjectId` / `episodeId` is the

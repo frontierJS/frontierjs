@@ -87,7 +87,7 @@ where the rules and the numbers are.
   answer at all for an MCP server built by hand.
 - **Enforcement is below the tool layer.** A bug in tool definition cannot widen
   access, because the gate is checked in Litestone regardless of how the call
-  arrived. This is the same property that makes `IDEAS/slices.md` argue a Gate on a
+  arrived. This is the same property that makes `IDEAS/rigs.md` argue a Gate on a
   Model is harder for an agent to get wrong than a check in a handler — the same
   argument, pointed at the agent instead of at the code it writes.
 - **Descriptions can be honest.** The schema knows a field is an enum with three
@@ -359,19 +359,46 @@ are in the ruling rather than restated here.
   the ones the gate says nothing about. Naming is the smaller half; grading them
   off `x-transitions` is the larger, and the remainder is the third rule above —
   a custom method that drives no declared move.
+  - **Recommend A** — FJS-D02 already answers this: a custom method is a method of
+    the service and `X-Service-Method` is only its HTTP wire spelling, so the
+    projection names it directly (`toolName`); the grading half is `FJS-D408`'s
+    declared `gate:` plus the move floor, both built.
 - **Does the agent surface get its own audit trail?** Almost certainly yes, and
   `IDEAS/compliance-from-the-seed.md` is where it should land rather than here.
+  - **A** — as built: `recordCall` writes `mcp.call` entries into the app's own
+    logger database, read back at `GET {path}/calls` by an administrator.
+  - **B** — a separate store owned by `@frontierjs/mcp`.
+  - **C** — none here; wait for `IDEAS/compliance-from-the-seed.md`.
+  - **Recommend A** — A is what ships in `packages/mcp/src/plugin.ts`, and it is one
+    trail rather than two: an agent's write still lands in the field entries the
+    Data boundary logs, and `mcp.call` adds only who asked through which tool.
 - **Rate limiting and cost.** An agent will call `find` in a loop. `ctx.directives`
   already carries `limit`; a maximum per tool is probably a projection concern.
+  - **A** — junction's one rate limiter (`core/rate-limit.ts`) on the `/mcp` route,
+    keyed by principal.
+  - **B** — a per-tool `maximum` on `limit` in the projection's `find` schema.
+  - **C** — nothing new: the Data boundary's own handling of `limit` is the cap.
+  - **Recommend A** — rate limiting already has one owner, and a loop is a rate
+    problem, not a page-size one. B is a second rule over one schema that the
+    boundary does not share, the same split the SDK's stricter validator already
+    opened.
 - Does this obsolete or complement the typed browser client? They are the same
   services with different consumers, which suggests the projection is a third
   client generator, not a special case.
+  - **A** — complement: the projection is a third client over the same services,
+    dispatching through `app.service(name)`, beside the browser client.
+  - **B** — obsolete: the browser client is generated from the tool list.
+  - **Recommend A** — A is what ships: `@frontierjs/mcp` and the browser client read
+    the same `describe()` and `generateJsonSchema`, and `src/client/` is already a
+    terminal client built off the tool list. A browser client generated from it
+    would inherit the projection's narrowing, which is an affordance for an agent
+    and wrong for a screen.
 
 ## See also
 
 - `IDEAS/map-packages.md` — the roster; this one shipped as `@frontierjs/mcp`
 - `IDEAS/compliance-from-the-seed.md` — the audit and disclosure half
-- `IDEAS/slices.md` — the "a Gate is harder for an agent to get wrong" argument, in
+- `IDEAS/rigs.md` — the "a Gate is harder for an agent to get wrong" argument, in
   its original context
 - `IDEAS/permission-sets.md` — who may approve a held call; the grid the ladder
   cannot express

@@ -4,7 +4,7 @@
 //
 //   bun run frame:loop                        # up to 3 papers
 //   bun run frame:loop -- --rows 5 --max 4    # 5 papers, at most 4 questions each
-//   bun run frame:loop -- --paper slices --dry-run
+//   bun run frame:loop -- --paper rigs --dry-run
 //
 // A question is OPEN until its bullet carries lettered options and a
 // recommendation (`core/decisions.js`); then it is DECIDABLE and the owner rules

@@ -560,6 +560,39 @@ model Vault {
     expect(forced.stdout + forced.stderr).toContain('DB pushed')
   })
 
+  // The refusal above is the piped half; a person at a terminal is asked, as
+  // Prisma asks (`FJS-1926`). `script` is the terminal — a pipe cannot be one.
+  const hasScript = execFileSync('sh', ['-c', 'command -v script || true'], { encoding: 'utf8' }).trim() !== ''
+  const pushAtTerminal = (dir: string, answer: string) => {
+    const env = { ...process.env, NO_COLOR: '1' } as Record<string, string>
+    delete env.FORCE_COLOR
+    try {
+      return { out: execFileSync('sh', ['-c',
+        `(sleep 1; printf '${answer}\\r'; sleep 1) | script -qec "${process.execPath} ${CLI} db push" /dev/null`],
+        { cwd: dir, encoding: 'utf8', env, timeout: 15_000 }), exit: 0 }
+    } catch (err: any) { return { out: String(err.stdout), exit: err.status as number } }
+  }
+
+  test.skipIf(!hasScript)('db push at a terminal asks before dropping, and a no leaves the database alone', async () => {
+    const dir = makeFixtureDir('db-push-ask', {
+      schema: `model Post { id Int @id @default(autoincrement())  body String?  keep String? }`,
+    })
+    expect((await runCli(dir, ['db', 'push'])).exit).toBe(0)
+    writeFileSync(join(dir, 'schema.lite'),
+      `model Post { id Int @id @default(autoincrement())  content String?  keep String? }`, 'utf8')
+
+    const no = pushAtTerminal(dir, 'n')
+    expect(no.out).toContain('apply anyway? [y/N]')
+    expect(no.out).toContain('post.body')
+    expect(no.out).toContain('DB not pushed')
+    expect(no.exit).toBe(1)
+
+    const yes = pushAtTerminal(dir, 'y')
+    expect(yes.out).toContain('DB pushed')
+    expect(yes.exit).toBe(0)
+    expect((await runCli(dir, ['db', 'push'])).stdout).toContain('already in sync')
+  })
+
   test('db push works on a schema with @encrypted fields when ENCRYPTION_KEY is set', async () => {
     // Regression guard: cmdDbPush (and other CLI cmds) used to call
     // createClient without forwarding encryptionKey, so any schema with

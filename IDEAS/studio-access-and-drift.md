@@ -150,13 +150,24 @@ renders a surface the schema already declares.
   silent about policies; a principal-shaped one would need Studio to know the app's
   resolver, which it has no route to today. Probably: levels for the matrix, and show
   policy predicates as text rather than pretending to evaluate them.
+  - **A** — Level only: the matrix grades gates at a chosen level (`acVerdict` in `packages/litestone/src/tools/studio.html`), and policy predicates are shown as text.
+  - **B** — Principal-shaped: Studio boots as a person, as `fli tinker --as` does, takes the app's `getLevel` by path, and evaluates policies against real rows.
+  - **Recommend A** — A is what ships, and it states what it cannot judge rather than guessing. *What can Ada see* already has an owner in `fli tinker --as`, which takes the app's resolver, and B would be a second implementation of that inside a browser page that cannot import the gate module.
 - **Multi-database and tenants.** Studio already re-points at a tenant client. The
   access surface is a property of the *schema*, so it does not vary per tenant — worth
   stating in the UI, because the natural assumption is that it does.
+  - **A** — State it: when a tenant is open, the access panel says in one line that the surface comes from the schema and is the same for every tenant.
+  - **B** — Say nothing: the panel is derived from the schema, so it is already the same for every tenant.
+  - **C** — Show what does vary per tenant: drift A, schema against that tenant's database, since a tenant behind on migrations is where tenants actually differ.
+  - **Recommend A** — then C if tenants are seen to fall behind. The open tenant changes every other panel, so the natural reading is that it changes this one too, and nothing in `studio.html` says otherwise today. B leaves that wrong reading in place.
 - **Is drift B worth showing when the repo has no committed snapshot?** `litestone
   access` writes one beside the schema, but nothing requires it to exist. Absent, the
   badge should say *no snapshot is committed* rather than *no drift* — the same
   distinction `db.$checkWhere` makes between *I cannot judge this* and *this is fine*.
+  - **A** — Show the absence as a warning: *no access snapshot is committed — nothing fails when access widens*.
+  - **B** — Hide drift B when no snapshot exists, since there is nothing to compare.
+  - **C** — Offer to write the snapshot from Studio.
+  - **Recommend A** — A is what ships in `packages/litestone/src/tools/studio.html`. B makes *I cannot judge this* look like *this is fine*. C is the regenerate button § *The rule that keeps this from doing harm* refuses.
 
 ## What would make this wrong
 

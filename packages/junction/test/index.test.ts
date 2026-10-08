@@ -1670,7 +1670,7 @@ describe('Service custom methods', () => {
 
 // ─── Channels tests ───────────────────────────────────────────────────────
 
-import { createChannelManager, Channel, publish } from '../src/transport/channels.ts'
+import { createChannelManager, Channel, announce } from '../src/transport/channels.ts'
 
 describe('Channel', () => {
 
@@ -1754,7 +1754,7 @@ describe('ChannelManager', () => {
     manager.destroy()
   })
 
-  it('publish sends to target channels', async () => {
+  it('announce sends to target channels', async () => {
     const manager = createChannelManager()
     const sent: unknown[] = []
     const socket  = { send: (m: string) => sent.push(JSON.parse(m)), close: () => {}, readyState: 1 }
@@ -1764,7 +1764,7 @@ describe('ChannelManager', () => {
     ch.join(conn)
 
     const fakeCtx = { service: 'deployments', method: 'create', auth: { user: null }, caller: { headers: {} }, route: {}, locals: {} } as any
-    await manager.publish('deployments created', { id: 'dep-1' }, fakeCtx, () => ch)
+    await manager.announce('deployments created', { id: 'dep-1' }, fakeCtx, () => ch)
 
     expect(sent.length).toBe(2)  // 1 connection ack + 1 event
     const event = (sent as any[]).find(m => m.type === 'event')
@@ -2218,7 +2218,7 @@ describe('ctx.statusCode', () => {
 
 describe('ctx.dispatch', () => {
 
-  it('publish() uses ctx.result when dispatch not set', async () => {
+  it('announce() uses ctx.result when dispatch not set', async () => {
     let published: unknown = null
     const manager = createChannelManager()
     const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data; return m.length }, close: () => {}, readyState: 1 }
@@ -2232,20 +2232,20 @@ describe('ctx.dispatch', () => {
         hooks: {
           after: {
             create: [async (ctx) => { ctx.locals.__channels = manager },
-                     publish(() => manager.channel('all'))],
+                     announce(() => manager.channel('all'))],
           }
         }
       })]
     })
 
     await request(app).post('/posts').send({ title: 'Hello' })
-    // publish() broadcasts ctx.result; manager.publish unwraps single-record
+    // announce() broadcasts ctx.result; manager.announce unwraps single-record
     // envelopes (`object !== 'list'`) so subscribers see the bare record.
     expect((published as Record<string, unknown>)?.secret).toBe('hidden')
     manager.destroy()
   })
 
-  it('publish() uses ctx.dispatch when set — strips sensitive fields', async () => {
+  it('announce() uses ctx.dispatch when set — strips sensitive fields', async () => {
     let published: unknown = null
     const manager = createChannelManager()
     const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data; return m.length }, close: () => {}, readyState: 1 }
@@ -2264,7 +2264,7 @@ describe('ctx.dispatch', () => {
                 const r = (ctx.result as { data: Record<string, unknown> }).data
                 ctx.dispatch = { id: r.id, email: r.email }  // strip password_hash
               },
-              publish(() => manager.channel('all')),
+              announce(() => manager.channel('all')),
             ]
           }
         }
@@ -2277,7 +2277,7 @@ describe('ctx.dispatch', () => {
     manager.destroy()
   })
 
-  it('publish() suppresses broadcast when dispatch === false', async () => {
+  it('announce() suppresses broadcast when dispatch === false', async () => {
     let eventCount = 0
     const manager = createChannelManager()
     const socket  = { send: (m: string) => { if (JSON.parse(m).type === 'event') eventCount++; return m.length }, close: () => {}, readyState: 1 }
@@ -2295,7 +2295,7 @@ describe('ctx.dispatch', () => {
           after: {
             create: [
               async (ctx) => { ctx.locals.__channels = manager },
-              publish(() => manager.channel('all')),
+              announce(() => manager.channel('all')),
             ]
           }
         }

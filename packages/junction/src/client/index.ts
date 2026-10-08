@@ -1075,14 +1075,14 @@ export interface ApiKeyInfo {
 // It is deliberately NOT called subscribe/unsubscribe even though those are the
 // frame types on the wire. `subscribe` does not subscribe — the server owns
 // channel membership and says so at transport/channels.ts, and `unsubscribe` is
-// a no-op there. Publishing the wire words as the public verbs would name the
+// a no-op there. Exposing the wire words as the public verbs would name the
 // one thing this cannot do.
 
 class PresenceClient {
   constructor(private _client: JunctionClient) {}
 
   /**
-   * Publish this connection's meta for a channel, and ask for its roster.
+   * Set this connection's meta for a channel, and ask for its roster.
    *
    * Queued while the socket is down and re-sent on every connect, because a
    * component that wants presence is mounted long before — and long after —
@@ -1093,12 +1093,12 @@ class PresenceClient {
    * is answered with nothing, and an anonymous connection is not tracked at
    * all. Nothing here can widen that.
    */
-  announce(channelId: string, meta: Record<string, unknown> = {}): void {
+  set(channelId: string, meta: Record<string, unknown> = {}): void {
     this._client._presenceSet(channelId, meta)
   }
 
-  /** Stop publishing meta for a channel. Membership is not this client's to drop. */
-  release(channelId: string): void {
+  /** Clear this connection's meta for a channel. Membership is not this client's to drop. */
+  clear(channelId: string): void {
     this._client._presenceClear(channelId)
   }
 }
@@ -1189,10 +1189,10 @@ export class JunctionClient extends EventEmitter {
     this._wsReady = true
     this._noteServerBuild(msg[BUILD_FIELD])
     // A reconnect is a NEW connection to the server, with no presence meta and
-    // no membership carried over, so every announcement this client has made
-    // has to be made again. Before `connect` fires, so a listener that reads a
+    // no membership carried over, so all the meta this client has set has to
+    // be sent again. Before `connect` fires, so a listener that reads a
     // roster is not reading the previous socket's.
-    this._presenceAnnounce()
+    this._presenceSend()
     this.emit('connect')
 
     if (this._everConnected) {
@@ -1249,12 +1249,12 @@ export class JunctionClient extends EventEmitter {
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
 
   /**
-   * The presence meta this connection has announced, per channel.
+   * The presence meta this connection has set, per channel.
    *
    * Held here rather than by the caller because the thing that invalidates it
    * is a RECONNECT, which no caller sees: the server keys presence by
    * connection id, so a new socket is a new connection with no meta and no
-   * roster, and whatever announced it is long past the call that did.
+   * roster, and whatever set it is long past the call that did.
    */
   private _presenceMeta: Map<string, Record<string, unknown>> = new Map()
   private _presenceApi: PresenceClient | null = null
@@ -1322,7 +1322,7 @@ export class JunctionClient extends EventEmitter {
   }
 
   /**
-   * Presence — who else is on this channel, and what this connection publishes
+   * Presence — who else is on this channel, and what this connection says
    * about itself.
    *
    * Socket-only and it has no HTTP fallback: presence is a fact about a live
@@ -1336,13 +1336,13 @@ export class JunctionClient extends EventEmitter {
 
   /**
    * Send this connection's meta for one channel, or for every channel it has
-   * announced.
+   * set.
    *
    * The server's `subscribe` frame does NOT join a channel — the app decides
    * membership — so this is *here is my meta, send me the roster*, and a frame
    * naming a channel this connection is not in is dropped there in silence.
    */
-  _presenceAnnounce(channelId?: string): void {
+  _presenceSend(channelId?: string): void {
     if (!this._wsReady || !this._ws) return
     const ids = channelId === undefined ? [...this._presenceMeta.keys()] : [channelId]
     for (const id of ids) {
@@ -1355,7 +1355,7 @@ export class JunctionClient extends EventEmitter {
 
   _presenceSet(channelId: string, meta: Record<string, unknown>): void {
     this._presenceMeta.set(channelId, meta)
-    this._presenceAnnounce(channelId)
+    this._presenceSend(channelId)
   }
 
   _presenceClear(channelId: string): void {

@@ -33,7 +33,7 @@ single owner, and a single owner is the thing a specification needs to point
 at.** Toolbelt's own purpose is "facts with many possible answers that must have
 one". Most of the bridge index is a list of translations with exactly one owner
 each. The committed snapshots (`errors.snapshot.md`, `jsonschema.snapshot.md`,
-`surface.snapshot.md`) and the oracles (`datetime-oracle.json`, the policy oracle
+`surface.snapshot.md`) and the vectors (`datetime-vectors.json`, the policy oracle
 between `compileSql` and `evalJs`, `verifyTransportParity`) are test vectors
 that nobody has pulled out of the implementation yet.
 

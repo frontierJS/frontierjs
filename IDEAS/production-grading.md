@@ -101,18 +101,58 @@ is silent by construction today.
   its fleet, or the app grading itself on a schedule and reporting the verdict
   as a metric. The third needs no new transport and is the one an app with no
   control plane can use.
+  - **A** — `fli`, run against a host: it holds the committed snapshots and compares
+    them with what the process reports.
+  - **B** — A Basecamp engine polling its fleet.
+  - **C** — The app, grading itself on a Caravan schedule and reporting the verdict
+    as a metric.
+  - **Recommend A** — then C once lantern's store exists. The first slice (the gate
+    ladder against `access.snapshot.md`) needs the committed snapshot and no store,
+    and `fli` already has both. C keeps a history, which is what the store is for,
+    and B reads C's metric rather than asking again.
 - **What the endpoint costs.** *What am I enforcing* is a description of the
   access surface, which is exactly what an attacker would like. It cannot be a
   public route, and `devtools()`'s answer — refuse to bind under
   `NODE_ENV=production` with no `auth` — is the wrong one here, because
   production is the only environment where the question means anything.
+  - **A** — An HTTP route behind the app's own gate, readable only at the highest
+    level.
+  - **B** — No route: a command run inside the container (`docker exec`), the way
+    `fli` already runs `litestone backup` and `litestone release`, reached only by
+    whoever holds the machine.
+  - **C** — A route signed with a machine credential, the way the Outpost's command
+    port is.
+  - **Recommend B** — a description of the access surface that is never served over
+    HTTP has no attack surface to price, and the asker in A of the question above
+    already runs commands in that container. A route can come later if something
+    without a shell needs to ask.
 - **Whether a verdict is a metric.** Folding it into
   `registerMetricsSource` gets retention, alerting and a history for free from
   work already specified. It also makes a boolean into a time series, which is
   what `MetricType` has no member for.
+  - **A** — Yes, as a `gauge` of 1 or 0 per check through `registerMetricsSource`,
+    with no new `MetricType` member.
+  - **B** — Yes, with a new `MetricType` member, `verdict`, holding pass, fail or
+    unknown.
+  - **C** — No: its own record that stores only the changes in a verdict, kept
+    forever.
+  - **Recommend A** — a 0/1 gauge is how Prometheus has always reported `up`, so
+    retention and alerting come with no new type. *When did it stop* is answered
+    within the metrics retention window. C is owed only if somebody needs a verdict
+    older than that window.
 - **What it does about drift it cannot explain.** `verify:studio:access` already
   names which side moved when a schema and its snapshot disagree. The same
   answer is owed here and is harder: the two sides are a file and a machine.
+  - **A** — Report both sides and name neither: the verdict is `unknown`, with the
+    snapshot's claim and the process's answer printed side by side.
+  - **B** — Split it by Release id: a process reporting a different Release from the
+    one the journal says is serving means the machine moved (stale image, half swap).
+    The same Release with different enforcement means the build moved. Name the
+    side, and fall back to A only where the ids cannot split it.
+  - **C** — Refuse to grade when the Release ids disagree.
+  - **Recommend B** — the Release id is content-addressed, so it separates the two
+    causes without a guess, which is what `verify:studio:access` does for a schema.
+    C is silent in exactly the case worth reporting.
 
 ## See also
 

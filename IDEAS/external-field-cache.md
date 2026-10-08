@@ -31,5 +31,23 @@ model User {
 ## Open questions
 
 - The noun.
+  - **A** — none: if the next question lands on an ordinary column, there is no new
+    thing to name.
+  - **B** — `@fetched(via: "stripe", ttl: 1d)`, a field attribute that says where the
+    value comes from and how long it stays.
+  - **Recommend A** — it follows the next question's recommendation, and a noun
+    coined before the mechanism is chosen enlarges the concept budget for nothing.
+    B is the spelling to start from if the attribute route is ever taken.
 - Whether this is a litestone attribute at all, or a conduit target writing an
   ordinary column on a schedule — which needs no language change.
+  - **A** — a litestone attribute: litestone owns the cached column, its TTL and its
+    invalidation, and a conduit target does the fetch.
+  - **B** — no language change: a Caravan job calls a conduit target and writes an
+    ordinary column on a schedule.
+  - **C** — an `ExternalRefPlugin` subclass the app writes, which ships: a field
+    type resolved on read, with `cacheKey` caching the answer.
+  - **Recommend B** — every piece already has its owner: Caravan the clock
+    (`FJS-D36`), conduit the third party (`FJS-D153`), litestone the column. The
+    value lands stored, so it is queryable locally, which is the point of the
+    idea; C resolves on read and is not. A is worth pricing only once several apps
+    write the same job by hand.

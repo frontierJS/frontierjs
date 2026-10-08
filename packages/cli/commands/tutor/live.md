@@ -59,9 +59,9 @@ worth a lesson is the second question, which most frameworks never ask:
 
 A channel is a named set of connections. If joining one is a grant, every
 subscriber gets every row — and the gate you spent lesson 4 declaring is
-enforced on the request and not on the wire. So the same publish is graded per
+enforced on the request and not on the wire. So the same broadcast is graded per
 recipient, against the same `@@gate` and the same `@@allow`, and this lesson
-makes you watch it happen: two sockets, one publish, one of them refused.
+makes you watch it happen: two sockets, one broadcast, one of them refused.
 
 There is no browser. A raw socket is the only client that can be genuinely
 signed **out**, which is why this hole survived a year in this repository's own

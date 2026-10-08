@@ -53,10 +53,10 @@ surgery on the core:
 
 | Package | Concern | |
 | --- | --- | --- |
-| [`@frontierjs/auth`](./packages/auth) | slice | Identity, sessions and API keys over Litestone's `asSystem()`. Ships its own schema fragments |
+| [`@frontierjs/auth`](./packages/auth) | rig | Identity, sessions and API keys over Litestone's `asSystem()`. Ships its own schema fragments |
 | [`@frontierjs/caravan`](./packages/caravan) | jobs | SQLite job queue + cron → `app.jobs`. A job runs as whoever asked for it |
 | [`@frontierjs/conduit`](./packages/conduit) | outbound | The third parties an app integrates with, declared in one place — `app.conduit.send()` |
-| [`@frontierjs/notifications`](./packages/notifications) | slice | A notification file (`defineNotification`) → an in-app record, a WebSocket event and an email |
+| [`@frontierjs/notifications`](./packages/notifications) | rig | A notification file (`defineNotification`) → an in-app record, a WebSocket event and an email |
 | [`@frontierjs/ui`](./packages/ui) | UI | Mesa components over the design system. A `<Form>` that reads the schema |
 | [`@frontierjs/css`](./packages/css) | UI | The styling language — a tone and a treatment, never a color. Plain CSS, no build step |
 | [`@frontierjs/email-kit`](./packages/email-kit) | UI | Table-based email components compiled by Mesa. An MJML replacement |
@@ -463,8 +463,8 @@ package `fli new` writes into an app that the registry has never heard of.
 | `@frontierjs/css`           | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/css)](https://www.npmjs.com/package/@frontierjs/css) |
 | `@frontierjs/email-kit`     | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/email-kit)](https://www.npmjs.com/package/@frontierjs/email-kit) |
 | `@frontierjs/jetty`         | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/jetty)](https://www.npmjs.com/package/@frontierjs/jetty) |
-| `@frontierjs/auth`          | slice | [![npm](https://img.shields.io/npm/v/@frontierjs/auth)](https://www.npmjs.com/package/@frontierjs/auth) |
-| `@frontierjs/notifications` | slice | [![npm](https://img.shields.io/npm/v/@frontierjs/notifications)](https://www.npmjs.com/package/@frontierjs/notifications) |
+| `@frontierjs/auth`          | rig   | [![npm](https://img.shields.io/npm/v/@frontierjs/auth)](https://www.npmjs.com/package/@frontierjs/auth) |
+| `@frontierjs/notifications` | rig   | [![npm](https://img.shields.io/npm/v/@frontierjs/notifications)](https://www.npmjs.com/package/@frontierjs/notifications) |
 | `@frontierjs/caravan`       | jobs | [![npm](https://img.shields.io/npm/v/@frontierjs/caravan)](https://www.npmjs.com/package/@frontierjs/caravan) |
 | `@frontierjs/conduit`       | outbound | [![npm](https://img.shields.io/npm/v/@frontierjs/conduit)](https://www.npmjs.com/package/@frontierjs/conduit) |
 | `@frontierjs/mcp`           | API · agent | [![npm](https://img.shields.io/npm/v/@frontierjs/mcp)](https://www.npmjs.com/package/@frontierjs/mcp) |

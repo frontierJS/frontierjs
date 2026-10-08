@@ -184,13 +184,46 @@ this feature and it is not the shape this feature takes.
    argues for `part`. A third option is `--`-style custom properties, which is what
    `@frontierjs/ui`'s DatePicker went **107 declared properties → 6** to get away
    from (`FJS-128`) — per-property, does not compose, enumerate-everything.
+   - **A** — `part="header"` on the child, `part:header="dense"` on the parent.
+   - **B** — custom properties per styled property, the DatePicker shape.
+   - **C** — a prop map, `parts={{ header: 'dense' }}`, as Tailwind-ish kits pass
+     a class string per slot.
+   - **Recommend A** — the platform's word with the platform's meaning, so the
+     shape is stolen whole (*familiarity vs. precision*). B is what `FJS-128`
+     walked away from, and C is a runtime object the compiler cannot see, which
+     leaves question 2's parent-scoped resolution nowhere to happen.
 2. **Is the parent-scoped-class resolution in v1**, or does `:global()` stay for the
    bespoke-rule case and this ship as design-system-classes-only?
+   - **A** — design-system classes only in v1; `:global()` stays for a bespoke
+     rule.
+   - **B** — v1 includes resolving `part:header="tight"` to `tight mHASHp` at the
+     parent, through `resolveAsNode`.
+   - **Recommend A** — then B once a second `:global()` reaches into a child. The
+     demand is one use in the repo, and Invariant 13 already says a parent styles
+     with a tone and a treatment, which A covers whole.
 3. **Does `class:x` on a component start refusing now**, independently of the rest?
    That one is cheap, stands alone, and closes a silent drop today.
+   - **A** — yes: the compiler refuses `class:name` on a component node, naming
+     plain `class=` as what reaches the child today.
+   - **B** — no: it starts refusing when `part:` ships, with `part:` as the named
+     equivalent.
+   - **Recommend A** — it compiles to a `"class:header"` prop nothing reads, a
+     wrong answer nothing reports, and failing that muscle memory loudly is what
+     *familiarity vs. precision* asks. Svelte removed the same spelling from
+     components. It needs no protocol key and no version bump.
 4. **Who grades a part name** — the compiler against a `part=` scan of the child
    (needs cross-module knowledge Mesa does not have), or `fli check` against
    `ANATOMY` (has the register, only sees text), or neither in v1.
+   - **A** — the compiler, scanning the child's `part=` at the parent's compile.
+   - **B** — `fli check` against `ANATOMY`.
+   - **C** — neither in v1.
+   - **D** — the child: its compile emits the set of parts it declares, and in a
+     dev build it warns on a `part:` key outside that set at mount.
+   - **Recommend D** — it grades against the child's own declaration, the one
+     place the answer lives, and needs no cross-module knowledge. B covers only
+     the 25 css terms, not an app's components, and `ANATOMY`'s `uses` and
+     `parts` disagree about who owns Card's header. C leaves a misspelled part a
+     silent drop, the defect question 3 exists to close.
 
 ---
 

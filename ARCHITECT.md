@@ -44,6 +44,9 @@ Use the left column. Never the right.
 | Use                         | Not                                         |
 | --------------------------- | ------------------------------------------- |
 | **Realm**                   | layer, tier, side                           |
+| **Schema**                  | seed (for `db/schema.lite`)                 |
+| **Declaration**             | business rule (for what an app states and the framework enforces) |
+| **Projection**              | derivative, generated copy (for a second shape derived from an origin) |
 | **Model**                   | table, entity, record type                  |
 | **Service**                 | controller, endpoint, handler               |
 | **Resource**                | store, state manager, data hook             |
@@ -54,7 +57,11 @@ Use the left column. Never the right.
 | **Gate**                    | permission, policy, ACL                     |
 | **Gate ladder**             | roles, permissions, access levels           |
 | **Warden**                  | access control, authorization, permission system (for the whole) |
+| **Principal**               | actor, identity (for whose standing a Call is graded at) |
+| **Actor**                   | principal (for who answers for a write)     |
+| **Tenant**                  | silo, partition (for the unit of data isolation) |
 | **Plugin**                  | middleware, extension, addon                |
+| **Rig**                     | slice, module, kit, engine (for a package installed across realms) |
 | **Context**                 | request context, state, payload             |
 |   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
@@ -74,6 +81,8 @@ Use the left column. Never the right.
 | **Target**                  | endpoint, integration, service (for a Conduit declaration) |
 | **Job**                     | task, worker, cron                          |
 | **Queue**                   | lane, topic, pool, channel (for a Job's container) |
+| **Flow**                    | workflow, process, saga (for a declared multi-step process) |
+| **Run**                     | execution, instance, saga (for one bounded, resumable execution) |
 | **Release**                 | manifest, deploy, build (for the immutable artifact) |
 
 Clarifications settled by the code:
@@ -96,10 +105,19 @@ Clarifications settled by the code:
   Signal it reads changes. `bind:` is the two-way case, and § 3.7's last hop is
   one. The Deployment realm calls a Release's per-environment values its
   *configuration*.
-- **A second shape of the same truth is a `view`**, which is what the seed
-  language calls it — `@@materialized` for the kind that is stored, `@@refreshOn`
-  for what refreshes it. What a compiler or a component computes and throws away
-  stays **derived**. There is no second noun for it (`FJS-D46`).
+- **The Schema is `db/schema.lite`; a Seed is rows written before anyone uses
+  the database** (`FJS-D632`). *Seed* keeps the meaning `litestone seed` and the
+  ecosystem give it, and *the schema is the seed* is the thesis's metaphor, never
+  a sentence about the file. A **Declaration** is what an app states for the
+  framework to enforce or derive from — a model, a gate, a `view`, a Conduit
+  Target, a service's `methods:` — where a Hook is code that runs.
+- **A Projection is a second shape of a truth, derived and never written**
+  (`FJS-D632`). A `view` projects rows, and it is the kind the schema language
+  spells — `@@materialized` for the stored kind, `@@refreshOn` for what refreshes
+  it. The DDL, the JSON Schema, client types, a default form and an MCP tool set
+  project the schema. A projection is never writable, because a written one is a
+  second origin. A column subset is a `select`, never a projection, and what a
+  component computes is *derived* — the adjective, never a noun.
 - **A custom service method is a Method, not an Action.** A Service answers
   CRUD plus whatever else it declares, in one `methods:` list; *custom* is the
   adjective for the ones the CRUD set does not name, and there is no noun for
@@ -136,15 +154,24 @@ Clarifications settled by the code:
   Warden is the umbrella over them, not a third sense of either. It is a word for
   prose, never a package or an identifier. The Data boundary is *where* the Warden
   enforces. `packages/litestone/docs/warden.md` is its map.
+- **A Principal is whose standing a Call is graded at; an Actor is who answers
+  for a write** (`FJS-D633`). They are usually one, and they part in support mode
+  (the operator is the actor, the principal they stand behind is `subjectId`) and
+  for a Bearer, a principal with no id whose actor is the grant row. A session,
+  an API key and a Bearer are the principal's kinds. A **Tenant** is the unit of
+  data isolation a `tenancy { }` block declares, never a customer. **User** is
+  auth's model. *Account* is an app's model name, usually an organization, and
+  *Party* is not coined.
 - Model naming: **PascalCase, singular — always**; `@@external` models exempt
   (`FJS-D42`).
 - **A Hook has three tiers and a new `on*` states its tier** (`FJS-D06`). A
   **Hook** may mutate the arguments or halt the operation; a **Guard** answers
   allow/deny and nothing else; an **Observer** receives and cannot act. There is
   no fourth tier: a required single-slot callback is a Hook that throws.
-- **A Plugin attaches a capability; a Provider is a third party the app speaks
-  to** (`FJS-D06`). The registration unit is always Plugin, protocol and all.
-  `Adapter` is refused.
+- **A Plugin extends what it is installed into — Junction's app, Litestone's
+  client, Vite's build; a Provider is a third party the app speaks to**
+  (`FJS-D06`, `FJS-D631`). *Capability* is the Warden's word alone. The
+  registration unit is always Plugin, protocol and all. `Adapter` is refused.
 - **A Channel is a broadcast set; the delivery medium is a Transport**
   (`FJS-D06`).
 - **A Queue is what a Job runs on, and its verbs come in two tiers**
@@ -153,15 +180,30 @@ Clarifications settled by the code:
   `drain`, `purge`, `cancel`, the rate limit — are in no source file, are gated
   at ADMINISTRATOR or above, and are audited. The word is Caravan's: a buffer
   that holds work in order is not thereby a Queue.
+- **A Flow declares a multi-step process; a Run is one bounded execution that
+  can be interrupted and resumed** (`FJS-D634`). An orion run, a backfill and a
+  deploy's journal are Runs. A Run is not a Job: a Job is one unit retried, and
+  a Run's host may or may not run its steps as Jobs. A Flow is declared in code
+  or stored as data, as orion's is. The noun is shared and the engine is not
+  (`FJS-D503`). A Run's **pivot** is the step past which it only goes forward.
+  Before it, a step may be *compensable*, meaning a later failure takes it back,
+  and it declares its own compensation. *Saga* is a Run whose steps compensate,
+  and is not a term. The cli's *runnable* is a launch target, never a Run.
+- **Work a person owes is a Transition with a declared owed-by party**
+  (`FJS-D634`). The breach is a Commitment the system owes, like
+  `@@commitment(escalate, …)`, so an approval adds no noun. The party is a User
+  or a gate level, and an inbox is derived from the declaration. *Task* is
+  refused.
 - **A Phase is qualified at every use too** — a *startup phase* or a *CI
   phase*, never bare (`FJS-D395`). *Battery* is ordinary English: a Plugin
   Junction ships is a Plugin (`FJS-D394`).
 - **`Edge` is refused; `Boundary` is qualified at every use** — the Data
   boundary, the app↔world boundary (`FJS-D06`).
 - **The Deployment noun is Release, and `Manifest` is ceded to MV3**
-  (`FJS-D06`). A Release is immutable and environment-independent; a **Pivot**
-  is the transition at which N-1 compatibility ends, and it is the same test for
-  a contract migration and a client retention window.
+  (`FJS-D06`). A Release is immutable and environment-independent; a Release's
+  **Pivot** is the transition at which N-1 compatibility ends. It is the deploy
+  instance of a Run's pivot (`FJS-D634`), and it is the same test for a contract
+  migration and a client retention window.
 
 **Two channels, kept separate.** When you *describe* the codebase, use these
 words and only these words. When you *evaluate* the vocabulary itself, do it
@@ -170,12 +212,6 @@ vocabulary is mandatory for describing and fully open for challenging.
 
 ### Not yet named
 
-- **Slice** — a package that crosses all realms deliberately (auth,
-  notifications). Deferred until `fli add <slice>` is on the table or someone
-  outside this repo ships one (`FJS-D06` §7).
-- **Run** — bounded work that finishes and can be interrupted and resumed: a
-  backfill, a pay run, a deploy. Distinct from Queue, which is standing and
-  unbounded (`FJS-D198`). The word is currently spent on the cli's runnables.
 - **Environment** and **Audience** in the Deployment realm — proposed in
   `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
   the gate ladder.
@@ -195,7 +231,7 @@ Standing rules the framework is designed against.
    relations, access, lifecycle, even storage topology. What it never encodes:
    UI behavior and business logic. Growth happens outward; it all traces back.
    *Named exemption:* framework-owned storage (job queues, outbound-target
-   registries, session stores) deliberately lives outside the seed — that gap
+   registries, session stores) deliberately lives outside the schema — that gap
    is intentional, not drift.
 2. **Boundaries are checkpoints, not walls.** A realm affects another realm
    through hooks at the boundary, never by reaching into its internals — and a
@@ -242,8 +278,8 @@ eliminated. **Intentional gaps** (genuinely different concerns) are respected
 
 Beyond the application sits the FJS World — the operational environment.
 **This structure is not locked.** Realm and domain are orthogonal axes, and
-several packages legitimately cross both; a second axis, the Slice, is deferred
-(§2). Maturity per package is the map's to say (`CLAUDE.md` § Packages), not
+several packages legitimately cross both; the second axis is the **Rig**, a
+package assembled from realm parts that an app installs any subset of (`FJS-D630`). Maturity per package is the map's to say (`CLAUDE.md` § Packages), not
 this document's.
 
 | Domain                           | Concern                                          | Tool(s)                                 |
@@ -262,8 +298,8 @@ Placements outside the table: **toolbelt** (substrate, `FJS-D26`), **testing**
 **email-kit** (UI), **jetty** (a browser-extension
 application *container* — UI realm plus its own build/deploy surface),
 **css** (presentation — the UI realm's second concern), and
-**auth**/**notifications** as vertical slices that ship a schema fragment, a
-service, a plugin, and a resource as one unit.
+**auth**, **notifications** and **orion** as rigs — a schema fragment, a
+service whose plugin attaches it, and a resource, installed by part.
 
 Dependency direction across the core: `Litestone ← Junction ← Sierra`, with
 Mesa a strict leaf. Never the reverse, in any package. `@frontierjs/toolbelt`
@@ -279,8 +315,6 @@ what is here is a question the mental model has not answered.
 - **The Deployment realm's remaining nouns.** Release and Pivot are ruled and in
   code; Environment and Audience are proposed (`IDEAS/release-transitions.md`)
   and collide with words the Data realm and Mesa already hold (§2).
-- **Slice.** Two exist and both are this repo's; the word waits for a third
-  party (`FJS-D06` §7).
 - **Auth's routes.** `/auth/*` establishes a session and deliberately bypasses
   the Service abstraction — login cannot be gated by login (`FJS-D20`). Whether
   a second provider inherits that shape unchanged is not yet asked.

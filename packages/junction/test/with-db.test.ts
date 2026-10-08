@@ -165,4 +165,67 @@ describe('app.withDb under strategy row', () => {
     // tenant's row, which is why the callback is handed the claimed one.
     expect(out).toEqual({ claim: 'w1', mine: 'mine', theirs: null, bare: null })
   })
+
+  // The app's own principal holds no membership and needs none: the tenant it
+  // works in is the one the APP stated, through runAs or the job caravan
+  // re-binds. Refused, every scoped write a cron made went through asSystem()
+  // or a resolver granting the claim on nothing (FJS-1924).
+  async function rowApp(resolver?: (ctx: ServiceContext, user: unknown) => Promise<Record<string, unknown>>) {
+    const db: any = await createClient({ db: ':memory:', schema: `
+      tenancy { strategy row  column workspaceId  claim workspaceId }
+      model Doc {
+        id          Int    @id @default(autoincrement())
+        workspaceId String
+        title       String
+      }` })
+    await db.asSystem().doc.create({ data: { workspaceId: 'w2', title: 'other workspace' } })
+    const app = createApp({ db, auth: USERS, system: SYSTEM, ...(resolver ? { principal: resolver } : {}) })
+    app.services.register(createService({ name: 'docs', model: 'Doc' }))
+    await app._startForTest()
+    return { db, app }
+  }
+  const SYSTEM = { userId: 'system', role: 'system' } as any
+
+  test('the app\'s own principal holds the tenant runAs states, through withDb and through a service', async () => {
+    const { db, app } = await rowApp()
+
+    const seen = await app.runAs(null, { tenant: 'w1' }, async () => {
+      await app.withDb((scoped: any) => scoped.doc.create({ data: { title: 'by withDb' } }))
+      await app.service('docs').create({ title: 'by service' })
+      return app.service('docs').find({})
+    })
+    const rows = (seen as any).data ?? seen
+    expect(rows.map((d: any) => [d.workspaceId, d.title])).toEqual([['w1', 'by withDb'], ['w1', 'by service']])
+    expect((await db.asSystem().doc.findMany({ where: { workspaceId: 'w2' } })).length).toBe(1)
+  })
+
+  test('the actor id caravan recorded for the app is the same principal and holds the same tenant', async () => {
+    const { app } = await rowApp()
+    const made = await app.runAs('system', { tenant: 'w1' }, () =>
+      app.withDb((scoped: any) => scoped.doc.create({ data: { title: 're-bound' } })))
+    expect(made.workspaceId).toBe('w1')
+  })
+
+  test('a person runAs names is granted nothing by the tenant it states', async () => {
+    // Their claim is a fact about THEM — a membership, a session field — and
+    // the stated tenant is only where the work points.
+    const { app } = await rowApp()
+    await expect(app.runAs('u1', { tenant: 'w1' }, () => app.service('docs').find({})))
+      .rejects.toThrow(/carries no 'workspaceId'/)
+  })
+
+  test('work stated to belong to no tenant holds no claim', async () => {
+    const { app } = await rowApp()
+    await expect(app.runAs(null, { tenant: null }, () => app.service('docs').find({})))
+      .rejects.toThrow(/carries no 'workspaceId'/)
+  })
+
+  test('a resolver that refuses the app\'s own principal leaves it the stated tenant', async () => {
+    // membershipClaim's shape: no membership row for 'system', so it answers
+    // nothing — which must not strip what the app stated.
+    const { app } = await rowApp(async () => ({}))
+    const made = await app.runAs(null, { tenant: 'w1' }, () =>
+      app.withDb((scoped: any) => scoped.doc.create({ data: { title: 'past the resolver' } })))
+    expect(made.workspaceId).toBe('w1')
+  })
 })

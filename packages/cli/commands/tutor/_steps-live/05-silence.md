@@ -1,6 +1,6 @@
 ---
 title: 05-silence
-description: The same publish with nobody joined — the half that fails without an error
+description: The same broadcast with nobody joined — the half that fails without an error
 ---
 
 ## Nothing arrives
@@ -15,17 +15,17 @@ app.configure(channels((a) => {
 ```
 
 This step replaces it with the bare `app.configure(channels())`, restarts the
-API, and runs **the same publish as the step before** — same caller, same
+API, and runs **the same broadcast as the step before** — same caller, same
 channel, same socket.
 
 Nothing arrives.
 
-The publish still happens. The service still declares `channel: 'notes'`, the
+The broadcast still happens. The service still declares `channel: 'notes'`, the
 call still completes, `callService` still announces it. It reaches an empty set,
 because a channel is a set of connections and no connection is in this one.
 
 **Both halves of getting this wrong are silent.** There is no error, no warning
-and no log line — on the server a publish to a channel nobody joined is
+and no log line — on the server a broadcast to a channel nobody joined is
 indistinguishable from a successful one, and in the browser the symptom is a
 screen that never updates. That is why it is worth ten seconds of watching:
 it is not a shape you can debug by reading a stack trace, because there isn't
@@ -106,7 +106,7 @@ watcher.ws.close()
 
 await restore()
 
-// The pair. Step 4 asserted the frame arriving; this asserts the same publish,
+// The pair. Step 4 asserted the frame arriving; this asserts the same broadcast,
 // from the same caller, on the same channel, reaching nobody. One callback is
 // the whole difference between them.
 if (!await must($, {
@@ -127,7 +127,7 @@ if (!await must($, probe.fileContains({
 })) return
 
 log.info('')
-log.info('  the row was written, the publish went out, and it reached nobody')
+log.info('  the row was written, the broadcast went out, and it reached nobody')
 log.info('  app.ts is back as it was')
 log.info('')
 

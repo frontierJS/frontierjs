@@ -954,7 +954,7 @@ type Session = { userId?: string; id?: string }
 // cannot.
 //
 // It exists because a channel nobody joined broadcasts into NOTHING. No error,
-// no log, no dropped frame: the publish succeeds, reaches an empty set, and the
+// no log, no dropped frame: the broadcast succeeds, reaches an empty set, and the
 // symptom is a screen that never updates.
 //
 // Joining is a subscription and not a permission. A broadcast is not a SELECT,
@@ -976,7 +976,7 @@ ${sessionType}
 export function joinChannels(app: App, ${sessionArg}: unknown, conn: unknown): void {
   for (const service of app.services.values()) {
     // Only the string form. A function \`channel:\` computes its target per
-    // publish, so there is no name here to join ahead of time — an app using
+    // broadcast, so there is no name here to join ahead of time — an app using
     // one names the channels it wants below, by hand.
     const declared = (service as { channel?: unknown }).channel
     if (typeof declared === 'string') app.channel!(declared).join(conn as never)

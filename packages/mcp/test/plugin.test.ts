@@ -424,3 +424,51 @@ describe('a protected column reaches no tool RESULT (FJS-D473)', () => {
     expect(res.text).not.toContain('scope-minted')
   })
 })
+
+describe('GET /mcp/levels — what each level is offered, for an operator', () => {
+
+  type Row = { name: string; verdict: string; needs: number | null }
+  type Levels = { standing: number; levels: Array<{ level: number; tools: Row[]; withheld: Row[] }> }
+
+  const levels = async (token?: string) => {
+    const res = await fetch(`${base}/levels`, {
+      headers: token ? { authorization: `Bearer test-token-${token}` } : {},
+    })
+    return { status: res.status, body: await res.json() as Levels }
+  }
+  const names = (rows: Array<{ name: string }>) => rows.map(r => r.name).sort()
+
+  test('an administrator is answered every level from STRANGER to SYSTEM; a user and a stranger are refused', async () => {
+    const staff = await levels('staff')
+    expect(staff.status).toBe(200)
+    expect(staff.body.standing).toBe(5)
+    expect(staff.body.levels.map(l => l.level)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
+
+    expect((await levels('shopper')).status).toBe(403)
+    expect((await levels()).status).toBe(403)
+  })
+
+  test('a level’s tools are the list tools/list answers a caller standing there', async () => {
+    const { body } = await levels('staff')
+    // A pair a rung apart, so a route that answered one list for every level fails.
+    expect(names(body.levels[5]!.tools)).toEqual(names(await list('staff')))
+    expect(names(body.levels[4]!.tools)).toEqual(names(await list('shopper')))
+    expect(names(body.levels[4]!.tools)).not.toEqual(names(body.levels[5]!.tools))
+  })
+
+  test('a custom method’s declared gate and a move’s floor are graded, each with the rule that decided', async () => {
+    const { body } = await levels('staff')
+    const at = (level: number, name: string) => ({
+      offered:  body.levels[level]!.tools.find(t => t.name === name),
+      withheld: body.levels[level]!.withheld.find(t => t.name === name),
+    })
+
+    // `mint` is declared `{ method: 'mint', gate: 5 }` in the service, not the schema.
+    expect(at(4, 'credentials_mint').withheld).toMatchObject({ verdict: 'method-gate', needs: 5 })
+    expect(at(5, 'credentials_mint').offered).toMatchObject({ verdict: 'method-gate', needs: 5 })
+
+    // `refund` is @gate(5) on a model a USER updates: the move's own floor decides.
+    expect(at(4, 'orders_refund').withheld).toMatchObject({ verdict: 'move-floor', needs: 5 })
+    expect(at(5, 'orders_refund').offered).toMatchObject({ verdict: 'move-floor', needs: 5 })
+  })
+})

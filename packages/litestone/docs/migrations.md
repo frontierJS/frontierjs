@@ -33,7 +33,9 @@ as a probable rename, with the `ALTER TABLE … RENAME COLUMN` to use instead �
 that guess changes the wording and never the decision.
 
 On the CLI it is `litestone db push --accept-data-loss`. Without the flag the
-command names the columns, prints `✗  DB not pushed` and **exits 1**.
+command names the columns, prints `✗  DB not pushed` and **exits 1** — unless a
+person is at a terminal, where it lists the columns and asks `apply anyway? [y/N]`;
+a yes applies, anything else refuses as above.
 
 **The file path still applies.** `litestone migrate create` writes the migration
 with a boxed `DESTRUCTIVE` banner naming the columns whose values go — the file

@@ -252,9 +252,30 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
   What remains open is not *which wins* but **whether the sync is at BUILD time or
   continuous**: at build time it is a loader, continuously it is a service and a
   webhook, and only the second serves an editor.
+  - **A** — files, read at build by a loader into a build-time index; no table,
+    no sync.
+  - **B** — files as the source, synced continuously into a table by a service
+    and a git-host webhook, sha-gated, the CMS's shape.
+  - **C** — rows with a markdown column, no files.
+  - **Recommend A** — then B once an editor exists to need it. A is the weekend
+    against machinery that exists and keeps one origin, the repository; B's
+    index is only worth its git round trip and its half-failed write when a
+    person with no checkout is saving, and C gives up review and a prerender
+    with no database.
 - **Is this a package or sierra's?** The routing, the compiler and the prerender
   are already sierra's and mesa's. What is new is a declaration and an index,
   which argues for sierra rather than a new name.
+  - **A** — sierra's: `content:` in `sierra.config.js` names each collection's
+    directory, `type` and route, and the index is built beside the route scanner.
+  - **B** — a new battery package owning the declaration and the index, with
+    sierra as a reader.
+  - **C** — sierra's, but each directory declares itself in its `_module.md`
+    (its `type` and route), the way the CMS derives a document's type from its
+    path.
+  - **Recommend A** — the index has one reader, sierra's prerender, so a package
+    would be a severable seam around nothing yet, and an existing owner beats a
+    new name. C scatters the list of collections across the tree with nothing
+    that enumerates them; it is worth measuring again if the editor arrives.
 - **Does the non-developer audience actually get served by this?** The answer
   here was *no, that is `foundry` territory and a much larger project*, and the
   second half of that is **measured wrong**: the CMS in § *Evidence from a CMS…*
@@ -265,9 +286,25 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
   not follow from it, and this record should stop claiming it does. What the editor
   actually needs from this proposal is the two conventions named above: a
   directory's own metadata, and a per-directory template for new documents.
+  - **A** — no: developer-only, and every editing concern is `foundry`'s later.
+  - **B** — not by an editor here, but the collection adopts `_module.md` and
+    `__template.md` now so the editor that comes later has its two conventions.
+  - **C** — yes: ship the list, editor and save over a git service with it.
+  - **Recommend A** — then B's two conventions in the same piece of work as the
+    first editor. A convention with no reader can be wrong without anything
+    saying so, and `__template.md` has no reader until something creates a
+    document. C waits on question 1's B.
 - **What does it do about `@@fts`?** The storefront search finding a product and
   not a help article is the concrete symptom, and it is the strongest argument for
   content-as-rows.
+  - **A** — the build emits a client-side search index for the collection.
+  - **B** — the documents are written into a table so `@@fts` covers them beside
+    the rows.
+  - **C** — nothing in v1; content is not searchable.
+  - **Recommend C** — then B once question 1's sync to a table exists, since that
+    table is what `@@fts` indexes and one search box over products and articles
+    needs one index. A is a second search engine with its own ranking, so the
+    storefront would answer one query two ways.
 
 ---
 

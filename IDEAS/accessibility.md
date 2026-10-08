@@ -104,16 +104,56 @@ and pretending otherwise would be a check that fails open.
   sierra already taps a prerendered route's reads to grade them against `@@gate`.
   The same tap could grade a page's landmarks. That may be a `fli check` rule
   instead, and the two are not equivalent: one runs at build, one at review.
+  - **A** — sierra is a reader: the prerender tap that grades a route's reads
+    against `@@gate` also grades its landmarks, heading order and skip link, and
+    fails the build.
+  - **B** — a `fli check` rule over the app's layout and route files, at review.
+  - **C** — sierra emits the shell-level facts itself (`lang` on `<html>`, the
+    skip link to `<main>`), and landmarks and heading order are asserted by the
+    browser drive on rendered pages.
+  - **Recommend C** — `lang` and the skip link are facts sierra can write rather
+    than check, which is the derive-instead-of-restate answer. Landmarks and
+    heading order exist only in rendered output: A sees the prerendered routes
+    and none of the SPA ones, and B reads source text that a layout chain and
+    `{#if}` rearrange, so both would pass routes they never saw.
 - **What the kit is called and what one entry holds.** Coining a noun is a
   decision-rules matter and is deliberately not made here.
+  - **A** — `@frontierjs/toolbelt/aria`, keyed by the css `VOCAB` term; an entry
+    is `{ role, requires: [relationships], tracks: { state: attribute } }`.
+  - **B** — `@frontierjs/toolbelt/a11y`, the same entry, plus the page-level kind
+    as entries keyed by layout.
+  - **C** — no kit noun: a `role` and `aria` column added to each `ANATOMY`
+    entry in `packages/css/vocabulary.js`.
+  - **Recommend A** — WAI-ARIA is the field's existing name for exactly what one
+    entry holds (role, required owned and labelling elements, state attributes),
+    so the noun is discovered rather than coined. B stretches it over the
+    page-level kind the first question gives to sierra, and C is the home
+    § *Why not `css/vocabulary.js`* already rules out.
 - **Whether `<Form>`'s existing answer is the model for the rest.** It is the one
   kind that derives today and it works: label, constraints and server error all
   resolved from `$context.form`, with `novalidate` and a named case it cannot
   cover. If the other three kinds can be made to look like that, the kit is
   smaller than this record assumes.
+  - **A** — yes: each component asks a context at the point of use what it owes,
+    the way a control asks `$context.form`, and the kit holds only what no
+    context can answer.
+  - **B** — no: the kit is a full table for every term, and `<Form>` becomes
+    one more reader of it.
+  - **Recommend A** — then the table only for what is left. Build one behavioral
+    component (Dialog's focus trap and labelled title) the `<Form>` way first and
+    price the kit against what remains; *cut one level simpler* says not to
+    tabulate the kind that already derives.
 - **Where the WCAG level is stated.** A conformance target is a claim a project
   makes, and the framework shipping one for its consumers is a claim it cannot
   keep. Probably a `README` sentence per package and never a config key.
+  - **A** — one `README.md` sentence per package naming the level its own drives
+    assert (`css`, `ui`).
+  - **B** — one sentence in the root `README.md` for the whole framework.
+  - **C** — an app config key (`a11y.level`) that `fli check` grades against.
+  - **Recommend A** — the level is only as true as the drive behind it, and each
+    package owns its own drive, so the claim sits with its evidence. B states a
+    level for packages that test nothing, and C is a key nothing can keep true
+    from a static read.
 
 ## See also
 

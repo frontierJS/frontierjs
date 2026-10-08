@@ -728,6 +728,10 @@ is shape 1 against shape 2 inside one row. Legal, not refused.
 - **Does the tree ship as a skill, as `oracle`'s knowledge base, or as neither?**
   Its left half is `discovery` already, so a skill would be a second copy of four
   forks; its right half has no home at all.
+  - **A** — As `oracle`'s knowledge base: each leaf becomes data in `packages/oracle/src/catalog.js`, which `brief.js` renders for a model and `emit.js` reads for a schema, and `discovery` cites the catalog for the order of asking.
+  - **B** — As a skill of its own beside `discovery`, holding the whole tree as prose.
+  - **C** — Neither: the tree stays in this paper, and only the leaves that become a `fli check` rule or a schema word ship.
+  - **Recommend A** — § 4 already argues it, and `FJS-D601` makes the catalog the one model-free module that both the developer's skill and the app builder call, so the tree lands where both readers already look. B is a second prose copy of `discovery`'s four forks. C leaves the right half with no home and nothing to check it.
 - ~~**What grades shape 1?**~~ **Answered 2026-09-22 (`FJS-D351`, `FJS-D352`):
   nothing has to — `@@expires` makes the filter automatic, so an omitted filter
   becomes a stated `withExpired` rather than a read to be graded.**

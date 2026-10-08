@@ -149,7 +149,8 @@ export interface IAuth {
 
   // Users
   createUser(data: CreateUserInput):         Promise<SessionContext>
-  deleteUser(userId: string):                Promise<void>
+  /** Delete the account and what signs it in. `actorId` is who asked, when that is not the user. */
+  deleteUser(userId: string, opts?: { actorId?: string }): Promise<void>
 
   /**
    * Build a session for a user who is not presenting a credential.
@@ -195,7 +196,7 @@ export interface IAuth {
 
   // API Keys
   createApiKey(userId: string, opts?: ApiKeyOptions):  Promise<{ key: string; id: string }>
-  revokeApiKey(keyId: string, opts: { userId: string }): Promise<void>
+  revokeApiKey(keyId: string, opts: { userId: string, actorId?: string }): Promise<void>
   verifyApiKey(key: string):                           Promise<SessionContext | null>
 
   // ── The caller acting on their own credentials ────────────────────────
@@ -221,11 +222,21 @@ export interface IAuth {
   /** The user's live sessions. Never carries the token — see AuthSessionInfo. */
   listSessions?(userId: string):                       Promise<AuthSessionInfo[]>
 
-  /** Revoke one session of this user's. Throws if it is not theirs. */
-  revokeSession?(userId: string, sessionId: string):   Promise<void>
+  /**
+   * Revoke one session of this user's. Throws if it is not theirs. `actorId` is
+   * who asked when that is not the user: an operator signing somebody out.
+   */
+  revokeSession?(userId: string, sessionId: string, opts?: { actorId?: string }): Promise<void>
 
   /** Revoke every session of this user's, optionally keeping the one presenting. */
-  revokeSessions?(userId: string, opts?: { exceptSessionId?: string }): Promise<number>
+  revokeSessions?(userId: string, opts?: { exceptSessionId?: string, actorId?: string }): Promise<number>
+
+  /**
+   * An operator inviting somebody: an account with no way in, and the raw token
+   * that sets its first password at `confirmPasswordReset`. The caller hands
+   * the token over — nothing is mailed. Throws if the address is taken.
+   */
+  createInvitation?(email: string, opts: { name?: string, actorId: string }): Promise<{ userId: string, token: string, expiresAt: string }>
 
   /** The user's API keys. Never carries the key — it exists once, at creation. */
   listApiKeys?(userId: string):                        Promise<ApiKeyInfo[]>

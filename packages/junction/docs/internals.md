@@ -158,14 +158,14 @@ and not here. Read the section for a path before changing code under it.
   irregular — graded to nobody, silently. A channel that grades to nobody warns
   once per service, because a correct refusal and a misresolved accessor look
   identical from the send side.
-- **A service broadcasts through `channel:` OR the `publish()` hook, never both.**
+- **A service broadcasts through `channel:` OR the `announce()` hook, never both.**
   `svc.pipelines()` refuses the pair, naming the method — it is the one place the
-  full effective chain is known, so an app-level `after: { all: [publish(…)] }` is
+  full effective chain is known, so an app-level `after: { all: [announce(…)] }` is
   caught as well as a service-level hook. The check matches **marked** hooks, not
-  names: an app may call its own hook `publish`, and suppressing a real one on a
+  names: an app may call its own hook `announce`, and suppressing a real one on a
   name collision would silently stop broadcasting (`FJS-045`).
 - **`channel:` takes three shapes.** A string names the channel, `false` is the
-  declared opt-out (from `publishDefault` too), and a function `(data, ctx) =>
+  declared opt-out (from `announceDefault` too), and a function `(data, ctx) =>
   app.channel(…)` picks the target per write — the shape for a workspace or a
   room, where the name is on the row.
 - **`changed` is the announcement for a write that cannot name its row.**
@@ -464,7 +464,7 @@ nothing for it to be inside of.
   {}}`, an empty object with a 200 and the stream destroyed. **`kind` stays
   two-valued**: a third value is branched on at ten sites and lands in every one
   as *not a list*. Each FRAME is a result and the stream is not — which is why
-  `publish()` is an after-hook (a pushed frame IS `ctx.result`, already through
+  `announce()` is an after-hook (a pushed frame IS `ctx.result`, already through
   `protect()`) and why `ctx.sse()` on a raw route has no hooks, no `gateAuth` and
   no field protection: right for a heartbeat, wrong for records.
 - **`kind` is the envelope's one discriminant.** `object` names the SERVICE in

@@ -192,6 +192,17 @@ around is worse than the current honest raw one.
 - **Cost.** Creating N views per request is not free. Cache per (identity, schema
   version)? Create lazily, only for tables the statement names — which requires
   parsing the statement, which the allowlist needs anyway?
+  - **A** — build the full view set for every readable model before each scoped
+    call, and drop it after.
+  - **B** — build lazily, only the views for tables the statement names. That needs
+    a parse, and a name the parse misses resolves to the base table, which is a leak.
+  - **C** — cache the set per (identity, schema version) on the read connection.
+  - **D** — make the views identity-free: each predicate reads the viewer from a
+    one-row temp table, so the set is built once per (connection, schema version)
+    and a call only rewrites that row.
+  - **Recommend D** — measured against A as the baseline first, per build item 2.
+    D splices no identity value into view DDL, its cache key is the schema version
+    alone, and B's failure mode is the false guarantee `FJS-D52` refused to ship.
 - ~~**`@encrypted` columns.**~~ **Answered 2026-09-28 (`FJS-D538`): A — omit them from the view, and report the omission to the caller.** Decryption happens above SQLite, so a view exposes
   ciphertext. Omit them (safe, surprising) or expose them raw (honest, useless)? Omit,
   probably, with the omission reported.
@@ -201,16 +212,45 @@ around is worse than the current honest raw one.
     data, while a reported omission says exactly what was withheld and why
 - **Does the view set follow `$scopedBy(...)` too?** It should — same declarations,
   same binding — but that multiplies the cache key.
+  - **A** — yes: the binder's value joins the view predicates, from the same
+    declaration the ORM path binds.
+  - **B** — no: scoped SQL reads through `$setAuth` only, and `$scopedBy(...).sql`
+    keeps refusing.
+  - **Recommend A** — one declaration read two ways is the design's whole claim, and
+    B leaves a proxy whose `sql` means something different from its `findMany`. If
+    the first question picks D, the binder's value is one more column of the viewer
+    row and the cache key does not grow.
 - **Reads across a relation.** A join between two scoped views is correct by
   construction, which is a nice property worth stating explicitly rather than
   discovering.
+  - **A** — state the property and pin it with a test: a join over two views carries
+    both predicates, and a model below its read level does not resolve, so the
+    join fails with SQLite's `no such table`.
+  - **B** — the same, but a model below its read level gets an empty view, so the
+    join returns fewer rows instead of failing.
+  - **C** — as A, with a `no such table` naming a declared model rethrown as a
+    refusal that names the model and its read level.
+  - **Recommend C** — B shows a missing permission as missing data, which is wrong
+    without anything saying so. C is A plus the helpful failure § IV's
+    *familiarity vs. precision* asks for, and needs no statement parse because the
+    SQLite error already names the table.
 - **Do writes ever arrive?** `INSTEAD OF` triggers could auto-inject the scope
   dimension the way Agent-Native auto-injects `owner_email` on INSERT. Attractive, and
   a much larger surface. Read-only first.
+  - **A** — never: scoped SQL is `SELECT` only, and a write goes through the ORM or
+    `asSystem().sql`.
+  - **B** — read-only first, then `INSTEAD OF` triggers that inject the scope
+    dimension once a consumer asks.
+  - **Recommend A** — the ORM already writes with every gate, transition, audit
+    entry and announcement. A trigger path is a second write owner beside it that
+    runs none of the hooks, which Invariant 4 forbids for the announcement alone.
 - **Is this how `db.sql` should behave for an unauthenticated client?** Argued above
   as "unchanged" — there is no identity to scope by — but that means the least
   restricted path is the one with no auth on it, which reads oddly out of context and
   should be a `DECISIONS.md` line rather than an implicit fallthrough.
+  - **Recommend A** — `FJS-D52` already answers this: on a schema that declares access
+    rules, `db.sql` with no identity throws, and only `asSystem().sql` reaches the
+    base tables.
 
 ## See also
 

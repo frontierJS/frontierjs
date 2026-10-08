@@ -19,7 +19,7 @@ export function createPostsService() {
   return createBaseService({
     // Broadcast every mutation to the 'posts' channel. One line, declared next
     // to the service it belongs to — this used to be three steps in app.ts:
-    // import publish(), build the hook, attach it to create/patch/remove
+    // import announce(), build the hook, attach it to create/patch/remove
     // individually (and know that `after: { all }` would broadcast READS).
     //
     // Scope this before you ship: every connection in the channel receives

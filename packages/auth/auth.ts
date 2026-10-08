@@ -1469,9 +1469,40 @@ export function createLitestoneAuth(
       return toContext(user, 'created')
     },
 
+    // ── createInvitation ─────────────────────────────────────────────────
+    // An operator's invitation: the account `createUser` makes with no password,
+    // and the token `confirmPasswordReset` turns into its first one (FJS-D265).
+    // Returned rather than handed to `onPasswordResetRequested`: an operator
+    // asked for it, so there is no enumeration to hide, and an app with no
+    // mailer is the case this is for. The role is always the default — standing
+    // is the User row's to change afterwards, by someone allowed to.
+
+    async createInvitation(
+      email: string, opts: { name?: string, actorId: string },
+    ): Promise<{ userId: string, token: string, expiresAt: string }> {
+      const existing = await sys.user.findFirst({ where: { email } })
+      if (existing) throw new EmailTakenError()
+      if (onRegister) await onRegister({ email, name: opts.name ?? null })
+
+      const user = await registerUser(tx => tx.user.create({
+        data: { email, name: opts.name ?? null },
+      }))
+
+      const token = generateToken()
+      const until = expiresAt(passwordResetTtl, sys.$now())
+      await sys.verification.create({
+        data: { purpose: 'passwordReset', identifier: email, value: token, expiresAt: until },
+      })
+
+      await audit('invitation.created', {
+        model: 'User', records: [String(user.id)], actorId: opts.actorId, actorType: 'user',
+      })
+      return { userId: String(user.id), token, expiresAt: new Date(until).toISOString() }
+    },
+
     // ── deleteUser ───────────────────────────────────────────────────────
 
-    async deleteUser(userId: string): Promise<void> {
+    async deleteUser(userId: string, opts?: { actorId?: string }): Promise<void> {
       // Fetch the user first so we can clean up email-scoped verification tokens
       const user = await sys.user.findUnique({ where: { id: userId } })
 
@@ -1489,6 +1520,12 @@ export function createLitestoneAuth(
       }
 
       await sys.user.delete({ where: { id: userId } })
+
+      // Only when somebody else did it: the model's own log files a delete as
+      // the system's, which says nothing about who asked.
+      if (opts?.actorId) await audit('user.removed', {
+        model: 'User', records: [String(userId)], actorId: opts.actorId, actorType: 'user',
+      })
     },
 
     // ── requestPasswordReset ─────────────────────────────────────────────
@@ -1704,7 +1741,7 @@ export function createLitestoneAuth(
 
     // ── revokeApiKey ─────────────────────────────────────────────────────
 
-    async revokeApiKey(keyId: string, opts: { userId: string }): Promise<void> {
+    async revokeApiKey(keyId: string, opts: { userId: string, actorId?: string }): Promise<void> {
       // Not Number(keyId). schema.ts ships `Credential.id Int`, but the
       // fragments are a starting point apps edit, and an app whose ids are
       // uuids got Number(uuid) === NaN — a delete that matches nothing and
@@ -1735,7 +1772,7 @@ export function createLitestoneAuth(
       // scopes, and is spent by a machine nobody is watching (FJS-991).
       await credentialChanged('apikey.revoked', opts.userId, {
         model: 'Credential', records: [String(keyId)],
-        actorId: opts.userId, actorType: 'user',
+        actorId: opts.actorId ?? opts.userId, actorType: 'user',
       })
     },
 
@@ -1795,7 +1832,7 @@ export function createLitestoneAuth(
 
     // ── revokeSession ────────────────────────────────────────────────────
 
-    async revokeSession(userId: string, sessionId: string): Promise<void> {
+    async revokeSession(userId: string, sessionId: string, opts?: { actorId?: string }): Promise<void> {
       // userId in the where, not checked after the read: a delete keyed on the
       // id alone ends anyone's session whose id is guessable, and the id is
       // what a UI hands back from listSessions.
@@ -1803,20 +1840,20 @@ export function createLitestoneAuth(
       if (!count) throw new InvalidTokenError(`No session with id ${sessionId}`)
 
       await audit('session.revoked', {
-        model: 'Session', records: [String(sessionId)], actorId: userId, actorType: 'user',
+        model: 'Session', records: [String(sessionId)], actorId: opts?.actorId ?? userId, actorType: 'user',
       })
     },
 
     // ── revokeSessions ───────────────────────────────────────────────────
 
-    async revokeSessions(userId: string, opts?: { exceptSessionId?: string }): Promise<number> {
+    async revokeSessions(userId: string, opts?: { exceptSessionId?: string, actorId?: string }): Promise<number> {
       const where: Record<string, unknown> = { userId }
       if (opts?.exceptSessionId) where.id = { not: opts.exceptSessionId }
 
       const { count } = await sys.session.deleteMany({ where, ...PURGE })
 
       await audit('session.revoked', {
-        model: 'Session', records: [], actorId: userId, actorType: 'user',
+        model: 'Session', records: [], actorId: opts?.actorId ?? userId, actorType: 'user',
         meta:  { count, keptCurrent: Boolean(opts?.exceptSessionId) },
       })
       return count

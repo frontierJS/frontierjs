@@ -423,6 +423,17 @@ missed the index it had just declared, with nothing anywhere reporting it.
   is the strongest unexplored alternative and it should be priced before step 2.
   `IDEAS/scoped-sql.md` and `IDEAS/schema-variants.md` § the generated partial
   index are adjacent.
+  - **A** — keep `where:` on `@@index` as built: a predicate is reachable when it
+    compiles to zero parameters.
+  - **B** — index a scope instead: `@@index([cols], scope: active)` takes its
+    predicate from a declared `@@scope`, and `where:` goes.
+  - **C** — both: `where:` stays, and `scope:` is a second spelling that reads the
+    predicate from a scope.
+  - **Recommend A** — the reachability B was meant to buy is already structural: the
+    zero-parameter rule plus `FJS-578`'s boolean inlining construct it. `where:` is
+    also the unique half's spelling, and a uniqueness constraint has no read-side
+    scope to name, so B would split one predicate slot across two spellings. C is
+    two names for one predicate.
 - ~~Does `introspect`'s column parse survive a predicate containing
   parentheses?~~ **Answered, and it did not.** `indexOf('(')` found the bracket
   inside a QUOTED table name before it found the column list, and the corpus's
@@ -432,6 +443,13 @@ missed the index it had just declared, with nothing anywhere reporting it.
   exist. `parseIndexColumns` is one owner for all three readers now.
 - Prior art in the JS ecosystem is worth one pass for the argument's sake, not
   for the design's — checked as a lead, not stated as a fact here.
+  - **A** — done: § *The spelling* in the unique half made the pass (Prisma 7.4,
+    Django, Rails, Ecto, Drizzle, EF Core, SQLAlchemy), and its findings apply to
+    the `@@index` half unchanged.
+  - **B** — a second pass aimed at the plain `where:` on `@@index`.
+  - **Recommend A** — A is what the paper's own later text holds. A second pass
+    would re-ask a spelling question already settled in the tree, and the bullet
+    can be struck.
 
 ## See also
 

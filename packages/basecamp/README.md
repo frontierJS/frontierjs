@@ -139,7 +139,7 @@ schema:
 ```
 basecamp/
   db/                        ← Data realm — Litestone
-    schema.lite              ← the seed. everything derives from this
+    schema.lite              ← the schema. everything derives from this
     migrations/              ← GENERATED. never hand-edited
     test/
   api/                       ← API realm — Junction

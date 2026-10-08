@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-07 — `tutor:live` and the scaffolds say *broadcast*, not *publish* (`FJS-D631`)
+
+Junction's `publish()` hook is `announce()`, and the lesson text, `make:model`, `make:scaffold` and `project/new.md` call the thing that goes out on a channel a *broadcast*. `tutor:site` keeps *publish*, which there means what a static build ships. No generated code changes: the scaffolds emit `channel:`, never the hook.
+
 ## 2026-10-07 — `make:scaffold` links the list from the layout's nav (`FJS-1808`)
 
 The scaffold ended on *Add a nav link to your layout* and nothing added one, so in 0 of 21 apps the base44 stressor generated did the page after sign-up reach a model's list. It now writes the link into the layout's `<nav aria-label="Main">`: `withNavLink` in `core/crud-templates.js`, with the list page's own URL and heading, behind `{#if session.user}` where the layout signs people in, as `fli new`'s Users link is. A second run adds nothing, and a layout with no main nav is left alone and named in the summary. `generators-run.test.js` runs the scaffold over both layouts `fli new` writes, read out of `new.md`, and compiles the result.

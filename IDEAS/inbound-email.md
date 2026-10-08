@@ -79,7 +79,18 @@ notifications and jobs already follow (`OrderPaid.notification.ts`,
 
 1. What is the noun, and is it a file convention (Void's routing) or a
    declaration in conduit beside the provider it arrives from?
+   - **A** — a file convention: `api/src/mailboxes/<address>.mailbox.ts`, routed on the `To` local part with `[tag]` captures, Void's order of specificity, and the noun `Mailbox`.
+   - **B** — a declaration in conduit: a `mail` receiver beside the provider's target, holding the route table from local part to handler.
+   - **C** — both, split by owner: conduit's receiver owns the arrival (verify, dedupe, parse), and a `<address>.mailbox.ts` file owns what one address does with what arrived.
+   - **Recommend C** — which vendor delivers mail and which address answers it are two facts that change for different reasons, and `FJS-D177` already gives the first to conduit. The second follows the file convention notifications and jobs use, and `Mailbox` is the older name `FJS-D177` credits to Rails rather than a new one.
 2. Does a token expire, and does a reply to an expired one go to the fallback
    handler or bounce?
+   - **A** — no expiry: a valid signature threads the reply onto its record for as long as the record exists.
+   - **B** — it expires, and an expired token's reply goes to the fallback handler, unattributed, as a message whose `From` is a claim.
+   - **C** — it expires, and an expired token's reply is answered with a mailed bounce.
+   - **Recommend B** — the expiry bounds how long a token forwarded or cc'd onward can speak as the person it names, and B takes away the attribution without losing the message, which on a support thread is usually still a real customer. C is not a bounce behind a webhook, where the message is already accepted; it is an outbound mail sent to whatever `From` claims, which is backscatter.
 3. Where does the parse happen — the provider connector, which already holds the
    vendor's JSON shape, or one MIME parser shared by every provider?
+   - **A** — the provider connector normalizes the vendor's payload into one message shape, the same split `FJS-D153` draws for signatures.
+   - **B** — every connector hands over raw MIME, and one shared parser builds the message.
+   - **Recommend A** — then a shared MIME parser the first time a connected provider hands over only raw MIME (SES), called by that connector. The vendor's shape is the connector's by `FJS-D153`, and B throws away the parse Postmark and Mailgun already did while putting a MIME parser into every app on day one.

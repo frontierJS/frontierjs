@@ -54,15 +54,15 @@ export type TargetAuth =
 
 export type FollowRedirects = 'never' | 'same-origin'
 
-// Per-target overrides for the conduit's own policy numbers. Each is the same
+// Per-target overrides for the conduit's own resilience numbers. Each is the same
 // value, with the same meaning and the same default, as the ConduitOptions /
 // ResilienceOptions field it shadows — see those for what each one buys.
 //
 // An absent field is not zero: it defers to the conduit. `0` and `Infinity`
 // keep the meanings they have conduit-wide (`failure_threshold: 0` disables the
 // breaker, `max_concurrent: Infinity` removes the cap), so a target can opt out
-// of a policy the rest of the conduit runs under.
-export interface TargetPolicy {
+// of a limit the rest of the conduit runs under.
+export interface TargetResilience {
   timeout_ms?:         number
   retry_limit?:        number
   deadline_ms?:        number
@@ -196,7 +196,7 @@ export interface TargetDescriptor {
   // a second set of breakers. A field here was already being written by hand and
   // dropped in silence — a descriptor carrying `timeout_ms: 1` let a 300ms
   // request succeed (`FJS-728`).
-  policy?:         TargetPolicy
+  resilience?:     TargetResilience
 
   registered_at:   number        // unix ms
   last_seen_at:    number | null
@@ -286,7 +286,7 @@ export interface ConduitRequest {
   // Auth headers take precedence: a caller cannot override or strip them.
   headers?:    Record<string, string>
 
-  // Opts a non-idempotent request (POST, PATCH) into the retry policy, and
+  // Opts a non-idempotent request (POST, PATCH) into retries, and
   // is forwarded as an `Idempotency-Key` header so the target can collapse
   // duplicates. Without it, POST and PATCH are never retried — a timed-out
   // `POST /servers` that actually committed must not create four servers.

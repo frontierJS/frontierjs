@@ -249,17 +249,32 @@ different audience.
   *Total traffic across the fleet* means fanning out to every machine and adding
   up, which is a different call with a different failure mode (one machine down
   = a wrong number, not an error). Probably a later row; certainly not phase 1.
+  - **A** — no fleet sum: the report is per app per machine, which is what the topology gives.
+  - **B** — a fleet total in basecamp that fans out to every machine and says how many answered (*3 of 4 machines*) rather than presenting a partial sum as the whole.
+  - **C** — the fleet number from the edge, `IEdge.analytics()`.
+  - **Recommend A** — then B once an operator asks for the total. A has no failure mode the per-app report does not already have; B's only honest form names the machines that did not answer, which is a design of its own. C counts the CDN, not the machines, and is a stub.
 - **`site/` and `widgets/` are surfaces with their own origins** and the vhost
   writes one log per app, not per surface. A storefront's traffic and its
   console's traffic land in one file. Splitting them is another `access_log`
   line inside a `location` block and it is not obviously wanted.
+  - **A** — one log per route, as `packages/cli/core/edge.js` writes it, split at report time by the `request.host` every Caddy JSON line carries.
+  - **B** — a route and an access log per surface origin, the way `api` already gets `fli-<app>-api`.
+  - **C** — no split: one report per app, surfaces mixed.
+  - **Recommend A** — the hostname is already in every line, so the split derives at read time and a file per surface would restate it. The edge is Caddy now (`FJS-D598`), so the `access_log` and `location` mechanics this question was written against are gone either way.
 - **Where the window comes from.** GoAccess parses whole files; asking for *last
   7 days* means either it re-parses each time or we keep its persisted database.
   CapRover chose the second and it is why they have a catch-up report at all.
+  - **A** — re-parse on each request, filtering lines by their timestamp to the window; the deepest history is whatever Caddy's roll keeps.
+  - **B** — GoAccess's persisted database on the target, restored and extended on each run.
+  - **Recommend A** — then B once a re-parse is measured too slow. The paper's own *a report is not a row* is the reason: a persisted database is a parsed report kept between runs, a cache with a staleness question and nothing to answer it.
 - **Does `IObservability` absorb this or sit beside it?** The interface already
   declares `queryLogs`. Answering GoAccess through it would make one adapter mean
   two unrelated things; a separate `IAnalytics` is cleaner and is one more
   interface nobody implements.
+  - **A** — through `IObservability`, adding an analytics read to it.
+  - **B** — a separate `IAnalytics` provider interface.
+  - **C** — no interface: an Outpost capability read through `apps.analytics()`, the shape `apps.logs()` already has.
+  - **Recommend C** — the plan's own phase 1 and 2 already describe C. A provider interface in basecamp is for a third party it speaks to, and GoAccess on the target reached through the Outpost is not one; `apps.logs()` is the owner that exists, and C adds no interface nobody implements.
 
 ---
 

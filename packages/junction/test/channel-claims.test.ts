@@ -81,8 +81,8 @@ const ROW_B = { id: 's2', workspaceId: WS_B, name: 'edge-01',    status: 'online
 const workspaceClaims = (name: string) =>
   name.startsWith('workspace:') ? { workspaceId: name.slice('workspace:'.length) } : null
 
-async function publish(manager: Manager, db: unknown, row: any, channels: string[]) {
-  await manager.publish('servers heartbeat', row, ctxFor(db), () => channels.map(c => manager.channel(c)))
+async function announce(manager: Manager, db: unknown, row: any, channels: string[]) {
+  await manager.announce('servers heartbeat', row, ctxFor(db), () => channels.map(c => manager.channel(c)))
 }
 
 // ─── the defect ────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ describe('a connection carries no per-request claim', () => {
     const member   = subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1', isSystemAdmin: true })
     const { db }   = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(member.sent()).toEqual([])
   })
@@ -103,7 +103,7 @@ describe('a connection carries no per-request claim', () => {
     const member  = subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1', isSystemAdmin: true })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(member.rows()).toEqual([ROW_A])
   })
@@ -113,7 +113,7 @@ describe('a connection carries no per-request claim', () => {
     subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-1' })
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(asked).toHaveLength(1)
     expect(asked[0]).toMatchObject({ userId: 'u-1', workspaceId: WS_A })
@@ -128,8 +128,8 @@ describe('one principal, two workspaces, one socket', () => {
     const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
-    await publish(manager, db, ROW_B, [`workspace:${WS_B}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_B, [`workspace:${WS_B}`])
 
     expect(both.rows()).toEqual([ROW_A, ROW_B])
   })
@@ -143,13 +143,13 @@ describe('one principal, two workspaces, one socket', () => {
       const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
       const { db }  = tenantBoundary()
 
-      await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
-      await publish(manager, db, ROW_B, [`workspace:${WS_B}`])
+      await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
+      await announce(manager, db, ROW_B, [`workspace:${WS_B}`])
 
       expect(both.rows()).toEqual([ROW_A])
     })
 
-  test('two SOCKETS of one person, in different channels, on one publish', async () => {
+  test('two SOCKETS of one person, in different channels, on one broadcast', async () => {
     // The case the claim signature exists for, and the only one that needs it:
     // `seen` dedupes a CONNECTION, so a single socket is never in two groups —
     // but two sockets of one person are one principal, and keying the cohort on
@@ -161,7 +161,7 @@ describe('one principal, two workspaces, one socket', () => {
     const inB     = subscriber(manager, [`workspace:${WS_B}`], user)
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`, `workspace:${WS_B}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`, `workspace:${WS_B}`])
 
     expect(asked).toHaveLength(2)
     expect(inA.rows()).toEqual([ROW_A])
@@ -176,7 +176,7 @@ describe('one principal, two workspaces, one socket', () => {
     const both    = subscriber(manager, [`workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`, `workspace:${WS_B}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`, `workspace:${WS_B}`])
 
     expect(asked).toHaveLength(1)
     expect(both.rows()).toEqual([ROW_A])
@@ -193,7 +193,7 @@ describe('cohorts', () => {
     const tab2    = subscriber(manager, [`workspace:${WS_A}`], user)
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(asked).toHaveLength(1)
     expect(tab1.rows()).toEqual([ROW_A])
@@ -206,7 +206,7 @@ describe('cohorts', () => {
     subscriber(manager, [`workspace:${WS_A}`], { userId: 'u-2' })
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(asked).toHaveLength(2)
   })
@@ -222,7 +222,7 @@ describe('cohorts', () => {
     subscriber(manager, ['servers'], user)
     const { db, asked } = tenantBoundary('database')
 
-    await publish(manager, db, ROW_A, ['servers'])
+    await announce(manager, db, ROW_A, ['servers'])
 
     expect(asked).toEqual([{ userId: 'u-1', id: 'u-1' }])
   })
@@ -239,7 +239,7 @@ describe('an empty answer is not a claim', () => {
     subscriber(manager, [`workspace:${WS_A}`], null)
     const { db, asked } = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(asked).toEqual([null])
   })
@@ -252,7 +252,7 @@ describe('an empty answer is not a claim', () => {
     const guest   = subscriber(manager, [`workspace:${WS_A}`], null)
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(guest.rows()).toEqual([ROW_A])
   })
@@ -267,7 +267,7 @@ describe('an empty answer is not a claim', () => {
     const lines: string[] = []
     const original = console.warn
     console.warn = (...a: unknown[]) => { lines.push(a.join(' ')) }
-    try { await publish(manager, db, ROW_A, [`workspace:${WS_A}`]) }
+    try { await announce(manager, db, ROW_A, [`workspace:${WS_A}`]) }
     finally { console.warn = original }
 
     expect(asked).toEqual([{ userId: 'u-1', id: 'u-1' }])
@@ -283,7 +283,7 @@ describe('an empty answer is not a claim', () => {
     const member  = subscriber(manager, [`workspace:${WS_B}`], { userId: 'u-1', workspaceId: WS_A })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_B, [`workspace:${WS_B}`])
+    await announce(manager, db, ROW_B, [`workspace:${WS_B}`])
 
     expect(member.rows()).toEqual([ROW_B])
   })
@@ -308,7 +308,7 @@ describe('the refuse-all warning names the cause', () => {
     // A distinct service label per test: the warning is deduped per label for
     // the life of the process, so a shared one makes the second test silent.
     const said = await captureWarn(() =>
-      manager.publish('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-a'),
+      manager.announce('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-a'),
         () => manager.channel(`workspace:${WS_A}`)))
 
     expect(said).toContain('strategy row')
@@ -324,7 +324,7 @@ describe('the refuse-all warning names the cause', () => {
     const { db } = tenantBoundary()
 
     const said = await captureWarn(() =>
-      manager.publish('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-b'),
+      manager.announce('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-b'),
         () => manager.channel(`workspace:${WS_A}`)))
 
     expect(said).toContain('was refused')
@@ -337,7 +337,7 @@ describe('the refuse-all warning names the cause', () => {
     const { db } = tenantBoundary('database')
 
     const said = await captureWarn(() =>
-      manager.publish('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-c'),
+      manager.announce('servers heartbeat', ROW_A, ctxFor(db, 'servers-hint-c'),
         () => manager.channel('servers')))
 
     expect(said).toContain('was refused')
@@ -374,9 +374,9 @@ describe('a resolver that reads the database is asked on every frame', () => {
     const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
     m.rows.set('ana', [])
-    await publish(manager, db, { ...ROW_A, name: 'renamed' }, [`workspace:${WS_A}`])
+    await announce(manager, db, { ...ROW_A, name: 'renamed' }, [`workspace:${WS_A}`])
 
     expect(ana.rows()).toEqual([ROW_A])
   })
@@ -387,9 +387,9 @@ describe('a resolver that reads the database is asked on every frame', () => {
     const ana     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'ana' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
     m.rows.set('ana', [WS_A])
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(ana.rows()).toEqual([ROW_A])
   })
@@ -401,8 +401,8 @@ describe('a resolver that reads the database is asked on every frame', () => {
     const lea     = subscriber(manager, [`workspace:${WS_A}`], { userId: 'lea' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
-    await publish(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
+    await announce(manager, db, ROW_A, [`workspace:${WS_A}`])
 
     expect(m.calls.sort()).toEqual([
       `ana@workspace:${WS_A}`, `ana@workspace:${WS_A}`,
@@ -423,7 +423,7 @@ describe('a resolver that reads the database is asked on every frame', () => {
 
     const original = console.warn
     console.warn = () => {}
-    try { await publish(manager, db, ROW_A, [`workspace:${WS_A}`]) }
+    try { await announce(manager, db, ROW_A, [`workspace:${WS_A}`]) }
     finally { console.warn = original }
 
     expect(broken.sent()).toEqual([])
@@ -444,7 +444,7 @@ describe('a fixed channel carries rows of every tenant', () => {
     const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, ['flows'])
+    await announce(manager, db, ROW_A, ['flows'])
 
     expect(member.rows()).toEqual([ROW_A])
   })
@@ -455,7 +455,7 @@ describe('a fixed channel carries rows of every tenant', () => {
     const stranger = subscriber(manager, ['flows', `workspace:${WS_B}`], { userId: 'u-2' })
     const { db }   = tenantBoundary()
 
-    await publish(manager, db, ROW_A, ['flows'])
+    await announce(manager, db, ROW_A, ['flows'])
 
     expect(member.rows()).toEqual([ROW_A])
     expect(stranger.sent()).toEqual([])
@@ -466,7 +466,7 @@ describe('a fixed channel carries rows of every tenant', () => {
     const loner   = subscriber(manager, ['flows'], { userId: 'u-3' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, ['flows'])
+    await announce(manager, db, ROW_A, ['flows'])
 
     expect(loner.sent()).toEqual([])
   })
@@ -476,8 +476,8 @@ describe('a fixed channel carries rows of every tenant', () => {
     const both    = subscriber(manager, ['flows', `workspace:${WS_A}`, `workspace:${WS_B}`], { userId: 'u-1' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, ['flows'])
-    await publish(manager, db, ROW_B, ['flows'])
+    await announce(manager, db, ROW_A, ['flows'])
+    await announce(manager, db, ROW_B, ['flows'])
 
     expect(both.rows()).toEqual([ROW_A, ROW_B])
   })
@@ -487,7 +487,7 @@ describe('a fixed channel carries rows of every tenant', () => {
     const member  = subscriber(manager, ['flows', `workspace:${WS_A}`], { userId: 'u-1' })
     const { db }  = tenantBoundary()
 
-    await publish(manager, db, ROW_A, ['flows'])
+    await announce(manager, db, ROW_A, ['flows'])
 
     expect(member.sent()).toEqual([])
   })

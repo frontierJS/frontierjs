@@ -1,6 +1,6 @@
 # Multi-Tenancy
 
-**One declaration, in the seed.** A `tenancy { }` block at the top of
+**One declaration, in the schema.** A `tenancy { }` block at the top of
 `schema.lite` says what a tenant IS, and everything that needs to know — the
 registry, the CLI, Litestone Studio, Junction's per-request resolution — reads that one
 block rather than being told again.

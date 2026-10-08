@@ -95,7 +95,7 @@ third-party integration needs on the way in, it exists and is exercised.
 > **auth mints, conduit spends.**
 
 `FJS-D06` already rules that **a Provider is a third party the app speaks to** and a
-Plugin is what attaches a capability. A user's Google token is a credential for a
+Plugin is what extends the app. A user's Google token is a credential for a
 party outside the app, so spending it is conduit's realm; proving who the person is
 belongs to auth. The seam between them is a row.
 
@@ -279,12 +279,27 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 - Does `get(ref)` gain a principal argument, or is a per-caller resolver a second
   interface? A second interface keeps the process-scoped case exactly as it is.
+  - **A** — `get(ref, principal?)`: one interface, an optional second argument a process-scoped resolver ignores.
+  - **B** — a second interface beside it, `getFor(ref, principal)`, and a target that declares per-caller auth refuses at boot unless the installed resolver has it; `get(ref)` and `FJS-D219`'s structural `{ get(ref) }` shape stay exactly as they are.
+  - **C** — no argument: auth's resolver reads the principal from junction's ambient `$` itself, and `get(ref)` is unchanged.
+  - **Recommend B** — A lets a process-scoped resolver ignore the principal and hand every caller the machine token, and C does the same inside `withCache`, which keys on `ref` alone and would hand one person's token to the next; both are wrong without anything saying so. B leaves the shape `FJS-D219` made every battery depend on untouched and turns a missing per-caller resolver into a boot refusal.
 - What does the resolver return once expiry matters — a string plus an expiry, or a
   richer credential object? Every existing resolver returns a string.
+  - **A** — the per-caller interface returns `{ value, expiresAt }`; `get(ref)` keeps returning a string.
+  - **B** — a credential object, `{ value, expiresAt, scope, refresh() }`, from both interfaces.
+  - **C** — a string still, with no expiry: a 401 hands it to `invalidate` and it is re-minted, which is what `FJS-1905` ships.
+  - **Recommend A** — the expiry is the one fact the send path lacks, and C is what cannot carry a rotating refresh token, since it learns a token is stale only from the refusal. Scope is read by the scope check from the `Credential` row rather than per send, and a `refresh()` on the object would carry minting into conduit, where auth mints and conduit spends.
 - Is OAuth a fifth `TargetAuth` kind, or does it resolve *to* `bearer`? The second is
   cheaper and the transport already knows how to send a bearer.
+  - **A** — it resolves to `bearer`: no new kind, and the per-caller flag and the scopes ride as optional fields on `bearer`.
+  - **B** — a fifth kind, `{ type: 'oauth', provider, scopes }`, which the transport sends down `bearer`'s branch.
+  - **C** — no target-side change: the ref names a `Credential` type (`oauth:google`), and the scopes are declared on the provider in auth.
+  - **Recommend B** — the scope derivation needs a target to state its provider and scopes, and only an OAuth target has them; on `bearer` they are optional fields that mean nothing for a static token. C moves the declaration off the target and loses the union the paper's move computes. The transport cost is nil, since B sends as a bearer.
 - Can one target hold both a machine credential and a per-user one — an app calling
   GitHub as itself and as a person?
+  - **A** — no: a target has one `auth`, so the two identities are two targets on one address (`github-app`, `github-user`).
+  - **B** — yes: `auth` takes both, and each `send()` names which one it spends.
+  - **Recommend A** — a target is one declared line of what this process may talk to and as whom, so two identities are two lines; the target id in a log or a breaker then says which identity a send used, and `send()` gains no option. B is the same capability with a second axis inside one descriptor.
 
 **Refresh**
 
@@ -292,44 +307,91 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
   sends both refresh, the provider rotates the refresh token, and one of them is now
   holding a dead one — Google does rotate. The outbox already claims with a
   compare-and-set and is the precedent to copy.
+  - **A** — lazy: the send that finds the credential near expiry refreshes it, under a compare-and-set claim on the `Credential` row copied from the outbox.
+  - **B** — ahead of expiry: a caravan job refreshes every credential inside a window before `tokenExpiresAt`.
+  - **Recommend A** — refresh is then spent only on credentials somebody uses, and conduit stays free of caravan, a peer plugin an app may not install (the reason the login half uses plain `fetch`). The lock is owed either way: a token refused mid-flight is refreshed at send time even with a cron running, so B adds a job without removing the claim.
 - What does a dead credential mean to a caller? `auth_failed` is terminal today, and
   *this person must reconnect Google* is a UI state rather than an error. It needs a
   name and a way to reach a screen.
+  - **A** — a named `ConduitError` code, `reconnect_required`, carrying the provider, distinct from `auth_failed` and mapped to a status at the one owner of that translation.
+  - **B** — `auth_failed` stays, and the `Credential` row is marked dead, so `connections.find` reports *reconnect Google* to a screen.
+  - **C** — both: the send fails with the named code, and the refresh that found the credential dead marks the row.
+  - **Recommend C** — the caller of `send()` cannot tell *this person must reconnect* from *our key is wrong* without the code, and a screen cannot show the state before the next failing send without the row. The row is the one truth; the code is the send reporting it, so neither restates the other.
 - Who notices a revocation at the provider's end, and how does the app find out
   before the next call fails?
+  - **A** — nobody ahead of time: the first refresh or send that fails marks the row, and the app finds out then.
+  - **B** — the provider tells us where it offers to: Google's Cross-Account Protection (RISC) events and GitHub's authorization-revoked webhook arrive on the inbound leg and mark the row.
+  - **C** — a caravan probe calls each provider's token-info endpoint on an interval.
+  - **Recommend A** — then B per provider once an app needs to know before its next call. C spends a call per credential per interval to learn what the next send learns for nothing, and B's inbound leg already exists and is proven by `verify:pay`.
 
 **Scope**
 
 - Where does the declared-target scope check run — boot, `fli check`, or a committed
   snapshot? A snapshot makes drift a diff, which is the house answer elsewhere.
+  - **A** — a committed snapshot of each provider's scope union, regenerated from the declared targets, so adding a scope is a reviewed diff; the gap on a person's own token is checked at send time against `Credential.scope`.
+  - **B** — at boot: the union is computed and a provider whose configured scope lacks part of it refuses to start.
+  - **C** — a `fli check` rule over the declared targets.
+  - **Recommend A** — the silent failure the paper names is a scope added after users consented, and a diff is the artefact that makes that visible at review rather than in production. None of the three can see existing users' tokens at build or boot time, so the per-person half belongs at send time in every option, and the snapshot is the house answer for the declared half.
 - Incremental consent, or one union up front? The union is simpler and asks for more
   than most users have been shown before.
+  - **A** — one union up front: the consent screen asks for every declared target's scopes.
+  - **B** — incremental: sign-in asks the preset's minimum, and each target's scopes are asked on its first use, with `include_granted_scopes` where the provider has it.
+  - **Recommend A** — then B once an app has a target most of its users never touch. A is the paper's move as stated and one code path; B needs per-person tracking of which scopes were shown and a re-consent flow per target, and the drift case under A already needs that re-consent flow, so B arrives as a use of it rather than a second mechanism.
 
 **The login half**
 
 - Route or service for *linking* a second provider to a caller who is already signed
   in? It establishes no session, so `FJS-D20` says service — but it shares the whole
   redirect flow with the half that does.
+  - **A** — the route pair: `GET /auth/oauth/{provider}` attaches to the signed-in caller when a session cookie is present.
+  - **B** — a service starts it: `connections.connect(provider)` records the caller on the `OauthFlow` row and returns the authorize URL, and the existing callback route finishes by attaching to that caller instead of issuing a session.
+  - **C** — no signed-in link: `FJS-D611`'s mailed invitation stays the only way to attach a provider.
+  - **Recommend B** — `FJS-D20`'s line is whether a call can be refused for want of a session, and starting a link can; the callback must stay a route because the provider redirects a browser there, and it already exists. A makes a sign-in link's meaning depend on an ambient cookie, so a forged link attaches an attacker's provider account to a signed-in victim.
 - Where do `state`, the PKCE verifier and the OIDC nonce live? `Verification` is
   already *identifier, guarded value, expiry* with a sweep in `cleanup.ts`. What is
   the identifier before a user exists?
+  - **A** — their own model, `OauthFlow`, keyed by `state` and bound to a cookie, swept by `cleanup.ts` on `@@expires`; no nonce, because v1 fetches userinfo rather than validating an `id_token`.
+  - **B** — `Verification` with a purpose, the identifier being the `state`.
+  - **C** — a signed cookie holding all three, with no row.
+  - **Recommend A** — A is what ships in `packages/auth/db/auth.lite`. An authorization in flight proves nothing and has no address, so B is two meanings in one table (the test `FJS-D261` cites this case for), and C cannot refuse a replayed code, which the drive does.
 - One OIDC engine plus per-provider normalizers, or a provider table? Discovery
   covers Google, Microsoft, Okta and Auth0 generically; GitHub and Apple do not.
+  - **A** — a preset table (`google`, `github`, `oidc`), each preset carrying its own `identify` normalizer, with endpoints stated rather than discovered.
+  - **B** — one OIDC engine reading `.well-known/openid-configuration`, with normalizers only for the providers discovery does not cover.
+  - **Recommend A** — A is what ships in `packages/auth/oauth.ts`. Discovery is a network call at boot, and a provider that cannot be constructed offline cannot be tested offline; the `oidc` preset already covers Entra, Okta and Auth0 with stated endpoints.
 - Can a caller unlink their last credential and lock themselves out?
+  - **A** — no: `removeConnection` refuses with `LastCredentialError` when the connection is the only password or OAuth credential, and an API key does not count as a way in.
+  - **B** — yes, and the way back is a password reset by mail.
+  - **Recommend A** — A is what ships in `packages/auth/auth.ts`. B depends on the account having a verified, reachable address, which an OAuth-only account need not have.
 - Which surfaces are supported at v1 — `web/` certainly, but `site/`, `widgets/` and
   `extension/` each have a different redirect story and the extension has no origin
   at all.
+  - **A** — `web/` only at v1, the surface `verify:oauth` drives.
+  - **B** — `web/` and `site/`, both of which can make a full-page navigation to the callback on the API's origin.
+  - **C** — all four, the extension through `chrome.identity.launchWebAuthFlow`.
+  - **Recommend A** — then B once a static site asks for sign-in, since it is the same redirect story with a different return page. A widget lives in somebody else's origin, where the session cookie is third-party, and the extension has no origin to redirect to; each is its own design, and nothing proves them today.
 - Where is the provider configured? `junction.config.js` is nicer, and the hazard is
   known: a plugin must read config in `boot()` and never `register()`, which made
   caravan's entire config section unreachable (`FJS-431`).
+  - **A** — in code: providers are `createLitestoneAuth({ oauthProviders })`, built with `defineProvider` beside `encryptionKey`, and only `publicUrl` and the failure page sit in the plugin's `oauth` block.
+  - **B** — in `junction.config.js`, an `auth.oauth` block read in `boot()`.
+  - **Recommend A** — A is what ships in `packages/auth/types.ts`. A `clientSecret` is credential material and belongs beside `encryptionKey`, and the transport block is the only part the route needs, which `boot()` already reads after config is loaded.
 - Does the redirect URI get scaffolded? It must match the provider console exactly
   and differs per environment and port (8000, 8010, production).
+  - **A** — not scaffolded: it is derived from `oauth.publicUrl` plus the mounted callback path, and `boot()` refuses when the mount and the derived path disagree.
+  - **B** — derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
+  - **C** — scaffolded per environment into config by `fli`, from `ports.js`.
+  - **Recommend B** — A is what ships in `packages/auth/plugin.ts`, and its one remaining silent failure is the console copy, which shows only on the provider's error page; printing the derived string closes it. C writes down a value that is derived from `publicUrl`, and the copy drifts the first time either moves.
 
 **The kit**
 
 - Brand sign-in buttons need brand colors, and Invariant 13 says style with a tone
   and a treatment, never a color. This is the one case where the color is the
   requirement. Does `@frontierjs/ui` ship them, and under what exemption?
+  - **A** — `@frontierjs/ui` ships none; an app styles its own provider buttons.
+  - **B** — a provider button whose color is the provider's official mark as an image, on a neutral tone and treatment, using the light or neutral variant Google's and GitHub's guidelines both offer.
+  - **C** — brand-colored buttons in `@frontierjs/css`, under an exemption to Invariant 13 recorded in `DECISIONS.md`.
+  - **Recommend B** — the guidelines put the required color in the mark, so the button stays a tone and a treatment and Invariant 13 needs no exemption. A leaves every app to meet each provider's guidelines alone, and C opens the first color class in a system that has none.
 
 ---
 
@@ -380,8 +442,8 @@ repo that reach for it each wanted exactly one.
 
 ### One ruling, two seams
 
-3.8 names the sharpest unanswered question about the slice format: only one
-`GatePlugin({ getLevel })` may be installed, so a slice supplying standing either owns
+3.8 names the sharpest unanswered question about the rig format: only one
+`GatePlugin({ getLevel })` may be installed, so a rig supplying standing either owns
 the ladder outright or contributes a **fragment** an app composes.
 
 Conduit has the identical shape and nobody has noticed: **only one `CredentialResolver`

@@ -1,5 +1,17 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-07 — the broadcast hook is `announce()`, and presence is `set()` / `clear()` (`FJS-D631`)
+
+`publish()` is `announce()`, the verb `FJS-D393` gave an Event. The family moves with it: `AnnounceFn`, `app.channels.announceDefault()`, the channel manager's `announce()`, `markAnnounceHook` / `isAnnounceHook`, `announceToChannels` inside `callService`, `ChannelDeclaration` for the type of `channel:`, and the `junction.channel.announce` telemetry event. The `publish as publishToChannels` export alias is removed. A service whose own custom METHOD is called `publish` is untouched, which is the reason `FJS-D79` named the option `channel`. `client.presence.announce()` / `release()` are `set()` / `clear()`, so `announce` has one meaning in the package. `test/publish-default.test.ts` and `test/publish-grading.test.ts` are `announce-default` and `announce-grading`. Proof: `bun run test`, 2650 pass.
+
+## 2026-10-07 — the app's own principal holds the tenant `runAs` states (`FJS-1924`)
+
+Under `tenancy { strategy row }`, `app.runAs(null, { tenant })` put the tenant on the request meta and nothing turned it into a claim, so the system principal reached the Data boundary holding none. A cron job caravan dispatched into a tenant was refused every scoped row it wrote (*Outside your accountId*), and the ways through were `asSystem()` or a resolver granting the claim on nothing. Measured in `fjs-prototypes/ela`, whose SA poll it blocked.
+
+`withLitestoneDb(db, principal, system)` — `createApp` passes `opts.system` — merges `{ [tenancy.claim]: tenant }` onto the caller when its `userId` is the declared system's and it holds no claim, before the resolver. A person `runAs` names is granted nothing: their claim is a fact about them (`FJS-D113`), and the stated tenant is only where the work points. The meta's tenant is set by `runAs` alone, so no transport can reach it.
+
+`test/with-db.test.ts` § *strategy row*: withDb and a service write into the stated tenant, the `'system'` actor id caravan re-binds holds it, a resolver answering `{}` does not strip it — three red before — and a person and `{ tenant: null }` are still refused. 2650 pass.
+
 ## 2026-10-07 — a move named for a CRUD verb refuses start() (`FJS-1909`)
 
 A `@@transitions` move whose name a service already answers (`restore`, `remove`, `create`, a service option) was dropped from the method table without a word. The screen still drew its button, and the call reached the verb: base44's `Project` declared `archive`/`restore`, and restore answered 400 *the model declares no @@softDelete*. `resolveTable` now reports each such move as an authoring finding, so `check-authoring` refuses start, naming the move.

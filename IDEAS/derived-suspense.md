@@ -369,6 +369,15 @@ Open, and the reason this is a note rather than a proposal:
   (`FJS-067` recorded the opposite and was wrong). Same shape of question: what
   does a region render when its data is not there yet, and a window of rows is
   the answer that block already gives.
+  - **A** — nothing special: a `{#virtual each}` over an awaited list is a region
+    like any other, held by its boundary until the list settles, then it renders
+    its first window; on the server the SSR answer awaits it.
+  - **B** — the block is its own boundary, and before the list arrives it renders
+    a window of placeholder rows sized from the row height.
+  - **Recommend A** — B is a skeleton derived from the markup, which the fallback
+    question above turns down in favor of an authored `pending`. Under the SSR
+    answer's B the server awaits the list and renders the first real window,
+    which is the case `FJS-067` was about.
 - **Does the derivation want to be visible?** A compiler that silently inserts
   boundaries is a compiler whose output does not match the source.
   - **A** — silent.

@@ -21,7 +21,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 | 3 | The change crosses a package, or you are about to grep for who owns a translation | `bridge-index` |
 | 4 | Search `ISSUES.md`, `ISSUES_ARCHIVE.md`, `DECISIONS.md` and `IDEAS/` for the subject | — |
 | 5 | The change adds an option, coins a noun, restates something, picks between designs, or finds code and a doc disagreeing | `decision-rules` |
-| 6 | Build outward from the seed: schema, then service, then resource | — |
+| 6 | Build outward from the schema: model, then service, then resource | — |
 | 7 | Prove it (below) | — |
 | 8 | Record it (below); editing a `CLAUDE.md`, a `SKILL.md` or anything behind a pointer | `doc-hygiene` |
 
@@ -51,7 +51,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 
 ## On-ramps
 
-- **A new app for a client, with no `db/schema.lite` yet.** The `discovery` skill turns the conversation, brief or existing database into the seed. It is installed per user under `~/.claude/skills` rather than in this repo, so it is absent on a machine that has not added it.
+- **A new app for a client, with no `db/schema.lite` yet.** The `discovery` skill turns the conversation, brief or existing database into the schema. It is installed per user under `~/.claude/skills` rather than in this repo, so it is absent on a machine that has not added it.
 - **Working down the open register.** `fix-next` picks the top `fli next` row and carries it through this path to `fli close`; one row per session, so a batch is `bun run fix:loop`.
 - **Something is broken.** `VERIFYING.md` first: reproduce with one command that goes red on this defect, before theorizing. Then the realm's hazard skill, since half of what reads as a bug is correct-but-surprising behavior already written down there.
 - **A screen needs styling.** `ui-hazards`, then `packages/css/README.md` for the vocabulary — a tone and a treatment, never a color (Invariant 13).

@@ -220,8 +220,8 @@ Kept because each is worth *discussing* under a name. None of them earns a modul
 | **`lantern`** — observability | junction (a span tree over the existing `correlationId` and `traceparent`) plus one `fli` dashboard unifying `project:map --as=serve`, devtools and an API explorer | Tracing is not declinable and reaches every seam; a package holding it would be the core wearing another name |
 | **`charts`** | `@frontierjs/ui` — `Sparkline`, `StatCard`, `Bar` and `Progress` already ship over the css tokens | Markup |
 | **`porter`** — bulk data | `fli db import` / `fli db export` already exist; what is genuinely new is a screen, which is `ui` | The original row already suspected this and said so |
-| **`flags`** | A slice — one model plus a plugin exposing `app.features` | The small test of whether the slice format is real |
-| **`ledger`** — billing | A slice — models, service, webhooks, portal route. Built in `example`, never extracted | The canonical first slice, and still the proof the format works |
+| **`flags`** | A rig — one model plus a plugin exposing `app.features` | The small test of whether the rig format is real |
+| **`ledger`** — billing | A rig — models, service, webhooks, portal route. Built in `example`, never extracted | The canonical first rig, and still the proof the format works |
 | **`shift`** — upgrade codemods | `fli` | Deferred for want of a stable surface to move between, not for want of value |
 | **geo** | A `.lite` declaration plus a toolbelt kit for the distance math | Never proposed anywhere; **zero hits in the tree**. Named here so the gap has a home |
 
@@ -234,7 +234,7 @@ packages. What is left is short:
 
 1. **One `conduit-*` connector**, to prove the connector interface against a real
    vendor. Then a second that disagrees with it.
-2. **`ledger` or `flags` as the first slice**, because `slices.md` has no ruling and
+2. **`ledger` or `flags` as the first rig**, because `rigs.md` has no ruling and
    nothing will settle it but building one.
 3. **The `media` decomposition**, and it starts with neither a kit nor a seam: the
    file-type finding is free — `metadata()` makes *this `.png` is an SVG* decidable
@@ -263,8 +263,13 @@ afternoon, or V2.
   eight rows on this page and is currently findable only from the offline ruling.
   Either it becomes a ruling of its own about packaging, or this file stays its only
   index — and an assessment is not allowed to be the index for doctrine (§ VII).
-- **Which of these are slices rather than packages?** `ledger` and `flags` clearly.
+  - **A** — a ruling of its own about packaging, holding § *The test*'s five outcomes and citing `FJS-D297` as where it came from.
+  - **B** — one sentence in `PHILOSOPHY.md` § IV, *batteries vs. smallness*: nothing that is the default is severable.
+  - **C** — this file stays its index.
+  - **Recommend A** — the five-outcome table names precedents (`warden`, `foundry`, `chronos`), which § VII keeps out of a guiding document, and C is what § VII forbids. A ruling is the register an assessment may cite, and § IV may cite the ruling in turn.
+- ~~**Which of these are slices rather than packages?**~~ **Answered 2026-10-07 (`FJS-D630`): FJS-D630 adopts Rig and names the rigs today: notifications, orion and auth. ledger and flags are rigs once they are extracted as packages; billing's extraction is billing.md phase 7.** `ledger` and `flags` clearly.
   The distinction matters once `slices.md` gets a ruling.
+  - **Recommend A** — `FJS-D06` § 7 already answers this: `Slice` is deferred until `fli add <slice>` is on the table or someone outside the repo ships one, so no row is filed as a slice before then.
 - ~~**Does everything need to be a package?**~~ Answered by the test above. No.
 - ~~**Does `email-kit`'s name/directory mismatch get fixed?**~~ Ruled 2026-08-06: the
   package is `@frontierjs/email-kit` and the directory already agreed.
@@ -275,7 +280,7 @@ afternoon, or V2.
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison; most of the original tier 1 originates there
 - `IDEAS/stressors.md` — products worth building to find a seam. Its three
   no-exercise-needed gaps are i18n, an image pipeline and geo, all three of which land on this page
-- `IDEAS/slices.md` — `ledger` and `flags` are slices, not packages
+- `IDEAS/rigs.md` — `ledger` and `flags` are rigs, not packages
 - `IDEAS/agent-surface.md`, `IDEAS/compliance-from-the-seed.md` — the proposals behind `mcp` (shipped) and `marshal`
 - `IDEAS/bun-natives.md` — **the measured record behind the `media` row.** `Bun.Image` is
   the one native in Bun 1.4 this workspace can adopt, and the nine rejections beside it

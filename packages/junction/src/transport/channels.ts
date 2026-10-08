@@ -2,12 +2,12 @@
 // Real-time channels — Feathers model, Bun WebSocket underneath.
 //
 // A Channel is a named group of WebSocket connections.
-// After every service mutation, the publish() hook sends the result
+// After every service mutation, the announce() hook sends the result
 // to every connection in the target channels.
 //
 // ─── Minimal wiring ───────────────────────────────────────────────────────
 //
-//   import { channels, publish } from '@frontierjs/junction'
+//   import { channels, announce } from '@frontierjs/junction'
 //
 //   // 1. Configure which channels a connection joins on connect
 //   app.configure(channels(app => {
@@ -18,10 +18,10 @@
 //     })
 //   }))
 //
-//   // 2. Publish service results to channels after mutations
+//   // 2. Announce service results to channels after mutations
 //   service.hooks({
 //     after: {
-//       create: [publish((result, ctx) =>
+//       create: [announce((result, ctx) =>
 //         ctx.auth.user?.workspaceId
 //           ? app.channel(`workspace:${ctx.auth.user.workspaceId}`)
 //           : null
@@ -33,7 +33,7 @@
 //   //   { type: 'event', event: 'deployments created', data: { id: '...', ... } }
 
 import { createPresenceTracker } from './presence.ts'
-import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markPublishHook } from '../core/events.ts'
+import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
 import { MADE_AT_HEADER, SENT_AT_HEADER } from '../core/context.ts'
@@ -77,7 +77,7 @@ type BunWS = {
   readyState: number
 }
 
-export type PublishFn<T = unknown> = (
+export type AnnounceFn<T = unknown> = (
   data: T,
   ctx:  ServiceContext
 ) => Channel | Channel[] | null | false
@@ -113,7 +113,7 @@ export interface PresenceMember {
 
 // ─── Wire format ─────────────────────────────────────────────────────────
 // The single event-frame encoder for every broadcast path (Channel.send,
-// broadcastToChannel, sendToConn, publish). One implementation → one wire
+// broadcastToChannel, sendToConn, announce). One implementation → one wire
 // format that can't drift, and JSON.stringify correctly omits undefined
 // data instead of emitting invalid JSON.
 
@@ -129,7 +129,7 @@ export class Channel {
   readonly connections: Set<Connection>
 
   // Set by the presence plugin the first time it wraps this channel's
-  // join/leave. `channel(name)` is called on every publish, so without the
+  // join/leave. `channel(name)` is called on every broadcast, so without the
   // guard the wrappers stack and one join counts N times.
   __presenceWrapped?: boolean
 
@@ -401,7 +401,7 @@ function stableKey(v: unknown, depth = 0): string | null {
 // Memoized on the session OBJECT, which is the one thing identity is good for
 // here: `verifySession` runs once per socket and the object it answers does not
 // change while that socket is open, so the serialization is paid once per
-// connection instead of once per connection per publish. Weak, so it is
+// connection instead of once per connection per broadcast. Weak, so it is
 // collected with the socket and holds nothing open.
 const _cohortKeys = new WeakMap<object, unknown>()
 
@@ -646,9 +646,9 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
   const channels    = new Map<string, Channel>()
   const connections = new Map<string, Connection>()
 
-  // The app-level fallback publisher — see publishDefault() below. Null until
+  // The app-level fallback publisher — see announceDefault() below. Null until
   // an app registers one, which is what keeps broadcasting opt-in.
-  let _default: PublishFn | null = null
+  let _default: AnnounceFn | null = null
 
   // ── Send primitives ─────────────────────────────────────────────────
   function broadcastToChannel(channelId: string, excludeConnId: string | null, event: string, data: unknown): void {
@@ -742,7 +742,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
   return {
 
     // Graded send for a write that went through NO service call — the
-    // litestone tap (`announceDataWrites`). The publish() path grades off a
+    // litestone tap (`announceDataWrites`). The announce() path grades off a
     // ServiceContext and there is none here, so the two facts grading needs are
     // handed over instead: the client the rule lives on and the model the
     // payload is a row of. Without it every write outside its own service — a
@@ -902,7 +902,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     // service event goes, which is how a tenant-shaped app writes *everything
     // a caller may hear goes to their own account channel* once instead of
     // once per service. Junction had no equal: `channel:` is per service, and
-    // the natural workaround — an app-level `after: { all: [publish(fn)] }` —
+    // the natural workaround — an app-level `after: { all: [announce(fn)] }` —
     // is refused at startup by refuseDoubleBroadcast for every service that
     // also declares `channel:`, which is most of them (FJS-334).
     //
@@ -923,24 +923,24 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
     //
     // Returns an unsubscribe, like on() — a test that registers one must be
     // able to take it back.
-    publishDefault<T = unknown>(fn: PublishFn<T>): () => void {
-      _default = fn as PublishFn
-      return () => { if (_default === (fn as PublishFn)) _default = null }
+    announceDefault<T = unknown>(fn: AnnounceFn<T>): () => void {
+      _default = fn as AnnounceFn
+      return () => { if (_default === (fn as AnnounceFn)) _default = null }
     },
 
-    // Read by publishToChannels (core/service.ts) for a service that declares
+    // Read by announceToChannels (core/service.ts) for a service that declares
     // no channel:. A getter rather than a field so the manager stays the one
     // owner of when it is null.
-    get defaultPublisher(): PublishFn | null {
+    get defaultAnnouncer(): AnnounceFn | null {
       return _default
     },
 
-    // Core send — called by the publish() hook
-    async publish<T = unknown>(
+    // Core send — called by the announce() hook
+    async announce<T = unknown>(
       event:     string,
       data:      T,
       ctx:       ServiceContext,
-      fn:        PublishFn<T>
+      fn:        AnnounceFn<T>
     ): Promise<void> {
       const result = fn(data, ctx)
       if (!result) return
@@ -990,13 +990,13 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       const telemetry = ctx.app?.telemetry
       if (telemetry && (typeof telemetry.hasListeners !== 'function' || telemetry.hasListeners())) {
         // The count is who was SENT to, not who was in the channel — a graded
-        // publish is the one thing here whose two numbers differ, and the gap
+        // a broadcast is the one thing here whose two numbers differ, and the gap
         // between them is the whole point of it.
         const inChannel = targets.reduce((n, ch) => n + ch.length, 0)
         const recipientCount = graded
           ? graded.reduce((n, g) => n + g.conns.length, 0)
           : inChannel
-        telemetry.emit('junction.channel.publish', {
+        telemetry.emit('junction.channel.announce', {
           channel:        targets.map(ch => ch.name ?? '?').join(','),
           event,
           recipientCount,
@@ -1076,7 +1076,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
 //      lifecycle, and routing through the channel manager.
 //
 //   2. Stamps ctx.locals.__channels on every service call so the
-//      publish() hook can find the manager without a global variable.
+//      announce() hook can find the manager without a global variable.
 //
 //   3. Calls the optional setup function so the app can declare which
 //      channels a connection joins at connect time.
@@ -1100,7 +1100,7 @@ export interface ChannelsOptions {
   heartbeatTimeout?:  number
 
   /**
-   * The largest presence meta one connection may publish, in bytes of JSON.
+   * The largest presence meta one connection may set, in bytes of JSON.
    * Default 4096.
    *
    * Whatever a client sent was stored and fanned out to every member with no
@@ -1121,7 +1121,7 @@ export interface ChannelsOptions {
   claims?: ChannelClaimsFn
 
   /**
-   * Presence updates one connection may publish per second. Default 5.
+   * Presence updates one connection may send per second. Default 5.
    *
    * The size cap bounds one frame and this bounds the stream: 4KB at a
    * thousand a second is the same amplifier with more steps.
@@ -1180,7 +1180,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     register(app: App): void {
       // Create and attach the channel manager
       // Resolved once, here, rather than read per channel: `channel()` runs on
-      // every publish and a pattern match per call is a cost with no reason.
+      // every broadcast and a pattern match per call is a cost with no reason.
       const declared = opts.presence ?? false
       const enabled =
         declared === false ? () => false
@@ -1580,7 +1580,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       })
 
       // ── Stamp __channels on every service context ────────────────
-      // Added as an app-level around hook so publish() can find the
+      // Added as an app-level around hook so announce() can find the
       // manager without importing it or closing over a variable.
       app.hooks({
         around: {
@@ -1608,7 +1608,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     //
     // Runs only when an app registered a default publisher, and lists the
     // services that will therefore broadcast without ever having said so.
-    // That is the failure `publishDefault` introduces and the only one it
+    // That is the failure `announceDefault` introduces and the only one it
     // introduces: before it, forgetting `channel:` meant a screen that never
     // updates — visible, and yours; after it, the same omission puts records
     // on the wire on a rule written for other services, which nothing on the
@@ -1626,7 +1626,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     // are the case, and there is no later phase this can be asked from that a
     // test-mounted app also runs (`ready-hooks` is needsHost).
     boot(app: App): void {
-      if (!_manager?.defaultPublisher) return
+      if (!_manager?.defaultAnnouncer) return
 
       const undeclared = app.services.values()
         .filter(svc => (svc as { channel?: unknown }).channel === undefined)
@@ -1636,7 +1636,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
       console.warn(
         `[Junction] ${undeclared.length} service(s) declare no channel: and will ` +
-        `broadcast on the app-level publishDefault(): ${undeclared.join(', ')}. ` +
+        `broadcast on the app-level announceDefault(): ${undeclared.join(', ')}. ` +
         `Declare channel: to name a target, or channel: false to opt out.`
       )
     },
@@ -1707,7 +1707,7 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
   return out
 }
 
-// ─── publish() hook factory ───────────────────────────────────────────────
+// ─── announce() hook factory ───────────────────────────────────────────────
 // Creates an after hook that pushes a real-time event to the channels returned
 // by publishFn. Silently does nothing if the channels plugin isn't loaded.
 //
@@ -1719,7 +1719,7 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
 // Usage:
 //   service.hooks({
 //     after: {
-//       create: [publish((result, ctx) =>
+//       create: [announce((result, ctx) =>
 //         app.channel(`workspace:${ctx.auth.user?.workspace_id}`)
 //       )],
 //     }
@@ -1729,7 +1729,7 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
 //   after: {
 //     create: [
 //       async (ctx) => { ctx.dispatch = { ...(ctx.result as User), password_hash: undefined } },
-//       publish(fn),
+//       announce(fn),
 //     ]
 //   }
 //
@@ -1737,16 +1737,16 @@ function _frameProtocolHeaders(frame: unknown): Record<string, string> | undefin
 //   ctx.dispatch = false
 //
 // Event name defaults to '<service> <method>' e.g. 'notes created'.
-// Override: publish(fn, 'note:published')
+// Override: announce(fn, 'note:published')
 
-export function publish<T = unknown>(
-  fn:     PublishFn<T>,
+export function announce<T = unknown>(
+  fn:     AnnounceFn<T>,
   event?: string
 ): import('../core/hooks.ts').Hook {
 
   // Named so the dev-mode "anonymous hook" warning stays about USER hooks, and
-  // so the telemetry waterfall reads 'publish' rather than 'anonymous'.
-  const hook = async function publish(ctx: ServiceContext): Promise<void> {
+  // so the telemetry waterfall reads 'announce' rather than 'anonymous'.
+  const hook = async function announce(ctx: ServiceContext): Promise<void> {
 
     const manager = ctx.locals.__channels as
       ReturnType<typeof createChannelManager> | undefined
@@ -1777,8 +1777,8 @@ export function publish<T = unknown>(
       ? ctx.dispatch as T
       : ctx.result as T
 
-    await manager.publish(eventName, payload, ctx, fn)
+    await manager.announce(eventName, payload, ctx, fn)
   }
 
-  return markPublishHook(hook)
+  return markAnnounceHook(hook)
 }

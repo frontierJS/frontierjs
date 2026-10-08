@@ -53,11 +53,11 @@ to look hardest.
 | `@@log(audit)` | AshPaperTrail |
 | `@@softDelete` | AshArchival |
 | `@money`, shipped 2026-08-26 | AshMoney |
-| a slice contributing across realms — `slices.md`, **unbuilt** | the extension protocol, which is how every row above ships |
+| a rig contributing across realms — `rigs.md`, **unbuilt** | the extension protocol, which is how every row above ships |
 
 That last row is the one to sit with. **What FJS has as an unbuilt design
-(3.2, the slice installer) is the mechanism Ash's entire ecosystem is already
-made of.** If the slice format is going to be argued further, it should be
+(3.2, the rig installer) is the mechanism Ash's entire ecosystem is already
+made of.** If the rig format is going to be argued further, it should be
 argued against a working instance of the same idea.
 
 ### Two places it is ahead of exactly what is scheduled here
@@ -266,7 +266,7 @@ price, and `DECISIONS.md` has already bought the other one.
 `live-queries.md` reads Remult (a per-connection query registry, correct and
 stateful, against this project's derived client-side matcher).
 The client-data-lifecycle record (since deleted) read Meteor's minimongo and latency compensation.
-`slices.md` reads RedwoodJS. `testing-realm.md` reads Redwood, Wasp, SvelteKit
+`rigs.md` reads RedwoodJS. `testing-realm.md` reads Redwood, Wasp, SvelteKit
 and Supabase. `release-transitions.md` reads nine systems for what they RECORD —
 Cloud Run, Workers, Helm, Nomad, NixOS, Kamal, Argo, OTP and Vercel.
 `time-and-recurrence.md` reads java.time, Noda Time and Temporal.
@@ -279,7 +279,7 @@ more paragraph inside a feature record.
 ## What to actually do with it
 
 Nothing, until a specific question is open. Then: **`tables-from-the-seed.md`
-before AshAdmin and Django's admin, `slices.md` before Ash's extension protocol,
+before AshAdmin and Django's admin, `rigs.md` before Ash's extension protocol,
 `agent-surface.md` before AshAi, `permission-sets.md` against Ash policies for
 where the ladder is doing work their model cannot.** A reading with no question
 in hand produces a feature list, which is how a project ends up out-featuring
@@ -288,7 +288,7 @@ nobody.
 ## Relationship to the other files
 
 - `IDEAS/tables-from-the-seed.md` — the record with the most to gain
-- `IDEAS/slices.md` — the design whose mechanism already exists elsewhere
+- `IDEAS/rigs.md` — the design whose mechanism already exists elsewhere
 - `IDEAS/permission-sets.md` — the gap Ash has from the other side
 - `IDEAS/agent-surface.md` — 4.2, and its approval-gate half
 - `IDEAS/conflict-as-data.md` — § 5's one finding, argued as a design

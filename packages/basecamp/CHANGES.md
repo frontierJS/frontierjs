@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-07 — the outpost target states `resilience`, and the channel hook is `AnnounceFn` (`FJS-D631`)
+
+`servers.service.ts` registers the outpost target with `resilience: { deadline_ms }` and compares `known?.resilience?.deadline_ms`, conduit's new name for the per-target numbers. Left as `policy`, it would have been dropped without a word and the deploy deadline lost (`FJS-1951`). `workspaceChannel` is typed `AnnounceFn`. `bun run typecheck` is back at its baseline.
+
 ## 2026-10-06 — the outpost nonce table holds a nonce for twice the tolerance (`FJS-1833`)
 
 `rememberNonce` swept a nonce after one tolerance (300s), but a signed request's timestamp is accepted up to 300s either side of this clock, so a request from a machine running ahead could replay once its row was swept. The window is now twice the tolerance. `services.test.ts` § *a nonce is remembered for as long as its timestamp can still be fresh* seeds a nonce seen 400s ago and expects 401; it goes red at one tolerance.

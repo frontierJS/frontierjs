@@ -187,14 +187,43 @@ not.
    frontmatter first?** Recommendation: build the `example/` version against a
    glob now, and let its frontmatter bugs be the evidence the collection half is
    argued with.
+   - **A** — wait for the collection half of `IDEAS/content-collections.md`, so
+     frontmatter is validated against a declared `type` from the first note.
+   - **B** — build the `example/` version now, against a Vite glob with
+     hand-read frontmatter.
+   - **Recommend B** — the collection half has no concrete second reader yet, and
+     this is the first one. Its frontmatter bugs are the evidence the collection
+     half is argued with, and the smallest version needs no framework change.
 2. **Where does a set two surfaces read live?** `content/` at the root is what
    `content-collections.md` sketches, and it is a new top-level directory against
    Invariant 3's list of surfaces. It is not a surface — nothing is built or
    released from it — so it may be the `db/` shape rather than the `web/` shape.
+   - **A** — a root `content/` in the `db/` shape: not a surface, read by every
+     surface, named in Invariant 3 beside `db/` by the same ruling.
+   - **B** — owned by one surface (`site/content/notes/`) and imported by the
+     other through an alias.
+   - **Recommend A** — B makes `web/` depend on `site/`'s tree, and a surface's
+     folder is the unit Invariant 3 gives its own build and release. Notes are
+     source both surfaces bundle, which is the `db/` relationship: one owner at
+     the root, read outward.
 3. **A notice to every user**: a notification fanned out per person, or a
    broadcast shape `@frontierjs/notifications` does not have? The fan-out is
    correct and costs a row per person per notice.
+   - **A** — fan out through `app.notify`, a row per person per notice.
+   - **B** — a broadcast shape in `@frontierjs/notifications`: one record
+     addressed to everyone, with a per-person seen-set like § 2's.
+   - **Recommend A** — then B once a real app measures the row count as a cost.
+     A is correct today through the existing owner and adds no noun; B is a
+     second delivery model inside one package, priced before anyone has paid A's
+     cost.
 4. **Tenancy.** Under `strategy database` every shop is its own database and its
    own users; the notes are the app's and identical across shops, and the
    seen-set is per shop's user. That falls out of the column living on `User`,
    and should be checked in `example/` rather than assumed.
+   - **A** — notes are bundle-global and the seen-set lives on each tenant's
+     `User`, proved in `example/`, which already runs `strategy database`.
+   - **B** — notes are per tenant, so one shop can carry a note the others do
+     not.
+   - **Recommend A** — it follows from § 1: a note ships in the bundle and every
+     tenant runs one bundle. A per-shop message is § 3's notice, which already
+     lives in the tenant's database.

@@ -2051,7 +2051,7 @@ function liftTransient(ctx: ServiceContext, fields: string[]): void {
 //   { id, variables }           partial → replaces the row, losing the rest
 //
 // Both silent, in every open tab. Basecamp shipped four of them — `setVariable`,
-// the deployment engine's five-field projection, the server heartbeat and
+// the deployment engine's five-field partial row, the server heartbeat and
 // `jobs.trigger` — and each was found by looking at a screenshot, because a
 // page doing the obvious thing (`environment = await …setVariable(…)`) rendered
 // "undefined" as its heading with every other assertion still passing. *A
@@ -2183,7 +2183,7 @@ export async function announcementPayload(
   const keys    = payload && typeof payload === 'object' ? new Set(Object.keys(payload)) : new Set<string>()
   const missing = [...columns].filter(c => !keys.has(c))
   // Extra keys are fine — `{ ...job, queued: true }` is the whole row and a
-  // flag, which is a row. Only an omission makes it a projection.
+  // flag, which is a row. Only an omission makes it a partial row.
   if (missing.length === 0) return payload
 
   const id = (payload as Record<string, unknown> | null)?.[idField] ?? ctx.id
@@ -2198,7 +2198,7 @@ export async function announcementPayload(
         warnOnce(named,
           `[Junction] ${named}() answered ${keys.size} of ${columns.size} columns — missing ${shown}. ` +
           `The announcement carries the row instead, re-read by ${idField}; the CALLER still gets the ` +
-          `projection, and a page assigning it over the record it renders loses those fields. Answer the ` +
+          `partial row, and a page assigning it over the record it renders loses those fields. Answer the ` +
           `whole row, or state the payload with ctx.dispatch.`)
         return row
       }
@@ -3229,7 +3229,11 @@ async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: Pri
   return claims
 }
 
-export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): import('./hooks.ts').AroundHook {
+export function withLitestoneDb(
+  db:         unknown,
+  principal?: PrincipalResolver,
+  system?:    { userId?: string | number } | null,
+): import('./hooks.ts').AroundHook {
   return async (ctx, next) => {
     // Scope to the caller here, not in the service.
     //
@@ -3254,6 +3258,11 @@ export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): imp
     // from `sessionFields` at sign-in and is already on the principal.
     // `applyClaims` lifts it again afterwards, where a resolver moved it.
     liftRowTenant(ctx, db)
+
+    // Before the resolver, so a resolver that finds no membership for the app
+    // answers nothing over the top of it rather than taking it away.
+    const stated = statedTenantClaim(ctx, db, system)
+    if (stated) mergeClaims(ctx, db, stated)
 
     // After the scope above and before `next()`: the resolver may read through
     // `ctx.locals.db`, and everything downstream must see the claims.
@@ -4143,7 +4152,7 @@ export function announceDataWrites(
 
   // ── A background write is graded exactly as a published one is ──────────
   //
-  // `publish()` grades every recipient against the schema (`FJS-D175`); this
+  // `announce()` grades every recipient against the schema (`FJS-D175`); this
   // path did not, so every write that went through no service call — a job, a
   // webhook, a cron, a bulk write, `asSystem()` anywhere — put whole rows on
   // every subscribed socket. Measured on a policied `Order`: the service path
@@ -4196,7 +4205,7 @@ export function announceDataWrites(
     catch { /* a dead socket is not a background job's problem */ }
   }
 
-  // Covered only for a ROW the call's publish carries. A write with no row -- a
+  // Covered only for a ROW the call announces. A write with no row -- a
   // bulk `{count}` or a `select: false` -- is never one of them: suppressing it
   // by service name hid every sibling a method wrote, and a renumber's
   // `updateMany` over 2,800 rows reached no socket and no bus subscriber
@@ -4424,6 +4433,40 @@ function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalC
   const value      = fromClaims ?? fromUser
 
   if (value != null) ctx.locals.tenantId = String(value)
+}
+
+/**
+ * Under `strategy row`, the app's own principal holds the tenant the app
+ * stated for this unit of work.
+ *
+ * A person's claim is a fact about THEM — a membership row, a session field —
+ * and the tenant `runAs` names is only where the work points, so it grants a
+ * person nothing (`FJS-D113`). The app's own principal is different: nothing
+ * can prove it belongs to a tenant, because it belongs to every tenant, and the
+ * tenant was stated by the app itself — `runAs(null, { tenant })`, or the
+ * `tenant_id` caravan recorded at dispatch and re-binds. Without this a cron job
+ * dispatched into a tenant was refused every scoped row it wrote, and the only
+ * ways through were `asSystem()` — gate, row policies and audit actor dropped
+ * together — or a resolver granting the claim on nothing (`FJS-1924`).
+ *
+ * Matched by id against `createApp({ system })`, the check `runAs` makes. The
+ * request meta's tenant is set by `runAs` alone, never by a transport.
+ */
+function statedTenantClaim(
+  ctx:    ServiceContext,
+  client: unknown,
+  system: { userId?: string | number } | null | undefined,
+): PrincipalClaims | null {
+  if (system?.userId == null) return null
+  const t = tenancyOf(client)
+  if (t?.strategy !== 'row' || !t.claim) return null
+
+  const user = ctx.auth?.user as { userId?: string | number } | null | undefined
+  if (user?.userId == null || String(user.userId) !== String(system.userId)) return null
+  if ((toDataPrincipal(user) as Record<string, unknown>)[t.claim] != null) return null
+
+  const tenant = requestMeta()?.tenant
+  return tenant == null ? null : { [t.claim]: tenant }
 }
 
 /**

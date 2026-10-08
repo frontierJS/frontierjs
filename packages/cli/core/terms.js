@@ -571,7 +571,13 @@ const COMMON = new Set(
     // and a CRUD verb is a method name, not a concept.
     'Battery',
     'Batteries',
-    'Create'
+    'Create',
+    // Ruled not terms (`FJS-D633`): an app's `Account` is usually an
+    // organization, so the framework saying it for a login would contradict
+    // the model a reader has open, and nothing in the tree is a Party.
+    'Account',
+    'Accounts',
+    'Party'
   ].filter((w) => !DROPPED.has(w.toLowerCase()))
 )
 

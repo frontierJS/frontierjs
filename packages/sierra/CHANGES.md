@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-07 — presence calls `client.presence.set()` / `clear()` (`FJS-D631`)
+
+Junction renamed its presence verbs (`announce` / `release`), and `src/presence/index.js` follows. Behavior is unchanged.
+
+## 2026-10-07 — README § Guards reads `to.pathname` (`FJS-1944`)
+
+Both guard examples read `to.path`, which a guard's context has never carried — it is `{ pathname, search, params, query, directives, node }` — so the first guard copied from the README threw on `undefined.startsWith`. AGENTS.md and `fli check`'s `page-path-retired` already retired the name; the README now agrees. Docs only.
+
 ## 2026-10-07 — a Mesa warning names its file and no false line, and is printed once (`FJS-1919`)
 
 Under `bun --bun vite`, every warning and compile failure from a `.mesa` transform was placed at `<file>:8766:43`. Handed a string, Vite builds `new Error(message)` and reports that Error's `line` and `column` as a place in the transformed file. Bun gives every Error both: the spot inside Vite's own chunk where it was built. The transform now hands `this.warn` and `this.error` `positionless(message)` (`src/build/warnings.js`), an Error with those two deleted. The compiler's diagnostics carry no position, so the file alone is the honest answer.

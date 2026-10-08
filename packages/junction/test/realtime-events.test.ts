@@ -3,7 +3,7 @@
 // The API→UI seam. Two independent defects met here and cancelled each other
 // out well enough to look like it worked:
 //
-//   1. publish() derived its channel event name straight from ctx.method, so a
+//   1. announce() derived its channel event name straight from ctx.method, so a
 //      create put 'posts create' on the wire — present tense — while app.events,
 //      the README, every test, and the browser client's own handlers all use
 //      'posts created'. The client's created/patched/removed listeners never
@@ -21,21 +21,21 @@
 import { describe, test, expect, mock } from 'bun:test'
 import { createService, callService } from '../src/core/service.ts'
 import { AUTO_EVENT_MAP }             from '../src/core/events.ts'
-import { publish } from '../src/transport/channels.ts'
+import { announce } from '../src/transport/channels.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
-// Records what publish() hands the channel manager, without a socket.
+// Records what announce() hands the channel manager, without a socket.
 function captureNames() {
   const seen: string[] = []
-  return { seen, manager: { publish: async (event: string) => { seen.push(event) } } }
+  return { seen, manager: { announce: async (event: string) => { seen.push(event) } } }
 }
 
 async function emit(method: string, capture: ReturnType<typeof captureNames>) {
   const svc = createService({
     name: 'posts',
     [method]: async () => ({ id: 1 }),
-    hooks: { after: { [method]: [publish(() => ({}) as never)] } },
+    hooks: { after: { [method]: [announce(() => ({}) as never)] } },
   } as never)
 
   const ctx = {
@@ -47,7 +47,7 @@ async function emit(method: string, capture: ReturnType<typeof captureNames>) {
   await callService(svc, ctx)
 }
 
-describe('publish() event names match what the client listens for', () => {
+describe('announce() event names match what the client listens for', () => {
 
   test.each([
     ['create', 'posts created'],
@@ -73,12 +73,12 @@ describe('publish() event names match what the client listens for', () => {
     const svc = createService({
       name: 'posts',
       create: async () => ({ id: 1 }),
-      hooks: { after: { create: [publish(() => ({}) as never, 'post:published')] } },
+      hooks: { after: { create: [announce(() => ({}) as never, 'post:published')] } },
     } as never)
     await callService(svc, {
       service: 'posts', method: 'create', data: {}, params: {}, query: {},
       auth: {}, caller: {}, app: {},
-      locals: { __channels: { publish: async (e: string) => { seen.push(e) } } },
+      locals: { __channels: { announce: async (e: string) => { seen.push(e) } } },
     } as unknown as ServiceContext)
     expect(seen).toEqual(['post:published'])
   })

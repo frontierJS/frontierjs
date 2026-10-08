@@ -59,6 +59,7 @@ export type {
 
   // Resilience + validation
   ResilienceOptions,
+  TargetResilience,
   BreakerState,
   ResponseValidator,
 

@@ -150,12 +150,12 @@ on the one outbound call where a retry costs money), `verify:money` (one owner f
 arithmetic, the discount/threshold crossing, the redemption race). Billing is those
 pieces pointed at a recurring charge instead of a one-off sale.
 
-**The strategic reason to do it first is not the domain.** Wave 3's slice mechanism has
+**The strategic reason to do it first is not the domain.** Wave 3's rig mechanism has
 no real consumer. `@frontierjs/billing` — models, services, screens, jobs, a conduit
-target and a webhook route, installed as one slice — would be the first genuine test of
-`slices.md`, and it is a slice people would install. Auth is currently the only package
+target and a webhook route, installed as one rig — would be the first genuine test of
+`rigs.md`, and it is a rig people would install. Auth is currently the only package
 that contributes into the seed, and it contributes two files and a plugin. A billing
-slice contributes all five realms at once, which is the shape the mechanism claims to
+rig contributes all five realms at once, which is the shape the mechanism claims to
 support and has never had to.
 
 **One thing blocks it and should be settled first, and it is not the one this record
@@ -175,7 +175,7 @@ The function shipped with the ruling —
 `@frontierjs/toolbelt/units` — and now has callers: `domain/billing/billing.ts`
 (splitting a charge across seats) and `domain/payroll/payslip.ts` (splitting a
 year across periods). **The sequencing is `billing.md`**, eight phases from where it lives to
-the slice.
+the rig.
 
 **Risk is low and bounded.** Roughly ten models. No regulator. Getting it wrong costs a
 credit note, not a tribunal. And the failure modes are already documented by other
@@ -213,7 +213,7 @@ arrives twice out of order.
 
 ## The recommended order
 
-1. **C, subscription billing** — weeks, half-built, ships as the first real slice, and
+1. **C, subscription billing** — weeks, half-built, ships as the first real rig, and
    every gap it hits is a gap A will hit again. If the cross-row invariant and the
    immutable-document questions get rulings here, payroll starts with two of its five
    walls already standing.
@@ -429,7 +429,7 @@ having a person in front of it.
   the retention footgun (`FJS-521`) a disclosure log would inherit
 - `IDEAS/time-travel.md` — why the UI-realm version of *what was true then* does not
   work, and why the answer is one realm down
-- `IDEAS/slices.md` — what candidate C would be the first real consumer of
+- `IDEAS/rigs.md` — what candidate C would be the first real consumer of
 - `IDEAS/testing-realm.md` — the executed checks candidate B would extend
 - `example/PROJECT_STATE.md` and its README's *Found by building this* — the ledger
   this record is arguing to extend

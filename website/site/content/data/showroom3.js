@@ -136,7 +136,7 @@ export const HOPS = [
     say:'Your code again, on the way out. Shape it, format it, redact it.' },
   { r:'a', name:'wrapResult()', where:'core/envelope.ts',
     say:'THE result envelope, one owner. A list keeps { object, data, total }; a single record unwraps. Nothing else in the framework decides this.' },
-  { r:'a', name:'publishToChannels()', where:'core/service.ts',
+  { r:'a', name:'announceToChannels()', where:'core/service.ts',
     say:'The single announcement point. One mutation, fanned out to both the event bus and the declared channel — there is no second path to forget.' },
   { r:'u', name:'WebSocket frame', where:'transport/channels.ts',
     say:'Subscribers receive "leads created". The gate still applies on the way out, so nobody is pushed a row they could not have fetched.' },

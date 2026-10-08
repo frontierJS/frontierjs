@@ -395,21 +395,64 @@ rather than assuming.
   exactly this split (`logger` service against `ctx.logger`) and documents the
   recommendation rather than removing the choice. Probably fine; worth stating
   in the hazard list rather than discovering.
+  - **A** — keep both and state the split in `api-hazards`: `$.log` inside a call,
+    `app.logger` outside one, which is what the JSDoc on `log` in
+    `junction/src/core/context.ts` already says.
+  - **B** — a `fli check` rule that names `app.logger` read inside a service
+    method or hook body, where it drops the call's `correlationId`, user and
+    tenant.
+  - **C** — make `app.logger` bind the current call itself, so both spellings
+    write the same line.
+  - **Recommend A** — then B once a real app ships a line missing its call
+    context. The wrong choice loses context fields, not data, so a documented
+    hazard is proportional. C makes every module-scope logger consult the
+    ambient call on each line, and leaves two names doing one job.
 - **Should `fileWriter` be deleted or kept?** Twelve-factor says delete. Against
   that: a CLI is not a twelve-factor process, and `fli` has somewhere it might
   legitimately write. Recommendation: keep it, document it as not for a served
   app, and never grow rotation onto it.
+  - **A** — delete it from `junction/src/core/logger.ts` and the `index.ts`
+    export, with its test.
+  - **B** — keep it, documented as not for a served app, never grown rotation.
+  - **Recommend A** — nothing in the tree calls it; `fli` does not import
+    Junction's logger, so the CLI case is hypothetical. An export with no caller
+    is a road nobody takes and an invitation to grow rotation onto it. When `fli`
+    needs a file sink it writes the four lines itself.
 - **What is the trail's tenant column under `strategy database`?** One file per
   tenant makes it obvious; one fleet-shared logger database makes it a real
   question, and the answer decides whether phase 2's `logModel` is
   `@@tenant(none)` or scoped.
+  - **A** — one fleet-shared logger file, its model unscoped, with a nullable
+    `tenant` String column stamped from the call (`litestone/src/core/audit-log.js`).
+  - **B** — one logger file per tenant, redirected by `tenant.js` the way every
+    sqlite database already is.
+  - **C** — fleet-shared file, the model scoped by the tenant column so a
+    tenant reads only its own rows.
+  - **Recommend A** — A is what ships in `audit-log.js` and `tenant.js`. Reading
+    the trail across the fleet is an operator act, and B would cost a second file
+    per tenant and the cross-tenant query. C belongs to the day a tenant reads
+    its own trail in the app.
 - **Does the bulk-write remainder belong here or in 4.13?** It is the same
   defect from two directions — this file wants contents for provenance, 4.13
   wants them for invertibility. Whoever gets there first should design for both.
+  - **A** — defer it to 4.13: `IDEAS/time-travel.md` owns it, and already prices
+    it and proposes the per-model opt-in `@@log(audit, snapshots: all)`.
+  - **B** — decide it here: every bulk write on a logged model records `before`
+    and `after` per row.
+  - **Recommend A** — this paper shipped Phase 2 without it, so *decided here*
+    has lapsed. One argument with one owner, and the only consumer that needs
+    contents is replay. B writes a million snapshots for a million-row update for
+    provenance nobody has asked to read.
 - **Is the Outpost the right home for `/logs`?** It is where the machine is. The
   argument against is that Outpost is deliberately narrow and `/exec` can already
   do it — but *the caller composes the docker command* is exactly the shape that
   makes `/exec` the route nobody should be reaching for.
+  - **A** — the Outpost, as a named `POST /logs` with a capped tail, which is
+    what `packages/outpost/src/server.js` ships.
+  - **B** — no route: the caller composes `docker logs` over `/exec`.
+  - **Recommend A** — A is what ships. A named route with a cap states what the
+    caller may ask for, and `/exec` would make every log read an arbitrary
+    command.
 
 ## See also
 

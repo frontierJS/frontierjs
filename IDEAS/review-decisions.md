@@ -49,8 +49,8 @@ corpus voted 320 to 5; `FJS-D32` measured 7,249 lint findings against ~600;
 `FJS-D174` refused `safeIntegers` on measurement. *Not a taste call* recurs — a
 taste question is converted into a fact before it is ruled.
 
-**6. Generality waits for a second consumer.** `Slice` waits for a second author
-(`FJS-D06`), `@zoned` for a second app (`FJS-D288`), Mesa's IR for the first
+**6. Generality waits for a second consumer.** `Rig` waited for `fli add`
+(`FJS-D06`, ruled `FJS-D630`), `@zoned` for a second app (`FJS-D288`), Mesa's IR for the first
 non-DOM backend (`FJS-D545`), the flow canvas stays orion-local with one consumer
 (`FJS-D510`), `@@sync` grows only when an app asks (`FJS-D304`). The stressor
 apps exist to supply that second consumer.

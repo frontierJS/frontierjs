@@ -226,5 +226,5 @@ the failure the whole declaration exists to prevent.
 The cutoff is a **rolling instant** rather than a day boundary — `Date.now()` minus the
 duration, with `d` a flat 24 hours and `y` a flat 365 days — so *ninety days* is measured
 from the moment the pass runs, in no particular zone. That half is stated rather than
-fixed: a calendar-aligned window needs a zone the seed has no way to say yet
+fixed: a calendar-aligned window needs a zone the schema has no way to say yet
 (`FJS-D143`).

@@ -68,7 +68,7 @@ handing off to something deeper rather than trying to be it.
 | `#code`     | See it   | Schema → Service → Resource side by side. The page's center of gravity  |
 | `#packages` | Packages | The honest map, with maturity stated per package                        |
 | `#extend`   | Extend   | The four extension concepts — Declaration, Hook, Plugin, Provider       |
-| `#vision`   | Vision   | Slices, offline-first, one target axis                                  |
+| `#vision`   | Vision   | Rigs, offline-first, one target axis                                    |
 | `#start`    | Start    | Install, run an example, read next                                      |
 
 ## The tutorial page
@@ -239,4 +239,4 @@ rendering wrong:
   some distance, and the offline-first direction
   (`IDEAS/offline-first-and-release.md`) makes it structurally cheap: the same
   engine already runs on both sides.
-- A slice registry, once `IDEAS/slices.md` is real.
+- A rig registry, once `IDEAS/rigs.md` is real.

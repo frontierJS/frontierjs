@@ -173,16 +173,49 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
   independent packages is the harder and more honest position and needs all of it.
   **This question should be answered before anything is built**, because the wrong
   answer builds a matrix nobody needed.
+  - **A** — One train: one version for every published package, bumped in lockstep,
+    and every internal peer pinned to the train's number.
+  - **B** — Twenty packages: independent semver, each bump graded by a diff of
+    `exports.snapshot.md` (`fli ws:compat`).
+  - **Recommend A** — then B for a package once a third party depends on it alone.
+    A matrix of size one needs nothing built, and pre-alpha nobody outside depends
+    on any single number. B builds the matrix before anyone needs it.
 - **What does 1.0 mean here?** Two packages are already past it and the repo
   describes itself as pre-alpha. Either the numbers are wrong or the description
   is, and a consumer cannot tell which.
+  - **A** — The numbers are wrong: litestone and auth move to the train's `0.x`, their
+    `1.x` releases are deprecated on npm, and 1.0 is defined as the first release
+    whose surface diff is graded.
+  - **B** — The description is wrong for those two: litestone and auth are stable
+    and keep `1.x`, and the README says which packages are pre-alpha.
+  - **C** — 1.0 means nothing beyond *published*, stated in each README.
+  - **Recommend A** — the repo is pre-alpha and nothing has a compatibility promise,
+    so a `1.x` on npm promises something nobody is keeping. Pre-alpha nobody depends
+    on the number, so the renumbering is free, and tying 1.0 to a graded diff gives
+    the number something that checks it. B splits one framework's maturity by
+    package, and C leaves a semver reader misled.
 - **Should the peer ranges be generated rather than written?** They are facts
   about what a package calls, and every other fact of that shape in this repo is
   derived and committed. A hand-typed floor that nobody moves is the same failure
   as a hand-copied gate ladder (`FJS-520`), one layer out.
+  - **A** — Written by hand, as today: a floor typed once.
+  - **B** — Generated at publish: each internal peer is written from the sibling's
+    workspace version at pack time (the train's number under a train), and
+    `exports.snapshot.md` records the result.
+  - **Recommend B** — a peer range is a fact about which sibling version a package
+    was built and tested against, so it is derived. It holds under either answer to
+    the train question, and the `snapshots` phase already shows the range moving.
 - **Is `unknown` allowed to ship?** `release:check` treats unknown as contract,
   fail-closed, because a database cannot be half-migrated. A package surface is
   more forgiving and the same rule may be too strict.
+  - **A** — No: as `release:check`, `unknown` counts as a contract and refuses a
+    minor bump under `--strict`.
+  - **B** — Yes, with a warning: `unknown` ships and is printed in the release
+    output beside the bump.
+  - **Recommend B** — strictness follows cost (§ IV *ergonomics vs. strictness*).
+    A wrong verdict on a package is fixed by the next publish, while a database
+    cannot be half-migrated. Level 1, the export surface, never answers `unknown`,
+    so the warning only appears for the levels that cannot be decided.
 
 ---
 

@@ -1095,6 +1095,10 @@ language stops being reviewable.
   `fli check` rule because a forgotten entry makes an action reachable by nobody in
   silence. Exclusion must mean *ungrantable*, never *ungraded*. Revisit once a role
   editor exists to say whether 153 is too many.
+  - **A** — No: the block carries labels only, and the grantable set narrows by derivation. A move marked `@system` or `@gate(8)` is already left out by `packages/litestone/src/core/capabilities.js`.
+  - **B** — Yes, as an allow-list: `capabilities { }` names the grantable ones, everything unnamed is ungrantable, and a `fli check` rule beside `gate-unreachable` compares the block against the derived set.
+  - **C** — Yes, as an exclusion list: `capabilities { exclude: [...] }` names the ungrantable ones, with the same `fli check` rule. The list is shorter, and a forgotten entry stays grantable rather than unreachable.
+  - **Recommend A** — The one narrowing the tree has needed so far, engine-only moves, is already derived from the schema, so nothing has to be restated. B fails silently when an entry is forgotten, which is the cost this paper refuses. If a role editor proves 153 too many, C is the next step, because its forgotten entry fails open to the grant and stays visible.
 - ~~**Does an application get to declare a coarse grant anyway?**~~ Answered by
   `FJS-D139`: the framework mints none and cannot, because a bundle is not a thing
   the seed declares and there is nothing for a capability to refer to. A `Role` row
@@ -1131,7 +1135,7 @@ language stops being reviewable.
 
 ## See also
 
-- `IDEAS/slices.md` — why a declaration at the Data boundary beats a check in a
+- `IDEAS/rigs.md` — why a declaration at the Data boundary beats a check in a
   handler
 - `IDEAS/compliance-from-the-seed.md` — the audit half, which this feeds
 - `CLAUDE.md` § Live hazards — *a `@@gate` refuses, a `@@allow` filters*, the hazard

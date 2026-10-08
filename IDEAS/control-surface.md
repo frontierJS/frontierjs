@@ -416,17 +416,48 @@ up is not a fact about the app this page maps.
   has one. `project:map` takes `--project`. Does the dashboard show one app or the
   workspace? Probably: one app by default, the workspace when `fli` is run from its
   root, which is a distinction `context.wsRoot()` already makes.
+  - **A** — as built: whatever root `fli` resolved; `runnables()` walks it with
+    `findApps`, so an app directory shows one app and the workspace root shows all.
+  - **B** — always one app, chosen with `--project`.
+  - **C** — always the workspace.
+  - **Recommend A** — A is what ships in `packages/cli/core/runnables.js`, and it
+    derives the scope from where the command is typed rather than adding a flag.
 - **Does a started server outlive the GUI?** A child of the GUI process dies with it,
   which is tidy and is not what somebody who just started `api` expects. Detaching
   buys the expectation and costs the stop button.
+  - **A** — as built: children die with the GUI (`killAll` on SIGINT/SIGTERM in
+    `core/server.js`).
+  - **B** — detach, and record the pid so a restarted GUI re-adopts the child and
+    can still stop it.
+  - **C** — detach, and a restarted GUI shows the server up but refuses to stop it,
+    as it refuses anything it did not start.
+  - **Recommend A** — a server meant to outlive a session is what `fli dev` is for,
+    and it already records its session. B would build a second record of running
+    processes beside that one; C leaves a server running that no page can stop.
 - **How does a tile know a port is *its*?** A port answering is not proof it is the
   thing the tile names — this is exactly the failure `strictPort` exists for. A probe
   of `/health` or `/manifest` narrows it for an API and answers nothing for a static
   origin.
+  - **A** — as built: port busy, plus the health shape (`status` and `checks`) for
+    an API; a static origin reads `up` unverified.
+  - **B** — ask who holds the port (`pidsOnPort` in `core/ports.js`) and match the
+    holder to the tile: inside the GUI child's process group, else a working
+    directory under the row's `dir`.
+  - **C** — every surface answers an identity probe (`x-fjs-build` or a manifest
+    naming its app), and the tile compares names.
+  - **Recommend B** — it answers for a static origin as well as an API, using the
+    one owner of *what holds this port* that `fli kill` and `ports:status` already
+    share. C needs every server, Vite's included, to grow an endpoint.
 - **Are `repo-report.snapshot.html`/`repo-atlas.snapshot.html` then redundant?** No, and the split is worth stating:
   the snapshot is a **committed artefact reviewable in a diff**, the dashboard is
   **live and never committed**, the same split `fli ws:atlas` and `ws:atlas --live`
   already make.
+  - **A** — keep both: the snapshots are committed and reviewed in a diff, the page
+    is live and never committed.
+  - **B** — retire the snapshots; the live page is the reading.
+  - **Recommend A** — A is what ships, and the question's own text argues it: a
+    live page cannot show what changed in a commit, and a committed file cannot show
+    what is running.
 
 ---
 

@@ -1,5 +1,11 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-07 — every tool call is recorded in the audit trail; `GET {path}/calls` and `GET {path}/levels` for an operator
+
+`run` writes one `$audit` entry per `tools/call`, operation `mcp.call`, into the app's first logger database. Each entry records the caller as `actorId`, the row it named in `records`, and `meta` with `{ tool, kind, method, outcome, fields?, count?, code?, message?, key? }`. `outcome` is `done`, `refused` (401/403), `rejected` (another 4xx) or `failed` (5xx). Only field names are recorded, never values. `message` is the text the agent was given, and only for a 4xx. `key` is the API key's `credentialId`. `@@log` cannot record a refused call, and cannot say a write came from an agent. A trail that fails to write logs a warning and leaves the call's answer as it was. An app with no logger database, or one under `tenancy { strategy database }` with no `app.db`, records nothing.
+
+`GET {path}/calls?limit=` answers the newest calls (100 by default, at most 500) to ADMINISTRATOR and above. With no trail it answers `{ recorded: false }`. `GET {path}/levels` answers what each level 0..8 is offered and withheld, using the same `projectTools` and `dispatchable` as `tools/list`, with no `narrow` applied. It is also ADMINISTRATOR and above. Both routes were built for base44's fixed screens (History, Who can do what). `test/calls.test.ts` and `plugin.test.ts` § `/levels` cover them: 151 pass, typecheck clean.
+
 ## 2026-10-07 — a service declared over no model is not reported as unresolved (`FJS-D628`)
 
 `ServiceShape.model` is now `string | null`. The projection treats `describe().model === null` as a service over no model: its CRUD verbs are graded by their declared `gate:`, or listed as `ungraded`, and the service is not added to `unresolved`. This is what lets `@frontierjs/auth`'s five services be graded here (`FJS-1795`). The proving test is `packages/auth/test/agent-refusals.test.ts`, which mounts this plugin over a real auth app.

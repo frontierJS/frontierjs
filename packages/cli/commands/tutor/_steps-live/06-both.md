@@ -1,11 +1,11 @@
 ---
 title: 06-both
-description: Two sockets, one publish — and both of them are told
+description: Two sockets, one broadcast — and both of them are told
 ---
 
 ## Two sockets
 
-The same publish, watched by two clients at once: one holding the session from
+The same broadcast, watched by two clients at once: one holding the session from
 step 3, one holding nothing at all.
 
 Both receive it, and that is **correct**. `fli scaffold` gave `Note` the gate
@@ -47,7 +47,7 @@ if (!await must($, {
   asked: `a frame carrying ${title}`,
   got:   heard.signedIn.length ? `${heard.signedIn.length} frame(s)` : 'no frames at all',
 }, {
-  likely: 'the publish did not go out — step 4 is the one that would have failed',
+  likely: 'the broadcast did not go out — step 4 is the one that would have failed',
 })) return
 
 if (!await must($, {

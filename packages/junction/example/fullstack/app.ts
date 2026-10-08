@@ -129,7 +129,7 @@ app.configure(channels((a: App) => {
 // Nothing here. Broadcasting is declared on the service itself — see
 // services/posts.service.ts, `channel: 'posts'`. This used to be:
 //
-//   const live = publish(() => app.channel!('posts'))
+//   const live = announce(() => app.channel!('posts'))
 //   app.hooks({ after: { create: [live], patch: [live], remove: [live] } })
 //
 // with the per-method list mandatory, because `after: { all }` would have

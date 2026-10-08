@@ -1,5 +1,9 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-07 — a target's own numbers are `resilience`, and `TargetResilience` is exported (`FJS-D631`, `FJS-1400`)
+
+`TargetDescriptor.policy` is `resilience` and `TargetPolicy` is `TargetResilience`, with `Resilience.setResilience` and `RESILIENCE_FIELDS` beside them. The seven numbers were a third sense of *policy*, which `FJS-D45` refuses; *resilience* is the word `ResilienceOptions`, the type they shadow, already used. A refusal now reads `Target '<id>' resilience: unknown field …`. `TargetResilience` is exported from the entry point, which `FJS-1400` measured as a TS2305. A SQLite registry written before this keeps the old key and reads back with no per-target numbers: delete the file. Proof: `bun run test`, 361 pass.
+
 ## 2026-10-07 — A target that never says 401 declares what it says instead: `auth.refusal` (`FJS-1906`)
 
 Service Autopilot — the target `FJS-1905` was built for — answers a dead session with its login page as a

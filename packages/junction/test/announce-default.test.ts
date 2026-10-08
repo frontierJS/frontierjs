@@ -1,29 +1,29 @@
-// test/publish-default.test.ts
+// test/announce-default.test.ts
 //
 // FJS-334. Junction had two ways to broadcast and both were per service:
-// `channel:` on the definition, and a publish() hook in `after`. Feathers has a
+// `channel:` on the definition, and a announce() hook in `after`. Feathers has a
 // third that Junction had no equal for — `app.publish(fn)`, one catch-all
 // deciding where EVERY service event goes, which is how a tenant-shaped app
 // writes "everything a caller may hear goes to their own account channel" once
 // instead of once per service.
 //
 // The natural workaround is not merely undocumented, it is REFUSED:
-// `after: { all: [publish(fn)] }` trips refuseDoubleBroadcast for every service
+// `after: { all: [announce(fn)] }` trips refuseDoubleBroadcast for every service
 // that also declares `channel:` (see double-broadcast.test.ts), which is most of
 // them. So the catch-all had no spelling at all.
 //
-// `app.channels.publishDefault(fn)` is that spelling, and it is a DEFAULT rather
+// `app.channels.announceDefault(fn)` is that spelling, and it is a DEFAULT rather
 // than a second broadcaster: consulted only where a service declares nothing, so
 // it composes with `channel:` instead of racing it and cannot put one record on
 // the wire twice.
 //
-// The manager here is the REAL one, not a stub with a `publish` that records —
+// The manager here is the REAL one, not a stub with an `announce` that records —
 // the whole question is which channel the frame is resolved onto, and a stub
 // that ignores the resolver answers it by construction.
 
 import { describe, test, expect } from 'bun:test'
 import { createService, callService } from '../src/core/service.ts'
-import { createChannelManager, publish, channels } from '../src/transport/channels.ts'
+import { createChannelManager, announce, channels } from '../src/transport/channels.ts'
 import { createApp } from '../src/core/app.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
@@ -66,7 +66,7 @@ describe('the app-level default publisher', () => {
   test('a service declaring nothing broadcasts on the default', async () => {
     const manager = createChannelManager()
     const all = subscriber(manager, 'all')
-    manager.publishDefault(() => manager.channel('all'))
+    manager.announceDefault(() => manager.channel('all'))
 
     await callService(svc(), ctx(manager, 'create'))
 
@@ -89,7 +89,7 @@ describe('the app-level default publisher', () => {
     const manager = createChannelManager()
     const all  = subscriber(manager, 'all')
     const mine = subscriber(manager, 'posts')
-    manager.publishDefault(() => manager.channel('all'))
+    manager.announceDefault(() => manager.channel('all'))
 
     await callService(svc({ channel: 'posts' }), ctx(manager, 'create'))
 
@@ -102,7 +102,7 @@ describe('the app-level default publisher', () => {
   test('channel: false opts out of the default too', async () => {
     const manager = createChannelManager()
     const all = subscriber(manager, 'all')
-    manager.publishDefault(() => manager.channel('all'))
+    manager.announceDefault(() => manager.channel('all'))
 
     await callService(svc({ channel: false }), ctx(manager, 'create'))
 
@@ -114,7 +114,7 @@ describe('the app-level default publisher', () => {
     // the shape that hands a subscriber rows no policy would have let them read.
     const manager = createChannelManager()
     const all = subscriber(manager, 'all')
-    manager.publishDefault((data) =>
+    manager.announceDefault((data) =>
       (data as { title?: string }).title === 'x' ? null : manager.channel('all'))
 
     await callService(svc(), ctx(manager, 'create'))
@@ -125,7 +125,7 @@ describe('the app-level default publisher', () => {
   test('registering one returns an unsubscribe that takes it back', async () => {
     const manager = createChannelManager()
     const all = subscriber(manager, 'all')
-    const off = manager.publishDefault(() => manager.channel('all'))
+    const off = manager.announceDefault(() => manager.channel('all'))
 
     await callService(svc(), ctx(manager, 'create'))
     expect(all.frames).toHaveLength(1)
@@ -136,18 +136,18 @@ describe('the app-level default publisher', () => {
   })
 
   test('it does not trip the double-broadcast refusal', () => {
-    // A publish() HOOK beside channel: is still refused, and must be — both
+    // A announce() HOOK beside channel: is still refused, and must be — both
     // send. The default is not a hook and never runs beside a declaration, so
     // nothing here changes for refuseDoubleBroadcast.
     const manager = createChannelManager()
-    manager.publishDefault(() => null)
+    manager.announceDefault(() => null)
 
     expect(() => createService({ name: 'posts', model: 'Post', channel: 'posts' }).pipelines())
       .not.toThrow()
     expect(() => createService({
       name: 'posts', model: 'Post', channel: 'posts',
-      hooks: { after: { create: [publish(() => null)] } },
-    }).pipelines()).toThrow(/declares channel: and also runs a publish\(\) hook/)
+      hooks: { after: { create: [announce(() => null)] } },
+    }).pipelines()).toThrow(/declares channel: and also runs a announce\(\) hook/)
   })
 })
 
@@ -177,12 +177,12 @@ describe('the fall-through report', () => {
     const original = console.warn
     console.warn = (...args: unknown[]) => { lines.push(args.join(' ')) }
     try { await app._startForTest() } finally { console.warn = original }
-    return lines.filter(l => l.includes('publishDefault'))
+    return lines.filter(l => l.includes('announceDefault'))
   }
 
   test('names the services that will broadcast without having said so', async () => {
     const lines = await bootWith(
-      (a: never) => { (a as unknown as { channels: Manager }).channels.publishDefault(() => null) },
+      (a: never) => { (a as unknown as { channels: Manager }).channels.announceDefault(() => null) },
       [{ name: 'posts', model: 'Post' }, { name: 'notes', model: 'Note' }],
     )
     expect(lines).toHaveLength(1)
@@ -199,7 +199,7 @@ describe('the fall-through report', () => {
 
   test('it extinguishes itself — channel: false drops a service from the list', async () => {
     const lines = await bootWith(
-      (a: never) => { (a as unknown as { channels: Manager }).channels.publishDefault(() => null) },
+      (a: never) => { (a as unknown as { channels: Manager }).channels.announceDefault(() => null) },
       [{ name: 'posts', model: 'Post', channel: false }, { name: 'notes', model: 'Note', channel: 'notes' }],
     )
     expect(lines).toHaveLength(0)

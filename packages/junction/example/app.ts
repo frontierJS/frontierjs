@@ -79,7 +79,7 @@ import {
   createApp, loadConfig, createLogger,
   channels, openapi, healthPlugin, webhooks,
   authenticate, requireRole, protect, timestamps, circuitBreaker,
-  publish,
+  announce,
   correlationId, rateLimit, requestLogger,
   createSchema, v,
   createService,
@@ -253,9 +253,9 @@ app.hooks({
   },
   after: {
     // Real-time push: broadcast note mutations to the 'notes' channel
-    create: [publish((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
-    patch:  [publish((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
-    remove: [publish((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
+    create: [announce((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
+    patch:  [announce((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
+    remove: [announce((_result, ctx) => ctx.service === 'notes' ? app.channel?.('notes') ?? null : null)],
   },
   error: {
     all: [async (ctx) => {

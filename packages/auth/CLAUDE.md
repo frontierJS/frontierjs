@@ -1,7 +1,7 @@
 # auth — package map
 
 **`@frontierjs/auth`.** A native `IAuth` implementation over Litestone's
-`asSystem()` client, plus the schema fragments it contributes into the app's seed
+`asSystem()` client, plus the schema fragments it contributes into the app's schema
 and the `/auth/*` route plugin. `bun run test` (bun).
 
 ---

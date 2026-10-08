@@ -7,7 +7,7 @@
 // one caller can get wrong while every other caller keeps working, and the
 // symptom is a screen that never updates rather than an error.
 //
-// `publish()` lives on the MANAGER and `send()` on a CHANNEL. Calling publish on
+// `announce()` lives on the MANAGER and `send()` on a CHANNEL. Calling announce on
 // a channel is a silent no-op — the deploy pipeline did exactly that for its
 // whole life and pushed nothing, ever, without a line in the log.
 

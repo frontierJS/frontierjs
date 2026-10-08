@@ -198,7 +198,7 @@ describe('a write with no row to hand over (FJS-307)', () => {
     expect(seen).toEqual([])
   })
 
-  // The call's publish carries the row it returns and never a count, so a bulk
+  // The call announces the row it returns and never a count, so a bulk
   // write made inside it is announced here or nowhere (`FJS-1308`): the sweep
   // below changed a row the `orders created` payload shows before the sweep.
   test('a bulk write inside its own service call still announces changed', async () => {
@@ -231,9 +231,9 @@ describe('a write with no row to hand over (FJS-307)', () => {
     expect(changed.map(c => `${c.operation}#${c.count}`)).toEqual(['updateMany#2'])
   })
 
-  // The per-row half (`FJS-1357`): the call's publish carries the row it
+  // The per-row half (`FJS-1357`): the call announces the row it
   // returns, so only THAT row is covered. A method closing a parent's children
-  // one `update()` at a time changed rows no publish names.
+  // one `update()` at a time changed rows the call never announces.
   for (const transactional of [false, true]) {
     test(`a single-row write to a sibling inside its own call announces${transactional ? ' (transactional)' : ''}`, async () => {
       const { db, app, seen } = await mkApp({

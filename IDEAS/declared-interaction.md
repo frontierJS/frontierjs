@@ -161,7 +161,7 @@ than finishing one, so it is the one that should wait for a second caller.
 
 **Response headers that steer the client** — `HX-Retarget`, `HX-Reswap`,
 `HX-Trigger`, `HX-Reselect`. They are coherent in htmx because the response *is*
-the UI. Here they would put a second owner beside `publish()` and the result
+the UI. Here they would put a second owner beside `announce()` and the result
 envelope for *what a mutation means to a screen*, which is Invariant 4 directly.
 A broadcast is graded per recipient; a header is not graded at all.
 

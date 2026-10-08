@@ -1,5 +1,14 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-07 — db push asks y/N at a terminal before dropping a column (`FJS-1926`)
+
+`db push` refused a change that drops a column wherever it ran, and said to rerun with `--accept-data-loss`. Prisma's `db push` asks a person at a terminal instead.
+
+- **At a terminal, a blocked push lists the columns it would drop and asks `apply anyway? [y/N]`.** A yes reruns `autoMigrate` with `acceptDataLoss: true` and takes its result only for the databases that were blocked by the loss. Anything else refuses as before, exit 1. A drops-only diff adds one line: if a newer build migrated this database, answer no. A probable rename is named next to its column.
+- **Without a terminal nothing changed**: CI, a script or an agent gets the refusal and exit 1. `fli db:push` runs litestone with `stdio: 'inherit'`, so it asks too.
+
+`test/cli-smoke.test.ts` § *db push at a terminal asks before dropping* runs the command under `script(1)`, answers no and then yes, and checks the exit code and the database state after each.
+
 ## 2026-10-07 — a File column on a client with no FileStorage is refused by name, and a File[] upload stores (`FJS-1898`, `FJS-1899`)
 
 With no `FileStorage` installed, an upload into a `File?` column was refused about atomic operators, a message that names neither the column's type nor the plugin. An upload into a `File[]` was not refused at all: it took the Json path and stored `[{}]`.

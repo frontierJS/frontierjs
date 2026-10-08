@@ -178,9 +178,35 @@ and gives the write verbs something to write.
 
 - **Where a prefix is declared**, if the migration does not remove the need —
   `.fli.json`, a `fli` key in `package.json`, or derived from the workspace name.
+  - **A** — a `"registers": { "prefix", "dir" }` key in the project's
+    `package.json`, read by `registerLayout()`.
+  - **B** — a `.fli.json` beside it.
+  - **C** — derived from the workspace name.
+  - **Recommend A** — A is what ships, and `elitelawncare/ela` runs on it. A
+    second config file is a second origin for project settings, and a derived
+    prefix changes every id the day the workspace is renamed.
 - **Whether closing a row is a verb or an edit.** Today it is a move between two
   sections of one file; file-per-record makes it a frontmatter field, and then
   `ISSUES.md` is a generated index rather than the register.
+  - **A** — a verb: `fli close <id> --how`, which ships in `core/close.js` and
+    moves the row with its date and How cell, and would set the frontmatter field
+    under file-per-record.
+  - **B** — an edit by hand, graded afterwards by `register:check`.
+  - **Recommend A** — A is what ships. The verb writes the closing date and the
+    How column the same way every time, so the shape cannot be wrong; a hand
+    edit can, and is still graded when someone makes one.
 - **Whether `ISSUES.md` survives as a file at all** under that migration, or
   becomes what `IDEAS/overview.md` already is: derived, ranked, authoritative over
   nothing.
+  - **A** — it survives as the register: one table, the file-per-record migration
+    not taken for issues.
+  - **B** — a file per record, with `ISSUES.md` a generated index the `snapshots`
+    phase keeps fresh.
+  - **C** — a file per record and no `ISSUES.md`; `fli next`, `register:find` and
+    `ws:atlas` are the reading surface.
+  - **Recommend A** — the migration's argument here was the prefix, and the
+    declared prefix solved that without it. Every write verb (`file`, `close`,
+    `archive`, `amend`, `decide`) writes the table today, and the file's size is a
+    narrative problem (`IDEAS/changes-retirement.md` question 4), not a shape one.
+    The header of `registers.js` that calls the migration declared is then the
+    claim to amend.

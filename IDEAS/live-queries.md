@@ -45,7 +45,7 @@ matching* is pushed as a removal even though it was only patched.
 ## Where FJS actually stands
 
 **The transport is done.** `callService` announces a mutation once and
-`publishToChannels` fans out to the channels a service declares
+`announceToChannels` fans out to the channels a service declares
 (`packages/junction/src/core/service.ts`). `client.resource('leads')` opens the
 socket, wires `created`/`patched`/`removed` into a `Store`, and notifies subscribers
 (`packages/junction/src/client/index.ts:480-489`). Sierra surfaces it through
@@ -136,7 +136,7 @@ correctness.
 ## Two constraints that bound the design
 
 **1. A broadcast does not re-evaluate row policies per subscriber.** This is stated
-deliberately in `publishToChannels` and is exactly why `channel:` is opt-in: `@@allow`
+deliberately in `announceToChannels` and is exactly why `channel:` is opt-in: `@@allow`
 is enforced when a row is READ, and a broadcast hands every connection in the channel
 rows it may never have been able to fetch.
 
@@ -168,7 +168,7 @@ the source, and a mutation propagates a *delta* along the edge instead of
 invalidating a cache and triggering a refetch. That framing is worth adopting
 because it is the projections axiom applied to the wire — but it must not become a
 second announcement mechanism. `callService` is the single announcement point
-(repo Invariant 4), so everything below happens **inside `publishToChannels`**, not
+(repo Invariant 4), so everything below happens **inside `announceToChannels`**, not
 beside it.
 
 **The mechanism.** At publish time the server has three things at once, which is the
@@ -322,9 +322,24 @@ result deserves its own noun. It probably does not.
   field server-side. The client has `x-relations` but not the related *rows*, so the
   honest answer is probably that a query touching a relation is not live-able and
   must say so, loudly, at subscribe time.
+  - **A** — as built: the matcher answers `null` for a filter naming a relation and
+    the store refetches, coalesced per burst.
+  - **B** — refuse at load: a query touching a relation is not live-able, said at
+    subscribe time.
+  - **C** — ship the related rows with the event so the client can decide.
+  - **Recommend A** — A is what ships in `packages/junction/src/client/index.ts`
+    (`verdict`, `refetch`), and it is correct, only slower. B would make a list that
+    loads correctly refuse to stay live, and C widens every broadcast for one kind
+    of query.
 - **What about a `select`?** A projected record may lack the columns the query
   filters on. Either live queries refuse a `select` that drops a filtered column, or
   the matcher reports "cannot decide" and the store refetches.
+  - **A** — as built: `null`, then a refetch.
+  - **B** — refuse at load a `select` that drops a filtered column.
+  - **C** — widen the `select` silently to include the filtered columns.
+  - **Recommend A** — A is what ships, and the cost is a round trip per burst, not
+    a wrong list. C changes what the caller asked for, and B refuses a load that
+    answers correctly.
 - ~~**Is "cannot decide" a first-class outcome?**~~ **Settled by the hook framing
   above.** `unknown` → refetch is the default `before` hook; an app that can decide
   replaces it. Kept here because the reasoning matters: a matcher forced to return a
@@ -334,13 +349,31 @@ result deserves its own noun. It probably does not.
   excluding one phase from one direction breaks the "matches the API realm exactly"
   claim the pipeline currently earns. Probably run all four and let `around` be
   trivially satisfied.
+  - **A** — run all four phases inbound; `around` wraps the store-apply, which is the
+    inner call in place of the network.
+  - **B** — inbound runs `before`, `after` and `error`; `around` is outbound only.
+  - **Recommend A** — one pipeline with one rule is the claim the framing rests on,
+    and B makes an `around.created` hook a declaration that never fires with
+    nothing saying so. A hook that means only the network keys on the method it
+    wraps, which is how a hook already avoids methods it does not mean.
 - **Does this want a `live:` declaration on the service**, the way `channel:` is
   declared? That would let the server refuse to broadcast for services where
   per-subscriber policy cannot be satisfied — which is the security constraint above,
   expressed as a declaration instead of a warning.
+  - **Recommend A** — FJS-D175 already answers this: every broadcast is graded per
+    recipient at publish by the Data boundary, so there is no service whose policy a
+    broadcast cannot satisfy, and `channel:` stays the one declaration.
 - **Custom method events are treated as upserts** (`client/index.ts:486-489`). Under
   a matcher they get the same treatment as `patched`, which is probably right and
   should be stated rather than inherited.
+  - **A** — as built: a custom-method event goes through the same `apply` as
+    `patched`, so it can insert, reposition, or drop the row.
+  - **B** — a custom-method event always refetches, since the client cannot know
+    what the method did.
+  - **Recommend A** — A is what ships in `packages/junction/src/client/index.ts`,
+    and it is now stated there: the server publishes the updated record, and a row
+    leaves a filter through a custom method exactly as through a patch. `changed`,
+    which carries a count rather than a row, is already excluded and refetches.
 
 ## See also
 

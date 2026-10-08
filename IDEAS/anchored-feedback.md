@@ -72,6 +72,14 @@ placed at a guessed position. A build id that differs from the pin's marks it
    the stamp**: the handoff is the payoff, and a selector is the thing Pinmark
    shows drifting. This needs `site-kit build --preview` to be a named mode, so
    production cannot get it by accident.
+   - **A** — a preview build stamps `data-fjs-loc`, behind a named
+     `site-kit build --preview` mode that production cannot reach by default.
+   - **B** — the anchor stores a selector and a quote, and the dev server maps
+     it to a `loc` at handoff.
+   - **Recommend A** — the handoff is the payoff, and a selector is the anchor
+     Pinmark shows drifting. Leaking source paths is acceptable on a link handed
+     to a reviewer and not in production, which is what the named mode and a
+     `dist/` check for an absent panel are for.
 2. **Where the store runs.** A site-kit site is static.
    - **A** — one hosted FJS app serving every site's reviews (Kobami runs one).
    - **B** — Basecamp as the store, a pin becomes a to-do in the client's
@@ -87,6 +95,19 @@ placed at a guessed position. A build id that differs from the pin's marks it
    API must allow) is open and this is one more caller of it; `FJS-788`
    (`sierraFetch` sent the Bearer to any absolute URL) is the closed trap to
    re-read before choosing the token's home.
+   - **A** — Bearer over CORS with an explicit `cors.origins` list of every
+     preview origin.
+   - **B** — Bearer over CORS with `origins: ['*']`, the token scoped to one
+     review by its invite link, and the client attaching it only to the store's
+     configured origin.
+   - **C** — same origin: the store serves each preview build under its own
+     origin, so the session is a cookie and there is no CORS.
+   - **Recommend B** — with no ambient credential a wildcard origin grants
+     nothing, which is how `example` already runs, so `FJS-1090` does not block
+     it. The token's reach is one review, and sending it only to the store's
+     origin is the lesson of `FJS-788`. A is a list per site that drifts as
+     previews are added, and C moves preview hosting into the store for a
+     problem B does not have.
 
 ## The plan
 

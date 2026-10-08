@@ -95,8 +95,8 @@ app↔world (**Edge** proposed); `Manifest` claimed by Deployment noun, MV3
 coordinates forced into one field; nearly every package is a cross-cut
 (junction hosts seams of D3/4/5/6/7; the CLI owns the Deployment realm).
 auth and notifications are a *shape* the map can't express: vertical
-**Slices** (schema fragment + service + plugin + resource as one unit) —
-add as a second axis, which also predicts what `fli add <slice>` scaffolds.
+**Rigs** (schema fragment + service + plugin + resource as one unit) —
+add as a second axis, which also predicts what `fli add <rig>` scaffolds.
 Domain 8 is a junk drawer; jetty/css/mesa-vite/vscode are unmapped; Orion and
 Basecamp are mapped but absent.
 

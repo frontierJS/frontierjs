@@ -1,7 +1,7 @@
 # conduit — package map
 
 **The third parties an app integrates with, declared in one place.** A
-counterparty is named once — with what credential, under what policy — and
+counterparty is named once — with what credential, under what limits — and
 `app.conduit.send()` is how a call to it leaves the process. v0.1.3, deliberately
 narrow. `bun run test` (bun).
 
@@ -37,7 +37,7 @@ and `unix` answers `not_implemented`.
 
 ```
 src/
-  conduit.ts        the core — declare targets, send, apply policy
+  conduit.ts        the core — declare targets, send, apply resilience
   router.ts         target resolution
   observe.ts        the one place an observer is called
   plugin.ts         the Junction plugin (app.conduit)
@@ -130,19 +130,19 @@ src/
   `opts.targets` straight through `put()`, so a rule that lives in `register()`
   is one a STATIC target — the way a provider is actually declared — never
   meets. `assertDescriptor` is the door.
-- **Policy is per TARGET first and per conduit second.** All seven numbers live
-  on `TargetDescriptor.policy` and fall back field by field to the conduit-wide
+- **Resilience is per TARGET first and per conduit second.** All seven numbers live
+  on `TargetDescriptor.resilience` and fall back field by field to the conduit-wide
   option of the same name, so one conduit really can carry a card processor, a
   mail sink and a health probe. Two owners apply it and both are needed: the
   router merges the transport half when it builds a transport, and
-  `Resilience.setPolicy` takes the breaker half — fed by `put()` for what this
+  `Resilience.setResilience` takes the breaker half — fed by `put()` for what this
   process registers AND by the router for a descriptor it read out of the store,
   since admission is graded before any descriptor is resolved. An unknown field
-  under `policy` is refused at `register()` **by name**, which is the finding
-  rather than tidiness: `timeout_ms` written beside `policy` instead of inside it
+  under `resilience` is refused at `register()` **by name**, which is the finding
+  rather than tidiness: `timeout_ms` written beside `resilience` instead of inside it
   was accepted and ignored, and TypeScript cannot see it — a descriptor read out
   of a store is a `TargetDescriptor` by assertion (`FJS-728`). Adding a field
-  means `POLICY_FIELDS`, the router's merge or `Resilience`, **and**
+  means `RESILIENCE_FIELDS`, the router's merge or `Resilience`, **and**
   `EXTRA_KEYS`; a value that JSON cannot carry means the store too.
 - **`max_concurrent` defaults to 64 and unlimited was never unbounded.** A burst
   past the pool queues INSIDE it with the per-attempt timer already running, so
@@ -196,7 +196,7 @@ src/
   path that cannot say so does not ship.
 - **A target is declared, not constructed at the call site.** That is the whole
   point of the package: one place lists what this process may talk to, with what
-  credential, under what policy.
+  credential, under what limits.
 - **`stub` and `not_implemented` are different answers.** A stub transport
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.

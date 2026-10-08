@@ -553,7 +553,7 @@ export async function buildBasecampApp(
         // their disks every minute buries every action a person took, and an
         // audit trail nobody can read is an audit trail nobody reads.
         // Deliberately NOT `ctx.dispatch = false` — that would also silence the
-        // channel, and both screens are fed by exactly that publish.
+        // channel, and both screens are fed by exactly that broadcast.
         basecampAuditLog(app, { except: AUDIT_EXCEPT }),
         // Only fires when apiKeyGuard stamped a key id, so a session request
         // pays nothing for it.

@@ -1456,6 +1456,15 @@ Compose has no traffic layer at all and stops the old container before starting 
   falsy**: `LockNotAcquiredError`, 409, `retryable`, naming the current holder — which
   is already the *refuse by name* shape `fli revert` wants, so nothing needs writing for
   it. These four assertions are the first test 1a should carry.
+  - **A** — On the target: its own Litestone client over `packages/cli/db/deploy.lite`,
+    `main` at `.fli/deploy.db` under the deploy root, `fli` the only writer and
+    Basecamp a reader through the Outpost.
+  - **B** — A second `database` block on the app's own client.
+  - **C** — Off the target: on the operator's machine, or in Basecamp.
+  - **Recommend A** — A is what ships (`deploy.lite`, and `journal.path` defaulting to
+    `.fli/deploy.db` in `deploy/_module.md`). The negative control above measured B
+    putting the lock in the app's `main` and the journal in the app's backup set,
+    and C gives two operators two histories of one server.
 - **Where does the Release declaration live** — its own file beside `db/schema.lite`,
   or `frontier.config.js`, which `IDEAS/app-manifest.md` is already shaping. If the
   former, whether *everything derives from the schema* holds literally here or by
@@ -1463,6 +1472,14 @@ Compose has no traffic layer at all and stops the old container before starting 
   block that `fli make:deploy` writes and `fli deploy` reads, so the question is no
   longer where to put a new thing but whether the Release's declaration joins the one
   that exists.
+  - **A** — It joins the deploy block in `frontier.config.js`: `configuration` (values)
+    beside `secrets` (pinned references), and the pivot comes from `classifyPivot`
+    over `release.snapshot.md` rather than being declared.
+  - **B** — Its own file beside `db/schema.lite`, such as `db/release.lite`.
+  - **Recommend A** — A is what `fli release:mint` reads today (1b). The terms that
+    can be derived are derived (the schema hash off the committed snapshot, the
+    digest off the build), so what remains declared is deploy configuration, and it
+    already has one home. B adds a second file for the same block.
 - **How the Environment configuration set composes with per-tenant configuration**, which
   arrived after this record was written. `FJS-D126` gives an app a resolver answering
   configuration per tenant, an explicit `tenantConfigKeys` allow-list, and a reserved
@@ -1472,6 +1489,19 @@ Compose has no traffic layer at all and stops the old container before starting 
   need settling before either is built on: which wins, whether a revert restores a
   tenant override or only the Environment's configuration, and whether the configuration set
   should simply adopt the committed-allow-list idiom rather than invent a second one.
+  - **A** — Two layers, tenant over environment: `$.config` answers the tenant's
+    override where `tenantConfigKeys` allows one and the Environment's value
+    otherwise. A revert restores the Environment's set only, because a tenant
+    override is data in the app and not part of the Release.
+  - **B** — The Release snapshots tenant overrides too, so a revert puts each
+    tenant's configuration back with the code.
+  - **C** — As A, and the Environment set also adopts the committed allow-list: its
+    keys are listed in a snapshot beside `principal.snapshot.md`'s tenant keys.
+  - **Recommend A** — the tenant resolver is already the one owner of the read
+    (`FJS-D126`, `core/config-scope.ts`), so layering inside it needs no second
+    mechanism. B would have a deploy revert rewrite rows a customer set, which is
+    the app's data rather than the release's. C can wait until `FJS-585` makes the
+    Environment set something the process actually applies.
 - **Is the compose file for an attached service ours to generate or yours to write?**
   The line between helpful and Caprover is exactly there. **Still open after the
   phase shipped, and narrowed by it**: the declaration names the variables a
@@ -1480,8 +1510,30 @@ Compose has no traffic layer at all and stops the old container before starting 
   crossing rather than a step toward it. What IS free is an `.env.example`
   grouped by service, since the declaration already carries every field spec
   `generateEnvExample` reads.
+  - **A** — Yours to write. What is generated is an `.env.example` grouped by
+    service, derived from `attachments`.
+  - **B** — Ours, dev only: `attachments` grows `image` and `version`, and `fli`
+    writes a compose file with ports from its broker.
+  - **C** — Yours to write, and `fli` reads it to check that every attachment's
+    variables are bound by some service in it.
+  - **Recommend A** — the declaration carries no image, version or volumes, so
+    generating a compose file means inventing all three, which is the line toward
+    managing the service that phase 2 refused. The `.env.example` is derived from
+    a declaration that already exists. C grades a file whose shape we do not own.
 - **Retention economics.** Nobody publishes the storage and routing cost of keeping N
   Releases addressable for a week. We would be finding out.
+  - **A** — Counts, as built: `keep_releases` (default 3) for web and
+    `keep_backups` (default 5), with images pruned to what is in use, and the cost
+    unmeasured.
+  - **B** — Keep A's counts and measure them: `deploy:status` reports the bytes each
+    retained Release holds (image, web release, backup), so a count is chosen from
+    a number.
+  - **C** — Retention by time: keep every Release for a stated window, as the
+    question's *a week* assumes.
+  - **Recommend B** — the question is that the cost is unknown, and the cheapest
+    answer is to report it where an operator already looks. Routing cost only
+    exists once two Releases are served at once, which is phase 4. C keeps an
+    unbounded number of Releases on a busy week.
 - ~~**FJS-D503 — Is `IDEAS/overview.md` 4.19 one durable-run primitive, or several uses of `occurrenceKey`?**~~ **Answered 2026-09-28 (`FJS-D503`): A — several uses of `occurrenceKey`, and 4.19 is withdrawn as a primitive. The discipline becomes graded: every durable dispatch id goes through `occurrenceKey`, orion's three hand-built ids are the first to move, and `toolbelt/history`'s header states the moving term (attempt, generation, fire minute) as part of an occurrence's contract. It reopens when a second realm needs claimed, ordered steps resumed after a crash.**
   Who owns a backfill is settled (FJS-D157: a durable row plus a
   Caravan job). What remained is 4.19 itself, and this paper both defers it (§ The
@@ -1518,6 +1570,17 @@ Compose has no traffic layer at all and stops the old container before starting 
   of principals, which sounds like the Trust Hierarchy's neighbourhood, and if it is
   declarable in the seed then `@@gate` and Audience should be checked against each
   other before either name is settled.
+  - **A** — Data realm: a cohort is declared in the seed beside `@@gate` and resolved
+    onto the principal like standing; a Release names the cohort it serves.
+  - **B** — Deployment realm: declared with the Release in the deploy block, as a
+    predicate over the principal the app exposes.
+  - **C** — Not owed until phase 4 builds the routing; the journal's
+    `everyone` column is the whole of it until then.
+  - **Recommend C** — then A once phase 4 routes by principal. Membership must be a
+    server-side fact about a principal, which is the Data realm's, and nothing
+    routes on it yet. Whichever lands, the word needs changing: `audience` already
+    names litestone's field-crossing set (`audience: 'client'`, `FJS-D454`), and
+    this paper's own word, *cohort*, is free.
 
 ## See also
 

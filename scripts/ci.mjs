@@ -1711,7 +1711,7 @@ function tutor() {
     // already has rather than a new one.
     { id: 'tutor:ui',     args: ['--api-port', String(API), '--web-port', String(WEB)], needsChrome: true },
     { id: 'tutor:access', args: ['--api-port', String(API)] },
-    // Two sockets against one publish, a job that outlives its request, and a
+    // Two sockets against one broadcast, a job that outlives its request, and a
     // public site built from the database. All three reuse the API slot: each
     // lesson stops what it started, and the phase runs them in order.
     { id: 'tutor:live',   args: ['--api-port', String(API)] },

@@ -79,7 +79,7 @@ unchanged around it:
   now, because they run **before the first token**;
 - **each frame is a result** and goes through `protect()` and the after-hooks the
   way a published frame already does — which is the precedent, not a new idea:
-  `publish()` is an after-hook for this reason;
+  `announce()` is an after-hook for this reason;
 - transport is `ctx.sse()` under HTTP and the existing `event` frame under WS, so
   neither transport learns a new concept;
 - the client gets one call shape that yields chunks and resolves to the final
@@ -261,7 +261,7 @@ framework does not have.
     limitation into every caller. It costs one honest sentence: under a
     non-streaming transport the tokens arrive together.
 - **Does a frame go through the after-hook chain, or only through `protect()`?**
-  - **A** — the full after chain per frame, consistent with `publish()`.
+  - **A** — the full after chain per frame, consistent with `announce()`.
   - **B** — `protect()` per frame, the after chain once on the final record.
   - **Recommend B** — an after-hook that announces, enqueues or invalidates would
     fire once per token under A, and a hook author cannot be expected to know

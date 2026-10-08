@@ -73,7 +73,7 @@ before citing it.
 ## `fli check` — the rules a linter cannot reach
 
 A Biome or an ESLint owns generic JavaScript. **`fli check` owns everything
-derived from the seed**, and the boundary is not tooling immaturity: neither
+derived from the schema**, and the boundary is not tooling immaturity: neither
 linter reads `.mesa` or `.lite`, and the questions worth asking here are
 cross-file. *Does this resource name resolve to a model?* cannot be answered
 from the file it appears in.

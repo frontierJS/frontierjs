@@ -155,6 +155,10 @@ secrets are scoped, and who is allowed to spend the resources.
 
 ## The fourth, found later — durable workflows
 
+**The noun is ruled (`FJS-D634`): a Flow declares the process and a Run executes it.
+*Saga* and *workflow* are refused, and *pivot* and *compensable* are ruled once for
+both uses. The engine is not built: `FJS-D503` withdrew the shared primitive.**
+
 Added 2026-08-12, from a sweep for missing *categories*. The three above were the
 maintainer's list; this one is the category the domain map already names and nothing
 owns.

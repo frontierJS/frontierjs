@@ -71,7 +71,7 @@ export const STEPS = [
     what:'THE result envelope, one owner. A list keeps { object, data, total }; a single record unwraps.',
     why:'One module decides the response shape for the whole framework, so a client never has to ask which endpoint wraps and which does not.' },
 
-  { lane:2, row:10, tone:'core',      t:'publishToChannels()', f:'core/service.ts',
+  { lane:2, row:10, tone:'core',      t:'announceToChannels()', f:'core/service.ts',
     what:'The single announcement point. One mutation fans out to both the event bus and the declared channel.',
     why:'Announcing in one place is what makes realtime reliable. Two publish paths means one of them eventually gets forgotten in a new code path.' },
 

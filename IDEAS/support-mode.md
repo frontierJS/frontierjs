@@ -379,6 +379,14 @@ all of the risk.
   record* is the DSAR question and it is a READ. Probably: reads are logged for the
   duration of an episode regardless of the model's setting, which is a rule with no home
   yet.
+  - **A** — reads stay opt-in per model; an app that wants the DSAR answer declares `reads: true` where it matters.
+  - **B** — inside an episode, every model with `@@log` logs reads whatever its `reads` setting, decided in litestone's logger off the `episodeId` that `installLogContext` already hands it.
+  - **C** — inside an episode, every model logs reads, `@@log` or not, into the default trail.
+  - **Recommend B** — the condition already reaches the logger, so the rule's home is the one read-logging check that exists, not a new seat. Under A an operator reading a record leaves nothing, and the DSAR answer is incomplete without anything saying so. C writes a trail for models the app never declared one for.
 - **`asSystem()` inside an episode.** A service that legitimately bypasses rules would
   bypass the subject's ceiling too. The trail still names the operator; whether an episode
   should refuse `asSystem()` outright is `FJS-519`'s shape one layer up.
+  - **A** — allowed, as built: a service's `asSystem()` is the service's decision for every caller, the subject included, and the trail names the operator.
+  - **B** — refused: litestone throws on `asSystem()` while the context carries an episode.
+  - **C** — allowed, and each `asSystem()` inside an episode writes a trail entry naming the call.
+  - **Recommend A** — the episode's ceiling is the subject's, and the subject's own call through that service bypasses the same way, so B makes an operator unable to see what the subject sees. What an episode must not reach is already refused by name (`refuseDelegated`), and a narrower lift is `FJS-D575`'s `system: ['@@gate']`, which keeps the audit actor.

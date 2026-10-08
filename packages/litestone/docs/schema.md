@@ -328,7 +328,7 @@ as an affordance.
 validator sees one field, `@@unique` is about rows in a table rather than values
 in a row, `@@allow` is who rather than what is valid, and `@@transitions` is one
 column's moves. `startsAt < endsAt`, `discount <= subtotal` and
-`status != 'shipped' OR trackingCode IS NOT NULL` have no other home in the seed.
+`status != 'shipped' OR trackingCode IS NOT NULL` have no other home in the schema.
 
 **A violation is a `ValidationError`** — 400, with `errors` — so it lands under
 the control like any other refused value. A field `@check` names its column; a

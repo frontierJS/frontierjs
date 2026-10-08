@@ -255,15 +255,31 @@ is not already precedented in the tree.
   devtools, and a `@frontierjs/lantern` before there is a second reader is a
   package boundary drawn around one caller. Extract when basecamp wants the same
   trace off a deployed app, which is when it earns the name.
+  - **A** — no package, ever: the emitters stay in litestone and junction, the store and the viewer in junction's devtools plugin. `map-packages.md`'s `lantern` row says the same.
+  - **B** — no package yet; extract the store and the viewer as `@frontierjs/lantern` when basecamp reads traces off a deployed app.
+  - **C** — `@frontierjs/lantern` from the start, holding the store, the viewer and the OTLP exporter.
+  - **Recommend A** — `map-packages.md`'s test asks whether the thing is declinable and carries code the core must refuse, and tracing is neither: the emitters reach every seam, and basecamp as a second reader reads a deployed app's trace over a service, not over an import. The exporter is the one piece that could pass the test, and only if it pulls in a vendor SDK; OTLP over HTTP as JSON needs none.
 - **Sampling policy.** A head sample loses the trace of the call that failed; a
   tail sample means buffering every span. Probably: keep everything in dev, keep
   errors and refusals always, sample the rest.
+  - **A** — dev keeps everything; production keeps every error and refusal and samples the rest, deciding at the end of each call over that call's buffered spans.
+  - **B** — production writes nothing to the store; a deployed app's traces leave through the phase 5 OTLP export, and the collector does the sampling.
+  - **C** — a fixed head-sample rate outside dev, decided when the request arrives.
+  - **Recommend B** — then A once basecamp reads traces off a deployed app. Phase 3 already says production is off or sampled, and a collector already does tail sampling; a sampling rate with no deployed reader is an option nobody sets. C is the one that loses the failed call, which is the trace most worth keeping.
 - **Does a decision event belong in the audit trail instead?** No — `@@log(audit)`
   records a write and `db.$audit()` records an event, and a refusal is neither. But
   the two want to point at each other, and the trace id is the pointer.
+  - **A** — no: decisions live in the trace store, writes in the trail, joined by the correlation id the trail already carries.
+  - **B** — every refusal also writes a `db.$audit()` event.
+  - **C** — only write refusals (a create or post-update denial, a `@guarded` or `@system` write) go to the trail; read filters stay in the trace.
+  - **Recommend A** — the pointer already exists: the logger auto-model carries an indexed `correlationId` (`litestone/src/core/audit-log.js`), and phase 1 seeds `traceId` from that same value. B grows the trail by a row per filtered read, which `traffic-analysis.md` refuses for the same reason. C is the narrow version worth reopening if a DSAR ever has to show refused attempts.
 - **What does the counterfactual cost on a large table?** It is a second query
   with the policy filter removed. Bounded by a limit, or refused above a row
   count; unbounded it is a way to make a debugger the slowest thing in the app.
+  - **A** — a capped count: the caller's query without its policy clause, as `SELECT count(*) FROM (SELECT 1 … LIMIT N)`, reported as *at least N* when it hits the cap.
+  - **B** — refused above a row count, estimated before the second query runs.
+  - **C** — unbounded, because it is a dev-only button somebody chose to press.
+  - **Recommend A** — the answer the pane needs is a number (*17 exist, the policy admitted 0*), so capping the count bounds the work without refusing the question. B needs an estimate SQLite only has after `ANALYZE`, which a fresh dev database has not run, so the refusal would be wrong without anything saying so.
 
 ## See also
 

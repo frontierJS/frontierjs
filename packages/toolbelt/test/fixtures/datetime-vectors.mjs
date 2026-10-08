@@ -1,14 +1,14 @@
 /*
- * datetime-oracle.mjs — regenerates datetime-oracle.json from the Temporal polyfill.
+ * datetime-vectors.mjs — regenerates datetime-vectors.json from the Temporal polyfill.
  *
- * The polyfill is the oracle and never a dependency: this package declares none,
+ * The polyfill is the reference and never a dependency: this package declares none,
  * so it is installed somewhere else and resolved from the working directory.
  *
  *   cd "$(mktemp -d)" && npm i @js-temporal/polyfill@0.5.1
- *   node <repo>/packages/toolbelt/test/fixtures/datetime-oracle.mjs
+ *   node <repo>/packages/toolbelt/test/fixtures/datetime-vectors.mjs
  *
  * Run it under NODE. The polyfill reads zone rules from the host's ICU exactly as
- * the kit does, so oracle and kit agree by construction on one runtime; the spec
+ * the kit does, so reference and kit agree by construction on one runtime; the spec
  * then runs under bun as well, which is where a zone whose rules changed shows up.
  * That is why ZONES holds no zone whose rules moved recently (`America/Asuncion`
  * disagreed between node and bun for 36 months of 2020-2030 when this was written).
@@ -143,7 +143,7 @@ for (const zone of ZONES) {
 }
 
 const out = {
-  generator: 'node packages/toolbelt/test/fixtures/datetime-oracle.mjs, from a directory holding @js-temporal/polyfill',
+  generator: 'node packages/toolbelt/test/fixtures/datetime-vectors.mjs, from a directory holding @js-temporal/polyfill',
   polyfill:  '@js-temporal/polyfill@0.5.1',
   icu:       process.versions.icu,
   tz:        process.versions.tz,
@@ -155,6 +155,6 @@ const out = {
   between,
   days,
 }
-const target = join(dirname(fileURLToPath(import.meta.url)), 'datetime-oracle.json')
+const target = join(dirname(fileURLToPath(import.meta.url)), 'datetime-vectors.json')
 writeFileSync(target, JSON.stringify(out) + '\n')
 console.log(`${resolve.length} wall clocks, ${parts.length} instants, ${weeks.length} week dates, ${added.length} additions, ${between.length} spans, ${days.length} day starts → ${target}`)

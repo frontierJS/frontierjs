@@ -413,6 +413,10 @@ because the argument is what the record cites.
   server. The ledger in `core/cardinality.js` already keys and would take a
   composite one; the question is whether the spelling belongs on the relation
   field, and it is that owner's rather than this word's.
+  - **A** — On the relator, which already names the pair: `@@relator([appId, serverId], many: replicaIndex, max: 8)`, with the ledger keyed on the relator's own columns.
+  - **B** — On the relation field, with a qualifier: `placements AppServer[] @maxItems(8, per: server)` on `App`, so `@maxItems` stays the one spelling of a bound.
+  - **C** — No new spelling: where the relator has an ordinal discriminator, bound the discriminator. `replicaIndex Int @lte(7)` under the relator's unique over `[appId, serverId, replicaIndex]` already caps the pair at eight.
+  - **Recommend C** — then A once a `many` relator with no ordinal discriminator needs a bound. The one live case, `AppServer` in `packages/basecamp/db/schema.lite`, has `replicaIndex`, so C costs nothing new. When A is needed it beats B: the pair is already declared once on the relator, and B restates it from one side, and which side owns it is a choice B leaves open.
 - **Still open, and now live — does the absence of the word come to mean
   something, and does anything grade it?** `@@relator` exists as of
   [`FJS-D350`](../DECISIONS.md#fjs-d350) and nothing was built for this, so a model with two cascading required
@@ -420,6 +424,10 @@ because the argument is what the record cites.
   `opportunities.js` rule could ask — confidence, never severity — but the
   literature's own `FreeRole` is the warning: a recognizer that fires on every
   unmarked pair trains people to ignore it.
+  - **A** — Absence means nothing: a model without `@@relator` is a model, and nothing grades it.
+  - **B** — A narrow opportunity in `packages/litestone/src/core/opportunities.js`: it fires only where a hand-written `@@unique` over two required cascading foreign keys is the DDL `@@relator(…, once)` would emit. It names the word and carries confidence, never severity.
+  - **C** — A `fli check` rule with severity on every model with two cascading required relations and no declaration.
+  - **Recommend B** — It follows `FJS-D539`: fire on a narrow shape the word would generate, never on every unmarked pair, which is how it avoids the `FreeRole` failure that C walks into. Hold it as `FJS-D539` held its rule until a probe of `example/` and `packages/basecamp/` finds a true positive, because a recognizer whose first firing is hypothetical is one nobody trusts.
 - ~~**Does a create on a repeatable relator have to carry an idempotency key, and what says so?**~~ **Answered 2026-09-28 (`FJS-D539`): A — an advisory rule. `opportunities.js` or `fli check` asks it: *this service creates a model declaring `@@relator(…, many)` and no idempotency config, so a retry writes a second occurrence*. Confidence, never severity. Costs nothing to anyone who ignores it.** § 3 assumed *mandatory*, and `claimIdempotency(ctx, key,
   config)` cannot mean that: it is opt-in on an `Idempotency-Key` header and
   returns `null` when none arrives, so there is no position from which to
@@ -451,6 +459,10 @@ because the argument is what the record cites.
   discriminator. Both emit identical DDL. Whichever way it resolves is the
   worked example for the distinction, and `OrderLine` and `StocktakeCount` are
   the same question.
+  - **A** — A relator: `@@relator([payRunId, employeeId], once)` replaces the hand-written `@@unique` in `example/db/schema.lite`, and `payWindow` is a term it references rather than a relatum.
+  - **B** — A document the run owns: no `@@relator`, the `@@unique([payRunId, employeeId])` stays, and the copies and `@immutable` figures are what say it records a relationship rather than being one.
+  - **C** — Make the tell a rule: a model that copies columns off a relatum is never a relator, so `Payslip`, `OrderLine` and `StocktakeCount` resolve together as documents.
+  - **Recommend B** — Under `FJS-D350` a word lands only if it generates or refuses, and `once` here would generate exactly the unique already written, so A buys a label. The copied period and the frozen figures are § 2's tell, and `FJS-D162` already treats a payslip as a document. C is the same answer, made binding before a second case has tested it.
 
 ---
 
