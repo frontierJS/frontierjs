@@ -24,7 +24,7 @@ import { capabilityNames }          from './core/capabilities.js'
 import { isServerAssignedId }       from './core/ids.js'
 import { Factory }                  from './seeder.js'
 import { tempDir }                  from './tmp-dirs.js'
-import { parseDuration }            from './tools/retention.js'
+import { parseDuration }            from './core/retention.js'
 import { existsSync, readFileSync } from 'fs'
 import { join }                     from 'path'
 

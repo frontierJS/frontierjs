@@ -20,3 +20,7 @@ and build plugins: `export default { preset: '@kobami/ksite' }` in
 `content/settings/site.js`. The package exports `./preset`, a function of the
 site returning `{ sierra, plugins, shell }`. A preset that does not load stops
 the build by name.
+
+Analytics is Sierra's `analytics` key in the same file — `analytics: {
+provider: 'plausible', domain: 'example.com' }` — and the build puts the
+vendor's tag in every page's `<head>`.

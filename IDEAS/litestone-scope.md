@@ -74,6 +74,8 @@ in a directory of jsonl* (`parser.js`, the `logModel` check;
 
 ## 3. What `FJS-D635` leaves to build
 
+**Built 2026-10-08**, items 1–4 (`packages/litestone/CHANGES.md`). One thing the test found that this section missed: `src/core/client.js` imported `tools/retention.js`. `@@retention`'s runner was on the axis but filed under `tools/`, so it moved to `core/`.
+
 About a day, and none of it touches the core:
 
 1. **The import test.** It fails if anything under `src/core/` imports
@@ -113,7 +115,7 @@ word names its axis*, is a fifth item and is priced separately.
     failing test (§ V's ninth question), and A stays open as a later move with
     nothing to untangle first. C makes "done" unreachable, which is the question
     this paper set out to answer.
-- **What happens to `driver jsonl`?**
+- **What happens to `driver jsonl`?** **On hold (owner, 2026-10-08):** not to be built or ruled until the owner reopens it. The measurement below stands.
   § 2: a second engine in the language, whose one real user is the audit trail.
   - **A** — Keep both drivers, and move `jsonl` behind the engine seam
     `#sql-engine` already gives `bun:sqlite` and wasm (`FJS-D305`). The core learns
@@ -138,6 +140,14 @@ word names its axis*, is a fifth item and is priced separately.
     a second database, against the jsonl append, interleaved A/B in
     `bench/audit-bench.mjs`. If the SQLite trail costs much more on the hot path,
     **B** is the fallback.
+  - **Measured 2026-10-08: the SQLite trail is cheaper.** `bun run bench
+    audit-trail-ab` (§ 13): a `create()` on a logged model, trail write flushed
+    and settled inside the timing, 500 per batch, 12 interleaved rounds. Four runs:
+    jsonl append 152–163 µs/op, SQLite insert 109–121 µs/op, a ratio of
+    0.67–0.74; the hot path before the deferred write is the same for both,
+    47–53 µs. Taken on a loaded machine (load 1.7–3.4), so the absolute numbers
+    are soft and the ratio held across every run. The measurement that could
+    overturn **C** does not, and **B** is not needed as a fallback.
 
 ## The nine, for the edge
 

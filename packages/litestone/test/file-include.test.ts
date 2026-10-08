@@ -13,7 +13,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { parse }       from '../src/core/parser.js'
-import { FileStorage } from '../src/plugins/file.js'
+import { FileStorage } from '../src/storage/file-storage.js'
 
 const SCHEMA = `
   model Product {

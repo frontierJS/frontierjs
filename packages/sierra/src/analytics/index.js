@@ -1,7 +1,9 @@
 /**
  * sierra/analytics — analytics integration
  *
- * Initialized by virtual:sierra at boot.
+ * Initialized by virtual:sierra at boot. A static page never loads that, so
+ * the build writes the vendor tag into its <head> (`postbuild/inject-analytics.js`)
+ * and the island entry calls `configureAnalytics` so `track()` reaches it.
  * App code uses track() to fire events.
  *
  * Providers:
@@ -10,28 +12,42 @@
  *   object      — custom provider { init, pageview, track }
  */
 
-import { afterNavigate } from '../router/index.js'
+import { vendorTag } from './tag.js'
 
 let _provider = null
+
+/**
+ * Resolve the provider `track()` calls, and load nothing. For a page whose
+ * vendor tag is already in the HTML.
+ * @param {object} config — analytics config from sierra.config.js
+ * @returns {boolean} whether a provider was resolved
+ */
+export function configureAnalytics(config) {
+  if (!config?.provider) return false
+
+  if (typeof config.provider === 'object') {
+    _provider = config.provider
+    return true
+  }
+  let tag
+  try { tag = vendorTag(config) } catch (err) {
+    console.warn(err.message)
+    return false
+  }
+  if (!tag) {
+    console.warn(`[Sierra] Unknown analytics provider: ${config.provider}`)
+    return false
+  }
+  _provider = config.provider === 'plausible' ? buildPlausibleProvider(tag) : buildGtmProvider(tag)
+  return true
+}
 
 /**
  * Boot analytics. Called by virtual:sierra.
  * @param {object} config — analytics config from sierra.config.js
  */
 export function initAnalytics(config) {
-  if (!config?.provider) return
-
-  // Resolve provider
-  if (typeof config.provider === 'object') {
-    _provider = config.provider
-  } else if (config.provider === 'plausible') {
-    _provider = buildPlausibleProvider(config)
-  } else if (config.provider === 'gtm') {
-    _provider = buildGtmProvider(config)
-  } else {
-    console.warn(`[Sierra] Unknown analytics provider: ${config.provider}`)
-    return
-  }
+  if (!configureAnalytics(config)) return
 
   // Defer init until after first user interaction or idle
   if (typeof window !== 'undefined') {
@@ -48,8 +64,11 @@ export function initAnalytics(config) {
       if (started) return
       started = true
       _provider.init?.(config)
-      // Wire pageview to afterNavigate
-      afterNavigate(({ to }) => {
+      // Imported here and not at the top: the island entry reaches this module
+      // for `track()`, and a static import would put the router in every
+      // island page. On an SPA the router is already loaded, so this resolves
+      // to the same instance.
+      import('../router/index.js').then(({ afterNavigate }) => afterNavigate(({ to }) => {
         _provider.pageview?.({
           // The ADDRESS, not the address bar. `location.href` carries the search
           // string, and a password-reset or verification link is
@@ -65,7 +84,7 @@ export function initAnalytics(config) {
           path: to.pathname,
           meta: to.node?.meta ?? {},
         })
-      })
+      }))
     }
 
     if (config.trackLocalhost === false && isLocalHost(window.location.hostname)) {
@@ -121,15 +140,9 @@ export function track(event, props = {}) {
 
 // ─── Built-in providers ───────────────────────────────────────────────────────
 
-function buildPlausibleProvider(config) {
+function buildPlausibleProvider(tag) {
   return {
-    init(cfg) {
-      const script = document.createElement('script')
-      script.defer = true
-      script.dataset.domain = cfg.domain
-      script.src = `${cfg.apiHost ?? 'https://plausible.io'}/js/script.js`
-      document.head.appendChild(script)
-    },
+    init() { mountTag(tag) },
     pageview({ path, meta }) {
       window.plausible?.('pageview', {
         u: path,
@@ -142,14 +155,9 @@ function buildPlausibleProvider(config) {
   }
 }
 
-function buildGtmProvider(config) {
+function buildGtmProvider(tag) {
   return {
-    init(cfg) {
-      window.dataLayer = window.dataLayer || []
-      const script = document.createElement('script')
-      script.src = `https://www.googletagmanager.com/gtm.js?id=${cfg.containerId}`
-      document.head.appendChild(script)
-    },
+    init() { mountTag(tag) },
     pageview({ path }) {
       window.dataLayer?.push({ event: 'pageview', page: path })
     },
@@ -157,4 +165,15 @@ function buildGtmProvider(config) {
       window.dataLayer?.push({ event, ...props })
     },
   }
+}
+
+function mountTag(tag) {
+  tag.before?.()
+  const script = document.createElement('script')
+  for (const [k, v] of Object.entries(tag.attrs)) {
+    if (v === true) script[k] = true
+    else script.setAttribute(k, v)
+  }
+  script.src = tag.src
+  document.head.appendChild(script)
 }

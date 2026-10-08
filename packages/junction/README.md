@@ -146,10 +146,10 @@ packages/junction/
 
 The main entry is the four axes of a call — admission, call, carriage, announcement —
 and the host: `createApp`, plugins, config (`FJS-D639`). Everything else is a battery
-reached by its subpath: `/mail`, `/ai`, `/cache`, `/scheduler`, `/email`, `/webhooks`,
+reached by its subpath: `/mail`, `/ai`, `/cache`, `/scheduler`, `/webhooks`,
 `/openapi`, `/outbox`, `/backfill`, `/commitments`, `/manifest`, `/devtools`, `/export`,
 `/metrics`. A battery types its `app.<slot>` by augmenting an empty `App*` interface
-(`AppMail`, `AppAI`, `AppCache`, `AppScheduler`, `AppEmail`, `AppOutbox`,
+(`AppMail`, `AppAI`, `AppCache`, `AppScheduler`, `AppOutbox`,
 `AppCommitments`, `AppWebhooks`), so importing the subpath is what brings the type
 (`FJS-D640`). Junction opens no database: `createApp({ db })` is the one way in.
 
@@ -1515,7 +1515,7 @@ app.patch('/users/{id}/avatar', async ctx => {
 **Expanding file refs in responses** — Litestone stores file references as JSON. Use an after hook to expand them to URLs before the response goes out:
 
 ```typescript
-import { fileUrl } from '@frontierjs/litestone'
+import { fileUrl } from '@frontierjs/litestone/storage'
 
 app.services.register(createService({
   name: 'users',
@@ -1948,44 +1948,46 @@ Every `connected` after the first emits `resync`, as a socket's reconnect does. 
 
 ---
 
-## Email
+## Mail
 
-Junction ships a built-in email plugin with two independent tiers. Start with zero-config native SMTP and upgrade to a third-party provider later — without changing any call sites.
+`@frontierjs/junction/mail` puts an `IMail` on `app.mail`. Pick a transport and
+hand it to `mailerPlugin`:
 
 ```typescript
-import { email } from '@frontierjs/junction/email'
+import { mailerPlugin, createSmtpMailer, createResendMailer } from '@frontierjs/junction/mail'
+
+// Any SMTP server: no package, no account. Bun opens the socket.
+app.configure(mailerPlugin(createSmtpMailer({
+  host: env.SMTP_HOST,
+  port: 587,
+  user: env.SMTP_USER,
+  pass: env.SMTP_PASS,
+  from: 'system@acme.com',
+})))
+
+// Or Resend, with the key resolved at send time rather than held.
+app.configure(mailerPlugin(createResendMailer({
+  from:        'Acme <noreply@acme.com>',
+  credentials: { get: k => process.env[k] },
+  apiKeyRef:   'RESEND_API_KEY',
+})))
 ```
 
----
-
-### Tier 1 — Native SMTP (zero dependencies)
-
-Point it at any SMTP server and it works. No external packages, no accounts, no API keys. Bun handles the TCP connection natively.
+Send from anywhere you have `app`:
 
 ```typescript
-app.configure(email({
-  system: {
-    from: 'system@acme.com',
-    smtp: {
-      host: env.SMTP_HOST,  // your mail server, Google Workspace, Zoho, local Postfix
-      port: 587,
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASS,
-    }
-  }
-}))
-```
-
-Send from anywhere you have access to `app`:
-
-```typescript
-await app.email.system.send({
+await app.mail.send({
   to:      'alice@example.com',
   subject: 'Your password has been reset',
   html:    '<p>Click here to set a new password.</p>',
-  text:    'Visit https://... to set a new password.',  // plain-text fallback
+  text:    'Visit https://... to set a new password.',
 })
 ```
+
+A message takes `from`, `replyTo`, `cc`, `bcc`, `headers`, `tags` and
+`attachments`. An attachment with a `cid` is drawn inline as `<img src="cid:…">`.
+`batch(messages)` sends several over one SMTP session. Any other provider is
+an `IMail` you write: `send` and `batch`.
 
 **SMTP ports:**
 
@@ -1997,99 +1999,12 @@ await app.email.system.send({
 
 `AUTH PLAIN` is used when the server supports it, falls back to `AUTH LOGIN`. Both methods are only sent after the connection is encrypted.
 
-This tier is for system notifications — password resets, account alerts, admin emails. The audience is always known users of your system.
+Mail to someone who has an account is a notification: `@frontierjs/notifications`
+(`app.notify`) stores it, honors their preferences and sends the email through
+`app.mail`. Call `app.mail` directly only for mail to an address that may have
+no account yet, such as a password reset, a verification link or an invitation.
 
 ---
-
-### Tier 2 — Third-party providers via Conduit
-
-When you need higher deliverability, open rate tracking, or bulk sending, add a provider. Tier 2 routes through [Conduit](#tier-1-plugins) — register your provider as a Conduit target, tell the email plugin which target to use, and `app.email.campaign.send()` handles the rest.
-
-Supported providers (auto-detected from the target address): **Resend**, **Postmark**, **Sendgrid**.
-
-**Step 1 — configure Conduit with your provider:**
-
-```typescript
-import { conduit } from '@frontierjs/conduit'
-
-app.configure(conduit({
-  targets: [{
-    id:            'provider:resend',
-    kind:          'provider',
-    protocol:      'http',
-    address:       'https://api.resend.com',
-    auth:          { type: 'bearer', ref: 'RESEND_API_KEY' },   // read from process.env at send time
-    registered_at: Date.now(),
-    last_seen_at:  null,
-  }]
-}))
-```
-
-**Step 2 — add `campaign` to the email config:**
-
-```typescript
-app.configure(email({
-  system: {
-    from: 'system@acme.com',
-    smtp: { host: env.SMTP_HOST, port: 587, user: env.SMTP_USER, pass: env.SMTP_PASS },
-  },
-  campaign: {
-    target: 'provider:resend',  // matches the Conduit target id
-    from:   'hello@acme.com',
-  },
-}))
-```
-
-**Step 3 — send:**
-
-```typescript
-// System email — goes through native SMTP, unchanged
-await app.email.system.send({ to, subject, html })
-
-// Campaign email — goes through Resend (or Postmark, Sendgrid)
-await app.email.campaign.send({ to, subject, html })
-// result.status: 'sent' | 'queued'
-// 'queued' means the provider accepted it — Sendgrid returns 202
-```
-
-Swapping providers later is a one-line change to the Conduit target. The rest of your code stays the same.
-
----
-
-### Hook factories
-
-Send email as part of a service hook without boilerplate. Failures are logged and swallowed by default, so a transient SMTP hiccup never fails a successful write. Set `optional: false` when delivery must be confirmed — the call then fails, and the write is rolled back only if the service is `transactional:`.
-
-```typescript
-import { sendSystemEmail, sendCampaignEmail } from '@frontierjs/junction/email'
-
-createService({
-  name: 'users',
-  hooks: { after: {
-    create: [
-      // Welcome email — optional (default): SMTP failure is logged, not thrown
-      sendSystemEmail(app, ctx => ({
-        to:      (ctx.result as { email: string }).email,
-        subject: 'Welcome to Acme',
-        html:    `<p>Your account is ready.</p>`,
-      })),
-    ],
-    patch: [
-      // Password changed — optional: false: failure fails the call
-      sendSystemEmail(app, ctx => ({
-        to:      (ctx.result as { email: string }).email,
-        subject: 'Your password was changed',
-        html:    `<p>If this wasn't you, contact support.</p>`,
-      }), { optional: false }),
-    ],
-  } },
-})
-```
-
-`sendCampaignEmail` has the same signature — swap it in when you want a send to go through your Tier 2 provider instead.
-
----
-
 
 ## What is actually mounted
 

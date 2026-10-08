@@ -18,7 +18,8 @@ Store file metadata in SQLite and file bytes in S3-compatible object storage, wi
 
 ```js
 // lib/db.js
-import { createClient, FileStorage } from '@frontierjs/litestone'
+import { createClient } from '@frontierjs/litestone'
+import { FileStorage } from '@frontierjs/litestone/storage'
 
 export const db = await createClient({
   path: './schema.lite',
@@ -107,7 +108,7 @@ app.post('/documents/:id/attachments', async (req, res) => {
 For private buckets, generate time-limited presigned URLs:
 
 ```js
-import { useStorage } from '@frontierjs/litestone'
+import { useStorage } from '@frontierjs/litestone/storage'
 
 const storage = useStorage({
   provider:        'r2',

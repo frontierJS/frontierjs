@@ -65,6 +65,7 @@ const TOOLS = {
  */
 const ALLOWED = [
   { from: 'build/index.js', to: 'devtools/plugin.js', why: 'FJS-D649 — `devtools:` is a battery key in sierra.config.js, and the build is what reads that file' },
+  { from: 'postbuild/inject-analytics.js', to: 'analytics/tag.js', why: 'FJS-D658 — a static page never loads virtual:sierra, so the build is the only thing that can put the vendor tag on it' },
 ]
 
 /**
@@ -74,19 +75,20 @@ const ALLOWED = [
  * earned by a second consumer, so a file added here says which half it is.
  */
 const POSTBUILD = {
-  'index.js':          'pipeline',
-  'html-files.js':     'pipeline',
-  'move-404.js':       'build',
-  'redirects.js':      'build',
-  'inject-theme.js':   'build',
-  'manifest.js':       'build',
-  'offline-shell.js':  'build',
-  'sitemap.js':        'site',
-  'llms.js':           'site',
-  'markdown-pages.js': 'site',
-  'speculation.js':    'site',
-  'defer-js.js':       'site',
-  'robots.js':         'site',
+  'index.js':            'pipeline',
+  'html-files.js':       'pipeline',
+  'move-404.js':         'build',
+  'redirects.js':        'build',
+  'inject-theme.js':     'build',
+  'inject-analytics.js': 'build',
+  'manifest.js':         'build',
+  'offline-shell.js':    'build',
+  'sitemap.js':          'site',
+  'llms.js':             'site',
+  'markdown-pages.js':   'site',
+  'speculation.js':      'site',
+  'defer-js.js':         'site',
+  'robots.js':           'site',
 }
 
 /** Navigation may not import Resource (FJS-D651); Resource may import Navigation. */

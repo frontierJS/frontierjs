@@ -10,6 +10,13 @@ tests, and **a feature is incomplete while only one of those paths knows about i
 
 Each names its pin. The failure behind each is `docs/internals.md`.
 
+- **Litestone's edge is what is true about a row** (`FJS-D635`): its shape, who
+  may read and write it, what moves it may make, how its shape changes. Object
+  storage, replication, transform and Studio are batteries behind a subpath
+  (`./storage`, `./replicate`, `./transform`); no axis directory imports one or
+  anything under `tools/`, and the main entry re-exports none.
+  `test/edge.test.ts` classifies every `src/` directory, so a new one names its
+  axis or is a battery.
 - **Every path that reaches a row applies every rule that guards it**, in
   `READ_RULES`'s order (`src/core/client.js`, inside `makeTable`) — global
   filter, plugin read filters, soft-delete, templates, the effective window, the
@@ -82,6 +89,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
 | a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row |
+| a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
 | a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
 
 ## What the default gets wrong
@@ -189,7 +197,7 @@ agent pays nothing for it. It must stay outside a code fence, since a comment
 inside one is kept.
 
 src/
-  index.js · index.d.ts — public API re-exports · the hand-written declarations
+  index.js · index.d.ts — public API re-exports, no battery · the hand-written declarations
   core/
     parser.js — .lite to AST; the lexer and condition grammar are toolbelt/predicate's
     catalog.js — every word a .lite file can hold; what explain, Studio and the reference read
@@ -229,22 +237,22 @@ src/
     migrate.js — introspect, buildPristine, diffSchemas, residue
     migrations.js — file migrations, buildShadow, historyGap, autoMigrate
     tenancy.js — resolveTenancy + tenantFrom; four readers, one answer
+    retention.js — the database block's retention: the SQLite sweep and the jsonl compaction
   plugins/
     gate.js — GatePlugin
     capability.js — the capability grid, ANDed with the gate as its floor (FJS-D146)
     reach.js — which models a call touches beyond the one it names
-    file.js — FileStorage
     external-ref.js — ExternalRefPlugin base
   engines/ — bun-sqlite.js · sqlite-wasm.js · none.js
   host/ — node.js · browser.js
   browser/ — worker.js · client.js
   drivers/ — jsonl.js · jsonl-index.js (the sidecar index AND the write lock, FJS-D180)
-  storage/ — index.js · sigv4.js · providers/s3.js · providers/local.js
+  storage/ — the ./storage battery: index.js · file-storage.js (FileStorage) · sigv4.js · providers/s3.js · providers/local.js
   import/ — index.js · prisma.js · rails.js · sql.js · frappe.js · tiers.js · polymorphic.js · wide-int.js
-  tools/ — cli.js · repl.js · studio.html · introspect.js · typegen.js · retention.js · replicate.js ·
+  tools/ — cli.js · cli-helpers.js (what the commands share) · studio.js (Studio's server) · studio-queries.js (its saved queries, a sidecar) · studio.html · repl.js · introspect.js · typegen.js · replicate.js (./replicate) ·
            assistant.js · eject.js · ddl-snapshot.js · jsonschema-snapshot.js · catalog-snapshot.js ·
            catalog-reference.js · principal.js (who `--as` names, for every tool that boots as somebody)
-  transform/ — CLI-only: framework.js · runner.js · run.js · split-worker.js · split-worker.source.js
+  transform/ — the ./transform battery: framework.js · runner.js · run.js · split-worker.js · split-worker.source.js
   access.js — the declared access surface as data and prose
   release.js — the release surface; classifyPivot and classifyAccess
   mutate.js — schema mutation testing

@@ -2676,7 +2676,9 @@ function jumpToFK(table, col, val) {
   toast(`Showing ${col} = ${val} in ${table}`, 'ok')
 }
 
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+// A state can be a Boolean or a number (@@transitions on `reminded Boolean`),
+// and a throw here blanks the whole panel it was rendering.
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 

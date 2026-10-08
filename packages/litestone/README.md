@@ -1760,7 +1760,7 @@ model User {
 ## File storage — FileStorage plugin
 
 ```js
-import { FileStorage, fileUrl, fileUrls, useStorage } from '@frontierjs/litestone'
+import { FileStorage, fileUrl, fileUrls, useStorage } from '@frontierjs/litestone/storage'
 
 const db = await createClient({ path: './schema.lite',
   plugins: [FileStorage({

@@ -199,7 +199,6 @@ export interface AppCache {}
 export interface AppScheduler {}
 export interface AppMail {}
 export interface AppAI {}
-export interface AppEmail {}
 export interface AppOutbox {}
 export interface AppCommitments {}
 export interface AppWebhooks {}
@@ -273,10 +272,9 @@ export interface App {
   auth?:     SessionVerifier
   mail?:     AppMail
   ai?:       AppAI
-  email?:    AppEmail
   // Conduit is provided by @frontierjs/conduit. Typed as the augmentable
-  // AppConduit below rather than `unknown`, so in-tree code (email/campaign)
-  // can read app.conduit without a hard dep AND the conduit package can
+  // AppConduit below rather than `unknown`, so in-tree code can read
+  // app.conduit without a hard dep AND the conduit package can
   // contribute the real type.
   //
   // This must stay an interface reference, not a redeclared property:

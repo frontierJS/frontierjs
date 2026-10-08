@@ -9,7 +9,7 @@
 export { createApp }                              from './src/core/app.ts'
 export type { App, AppConduit, AppDb, AppJobs, AppNotify, DevService, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
 // The battery slots (`FJS-D640`): each battery augments its own from its subpath.
-export type { AppCache, AppScheduler, AppMail, AppAI, AppEmail, AppOutbox, AppCommitments, AppWebhooks } from './src/core/app.ts'
+export type { AppCache, AppScheduler, AppMail, AppAI, AppOutbox, AppCommitments, AppWebhooks } from './src/core/app.ts'
 export { CALL_OPTIONS_AT } from './src/core/app.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────

@@ -526,6 +526,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
               // is the only thing that can tell the browser what the app's
               // theme block says (`FJS-501`).
               theme: config.theme ?? null,
+              analytics: config.analytics ?? null,
             })
             if (bundle) {
               const touched = await injectIntoPages(outDir, pre.islandPages, bundle.src)

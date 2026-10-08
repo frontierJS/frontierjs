@@ -1,11 +1,11 @@
-// plugins/file.js — FileStorage plugin
+// storage/file-storage.js — FileStorage plugin
 //
 // Extends ExternalRefPlugin — @file fields store a JSON ref in SQLite,
 // actual bytes live in object storage (R2, S3, B2, MinIO, or local filesystem).
 //
 // ─── Setup ─────────────────────────────────────────────────────────────────────
 //
-//   import { FileStorage } from '@frontierjs/litestone'
+//   import { FileStorage } from '@frontierjs/litestone/storage'
 //
 //   const db = await createClient({
 //     schema: './schema.lite', db: './app.db',
@@ -29,8 +29,8 @@
 //     docs    File[] @accept("application/pdf")
 //   }
 
-import { ExternalRefPlugin } from './external-ref.js'
-import { createProvider }     from '../storage/index.js'
+import { ExternalRefPlugin } from '../plugins/external-ref.js'
+import { createProvider }     from './index.js'
 import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
 import { extname, basename }  from 'path'

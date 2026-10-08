@@ -12,16 +12,6 @@
 // that matters is what reached the WIRE: a unit test over the builder alone
 // passes with `sendMail` unguarded, and `sendMail` is exported and reachable
 // directly.
-//
-// It ran in a SUBPROCESS for most of its life, because `test/email.test.ts`
-// called `mock.module()` on the smtp shim that `export *`s this client — the
-// replacement is process-wide and never undone, so an in-process version passed
-// ALONE and graded a mock inside the suite (measured: five of these went green
-// in isolation and failed in the full run). The system sender takes an injected
-// transport now and nothing here mocks a module (`FJS-908`), so it is back in
-// process — and the assertions are real `expect`s rather than the parent
-// matching the child's stdout, which is most of what that fork cost
-// (`FJS-909`): a probe line that was never reached passed silently.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { sendMail, assertAddress, assertHeaderValue } from '../src/mail/smtp.ts'

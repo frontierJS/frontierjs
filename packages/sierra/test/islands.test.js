@@ -63,6 +63,23 @@ describe('islandEntrySource', () => {
     expect(src).not.toContain('@frontierjs/sierra/theme')
   })
 
+  test('carries the app\'s analytics block, so track() in an island reaches the page\'s tag (FJS-2058)', () => {
+    const src = islandEntrySource(
+      [{ component: 'Form', module: '/a.mesa' }],
+      { analytics: { provider: 'plausible', domain: 'shop.example' } },
+    )
+    expect(src).toContain(`import { configureAnalytics } from '@frontierjs/sierra/analytics'`)
+    expect(src).toContain('"shop.example"')
+    // configure, never init: the tag is already in the page, and init would load a second one.
+    expect(src).not.toContain('initAnalytics')
+    expect(src.indexOf('configureAnalytics(')).toBeLessThan(src.indexOf('hydrateIslands('))
+  })
+
+  test('an app with no analytics block imports no analytics code', () => {
+    const src = islandEntrySource([{ component: 'Form', module: '/a.mesa' }])
+    expect(src).not.toContain('@frontierjs/sierra/analytics')
+  })
+
   test('quotes component names that are not bare identifiers', () => {
     // The registry is keyed by the name a marker carries, which is whatever the
     // component was imported as — it never has to be a valid identifier here,

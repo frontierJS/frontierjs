@@ -2,7 +2,7 @@
 // lock that says who may change that file.
 //
 // It is one module because TWO callers need it and they are not each other's:
-// the driver appends and reads through it, and `tools/retention.js` compacts
+// the driver appends and reads through it, and `core/retention.js` compacts
 // through it. Compaction previously reached the sidecar the only way it could
 // from outside — `rmSync` — and deleting a database another process holds open
 // is what `FJS-540` was.

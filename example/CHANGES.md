@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-08 — `FileStorage` comes from `@frontierjs/litestone/storage` (`FJS-D635`)
+
+litestone's main entry no longer re-exports its batteries, so `api/src/core/db.ts` imports `FileStorage` from the storage subpath.
+
 ## 2026-10-08 — the extension's dock and island run sierra's Resource over Harbor (`FJS-D650`)
 
 `extension/src/dock/App.mesa` and `extension/src/islands/stock-badge.js` import `createResource` from `@frontierjs/sierra/resource` and pass `{ app: harborApp() }`, from `@frontierjs/jetty/resources`. Jetty's own copy of the Resource is gone. The dock's queue keeps its filter, its push handling and `ship`; what changed is whose code runs them. `bun run build:extension` builds, and `verify:extension` is the drive.

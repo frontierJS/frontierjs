@@ -104,6 +104,7 @@
 // side-effect line — which is the version of this that breaks, because the
 // entry point somebody adds next is the one that forgets.
 import defaultEngine from '#sql-engine'
+import { applyWal }   from './pragmas.js'
 
 // The registered engine. There is one, because a client holding connections
 // from two engines would be one transaction manager over two implementations
@@ -172,4 +173,13 @@ export function openDatabase(path, options = {}) {
       "  Litestone's own entry points register one; a host that imports a module directly\n" +
       "  registers it with setEngine() from '@frontierjs/litestone/engine'.")
   return current.open(path, options)
+}
+
+// A file more than one process writes. The wait-then-WAL order and the retry
+// on a fresh file are `applyWal`'s, so a handle opened outside the client gets
+// the rule the client's own connections get (`FJS-655`, `FJS-729`, `FJS-D646`).
+export function openWalDatabase(path, { busyTimeout, ...options } = {}) {
+  const db = openDatabase(path, options)
+  applyWal(db, busyTimeout)
+  return db
 }

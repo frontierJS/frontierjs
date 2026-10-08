@@ -65,6 +65,7 @@ than started.
 | 22 | **Base44** — a prompt-to-app builder: chat in, a running app out, every later message an edit | a schema change on every turn against live rows, approved by the person and never the agent; a model writing `.lite` and `.mesa`, which no training set holds; generated server code one call from `asSystem()`; hundreds of apps on one host | `prompt-to-app.md` · `packages/oracle` · `intent-recognizer.md` · `sandboxes.md` · `agent-surface.md` · `on-page-editing.md` |
 | 23 | **Quo** (formerly OpenPhone) — a team phone: one number many people answer, texts and calls in one inbox, on Telnyx | a counterparty's webhook whose signature has no secret; a status moved by somebody else, out of order; a live call whose state the vendor holds; a WebSocket a VENDOR dials | `inbound-integrations.md` ([`FJS-D177`](../DECISIONS.md#fjs-d177)) · `conduit-connectors.md` row 5 · `compliance-from-the-seed.md` · #5 |
 | 24 | **ELA** — a live legacy-FJS lawn-care operations app, maid.tech's sibling, being ported | a system of record the app does not own, mirrored and polled; money mirrored rather than originated; a wall-clock day as a key, in a composite foreign key | `conversion-ela.md` · `conversion-maid-tech.md` · #2 · #7 · #21 · #23 |
+| 25 | **SSTime** — a live Laravel + Ember time clock, ELA's, being ported | a punch accepted and classified by device and position rather than refused; a PIN on a wall kiosk as the attestation; the employee held by two apps kept in step | `conversion-sstime.md` · #2 · #13 · #23 · #24 |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -961,6 +962,25 @@ the question #21 Transit asks with a made-up source.
 
 Built under the rule #21 set, and the Telnyx connector comes from #23 rather
 than being written twice.
+
+### 25. SSTime — Connecteam, asked of real rows
+
+*Added 2026-10-08. A live port of a Laravel 6 + Ember 2.17 time clock, in
+`fjs-prototypes/sstime`, which merges into #24 later. The reading and the
+gameplan are `conversion-sstime.md`.*
+
+**Why it is a stressor and not only a conversion.** #2 answered its seven
+questions against imagined rows. SSTime is the product those questions were
+imagined from, built by somebody else years earlier. It has 42k punches, 39 wall
+kiosks taking PINs, a geofence, and an approval queue, so every connectteam
+answer can now be checked against rows.
+
+**What it breaks first is a write that is accepted and judged.** A punch from an
+untrusted device or the wrong place is not refused. It is stored as
+`unauthorized` and counted separately. The verdict comes from request context
+that is not the principal. Second is the seam with #24: ELA and SSTime each hold
+the employee and keep each other in step. That makes it the first real caller
+of #13's question about one app creating a principal in another.
 
 ## Not on this list, with reasons
 

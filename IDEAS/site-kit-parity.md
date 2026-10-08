@@ -91,7 +91,7 @@ no owner. Which is which, per `conversion-ksite.md` § *Already answered here*:
 | Legacy | Sierra owner | Port |
 | --- | --- | --- |
 | `core/lazy-loader.js`, `preload.js` | `postbuild/defer-js.js`, `speculation.js` | unwired |
-| `core/tracking.js` (Plausible, GTM, Zaraz, Meta pixel), the `ka-*` and `fb-*` click conventions (§ 6) | `sierra/analytics` (`track()`, imperative) | unported; the convention has no counterpart |
+| `core/tracking.js` (Plausible, GTM, Zaraz, Meta pixel), the `ka-*` and `fb-*` click conventions (§ 6) | `sierra/analytics` (`track()`, imperative) | Plausible and GTM wired: `analytics:` in `content/settings/site.js` reaches every static page (`FJS-D658`). Zaraz, the Meta pixel and the click convention have no counterpart |
 | `core/schemaGeneration.js` per-page JSON-LD | none | site-wide Organization/WebSite graph only, in `site-scripts.js` |
 | `core/fallback.js` (`sendBeacon` lead mirror) | none | unported |
 | `core/animations.js`, `attentionTracker.js`, `YTLite.js` | none | unported |

@@ -30,20 +30,13 @@ export { generateTypeScript }                     from './tools/typegen.js'
 export { createTenantRegistry }                  from './tenant.js'
 export { resolveTenancy, tenantFrom }            from './core/tenancy.js'
 export { parseDuration, parseSize,
-         runSqliteRetention, compactJsonl }       from './tools/retention.js'
+         runSqliteRetention, compactJsonl }       from './core/retention.js'
 export { Factory, defineFactory, Seeder, runSeeder,
          loadRows, loadFixture, parseCsv }      from './seeder.js'
 export { ValueSetExtendError }                   from './core/valuesets.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
 export { findPrincipal, authModelOf }            from './tools/principal.js'
-export { replicate }                             from './tools/replicate.js'
 export { ExternalRefPlugin }                       from './plugins/external-ref.js'
-export { FileStorage }                             from './plugins/file.js'
-export { fileUrl, fileUrls, useStorage, createProvider } from './storage/index.js'
 
-// ─── Transform pipeline (DSL) ─────────────────────────────────────────────────
-// Declarative SQLite transformation — separate from the ORM.
-// Used via: import { $, params, preview, execute } from '@frontierjs/litestone'
-export { $, params, preview, execute,
-         introspectSQL, buildFKGraph,
-         parseLimit, resolveRowCount }           from './transform/framework.js'
+// Batteries are reached by subpath, never from here (FJS-D635, test/edge.test.ts):
+// '@frontierjs/litestone/storage' · '/replicate' · '/transform'

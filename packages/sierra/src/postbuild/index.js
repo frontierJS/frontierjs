@@ -14,6 +14,7 @@
  *   6. speculation   — inject Speculation Rules into index.html
  *   7. deferJS       — defer script tags in index.html
  *   8. theme         — the pre-paint theme script (if config.theme)
+ *   8b. analytics    — the vendor tag on every prerendered page (static, if config.analytics)
  *   9. manifest      — can a browser install this build (if it links a manifest)
  *  10. offlineShell   — sw.js + a precached shell (if config.offline)
  *  11. plugins       — run user-supplied post-build plugin functions
@@ -27,6 +28,7 @@ import { generateLlms } from './llms.js'
 import { injectSpeculationRules } from './speculation.js'
 import { deferJsLoading } from './defer-js.js'
 import { injectThemeScript } from './inject-theme.js'
+import { injectAnalyticsTag } from './inject-analytics.js'
 import { generateMarkdownPages } from './markdown-pages.js'
 import { gradeManifest } from './manifest.js'
 import { writeOfflineShell } from './offline-shell.js'
@@ -143,6 +145,12 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   if (config.theme) {
     const rTheme = await injectThemeScript(config.theme, outDir)
     if (rTheme) results.push(rTheme)
+  }
+
+  // 9b. Analytics, static only — an SPA's runtime loads its own tag (FJS-2058).
+  if (prerenderedUrls && config.analytics) {
+    const rAnalytics = await injectAnalyticsTag(config.analytics, outDir)
+    if (rAnalytics) results.push(rAnalytics)
   }
 
   // 10. Installability. A warning and not a failure: the build is a working

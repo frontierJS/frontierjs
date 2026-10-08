@@ -13,7 +13,6 @@ Read them in this order.
 | [`single-file.ts`](./single-file.ts) | 3000 | Kitchen sink in one file — auth, hooks, mail, OpenAPI, channels. |
 | [`app.ts`](./app.ts) | 3000 | The demo API `bun run dev` starts. Broadest feature surface; registers the services in [`services/`](./services) by hand (`autoload: false`). |
 | [`server.ts`](./server.ts) | 3000 | Litestone-backed smoke server: login, seeded leads, every lead route behind a token. |
-| [`email-system.ts`](./email-system.ts) | 3000 | Tier-1 native SMTP — no third-party dependency. |
 | [`file-upload.ts`](./file-upload.ts) | 3000 | `File` fields: multipart in, stored refs expanded to URLs on the way out. Runs offline. |
 | [`test.ts`](./test.ts) | — | The test harness, not a server. `bun test ./example/test.ts` → 26 tests. |
 

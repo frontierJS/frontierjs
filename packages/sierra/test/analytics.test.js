@@ -57,7 +57,11 @@ function installWindow({ idle = false, hostname = 'shop.example', href = 'https:
   if (idle) win.requestIdleCallback = (fn) => setTimeout(fn, 0)
   globalThis.window = win
   globalThis.document = {
-    createElement: () => { const el = { dataset: {} }; return el },
+    createElement: () => {
+      const el = { dataset: {}, attrs: {} }
+      el.setAttribute = (k, v) => { el.attrs[k] = v }
+      return el
+    },
     head: { appendChild: (el) => scripts.push(el) },
   }
 }
@@ -75,6 +79,10 @@ function spyProvider() {
 async function freshAnalytics() {
   vi.resetModules()
   globalThis.__afterNav = []
+  // Analytics reaches the router through a dynamic import. Loaded here first,
+  // that import is a cache hit and `dynamicImportSettled` sees it land; cold,
+  // the first test in the file read `__afterNav` before it had.
+  await import('../src/router/index.js')
   return import('../src/analytics/index.js')
 }
 
@@ -100,6 +108,7 @@ describe('a browser with no requestIdleCallback', () => {
     listeners.scroll.forEach(f => f())
     // ...and the hard fallback lands anyway.
     vi.advanceTimersByTime(6000)
+    await vi.dynamicImportSettled()
 
     expect(provider.inits).toHaveLength(1)
     // The consequence, which is the half a caller actually sees: one handler,
@@ -141,6 +150,7 @@ describe('the address a pageview reports', () => {
     const A = await freshAnalytics()
     A.initAnalytics({ provider })
     vi.advanceTimersByTime(10)
+    await vi.dynamicImportSettled()
     globalThis.__afterNav.forEach(fn => fn({ to: { pathname: '/orders/', node: { meta: { label: 'Orders' } } } }))
     return provider.pageviews[0]
   }
@@ -186,5 +196,67 @@ describe('trackLocalhost: false', () => {
     'localhost.evil.example', // a suffix match on the wrong end
   ])('and still tracks %s — a predicate that refused everything would pass the rows above', async (host) => {
     expect(await tracksOn(host)).toBe(true)
+  })
+})
+
+// ─── FJS-2058 — the built-in providers read one tag ──────────────────────────
+
+describe('the vendor tag', () => {
+
+  test('plausible loads its script with the domain, after idle', async () => {
+    installWindow({ idle: true })
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'plausible', domain: 'shop.example' })
+    expect(scripts).toHaveLength(0)
+    vi.advanceTimersByTime(10)
+    expect(scripts).toHaveLength(1)
+    expect(scripts[0].src).toBe('https://plausible.io/js/script.js')
+    expect(scripts[0].attrs['data-domain']).toBe('shop.example')
+    expect(scripts[0].defer).toBe(true)
+  })
+
+  test('gtm pushes its start event before the script, or no Page View trigger fires', async () => {
+    installWindow({ idle: true })
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'gtm', containerId: 'GTM-ABC' })
+    vi.advanceTimersByTime(10)
+    expect(window.dataLayer[0]).toMatchObject({ event: 'gtm.js' })
+    expect(typeof window.dataLayer[0]['gtm.start']).toBe('number')
+    expect(scripts[0].src).toBe('https://www.googletagmanager.com/gtm.js?id=GTM-ABC')
+  })
+
+  test('a named provider missing its id warns and loads nothing, rather than throwing at boot', async () => {
+    installWindow({ idle: true })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const A = await freshAnalytics()
+    A.initAnalytics({ provider: 'plausible' })
+    vi.advanceTimersByTime(10)
+    expect(scripts).toHaveLength(0)
+    expect(warn.mock.calls[0][0]).toContain('needs a domain')
+    warn.mockRestore()
+  })
+})
+
+describe('configureAnalytics — a page whose tag is already in the HTML', () => {
+
+  test('track() reaches the vendor and nothing is loaded', async () => {
+    installWindow({ idle: true })
+    const calls = []
+    window.plausible = (...a) => calls.push(a)
+    const A = await freshAnalytics()
+    expect(A.configureAnalytics({ provider: 'plausible', domain: 'shop.example' })).toBe(true)
+    A.track('Lead', { form: 'contact' })
+    vi.advanceTimersByTime(6000)
+    expect(calls).toEqual([['Lead', { props: { form: 'contact' } }]])
+    expect(scripts).toHaveLength(0)
+  })
+
+  test('before it, track() is a no-op — the state an island page was in', async () => {
+    installWindow({ idle: true })
+    const calls = []
+    window.plausible = (...a) => calls.push(a)
+    const A = await freshAnalytics()
+    A.track('Lead')
+    expect(calls).toEqual([])
   })
 })

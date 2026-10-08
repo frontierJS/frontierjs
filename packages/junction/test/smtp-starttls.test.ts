@@ -48,14 +48,6 @@ describe('the socket API the mailer depends on', () => {
 describe('a server that advertises STARTTLS', () => {
 
   it('is answered with an upgrade attempt, not a TypeError', async () => {
-    // In process. It ran in a subprocess for its whole life because
-    // `test/email.test.ts` called `mock.module()` on the smtp shim, which
-    // re-exports this module and whose replacement bun applies process-wide and
-    // never undoes — so an in-process version passed alone and graded a mock
-    // inside the suite, reaching the real client not once. The sender takes an
-    // injected transport now and that file mocks nothing, so the fork has no
-    // cause left (`FJS-908`).
-    //
     // The server greets, advertises STARTTLS and accepts the command, then does
     // nothing: there is no certificate here, so the handshake cannot complete.
     // WHICH failure is the assertion — a TLS or connection error means the

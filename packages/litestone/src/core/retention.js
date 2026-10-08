@@ -20,7 +20,8 @@
 
 import { existsSync, readFileSync, writeFileSync, rmSync, renameSync, statSync, openSync, readSync, closeSync } from '#host'
 import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex } from '../drivers/jsonl-index.js'
-import { modelToTableName } from '../core/ddl.js'
+import { modelToTableName } from './ddl.js'
+import { quoteIdent }       from './query.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
@@ -131,7 +132,7 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
 
     try {
       rawWriteDb.prepare(
-        `DELETE FROM "${table}" WHERE "createdAt" < ?`
+        `DELETE FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
       ).run(cutoff)
       // sqlite3_changes(), not bun's `.changes` — the latter counts what the
       // FTS and cascade triggers wrote too, so the line said 17 rows removed
@@ -142,14 +143,14 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
       if (removed > 0) {
         console.log(
           `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
-          ` from "${table}" (older than ${retention})`
+          ` from '${table}' (older than ${retention})`
         )
       }
     } catch (err) {
       // A table that exists and will not sweep is worth saying out loud: the
       // whole point of the declaration is rows going away.
       console.warn(
-        `[litestone] retention: could not sweep "${table}" — ${(err && err.message) || err}`
+        `[litestone] retention: could not sweep '${table}' — ${(err && err.message) || err}`
       )
       swept.push({ model: model.name, table, removed: 0, error: String((err && err.message) || err) })
     }
@@ -346,7 +347,7 @@ export function compactJsonl(filePath, model, retention, maxSize, now = Date.now
   if (db) rebuildIndex(db, model, filePath)
 
   console.log(
-    `[litestone] retention: compacted "${model.name}" — ` +
+    `[litestone] retention: compacted '${model.name}' — ` +
     `removed ${removed} line${removed === 1 ? '' : 's'} via ${reasons.join(' + ')} ` +
     `(${lines.length} remaining)`
   )

@@ -52,7 +52,7 @@ app.services.register(createService({
 
 await app.start()`],
   UI: ['mesa', `<script>
-  import { createResource } from '@frontierjs/sierra'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // Same four hook phases as the API realm.
   const leads = createResource('leads', {

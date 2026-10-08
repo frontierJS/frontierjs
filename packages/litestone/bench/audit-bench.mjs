@@ -4,6 +4,7 @@ import { createClient } from '../src/index.js'
 import { GatePlugin } from '../src/plugins/gate.js'
 import { Plugin } from '../src/core/plugin.js'
 import { autoMigrate } from '../src/core/migrations.js'
+import { flushPendingLogs } from '../src/core/audit-log.js'
 import { mkdirSync, rmSync, appendFileSync } from 'node:fs'
 import { Database } from 'bun:sqlite'
 
@@ -269,6 +270,71 @@ model Doc {
   await walk('12. findMany 5k, no field policy',        '',        'floor')
   await walk('12. findMany 5k, 4x auth-only @allow',    rowFree,   'hoisted — once per caller')
   await walk('12. findMany 5k, 4x row-dependent @allow', perRow,   'per field per row — the old cost')
+})
+
+// ── 13. The audit trail: jsonl append vs a SQLite insert (IDEAS/litestone-scope.md § 2) ──
+// What could overturn retiring `driver jsonl`: a create() on a logged model,
+// trail and all, with the trail as a jsonl append (`driver logger`) against an
+// insert into a second SQLite database. Both writes are deferred, so each batch
+// ends with flushPendingLogs() and the write is inside the timing. Rounds
+// alternate A and B so drift on the machine lands on both.
+await run('audit-trail-ab', async () => {
+  const TRAIL = `
+  id            Int      @id @default(autoincrement())
+  operation     String
+  model         String
+  field         String?
+  records       Json
+  before        Json?
+  after         Json?
+  actorId       String?
+  actorType     String?
+  correlationId String?
+  source        String?
+  origin        String?
+  ip            String?
+  userAgent     String?
+  tenant        String?
+  meta          Json?
+  createdAt     DateTime @default(now())`
+  const THING = `model Thing { id Int @id @default(autoincrement())  name String  qty Int  note String?  @@log(audit) }`
+  const open = async (label, auditDecl, extra = '') => {
+    const dir = `${DIR}/ab-${label}`
+    mkdirSync(dir, { recursive: true })
+    const db = await createClient({ schema: `
+database main  { path "${dir}/main.db" }
+${auditDecl(dir)}
+${extra}
+${THING}` })
+    await autoMigrate(db)
+    return db.asSystem()
+  }
+  const jsonl = await open('jsonl', d => `database audit { path "${d}/audit/" driver logger }`)
+  const sqlite = await open('sqlite', d => `database audit { path "${d}/audit.db" model AuditRow }`,
+                             `model AuditRow { ${TRAIL}\n  @@db(audit) }`)
+  const N = 500, ROUNDS = 12
+  const batch = async (db) => {
+    const t0 = performance.now()
+    for (let i = 0; i < N; i++) await db.thing.create({ data: { name: `n${i}`, qty: i, note: i % 3 ? null : 'x' } })
+    const hot = ms(t0)
+    flushPendingLogs()
+    await new Promise(r => setImmediate(r))   // a create() the flush started settles inside the timing
+    return { hot, total: ms(t0) }
+  }
+  for (const db of [jsonl, sqlite]) await batch(db)   // warm
+  const a = [], b = []
+  for (let r = 0; r < ROUNDS; r++) {
+    if (r % 2) { b.push(await batch(sqlite)); a.push(await batch(jsonl)) }
+    else       { a.push(await batch(jsonl));  b.push(await batch(sqlite)) }
+  }
+  const med = xs => { const s = xs.slice().sort((x, y) => x - y); return s[s.length >> 1] }
+  const per = (xs, k) => med(xs.map(x => x[k])) / N * 1000
+  report('13. create + trail, jsonl append',  'us/op (total)', per(a, 'total').toFixed(1), `hot path ${per(a, 'hot').toFixed(1)}`)
+  report('13. create + trail, SQLite insert', 'us/op (total)', per(b, 'total').toFixed(1), `hot path ${per(b, 'hot').toFixed(1)}`)
+  report('13. SQLite / jsonl',                 'x',             (per(b, 'total') / per(a, 'total')).toFixed(2))
+  const rows = await sqlite.auditRow.count()
+  report('13. SQLite trail rows written',      'rows',          rows, `expected ${N * (ROUNDS + 1)}`)
+  for (const db of [jsonl, sqlite]) db.$close()
 })
 
 console.log('\nDone.')

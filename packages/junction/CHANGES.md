@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-08 — the email tiers are deleted (`FJS-D644`)
+
+`src/plugins/email/`, the `./email` subpath and the `AppEmail` slot are gone. Nothing outside junction imported them. `app.mail` (`./mail`) stays and is the one mail battery: mail to a person with an account goes through `@frontierjs/notifications`, which sends through it, and an app calls `app.mail` itself for an address that may have no account. The README's § Email is replaced by § Mail, which documents `mailerPlugin` with the SMTP and Resend mailers. `example/email-system.ts`, `test/email.test.ts` and the shim test in `test/p3-fixes.test.ts` went with it.
+
+## 2026-10-08 — the file-upload example and README import storage from `@frontierjs/litestone/storage` (`FJS-D635`)
+
+`example/file-upload.ts` and the README's `fileUrl` snippet now use the subpath, because litestone's main entry no longer re-exports `FileStorage`, `fileUrl` or `FileStorageOptions`.
+
 ## 2026-10-08 — the static server is graded on the vectors sierra's origins are (`FJS-D653`)
 
 `test/fixtures/served-path-vectors.json` holds the cases for *which file does this URL name, and is it inside the root*: 17 URLs over a scratch tree with links in and out of the root, each with a verdict of `serves`, `missing`, `malformed` or `refused`. `test/served-path-vectors.test.ts` runs them against `serveStatic`, and sierra's `test/served-path-vectors.test.js` reads the same file by path. Junction cannot import sierra's copy (Invariant 1) and toolbelt cannot hold `realpath`, so the two copies share their cases and not their code.

@@ -1044,34 +1044,6 @@ export declare class GatePlugin extends Plugin {
 export declare function parseGateString(str: string): GateConfig
 export declare function FrontierGateGetLevel(user: LitestoneAuth | null): Level
 
-// ─── FileStorage ──────────────────────────────────────────────────────────────
-
-export interface FileStorageOptions {
-  provider?:        'r2' | 's3' | 'b2' | 'minio' | 'local'
-  bucket?:          string
-  endpoint?:        string
-  accessKeyId?:     string
-  secretAccessKey?: string
-  publicBase?:      string
-  keyPattern?:      string   // default: ':model/:id/:field/:date-:filename'
-  region?:          string
-  // provider: 'local' — read by storage/providers/local.js and undeclared
-  // here, so the local branch of every dev config was a type error.
-  localPath?:       string   // default: './storage'
-  localUrl?:        string   // default: http://localhost:<localPort>/storage
-  localPort?:       number   // default: 3001
-}
-
-export declare function FileStorage(options?: FileStorageOptions): Plugin
-export declare function fileUrl(ref: FileRef | string | null | undefined): string | null
-export declare function fileUrls(refs: (FileRef | string)[] | string | null | undefined): string[]
-export declare function useStorage(options: FileStorageOptions): {
-  sign(ref: FileRef, opts?: { expiresIn?: number }): Promise<string>
-  download(ref: FileRef): Promise<Buffer>
-  delete(key: string): Promise<void>
-}
-export declare function createProvider(options: FileStorageOptions): unknown
-
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
 export declare class ValidationError extends Error {
@@ -1558,10 +1530,6 @@ export declare function createTenantRegistry(options: TenantRegistryOptions): Pr
 
 export declare function generateLiteSchema(db: unknown, opts?: { camelCase?: boolean }): string
 
-// ─── Replication ──────────────────────────────────────────────────────────────
-
-export declare function replicate(configPath: string, opts?: { verbose?: boolean }): Promise<void>
-
 // ─── Retention ────────────────────────────────────────────────────────────────
 
 /** Answers milliseconds. `what` names the caller in the error message. */
@@ -1602,28 +1570,3 @@ export declare function compactJsonl(
   path: string, model: unknown, retention?: string | null, maxSize?: string | null,
   now?: (() => Date | string | number) | Date | string | number,
 ): { removed: number; remaining: number; reason: string } | null
-
-// ─── Transform pipeline ───────────────────────────────────────────────────────
-
-export declare const $: Record<string, {
-  filter(sql: string): unknown
-  drop(...cols: string[]): unknown
-  keep(...cols: string[]): unknown
-  limit(n: number): unknown
-  sample(n: number): unknown
-  redact(mode?: 'email' | 'phone' | 'both'): unknown
-  mask(col: string, strategy?: string): unknown
-  rename(from: string, to: string): unknown
-  scope(sql: string): unknown
-  truncate(): unknown
-  drop(): unknown
-  dropExcept(...cols: string[]): unknown
-}>
-
-export declare function params(values: Record<string, unknown>): void
-export declare function preview(configPath: string): Promise<void>
-export declare function execute(configPath: string, opts?: unknown, run?: unknown, pipeline?: unknown[]): Promise<unknown>
-export declare function introspectSQL(db: unknown): Record<string, unknown>
-export declare function buildFKGraph(db: unknown): Record<string, string[]>
-export declare function parseLimit(n: unknown): number
-export declare function resolveRowCount(db: unknown, table: string): number

@@ -9385,7 +9385,7 @@ describe('plugin system — onAfterDelete', () => {
 
 describe('FileStorage plugin', () => {
   test('onInit builds fileMap from File-typed fields', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     plugin.onInit(schema, { models: {} })
@@ -9394,7 +9394,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onInit ignores models with no @file fields', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(`model Post { id Int @id; title String }`).schema
     plugin.onInit(schema, { models: {} })
@@ -9402,7 +9402,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeCreate: Buffer value is uploaded and swapped to JSON ref', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({
       provider: 'r2', bucket: 'test', keyPattern: ':model/:field/:uuid.:ext'
     }) as any
@@ -9427,7 +9427,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeCreate: non-file values (strings, numbers, null) are not touched', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9441,7 +9441,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeCreate: createMany with file value throws', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9457,7 +9457,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeCreate: createMany with no file values passes silently', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9470,7 +9470,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeUpdate: uploads new file, stashes old key, deletes old on afterWrite', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx: any = {
@@ -9502,7 +9502,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onBeforeUpdate: keepVersions: true skips old key cleanup', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx: any = {
@@ -9531,7 +9531,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onAfterWrite: only runs for update operations', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9546,7 +9546,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onAfterDelete: deletes S3 objects for all @file fields', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9575,7 +9575,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onAfterDelete: skips rows with null @file fields gracefully', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9588,7 +9588,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onAfterDelete: does nothing on models with no @file fields', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'r2', bucket: 'test' }) as any
     const schema = parse(FILE_SCHEMA).schema
     const ctx = { models: Object.fromEntries(schema.models.map((m: any) => [m.name, m])) }
@@ -9602,7 +9602,7 @@ describe('FileStorage plugin', () => {
   })
 
   test('onAfterDelete fires after hard delete via createClient', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const deleted: string[] = []
 
     class SpyPlugin extends (await import('../src/core/plugin.js')).Plugin {
@@ -22383,7 +22383,7 @@ describe('ExternalRefPlugin', () => {
   })
 
   test('FileStorage still works after refactor', async () => {
-    const { FileStorage } = require('../src/plugins/file.js')
+    const { FileStorage } = require('../src/storage/file-storage.js')
     const plugin = FileStorage({ provider: 'local' })
     expect(plugin.fieldType).toBe('File')
     expect(typeof plugin.serialize).toBe('function')

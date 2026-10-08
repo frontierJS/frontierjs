@@ -320,7 +320,7 @@ DELETE /api/leads/7    (level 4 user) → 403  needs ADMINISTRATOR
     file:'src/routes/leads/index.mesa',
     code:[
       "<script>",
-      "  import { createResource } from '@frontierjs/sierra'",
+      "  import { createResource } from '@frontierjs/sierra/resource'",
       "",
       "  const leads = createResource('leads')",
       "  await leads.find({ value: { gte: 5000 } })",
@@ -347,7 +347,7 @@ src/routes/_module.mesa       →   the layout wrapping both
     file:'src/routes/leads/index.mesa',
     code:[
       "<script>",
-      "  import { createResource } from '@frontierjs/sierra'",
+      "  import { createResource } from '@frontierjs/sierra/resource'",
       "",
       "  let busy = false",
       "",
@@ -385,7 +385,7 @@ hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
     file:'src/routes/leads/index.mesa',
     code:[
       "<script>",
-      "  import { createResource } from '@frontierjs/sierra'",
+      "  import { createResource } from '@frontierjs/sierra/resource'",
       "",
       "  const leads = createResource('leads')",
       "  await leads.find()",
@@ -420,7 +420,7 @@ hooks: { around: {...}, before: {...}, after: {...}, error: {...} }
     file:'src/routes/leads/index.mesa',
     code:[
       "<script>",
-      "  import { createResource } from '@frontierjs/sierra'",
+      "  import { createResource } from '@frontierjs/sierra/resource'",
       "",
       "  const leads = createResource('leads')",
       "  await leads.find()",

@@ -1,6 +1,6 @@
-// storage/index.js — public storage API
+// storage/index.js — object storage, a battery reached as '@frontierjs/litestone/storage'
 //
-//   import { fileUrl, useStorage } from '@frontierjs/litestone'
+//   import { FileStorage, fileUrl, useStorage } from '@frontierjs/litestone/storage'
 //
 //   // Pure function — no credentials needed
 //   const url = fileUrl(user.avatar)
@@ -12,6 +12,8 @@
 
 import { S3Provider }     from './providers/s3.js'
 import { LocalProvider }  from './providers/local.js'
+
+export { FileStorage }    from './file-storage.js'
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 

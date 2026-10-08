@@ -42,7 +42,7 @@ routing added on top.
 subject line. The answer is to send with `replyTo: reply+<token>@<domain>` and
 read the token back from the address the reply arrives at. Junction's mailer
 already takes a per-message `replyTo` (`junction/src/mail/smtp.ts`,
-`plugins/email/types.ts`), so the outbound half exists.
+`junction/src/mail/index.ts`), so the outbound half exists.
 
 **The token is signed, and it names the record and the person it was sent to.**
 A bare id in the tag lets anyone mail `reply+42@` and post onto order 42; Void's

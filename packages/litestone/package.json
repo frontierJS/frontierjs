@@ -88,7 +88,16 @@
       "import": "./src/tools/typegen.js"
     },
     "./storage": {
-      "import": "./src/storage/index.js"
+      "import": "./src/storage/index.js",
+      "types": "./src/storage/index.d.ts"
+    },
+    "./replicate": {
+      "import": "./src/tools/replicate.js",
+      "types": "./src/tools/replicate.d.ts"
+    },
+    "./transform": {
+      "import": "./src/transform/framework.js",
+      "types": "./src/transform/framework.d.ts"
     },
     "./external-ref": {
       "import": "./src/plugins/external-ref.js"

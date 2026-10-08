@@ -25,8 +25,8 @@
 //   await tenants.query(db => db.user.count())
 //   await tenants.migrate()
 
-import { openDatabase }   from './core/engine.js'
-import { applyBusyTimeout, applyWal, busyTimeoutFor } from './core/pragmas.js'
+import { openDatabase, openWalDatabase } from './core/engine.js'
+import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname } from 'path'
 import { createClient }    from './core/client.js'
@@ -243,9 +243,8 @@ class LRUPool {
 // Schema is fixed: id TEXT PK, createdAt TEXT, meta TEXT (JSON blob).
 
 function openRegistry(path, busyTimeout) {
-  const db = openDatabase(path)
   // Every process booting under `strategy database` opens this one file.
-  applyWal(db, busyTimeout)
+  const db = openWalDatabase(path, { busyTimeout })
   db.run('PRAGMA foreign_keys = ON')
   db.run(`CREATE TABLE IF NOT EXISTS tenants (
     id        TEXT PRIMARY KEY,
@@ -486,8 +485,7 @@ class TenantRegistry {
       return this.#open(id)
     }
 
-    const raw = openDatabase(path)
-    applyWal(raw, this.#busyTimeout)
+    const raw = openWalDatabase(path, { busyTimeout: this.#busyTimeout })
     raw.run('PRAGMA foreign_keys = ON')
 
     if (this.#migrationsDir && existsSync(this.#migrationsDir)) {

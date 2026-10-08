@@ -209,17 +209,21 @@ t('claims.rowPerName', await evaluate(`
   return card.querySelectorAll('tbody tr').length;
 `), claims.used.length)
 
-// The SOURCE is the half that makes the badge actionable: `cartToken` is a
-// top-level `claim` and `isAdmin` is one of the framework's own, and a panel
-// printing one word for both says nothing about where to go and change it.
-const bySource = Object.fromEntries(claims.used.map(c => [c.name, c.source]))
-t('claims.sourceNamed', await evaluate(`
+// The SOURCE is the half that makes the badge actionable: a top-level `claim`
+// and a framework claim such as `isAdmin` are changed in different places, and
+// a panel printing one word for both says nothing about where to go. The claim
+// is picked from the endpoint rather than named, because a name typed here goes
+// stale when `example` renames its claim, and the drive then dies on a missing
+// row instead of grading one.
+const declared = claims.used.find(c => c.source === 'claim')
+t('claims.declaredOnExample', Boolean(declared), true)
+t('claims.sourceNamed', declared && await evaluate(`
   const card = [...document.querySelectorAll('#acPanel .card')]
     .find(c => c.querySelector('.surface-header b')?.textContent.trim() === 'Claims');
   const row = [...card.querySelectorAll('tbody tr')]
-    .find(r => r.querySelector('code')?.textContent.trim() === 'auth().cartToken');
-  return row.querySelector('td:nth-child(3)').textContent.trim();
-`), bySource.cartToken)
+    .find(r => r.querySelector('code')?.textContent.trim() === ${JSON.stringify(`auth().${declared.name}`)});
+  return row ? row.querySelector('td:nth-child(3)').textContent.trim() : null;
+`), declared?.source)
 
 t('claims.allGradedOnExample', await evaluate(`
   const card = [...document.querySelectorAll('#acPanel .card')]

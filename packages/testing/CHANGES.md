@@ -1,5 +1,9 @@
 # Changes — @frontierjs/testing
 
+## 2026-10-08 — the storage double's comment names `@frontierjs/litestone/storage` (`FJS-D635`)
+
+`FileStorage` moved from litestone's main entry to its storage subpath, and the comment in `src/doubles.ts` that names where it comes from now says so.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 `engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range

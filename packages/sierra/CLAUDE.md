@@ -161,6 +161,8 @@ src/
 
   islands/loader.js      — find island markers in prerendered HTML and mount
   postbuild/             — sitemap, redirects, llms.txt, 404, theme, defer, markdown,
+                           inject-analytics.js: the vendor tag on a static page,
+                           read from analytics/tag.js, which the runtime reads too,
                            manifest.js: can a browser INSTALL the build, and
                            offline-shell.js: sw.js + a precache list derived
                            from what this build emitted (`offline: true`).

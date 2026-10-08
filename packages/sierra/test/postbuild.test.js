@@ -17,6 +17,9 @@ import { generateLlms } from '../src/postbuild/llms.js'
 import { injectSpeculationRules } from '../src/postbuild/speculation.js'
 import { deferJsLoading } from '../src/postbuild/defer-js.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
+import { injectAnalyticsTag } from '../src/postbuild/inject-analytics.js'
+import { vendorTagHtml } from '../src/analytics/tag.js'
+import { runInNewContext } from 'vm'
 import { runPostBuild } from '../src/postbuild/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -99,6 +102,76 @@ describe('injectThemeScript', () => {
   test('no theme config is no injection', async () => {
     const outDir = await setup('theme-none', { 'index.html': page })
     expect(await injectThemeScript(null, outDir)).toBe(null)
+  })
+})
+
+// ─── injectAnalyticsTag (FJS-2058) ───────────────────────────────────────────
+
+describe('injectAnalyticsTag', () => {
+  const PLAUSIBLE = { provider: 'plausible', domain: 'shop.example' }
+  const page = '<!DOCTYPE html><html><head><title>x</title></head><body></body></html>'
+
+  test('puts the vendor tag in every page\'s head', async () => {
+    const outDir = await setup('analytics-many', {
+      'index.html':          page,
+      'catalog/index.html':  page,
+      'assets/thing.html':   page,
+    })
+    expect(await injectAnalyticsTag(PLAUSIBLE, outDir)).toContain('2 page(s)')
+    for (const f of ['index.html', 'catalog/index.html']) {
+      const html = await readFile(join(outDir, f), 'utf8')
+      expect(html).toContain('<script id="sierra-analytics" defer data-domain="shop.example" src="https://plausible.io/js/script.js"></script>')
+      expect(html.indexOf('sierra-analytics')).toBeLessThan(html.indexOf('</head>'))
+    }
+    expect(await readFile(join(outDir, 'assets/thing.html'), 'utf8')).not.toContain('sierra-analytics')
+  })
+
+  test('a page with no <head> keeps the doctype first, or it renders in quirks mode', async () => {
+    const outDir = await setup('analytics-headless', { 'index.html': '<!doctype html><meta charset="utf-8"><title>x</title><p>hi' })
+    await injectAnalyticsTag(PLAUSIBLE, outDir)
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html.startsWith('<!doctype html><meta charset="utf-8">')).toBe(true)
+    expect(html).toContain('sierra-analytics')
+  })
+
+  test('does not stack on a re-run over an existing output directory', async () => {
+    const outDir = await setup('analytics-rerun', { 'index.html': page })
+    await injectAnalyticsTag(PLAUSIBLE, outDir)
+    expect(await injectAnalyticsTag(PLAUSIBLE, outDir)).toBe(null)
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html.match(/sierra-analytics/g)).toHaveLength(1)
+  })
+
+  test('refuses a custom provider object by name — a static page has nothing to run it', async () => {
+    const outDir = await setup('analytics-custom', { 'index.html': page })
+    await expect(injectAnalyticsTag({ provider: { track() {} } }, outDir)).rejects.toThrow(/custom provider object/)
+    await expect(injectAnalyticsTag({ provider: 'matomo' }, outDir)).rejects.toThrow(/"matomo"/)
+  })
+
+  test('gtm\'s start event is serialized into the page and runs on its own', () => {
+    const html = vendorTagHtml({ provider: 'gtm', containerId: 'GTM-ABC' })
+    const inline = /<script>([\s\S]*?)<\/script>/.exec(html)[1]
+    const window = {}
+    runInNewContext(inline, { window, Date })
+    expect(window.dataLayer[0]).toMatchObject({ event: 'gtm.js' })
+    expect(html).toContain('src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC"')
+  })
+
+  test('escapes what the config puts in an attribute', () => {
+    const html = vendorTagHtml({ provider: 'plausible', domain: 'a"><script>x</script>' })
+    expect(html).not.toContain('"><script>x')
+    expect(html).toContain('data-domain="a&quot;>&lt;script>x&lt;/script>"')
+  })
+
+  test('runPostBuild writes it on a static target and not on an SPA, whose runtime loads its own', async () => {
+    const table = { tree: [], all: [], indexed: ['/'], redirects: [] }
+    const spa = await setup('analytics-spa', { 'index.html': page })
+    await runPostBuild({ analytics: PLAUSIBLE, speculationRules: false }, table, spa, spa, null)
+    expect(await readFile(join(spa, 'index.html'), 'utf8')).not.toContain('sierra-analytics')
+
+    const site = await setup('analytics-static', { 'index.html': page })
+    await runPostBuild({ analytics: PLAUSIBLE, speculationRules: false }, table, site, site, ['/'])
+    expect(await readFile(join(site, 'index.html'), 'utf8')).toContain('sierra-analytics')
   })
 })
 

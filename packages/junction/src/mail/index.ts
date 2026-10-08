@@ -1,15 +1,10 @@
 // mail/index.ts
-// Junction's INTERNAL mail system — always available, intended for
-// notification / system email that the app itself sends (password resets,
-// alerts, receipts). Owns the IMail interface, the MailBuilder, and the
-// SMTP client (./smtp.ts — the transport you can always rely on), plus a
-// minimal Resend adapter for when system mail should go through Resend.
-//
-// Division of responsibility:
-//   src/mail          → internal/system mail (this module). Base layer.
-//   src/plugins/email → 3rd-party provider integrations and higher-level
-//                       system/campaign email features. Builds ON TOP of
-//                       this module's SMTP transport (imports ./smtp.ts).
+// The mail battery — `app.mail`. Owns the IMail interface, the MailBuilder,
+// the SMTP client (./smtp.ts — the transport you can always rely on) and a
+// minimal Resend adapter. Mail to a person with an account goes through
+// @frontierjs/notifications, whose email channel sends through this; an app
+// calls `app.mail` itself only for an address that may have no account
+// (a reset, a verification, an invitation) — `FJS-D644`.
 //
 // Rest of framework uses the IMail interface only.
 

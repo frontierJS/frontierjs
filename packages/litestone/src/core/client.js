@@ -45,7 +45,7 @@ import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { isServerAssignedId, isServerFilled } from './ids.js'
-import { runSqliteRetention, compactJsonl } from '../tools/retention.js'
+import { runSqliteRetention, compactJsonl } from './retention.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {
   TransitionViolationError, TransitionConflictError, VersionRequiredError,

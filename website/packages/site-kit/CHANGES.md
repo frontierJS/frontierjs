@@ -1,5 +1,9 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-08 — analytics is `analytics:` in `content/settings/site.js` (`FJS-D608`, `FJS-D658`)
+
+The site-kit side needs no new code. The site's settings are spread over the Sierra config, and Sierra's static build now writes the vendor's tag into every page (`FJS-2058`). The README names the key. A probe copy of the website with `analytics: { provider: 'plausible', domain }` tagged 51/51 pages.
+
 ## 2026-10-08 — a site names its preset (`FJS-D605`, `FJS-D648`)
 
 `preset: '@kobami/ksite'` in the default export of `content/settings/site.js` names a package that adds to the site. Its `./preset` export is a function of `{ root, content, settings }`, where `settings` is the whole module, named exports included. It returns `sierra` (merged over site-kit's config and under the site's own keys), `plugins` (Vite plugins after Sierra's), and `shell` (`{ html, entry }`, the dev document and the file `/@site-kit/main.js` resolves to). `config/preset.js` loads it, and every way of failing to load one stops the build by name: a package that does not resolve from the site, one with no `./preset` export, a default that is not a function, a returned key outside those three, or a shell missing a half. A site that built without its preset would ship every page without its blocks.

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — `analytics:` reaches a static page (`FJS-2058`, `FJS-D658`)
+
+A static build writes the vendor's tag before every prerendered page's `</head>` (`postbuild/inject-analytics.js`). Before this, `analytics:` on `static` did nothing and said nothing, because `initAnalytics` runs only from `virtual:sierra`, which a prerendered page never loads. The island entry calls the new `configureAnalytics(config)`, which resolves the provider and loads nothing, so `track()` inside an island reaches the page's tag. A custom provider object, an unknown provider name, or Plausible without `domain` or GTM without `containerId`, is refused by name at build.
+
+`analytics/tag.js` is the one description of what each provider loads. The runtime's `init` reads it as well, so GTM now pushes its `gtm.js` start event before the script, as GTM's own snippet does. Without that event no Page View trigger fires. `initAnalytics` imports the router dynamically, so a static island bundle that reaches `track()` carries no router. The edge test's second allow row is `postbuild/inject-analytics.js → analytics/tag.js`. `placeInHead` moved from `inject-theme.js` to `html-files.js`, so both steps share it.
+
+Proof: sierra 1985/1985, including 13 new cases. A probe copy of the website, built through site-kit with `analytics:` set, tagged 51/51 pages, and its island bundle grew 1 kB. The website itself builds and verifies unchanged.
+
 ## 2026-10-08 — both static origins are graded on junction's served-path vectors (`FJS-D653`)
 
 `test/served-path-vectors.test.js` runs junction's `test/fixtures/served-path-vectors.json` through `serveSite` and `serveWidgets`. It sends each request with `node:http` and the path as written, because `fetch` folds `..` and `%2e%2e` away before the server sees them. Sierra's copy answered all 17 cases as the vectors say. With `withinRoot`'s containment test removed, the three escape cases fail on both origins. `src/` is unchanged.

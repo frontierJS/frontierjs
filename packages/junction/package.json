@@ -32,7 +32,6 @@
     "./export": "./src/plugins/export/index.ts",
     "./metrics": "./src/plugins/metrics/index.ts",
     "./client": "./src/client/index.ts",
-    "./email": "./src/plugins/email/index.ts",
     "./channels": "./src/transport/channels.ts",
     "./middleware": "./src/transport/middleware.ts",
     "./health": "./src/transport/health.ts",

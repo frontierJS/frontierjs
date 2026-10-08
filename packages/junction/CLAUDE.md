@@ -244,8 +244,6 @@ src/
   plugins/
     manifest/index.ts · openapi/index.ts · devtools/index.ts · devtools/admin.html
     webhooks/ — index.ts · payload.ts (what a subscriber may receive)
-    email/ — index.ts · plugin.ts · hook.ts · types.ts · system/sender.ts · system/smtp.ts ·
-             campaign/sender.ts · campaign/unconfigured.ts
     declared.ts — the plugins junction.config.js may declare; the one plugins/ module core names (FJS-D256)
     outbox/ — index.ts · engine.ts (ctx.enqueue's row and the relay pass)
     backfill/ — index.ts · engine.ts (the middle step of expand, backfill, contract, FJS-D157)

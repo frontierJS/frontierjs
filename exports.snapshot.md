@@ -175,7 +175,6 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./export` | `src/plugins/export/index.ts` | yes |
 | exports | `./metrics` | `src/plugins/metrics/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
-| exports | `./email` | `src/plugins/email/index.ts` | yes |
 | exports | `./channels` | `src/transport/channels.ts` | yes |
 | exports | `./middleware` | `src/transport/middleware.ts` | yes |
 | exports | `./health` | `src/transport/health.ts` | yes |
@@ -212,6 +211,11 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./testing (types)` | `src/testing.d.ts` | yes |
 | exports | `./types (import)` | `src/tools/typegen.js` | yes |
 | exports | `./storage (import)` | `src/storage/index.js` | yes |
+| exports | `./storage (types)` | `src/storage/index.d.ts` | yes |
+| exports | `./replicate (import)` | `src/tools/replicate.js` | yes |
+| exports | `./replicate (types)` | `src/tools/replicate.d.ts` | yes |
+| exports | `./transform (import)` | `src/transform/framework.js` | yes |
+| exports | `./transform (types)` | `src/transform/framework.d.ts` | yes |
 | exports | `./external-ref (import)` | `src/plugins/external-ref.js` | yes |
 | bin | `litestone` | `src/tools/cli.js` | yes |
 | main | `main` | `src/index.js` | yes |

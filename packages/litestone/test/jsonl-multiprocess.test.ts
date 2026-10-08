@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process'
 import { Database } from 'bun:sqlite'
 import { createClient } from '../src/index.js'
 import { openIndexDb, withWriteLock, indexPathFor } from '../src/drivers/jsonl-index.js'
-import { compactJsonl } from '../src/tools/retention.js'
+import { compactJsonl } from '../src/core/retention.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const dirs: string[] = []
@@ -277,7 +277,7 @@ describe('compaction', () => {
 
     while (!existsSync(join(dir, '.ready'))) await new Promise(r => setTimeout(r, 5))
     await new Promise(r => setTimeout(r, 400))
-    const { compactJsonl } = await import('../src/tools/retention.js')
+    const { compactJsonl } = await import('../src/core/retention.js')
     const model = (db as { $schema: { models: { name: string }[] } }).$schema.models.find(m => m.name === 'Entry')
     compactJsonl(file, model, null, '256kb', Date.now)
     await child.exited
@@ -308,7 +308,7 @@ describe('compaction', () => {
     writeFileSync(file, buf)
 
     const db = await createClient({ db: join(dir, 'main.db'), schema: SCHEMA(dir) })
-    const { compactJsonl } = await import('../src/tools/retention.js')
+    const { compactJsonl } = await import('../src/core/retention.js')
     const model = (db as { $schema: { models: { name: string }[] } }).$schema.models.find(m => m.name === 'Entry')
     const res = compactJsonl(file, model, null, '8kb', Date.now)
 

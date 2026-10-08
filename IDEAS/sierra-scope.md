@@ -1,16 +1,16 @@
 ---
 id: sierra-scope
-status: proposed
+status: shipped
 dated: 2026-10-08
 ---
 
 # Idea — Sierra's edge: what it owns, and what it hosts as a battery
 
-**Status: PROPOSED — RULED 2026-10-08, PARTLY BUILT.** Dated 2026-10-08; every
+**Status: SHIPPED 2026-10-08.** Dated 2026-10-08; every
 count in § 1–2 was measured on the working tree that day, with a path named. All
 five questions are ruled (`FJS-D649` to `FJS-D653`), each as recommended, and
-§ 3 is the build. Items 1 to 5 are built (sierra, jetty and junction
-`CHANGES.md`, 2026-10-08); 6 is not. It is
+§ 3 is the build, and all six items are built (sierra, jetty and junction
+`CHANGES.md`, 2026-10-08). It is
 [`litestone-scope.md`](litestone-scope.md) and [`junction-scope.md`](junction-scope.md)
 asked of the UI realm, and the answer is shaped differently: sierra hosts few
 batteries and they are small. **Its finding is that the realm's own noun lives
@@ -136,7 +136,7 @@ entry names both Node build code and browser runtime code. It is the same item
 `FJS-D635` and `FJS-D639` fixed by moving batteries to subpaths. The website's
 samples write `import { createResource } from '@frontierjs/sierra'`
 (`website/site/content/routes/pitch.meta.js:55`, four times in
-`content/data/showroom2.js`), which the entry has never exported (`FJS-2023`).
+`content/data/showroom2.js`), which the entry has never exported (`FJS-2023`, fixed: they write `/resource`).
 
 **2.6 — Postbuild is two things.** Half of it is what a build owes its own
 output, derived from the route table or the build's hashes: the 404 move,

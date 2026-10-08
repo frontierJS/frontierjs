@@ -5,7 +5,8 @@
 
 import { join }         from 'node:path'
 
-import { createTenantRegistry, autoMigrate, GatePlugin, FileStorage } from '@frontierjs/litestone'
+import { createTenantRegistry, autoMigrate, GatePlugin } from '@frontierjs/litestone'
+import { FileStorage } from '@frontierjs/litestone/storage'
 
 import { shopGateLevel } from './gate.ts'
 

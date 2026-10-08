@@ -41,3 +41,21 @@ export async function htmlFiles(dir) {
   }
   return out
 }
+
+/**
+ * Put a script where the parser reads it as head content, ahead of every
+ * stylesheet.
+ *
+ * `<head>` is optional in HTML and both apps in this repo leave it out, so
+ * anchoring on the literal tag alone injected nothing into either and every
+ * reader on a non-default theme saw the default first — with a build that
+ * reported nothing wrong. Without the tag, after the charset declaration keeps
+ * that within the first 1024 bytes where the parser looks for it.
+ */
+export function placeInHead(html, script) {
+  for (const anchor of [/<head\b[^>]*>/i, /<meta\s+charset\b[^>]*>/i, /<html\b[^>]*>/i, /<!doctype\s+html\s*>/i]) {
+    const m = anchor.exec(html)
+    if (m) return html.slice(0, m.index + m[0].length) + '\n' + script + html.slice(m.index + m[0].length)
+  }
+  return script + '\n' + html
+}

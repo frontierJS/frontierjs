@@ -27,6 +27,32 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d657"></a>2026-10-08 · `FJS-D657` — A column about a person is **`@personal`**, with an optional category from a closed list of thirteen. A model whose rows are people is **`@@person`**, and `@@person(child)` marks rows that are children in the legal sense. **Subject** is the role (the person something is about) and never a model word. No retention clock is declared.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/data-classification.md`](IDEAS/data-classification.md). **C** was picked over **A** (a bare `@personal`, with no category for a record of processing to group by) and **B** (a graded `@sensitivity(level)`, whose levels carry no behavior that anything grades).
+
+**The word is `personal`, not `pii`.** PII is the narrower US sense: data that identifies someone. Erasure has to null a `coverLetter` that identifies nobody, so the word must cover all of it. There is no did-you-mean hint for `@pii`.
+
+**The model word is `@@person`, not `@@subject`.** *Subject* has five live senses, all of them roles: the claim grammar's `<subject>` column (`FJS-D359`), `membershipClaim({ subject })`, support mode's subject (`FJS-D574`), the bearer's subject (`FJS-D342`) and oracle's link actor. A model-grain `@@subject` would be the only sense that names a kind, and a second meaning inside the `.lite` grammar. So *subject* gets a vocabulary row as the role. An `@@auth` model is a person by derivation.
+
+**What `@personal` does.** The audit trail writes `[personal]` in place of the value. `redact()` reads the declaration instead of `REDACT_DEFAULTS.PII`, and the mode is renamed `'PERSONAL'` with no alias. The data map reports it. It lands as a flag in `buildFieldPolicyMap` (`src/core/schema-maps.js`), the owner the trail and `$protectedFields` already read. `export.js`, `testing.js` and `query.js`, which rebuild the protected set from the AST, move onto that owner in the same change. It does NOT imply `@omit`: who sees a column stays the gate's question and `@omit`'s (`FJS-D205`).
+
+**The category list is closed and refused by name:** `contact`, `device`, `location`, `government`, `financial`, `employment`, `communication`, `demographic`, `health`, `genetic`, `biometric`, `characteristic`, `criminal`. One framework table maps each category to its regimes, so the data map derives *special* (GDPR Art. 9/10) and *sensitive* (CPRA) and no app restates them. The category feeds the data map only and changes no enforcement. Credentials are already covered by `@hashed`/`@secret`. Free text is a bare `@personal`. The list is drawn from fideslang, GDPR Arts. 9–10, Cal. Civ. Code § 1798.140 and Open edX OEP-30. Their `other` escape is what this list refuses.
+
+**`@@person(child)` is the argument's only value.** It states a legal status (COPPA, GDPR Art. 8, the lowered CPRA sale age) and never an age, because the threshold varies by jurisdiction. Every other category of data subject is already the model's name. A model mixing adults and children cannot declare it.
+
+**The parser warns, only on `@@person` models,** when a column named like personal data carries no `@personal`. This follows `FJS-D322`'s shape. `Company.email` never warns, and every app with sign-in meets the warning once, on its `@@auth` model. The auth package's `User` fragment declares its own `email @personal(contact)`.
+
+**Invariant 7 widens to state what ships:** `@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and `@personal` as `[personal]`. `@hashed` joined the trail in `FJS-1250`'s fix without the invariant saying so. The audit-redaction test gains both rows.
+
+**One human in two person models is refused by name.** `forget()` and export stop at a relation into another person model, because the schema cannot tell *the same person* (`Candidate.user`) from *another person* (`Candidate.referredBy`). The app answers in its own code, and a second product writing that code is the signal for a word. `@@relator` does not answer it: a relator relates distinct things. It does tell the walk that a relator row naming the person goes with them.
+
+**No retention clock.** `forgetting.md` measured the clock as a query over children. jazzhr's is `Application.rejectedAt`, not a column of `Candidate`. Retention stays a job the app schedules, and Caravan owns the clock (`FJS-D36`). *Sensitivity* is not coined.
+
+**Left to `forgetting.md`'s ruling:** its model word for *delete this row on forget* must not be a sibling of `@@person`. Its `@@subject` is renamed `@@person` by this ruling.
+
+*Lives in:* `.lite` grammar (to be built) · `src/core/schema-maps.js` · `src/transform/framework.js` · `CLAUDE.md` Invariant 7 · `VOCABULARY.md` (Person, Personal, Subject, Sensitivity) · [FJS-2059](ISSUES.md#fjs-2059) · [FJS-2060](ISSUES.md#fjs-2060).
+
 ### <a id="fjs-d656"></a>2026-10-08 · `FJS-D656` — The threat model is one root table, `THREATS.md`: a row per **adversary** and boundary, its **promise**, where it is enforced and the test that proves it, graded by `fli check`. The operator is a trusted row. An agent never sees more than a person at its level.
 
 Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/threat-model.md`](IDEAS/threat-model.md). **A** was picked over **B** (a `## Threats` section in each package's `CLAUDE.md`) and **C** (one test identity per adversary in `@frontierjs/testing`, now). B was refused because every hole open today sits at a seam between packages (FJS-1607, FJS-1833, FJS-1858), where a per-package section has no owner. C is the later shape of the Data and API rows, and the table's *Proved by* column is the seam it fills.
@@ -6609,11 +6635,31 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d646"></a>2026-10-08 · `FJS-D646` — Does basecamp's raw SQLite handle open through litestone — Litestone exports an opener that applies its own WAL and busy-timeout rule, and basecamp calls it.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **A** was picked over **B** (Basecamp opens bun:sqlite itself in `api/src/core/sqlite.ts`, with the four pragmas junction's opener set), **C** (Basecamp builds the litestone client first and takes `$rawDbs.main` for conduit's store and the health probe. Migrations then need another way in before the client opens).
+
+The paper's recommendation, taken as written: `applyWal` exists because WAL-before-timeout threw `SQLITE_BUSY` (`FJS-655`, `FJS-729`), and B copies the pragma order without the retry. A puts that rule in one place and keeps the ruling's wording.
+
+### <a id="fjs-d647"></a>2026-10-08 · `FJS-D647` — Which of the deleted scaffolder's checks and build modes does `fli` owe — None beyond the `.env` check. A binary is `single-binary.md`'s question.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **A** was picked over **B** (Also port *stub auth in production* to `deploy:doctor`), **C** (Restore `build-app` as `fli api:build`).
+
+The paper's recommendation, taken as written: the remaining checks either disagree with what `fli new` writes or only advise, and a build mode with no caller is not a step `fli deploy` lacks.
+
+### <a id="fjs-d645"></a>2026-10-08 · `FJS-D645` — Does the edge test's allow-list carry `plugins/declared.ts` — Yes. The installer is `plugins/declared.ts`, the core names that one module, and that module names the batteries. The allow-list has a row for it citing `FJS-D256`.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **A** was picked over **B** (No. `config.plugins` declares only `health`, which is on an axis. The batteries are configured by hand, and `fli new` writes `app.configure(manifestPlugin())`), **C** (No. Each battery registers its own declared key when its subpath is imported, so the core holds a registry and no import).
+
+The paper's recommendation, taken as written: it keeps `FJS-D256` and costs one row that names its ruling. B reopens `FJS-D256` and edits every scaffolded app. C makes a config key work only if something else happened to import the battery, so the key would fail silently.
+
 ### <a id="fjs-d644"></a>2026-10-08 · `FJS-D644` — What happens to the three zero-user batteries — Delete workers and the better-auth adapter; keep the email tiers behind the seam until notifications is measured against the system tier.
 
 Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **B** was picked over **A** (Keep all three as batteries behind the seam), **C** (Delete all three; the system tier's job is notifications' and the campaign tier is a conduit target plus a template. - **Recommend B, then measure C's last clause** — workers and the adapter have the rulings already (`FJS-D153`, `FJS-D215`: the mechanism, never the vendor). The email tiers are the one battery with a design argument (`mail/index.ts`'s division of responsibility), so the measurement is whether `example` and basecamp's system mail runs through notifications with nothing lost. If it does, C).
 
 workers has no caller anywhere and the better-auth adapter is a vendor inside the boundary package, which FJS-D153 and FJS-D215 already refuse; the email tiers are the one battery with a design argument, so they stay behind the seam until example and basecamp system mail is proved through app.notify with nothing lost, and then C's last clause applies.
+
+**Measured 2026-10-08: the tiers deleted.** Nothing outside junction imported `./email` or read `app.email`. The apps' mail runs on the two layers that stay. Mail to a person with an account goes through `app.notify`, whose email channel sends through `app.mail`: example's payment and invoice jobs, and basecamp's `notifyPeople`. Mail to an address that may have no account calls `app.mail` directly: example's password reset and credential-changed mail, and basecamp's reset, verification and invitation mail. That is on purpose, because there is no account to notify yet. So the measurement's wording, *through app.notify*, was too narrow. The rest of it held. The tiers added only a per-message `from`/`replyTo`, which `app.mail` already takes, and a `SystemEmailError`, which nothing caught. `plugins/email/`, the `./email` subpath and the `AppEmail` slot are deleted. `mail/` stays.
 
 ### <a id="fjs-d643"></a>2026-10-08 · `FJS-D643` — Where does the Data realm's work over time run — They stay in junction, as batteries, and the rule is written: *a schema-declared thing that needs a process and a queue is a junction battery over `app.jobs`, shipped with its `.lite` fragment.* Their core halves (`core/outbox.ts`, `core/backfill.ts`) move beside their plugins, keeping `ctx.enqueue` as the one verb on the context.
 
@@ -12089,6 +12135,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d658"></a>2026-10-08 · `FJS-D658` — How `analytics:` reaches a static page — The build writes the vendor's own tag into every prerendered page's `<head>`, and the island entry resolves the provider so `track()` reaches it. A custom provider object is refused on that target.
+
+Asked in chat while closing `FJS-2058`, which found `FJS-D608`'s *wire `sierra/analytics` into site-kit* had nothing to land on: a static page never loads `virtual:sierra`, the only place `initAnalytics` runs. **A** was picked over **B** (a small analytics module on every static page — `track()` everywhere, but a page with no island stops shipping zero JavaScript), **C** (refuse `analytics:` on `static` until `FJS-1539` gives the head a mechanism) and **D** (site-kit writes the tag, a second owner beside `sierra/analytics`, which `FJS-D608` ruled against).
+
+**It is the edge test's second allow row.** `postbuild/inject-analytics.js` imports `analytics/tag.js`: `analytics:` is a battery key, and on this target the build is the only thing that runs. `tag.js` is the one description of what Plausible and GTM load; the runtime's `init` and the build's HTML both read it, which is how GTM's `gtm.js` start event, missing from the runtime before, reached both at once. Each prerendered page is a full load, so the vendor counts its own pageview and the router stays off the page. *Batteries vs. smallness* is the adjudication: the battery stays in sierra and costs a zero-JS page nothing.
+
 ### <a id="fjs-d653"></a>2026-10-08 · `FJS-D653` — What owns *is this file inside the root* — Keep both copies, with one vector set of URLs and verdicts that both packages' tests read (`FJS-D631`'s *vectors*).
 
 Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **C** was picked over **A** (A toolbelt subpath for the string half (decode, refuse `..` and NUL, the prefix test), with `realpath` left to each caller), **B** (Sierra's static origins move to outpost or cli, the Release side, and the copy count stays two).
@@ -14325,7 +14377,7 @@ The paper's recommendation, taken as written: § 1 measured all four as already 
 
 **The edge: litestone owns what is true about a row in a database** — its shape, who may read and write it, what moves it may make, and how its shape changes. Object storage, moving data between machines, ETL, and showing data to a person are batteries. Work over time is caravan's, and invariants spanning rows stay in application code (`FJS-D168`). A new `.lite` word, `$` method or `src/` directory names the axis it serves, or it is a battery. `driver jsonl` is the one area this does not settle; it is its own question in the same paper.
 
-*Lives in:* `IDEAS/litestone-scope.md` § 1 · `packages/litestone/src/index.js` (the subpaths) · the import test, not yet written; until it lands nothing enforces this.
+*Lives in:* `IDEAS/litestone-scope.md` § 1 · `packages/litestone/src/index.js` (the subpaths) · `packages/litestone/test/edge.test.ts`.
 
 ### <a id="fjs-d549"></a>2026-10-05 · `FJS-D549` — Does FJS-D533 stand now that an app relies on nesting — A declared subset that includes nesting: block maps and sequences at any depth, `|` and `>` scalars, and flow collections, with anchors, aliases, merge keys and tags refused by name. It's one toolbelt kit with no dependency, as A intended, and it holds everything ksite writes. - **Recommend C.** D533's reason was the part of YAML that caused `FJS-821`, and C still refuses that part. The nesting D533 gave up is something a real client site depends on. A leaves ksite's content split across two formats, which is a cost every client site cut from the template would pay.
 

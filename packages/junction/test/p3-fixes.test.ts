@@ -6,7 +6,6 @@
 //      re-exports the same bindings for compatibility.
 //   2. Scheduler + AI moved out of plugins/ — old import paths still work
 //      via shims.
-//   3. The SMTP client moved to src/mail/smtp.ts — old path still works.
 //   4. HTTP PUT now dispatches update (full replace), PATCH stays patch.
 //   5. createBaseService delegates to the litestone base: query operators
 //      ($gt/$in) are translated for plain clients, and remove() falls back
@@ -21,15 +20,13 @@ import { describe, it, expect } from 'bun:test'
 import { createTestApp, request, createService, createBaseService } from '../index.ts'
 import { requestMeta as coreRequestMeta, freezeUser as coreFreezeUser } from '../src/core/context.ts'
 import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/transport/bridge.ts'
-import { sendMail as shimSendMail } from '../src/plugins/email/system/smtp.ts'
-import { sendMail } from '../src/mail/smtp.ts'
 import { matchRouteSegments, matchPathDirect, parsePathSegments } from '../src/transport/router.ts'
 import { loadConfig } from '../src/config/index.ts'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// ─── 1–3. Moves with stable re-exports ────────────────────────────────────
+// ─── 1–2. Moves with stable re-exports ────────────────────────────────────
 
 describe('P3: relocations keep old import paths working', () => {
 
@@ -38,14 +35,6 @@ describe('P3: relocations keep old import paths working', () => {
     expect(bridgeFreezeUser).toBe(coreFreezeUser)
   })
 
-  // The `plugins/scheduler` and `plugins/ai` shims that used to be asserted
-  // here are gone: neither path was in the `exports` map, so the old import
-  // they preserved could not be reached from outside the package at all.
-  // This one stays because `plugins/email/system/smtp` IS live — the `./email`
-  // subpath re-exports SmtpError through it.
-  it('plugins/email/system/smtp shim re-exports src/mail/smtp', () => {
-    expect(shimSendMail).toBe(sendMail)
-  })
 })
 
 // ─── 4. PUT → update ──────────────────────────────────────────────────────

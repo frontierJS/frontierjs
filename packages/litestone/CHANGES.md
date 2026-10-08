@@ -1,5 +1,25 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — `verify:studio:access` grades again (`FJS-1238`)
+
+The drive looked for `auth().cartToken`, a claim `example` had renamed to `cartId`, so it died on a missing row before printing any result. It now takes a top-level claim from `/api/access`, which is where the panel reads it too. The real Studio defect behind that one: `esc()` threw on a non-string, so a `@@transitions` on a Boolean column (`reminded false → true`) blanked the Moves view. `esc` now coerces. `verify:studio` passes 6 of 6.
+
+## 2026-10-08 — litestone's edge, built (`FJS-D635`)
+
+Items 1–4 of `IDEAS/litestone-scope.md` § 3.
+
+- **`test/edge.test.ts` classifies every `src/` directory** as axis, battery or tool. It fails when an axis imports a battery or anything under `tools/`, when the main entry re-exports a battery, or when a battery has no subpath. Its first run found that `core/client.js` imported `tools/retention.js`. That file runs the database block's `retention` at `createClient`, which is axis work, so it moved to `core/retention.js`. Moving it brought it under `src/core`'s identifier ratchet, so the sweep's `DELETE` now quotes through `quoteIdent`.
+- **Batteries leave the main entry.** `FileStorage`, `fileUrl`, `fileUrls`, `useStorage` and `createProvider` come from `@frontierjs/litestone/storage`; `replicate` and the litestream helpers from `/replicate`; the transform DSL, `$` included, from `/transform`. `plugins/file.js` moved to `storage/file-storage.js` so that object storage is one directory, and each subpath has its own `.d.ts`. `replicate`'s declared signature was `(configPath, opts)`, which was wrong; it is now the `{ targets, options, dir }` the function takes. The same change moved every caller: `example`, junction's example and README, these docs, and four `fjs-prototypes` apps plus base44's generator.
+- **Studio's server left `cli.js`.** `tools/studio.js` holds `cmdStudio` and the nine helpers only it used, which is the EXPLAIN advisor, `findSeed`, `gitBaselineRefs` and `diffFindings`. `tools/cli-helpers.js` holds what both files share: colors, flags, `loadSchema`, `resolveDbPath`, and baselines from git. `cli.js` loads Studio lazily. It runs `main()` as soon as it loads, so Studio cannot import from it. `cli.js` went from 7,784 lines to 5,081. Nothing in the logic changed: the same statements were cut, every name resolves and the bundle builds.
+- **Saved queries are in a sidecar file**, `<db>-studio.json` beside the main database, through `tools/studio-queries.js`. The API is unchanged. Studio used to keep them in `_litestone_studio_queries` in the app's database, and the GET created that table, so `--readonly` Studio wrote to the data it was showing. An existing table of that name is left where it is (pre-alpha, not migrated).
+- **`bench/audit-bench.mjs` § 13 (`audit-trail-ab`)** times a `@@log` create with the trail as a jsonl append and as a SQLite insert. Across four runs the SQLite insert cost 0.67–0.74× the jsonl append. The `driver jsonl` question is still the owner's to rule; the result is in the scope paper's bullet.
+
+Proof: 5833 tests, 0 failures; `test/edge.test.ts` fails on a planted `core → tools` import; typecheck at the 58 ceiling, junction clean. Five of the six `verify:studio` drives pass. `verify:studio:access` fails the same way at HEAD (`FJS-1238`). A spawned Studio saved, listed and deleted a query, and afterwards the sidecar existed and the database held only its own table.
+
+## 2026-10-08 — `openWalDatabase` on `./engine` (`FJS-D646`)
+
+`@frontierjs/litestone/engine` exports `openWalDatabase(path, { busyTimeout, ...options })`: `openDatabase` followed by `applyWal`. A handle opened outside the client now gets the client's wait-then-WAL order and its retry. The tenant registry's two opens use it. Basecamp's raw handle is the first caller from outside the package.
+
 ## 2026-10-08 — the single-row write verbs and `upsert` run on the executor; `upsertMany` stays, by the stop rule
 
 Step 5b of `IDEAS/litestone-by-construction.md`. `create`, `update`, `remove`, `delete` and `upsert`'s fast path now plan and hand `executeWrite` the plan; the verb bodies are their own meaning only. Of the ten lock sites the proposal counted, the three left outside the executor are `upsertMany`, `restore` and `$transaction`.

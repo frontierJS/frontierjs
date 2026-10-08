@@ -12,7 +12,7 @@
 // (`import(import.meta.dir + '/../core/x.js')`) are invisible to the bundler and
 // produce a binary that dies at runtime with "Cannot find module /$bunfs/root/...".
 // Keep them literal. Likewise, on-disk assets must be `with { type: 'text' }`
-// imports — see STUDIO_HTML and BUILTIN_SEEDS in cli.js.
+// imports — see STUDIO_HTML in studio.js and BUILTIN_SEEDS in cli.js.
 
 import { mkdirSync, rmSync, statSync } from 'fs'
 import { resolve }                     from 'path'

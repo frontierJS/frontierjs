@@ -6,15 +6,6 @@
 // address was validated on the way in, reached no `RCPT TO`, appeared in no
 // header, and the copied recipient never received the mail (`FJS-895`).
 //
-// It ran in a SUBPROCESS for most of its life, because `test/email.test.ts`
-// called `mock.module()` on the smtp shim, process-wide and never undone — the
-// in-process first cut of this file passed alone and fourteen of its rows
-// failed in the full suite, grading a mock. The system sender takes an injected
-// transport now and nothing here mocks a module (`FJS-908`), so it is back in
-// process, with real `expect`s instead of the parent matching the child's
-// stdout — a probe line that was never reached used to pass silently
-// (`FJS-909`).
-//
 // Every assertion reads the CONVERSATION rather than the return value. The
 // return value was `sent` the whole time it was wrong.
 
@@ -252,9 +243,6 @@ describe('retryable comes from the reply code', () => {
   })
 
   it('is derived from the first digit rather than a hand list', () => {
-    // In process this used to grade a MOCK: `email.test.ts` replaced the smtp
-    // shim, and there is only one `SmtpError` class, so `.retryable` came back
-    // undefined inside the suite and true alone.
     expect(new SmtpError('graylisted', 450).retryable).toBe(true)
     expect(new SmtpError('no mailbox', 550).retryable).toBe(false)
     expect(new SmtpError('socket closed').retryable).toBe(true)

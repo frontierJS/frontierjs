@@ -5,7 +5,7 @@ The `FileStorage` plugin stores file bytes in S3-compatible object storage (Clou
 ## Setup
 
 ```js
-import { FileStorage } from '@frontierjs/litestone'
+import { FileStorage } from '@frontierjs/litestone/storage'
 
 const db = await createClient({
   path: './schema.lite',
@@ -79,7 +79,7 @@ user.avatar   // → { key: 'users/1/avatar/abc123.jpg', size: 42048, type: 'ima
 ## Utilities
 
 ```js
-import { fileUrl, fileUrls, useStorage } from '@frontierjs/litestone'
+import { fileUrl, fileUrls, useStorage } from '@frontierjs/litestone/storage'
 
 // Derive URL from a ref object
 fileUrl(user.avatar)       // → 'https://...'

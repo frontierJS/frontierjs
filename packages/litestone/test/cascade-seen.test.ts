@@ -162,7 +162,7 @@ describe('the two stores the stressor measured', () => {
   })
 
   test('FileStorage deletes the bytes of a cascaded row', async () => {
-    const { FileStorage } = await import('../src/plugins/file.js')
+    const { FileStorage } = await import('../src/storage/file-storage.js')
     const files = FileStorage({ provider: 'local', bucket: 'test' }) as any
     const db: any = await createClient({
       schema: `

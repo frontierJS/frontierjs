@@ -12,7 +12,7 @@
 //     in a test*, and the two would drift.
 //
 //   · **storage** — `FileStorage({ provider: 'local', localPath })` from
-//     `@frontierjs/litestone` is already the local implementation, and the
+//     `@frontierjs/litestone/storage` is already the local implementation, and the
 //     assertion surface is the filesystem, which a test can read directly.
 //
 //   · **mail** — genuinely missing. Nothing implements `IMail` without a mail

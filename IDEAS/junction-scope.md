@@ -6,11 +6,12 @@ dated: 2026-10-08
 
 # Idea — Junction's edge: what it owns, and what it hosts as a battery
 
-**Status: PARTIAL — BUILT 2026-10-08.** Dated 2026-10-08; every count in § 1–2 was
+**Status: BUILT 2026-10-08.** Dated 2026-10-08; every count in § 1–2 was
 measured on the working tree that day, before the build, with a path named. All
-six questions are ruled (`FJS-D639` to `FJS-D644`) and § 3 is built; what is
-left is `FJS-D644`'s measurement — whether example's and basecamp's system mail
-runs through `app.notify` with nothing lost, which decides the email tiers. It is
+six questions are ruled (`FJS-D639` to `FJS-D644`), the three found while
+building are ruled (`FJS-D645` to `FJS-D647`), and § 3 is built. `FJS-D644`'s
+measurement was taken the same day: nothing outside junction used the email
+tiers, so `plugins/email/` and `./email` are deleted, and `app.mail` stays. It is
 [`litestone-scope.md`](litestone-scope.md) asked of the API realm, and the
 answer is longer, because junction has grown the way litestone had not: by
 hosting whatever an app needed next.
@@ -268,19 +269,19 @@ so, and until it is written the next one lands wherever its author stood.
     already are, with the sentence that makes the next one land in the same
     place.
 
-- **FJS-D645 — Does the edge test's allow-list carry `plugins/declared.ts`?** Found building `FJS-D639`, which says the allow-list names *two* ruled exceptions. Building it needed a third: `config.plugins` (`FJS-D256`) installs manifest, openapi and devtools from the start phase, and every `fli new` app declares `manifest: true`. Built as **A**, pending this ruling.
+- ~~**FJS-D645 — Does the edge test's allow-list carry `plugins/declared.ts`?**~~ **Answered 2026-10-08 (`FJS-D645`): A — Yes. The installer is `plugins/declared.ts`, the core names that one module, and that module names the batteries. The allow-list has a row for it citing `FJS-D256`.** Found building `FJS-D639`, which says the allow-list names *two* ruled exceptions. Building it needed a third: `config.plugins` (`FJS-D256`) installs manifest, openapi and devtools from the start phase, and every `fli new` app declares `manifest: true`. Built as **A**, pending this ruling.
   - **A** — Yes. The installer is `plugins/declared.ts`, the core names that one module, and that module names the batteries. The allow-list has a row for it citing `FJS-D256`.
   - **B** — No. `config.plugins` declares only `health`, which is on an axis. The batteries are configured by hand, and `fli new` writes `app.configure(manifestPlugin())`.
   - **C** — No. Each battery registers its own declared key when its subpath is imported, so the core holds a registry and no import.
   - **Recommend A** — it keeps `FJS-D256` and costs one row that names its ruling. B reopens `FJS-D256` and edits every scaffolded app. C makes a config key work only if something else happened to import the battery, so the key would fail silently.
 
-- **FJS-D646 — Does basecamp's raw SQLite handle open through litestone?** Found building `FJS-D641`, which says *basecamp opens its handle through litestone*. Litestone's public opener (`openDatabase`, `@frontierjs/litestone/engine`) is a bare `new Database(path)`. The pragma helpers (`applyWal`, `applyBusyTimeout`) are not exported. Built as **B**, pending this ruling.
+- ~~**FJS-D646 — Does basecamp's raw SQLite handle open through litestone?**~~ **Answered 2026-10-08 (`FJS-D646`): A — Litestone exports an opener that applies its own WAL and busy-timeout rule, and basecamp calls it.** Found building `FJS-D641`, which says *basecamp opens its handle through litestone*. Litestone's public opener (`openDatabase`, `@frontierjs/litestone/engine`) is a bare `new Database(path)`. The pragma helpers (`applyWal`, `applyBusyTimeout`) are not exported. Built as **B**, pending this ruling.
   - **A** — Litestone exports an opener that applies its own WAL and busy-timeout rule, and basecamp calls it.
   - **B** — Basecamp opens bun:sqlite itself in `api/src/core/sqlite.ts`, with the four pragmas junction's opener set.
   - **C** — Basecamp builds the litestone client first and takes `$rawDbs.main` for conduit's store and the health probe. Migrations then need another way in before the client opens.
   - **Recommend A** — `applyWal` exists because WAL-before-timeout threw `SQLITE_BUSY` (`FJS-655`, `FJS-729`), and B copies the pragma order without the retry. A puts that rule in one place and keeps the ruling's wording.
 
-- **FJS-D647 — Which of the deleted scaffolder's checks and build modes does `fli` owe?** Found building `FJS-D642`, which says to move any step `fli` lacks before deleting. One step was moved: *`.env` is gitignored*, now in `fli deploy:doctor`. These were not:
+- ~~**FJS-D647 — Which of the deleted scaffolder's checks and build modes does `fli` owe?**~~ **Answered 2026-10-08 (`FJS-D647`): A — None beyond the `.env` check. A binary is `single-binary.md`'s question.** Found building `FJS-D642`, which says to move any step `fli` lacks before deleting. One step was moved: *`.env` is gitignored*, now in `fli deploy:doctor`. These were not:
   - setup's CORS-`'*'`-in-production check, which contradicts the `origins: ['*'], credentials: false` that `fli new` writes on purpose
   - demo or stub auth in production, the rate limiter, the drain timeout and *a test exists*, which were advice
   - `build-app`'s js and binary modes, which had no caller

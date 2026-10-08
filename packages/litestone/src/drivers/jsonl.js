@@ -28,7 +28,7 @@ import { noteMintedDirectory } from '../core/db-path.js'
 import { applyBusyTimeout } from '../core/pragmas.js'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
-import { compactJsonl } from '../tools/retention.js'
+import { compactJsonl } from '../core/retention.js'
 import { indexPathFor, indexShapeFor, openIndexDb, ensureIndexTable, withWriteLock }
   from './jsonl-index.js'
 

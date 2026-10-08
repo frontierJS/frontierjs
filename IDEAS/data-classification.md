@@ -6,7 +6,7 @@ dated: 2026-10-08
 
 # Idea — data classification: how a field's sensitivity and retention are declared
 
-**Status: IDEA, nothing built.** Dated 2026-10-08. Every "exists" line below
+**Status: ruled as `FJS-D657`, nothing built.** Corrections from the re-probe before ruling: the protected-set owner already exists (`buildFieldPolicyMap`), so C moves three call sites onto it rather than adding a table; `@@retain` is dropped, because the measured clock is a query over children; `subject` had five live senses, all roles, so the model word is `@@person`. Dated 2026-10-08. Every "exists" line below
 cites a file and line, and the parser claims were probed by running
 `parse()` from `packages/litestone/src/index.js`, not read from docs. Do not
 cite this file as describing behavior — see `VERIFYING.md`.
@@ -196,7 +196,7 @@ that exists.
   null a `coverLetter` that identifies nobody. No did-you-mean for `@pii`. The
   model word is **`@@person`**, not `@@subject` (§5). `subject` gets a
   `VOCABULARY.md` row as the role.
-- **Q1 — One word or a ladder?** **A** `@personal` binary · **B**
+- **Q1 — Ruled C by the owner's Q2 and naming calls, 2026-10-08.** One word or a ladder? **A** `@personal` binary · **B**
   `@sensitivity(level)` · **C** `@personal(category?)`, read through
   `buildFieldPolicyMap`.
   **Recommend C** — every word has a graded effect; the ladder can come later as
@@ -249,14 +249,33 @@ that exists.
 - **Q3 — Ruled by the owner, 2026-10-08: A.** Does `@personal` imply `@omit` from the client audience? **A** no,
   reads follow the gate as written · **B** yes. **Recommend A** — `FJS-D205`
   keeps visibility a separate axis; implying it hides a recruiter's email.
-- **Q4 — Does the parser warn on an undeclared column spelled like PII**
-  (`email`, `phone`)? **Recommend yes, as a warning**, the shape of the
-  `@@geo` ruling (`FJS-D322`), and it retires `REDACT_DEFAULTS.PII`.
+- **Q4 — Ruled by the owner, 2026-10-08: warn, on `@@person` models only.**
+  A column on a `@@person` model named like personal data (the names
+  `REDACT_DEFAULTS.PII` holds today) and carrying no `@personal` is a parse
+  WARNING naming the attribute to add — the shape of `FJS-D322`, which warns
+  only where the gate makes the point matter. Scoped so a false positive is
+  near impossible: `Company.email` never warns, and there is no word for *not
+  personal*. It still reaches every app with sign-in, because an `@@auth`
+  model is a person by derivation. **Follows from it:** `REDACT_DEFAULTS.PII`
+  is retired and `redact()` reads the declaration; the redact mode `'PII'` is
+  renamed `'PERSONAL'` with Studio's picker, no alias; the auth package's
+  `User` fragment declares its own `email @personal(contact)`. Refused: a
+  warning on every model (B), and a `fli check` advisory in its place (C).
+  **Out of scope, owed as its own defect:** `REDACT_DEFAULTS.SECRETS` guesses
+  by name too, where `@secret`/`@hashed` already declare it.
 - **Q5 — Ruled (above):** `@@person` is the kind, `subject` is the role.
-- **Q6 — Invariant 7 names three kinds and the trail redacts four** (`@hashed`,
-  `FJS-1250`). **Recommend** widening the invariant's text and the `@@log`
-  catalog entry to match what ships, in the ruling that adds `@personal` to it.
-- **Q7 — One human, two person models.** An `@@auth` model is a person by
+- **Q6 — Ruled by the owner, 2026-10-08: A, one invariant.** Invariant 7
+  becomes *`@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and
+  `@personal` as `[personal]`, in field entries and in `before`/`after`
+  snapshots*. `@hashed` joined the trail's set in `FJS-1250`'s fix
+  (`client.js:2018`) without the invariant, its proof row or the `@@log`
+  catalog entry (`catalog.js:1227`) saying so, and no test names it — `rg`
+  over `unique-redaction.test.ts` and `litestone.test.ts`, not a mutation
+  run. The same change adds both rows to the audit-redaction test in
+  `litestone.test.ts`; `fli ws:invariants` regenerates the snapshot's
+  *Covers*. Refused: `@personal` alone with `@hashed` left unstated (B); a
+  separate invariant for `@personal` (C).
+- **Q7 — Ruled by the owner, 2026-10-08: A.** One human, two person models. An `@@auth` model is a person by
   derivation, not by a second declaration. A `Candidate` who also signs in is
   then two person rows for one human, and a relation between two person
   models is either *the same person* (`Candidate.user`)
@@ -268,15 +287,28 @@ that exists.
   naming it · **B** a relation attribute declaring *same person* · **C** only
   the `@@auth` model is a person. **Recommend A** — refused by name, nothing
   destroyed, no word coined before a second product measures the shape; C
-  breaks the one product that asked.
-- **Q8 — `@@person` beside `@@personal`.** `forgetting.md` Q2 proposes
+  breaks the one product that asked. Under A the app answers *same person*
+  in its own code, calling `forget()` per row the refusal names; two
+  products writing that code is the signal for B. **`@@relator` does not
+  answer it** — a relator relates two or more DISTINCT relata (`FJS-D350`)
+  and is a row, where *same person* is identity on a plain foreign key. Its
+  source ontology names the shape (UFO: Candidate and User as two roles of
+  one kind, Person), but *role* is the auth `role` column, so B's word is not
+  free either.
+- **Q8 — Ruled by the owner, 2026-10-08: A, deferred to `forgetting.md`'s ruling with the constraint recorded.** `@@person` beside `@@personal`. `forgetting.md` Q2 proposes
   `@@personal` for *delete this model's rows on forget*. Two model words two
   letters apart, both legal on the same schema, one marking where the walk
   STARTS and one what it DELETES — a slip between them parses and does the
   wrong thing silently. Belongs to that paper's ruling, and wants a word that
-  is not a sibling of `@@person`.
-- **Q9 — The misleading parse error.** `@pii(x)` reports *unknown function*;
-  that is a defect independent of this paper and wants an `FJS-###`.
+  is not a sibling of `@@person`. **`@@relator` shrinks its job:** a relator
+  cannot outlive its relata and is forced to `Cascade` or `Restrict`, so the
+  walk derives that relator rows naming the person go with them (a
+  `Restrict` gets the by-name refusal `forgetting.md` already plans). What
+  is left for a model word is a non-relator row ABOUT the person — a note, a
+  message body.
+- **Q9 — Filed as [FJS-2060](../ISSUES.md#fjs-2060).** The misleading parse error:
+  `@pii(x)` reports *unknown function*. Q4's `SECRETS` half is
+  [FJS-2059](../ISSUES.md#fjs-2059).
 
 ## See also
 

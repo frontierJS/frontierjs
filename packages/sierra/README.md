@@ -973,7 +973,7 @@ Everything in `sierra.config.js`:
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
 | `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |
-| `analytics` | — | `{ provider }` — `'plausible'`, `'gtm'`, or a custom `{ init, pageview, track }` |
+| `analytics` | — | `{ provider }` — `'plausible'` (`domain`, `apiHost`), `'gtm'` (`containerId`), or a custom `{ init, pageview, track }`. On `static` the build writes the vendor's tag into every page's `<head>` and an island's `track()` reaches it; a custom object is refused there, since a prerendered page has nothing to run it |
 | `devtools` | — | `{ port, position, n1Threshold }` |
 | `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
 | `autoImport.modules` | `{}` | package → bindings that need no import |
@@ -1351,7 +1351,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../fetch` | `sierraFetch`, `configureFetch` |
 | `.../theme` | `theme`, `setTheme`, `toggleTheme`, `initTheme` |
 | `.../presence` | `presence(channelId, opts)` |
-| `.../analytics` | `initAnalytics`, `track` |
+| `.../analytics` | `initAnalytics`, `configureAnalytics` (the provider alone, for a page whose tag is already in the HTML), `track` |
 | `.../devtools` | `initToolbar` |
 | `.../postbuild` | `runPostBuild` |
 | `.../site/serve` | `serveSite` — the prerendered-site origin |
