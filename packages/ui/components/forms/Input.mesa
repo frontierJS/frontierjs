@@ -127,6 +127,12 @@
   const canReveal = stated(reveal, resolvedType === 'password')
   const inputType = canReveal && revealed ? 'text' : resolvedType
 
+  // `@unit` is what the number COUNTS, and a box reading `7.5` says nothing
+  // about whether that is hours or minutes. Named after the box the way
+  // DateTimeInput names its zone; sierra carries it on the rule for exactly
+  // this reader (field-rules § x-unit).
+  const unit = rule?.['x-unit']?.symbol ?? null
+
   const displayError = resolveError(form, name, error, errors)
   const hasError     = !!displayError
 
@@ -195,7 +201,7 @@
 
 <!-- The control, with the trailing addon when one was given. -->
 {#snippet control()}
-  {#if icon || canReveal}
+  {#if icon || canReveal || unit}
     <!-- .field-row joins a control to an addon; the addon sizes its own icon. -->
     <div class="field-row">
       {@render field()}
@@ -233,6 +239,11 @@
             </svg>
           {/if}
         </button>
+      {/if}
+      {#if unit}
+        <!-- Not aria-hidden, for DateTimeInput's reason: the unit is part of
+             what the value means. `fjs-input-unit` is a selector hook only. -->
+        <span class="field-addon fjs-input-unit">{unit}</span>
       {/if}
       {#if icon}
         <span class="field-addon">{@render icon?.()}</span>

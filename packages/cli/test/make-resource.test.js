@@ -85,7 +85,8 @@ describe('fli make:resource', () => {
   test('and it emits the default form rather than only permitting one', () => {
     // FJS-D114: permitted-and-never-generated is the state a convention dies in.
     const src = readFileSync(file(), 'utf8')
-    expect(src).toContain('<Form resource={leads}')
+    expect(src).toContain('const resource = leads')
+    expect(src).toContain('<Form {resource}')
     expect(src).toContain('export let record')
   })
 
@@ -108,7 +109,20 @@ describe('fli make:resource', () => {
     // `$slots.actions`, so the caller's snippet wins over the two buttons here.
     const src = readFileSync(file(), 'utf8')
     expect(src).toContain('export let actions')
-    expect(src).toMatch(/<Form resource=\{leads\}[^>]*\{actions\}/)
+    expect(src).toMatch(/<Form \{resource\}[^>]*\{actions\}/)
+  })
+
+  test('a model whose plural is a prop of the form still hands <Form> the resource', async () => {
+    // `Action` is `actions`, and so is the button-row prop: the prop shadowed
+    // the resource in the instance half, and the form drew no field (FJS-1959).
+    // Asked of the compiled module, because the shadowing is a scoping fact.
+    const { resourceFile } = await import('../core/resource-template.js')
+    const { compileSource } = await import('../../mesa/src/compiler.js')
+    const ctx = await compileSource(resourceFile('Action', 'actions'), { filename: 'Action.mesa', css: false, debug: false })
+    expect(ctx.analysis.errors).toEqual([])
+    // What <Form> is handed: the module's binding, never the prop's signal.
+    expect(ctx.result).toContain('{resource: resource,')
+    expect(ctx.result).not.toMatch(/resource: \$\$runtime\.get\(\$\$sig_actions\)/)
   })
 
   test('`web:resource` writes the same file, because it is the same module', () => {

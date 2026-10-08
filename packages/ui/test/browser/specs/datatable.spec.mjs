@@ -184,4 +184,16 @@ export async function run(t) {
   await t.clickAt('#refill-rows')
   await t.eventually(`document.querySelectorAll('#tbl tbody [data-row]').length`, '3',
     'and rows arriving replaces it')
+
+  /* ── footer ───────────────────────────────────────────────────────────── */
+
+  // A totals line is a <tfoot>, handed the rows (FJS-1966).
+  await t.eventually(`document.querySelector('#tbl-foot tfoot td')?.textContent.trim() ?? null`, '3 rows',
+    'a footer renders in a tfoot and is handed the rows')
+  t.is(await t.evaluate(`return document.querySelectorAll('#tbl tfoot').length;`), 0,
+    'and a table given none draws no tfoot')
+  await t.clickAt('#empty-rows')
+  await t.eventually(`document.querySelectorAll('#tbl-foot tfoot').length`, '0',
+    'and a total of no rows is not drawn')
+  await t.clickAt('#refill-rows')
 }

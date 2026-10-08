@@ -40,6 +40,8 @@
   const where    = { name: 'where',   display: 'geo', geo: { lat: 'lat', lng: 'lng' } }
   const whereLong = { name: 'where',  display: 'geo', geo: { lat: 'latitude', lng: 'longitude' } }
   const unknown  = { name: 'thing',   display: 'someday' }
+  const hours    = { name: 'hours',   display: 'number', rule: { type: 'number', 'x-unit': { symbol: 'h' } } }
+  const tenths   = { name: 'hours',   display: 'scale', scale: 1, rule: { type: 'integer', 'x-unit': { symbol: 'h' } } }
 </script>
 
 <!-- money, and the pair that decides it -->
@@ -62,6 +64,12 @@
 <div id="bool"><Cell value={false} column={flag} /></div>
 <div id="instant"><Cell value={'2026-01-02T03:04:05Z'} column={instant} /></div>
 <div id="wall"><Cell value={'2026-01-02'} column={wall} /></div>
+<div id="zoned"><Cell value={'2026-01-02T03:04:05Z'} column={instant} timeZone="America/New_York" /></div>
+<div id="badzone"><Cell value={'2026-01-02T03:04:05Z'} column={instant} timeZone="Not/AZone" /></div>
+
+<!-- what the number counts -->
+<div id="hours"><Cell value={7.5} column={hours} /></div>
+<div id="tenths"><Cell value={75} column={tenths} /></div>
 
 <!-- a point, under whichever keys the model declared -->
 <div id="geo"><Cell value={{ lat: 37.7749, lng: -122.4194 }} column={where} /></div>

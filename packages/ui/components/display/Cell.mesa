@@ -43,6 +43,10 @@
   export let column = undefined
   // The whole row, for a display that needs a sibling column.
   export let record = undefined
+  // The IANA zone an instant is shown in. Unstated is the viewer's, which is
+  // wrong for an app whose day belongs to an account: a 23:30 visit in the
+  // account's zone reads as the next morning to an admin two zones east.
+  export let timeZone = undefined
 
   const EMPTY = '—'
 
@@ -93,6 +97,12 @@
     return (v / 10 ** places).toFixed(places)
   }
 
+  // `@unit` is WHAT the number counts, and it is carried on the rule for this
+  // reader (sierra's field-rules § x-unit): `7.5` in an hours column is not a
+  // number anybody can read without the `h` beside it.
+  const unit = column?.rule?.['x-unit']?.symbol ?? null
+  const withUnit = (shown) => unit ? `${shown} ${unit}` : String(shown)
+
   // An instant is a moment everyone shares and a wall clock is a reading on
   // somebody's wall; rendering the second in the viewer's zone moves an
   // appointment. So the declaration decides, and only a resolved instant is
@@ -101,7 +111,11 @@
     const kind = column?.time?.kind
     if (kind === 'date' || kind === 'wall') return String(v).replace('T', ' ').replace(/Z$/, '')
     const d = new Date(v)
-    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString()
+    if (Number.isNaN(d.getTime())) return String(v)
+    // A zone name is a value out of the data, and `toLocaleString` throws on
+    // one it does not know — which in one cell takes the whole table down.
+    try { return d.toLocaleString(undefined, timeZone ? { timeZone } : undefined) }
+    catch { return d.toLocaleString() }
   }
 
   // A `@point` column is a `Json` document under the hood, so reaching the
@@ -151,9 +165,9 @@
   {:else if column?.display === 'money'}
     {money(value)}
   {:else if column?.display === 'scale'}
-    {scaled(value)}
+    {withUnit(scaled(value))}
   {:else if column?.display === 'number'}
-    {value}
+    {withUnit(value)}
   {:else if column?.display === 'boolean'}
     {value ? 'yes' : 'no'}
   {:else if column?.display === 'enum'}
@@ -195,4 +209,7 @@
 <style>
   .muted   { color: var(--ink-mute); }
   .tabular { font-variant-numeric: tabular-nums; }
+  /* A date is one token. Left to wrap, a narrow column breaks `2026-10-07` at
+     its hyphens and every row in the table grows a line. */
+  .cell-time { white-space: nowrap; }
 </style>

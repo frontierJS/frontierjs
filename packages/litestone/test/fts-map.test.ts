@@ -39,3 +39,22 @@ describe('@@fts over a @map field', () => {
       .toEqual([{ id: 1 }])
   })
 })
+
+// A column named for an SQL keyword (FJS-1952): the trigger bodies named the
+// FTS columns bare, so `from` failed the migration with `near "from"`.
+describe('@@fts over a column named for a keyword', () => {
+  const KEYWORDS = `model Message {\n  id Int @id\n  from String?\n  to String?\n  order String?\n  @@fts([from, to, order])\n}`
+
+  it('migrates, indexes, updates and deletes', () => {
+    const db = new Database(':memory:')
+    migrate(db, KEYWORDS)
+    db.run(`INSERT INTO message (id, "from", "to", "order") VALUES (1, 'alice', 'bob', 'first')`)
+    expect(db.query(`SELECT rowid AS id FROM message_fts WHERE message_fts MATCH 'alice'`).all())
+      .toEqual([{ id: 1 }])
+    db.run(`UPDATE message SET "from" = 'carol' WHERE id = 1`)
+    expect(db.query(`SELECT rowid AS id FROM message_fts WHERE message_fts MATCH 'carol'`).all())
+      .toEqual([{ id: 1 }])
+    db.run(`DELETE FROM message WHERE id = 1`)
+    db.run(`INSERT INTO message_fts(message_fts) VALUES('integrity-check')`)
+  })
+})

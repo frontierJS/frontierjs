@@ -174,6 +174,9 @@ const _NAME_KEYED = new Set([
   'properties', '$defs', 'definitions', 'patternProperties', 'dependentSchemas',
 ])
 
+/** The options the READ table is generated with — exported so a test asks for the same document. */
+export const READ_MODE = Object.freeze({ mode: 'full', includeTimestamps: true })
+
 /**
  * Every `description` ANNOTATION out of a generated `$defs` table (`FJS-785`).
  *
@@ -301,7 +304,12 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   // +1361, so the argument that kept the second mode a patch does not reach
   // this one at all. A COPY would be +7 KB, which is the number `FJS-785` is
   // about.
-  const readDefs  = stripProse(generateJsonSchema(result.schema, { mode: 'full' })?.$defs ?? {})
+  //
+  // With the row's own timestamps, which litestone leaves out of every mode
+  // unless asked: a write never sends them, but a table's *last updated* is
+  // among the columns a list most wants, and without them `columns({ only:
+  // ['updatedAt'] })` answered *no such field* (FJS-1803).
+  const readDefs  = stripProse(generateJsonSchema(result.schema, READ_MODE)?.$defs ?? {})
   const readPatch = diffSchemaModes(defs, readDefs)
 
   // $defs holds models, enums, `type` declarations and FileRef side by side —

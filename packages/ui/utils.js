@@ -5,7 +5,8 @@
 // same answer for a different reason — a stored value whose row it could not
 // read still has to render (`FJS-D225`) — and two copies of *what does this
 // identifier say* drift the moment one of them learns about initialisms.
-export { humanize } from '@frontierjs/toolbelt/inflect'
+import { humanize } from '@frontierjs/toolbelt/inflect'
+export { humanize }
 
 /**
  * Generate a stable random id suffix for label/input association.
@@ -65,6 +66,19 @@ export function resolveRule(form, name) {
   // no conditional column allocates nothing.
   if (rule.required || !Array.isArray(form.required)) return rule
   return form.required.includes(name) ? { ...rule, required: true } : rule
+}
+
+/**
+ * What a field's LABEL says when the caller stated none: `@label` verbatim,
+ * else the column's name humanized — and for a foreign key, its RELATION's.
+ * The same answer as sierra's `columnLabel`, which names the table header, so
+ * the form and the list over one model agree; without the relation the form
+ * read *Assignee Id* over a column whose header said *Assignee* (FJS-1962).
+ * Restated rather than imported: this kit and sierra are siblings.
+ */
+export function ruleLabel(name, rule) {
+  if (!name) return undefined
+  return rule?.title ?? humanize(rule?.references?.relation ?? name)
 }
 
 /**

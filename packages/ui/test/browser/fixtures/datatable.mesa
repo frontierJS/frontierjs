@@ -61,6 +61,17 @@
   </Table>
 </div>
 
+<div id="tbl-foot">
+  <Table {columns} {rows} {loading}>
+    {#snippet row(r, i)}
+      <tr><td>{r.name}</td><td>{r.email}</td><td>{r.total}</td></tr>
+    {/snippet}
+    {#snippet footer(all)}
+      <tr><th scope="row" colspan="2">Total</th><td>{all.length} rows</td></tr>
+    {/snippet}
+  </Table>
+</div>
+
 <button type="button" id="toggle-loading" on:click={() => loading = !loading}>loading</button>
 <button type="button" id="empty-rows" on:click={() => rows = []}>empty</button>
 <button type="button" id="refill-rows" on:click={() => rows = everyone}>refill</button>

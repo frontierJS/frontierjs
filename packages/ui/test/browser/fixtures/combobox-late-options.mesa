@@ -1,0 +1,59 @@
+<script>
+  // combobox-late-options.mesa — a searchable picker whose value is known
+  // before its list.
+  //
+  // An edit form has the row in hand before `form.optionsFor` answers, so the
+  // combobox's text box was labelled at mount from an empty list — it read the
+  // raw foreign key, and since the box's text is also its search, the list it
+  // opened filtered to nothing (`FJS-1443`). The same shape as
+  // `select-late-options`, for the control a generated form actually draws.
+  //
+  // `#numeric` is the other half: a model with no label column answers its
+  // id as the label, and an id may be a NUMBER. Choosing one put a number in
+  // the search box and the next filter pass called `.trim()` on it.
+  import Form from '../../../components/forms/Form.mesa'
+  import Combobox from '../../../components/forms/Combobox.mesa'
+
+  const FIELDS = {
+    ownerId: { type: 'string', title: 'Owner',
+               references: { model: 'User', field: 'id', relation: 'owner' } },
+  }
+  // Answered after a delay: a request, not a promise that is already settled.
+  const LATE = {
+    context: { model: 'Post', service: 'posts', idField: 'id' },
+    fields:  FIELDS,
+    formFields: () => [],
+    options: () => new Promise((r) => setTimeout(() => r({
+      options: [{ value: 'u-1', label: 'Alpha' }, { value: 'u-2', label: 'Bravo' }, { value: 'u-3', label: 'Charlie' }],
+      total: 3, truncated: false,
+    }), 50)),
+    make: () => ({ ownerId: 'u-2' }),
+    validate: () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+  }
+
+  let crews = []
+  const load = () => crews = [{ value: 'c-1', label: 'North' }, { value: 'c-2', label: 'South' }]
+
+  // A label that is a number, as `resource.options()` answers for a model
+  // whose `@@label` falls back to an integer id.
+  const IDS = [{ value: 7, label: 7 }, { value: 8, label: 8 }]
+  let picked = null
+</script>
+
+<div id="fetched">
+  <Form resource={LATE}>
+    <Combobox name="ownerId" value="u-2" />
+  </Form>
+</div>
+
+<div id="passed">
+  <Combobox name="crewId" value="c-2" options={crews} />
+  <button type="button" id="load" on:click={load}>load</button>
+</div>
+
+<div id="numeric">
+  <Combobox name="crew" options={IDS} onchange={(v) => picked = v} />
+  <output id="picked">{String(picked)}</output>
+</div>

@@ -2870,9 +2870,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function refuseMissingRequired(model, data) {
     const missing = []
     for (const f of model.fields) {
-      // Arrays always carry a DDL-level DEFAULT '[]' (empty array is the
-      // null state — see ddl.js), so they are never required.
-      if (f.type.optional || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
+      if (f.type.optional || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
       const attrs = f.attributes ?? []
       if (isServerFilled(f)) continue
       // A required @transient field is required OF THE CALLER, on the wire,

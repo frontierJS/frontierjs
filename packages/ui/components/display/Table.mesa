@@ -13,6 +13,11 @@
   // COLUMNS shape:
   //   { name, label, sortable?, align?: 'left'|'center'|'right', width?, hideLabel? }
   //
+  // `footer` is rows for a <tfoot> — a totals line, handed the rows so it can
+  // sum them. A <tfoot> rather than a last body row, because that is what
+  // tells a reader the line is ABOUT the rows rather than one of them, and it
+  // is drawn only over rows: a total of nothing, or of skeletons, says nothing.
+  //
   // `name` is the FIELD, which is what `resource.columns()` already calls it and
   // what `<FilterBar>` already reads off the same list — this component said
   // `key` and every caller carried a `.map` to translate, which is a shape
@@ -75,6 +80,7 @@
   export let row     = null        // required — renders each data row
   export let empty   = null        // optional override for the empty state
   export let actions = null        // optional toolbar above the table
+  export let footer  = null        // optional — (rows) => the <tfoot>'s own <tr>s
 
   // Skeleton row count while loading
   export var skeletonRows = 5
@@ -190,6 +196,12 @@
           {/each}
         {/if}
       </tbody>
+
+      {#if footer && !loading && rows.length}
+        <tfoot>
+          {@render footer?.(rows)}
+        </tfoot>
+      {/if}
     </table>
   </div>
 </div>

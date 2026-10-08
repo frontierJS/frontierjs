@@ -1226,7 +1226,10 @@ export function columnList(fields, { only, except, limit = 6, identify, label } 
     .map((name, order) => ({ name, rule: rules[name], tier: tierOf(name, rules[name]), order }))
     // Declaration order breaks a tie, so a schema stays readable as a table:
     // within one tier the file's order is the only ordering anybody stated.
-    .sort((a, b) => RANK[a.tier] - RANK[b.tier] || a.order - b.order)
+    // The row's own timestamps come after every other column: every model has
+    // them, so ranked as the dates they are they took a slot from the columns
+    // that tell one model's rows apart (FJS-1803).
+    .sort((a, b) => isRowStamp(a.name) - isRowStamp(b.name) || RANK[a.tier] - RANK[b.tier] || a.order - b.order)
 
   for (const name of removed)
     if (name in rules) omitted.push({ name, reason: 'excluded by the caller' })
@@ -1248,6 +1251,10 @@ export function columnList(fields, { only, except, limit = 6, identify, label } 
     omitted,
   }
 }
+
+// Litestone's own test for the two (jsonschema.js `includeTimestamps`) is the
+// name, so this one is too.
+const isRowStamp = (name) => (name === 'createdAt' || name === 'updatedAt') ? 1 : 0
 
 /**
  * Which column of a related model a picker should SHOW, and how sure it is.

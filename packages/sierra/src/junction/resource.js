@@ -2347,10 +2347,11 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * Counts, sums and groups — this service's own aggregate (`FJS-D226`).
    *
    *   const { _count } = await orders.aggregate({ where: { status: 'paid' } })
-   *   const byStatus   = await orders.aggregate({ by: ['status'], _count: true })
+   *   const { data }   = await orders.aggregate({ by: ['status'], _count: true })
    *
-   * `by` makes it a group-by and the answer is the LIST envelope's rows;
-   * without one it is a single object. Uncached, deliberately: `options()`
+   * `by` makes it a group-by and the answer is the LIST envelope, the groups
+   * under `data` — a list keeps its envelope, the one unwrap rule junction's
+   * `unwrapResult` owns. Without `by` it is a single object. Uncached, deliberately: `options()`
    * caches because a picker's list is stable, and a total is the opposite —
    * every caller of this wants the number as it is now.
    *

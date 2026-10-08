@@ -6797,7 +6797,10 @@ export function bindProp(prop, node, element) {
   // The attachment function receives the DOM node and may return a cleanup fn.
   if (prop.type === 'attach' || name === '@attach') {
     const rawExp = prop.value
-    const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors) : rawExp
+    // Setters, as for a component prop: an attachment's options very often
+    // carry a callback that writes state, and without them the target was
+    // rewritten as a READ that does not parse (FJS-1958).
+    const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawExp
     this.detectDependency(rawExp)
     return {
       bind: xNode('attach', { el: element.bindName(), exp }, (w, n) => {

@@ -268,6 +268,32 @@ describe('an assignment inside a component prop', () => {
   })
 })
 
+describe('an assignment inside {@attach}', () => {
+  // The same READ-for-a-write as a component prop, one directive along: a drag
+  // library's callback `({ items }) => { draft = items }` compiled to
+  // `$$runtime.get($$sig_draft) = items` and threw on the first drag (FJS-1958).
+
+  it('compiles to a signal write, and runs', async () => {
+    const src = `<script>
+  let draft = []
+  function zone(el, opts) { el.addEventListener('click', () => opts().onconsider({ items: [1, 2] })) }
+</script>
+<div {@attach (el) => zone(el, () => ({ onconsider: ({ items }) => { draft = items } }))}>go</div>
+<p>{draft.length}</p>`
+    const { result } = await compile(src)
+    expect(result).not.toMatch(/\$\$runtime\.get\(\$\$sig_draft\)\s*=/)
+    parseJs(result, { ecmaVersion: 'latest', sourceType: 'module' })   // throws if not
+
+    const c = mount(await build(src))
+    await Promise.resolve()          // an attachment runs on mount, a microtask on
+    expect(c.querySelector('p').textContent).toBe('0')
+    c.querySelector('div').click()
+    $rt.flushSync()
+    expect(c.querySelector('p').textContent).toBe('2')
+    c.remove()
+  })
+})
+
 describe('$.attributes', () => {
   // VISION §12 calls it "all attributes passed to this component… use for
   // forwarding". It was `$$option.props` unfiltered — the same thing as $.props —

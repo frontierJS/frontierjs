@@ -69,7 +69,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { generateSchemas, stripProse } = await import('../src/build/schema-plugin.js')
+const { generateSchemas, stripProse, READ_MODE } = await import('../src/build/schema-plugin.js')
 const { registerSchemas, applySchemaModePatch } = await import('../src/junction/schema-registry.js')
 const { createResource } = await import('../src/junction/resource.js')
 
@@ -292,7 +292,7 @@ describe('the read mode, which is what a display surface reads', () => {
     for (const app of ['example', 'packages/basecamp']) {
       const schema = parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema
       const create = stripProse(generateJsonSchema(schema)?.$defs ?? {})
-      const read   = stripProse(generateJsonSchema(schema, { mode: 'full' })?.$defs ?? {})
+      const read   = stripProse(generateJsonSchema(schema, READ_MODE)?.$defs ?? {})
       const patch  = (await import('../src/junction/schema-registry.js')).diffSchemaModes(create, read)
       for (const name of Object.keys(read))
         expect(applySchemaModePatch(create[name], patch[name])).toEqual(read[name])
@@ -331,6 +331,43 @@ describe('the read mode, which is what a display surface reads', () => {
     const signups = createResource('signups', { model: 'Signup' })
     expect(signups.formFields().map(f => f.name)).toContain('confirm')
     expect(signups.columns({ limit: 99 }).columns.map(c => c.name)).not.toContain('confirm')
+  })
+})
+
+describe('the row\'s own timestamps are read columns (FJS-1803)', () => {
+  // Litestone leaves `createdAt` and `updatedAt` out of every mode unless
+  // asked, and the build never asked: `columns({ only: ['updatedAt'] })`
+  // answered *no such field* while the server sorted by the same column.
+  const STAMPED = `
+    model Note {
+      id        Int      @id @default(autoincrement())
+      title     String
+      body      String?
+      createdAt DateTime @default(now())
+      updatedAt DateTime @default(now()) @updatedAt
+      @@gate("0.0.0.0")
+    }
+  `
+
+  test('a table can name one, and a detail view shows both', async () => {
+    await build(STAMPED)
+    const notes = createResource('notes', { model: 'Note' })
+    const named = notes.columns({ only: ['title', 'updatedAt'] })
+    expect(named.omitted.filter(o => o.name === 'updatedAt')).toEqual([])
+    expect(named.columns.map(c => c.name)).toEqual(['title', 'updatedAt'])
+    expect(named.columns[1].display).toBe('time')
+
+    const facts = notes.summary().columns.map(c => c.name)
+    expect(facts).toEqual(expect.arrayContaining(['createdAt', 'updatedAt']))
+  })
+
+  test('they are never offered to a form, and rank after every declared column', async () => {
+    await build(STAMPED)
+    const notes = createResource('notes', { model: 'Note' })
+    expect(notes.formFields().map(f => f.name)).not.toContain('createdAt')
+    expect(notes.formFields().map(f => f.name)).not.toContain('updatedAt')
+    const ranked = notes.columns({ limit: 99 }).columns.map(c => c.name)
+    expect(ranked.slice(-2)).toEqual(['createdAt', 'updatedAt'])
   })
 })
 

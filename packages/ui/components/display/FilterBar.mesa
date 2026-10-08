@@ -130,6 +130,41 @@
     write(f, { ...current(f), [key]: minor ?? undefined })
   }
 
+  // ── A day range over an INSTANT ──────────────────────────────────────────
+  //
+  // A `DateTime` column holds an instant, and the box holds a DAY. Handed
+  // across as it is, `lte: '2026-10-07'` is midnight at the START of that day
+  // in UTC, so *to the 7th* excluded the whole of the 7th, and *from the 7th*
+  // began at a UTC midnight that is the evening of the 6th west of Greenwich.
+  // So a bound is the viewer's day turned into its first and last instant, and
+  // read back the same way. A `Date` column is a day on both sides and is not
+  // converted; an `@time` column is a wall clock, not a day, and gets a time box.
+  const isInstant = (f) => f.display === 'time' && f.time?.kind === 'instant'
+  const isClock   = (f) => f.display === 'time' && !f.time?.kind && !!f.time
+  const rangeType = (f) => f.display !== 'time' ? 'number' : isClock(f) ? 'time' : 'date'
+
+  const pad = (n) => String(n).padStart(2, '0')
+
+  /** The box's day → the bound's instant: the day's first moment, or its last. */
+  function dayToInstant(day, key) {
+    const [y, m, d] = String(day ?? '').split('-').map(Number)
+    if (!y || !m || !d) return undefined
+    const at = key === 'gte' ? new Date(y, m - 1, d) : new Date(new Date(y, m - 1, d + 1).getTime() - 1)
+    return at.toISOString()
+  }
+
+  /** …and back, for showing it. A bare day (a URL typed by hand) shows as is. */
+  function instantToDay(at) {
+    if (at === undefined || at === null || at === '') return ''
+    if (!String(at).includes('T')) return String(at)
+    const d = new Date(at)
+    return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
+  const showBound  = (f, key) => isInstant(f) ? instantToDay(current(f)?.[key]) : (current(f)?.[key] ?? '')
+  const writeBound = (f, key, text) =>
+    write(f, { ...current(f), [key]: isInstant(f) ? dayToInstant(text, key) : text })
+
   /** Is anything filtered at all? Drives the clear-all affordance. */
   const active = searching !== '' || offered.some(f => current(f) !== undefined)
 
@@ -253,19 +288,25 @@
       </span>
     {:else if f.kind === 'range'}
       <span class="filter-range">
+        <!-- A date or time box draws its own format where a placeholder would
+             be, so the column's name has to be on screen beside it. Hidden
+             from a reader, which has the aria-label on each box already. -->
+        {#if rangeType(f) !== 'number'}
+          <span class="text-muted" aria-hidden="true">{f.label}</span>
+        {/if}
         <Input
-          type={f.display === 'time' ? 'date' : 'number'}
-          value={current(f)?.gte ?? ''}
+          type={rangeType(f)}
+          value={showBound(f, 'gte')}
           placeholder={f.label + ' from'}
           aria-label={f.label + ' from'}
-          oninput={(e) => write(f, { ...current(f), gte: e.target.value })}
+          oninput={(e) => writeBound(f, 'gte', e.target.value)}
         />
         <Input
-          type={f.display === 'time' ? 'date' : 'number'}
-          value={current(f)?.lte ?? ''}
+          type={rangeType(f)}
+          value={showBound(f, 'lte')}
           placeholder={f.label + ' to'}
           aria-label={f.label + ' to'}
-          oninput={(e) => write(f, { ...current(f), lte: e.target.value })}
+          oninput={(e) => writeBound(f, 'lte', e.target.value)}
         />
       </span>
     {:else}

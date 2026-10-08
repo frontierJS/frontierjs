@@ -92,6 +92,25 @@ export async function run(t) {
   t.ok(inst && inst !== '2026-01-02T03:04:05Z',
     'an instant IS localized, so it is not the string it arrived as')
 
+  // An account's day is in the account's zone, not the viewer's: the same
+  // instant read in New York is the evening BEFORE (FJS-1964).
+  t.is(await t.evaluate(`return ${text('zoned')}`),
+    await t.evaluate(`return new Date('2026-01-02T03:04:05Z').toLocaleString(undefined, { timeZone: 'America/New_York' })`),
+    'an instant is shown in the zone the caller states')
+  t.ok(await t.evaluate(`return ${text('zoned')} !== new Date('2026-01-02T03:04:05Z').toLocaleString(undefined, { timeZone: 'UTC' })`),
+    'which is not the reading in UTC — the zone was applied, whatever the host is set to')
+  t.is(await t.evaluate(`return ${text('badzone')}`), inst,
+    'and a zone nobody knows falls back to the viewer\'s rather than throwing')
+  t.is(await t.evaluate(`return getComputedStyle(document.querySelector('#wall .cell')).whiteSpace`), 'nowrap',
+    'a date never wraps at its hyphens')
+
+  /* ── a unit ───────────────────────────────────────────────────────────── */
+
+  t.is(await t.evaluate(`return ${text('hours')}`), '7.5 h',
+    'a @unit column says what the number counts')
+  t.is(await t.evaluate(`return ${text('tenths')}`), '7.5 h',
+    'and a scaled one too, after the scale')
+
   /* ── a point ──────────────────────────────────────────────────────────── */
   //
   // `@point` is a `Json` column underneath, so a cell with no `geo` branch fell

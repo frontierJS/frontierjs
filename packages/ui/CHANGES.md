@@ -1,6 +1,20 @@
 # Changes
 
 
+## 2026-10-07 — the ELA port's kit gaps
+
+Measured on the ELA port's generated screens, each with a drive or a `form.mjs` case that fails without it.
+
+- **`Combobox` labels a value once its list lands** (`FJS-1443`). `query` was labelled at mount and re-labelled only on a VALUE change, so an edit form, which has the row before `optionsFor` answers, read the raw foreign key and the key filtered the open list to nothing. A watch on the options re-labels unless the person is typing. `combobox-late-options.spec`.
+- **`Combobox` takes a numeric label** (FJS-1961). `normalize` kept a number as the label, a pick put it in `query`, and the next filter pass threw on `.trim()` and took the page down. The label is a string now.
+- **A foreign key's form label is its relation** (FJS-1962). `Field` and the four self-labelling controls said *Assignee Id* where sierra's `columnLabel` heads the column *Assignee*. `ruleLabel(name, rule)` in `utils.js` is the one answer.
+- **`MultiSelect` draws a token for a value no option names** (FJS-1963). A `String[]` opened for edit showed the clear button and no chips. `multiselect-parity.spec`.
+- **`Cell`** suffixes a `@unit` number (`7.5 h`), takes `timeZone` for an instant, and never wraps a date (FJS-1964). `cell.spec`.
+- **`Input` names a `@unit` in a `.field-addon`** (FJS-1968).
+- **`FilterBar` converts a day range over an instant** to the day's first and last local moment, so *to the 7th* includes the 7th; an `@time` column gets a time box; a date range shows its column name, which a date box cannot (FJS-1965). `filter-bar.spec`.
+- **`<Form>` clears the browser's `:user-invalid` on reset** (FJS-1967). A submit marks every control interacted-with, so after `resetOnDone` each emptied required box drew red. `form-lifecycle.spec`.
+- **`Table` takes a `footer(rows)` snippet**, rendered as its `<tfoot>` over rows only (FJS-1966). `datatable.spec`.
+
 ## 2026-10-07 — a `String[]` on a generated form takes typed items (`FJS-1822`)
 
 `FormField`'s `multiselect` row passes `type: 'number'` for an `Int[]` and the placeholder *Add…* where no set stands behind the list, and `MultiSelect` with `allowNew` says *Type a value and press Enter* where it said *No options*. `MultiSelect` asks the form for options only where its rule names a relation or a value set: a free list asked anyway, and the resource logged a warning on every form that held one. `form-list.spec` types two tags and a score into a generated form and reads the record: `["design","urgent"]` and `[3]`.

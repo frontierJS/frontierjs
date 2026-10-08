@@ -745,6 +745,28 @@
     // this form is now about something else.
     committed = false
     clearErrors()
+    _clearUserValidity()
+  }
+
+  // A submit marks every control under the form as interacted-with, and
+  // `:user-invalid` — what @frontierjs/css draws a field red by — then matches
+  // each required box the reset just emptied: the kit's messages were gone and
+  // the browser's were not, over a form that had just saved (FJS-1967). Only
+  // the form's own reset algorithm clears that flag, and it also puts every
+  // value back to its MARKUP default, which is not this form's pristine
+  // record. So the values are taken first and put back after; the record
+  // written above reaches the DOM on the next flush, as it always did.
+  function _clearUserValidity() {
+    if (typeof formEl?.reset !== 'function') return
+    const held = [...formEl.elements].map((el) => [el, el.value, el.checked,
+      el.type === 'select-multiple' ? [...el.options].map((o) => o.selected) : null])
+    formEl.reset()
+    for (const [el, value, checked, picked] of held) {
+      if (el.type === 'file') continue
+      if (picked) [...el.options].forEach((o, i) => { o.selected = picked[i] })
+      else if (el.type === 'checkbox' || el.type === 'radio') el.checked = checked
+      else el.value = value
+    }
   }
 
   /**

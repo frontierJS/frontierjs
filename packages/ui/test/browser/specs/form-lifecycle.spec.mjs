@@ -197,6 +197,16 @@ export async function run(t) {
   await t.evaluate(`document.querySelector('#reset-on-done form').requestSubmit(); return true;`)
   await t.eventually(`document.querySelector('#reset-on-done [name=reference]').value`, '',
     'resetOnDone clears the form after a successful save')
+  // The kit's own messages were cleared; the browser's were not. A field a
+  // person typed in keeps its `:user-invalid` across a value written by script,
+  // so the emptied required box drew red over a form that had just saved
+  // (FJS-1967).
+  await t.eventually(`document.querySelector('#reset-on-done [name=reference]').matches(':user-invalid')`, 'false',
+    'and the emptied required field is not drawn invalid')
+  t.is(await t.evaluate(`return document.querySelector('#reset-on-done [name=total]').value;`), '0',
+    'while a field whose pristine value is not empty goes back to it, not to blank')
+  t.is(await t.evaluate(`return document.querySelector('#reset-on-done [name=status]').value;`), 'draft',
+    'and a select keeps its pristine choice')
 
   // A disabled form refuses to submit at all — the guard is in submit(), not
   // only on the buttons, so a keyboard Enter cannot slip past it.

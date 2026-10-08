@@ -55,8 +55,8 @@ if (!await must($, probe.fileContains({
 
 if (!await must($, probe.fileContains({
   path:   file,
-  needle: /<Form\s+resource=\{notes\}/,
-  name:   'the form is <Form resource={notes}> and names no field',
+  needle: /<Form\s+\{resource\}/,
+  name:   'the form is <Form {resource}> and names no field',
 }), {
   likely: 'a form that lists its own fields is a form that stops matching the schema',
 })) return

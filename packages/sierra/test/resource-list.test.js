@@ -205,6 +205,29 @@ describe("state: 'url' — the address bar is the list", () => {
     expect(last().get('$orderBy')).toBe('number')
   })
 
+  // `<FilterBar>` and `sort` hand back the WHOLE bag, the start included, so a
+  // view's `populate` came back out as `?$populate=…` and a reload of that
+  // address carried it past the screen that set it (FJS-1957).
+  test('a starting directive stays off the address unless it was changed', async () => {
+    await boot('/invoices/')
+    const list = track(invoicesResource().list({ directives: { populate: ['customer'] } }))
+    await settle()
+    expect(last().get('$populate')).toBe('customer')
+
+    await list.sort('number')
+    await settle()
+    expect(path).toContain('$orderBy=number')
+    expect(path).not.toContain('populate')
+    expect(last().get('$populate')).toBe('customer')
+    expect(list.directives).toEqual({ orderBy: 'number', populate: ['customer'] })
+
+    // Sorted back to the declared order: the default is implicit again.
+    await list.apply(list.query, { ...list.directives, orderBy: '-issuedAt' })
+    await settle()
+    expect(path).not.toContain('$orderBy')
+    expect(last().get('$orderBy')).toBe('-issuedAt')
+  })
+
   test('a navigation AWAY does not re-ask with the next route\'s filters', async () => {
     await boot('/invoices/')
     track(invoicesResource().list())

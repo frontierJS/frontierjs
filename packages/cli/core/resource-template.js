@@ -53,6 +53,12 @@ export const ${service} = createResource('${service}', {
   //   detailQuery:  { directives: { populate: ['customer'] } },   // get(id)
   //   optionsQuery: { directives: { orderBy: 'name', limit: 500 } },  // a picker
 })
+
+// The form below reads the resource under this name. The instance half
+// declares props of its own, and one sharing the service's name shadows it
+// there: \`Action\` is \`actions\`, the button-row prop, so <Form> was handed
+// the snippet as its resource and drew no field (FJS-1959).
+const resource = ${service}
 </script>
 
 <script>
@@ -85,7 +91,7 @@ export const ${service} = createResource('${service}', {
   // $attributes onto <Form>, which is where those props are declared.
 </script>
 
-<Form resource={${service}} bind:record={record} {method} {actions} {...$attributes}>
+<Form {resource} bind:record={record} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

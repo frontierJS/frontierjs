@@ -161,6 +161,61 @@ await check(
   },
 )
 
+// A foreign key with no `@label` is named for its RELATION, as sierra's
+// `columnLabel` names its table header: the form read *Assignee Id* over a
+// column whose header said *Assignee* (FJS-1962).
+const TASK = {
+  context: { model: 'Task', service: 'tasks', idField: 'id' },
+  fields: {
+    assigneeId: { type: 'string', required: false,
+                  references: { model: 'User', field: 'id', relation: 'assignee' } },
+    ownerId:    { type: 'string', required: false, title: 'Responsible',
+                  references: { model: 'User', field: 'id', relation: 'owner' } },
+  },
+  make: () => ({}),
+  fieldErrors: () => ({ fields: {}, message: '' }),
+  service: {},
+}
+
+await check(
+  'a foreign key is labelled by its relation, and @label still wins',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import Combobox from '../forms/Combobox.mesa'
+     export let resource
+   </script>
+   <Form {resource}>
+     <Combobox name="assigneeId" />
+     <Combobox name="ownerId" />
+   </Form>`,
+  { resource: TASK },
+  {
+    'the relation names the field':         has(/>\s*Assignee\s*</),
+    'not the column':                       hasNot(/Assignee Id/),
+    'an @label is taken verbatim':          has(/>\s*Responsible\s*</),
+  },
+)
+
+// `@unit` is what the number counts; the box said `7.5` and not of what
+// (FJS-1968).
+await check(
+  'a @unit column names its unit beside the box',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import Input from '../forms/Input.mesa'
+     export let resource
+   </script>
+   <Form {resource}><Input name="hours" /><Input name="count" /></Form>`,
+  { resource: { ...RESOURCE, fields: {
+      hours: { type: 'number', required: false, 'x-unit': { symbol: 'h', dimension: 'time' } },
+      count: { type: 'number', required: false },
+    } } },
+  {
+    'the symbol is in an addon':          has(/class="field-addon fjs-input-unit[^"]*"[^>]*>\s*h\s*</),
+    'and only on the column that has one': (html) => (html.match(/fjs-input-unit/g) ?? []).length === 1,
+  },
+)
+
 await check(
   'a string column carries its @length as maxlength',
   `<script>

@@ -248,7 +248,7 @@ export function createList(resource, listQuery, opts = {}) {
       setLocalD(directives)
       return
     }
-    return goto(page.pathname, query, { directives, replace })
+    return goto(page.pathname, query, { directives: changedFrom(startDirectives, directives), replace })
   }
 
   /**
@@ -314,6 +314,20 @@ export function createList(resource, listQuery, opts = {}) {
     reload: () => untrack(run),
     destroy,
   }
+}
+
+// What the address carries is what was CHANGED from the start. `<FilterBar>`
+// and `sort` hand back the whole bag, the start included, so the view's own
+// `populate` or `onlyDeleted` came out as `?$populate=…` and a reload of that
+// address carried it on (FJS-1957). Left off, `currentDirectives()` lays the
+// start back underneath, so a value returned to its default drops out too.
+function changedFrom(start, directives) {
+  const out = {}
+  for (const [k, v] of Object.entries(directives ?? {})) {
+    if (k in start && JSON.stringify(start[k]) === JSON.stringify(v)) continue
+    out[k] = v
+  }
+  return out
 }
 
 function omit(o, key) {

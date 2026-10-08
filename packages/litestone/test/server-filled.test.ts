@@ -23,6 +23,10 @@ const CASES: [string, string, string][] = [
   ['`@sequence(scope:)`',       `model M { id Int @id  teamId Int  number Int @sequence(scope: teamId)  x String }`, 'number'],
   ['`@updatedAt` on any name',  `model M { id Int @id  touched DateTime @updatedAt  x String }`,                     'touched'],
   ['a literal `@default`',      `model M { id Int @id  qty Int @default(1)  x String }`,                             'qty'],
+  // DDL gives every array column DEFAULT '[]', and the client's pre-flight
+  // always skipped arrays — the schema did not, so a browser create that left
+  // `tags` out was refused "tags is required" (FJS-1956).
+  ['an array column, no attribute', `model M { id Int @id  tags String[]  x String }`,                              'tags'],
 ]
 
 describe('a column the Data boundary fills is not required of the caller', () => {

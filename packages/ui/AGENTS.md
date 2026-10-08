@@ -222,6 +222,9 @@ do the same for `<Cell>` and `<FilterBar>` — see `node_modules/@frontierjs/ui/
 
 A column is `{ name, label, sortable?, align?, width?, hideLabel? }`. `orderBy`
 is the `$orderBy` directive; `onsort(next)` reports a sort, `bind:orderBy` owns it.
+A `footer(rows)` snippet is the table's `<tfoot>` — its own `<tr>`s, for a
+totals line. `<Cell timeZone="America/Chicago">` shows an instant in that zone
+rather than the viewer's; a `@unit` column reads `7.5 h` on its own.
 
 ## Attributes, `class` and snippets
 

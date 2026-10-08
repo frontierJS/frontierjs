@@ -73,5 +73,10 @@ const SERVER_FILLED = new Set([
  * answer is *not required*, never *not writable*.
  */
 export function isServerFilled(field) {
+  // An array column is filled with no attribute at all: ddl.js gives it
+  // DEFAULT '[]', the empty list being its null state. The client's pre-flight
+  // skipped arrays and the schema did not, so a browser create that omitted
+  // `tags` was refused by name (FJS-1956).
+  if (field.type?.array && field.type.kind !== 'relation' && field.type.kind !== 'implicitM2M') return true
   return (field.attributes ?? []).some(a => SERVER_FILLED.has(a.kind))
 }

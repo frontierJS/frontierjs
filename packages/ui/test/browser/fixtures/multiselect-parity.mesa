@@ -36,5 +36,14 @@
   />
 </div>
 
+<!--
+  A scalar list with nothing to choose from — a `String[]` column a person
+  types into, which is what a generated form draws for one. Its stored values
+  are in no option list, and a token drew only for a value it found there.
+-->
+<div id="typed">
+  <MultiSelect name="tags" value={['Estimate', 'Repeat']} multiple allowNew />
+</div>
+
 <output id="events-log">{events.join(' ')}</output>
 <output id="many-count">{many.length}</output>

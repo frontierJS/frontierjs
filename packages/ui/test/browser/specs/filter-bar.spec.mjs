@@ -118,6 +118,42 @@ export async function run(t) {
   await t.eventually(held(`q.rate?.gte ?? null`), '5',
     'a plain number range still writes through the Input as it is typed')
 
+  /* ── a day range over an instant ──────────────────────────────────────── */
+  //
+  // The box holds a day and the column an instant. Written through bare, *to
+  // the 7th* was midnight at the START of the 7th and excluded all of it. The
+  // spec's page runs in whatever zone the host is in, so the expected bounds
+  // are built in the page the same way: the day's first and last local moment.
+  const setDate = (ph, v) => t.evaluate(`
+    const el = document.querySelector('${BAR} input[aria-label="${ph}"]');
+    el.value = '${v}';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  `)
+  await setDate('Seen from', '2026-10-07')
+  await t.eventually(held(`q.seenAt?.gte ?? null`),
+    await t.evaluate(`return new Date(2026, 9, 7).toISOString()`),
+    'a day\'s lower bound over an instant is that day\'s first local moment')
+  await setDate('Seen to', '2026-10-07')
+  await t.eventually(held(`q.seenAt?.lte ?? null`),
+    await t.evaluate(`return new Date(new Date(2026, 9, 8).getTime() - 1).toISOString()`),
+    'and its upper bound is the day\'s LAST moment, so the day is included')
+  await t.eventually(`document.querySelector('${BAR} input[aria-label="Seen to"]').value`, '2026-10-07',
+    'and the box shows the day back, not the instant')
+
+  await setDate('Due to', '2026-10-07')
+  await t.eventually(held(`q.dueOn?.lte ?? null`), '2026-10-07',
+    'a Date column is a day on both sides and goes across as it is')
+
+  t.is(await t.evaluate(`return document.querySelector('${BAR} input[aria-label="Opens from"]').type`), 'time',
+    'an @time column is a wall clock and gets a time box, not a date')
+
+  // A date box draws mm/dd/yyyy where the placeholder would be, so the name
+  // has to be on screen some other way.
+  t.is(await t.evaluate(`
+    return document.querySelector('${BAR} input[aria-label="Seen from"]').closest('.filter-range')?.textContent.trim();
+  `), 'Seen', 'a date range shows its column name, which its boxes cannot')
+
   // A `<select>` cannot be typed into, so this one is set and told to report —
   // the value has to move through the element's own change path or the adapter
   // is not what is under test.

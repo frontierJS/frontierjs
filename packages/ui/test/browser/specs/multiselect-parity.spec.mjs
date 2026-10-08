@@ -22,6 +22,14 @@ const summary  = `document.querySelector('#collapse .fjs-multiselect-summary')`
 export async function run(t) {
   await t.mount('multiselect-parity')
 
+  /* ── a value no option names ──────────────────────────────────────────── */
+
+  // A `String[]` column opened for edit: the clear button drew, so the control
+  // knew it held two values, and no token said which (FJS-1963).
+  t.is(await t.evaluate(`
+    return [...document.querySelectorAll('#typed .pill')].map(p => p.textContent.trim()).join(',');
+  `), 'Estimate,Repeat', 'a stored value with no option behind it still draws its token')
+
   /* ── collapse ─────────────────────────────────────────────────────────── */
 
   // Five selected, collapseAfter={4}: one chip standing for all of them, and

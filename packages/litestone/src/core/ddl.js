@@ -702,7 +702,10 @@ function createFts(model, tableName) {
   // the FTS table's own column names, so a field name under @map failed every
   // read and every rebuild with `no such column: T.<field>` (FJS-1467).
   // search() addresses the index by position and rowid, never by name.
-  const contentCols   = fts.fields.map(f => mapCol(cmap, f)).join(', ')
+  // QUOTED, like every other identifier this file emits: a column named for a
+  // keyword — a message's `from` and `to` — was a syntax error in the trigger
+  // bodies, and the whole migration failed on it (FJS-1952).
+  const contentCols   = fts.fields.map(f => `"${mapCol(cmap, f)}"`).join(', ')
   // Keyed on the source row's real rowid, never on `id`: an FTS5 rowid is an
   // integer, so a String id (uuid/ulid, which @@sync needs) failed every INSERT
   // with `datatype mismatch`. Holds because litestone emits no WITHOUT ROWID table.
@@ -714,8 +717,8 @@ function createFts(model, tableName) {
   const tokenize = fts.tokenize && fts.tokenize !== 'unicode61'
     ? `,\n  tokenize='${fts.tokenize}'`
     : ''
-  const oldVals = fts.fields.map(f => `old.${mapCol(cmap, f)}`).join(', ')
-  const newVals = fts.fields.map(f => `new.${mapCol(cmap, f)}`).join(', ')
+  const oldVals = fts.fields.map(f => `old."${mapCol(cmap, f)}"`).join(', ')
+  const newVals = fts.fields.map(f => `new."${mapCol(cmap, f)}"`).join(', ')
 
   // The index mirrors the table row for row, soft-deleted rows included, and
   // the ONE reader — search() — excludes them in its own WHERE, which is also

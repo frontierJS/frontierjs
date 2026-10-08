@@ -43,7 +43,7 @@
   // how a form and its .lite file drift apart. An explicit prop always wins.
 
   import Label from './Label.mesa'
-  import { humanize, resolveError, resolveRule, stated, withheldBy } from '../../utils.js'
+  import { ruleLabel, resolveError, resolveRule, stated, withheldBy } from '../../utils.js'
 
   export let id       = ''
   export let name     = ''
@@ -67,9 +67,9 @@
 
   // Schema facts, used only where the caller stated nothing. `@label("…")`
   // reaches the browser as the rule's `title`; failing that the column name
-  // is title-cased, which is what this component always did.
+  // is title-cased — a foreign key's by its relation, as its table header is.
   const rule = resolveRule(form, name)
-  const resolvedLabel    = stated(label, rule?.title, humanize(name))
+  const resolvedLabel    = stated(label, ruleLabel(name, rule))
   const resolvedRequired = stated(required, rule?.required)
 
   // A field `@allow('read', …)` the server refused arrives as a MISSING key, so

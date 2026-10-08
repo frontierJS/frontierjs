@@ -463,26 +463,29 @@
         >{selectedValues.size} selected</button>
       {/if}
 
-      <!-- Selected tokens -->
+      <!--
+        Selected tokens. A value no option names still draws, as itself: a
+        `String[]` a person types into has no list at all, so its stored values
+        drew nothing on edit while the clear button said they were there; and
+        a relation's rows arrive after the value does.
+      -->
       {#each collapsed ? [] : [...selectedValues] as val (val)}
-        {@const opt = optionsMap[val]}
-        {#if opt}
-          <span class="pill {!readonly && !resolvedDisabled ? 'removable' : ''}">
-            {opt.textContent}
-            {#if !readonly && !disabled}
-              <button
-                type="button"
-                class="pill-close"
-                aria-label="Remove {opt.textContent}"
-                on:click|stopPropagation={() => remove(val)}
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
-                </svg>
-              </button>
-            {/if}
-          </span>
-        {/if}
+        {@const opt = optionsMap[val] ?? { value: val, textContent: String(val) }}
+        <span class="pill {!readonly && !resolvedDisabled ? 'removable' : ''}">
+          {opt.textContent}
+          {#if !readonly && !disabled}
+            <button
+              type="button"
+              class="pill-close"
+              aria-label="Remove {opt.textContent}"
+              on:click|stopPropagation={() => remove(val)}
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22z"/>
+              </svg>
+            </button>
+          {/if}
+        </span>
       {/each}
 
       <!-- Search input — bare, because the .field box around it is the control -->
