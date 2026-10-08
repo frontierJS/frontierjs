@@ -1,5 +1,9 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-08 — the readiness adapter option is `registerReadiness` (`FJS-D661`)
+
+`createConduit({ registerHealth })` is `registerReadiness`, matching junction's `app.registerReadiness`, which the plugin passes it.
+
 ## 2026-10-08 — `parseTraceparent` is toolbelt's, and the outbound id is the trace id (`FJS-D660`)
 
 `parseTraceparent` moved to `@frontierjs/toolbelt/trace` unchanged and is re-exported from here, because junction now reads the same header to set its correlation id, and two parsers would disagree about which headers are well formed. Under junction, the outbound `X-Request-Id` is the inbound trace id when the caller sent a `traceparent`, where it used to be the caller's own `X-Request-Id`. `junction-integration.test.ts` has 1 case rewritten to match and 1 added for a `traceparent` sent with no `X-Request-Id`. 362 pass, typecheck clean.

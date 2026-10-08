@@ -1707,6 +1707,48 @@ describe('skill-pointer', () => {
 })
 
 
+describe('threat-row', () => {
+
+  // A renamed suite leaves a THREATS.md row reading as proved. Each failure
+  // below is paired with the clean row beside it, so a rule that stopped
+  // reading the table would fail the first test rather than pass them all.
+
+  const table = (...rows) => ({
+    'THREATS.md': '| # | Adversary | Proved by | Open |\n| --- | --- | --- | --- |\n' +
+                  rows.map(r => `| ${r} |`).join('\n') + '\n',
+    'pkg/test/a.test.js': '',
+    'pkg/src/a.js':       '',
+  })
+
+  test('a row whose test is in the tree is clean', () => {
+    const root = tree('threat-ok', table('B1 | anon | `pkg/test/a.test.js` § x | —'))
+    const res  = only(root, 'threat-row', { scope: 'repo' })
+    expect(res.ran).toEqual(['threat-row'])
+    expect(res.findings).toEqual([])
+  })
+
+  test('a row naming no test, a missing path or a source file is an error each', () => {
+    const root = tree('threat-bad', table(
+      'B1 | anon | `pkg/test/a.test.js` | —',
+      'B2 | tenant | none yet | —',
+      'B3 | names | `pkg/test/gone.test.js` | —',
+      'B4 | csrf | `pkg/test/a.test.js`, `pkg/src/a.js` | —',
+    ))
+    const { findings } = only(root, 'threat-row', { scope: 'repo' })
+    expect(findings.every(f => f.severity === 'error')).toBe(true)
+    expect(findings.map(f => f.message.match(/^row (\S+)/)[1])).toEqual(['B2', 'B3', 'B4'])
+    expect(findings[1].message).toMatch(/`pkg\/test\/gone\.test\.js`, which is not in the tree/)
+    expect(findings[2].message).toMatch(/which is not a test/)
+  })
+
+  test('a tree with no THREATS.md skips rather than passes', () => {
+    const root = tree('threat-none', { 'README.md': '' })
+    expect(only(root, 'threat-row', { scope: 'repo' }).skipped.map(s => s.id ?? s)).toHaveLength(1)
+  })
+
+})
+
+
 describe('dev-host-unique', () => {
 
   // A dev name is derived from the package name and the surface, so two

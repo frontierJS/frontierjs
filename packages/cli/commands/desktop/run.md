@@ -22,7 +22,7 @@ flags:
 ---
 
 <script>
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { join, relative, resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { spawn } from 'child_process'
@@ -43,10 +43,8 @@ naming the reused origin is the one place that is said; a window showing the
 wrong data with that line above it is a stale server, and `fli ps` names it.
 
 ```js
-const { desktopBinary, desktopApiTarget } =
+const { desktopBinary, desktopApiTarget, ensureServer, stopServer, surfaceRow } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
-const { appPorts }      = await import(resolve(global.fliRoot, 'core/ports.js'))
-const { portAnswering } = await import(resolve(global.fliRoot, 'core/probe.js'))
 const { detectRunner }  = await import(resolve(global.fliRoot, 'core/db-preflight.js'))
 
 const root       = $.paths.root
@@ -75,48 +73,26 @@ const api    = desktopApiTarget(config.api)
 const runner = detectRunner(root)
 
 let started = null
-function stopApi() {
-  if (!started) return
-  try { process.kill(-started.pid, 'SIGTERM') } catch { /* already gone */ }
-  started = null
-}
+const stopApi = () => { stopServer(started); started = null }
+process.on('exit', stopApi)
+
 if (!api) {
   log.info('API: none — desktop.config.js says api: null')
 } else if (!api.local || !flag.api) {
   log.info(`API: ${api.origin}`)
-} else if ((await portAnswering({ port: api.port })).ok) {
-  log.info(`API: ${api.origin} already answers — using it`)
 } else {
-  let manifest = {}
-  try { manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) } catch { /* no manifest, no script */ }
-  const script = appPorts(root, { name: manifest.name, scripts: manifest.scripts ?? {} })
-    .find(r => r.surface === 'api')?.script
-
-  if (!script) {
-    log.error(`Nothing answers at ${api.origin}, and package.json declares no api script to start.`)
+  try {
+    // A scaffolded API reads FLI_PORT_BE and an older one PORT; the port is
+    // the one the bundle was built to call, so both are set.
+    started = await ensureServer({
+      root, runner, script: surfaceRow(root, 'api')?.script, port: api.port,
+      label: 'API', log, dry: flag.dry,
+      env: { FLI_PORT_BE: String(api.port), PORT: String(api.port) },
+    })
+  } catch (err) {
+    log.error(err.message)
     log.error('Start the API yourself, or run with --no-api to open the window without one.')
     process.exit(1)
-  }
-
-  if (flag.dry) {
-    log.dry(`${runner} run ${script}   # on port ${api.port}`)
-  } else {
-    log.info(`API: nothing at ${api.origin} — starting ${runner} run ${script}`)
-    // Its own process group, stopped as one: `bun run api` is a launcher, and
-    // signaling its pid alone leaves the server it started holding the port.
-    started = spawn(runner, ['run', script], {
-      cwd: root, stdio: 'inherit', detached: true,
-      // A scaffolded API reads FLI_PORT_BE and an older one PORT; the port is
-      // the one the bundle was built to call, so both are set.
-      env: { ...process.env, FLI_PORT_BE: String(api.port), PORT: String(api.port) },
-    })
-    process.on('exit', stopApi)
-
-    const ready = await portAnswering({ port: api.port, retries: 60, everyMs: 500 })
-    if (!ready.ok) {
-      log.error(`The API did not answer at ${api.origin} within 30s.`)
-      process.exit(1)
-    }
   }
 }
 

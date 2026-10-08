@@ -10,9 +10,15 @@
 // A debug build injects a probe when FJS_DESKTOP_PROBE names a script.
 // WebKitGTK and WKWebView speak no CDP, so a drive cannot reach into the page
 // the way a browser drive does; the probe runs inside it and reports through
-// the two commands below. A release build neither reads the variable nor
-// registers the commands, so a shipped app cannot be scripted from its
-// environment.
+// the two commands below.
+//
+// A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
+// fli desktop:dev points it at the screens' dev server. That page's origin is
+// the server's, not tauri://localhost, so an origin or CORS fault shows only
+// in the bundled build.
+//
+// A release build reads neither variable and registers no command, so a
+// shipped app cannot be scripted or repointed from its environment.
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -39,8 +45,23 @@ fn probe_script() -> Option<String> {
     }
 }
 
+fn dev_url() -> Option<tauri::Url> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let raw = std::env::var("FJS_DESKTOP_URL").ok()?;
+    match raw.parse() {
+        Ok(url) => Some(url),
+        Err(e) => panic!("FJS_DESKTOP_URL={raw} is not a URL: {e}"),
+    }
+}
+
 fn main() {
     let probe = probe_script();
+    let page = match dev_url() {
+        Some(url) => WebviewUrl::External(url),
+        None => WebviewUrl::App("index.html".into()),
+    };
 
     let builder = tauri::Builder::default();
     #[cfg(debug_assertions)]
@@ -52,7 +73,7 @@ fn main() {
 
     builder
         .setup(move |app| {
-            let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let mut window = WebviewWindowBuilder::new(app, "main", page)
                 .title("Basecamp")
                 .inner_size(1280.0, 900.0);
             if let Some(script) = &probe {

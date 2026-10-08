@@ -22,6 +22,7 @@
     "./ai": "./src/ai/index.ts",
     "./testing": "./src/testing/index.ts",
     "./openapi": "./src/plugins/openapi/index.ts",
+    "./otlp": "./src/plugins/otlp/index.ts",
     "./webhooks": "./src/plugins/webhooks/index.ts",
     "./public-url": "./src/core/public-url.ts",
     "./manifest": "./src/plugins/manifest/index.ts",
@@ -69,7 +70,8 @@
     "test:example": "bun test ./example/test.ts",
     "test:all": "bun test test/ ./example/test.ts",
     "test:browser": "node test/browser/verify-devtools.mjs",
-    "repl": "bun run tools/repl.ts"
+    "repl": "bun run tools/repl.ts",
+    "verify:otlp": "bun test/verify-otlp.mjs"
   },
   "peerDependencies": {
     "@frontierjs/litestone": "^1.1.0"

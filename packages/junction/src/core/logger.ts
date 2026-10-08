@@ -43,6 +43,16 @@ export interface ILogger {
    * derived from it keeps the old one.
    */
   setLevel: (level: LogLevel) => void
+  /**
+   * Attach a writer to this logger AND every child of it, now and later;
+   * the answer detaches it.
+   *
+   * A plugin registers after the logger exists, and the writers were fixed at
+   * construction — so an exporter had no way onto the log at all. The list is
+   * shared by reference down the tree for the same reason the level cell is.
+   * Optional because an app may hand junction a logger of its own.
+   */
+  addWriter?: (writer: LogWriter) => () => void
 }
 
 export type LogWriter = (entry: LogEntry) => void
@@ -141,11 +151,14 @@ export function createLogger(opts: LoggerOptions = {}): ILogger {
   const {
     level:   minLevel  = (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
     format   = (process.env.NODE_ENV === 'production' ? 'json' : 'pretty'),
-    writers  = [consoleWriter(format)],
+    writers: given = [consoleWriter(format)],
     ns,
     defaults = {},
     levelRef,
   } = opts
+  // A root copies what it was handed, so addWriter never mutates the caller's
+  // array; a child is handed its parent's list and shares it.
+  const writers = levelRef ? given : [...given]
 
   // Shared by reference with every child, so `setLevel` on any logger in the
   // tree moves all of them. A root makes the cell; a child is handed it.
@@ -197,6 +210,14 @@ export function createLogger(opts: LoggerOptions = {}): ILogger {
     },
 
     get level() { return levelCell.current },
+
+    addWriter(writer: LogWriter) {
+      writers.push(writer)
+      return () => {
+        const at = writers.indexOf(writer)
+        if (at !== -1) writers.splice(at, 1)
+      }
+    },
 
     setLevel(next: LogLevel) {
       if (!(next in LEVEL_ORDER))

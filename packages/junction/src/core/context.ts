@@ -288,6 +288,9 @@ export interface ServiceContext {
 
   // instrumentation — set by callService, undefined for bypass (_find etc.)
   telemetryId?: string
+  // the telemetryId of the call this one was made from. Read before the call's
+  // own scope is entered: inside it, currentCall() is this call.
+  parentTelemetryId?: string
 
   // cleanup callbacks — called in callService finally block after pipeline
   // completes. Used by litestone $tapQuery teardown and any other

@@ -31,12 +31,22 @@
  * through; a release build does neither. WebKitGTK and WKWebView speak no CDP,
  * so that probe is the only way a drive reaches into the page, and every
  * generated app has it for the day it writes one.
+ *
+ * `FJS_DESKTOP_URL` is the other debug-only input: the window loads that URL
+ * instead of the bundle, which is how `desktop:dev` puts the screens' dev
+ * server, HMR included, in the native window. It is an environment variable and
+ * not tauri.conf.json's `devUrl`, because a `devUrl` makes every debug build —
+ * `desktop:run`'s and `verify:desktop`'s included — load the server rather than
+ * the page a release ships.
  */
 
+import { spawn }                                from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname, basename }           from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
+import { portAnswering }                        from './probe.js'
+import { appPorts }                             from './ports.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -336,8 +346,8 @@ export function desktopBuildRs() {
 }
 
 export function desktopTauriConf({ productName = 'app', identifier = 'dev.app.desktop' } = {}) {
-  // No devUrl: with one set, a debug build loads the dev server instead of the
-  // bundle, and the page stops being the thing a release ships.
+  // No devUrl: with one set, every debug build loads the dev server instead of
+  // the bundle. desktop:dev names the server through FJS_DESKTOP_URL instead.
   return `${JSON.stringify({
     productName,
     version:    '0.0.0',
@@ -362,9 +372,15 @@ export function desktopMainRs({ productName = 'app' } = {}) {
 // A debug build injects a probe when FJS_DESKTOP_PROBE names a script.
 // WebKitGTK and WKWebView speak no CDP, so a drive cannot reach into the page
 // the way a browser drive does; the probe runs inside it and reports through
-// the two commands below. A release build neither reads the variable nor
-// registers the commands, so a shipped app cannot be scripted from its
-// environment.
+// the two commands below.
+//
+// A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
+// fli desktop:dev points it at the screens' dev server. That page's origin is
+// the server's, not tauri://localhost, so an origin or CORS fault shows only
+// in the bundled build.
+//
+// A release build reads neither variable and registers no command, so a
+// shipped app cannot be scripted or repointed from its environment.
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -391,8 +407,23 @@ fn probe_script() -> Option<String> {
     }
 }
 
+fn dev_url() -> Option<tauri::Url> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let raw = std::env::var("FJS_DESKTOP_URL").ok()?;
+    match raw.parse() {
+        Ok(url) => Some(url),
+        Err(e) => panic!("FJS_DESKTOP_URL={raw} is not a URL: {e}"),
+    }
+}
+
 fn main() {
     let probe = probe_script();
+    let page = match dev_url() {
+        Some(url) => WebviewUrl::External(url),
+        None => WebviewUrl::App("index.html".into()),
+    };
 
     let builder = tauri::Builder::default();
     #[cfg(debug_assertions)]
@@ -404,7 +435,7 @@ fn main() {
 
     builder
         .setup(move |app| {
-            let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let mut window = WebviewWindowBuilder::new(app, "main", page)
                 .title(${JSON.stringify(productName)})
                 .inner_size(1280.0, 900.0);
             if let Some(script) = &probe {
@@ -515,6 +546,57 @@ export function desktopApiTarget(api) {
     port:   Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
     local:  ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname),
   }
+}
+
+// ─── the servers a window needs ───────────────────────────────────────────────
+
+/**
+ * Use what answers on `port`, or start the app's `script` there and wait for
+ * it. Returns the process it started, or `null` when it reused one — a port
+ * that answers is not proof it is this app's server (`FJS-740`), so the line
+ * naming the reuse is printed every time.
+ *
+ * Its own process group, stopped as one by `stopServer`: `bun run api` is a
+ * launcher, and signaling its pid alone leaves the server holding the port.
+ */
+export async function ensureServer({ root, runner, script, port, env = {}, label, log, dry = false }) {
+  const origin = `http://localhost:${port}`
+  if ((await portAnswering({ port })).ok) {
+    log.info(`${label}: ${origin} already answers — using it`)
+    return null
+  }
+  if (!script) throw new Error(`Nothing answers at ${origin}, and package.json declares no script that starts the ${label}.`)
+  if (dry) {
+    log.dry(`${runner} run ${script}   # ${label}, on port ${port}`)
+    return null
+  }
+  log.info(`${label}: nothing at ${origin} — starting ${runner} run ${script}`)
+  const child = spawn(runner, ['run', script], {
+    cwd: root, stdio: 'inherit', detached: true,
+    env: { ...process.env, ...env },
+  })
+  const ready = await portAnswering({ port, retries: 60, everyMs: 500 })
+  if (!ready.ok) {
+    stopServer(child)
+    throw new Error(`${label} did not answer at ${origin} within 30s.`)
+  }
+  return child
+}
+
+/**
+ * The `appPorts` row for one of the app's surfaces — its port and the script
+ * that starts it, read off the app's own package.json — or `null`.
+ */
+export function surfaceRow(root, surface) {
+  let manifest = {}
+  try { manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) } catch { /* no manifest, no script */ }
+  return appPorts(root, { name: manifest.name, scripts: manifest.scripts ?? {} })
+    .find(r => r.surface === surface) ?? null
+}
+
+export function stopServer(child) {
+  if (!child) return
+  try { process.kill(-child.pid, 'SIGTERM') } catch { /* already gone */ }
 }
 
 // ─── the launcher entry ───────────────────────────────────────────────────────

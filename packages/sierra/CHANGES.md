@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — a resource's reconnect hook is `onReconnected` (`FJS-D661`)
+
+Junction's client renamed `resync` to `reconnected`; the resource adapter's `onResync` is `onReconnected`, and the list's jitter constant is `RECONNECT_JITTER_MS`.
+
 ## 2026-10-08 — `AGENTS.md` says a page never fills a required `@system` column (`FJS-1825`)
 
 § Writes and forms gains one paragraph: the form leaves the column out, the Data boundary refuses a payload naming it, and the create needs a `before.create` hook calling `ctx.system.add('col')`, or a `@default`. Nothing in the guides said so, and a base44 build stopped at the root model's create. No code changes.

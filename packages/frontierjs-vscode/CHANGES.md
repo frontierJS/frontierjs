@@ -1,5 +1,9 @@
 # Changes — frontierjs-vscode
 
+## 2026-10-08 — `@trail` / `@@trail` / `driver trail` (`FJS-D661`)
+
+The grammar, snippets, completions (database names inside `@@trail(`) and the driver list follow litestone's rename of the trail family.
+
 ## 2026-10-05 — esbuild 0.28, typescript ^5.9.3, @types/node ^18
 
 `esbuild` `^0.20.0` → `^0.28.2`. Below 1.0 a caret pins the minor, so the old range was stuck at 0.20. `typescript` `^5.3.0` → `^5.9.3`, the same range as the workspace root. `@types/node` `^20.0.0` → `^18.19.0`, because `engines.vscode ^1.85.0` runs on Node 18 and `scripts/bundle.js` targets `node18`. Typed against 20, the extension could call an API that throws in the oldest VS Code it claims to support. The build, bundle, tests (127), typecheck and `verify:package` all pass.

@@ -167,4 +167,5 @@ must not use *sync* for replication, announce or outbox delivery.
   a second host is detectable, or only document it? Detection is the hard part;
   *recommend* document now, refuse when `outpost` knows the fleet shape.
 - **`resync`** — rename to say what it means (*reload*), given the sweep above?
-  That is a rename with every caller moved, if taken.
+  That is a rename with every caller moved, if taken. — **ruled `FJS-D661`: `reconnected`**,
+  named for what happened, beside `connect`/`disconnect`/`reconnecting`.

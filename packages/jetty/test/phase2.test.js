@@ -579,6 +579,23 @@ group('defineHarbor boot')
       else bad('boot error message wrong', e.message)
     }
   }
+
+  // THREATS.md B7: the relay answers this extension's own pages only. An
+  // onConnectExternal listener would hand every service call Harbor can make
+  // to any extension or site that knows the id.
+  {
+    const registered = { internal: 0, external: 0 }
+    const saved = globalThis.chrome
+    globalThis.chrome = { runtime: {
+      id: 'mock-extension-id',
+      onConnect:         { addListener() { registered.internal++ } },
+      onConnectExternal: { addListener() { registered.external++ } },
+    } }
+    try { defineHarbor({ run: async () => {} }) }
+    finally { if (saved === undefined) delete globalThis.chrome; else globalThis.chrome = saved }
+    if (registered.internal === 1 && registered.external === 0) ok('harbor listens on onConnect only, never onConnectExternal')
+    else bad('harbor connect listeners wrong', JSON.stringify(registered))
+  }
 }
 
 // --- the real Junction adapter ---

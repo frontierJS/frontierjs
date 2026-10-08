@@ -20,7 +20,8 @@ import { tmpdir } from 'os'
 
 import {
   scaffoldDesktopSurface, desktopScripts, desktopNames, desktopSurfaceDirs,
-  desktopBinary, desktopApiTarget, desktopLauncher,
+  desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
+  ensureServer, surfaceRow,
 } from '../core/desktop-surface.js'
 import { runChecks } from '../core/checks.js'
 import { port, PROJECTS } from '../core/ports.js'
@@ -192,6 +193,37 @@ describe('what desktop:run reads', () => {
     expect(desktopApiTarget('http://127.0.0.1:7120/')).toMatchObject({ port: 7120, local: true })
     expect(desktopApiTarget('https://api.example.com')).toEqual({ origin: 'https://api.example.com', port: 443, local: false })
     expect(desktopApiTarget(null)).toBeNull()
+  })
+})
+
+describe('what desktop:dev reads', () => {
+  test('the shell reads FJS_DESKTOP_URL only behind the debug guard', () => {
+    const fn = desktopMainRs().match(/fn dev_url\(\)[\s\S]*?\n}\n/)?.[0] ?? ''
+    const guard = fn.indexOf('if !cfg!(debug_assertions)')
+    expect(guard).toBeGreaterThan(-1)
+    expect(fn.indexOf('FJS_DESKTOP_URL')).toBeGreaterThan(guard)
+  })
+
+  test('the screens\' dev server is the wrapped surface\'s row, script and port', () => {
+    const root = appRoot('dev-row', {
+      'web/config/vite.config.js': 'export default {}\n',
+      'package.json': JSON.stringify({ name: 'dev-row', scripts: { web: 'vite' } }),
+    })
+    expect(surfaceRow(root, 'web')).toMatchObject({ script: 'web', env: 'FLI_PORT_FE' })
+    expect(surfaceRow(root, 'site')).toBeNull()
+  })
+
+  test('a server that answers is reused and named; none and no script is refused', async () => {
+    const lines = []
+    const log = { info: (l) => lines.push(l), dry: (l) => lines.push(l) }
+    const server = Bun.serve({ port: 0, fetch: () => new Response('ok') })
+    try {
+      expect(await ensureServer({ root: ROOT, runner: 'bun', script: 'web', port: server.port, label: 'web dev server', log })).toBeNull()
+      expect(lines.join('\n')).toContain(`http://localhost:${server.port} already answers`)
+    } finally { server.stop(true) }
+
+    await expect(ensureServer({ root: ROOT, runner: 'bun', script: null, port: server.port, label: 'API', log }))
+      .rejects.toThrow(/declares no script that starts the API/)
   })
 })
 

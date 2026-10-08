@@ -382,6 +382,7 @@ const FIELD_AXIS: Record<string, Axis> = {
   afterCommit:  'call',
   enqueue:      'call',   // the verb is the call's; the table is the outbox battery's (FJS-D643)
   telemetryId:  'call',
+  parentTelemetryId: 'call',
   _cleanups:    'call',
   _afterCommit: 'call',
   _outbox:      'call',

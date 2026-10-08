@@ -5,7 +5,7 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, reenterAs, enterCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope } from './context.ts'
+import { requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
@@ -451,6 +451,8 @@ function telemetryEnabled(t?: EventEmitter): boolean {
 
 export interface CallStartEvent {
   telemetryId: string
+  /** The call this one was made from, so a nested call's span hangs off its caller. */
+  parentTelemetryId?: string
   service:     string
   method:      string
   transport:   string
@@ -536,6 +538,8 @@ export async function callService(
   // `madeAt` is read before either: a nested call inherits the request's, so a
   // row a replayed write creates through another service is dated with it.
   ctx.madeAt ??= requestMeta()?.madeAt ?? new Date()
+  const caller = currentCall()
+  if (caller && caller !== ctx) ctx.parentTelemetryId ??= caller.telemetryId
   // enterCall is the SECOND scope and it wraps the whole of _callService —
   // pipeline, announcement, afterCommit drain, outbox handoff. Not merged into
   // runInServiceCall below: that one is read by litestone's write tap to
@@ -619,6 +623,7 @@ async function _callService(
     ctx.telemetryId = crypto.randomUUID()
     t.emit('junction.call.start', {
       telemetryId: ctx.telemetryId,
+      ...(ctx.parentTelemetryId ? { parentTelemetryId: ctx.parentTelemetryId } : {}),
       service:     service.name,
       method:      method as string,
       transport:   ctx.transport ?? 'internal',

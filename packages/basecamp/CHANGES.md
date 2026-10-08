@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-08 — the desktop shell can load the dev server (`fli desktop:dev`)
+
+`desktop/shell/src/main.rs` takes the generator's new `dev_url()`: a debug build loads `FJS_DESKTOP_URL` instead of the bundle when it is set, so `fli desktop:dev` opens the window on `web/`'s Vite at 8020 with HMR. A release build ignores the variable. Proof is in cli's entry of the same date.
+
 ## 2026-10-08 — the desktop app wears the brand icon
 
 `desktop/shell/tauri.conf.json`'s `bundle.icon` names `brand/assets/icons/basecamp.png` directly, so the window and the launcher entry `fli desktop:install` writes both carry it, and a brand edit reaches both after a rebuild. The scaffold's placeholder `shell/icons/icon.png` is deleted. Proof: after `bun run build:desktop`, `xprop` reads the window's `_NET_WM_ICON` as 96 x 96, the brand file's size (the placeholder was 32 x 32).

@@ -80,7 +80,7 @@ const DEFAULT_COUNTERS = [/^http\.requests\./, /^http\.responses\./, /^cache\.(h
 /** Flatten the collector's nested object into dotted names. Only numbers become
  *  series — a version string is not a measurement, and a store that accepted
  *  one would hold text nobody can threshold. */
-function flatten(node: unknown, prefix = '', out: Array<[string, number]> = []): Array<[string, number]> {
+export function flatten(node: unknown, prefix = '', out: Array<[string, number]> = []): Array<[string, number]> {
   if (typeof node === 'number' && Number.isFinite(node)) { out.push([prefix, node]); return out }
   if (node && typeof node === 'object' && !Array.isArray(node))
     for (const [k, v] of Object.entries(node as Record<string, unknown>))

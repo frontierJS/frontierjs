@@ -103,6 +103,7 @@ log.info('')
 if (!wraps) log.info(`  bun run dev:desktop     write the screens in a browser, at :${devPort}`)
 log.info(`  bun run build:desktop   → desktop/shell/target/debug/, the screens compiled in`)
 log.info(`  fli desktop:run         build it, start the API if nothing answers, open the window`)
+log.info(`  fli desktop:dev         the window on the dev server, with HMR`)
 log.info(`  fli desktop:install     add it to this machine's app launcher (Linux)`)
 log.info('')
 if (!wraps && existsSync(join(root, 'web'))) {

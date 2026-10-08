@@ -63,6 +63,7 @@ import { invariantCoverage }                   from './invariants.js'
 import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
 import { parseCommands, resolveCommands }      from './command-parse.js'
 import { typeScriptIn }                        from './scope.js'
+import { kindOf }                              from './file-kind.js'
 import { readConfig }                          from './config.js'
 
 export const RULES = [
@@ -206,6 +207,8 @@ export const RULES = [
     title: 'a seam\'s stated owner exists and is where the name is declared' },
   { id: 'seam-listed',          scope: 'repo', severity: 'error', invariant: 4,
     title: 'every seam the skill explains is named in CLAUDE.md\'s key list' },
+  { id: 'threat-row',           scope: 'repo', severity: 'error', invariant: null,
+    title: 'every THREATS.md row names a test that is in the tree' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -3409,6 +3412,7 @@ const CHECKS = {
   'seam-owner': ({ root }) => seamOwner({ root }),
 
   'seam-listed': ({ root }) => seamListed({ root }),
+  'threat-row':  ({ root }) => threatRow({ root }),
   'skill-pointer':      ({ root }) => skillPointer({ root }),
   'american-spelling':  ({ root }) => americanSpelling({ root }),
 }
@@ -4593,4 +4597,52 @@ function seamListed({ root }) {
              `without loading the skill, and a seam missing from it answers no. Add it under ` +
              `**${s.section}**.`,
   })) }
+}
+
+// ─── threat-row ───────────────────────────────────────────────────────────────
+//
+// `THREATS.md` is a Map of what each adversary may do (`FJS-D656`), and a row's
+// *Proved by* is the only part of it that can be wrong without anyone reading
+// it wrong: a renamed suite leaves the boundary reading as proved, and an audit
+// grading the table skips it. So a row naming no test, a path that is not in
+// the tree, or a path that is not a test is an error.
+//
+// Only *Proved by* is graded here. A dead path in *Enforced at* is
+// `doc-cites-dead`'s, and whether the named test really holds the promise is a
+// judgement no rule makes.
+
+const THREATS_FILE = 'THREATS.md'
+
+function threatRow({ root }) {
+  const file = join(root, THREATS_FILE)
+  if (!existsSync(file)) return { skipped: `no ${THREATS_FILE}` }
+
+  const findings = []
+  let col = -1, rows = 0
+  readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    if (!line.startsWith('|')) { col = -1; return }
+    const cells = line.split('|').slice(1, -1).map(c => c.trim())
+    if (col === -1) { col = cells.findIndex(c => /^proved by$/i.test(c)); return }
+    if (cells.every(c => /^:?-+:?$/.test(c))) return
+    rows++
+    const at    = { file, line: i + 1 }
+    const label = cells[0] || `line ${i + 1}`
+    const paths = [...(cells[col] ?? '').matchAll(/`([^`\s]+\/[^`\s]+)`/g)].map(m => m[1])
+    if (!paths.some(p => kindOf(p) === 'test')) {
+      findings.push({ ...at,
+        message: `row ${label} names no test in *Proved by*. A boundary with no test reads as proved ` +
+                 `from every angle — name the test that fails when the promise breaks, written from ` +
+                 `the repo root.` })
+    }
+    for (const p of paths) {
+      if (!existsSync(join(root, p))) findings.push({ ...at,
+        message: `row ${label} names \`${p}\`, which is not in the tree. Point it at what replaced ` +
+                 `the test, or the row has lost its proof.` })
+      else if (kindOf(p) !== 'test') findings.push({ ...at,
+        message: `row ${label} names \`${p}\` in *Proved by*, which is not a test. The file that ` +
+                 `keeps the promise belongs in *Enforced at*.` })
+    }
+  })
+  if (!rows) return { skipped: `${THREATS_FILE} has no table with a *Proved by* column` }
+  return { findings }
 }

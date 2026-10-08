@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-08 — `desktop/shell/src/main.rs` regenerated for `FJS_DESKTOP_URL`
+
+The generator's shell now loads `FJS_DESKTOP_URL` in a debug build (`fli desktop:dev`), and this file is compared to its output byte for byte.
+
 ## 2026-10-08 — `User.email` and `User.name` are `@personal(contact)` (`FJS-D657`)
 
 The parser now warns about an undeclared `email` on a person model, so the appended `User` declares both columns, as auth's fragment does.

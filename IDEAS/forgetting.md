@@ -255,7 +255,7 @@ model Message {
   - **Recommend A** — the trail's job is *who did what, when*; §3 shows the
     value is where every re-identification ended.
 
-- **Q2 — Does a non-relator row about the person get a word for *delete on forget*, and what is it?**
+- ~~**Q2 — Does a non-relator row about the person get a word for *delete on forget*, and what is it?**~~ **Answered 2026-10-08 (`FJS-D663`): A — no word. The walk tombstones every non-relator row it reaches: `@personal` columns nulled, the row kept. A `Message` keeps its keys and timestamps and loses its `body`; §2's reports read the rows unchanged.**
   This paper first proposed `@@personal`, which `FJS-D657` refuses: two letters
   from `@@person`, both legal on one schema, one marking where the walk STARTS
   and one what it DELETES, so a slip parses and does the wrong thing in silence.

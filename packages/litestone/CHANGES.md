@@ -1,5 +1,16 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — the trail is spelled *trail*: `@@trail`, `@trail`, `driver trail`, `db.auditTrail` (`FJS-D661`)
+
+`@@log` / `@log` spelled the audit trail with the word for what a process says, and the observability paper's case rests on the two being different things. One stem now, so knowing one spelling predicts the rest. No alias — an old spelling is an unknown attribute.
+
+- **`@@log(db)` → `@@trail(db)`, `@log(db)` → `@trail(db)`.** The parsed attribute's `kind` is `'trail'`.
+- **`database x { driver logger }` → `driver trail`.** `DATABASE_DRIVERS` is `sqlite`, `jsonl`, `trail`.
+- **The synthesized model is `<db>Trail`** (`db.auditTrail`, file `audit/auditTrail.jsonl`, index `auditTrail_idx`). A dev directory holding `auditLogs.jsonl` is not read; delete it.
+- Internals follow: `trailDbMap`, `trailModel`, `parseTrailArgs`. The catalog entries are `field:trail` / `model:trail`; `db.$audit()` keeps its name.
+
+The suite passes unchanged in substance — `extend-model.test.ts` and `jsonl-index-drift.test.ts` moved to the new names.
+
 ## 2026-10-08 — a required `@default(auth().x)` with no principal is refused by name (`FJS-1793`)
 
 With no principal the auth-default stamp writes nothing, and `isServerFilled` excused the column from the required pre-flight, so a create that did not name it reached the INSERT as NULL and answered SQLite's raw `NOT NULL constraint failed` — a 500 for an anonymous caller on a model whose create gate is 0. `refuseMissingRequired` (`src/core/client.js`) now holds an auth-default column it finds empty after the stamps. An anonymous caller gets `AccessDeniedError` with `status = 401`, naming the column and the claim (`Invitee.create needs a principal: ownerId defaults to auth().id, and the caller is not signed in. Sign in, or name ownerId on the call.`); Junction reads `status` before the class name. `asSystem()` with no principal, or a principal missing the claim, gets a `ValidationError` on the field. Every create path goes through it: `create`, `createMany`, `upsert`, `upsertMany`. A value in the payload still wins, and an optional column is left null. `docs/access-control.md` § `@default(auth().id)` says so. Proof: `test/create-policy-stamp.test.ts`, three new cases, two red before.

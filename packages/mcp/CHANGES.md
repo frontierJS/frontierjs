@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-08 — the trail model is `<db>Trail` (`FJS-D661`)
+
+The plugin's lookup of the trail database reads `driver trail` and names the synthesized model `<name>Trail`.
+
 ## 2026-10-08 — a `@system` move is offered only where a method lifts it (`FJS-1925`)
 
 No projection change. Junction no longer derives a method for a `@system` move (`FJS-1925`), so `/mcp` offers one only when the app wrote the method, from the model's update level, as `FJS-D150` has it. `test/plugin.test.ts` boots the lago shape, a generated service beside a written `{ system: true }` method over one model, and asserts both halves at levels 4 and 5, with the row's state after each call.

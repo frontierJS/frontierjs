@@ -11,7 +11,7 @@
 | `basecamp`                   | 2 | 8020 | 8120 · 8121 dev mail sink · 8122 dev DigitalOcean stand-in (7122 in `verify:provision`, 7123 in the unit file) · 7126 the container app `verify:outpost` releases · 7129 its Caddy admin stand-in · 8124 dev Hetzner stand-in (7124 / 7125) · 8127 dev Cloudflare stand-in (7127 in the unit file, 7128 in `verify:dns`) |
 | `packages/sierra/example`    | 3 | 8030 | 8130 |
 | `packages/css` demo/guide    | 4 | 8040 (`$PORT` overrides) | — |
-| `packages/junction/example`  | 5 | reserved, no slot in use | — |
+| `packages/junction/example`  | 5 | reserved, no slot in use | 7151 the OpenTelemetry Collector's OTLP/HTTP port in junction's `verify:otlp` |
 | `packages/litestone/example` | 6 | reserved, no slot in use | — |
 | `packages/oracle/mockup`     | 7 | 8070 (`$PORT` overrides) · 8071 preview | — |
 | `packages/outpost`           | 8 | — | 8180 (7180 test) · **8181 the static origin** (7181 test) · 7182 stand-in Basecamp, 7183 the deployed app and 7184/7185/7186 Caddy's http, https and admin, 7187 held to make a release's run fail, all in `verify:docker` (a fleet machine's Caddy is 80/443/2019, `FJS-D564`) — the port an `inline` app answers on, a SECOND listener because a port is an origin and a pasted page is a stranger's script (`FJS-D345`); `OUTPOST_STATIC_PORT=0` turns it off |

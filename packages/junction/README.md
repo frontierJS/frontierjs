@@ -620,6 +620,40 @@ rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds
 straight into the body, so a promise would serialize as `{}`; anything that
 needs a query caches it rather than running one per scrape.
 
+A plugin's own readiness check goes through `app.registerReadiness(name, fn)` —
+Caravan registers `jobs`, the outbox `outbox` — and is answered in `/health`'s
+`checks` beside the app's.
+
+### Exporting to a collector — `otlp()`
+
+```typescript
+import { otlp } from '@frontierjs/junction/otlp'
+
+app.configure(otlp({
+  endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,   // e.g. http://collector:4318
+  headers:  { authorization: `Bearer ${process.env.OTEL_TOKEN}` },
+}))
+```
+
+The one door from the process to an OpenTelemetry collector or vendor, as
+OTLP/JSON over `fetch`. It sends:
+
+- **spans** — one per service call, a child per hook and per query. A call made
+  from inside another call is that call's child. A request carrying a
+  `traceparent` continues its trace; otherwise the trace id is the request's
+  `correlationId`.
+- **the log**, each line carrying the trace and span it was written inside, with
+  the logger's secret-key redaction applied.
+- **every metric source** (`/metrics`'s numbers) as a gauge, once a minute.
+
+It never sends the audit trail, and a query span names the table, operation and
+row count but never the SQL, its params or its args. Sampling follows the
+caller: a `traceparent` with the sampled flag off exports no spans; anything
+else is exported, and a collector drops what it does not want. A collector that
+is down costs telemetry, not requests — the queue is bounded, a failed POST is
+not retried, and `exported`/`dropped`/`failed` appear in `/metrics` under
+`otlp`. The timers run in `work()`, so a one-shot process exports nothing.
+
 ### Announcing a second listener
 
 An app that starts its own sidecar — a dev mail catcher, a stand-in payment

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/caravan
 
+## 2026-10-08 — the `jobs` readiness check registers through `app.registerReadiness` (`FJS-D661`)
+
+Junction renamed `registerHealthCheck`; caravan's plugin and its `JunctionApp` type follow.
+
 ## 2026-10-08 — `fault.test.ts` pins a job retried after `retryable: false` (`FJS-2046`)
 
 A handler that throws `retryable: false` is still run again on the ladder, because the worker reads only `err.terminal`. The test is `it.failing` until `FJS-D655` is built, paired with a retryable throw that climbs the ladder. No source change.

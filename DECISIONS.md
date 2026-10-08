@@ -3411,6 +3411,12 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d663"></a>2026-10-08 · `FJS-D663` — Q2 — Does a non-relator row about the person get a word for *delete on forget*, and what is it — No word. The walk tombstones every non-relator row it reaches: `@personal` columns nulled, the row kept. A `Message` keeps its keys and timestamps and loses its `body`; §2's reports read the rows unchanged.
+
+Asked in [`IDEAS/forgetting.md`](IDEAS/forgetting.md) § Open questions. **A** was picked over **B** (a relation argument, `onForget: Delete`, beside `onDelete`. The edge says it, not the model, so a `Message` naming a sender and a recipient is deleted when one is forgotten and only nulled when the other is), **C** (a model word that is not a sibling of `@@person`, such as `@@erase`: every row of the model goes when the walk reaches it).
+
+The paper's recommendation, taken as written: after the null, the row holds nothing a `@personal` mark missed, and the facts it keeps are the ones §2's reports need. B is what gets added when a product needs a row's *existence* gone and not only its content, and a relation argument puts that on the edge the walk travels.
+
 ### <a id="fjs-d659"></a>2026-10-08 · `FJS-D659` — The consistency model is written down once, in `docs/CONSISTENCY.md`, with one row per seam naming its guarantee, how it fails and the test that holds it. `asSystem()` checks a `@version` the caller supplies. An `afterCommit` callback that reaches mail or a Conduit target warns in development.
 
 Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/consistency.md`](IDEAS/consistency.md). **A, with B's warning** was picked over **B** in full (renaming the delivery guarantee at the call site, which the names already state: `enqueue` *is* the durable one) and **C** (a commit position carried end to end, which is built for a topology no app here runs).
@@ -6664,6 +6670,24 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d662"></a>2026-10-08 · `FJS-D662` — The one door from the four streams to the outside is junction's `otlp({ endpoint, headers })` plugin: OTLP/JSON over `fetch`, spans for calls, hooks and queries, the log, and metric sources as gauges. It samples nothing itself, never exports the trail, and a failed export costs telemetry, never a request.
+
+Asked by [`IDEAS/observability.md`](IDEAS/observability.md) § 6 as option **B**, the step after `FJS-D660`. Four owner picks, each the paper's recommendation: a junction plugin over its own package, no `sample` option, a fake receiver in the suite plus a real collector as a drive, and `otlp()` over the paper's `telemetry()`.
+
+**A junction plugin, not a package.** It reads `app.telemetry`, the logger and `collectMetrics` — three junction internals — and junction is Bun-only, so a package would buy no portability and cost a boundary across the exact seams it reads (*batteries vs. smallness*: severable means one seam, and the plugin is one file behind one export, `@frontierjs/junction/otlp`).
+
+**Named `otlp()`, for the format it speaks** — the way `openapi()` is. `app.telemetry` is the in-process stream devtools also reads; naming the exporter after the stream would give one word two jobs.
+
+**No `sample` option.** A request carrying a `traceparent` follows its sampled flag; every other request is exported. A collector drops spans on its own side, and an app with a real volume problem is the evidence an option would need (*paved road vs. the workaround*).
+
+**What crosses, and what does not.** The trace id is the request's `correlationId` when that is 32 hex — which it is whenever a `traceparent` arrived or junction minted it — and otherwise derived from it by hash, so every span of a request shares one trace and the trace is still derived from the one id, not stored beside it. A query span names the model, operation, database and row count, and **never the SQL text, the params or the args** — those carry the values Invariant 7 redacts in the trail, and a collector is a third party. A log record's data passes through the logger's own secret redaction. **The trail never exports**: it is a record the Data boundary owes, retained and redacted by declaration, and exporting it would make this plugin a second owner of Invariant 7.
+
+**A failure costs telemetry, never a request.** The queue is bounded and drops oldest; a failed POST is not retried; both are counted in `/metrics` under `otlp` (`exported`, `dropped`, `failed`), which is what turns a silent loss into a number (§ V 9). Health stays a pull endpoint — a load balancer asks; nothing pushes it.
+
+**Two seams junction adds for it, each in its owner.** `ILogger.addWriter(writer)` attaches a writer to the whole logger tree after construction, since a plugin registers after the logger exists. A call's start event carries `parentTelemetryId`, read in `callService` before the call's own scope is entered, so a nested call's span hangs off its caller rather than off the request.
+
+*Lives in:* `packages/junction/src/plugins/otlp/index.ts` · `packages/junction/test/otlp.test.ts` (the fake receiver) · `DRIVES.md` (the collector drive).
 
 ### <a id="fjs-d660"></a>2026-10-08 · `FJS-D660` — A request has one id. When it states a well-formed `traceparent`, that header's trace id IS `correlationId`. Otherwise a well-formed `x-request-id` is used, and otherwise junction mints a 32-hex id. A malformed inbound id is replaced, never refused. The name `correlationId` stays.
 

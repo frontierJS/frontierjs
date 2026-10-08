@@ -1,5 +1,23 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-08 — `otlp()`: spans, the log and metric sources leave the process as OTLP/JSON (`FJS-D662`)
+
+Junction emitted nothing outward: an app wanting its traces in a collector wrote three adapters of its own over `app.telemetry`, the logger and `/metrics`. `@frontierjs/junction/otlp` is the one door.
+
+- **`otlp({ endpoint, headers })`** — spans for every service call, hook and query; every log line; every metric source as a gauge each minute. POSTed to `/v1/traces`, `/v1/logs`, `/v1/metrics`, batched every five seconds from `work()`.
+- **The trace id is derived from the request's one id** (`FJS-D660`): the `correlationId` itself when it is 32 hex, a hash of it otherwise. A `traceparent`'s parent span is the top call's parent and its sampled flag is the whole sampling policy — there is no option.
+- **Refused on purpose:** the trail, and a query's SQL, params and args. A log line's data goes through the logger's secret-key redaction.
+- **A dead collector costs telemetry, not requests** — the queue drops oldest, a failed POST is not retried, `otlp.{exported,dropped,failed}` is in `/metrics`, and the failure is logged once per streak.
+- **`ILogger.addWriter(writer)`** attaches a writer to a logger tree after construction, returning its detach. Optional on the interface, since an app may hand in its own logger. A root copies the `writers` it was given, so the caller's array is never mutated.
+- **`junction.call.start` carries `parentTelemetryId`** (and `ServiceContext` the field), read in `callService` before the call's scope is entered, so a nested call is attributable to its caller.
+
+`test/otlp.test.ts` drives a real app with a nested call against a receiver that records — trace, parenting, a sampled-out request, an `x-request-id` request, redaction, resource and headers, metrics, and a dead collector. `bun run verify:otlp` sends the same signals to `otel/opentelemetry-collector` in docker and reads its decoded output back.
+
+## 2026-10-08 — the client's `resync` event is `reconnected`; `registerHealthCheck` is `registerReadiness` (`FJS-D661`)
+
+- **`client.on('reconnected', …)`** replaces `resync`. It fires on every `connected` after the first, beside `connect`, `disconnect` and `reconnecting`, and names what happened; what a listener does about it (reload) is the listener's business. `test/resync.test.ts` is `test/reconnected.test.ts`.
+- **`app.registerReadiness(name, fn)`** replaces `registerHealthCheck`. `FJS-D440` made `/health` readiness, so every registered check already fed readiness; the name now says so. The stores are `app._readiness` / `app._readinessApp`. `healthPlugin({ checks })` and the response's `checks` keep their word.
+
 ## 2026-10-08 — a request has one id, and a stated trace is it (`FJS-D660`)
 
 A request carrying a `traceparent` and no `X-Request-ID` was filed under a fresh UUID on its log line and its audit row, while conduit continued the upstream trace outbound, so one request had two ids. `enterRequest` now takes `correlationId` from `inboundCorrelationId(headers)`: the `traceparent` trace id first (read by `@frontierjs/toolbelt/trace`), then a well-formed `X-Request-ID`, and otherwise `mintCorrelationId()`, which is 32 hex shaped as a trace id rather than a dashed UUID.
