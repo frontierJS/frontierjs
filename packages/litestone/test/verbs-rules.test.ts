@@ -308,13 +308,13 @@ describe('verbs × rules', () => {
     const db  = await createClient({
       parsed: parse(`
 database main  { path "${join(dir, 'm.db')}" }
-database audit { path "${join(dir, 'a')}/"  driver logger }
+database audit { path "${join(dir, 'a')}/"  driver trail }
 model Doc {
   id      Int     @id
   title   String
   ownerId String?
   @@db(main)
-  @@log(audit)
+  @@trail(audit)
   @@allow('read',   ownerId == auth().id)
   @@allow('create', ownerId == auth().id)
   @@allow('update', ownerId == auth().id)

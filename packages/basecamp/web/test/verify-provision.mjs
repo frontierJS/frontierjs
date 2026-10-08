@@ -102,7 +102,7 @@ const SSH_HOME = join(SCRATCH, 'home')
 mkdirSync(join(SSH_HOME, '.ssh'), { recursive: true })
 writeFileSync(join(SSH_HOME, '.ssh', 'config'),
   'Host desk\n  HostName 192.0.2.7\n  User ops\n  Port 2201\nHost named\n  HostName example.invalid\n')
-// …and two checkouts under ~/code for /git-activity/local/: one committed with
+// …and two checkouts under ~/code for /git-activity/local/: one a FrontierJS app committed with
 // a token in its remote and a file left uncommitted, one empty.
 const gitIn = (cwd, ...args) => spawnSync('git', args, { cwd, env: { ...process.env, HOME: SSH_HOME,
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
@@ -112,6 +112,7 @@ for (const name of ['alpha', 'beta']) {
 }
 const ALPHA = join(SSH_HOME, 'code', 'alpha')
 writeFileSync(join(ALPHA, 'README'), 'x')
+writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
 gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
 gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
 writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
@@ -901,6 +902,28 @@ try {
     /https:\/\/example\.test\/alpha\.git/.test(listed) && !/tok_secret/.test(await body()))
   check('the totals say how many have uncommitted work',
     /1 with uncommitted work/.test(await text('#local-repos-totals')))
+  check('a frontier.config.js at the root marks a FrontierJS app',
+    /1 FrontierJS/.test(await text('#local-repos-totals')))
+  await evaluate(`document.getElementById('local-repos-frontier-only').click()`)
+  await until(`document.getElementById('local-repos-list')?.textContent ?? ''`, t => !/beta/.test(t),
+    'the FrontierJS-only filter left beta in the list')
+  check('the FrontierJS-only filter keeps alpha and drops beta', /alpha/.test(await text('#local-repos-list')))
+  await evaluate(`document.getElementById('local-repos-frontier-only').click()`)
+  // alpha has a commit and beta none, so newest-first puts alpha on top and
+  // the header's first click — ascending — puts the repository with no commit there.
+  const order = () => evaluate(`[...document.querySelectorAll('#local-repos-list tbody strong')].map(e => e.textContent).join(',')`)
+  await until(`document.querySelectorAll('#local-repos-list tbody strong').length`, n => n === 2, 'the filter never let beta back')
+  check('the list opens newest commit first', (await order()) === 'alpha,beta', await order())
+  const sortOn = (label) => evaluate(`[...document.querySelectorAll('#local-repos-list th button')].find(b => b.textContent.trim() === ${JSON.stringify(label)}).click()`)
+  await sortOn('Last commit')
+  await until(`[...document.querySelectorAll('#local-repos-list tbody strong')].map(e => e.textContent).join(',')`,
+    t => t === 'beta,alpha', 'the Last commit header did not reverse the order')
+  check('the Last commit header reverses it', true)
+  await sortOn('Working tree')
+  await sortOn('Working tree')
+  await until(`[...document.querySelectorAll('#local-repos-list tbody strong')].map(e => e.textContent).join(',')`,
+    t => t === 'alpha,beta', 'the Working tree header did not put the changed repository first')
+  check('the Working tree header sorts by files changed', true)
   await fill({ root: 'code' })
   await evaluate(`document.querySelector('#local-repos-form button[type=submit]').click()`)
   await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /absolute/.test(t),

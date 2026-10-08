@@ -133,11 +133,11 @@
     "body": [
       "database ${1:audit} {",
       "  path      \"${2:./audit/}\"",
-      "  driver    logger",
+      "  driver    trail",
       "  retention ${3:90d}",
       "}"
     ],
-    "description": "Logger audit database for @log / @@log"
+    "description": "Trail database for @trail / @@trail"
   },
 
   "Function block": {
@@ -253,13 +253,13 @@
   "@secret": {
     "prefix": "@secret",
     "body": ["@secret"],
-    "description": "@encrypted + @guarded + @log(audit)"
+    "description": "@encrypted + @guarded + @trail(audit)"
   },
 
-  "@log": {
-    "prefix": "@log",
-    "body": ["@log(${1:audit})"],
-    "description": "Log reads/writes to a logger database"
+  "@trail": {
+    "prefix": "@trail",
+    "body": ["@trail(${1:audit})"],
+    "description": "Log reads/writes to a trail database"
   },
 
   "@sequence": {
@@ -424,10 +424,10 @@
     "description": "Row-level deny policy (overrides allow)"
   },
 
-  "@@log": {
-    "prefix": "@@log",
-    "body": ["@@log(${1:audit})"],
-    "description": "Model-level audit log"
+  "@@trail": {
+    "prefix": "@@trail",
+    "body": ["@@trail(${1:audit})"],
+    "description": "Model-level audit trail"
   },
 
   "@@map": {

@@ -19,7 +19,7 @@
 //     weeks, because a skipped row and a quiet row read the same.
 //   • The audit logger writes on setImmediate, and a loop that only awaits
 //     resolved promises never yields to it — every timed loop ends by awaiting
-//     one macrotask, or @@log would be measured without its write.
+//     one macrotask, or @@trail would be measured without its write.
 //   • A read policy narrows WHICH rows come back, and materializing a row is
 //     most of a read. `rows/op` is printed beside every read so a delta bought
 //     by returning fewer rows cannot pass for a cheap policy.
@@ -65,7 +65,7 @@ model Item {
 const TENANCY    = `tenancy {\n  strategy row\n  column   workspaceId\n}`
 const ROW_POLICY = `@@allow('read', ownerId == auth().id || status == 'published')`
 const TRANSITION = `@@transitions(status,\n    submit:  draft  -> review,\n    publish: review -> published\n  )`
-const AUDIT_DB   = `database audit {\n  path   "${DIR}/audit/"\n  driver logger\n}`
+const AUDIT_DB   = `database audit {\n  path   "${DIR}/audit/"\n  driver trail\n}`
 
 /**
  * A leaf and `depth` parents above it, each reachable by its key. With `policy`
@@ -119,7 +119,7 @@ const CASES = [
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/version',     floor: 'create/bare',  schema: item({ extra: 'version Int @version' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
-  { name: 'create/log-audit',   floor: 'create/bare',  schema: item({ head: AUDIT_DB, rules: '@@log(audit)' }),
+  { name: 'create/log-audit',   floor: 'create/bare',  schema: item({ head: AUDIT_DB, rules: '@@trail(audit)' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}` } }) },
   { name: 'create/unique',      floor: 'create/bare',  schema: item({ extra: 'email String @unique' }),
     op: (t, i) => t.item.create({ data: { workspaceId: 1, ownerId: 1, title: `t${i}`, email: `e${i}@x.test` } }) },

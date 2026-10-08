@@ -422,7 +422,7 @@ function rMetrics(){
             (c.error?'<span style="color:var(--red);font-size:10px">'+esc(c.error)+'</span>':'')+
             '<span class="hl">'+(c.latencyMs??0)+'ms</span></div>'
         }).join('')
-      : '<div class="ms">No checks registered &#x2014; a plugin declares one with app.registerHealthCheck(name, fn), an app with healthPlugin({ checks })</div>'
+      : '<div class="ms">No checks registered &#x2014; a plugin declares one with app.registerReadiness(name, fn), an app with healthPlugin({ checks })</div>'
     g.appendChild(box)
   }
   g.appendChild(sec('App'))

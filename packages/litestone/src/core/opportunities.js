@@ -415,7 +415,7 @@ export const OPPORTUNITIES = [
 
         // Document-shaped: something about this row is meant to stand. A basket
         // line legitimately reads the live price, and it declares none of these.
-        const isDocument = (model.attributes ?? []).some(a => a.kind === 'transitions' || a.kind === 'log')
+        const isDocument = (model.attributes ?? []).some(a => a.kind === 'transitions' || a.kind === 'trail')
           || fields.some(f => has(f, 'immutable') || has(f, 'sealed'))
         if (!isDocument) continue
 

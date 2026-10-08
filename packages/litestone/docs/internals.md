@@ -336,7 +336,7 @@ has no model in scope, so the default belongs at the caller that has one.
   Dropped but not silent — the first loss per model warns, once, because whatever
   produces one produces thousands.
 - **A jsonl/logger retention pass reads the FIRST line and stops if it is inside the window.** An append-only log is oldest-first, so a fresh first line means every line is fresh — the right optimization for a check that runs on every boot over a file that grows for the life of the deployment. What it costs is a probe: append an old row to the END and the pass returns `null`, having read nothing, so `$retain()` answers `[]` and the job that called it reports success while removing nothing. A test planting an old row has to plant it where an old row would actually be. The companion `.index.db` holds byte offsets and is DELETED by a compaction that rewrites the file, then rebuilt lazily — so anything rewriting that file by hand owes the same removal.
-- **Protected fields are redacted.** Any `@encrypted` / `@guarded` / `@secret` field has its value replaced with `'[redacted]'` in both the field-level entry and the model-level `before`/`after` snapshot — the trail records *that* the field was written, never what it holds. This is what makes `@secret`'s expansion safe: `@secret` implies `@log(<first logger db>)`, so declaring a logger database alone starts logging every `@secret` field, and without redaction that writes plaintext beside a correctly-encrypted row. `null` is preserved rather than redacted (nothing to leak, and it keeps `null → value` transitions visible); unprotected fields on the same model are still logged in full; the row returned to the caller is untouched.
+- **Protected fields are redacted.** Any `@encrypted` / `@guarded` / `@secret` field has its value replaced with `'[redacted]'` in both the field-level entry and the model-level `before`/`after` snapshot — the trail records *that* the field was written, never what it holds. This is what makes `@secret`'s expansion safe: `@secret` implies `@trail(<first trail db>)`, so declaring a trail database alone starts logging every `@secret` field, and without redaction that writes plaintext beside a correctly-encrypted row. `null` is preserved rather than redacted (nothing to leak, and it keeps `null → value` transitions visible); unprotected fields on the same model are still logged in full; the row returned to the caller is untouched.
 
 ## Policies
 
@@ -693,9 +693,9 @@ db.$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; retur
 await db.$audit({ operation: 'login.failed', model: 'User', records: [id],
                  actorId: id, meta: { reason: 'bad-password' } })
                            // the ONE owner of putting a row in the audit trail.
-                           // For what @@log(audit) cannot see: an event that
+                           // For what @@trail(audit) cannot see: an event that
                            // performs no write, or one whose asSystem() write
-                           // names no actor. THROWS — unlike @@log, the record
+                           // names no actor. THROWS — unlike @@trail, the record
                            // is what the caller asked for. actorId defaults to
                            // this client's principal; a system context has none.
 db.$capabilitiesFor(user)
@@ -747,7 +747,7 @@ db.$protectedFields('secret')
                            // written down in plain text, and which protection
                            // each carries ('guarded' | 'encrypted' | 'hashed').
                            // For an APPLICATION keeping a trail of its own:
-                           // @@log(audit) redacts these in its own JSONL, and an
+                           // @@trail(audit) redacts these in its own JSONL, and an
                            // app writing its own audit table had nothing to ask.
                            // Same contract as $checkWhere — unknown accessor is
                            // {}, every flavor of client answers the same

@@ -1131,7 +1131,7 @@ function makeSchemaLiteEmpty() {
 
 database main  { path env("DATABASE_URL", "./db/app.db") }
 
-database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
 
 `
 }

@@ -11,7 +11,7 @@ back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
 60 model(s) · 39 enum(s) · 2 database(s)
-audit → logger · main → sqlite
+audit → trail · main → sqlite
 ```
 
 ## Enums

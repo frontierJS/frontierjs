@@ -104,4 +104,4 @@ unsubscribe()
 
 ## select: false and logging
 
-`select: false` skips `RETURNING *` for performance. On `@@log` models, however, the row snapshot is required for the before/after audit entry — `select: false` is silently ignored on those models and the full RETURNING path runs.
+`select: false` skips `RETURNING *` for performance. On `@@trail` models, however, the row snapshot is required for the before/after audit entry — `select: false` is silently ignored on those models and the full RETURNING path runs.

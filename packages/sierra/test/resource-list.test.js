@@ -561,12 +561,12 @@ describe('composed: the rows carry what a push does not', () => {
     await settle()
     const before = sent.length
 
-    client.emit('resync', { downMs: 10 })
+    client.emit('reconnected', { downMs: 10 })
     await settle()
     expect(sent.length).toBe(before + 1)
 
     list.destroy()
-    client.emit('resync', { downMs: 10 })
+    client.emit('reconnected', { downMs: 10 })
     push()
     await settle()
     expect(sent.length).toBe(before + 1)

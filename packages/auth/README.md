@@ -189,9 +189,9 @@ reaches them:
   auth().isAdmin)` and `@allow('write', auth().isAdmin)` on `role` and
   `emailVerified`. A level says what kind of caller, a policy says whose row, a
   field policy says which columns; identity needs all three, and the columns a
-  gate is graded from are exactly the ones a caller must not write. `@@log(audit)`
+  gate is graded from are exactly the ones a caller must not write. `@@trail(audit)`
 - `Credential` — passwords + API keys (`@@gate("8")` — SYSTEM)
-- `Session` — active sessions (`@@gate("8")`, `@@log(audit)`)
+- `Session` — active sessions (`@@gate("8")`, `@@trail(audit)`)
 - `Verification` — reset + verify tokens (`@@gate("8")`)
 - `LoginChallenge` — a password accepted, a second factor owed (`@@gate("8")`)
 - `OauthFlow` — one in-flight OAuth redirect (`@@gate("8")`)

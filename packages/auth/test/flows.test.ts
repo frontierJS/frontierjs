@@ -738,26 +738,26 @@ describe('the gate walls the credential tables off, and User is readable by a us
 
 // ─── the audit trail ─────────────────────────────────────────────────────────
 //
-// `@@log(audit)` covers writes, so it covered exactly the auth events that ARE
+// `@@trail(audit)` covers writes, so it covered exactly the auth events that ARE
 // writes and none of the ones an app most wants (FJS-276, FJS-277). A failed
 // login performs no write and left no trace at all; a successful one left
 // `create:session` with `actorId: null`, because the write goes through
 // asSystem() and a system context names no principal.
 //
 // These go through litestone's `db.$audit` — the one owner of putting a row in
-// the trail — beside the @@log rows rather than instead of them: that one
+// the trail — beside the @@trail rows rather than instead of them: that one
 // records the WRITE and cannot name the actor, this one records the EVENT.
 
-describe('auth records what @@log(audit) cannot see', () => {
+describe('auth records what @@trail(audit) cannot see', () => {
 
   const settle = () => new Promise(r => setImmediate(r))
 
   async function trail(h: any, run: () => Promise<unknown>) {
     await settle()
-    const before = (await h.sys.auditLogs.findMany({})).length
+    const before = (await h.sys.auditTrail.findMany({})).length
     try { await run() } catch { /* a refusal is the case under test */ }
     await settle()
-    return (await h.sys.auditLogs.findMany({})).slice(before)
+    return (await h.sys.auditTrail.findMany({})).slice(before)
   }
 
   test('a successful sign-in is recorded WITH the actor', async () => {
@@ -770,7 +770,7 @@ describe('auth records what @@log(audit) cannot see', () => {
     expect(row).toBeDefined()
     expect(row.actorId).toBe(u.userId)
 
-    // Beside the @@log row, not instead of it.
+    // Beside the @@trail row, not instead of it.
     expect(rows.some((r: any) => r.operation === 'create' && r.model === 'session')).toBe(true)
     h.cleanup()
   })
@@ -844,18 +844,18 @@ describe('auth records what @@log(audit) cannot see', () => {
 //
 // The guard that matters most, because it sits on the login path. Auth's own
 // schema fragment declares `database audit`, but an app may bring its own User
-// model and no logger database at all — and `db.$audit` THROWS when there is
+// model and no trail database at all — and `db.$audit` THROWS when there is
 // nowhere to write, which is right for a caller whose purpose is the record and
 // wrong for one whose purpose is the login. Get this backwards and every such
 // app can no longer sign anybody in.
 
-describe('an app that declares no logger database', () => {
+describe('an app that declares no trail database', () => {
 
   async function plainAuth() {
     const dir  = mkdtempSync(join(tmpdir(), 'fjs-auth-noaudit-'))
     const path = join(dir, 'app.db')
 
-    // The shipped fragment carries @@log(audit); this is the other shape — an
+    // The shipped fragment carries @@trail(audit); this is the other shape — an
     // app's own identity models, no audit database anywhere.
     const source = `
 database main { path "${path}" }
@@ -975,11 +975,11 @@ describe('the auth hooks', () => {
     await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
     await settle()
 
-    const before = (await h.sys.auditLogs.findMany({})).length
+    const before = (await h.sys.auditTrail.findMany({})).length
     await expect(h.auth.login('a@b.co', 'correct-horse-1')).rejects.toThrow()
     await settle()
 
-    const row = (await h.sys.auditLogs.findMany({})).slice(before)
+    const row = (await h.sys.auditTrail.findMany({})).slice(before)
       .find((r: any) => r.operation === 'login.failed')
     expect(JSON.parse(row.meta)).toMatchObject({ reason: 'refused-by-app', message: 'locked out' })
     h.cleanup()
@@ -1009,11 +1009,11 @@ describe('the auth hooks', () => {
     await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
     await settle()
 
-    const before = (await h.sys.auditLogs.findMany({})).length
+    const before = (await h.sys.auditTrail.findMany({})).length
     await expect(h.auth.login('a@b.co', 'wrong')).rejects.toThrow('nope')
     await settle()
 
-    expect((await h.sys.auditLogs.findMany({})).slice(before)
+    expect((await h.sys.auditTrail.findMany({})).slice(before)
       .some((r: any) => r.operation === 'login.failed')).toBe(true)
     h.cleanup()
   })

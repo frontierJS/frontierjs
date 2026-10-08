@@ -8,11 +8,13 @@ title: Local repositories
   // LOCAL_MACHINE=1 (api core/local-git.ts); anywhere else the call is a 404
   // and the screen says so rather than drawing an empty list that reads like a
   // folder with no repositories in it.
+  import { comparatorFor } from '@frontierjs/junction/client'
   import { ago }  from '../../datetime.js'
   import { git }  from '../../resources/Git.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
@@ -25,6 +27,13 @@ title: Local repositories
   const KEY = 'basecamp.localRepos.root'
   const remembered = () => { try { return localStorage.getItem(KEY) } catch { return null } }
   const remember   = (v) => { try { localStorage.setItem(KEY, v) } catch {} }
+  const ONLY_KEY = 'basecamp.localRepos.frontierOnly'
+  const onlyRemembered = () => { try { return localStorage.getItem(ONLY_KEY) === '1' } catch { return false } }
+  const rememberOnly   = (on) => { try { localStorage.setItem(ONLY_KEY, on ? '1' : '0') } catch {} }
+
+  const SORT_KEY = 'basecamp.localRepos.orderBy'
+  const sortRemembered = () => { try { return localStorage.getItem(SORT_KEY) } catch { return null } }
+  const rememberSort   = (v) => { try { localStorage.setItem(SORT_KEY, v ?? '') } catch {} }
 
   let root     = remembered() ?? '~/code'
   let answer   = null
@@ -32,6 +41,10 @@ title: Local repositories
   let offered  = true
   let scanning = false
   let search   = ''
+  let frontierOnly = onlyRemembered()
+  // Newest commit first: the checkout last worked on is the one looked for.
+  let orderBy  = sortRemembered() || '-lastCommitAt'
+  function sortBy(next) { orderBy = next ?? ''; rememberSort(orderBy) }
 
   async function scan(e) {
     e?.preventDefault()
@@ -51,18 +64,21 @@ title: Local repositories
 
   if (remembered()) scan()
 
-  $: repos = (answer?.repos ?? []).filter(r => !search
+  $: repos = (answer?.repos ?? []).filter(r => (!frontierOnly || r.frontier) && (!search
     || r.relative.toLowerCase().includes(search.toLowerCase())
-    || (r.remote ?? '').toLowerCase().includes(search.toLowerCase()))
+    || (r.remote ?? '').toLowerCase().includes(search.toLowerCase())))
+    .sort(comparatorFor(orderBy || null) ?? (() => 0))
+  $: frontierCount = (answer?.repos ?? []).filter(r => r.frontier).length
   $: dirty = (answer?.repos ?? []).filter(r => r.changes).length
   $: noRemote = (answer?.repos ?? []).filter(r => !r.remote).length
 
+  // `name` is the record field, so the header's ordering sorts the rows as is.
   const COLUMNS = [
-    { name: 'repo',   label: 'Repository' },
-    { name: 'branch', label: 'Branch' },
-    { name: 'state',  label: 'Working tree' },
-    { name: 'remote', label: 'Remote' },
-    { name: 'last',   label: 'Last commit' },
+    { name: 'name',         label: 'Repository',   sortable: true },
+    { name: 'branch',       label: 'Branch' },
+    { name: 'changes',      label: 'Working tree', sortable: true },
+    { name: 'remote',       label: 'Remote' },
+    { name: 'lastCommitAt', label: 'Last commit',  sortable: true },
   ]
 </script>
 
@@ -104,6 +120,7 @@ title: Local repositories
         <Badge tone="muted">{answer.repos.length} repositories</Badge>
         {#if dirty}<Badge tone="warning">{dirty} with uncommitted work</Badge>{/if}
         {#if noRemote}<Badge tone="muted">{noRemote} with no remote</Badge>{/if}
+        <Badge tone="info">{frontierCount} FrontierJS</Badge>
         {#if answer.truncated}<Badge tone="danger">stopped at {answer.repos.length} — narrow the folder</Badge>{/if}
       </div>
 
@@ -111,14 +128,19 @@ title: Local repositories
         <label class="visually-hidden" for="local-repos-search">Filter repositories</label>
         <Input id="local-repos-search" placeholder="Filter by path or remote…" value={search}
                oninput={(e) => search = e.target.value} />
+        <Checkbox id="local-repos-frontier-only" label="FrontierJS apps only"
+                  description="A frontier.config.js at the repository root"
+                  checked={frontierOnly} onchange={(on) => { frontierOnly = on; rememberOnly(on) }} />
       </div>
 
       <div id="local-repos-list">
-        <Table columns={COLUMNS} rows={repos} striped emptyText="Nothing matches the filter">
+        <Table columns={COLUMNS} rows={repos} striped emptyText="Nothing matches the filter"
+               orderBy={orderBy} onsort={sortBy}>
           {#snippet row(r)}
             <tr>
               <td>
                 <strong>{r.name}</strong>
+                {#if r.frontier}<Pill tone="info">FrontierJS</Pill>{/if}
                 <div class="text-sm text-muted"><code>{r.relative}</code></div>
               </td>
               <td class="text-sm">

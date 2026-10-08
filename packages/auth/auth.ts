@@ -92,7 +92,7 @@ export function createLitestoneAuth(
 
   // ─── The audit trail ──────────────────────────────────────────────────────
   //
-  // `@@log(audit)` covers writes, so it covered exactly the auth events that ARE
+  // `@@trail(audit)` covers writes, so it covered exactly the auth events that ARE
   // writes and none of the ones an app most wants: a failed login performs no
   // write and left no trace at all, and a successful one left `create:session`
   // with `actorId: null`, because the write goes through `asSystem()` and a
@@ -105,7 +105,7 @@ export function createLitestoneAuth(
   //
   // TWO deliberate softenings, because this is on the login path:
   //
-  //   · An app is not required to declare a logger database. Auth's own schema
+  //   · An app is not required to declare a trail database. Auth's own schema
   //     fragment does, but an app may bring its own User model — and a login
   //     that throws because there is nowhere to write the record would be a
   //     worse failure than the missing record.
@@ -118,7 +118,7 @@ export function createLitestoneAuth(
 
   const hasAuditLog = (() => {
     try {
-      return Object.values(db.$databases ?? {}).some((d: any) => d?.driver === 'logger')
+      return Object.values(db.$databases ?? {}).some((d: any) => d?.driver === 'trail')
     } catch {
       // A Litestone client THROWS on an unknown property, so feature-detection
       // is itself a throwing expression on an older client.
@@ -142,7 +142,7 @@ export function createLitestoneAuth(
   // reach one without the other. `test/credential-events.test.ts` fails on an
   // `audit()` of one of these operations anywhere else in this file.
   //
-  // Not gated on `hasAuditLog`: an app with no logger database still owes the
+  // Not gated on `hasAuditLog`: an app with no trail database still owes the
   // person the email. The address is read here rather than passed by each
   // caller, and only when somebody is listening.
   async function credentialChanged(
@@ -255,7 +255,7 @@ export function createLitestoneAuth(
       }
     })
 
-    // Beside the `create:session` row @@log(audit) already writes, not instead
+    // Beside the `create:session` row @@trail(audit) already writes, not instead
     // of it: that one records the WRITE and cannot name the actor, this one
     // records the EVENT and does.
     await audit('login.succeeded', {
@@ -598,7 +598,7 @@ export function createLitestoneAuth(
         },
       })
 
-      // The trail already has the write — Session carries @@log(audit), so the
+      // The trail already has the write — Session carries @@trail(audit), so the
       // stamp above is an entry with `before` and `after`, and the token is
       // @guarded so it is redacted there. This says the same thing in the
       // vocabulary a person reads the trail with, and is what a start that was

@@ -122,7 +122,7 @@ const landing = await createClient({ schema: row.schemaText, db: `./landing/${ro
 The text is parsed as text (a one-line string ending in `.lite` is never read
 from disk) and held to the one `db` given: a `database` block, an `import`,
 `tenancy`, a `function`, an `extend`, a claim read off a model, and a model's
-`@@auth`, `@@external`, `@@db`, `@@log` or `@@tenant` are refused by name, all
+`@@auth`, `@@external`, `@@db`, `@@trail` or `@@tenant` are refused by name, all
 in one error. Built as an ordinary client, such text could name any file and
 write it (`FJS-1633`). Models, views, enums, types, traits, value sets, scopes
 and bare `claim`s are what it may hold; it grades with the gates and policies it

@@ -124,6 +124,7 @@ const dirs = {
   site:      env.SITE_DIR      || 'site',
   mobile:    env.MOBILE_DIR    || 'mobile',
   extension: env.EXTENSION_DIR || 'extension',
+  desktop:   env.DESKTOP_DIR   || 'desktop',
   tests:     env.TESTS_DIR     || 'tests',
   db:        env.DB_DIR        || 'db',
   wiki:      env.WIKI_DIR      || 'wiki',
@@ -1246,6 +1247,7 @@ function buildPaths() {
     siteMedia:      resolve(r, d.site, 'content/media'),
     mobile:        resolve(r, d.mobile),
     extension:     resolve(r, d.extension),
+    desktop:       resolve(r, d.desktop),
   }
 }
 

@@ -300,8 +300,8 @@ describe('what /metrics is told', () => {
     const { app, db } = await bootApp({ maxAttempts: 2, retryBackoffMs: 1, intervalMs: 60_000 })
     ;(app.jobs as { dispatch: unknown }).dispatch = async () => { throw new Error('queue is down') }
 
-    const health = (app as unknown as { _healthChecks: Map<string, () => boolean> })
-      ._healthChecks.get('outbox')!
+    const health = (app as unknown as { _readiness: Map<string, () => boolean> })
+      ._readiness.get('outbox')!
     const metrics = () =>
       (app as unknown as { _metricsSources: Map<string, () => unknown> })
         ._metricsSources.get('outbox')!() as { pending: number; dead: number }

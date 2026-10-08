@@ -195,7 +195,7 @@ model Run {
 enum FlowStepStatus { pending running completed failed skipped }
 
 // One node's outcome in one run, written once when the run ends and never
-// amended. No @@log: a run already IS a record, and an audit row per step would
+// amended. No @@trail: a run already IS a record, and an audit row per step would
 // double every terminal write.
 model RunStep {
   id          String      @id @default(uuid())

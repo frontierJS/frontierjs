@@ -108,7 +108,7 @@ await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: fals
 await db.order.create({ data: { amount: 100 }, select: false })                          // → null
 ```
 
-Most useful in hot write paths (bulk processing, event ingestion). Not available on `@@log` models — logging requires the before/after row snapshots.
+Most useful in hot write paths (bulk processing, event ingestion). Not available on `@@trail` models — logging requires the before/after row snapshots.
 
 ## NULLS FIRST / LAST
 

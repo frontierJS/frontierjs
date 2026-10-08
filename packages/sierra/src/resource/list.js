@@ -68,7 +68,7 @@ const SEARCH_DEBOUNCE_MS = 300
 
 // A deploy drops every socket at once, so an unjittered re-read on reconnect is
 // every client querying in the same tick. The same bound junction's store uses.
-const RESYNC_JITTER_MS = 2000
+const RECONNECT_JITTER_MS = 2000
 
 const isEmpty = (o) => !o || Object.keys(o).length === 0
 
@@ -85,7 +85,7 @@ function overlay(base, top) {
 
 /**
  * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `store`,
- *                           and for a composed list `find`, `on` and `onResync`
+ *                           and for a composed list `find`, `on` and `onReconnected`
  * @param {{ query?: object, directives?: object } | undefined} listQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
@@ -119,7 +119,7 @@ export function createList(resource, listQuery, opts = {}) {
   const [localD,    setLocalD]    = createSignal(startDirectives)
 
   let timer       = null
-  let resyncTimer = null
+  let reconnectTimer = null
 
   const route = state === 'url' ? page.route : null
 
@@ -130,9 +130,9 @@ export function createList(resource, listQuery, opts = {}) {
   const release = createEffect(() => {
     if (composed) {
       onCleanup(resource.on('*', announced))
-      onCleanup(resource.onResync(() => {
-        clearTimeout(resyncTimer)
-        resyncTimer = setTimeout(announced, Math.random() * RESYNC_JITTER_MS)
+      onCleanup(resource.onReconnected(() => {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = setTimeout(announced, Math.random() * RECONNECT_JITTER_MS)
       }))
     } else {
       const unsubscribe = untrack(() => resource.store.subscribe((next) => {
@@ -142,7 +142,7 @@ export function createList(resource, listQuery, opts = {}) {
       onCleanup(unsubscribe)
     }
     onCleanup(() => clearTimeout(timer))
-    onCleanup(() => clearTimeout(resyncTimer))
+    onCleanup(() => clearTimeout(reconnectTimer))
   })
 
   function currentQuery() {

@@ -1,4 +1,4 @@
-// test/resync.test.ts — a reconnect is a gap, and it used to be a silent one
+// test/reconnected.test.ts — a reconnect is a gap, and it used to be a silent one
 //
 // The server queues nothing for an absent socket, so every write between a drop
 // and the next `connected` frame reached this client and nobody else's copy of
@@ -6,7 +6,7 @@
 // screen saying anything was missing (`FJS-701`).
 //
 // There is no sequence number and this deliberately does not add one — see the
-// comment at the `resync` emit. A reconnect reloads, which is the same answer
+// comment at the `reconnected` emit. A reconnect reloads, which is the same answer
 // this store already gives `changed` and an undecidable record: *some unknown
 // rows moved*, and nothing in a browser can know which.
 
@@ -34,10 +34,10 @@ const connected = (c: any) => c.emit('connect') // not the real path; see below
 
 describe('the client can tell a first connection from a re-connection', () => {
 
-  it('the first `connected` frame emits no resync — there was nothing to miss', () => {
+  it('the first `connected` frame emits no reconnected — there was nothing to miss', () => {
     const c: any = client()
     const seen: unknown[] = []
-    c.on('resync', (p: unknown) => seen.push(p))
+    c.on('reconnected', (p: unknown) => seen.push(p))
 
     c._noteConnected({})
     expect(seen).toEqual([])
@@ -46,7 +46,7 @@ describe('the client can tell a first connection from a re-connection', () => {
   it('a `connected` frame after a drop emits one, carrying how long it was down', async () => {
     const c: any = client()
     const seen: any[] = []
-    c.on('resync', (p: unknown) => seen.push(p))
+    c.on('reconnected', (p: unknown) => seen.push(p))
 
     c._noteConnected({})
     c._noteDisconnected()
@@ -60,7 +60,7 @@ describe('the client can tell a first connection from a re-connection', () => {
   it('a second reconnect emits a second one — it is per outage, not once', () => {
     const c: any = client()
     let n = 0
-    c.on('resync', () => { n++ })
+    c.on('reconnected', () => { n++ })
 
     c._noteConnected({})
     c._noteDisconnected(); c._noteConnected({})
@@ -82,11 +82,11 @@ describe('a live list reloads across a reconnect', () => {
     expect(store.get().map((r: any) => r.id)).toEqual([1])
 
     rows = [{ id: 1, n: 1 }, { id: 2, n: 2 }]
-    c._noteConnected({})       // first connection — no resync
+    c._noteConnected({})       // first connection — no reconnected
     expect(store.get().length).toBe(1)
 
     c._noteDisconnected()
-    c._noteConnected({})       // this one is a resync
+    c._noteConnected({})       // this one emits reconnected
 
     // Jittered up to 2s, so the assertion waits rather than assuming a tick.
     const deadline = Date.now() + 4000

@@ -41,8 +41,8 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **Every socket bound is the socket's own**, since every HTTP bound stops at the
   upgrade (`FJS-705`, `FJS-704`, `test/ws-limits.test.ts`). Presence is opt-in and
   batched on a timer (`FJS-703`, `test/presence-scale.test.ts`).
-- **A reconnect is a gap**: the client emits `resync` and a live list refetches,
-  jittered (`FJS-701`, `test/resync.test.ts`). A present WS token that does not
+- **A reconnect is a gap**: the client emits `reconnected` and a live list refetches,
+  jittered (`FJS-701`, `test/reconnected.test.ts`). A present WS token that does not
   verify closes 4001; no token stays anonymous (`FJS-702`,
   `test/realtime-grading.test.ts`).
 - **A shutdown that does not finish exits 1** (`FJS-693`, `test/shutdown.test.ts`).

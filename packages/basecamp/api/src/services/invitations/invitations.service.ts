@@ -260,7 +260,7 @@ export function createInvitationsService(app: BasecampApp) {
     /**
      * Revoke. A hard delete, because the row IS the pending state — there is no
      * `revokedAt` to set, and a tombstone would be a second place a membership's
-     * origin is recorded that nothing reads. `@@log(audit)` keeps the record.
+     * origin is recorded that nothing reads. `@@trail(audit)` keeps the record.
      */
     async remove() {
       const row = await getScoped('invitation', 'Invitation')

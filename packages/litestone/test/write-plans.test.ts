@@ -34,8 +34,8 @@ model Doc {
 }`
 const LOGGED = `
 database main  { path env("MAIN_DB", "./main.db") }
-database audit { path "./audit/" driver logger }
-model Item { id Int @id @default(autoincrement())  name String  n Int  @@db(main) @@log(audit) }`
+database audit { path "./audit/" driver trail }
+model Item { id Int @id @default(autoincrement())  name String  n Int  @@db(main) @@trail(audit) }`
 
 type Plan = {
   verb: string, op: string, returning: boolean, batch: boolean,

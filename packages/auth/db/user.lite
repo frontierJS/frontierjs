@@ -68,5 +68,5 @@ model User {
   @@auth
   @@gate("4.4.4.5")
   @@allow('update', id == auth().id || auth().isAdmin)
-  @@log(audit)
+  @@trail(audit)
 }

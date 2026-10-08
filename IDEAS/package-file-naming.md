@@ -43,9 +43,8 @@ is about what they are compensating FOR.
 | Files in `litestone/src/core/` · `junction/src/core/` | 33 · 30 |
 
 Near-duplicate names inside one package, where the wrong pick is one inflection
-away: `core/migrate.js` beside `core/migrations.js`; `testing.js` beside
-`testdb.js`; `core/client.js` beside `browser/client.js`; two `smtp.ts` and two
-`sender.ts` in junction; `core/hooks.ts` beside `plugins/email/hook.ts`.
+away, all three in litestone: `core/migrate.js` beside `core/migrations.js`;
+`testing.js` beside `testdb.js`; `core/client.js` beside `browser/client.js`.
 
 Role is stated two ways: sierra writes `build/mesa-plugin.js` (suffix), litestone
 writes `plugins/gate.js` (folder). The app surface already chose the suffix

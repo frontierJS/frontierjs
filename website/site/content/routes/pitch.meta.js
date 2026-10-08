@@ -76,7 +76,7 @@ await app.start()`],
   total Float @gte(0)
   @@gate("0.4.4.8")
   @@allow('read', ownerId == auth().id)
-  @@log(audit)
+  @@trail(audit)
 }`],
   HOOK: ['js', `// Same four phases in the API and the UI.
 hooks: {

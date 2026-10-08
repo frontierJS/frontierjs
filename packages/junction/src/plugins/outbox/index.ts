@@ -171,8 +171,8 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // problem with the work rather than with the relay: an effect that has
       // been given up on is owed and is never going to happen, which nothing
       // else in this process will ever say out loud.
-      if (typeof app.registerHealthCheck === 'function')
-        app.registerHealthCheck('outbox', () =>
+      if (typeof app.registerReadiness === 'function')
+        app.registerReadiness('outbox', () =>
           dead === 0 &&
           (lastPassAt === null || Date.now() - Date.parse(lastPassAt) < intervalMs * 3))
     },

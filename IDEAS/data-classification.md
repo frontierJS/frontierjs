@@ -314,8 +314,8 @@ that exists.
 
 - [`compliance-from-the-seed.md`](compliance-from-the-seed.md) — the generators
   this feeds (data map, DSAR, erasure)
-- [`forgetting.md`](forgetting.md) — `@personal` and the walk, measured (it
-  spells the model word `@@subject`; this paper's ruling renames it)
+- [`forgetting.md`](forgetting.md) — `@personal` and the walk, measured; its
+  Q2 owns the word for *delete on forget* (Q8 here)
 - [`logbook.md`](logbook.md) — the database-grain retention sweep
 - `FJS-D205`, `FJS-D454`, `FJS-D322`, `FJS-D359`, `FJS-D574`, `FJS-521`,
   `FJS-1250`, Invariants 4 and 7

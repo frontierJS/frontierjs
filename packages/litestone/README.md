@@ -113,7 +113,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Auto attribution** (`@default(auth().id)`, `@updatedBy`) | ✓ | ✗ | ✗ | partial ⁶ |
 | **Per-scope sequences** (`@sequence(scope: tenantId)`) | ✓ | ✗ | ✗ | ✗ |
 | **File storage lifecycle** (S3/R2 upload + cleanup paired with row writes) | ✓ | ✗ | ✗ | ✗ |
-| **Audit log per write** (`@@log(audit)` with full diff) | ✓ | ✗ | ✗ | ✗ |
+| **Audit log per write** (`@@trail(audit)` with full diff) | ✓ | ✗ | ✗ | ✗ |
 | **Encryption key rotation** (`$rotateKey`) | ✓ | ✗ | ✗ | ✗ |
 
 ### Querying — how you read the data back
@@ -285,7 +285,7 @@ model User {
   @@index([accountId, email])
   @@allow('read',   accountId == auth().accountId)
   @@allow('update', id == auth().id || auth().role == 'admin')
-  @@log(audit)                           // write-audit every create/update/delete
+  @@trail(audit)                           // write-audit every create/update/delete
 }
 ```
 
@@ -339,11 +339,11 @@ model User {
                                  still WRITABLE by a non-system caller
 @encrypted(deterministic: true)  encrypted equality search, and the value still reads back
 @hashed                          HMAC-SHA256, one-way — matchable, never readable
-@secret                          @encrypted + @guarded + @log(audit) + $rotateKey
+@secret                          @encrypted + @guarded + @trail(audit) + $rotateKey
 @secret(rotate: false)           the same but excluded from key rotation — and therefore
                                  unreadable after one. $rotateKey refuses while one exists
 @allow('read'|'write'|'all', expr)   field-level conditional visibility
-@log(dbName)                     field-level audit log to a logger database
+@trail(dbName)                     field-level audit log to a trail database
 @keepVersions                    on File? / File[]: skip old S3 object cleanup on update
 @accept("mime/type")             on File / File[]: validate content type before upload
 @syntax(sql)                     the text is in this syntax — md, sql, js, html… (picks the editor; no validation)
@@ -395,7 +395,7 @@ model User {
                                  for as `where: { $scope: 'name' }`. See below
 @@transitions(field, ...)        a state machine on an enum field, enforced at the Data
                                  boundary. `name:` optional, `@gate(N)` per move. See below
-@@log(dbName)                    model-level audit log: every write fires a log entry
+@@trail(dbName)                    model-level audit log: every write fires a log entry
 @@auth                           marks model as the auth subject
 @@createdBy                      sugar: adds createdById @createdBy + a createdBy relation
                                  to the @@auth model. @@createdBy(owner) renames the pair
@@ -418,7 +418,7 @@ Route models to separate SQLite files, JSONL logs, or auto-schema audit loggers:
 database main      { path env("MAIN_DB", "./app.db") }
 database analytics { path env("ANALYTICS_DB", "./analytics.db") }
 database logs      { path "./logs/"; driver jsonl; retention 30d }
-database audit     { path "./audit/"; driver logger; retention 90d }
+database audit     { path "./audit/"; driver trail; retention 90d }
 
 model PageView {
   id        Int  @id
@@ -442,13 +442,13 @@ const db = await createClient({ path: './schema.lite' })
 
 await db.pageView.create({ data: { path: '/home', duration: 142 } })  // → analytics.db
 await db.apiRequest.create({ data: { method: 'GET', path: '/', status: 200 } })  // → logs/
-await db.auditLogs.findMany({ where: { model: 'User' } })  // → audit/ (auto-created by logger driver)
+await db.auditTrail.findMany({ where: { model: 'User' } })  // → audit/ (auto-created by logger driver)
 ```
 
 **Drivers:**
 - `sqlite` (default) — standard SQLite file with full ORM support
 - `jsonl` — append-only log files, one `.jsonl` per model, `findMany` supported
-- `logger` — auto-schema audit log, receives `@log` / `@@log` entries; queries via `db.auditLogs`
+- `logger` — auto-schema audit log, receives `@trail` / `@@trail` entries; queries via `db.auditTrail`
 
 ---
 
@@ -970,7 +970,7 @@ model User {
   ssn    String  @encrypted                        // AES-256-GCM, guarded — asSystem() only
   email  String  @encrypted(deterministic: true)   // equality WHERE works, and it reads back
   pwHash String  @hashed                           // one-way — matchable, never readable
-  apiKey String  @secret                           // @encrypted + @guarded + @log(audit)
+  apiKey String  @secret                           // @encrypted + @guarded + @trail(audit)
 }
 ```
 
@@ -1025,7 +1025,7 @@ db.user.upsert({ where, create: {...}, update: {...} })  // → TRow
 db.user.restore({ where })                         // → TRow[]
 
 // select: false — skip RETURNING, return null. Fastest write path.
-// No benefit on @@log models (logging requires the row snapshot).
+// No benefit on @@trail models (logging requires the row snapshot).
 db.user.create({ data, select: false })            // → null
 db.user.update({ where, data, select: false })     // → null
 
@@ -1236,9 +1236,9 @@ stop()
 
 ---
 
-## The audit trail — `@@log` records a write, `$audit` records an event
+## The audit trail — `@@trail` records a write, `$audit` records an event
 
-`@@log(audit)` covers **writes**, which means the events an application most
+`@@trail(audit)` covers **writes**, which means the events an application most
 wants are exactly the ones it cannot see. A sign-in is not a write to `User`, and
 a *failed* one is not a write at all — so nothing the logger can observe names the
 actor or the attempt.
@@ -1255,7 +1255,7 @@ await db.$audit({
 })
 ```
 
-**It awaits and throws**, where `@@log` is fire-and-forget — there the record is a
+**It awaits and throws**, where `@@trail` is fire-and-forget — there the record is a
 side effect of a write that already succeeded and must not fail it; here it *is*
 the point. An unknown key is refused by name, a stated `actorId` beats `onLog`'s,
 and `meta` is **not redacted** — it is yours, so do not put a secret in it. On
@@ -1265,7 +1265,7 @@ every flavor of client.
 `@secret` value logs as `[redacted]` in both the field entry and the
 `before`/`after` snapshots — the record says *that* the field was written, never
 what it held. That is what makes `@secret`'s expansion safe: it implies
-`@log(<first logger db>)`, so declaring a logger database alone starts logging
+`@trail(<first trail db>)`, so declaring a trail database alone starts logging
 every secret field, and without redaction that writes plaintext beside a correctly
 encrypted row. `null` is preserved rather than redacted.
 

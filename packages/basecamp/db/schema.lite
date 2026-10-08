@@ -125,9 +125,9 @@
 // ============================================================
 // DATABASES
 // ============================================================
-// The audit logger. Every write to a @@log(audit) model lands in
-// db/audit/auditLogs.jsonl with before/after snapshots, queryable through the
-// `auditLogs` accessor. Two things to know:
+// The audit logger. Every write to a @@trail(audit) model lands in
+// db/audit/auditTrail.jsonl with before/after snapshots, queryable through the
+// `auditTrail` accessor. Two things to know:
 //   • The path is resolved relative to the PROCESS CWD, not this file — it
 //     assumes the API is started from the package root.
 //   • Entries flush on a ~1s timer and on exit — a read in the same session
@@ -163,7 +163,7 @@
 // deliberately does not pass one.
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
 
-database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
 
 // ============================================================
 // TENANCY
@@ -472,7 +472,7 @@ model User {
   @@allow('read',   id == auth().id || auth().level >= 4)
   @@allow('update', id == auth().id)
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   // Both members are optional and that is the shape wanted: one username per
   // account, and no constraint at all between people who have neither.
   @@unique([accountId, username], nullsDistinct: true)
@@ -497,7 +497,7 @@ model User {
 // Credential / Session / Verification / OauthFlow are `@frontierjs/auth`'s, and
 // this app IMPORTS them rather than declaring copies. It used to declare
 // copies — it had to, because each one needs three things the shipped file
-// cannot know: a relation back to THIS app's User, `@@log(audit)`, and
+// cannot know: a relation back to THIS app's User, `@@trail(audit)`, and
 // `@@tenant(none)`, since identity spans workspaces and row tenancy otherwise
 // reports a model with no tenant column.
 //
@@ -545,19 +545,19 @@ extend model KvEntry        { workspaceId String }
 
 extend model Credential {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@log(audit)
+  @@trail(audit)
   @@tenant(none)
 }
 
 extend model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // No @@log(audit) here — the shipped model already carries it, and a second
+  // No @@trail(audit) here — the shipped model already carries it, and a second
   // one is refused rather than merged.
   @@tenant(none)
 }
 
 extend model Verification {
-  @@log(audit)
+  @@trail(audit)
   @@tenant(none)
 }
 
@@ -594,7 +594,7 @@ model Account {
 
   @@gate("6.8")
   @@softDelete(cascade)
-  @@log(audit)
+  @@trail(audit)
 
   // @@tenant(none) — identity spans workspaces — a person is one person in all of
   // them, and `@frontierjs/auth` owns this model
@@ -649,7 +649,7 @@ model Workspace {
 
   @@gate("1.1.5.6")
   @@softDelete(cascade)
-  @@log(audit)
+  @@trail(audit)
   @@index([accountId])
   @@check("(ingressAccountId IS NULL) = (ingressZoneId IS NULL)", "an ingress zone names its account and its zone together")
 
@@ -684,7 +684,7 @@ model WorkspaceMember {
   updatedAt   DateTime      @default(now()) @updatedAt
 
   @@gate("1.5")
-  @@log(audit)
+  @@trail(audit)
   // A person is in a workspace once. The membership IS the pair, so `once`
   // emits the key, and *which workspaces is this person in* — what the switcher
   // asks on every session — gets the reverse index a composite leading with
@@ -755,7 +755,7 @@ model WorkspaceMember {
 // and no `revokedAt`: accepting writes a WorkspaceMember carrying `invitedBy` /
 // `invitedAt` forward and deletes this row, and revoking deletes it too. A
 // lifecycle column here would mean two places record a membership's origin and
-// one of them is never read. `@@log(audit)` is what survives either way.
+// one of them is never read. `@@trail(audit)` is what survives either way.
 //
 // The token is the credential — whoever holds it may join. So it is
 // `@guarded`: written and read through `asSystem()` only, absent from
@@ -799,7 +799,7 @@ model Invitation {
   // Read at 5 as well as written: the row names a person who is not a member
   // yet, and who has been asked to join is an administrator's business.
   @@gate("5")
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, email])
   @@index([workspaceId])
 }
@@ -861,7 +861,7 @@ model Secret {
 
   @@gate("5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, name])
   @@index([workspaceId, providerKind])
 }
@@ -938,7 +938,7 @@ model ApiKey {
   // at it. A second, invisible deleted state on top would make "revoked" and
   // "gone" four combinations instead of two.
   @@gate("5")
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, name])
   @@index([credentialId])
   @@index([userId])
@@ -1155,7 +1155,7 @@ model Server {
   // list too, or a Server can claim to run somewhere nothing runs (FJS-D559).
   @@check("providerKind != 'cloudflare'", "Cloudflare sells no machines")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, slug])
   @@index([workspaceId])
   @@index([status])
@@ -1194,7 +1194,7 @@ model ServerEvent {
 // @@gate("8"): nothing outside asSystem() has anything to say to this table.
 // @@tenant(none): a machine's credential belongs to no workspace, and the
 // endpoints that spend one carry no session to resolve a claim from.
-// No @@log(audit): one row per signed request would bury the human trail.
+// No @@trail(audit): one row per signed request would bury the human trail.
 model OutpostNonce {
   nonce  String   @id
   seenAt DateTime @default(now())
@@ -1252,7 +1252,7 @@ model Volume {
   lastSeenAt      DateTime @default(now())
 
   @@gate("2.5.5.5")
-  @@log(audit)
+  @@trail(audit)
   @@unique([serverId, name])
   @@index([serverId])
 }
@@ -1282,7 +1282,7 @@ model Network {
 
   @@gate("2.5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, slug])
 }
 
@@ -1328,7 +1328,7 @@ model Project {
   // because a policy FILTERS where a gate refuses, so a scoped read that
   // crosses answers an empty list rather than an error.
   @@softDelete(cascade)
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, slug])
   @@index([workspaceId])
 }
@@ -1365,7 +1365,7 @@ model Environment {
   // Environment carries its own workspaceId rather than reaching through
   // projectId, so tenancy scopes it on a column rather than through a parent.
   @@softDelete(cascade)
-  @@log(audit)
+  @@trail(audit)
   @@unique([projectId, slug])
   @@index([projectId])
 }
@@ -1441,7 +1441,7 @@ model App {
   // The deploy job writes App.status through asSystem(), which is how it
   // crosses the tenancy the block at the top of this file compiles in.
   @@softDelete(cascade)
-  @@log(audit)
+  @@trail(audit)
   @@unique([environmentId, slug])
   @@index([workspaceId])
   @@index([environmentId])
@@ -1495,7 +1495,7 @@ model Variable {
   @@gate("2.4.4.4")
   @@capabilities
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([environmentId, key], where: appId == null)
   @@unique([appId, key], nullsDistinct: true)
   @@index([environmentId])
@@ -1540,7 +1540,7 @@ model Domain {
 
   @@gate("2.5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, hostname])
   @@index([appId])
 }
@@ -1649,7 +1649,7 @@ model Deployment {
     fail:     [pending, building] -> failed      @system,
     cancel:   [pending, building] -> cancelled,
     rollback: success             -> rolled_back @gate(5))
-  @@log(audit)
+  @@trail(audit)
   @@index([appId])
   @@index([workspaceId])
   @@index([status])
@@ -1731,7 +1731,7 @@ model Job {
     fail:   running                    -> failed    @system,
     cancel: [pending, running, failed] -> cancelled)
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@index([workspaceId])
   @@index([appId])
   @@index([environmentId])
@@ -1822,7 +1822,7 @@ model Recipe {
 
   @@gate("4.5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, slug])
   @@index([workspaceId])
 }
@@ -1943,7 +1943,7 @@ model CleanupRun {
   createdAt   DateTime  @default(now())
 
   @@gate("2.4.8.8")
-  @@log(audit)
+  @@trail(audit)
   @@index([serverId])
 }
 
@@ -1997,7 +1997,7 @@ model FeatureFlag {
 
   @@gate("2.4.4.5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, key])
   @@index([workspaceId])
 }
@@ -2019,7 +2019,7 @@ model FlagOverride {
   updatedAt     DateTime    @default(now()) @updatedAt
 
   @@gate("2.4.4.4")
-  @@log(audit)
+  @@trail(audit)
   @@relator([flagId, environmentId], once)
 }
 
@@ -2081,7 +2081,7 @@ model NotificationChannel {
 
   @@gate("2.5")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, name])
   @@index([workspaceId])
 }
@@ -2136,7 +2136,7 @@ model AlertRule {
   channels    AlertRuleChannel[]
 
   @@gate("2.5")
-  @@log(audit)
+  @@trail(audit)
   @@index([workspaceId])
 }
 
@@ -2230,7 +2230,7 @@ model Dashboard {
 
   @@gate("2.4.4.4")
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, slug])
   @@index([workspaceId])
 }
@@ -2273,7 +2273,7 @@ model DashboardWidget {
   updatedAt   DateTime   @default(now()) @updatedAt
 
   @@gate("2.4.4.4")
-  @@log(audit)
+  @@trail(audit)
   @@index([dashboardId])
   @@index([serverId])
   @@index([appId])
@@ -2420,7 +2420,7 @@ model Blueprint {
   // Read by anyone signed in — VISITOR(1), because browsing the catalog is
   // what a person with no workspace yet is doing. Written by the hub tier only.
   @@gate("1.7")
-  @@log(audit)
+  @@trail(audit)
   @@index([category])
 
   // @@tenant(none) — a curated catalog is the same nine rows for every
@@ -2519,7 +2519,7 @@ model RegistryImage {
   // administrator's action and really removes it at the registry, which is why
   // delete is 5 and not 8.
   @@gate("2.8.8.5")
-  @@log(audit)
+  @@trail(audit)
   @@unique([workspaceId, repository, tag])
   @@index([workspaceId])
   @@index([workspaceId, repository])
@@ -2566,7 +2566,7 @@ model Backup {
   // A sysadmin reads them and asks for one; the job writes the outcome;
   // pruning an old archive is a sysadmin's again.
   @@gate("7.7.8.7")
-  @@log(audit)
+  @@trail(audit)
   @@index([status])
   @@index([createdAt])
 
@@ -2639,7 +2639,7 @@ model HubConfig {
   // Nothing below the hub tier reads or writes this — it is the installation,
   // not a tenant's.
   @@gate("7")
-  @@log(audit)
+  @@trail(audit)
 
   // @@tenant(none) — one row for the whole installation
   @@tenant(none)

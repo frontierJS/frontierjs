@@ -1946,7 +1946,7 @@ port.on('call', (call) => holder.forward(call))    // the socket when it is up, 
 holder.on('event', (event, data) => port.send('frame', { type: 'event', event, data }))
 ```
 
-Every `connected` after the first emits `resync`, as a socket's reconnect does. `connect()` opens nothing. A call only HTTP can carry is refused by name, because there is no origin to send it to: a file upload, a filtered bulk write, a findFirst, an `/auth` route, or `client.fetch()`. `@frontierjs/jetty`'s `harborApp()` is the one in use.
+Every `connected` after the first emits `reconnected`, as a socket's reconnect does. `connect()` opens nothing. A call only HTTP can carry is refused by name, because there is no origin to send it to: a file upload, a filtered bulk write, a findFirst, an `/auth` route, or `client.fetch()`. `@frontierjs/jetty`'s `harborApp()` is the one in use.
 
 ---
 

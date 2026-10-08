@@ -2,7 +2,7 @@
 //
 // The absence that protects an anonymous row is not all on its own model. The
 // connectteam survey carried no actor, no timestamp and no log, and still gave
-// every response its name back through ONE `@@log(audit)` on the roster table
+// every response its name back through ONE `@@trail(audit)` on the roster table
 // written in the same transaction: the trail's millisecond clock, in order,
 // against the anonymous table's rowid order. So the word refuses both ends — a
 // correlatable column or log on the anonymous model at parse, and a logged
@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse, createClient, autoMigrate } from '../src/index.js'
 
-const TRAIL = 'database audit { path "./audit/" driver logger }\n'
+const TRAIL = 'database audit { path "./audit/" driver trail }\n'
 
 describe('@@anonymous — refused at parse', () => {
   const refuses = (src: string, re: RegExp) => {
@@ -29,12 +29,12 @@ describe('@@anonymous — refused at parse', () => {
     expect(r.schema.models[0].attributes.some(a => a.kind === 'anonymous')).toBe(true)
   })
 
-  test('its own @@log, which stamps an actor and the whole row on every write', () => {
-    refuses(TRAIL + 'model Ballot {\n id Int @id\n @@anonymous\n @@log(audit)\n}', /Ballot.*@@anonymous.*@@log\(audit\)/s)
+  test('its own @@trail, which stamps an actor and the whole row on every write', () => {
+    refuses(TRAIL + 'model Ballot {\n id Int @id\n @@anonymous\n @@trail(audit)\n}', /Ballot.*@@anonymous.*@@trail\(audit\)/s)
   })
 
-  test('a field @log — written, or implied by @secret', () => {
-    refuses(TRAIL + 'model Ballot {\n id Int @id\n note String @log(audit)\n @@anonymous\n}', /field 'note'.*logged/)
+  test('a field @trail — written, or implied by @secret', () => {
+    refuses(TRAIL + 'model Ballot {\n id Int @id\n note String @trail(audit)\n @@anonymous\n}', /field 'note'.*logged/)
   })
 
   test('a column stamped from the writer', () => {
@@ -56,9 +56,9 @@ describe('@@anonymous — refused at parse', () => {
 describe('@@anonymous — a logged write in the same transaction is refused', () => {
   const SCHEMA = `
     database main  { path ":memory:" }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
     model Ballot   { id Int @id  rating Int  @@anonymous }
-    model Roster   { id Int @id  person String  answered Boolean @default(false)  @@log(audit) }
+    model Roster   { id Int @id  person String  answered Boolean @default(false)  @@trail(audit) }
     model Note     { id Int @id  text String }
   `
 

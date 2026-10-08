@@ -1,4 +1,4 @@
-// log-flush-on-exit.test.ts — a committed write's `@@log` line survives the process ending.
+// log-flush-on-exit.test.ts — a committed write's `@@trail` line survives the process ending.
 //
 // `fireLog` defers the append one tick, so a script that ends in `process.exit`
 // or dies on a throw right after `await create()` left the row in main and no
@@ -19,15 +19,15 @@ async function run(ending: string) {
       import { createClient } from ${JSON.stringify(INDEX)}
       const db = await createClient({ resolveFrom: ${JSON.stringify(dir)}, schema: \`
         database main  { path "${dir}/main.db" }
-        database audit { path "${dir}/audit/" driver logger }
-        model Thing { id String @id @default(uuid())  name String  @@log(audit) }
+        database audit { path "${dir}/audit/" driver trail }
+        model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
       \` })
       await db.asSystem().thing.create({ data: { name: 'x' } })
       ${ending}
     `
     const proc = Bun.spawn(['bun', '-e', script], { stdout: 'ignore', stderr: 'ignore' })
     await proc.exited
-    const file = join(dir, 'audit', 'auditLogs.jsonl')
+    const file = join(dir, 'audit', 'auditTrail.jsonl')
     return existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0
   } finally { rmSync(dir, { recursive: true, force: true }) }
 }

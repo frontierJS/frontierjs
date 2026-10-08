@@ -82,7 +82,7 @@ describe('a readiness check is bounded', () => {
     // timeout would dominate the measurement and hide what is being asked.
     const slow = new Map(Array.from({ length: 5 }, (_, i) =>
       [`slow${i}`, async () => { await new Promise(r => setTimeout(r, 150)); return true }] as const))
-    const stub = { _healthChecks: new Map(), _healthChecksApp: slow, config: { name: 's', version: '1' } }
+    const stub = { _readiness: new Map(), _readinessApp: slow, config: { name: 's', version: '1' } }
 
     const t    = Date.now()
     const body = await collectHealth(stub as unknown as Parameters<typeof collectHealth>[0], t, { checkTimeout: 2000 })
@@ -144,9 +144,9 @@ describe('liveness and readiness are different questions', () => {
 describe('an app-declared check still wins its name', () => {
 
   it('replaces a plugin check of the same name without moving in the answer', async () => {
-    app.registerHealthCheck('shared', () => true)
-    app._healthChecksApp.set('shared', () => false)
-    app.registerHealthCheck('after', () => true)
+    app.registerReadiness('shared', () => true)
+    app._readinessApp.set('shared', () => false)
+    app.registerReadiness('after', () => true)
 
     const body = await collectHealth(app, Date.now(), { checkTimeout: 500 })
     const names = Object.keys(body.checks)
@@ -154,8 +154,8 @@ describe('an app-declared check still wins its name', () => {
     expect(body.checks.shared.status).toBe('fail')          // the app's answer
     expect(names.indexOf('shared')).toBeLessThan(names.indexOf('after'))
 
-    app._healthChecks.delete('shared'); app._healthChecks.delete('after')
-    app._healthChecksApp.delete('shared')
+    app._readiness.delete('shared'); app._readiness.delete('after')
+    app._readinessApp.delete('shared')
   })
 })
 

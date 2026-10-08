@@ -6360,29 +6360,29 @@ describe('@secret field attribute', () => {
     expect(field.attributes.some((a: any) => a.kind === 'guarded')).toBe(true)
   })
 
-  test('@secret synthesizes @log when a logger database is declared', () => {
+  test('@secret synthesizes @trail when a trail database is declared', () => {
     const r = parse(`
-      database audit { path "./audit/" driver logger }
+      database audit { path "./audit/" driver trail }
       model T { id Int @id; token String @secret }
     `)
     expect(r.valid).toBe(true)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
-    const logAttr = field.attributes.find((a: any) => a.kind === 'log')
+    const logAttr = field.attributes.find((a: any) => a.kind === 'trail')
     expect(logAttr).toBeDefined()
     expect(logAttr.db).toBe('audit')
     expect(logAttr.reads).toBe(false)
     expect(logAttr.writes).toBe(true)
   })
 
-  test('@secret does not synthesize @log when no logger database exists', () => {
+  test('@secret does not synthesize @trail when no trail database exists', () => {
     const r = parse(`model T { id Int @id; token String @secret }`)
     const field = r.schema.models[0].fields.find((f: any) => f.name === 'token')
-    expect(field.attributes.some((a: any) => a.kind === 'log')).toBe(false)
+    expect(field.attributes.some((a: any) => a.kind === 'trail')).toBe(false)
   })
 
-  test('@secret emits warning when no logger database is declared', () => {
+  test('@secret emits warning when no trail database is declared', () => {
     const r = parse(`model T { id Int @id; token String @secret }`)
-    expect(r.warnings.some((w: string) => w.includes('@secret') && w.includes('logger database'))).toBe(true)
+    expect(r.warnings.some((w: string) => w.includes('@secret') && w.includes('trail database'))).toBe(true)
   })
 
   test('@secret + explicit @encrypted is a validation error', () => {
@@ -6701,18 +6701,18 @@ describe('@secret field attribute', () => {
 describe('onLog callback', () => {
   const ENC_KEY = 'a'.repeat(64)
 
-  // Schema with a logger db, a @log field, and a @@log model
+  // Schema with a trail db, a @trail field, and a @@trail model
   const LOG_SCHEMA = `
     database main  { path env("MAIN_DB", "./main.db") }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
 
     model Post {
       id        Int  @id
       title     String
-      body      String     @log(audit)
+      body      String     @trail(audit)
 
       @@db(main)
-      @@log(audit)
+      @@trail(audit)
     }
   `
 
@@ -6744,7 +6744,7 @@ describe('onLog callback', () => {
   // Give fireLog's setImmediate a chance to flush
   function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
 
-  test('onLog is called on @@log model write', async () => {
+  test('onLog is called on @@trail model write', async () => {
     const calls: any[] = []
     const db = await makeLogDb((entry, ctx) => { calls.push({ entry, ctx }) })
     await db.post.create({ data: { title: 'Hello', body: 'World' } })
@@ -6764,7 +6764,7 @@ describe('onLog callback', () => {
     db.$close()
   })
 
-  test('onLog receives correct field for @log field entry', async () => {
+  test('onLog receives correct field for @trail field entry', async () => {
     const calls: any[] = []
     const db = await makeLogDb((entry) => { calls.push(entry) })
     await db.post.create({ data: { title: 'T', body: 'B' } })
@@ -6777,7 +6777,7 @@ describe('onLog callback', () => {
 
   // ─── $audit ───────────────────────────────────────────────────────────────
   //
-  // @@log(audit) covers WRITES, so the events an app most wants were the ones it
+  // @@trail(audit) covers WRITES, so the events an app most wants were the ones it
   // could not see: a failed login performs no write and left no trace, and a
   // system-context write left `actorId: null` because asSystem() names no
   // principal (FJS-276, FJS-277). $audit is the one owner of putting a row in
@@ -6797,12 +6797,12 @@ describe('onLog callback', () => {
     expect(row.operation).toBe('login.failed')
     expect(row.actorId).toBe('u1')
 
-    const rows = await (db as any).auditLogs.findMany({})
+    const rows = await (db as any).auditTrail.findMany({})
     expect(rows.some((r: any) => r.operation === 'login.failed' && r.actorId === 'u1')).toBe(true)
     db.$close()
   })
 
-  // It THROWS where @@log(audit) is fire-and-forget, and that difference is the
+  // It THROWS where @@trail(audit) is fire-and-forget, and that difference is the
   // point: there the record is a side effect of a write that already succeeded
   // and must not fail it; here the record IS what the caller asked for.
   test('$audit throws rather than dropping the row', async () => {
@@ -6813,7 +6813,7 @@ describe('onLog callback', () => {
     await expect((db as any).$audit({ operation: 'x', reason: 'oops' }))
       .rejects.toThrow(/unknown key 'reason'/)
     await expect((db as any).$audit({ operation: 'x' }, { database: 'nope' }))
-      .rejects.toThrow(/not a logger database/)
+      .rejects.toThrow(/not a trail database/)
     db.$close()
   })
 
@@ -6821,7 +6821,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb()
     await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout' })
     await flush()
-    const rows = await (db as any).auditLogs.findMany({})
+    const rows = await (db as any).auditTrail.findMany({})
     const row  = rows.find((r: any) => r.operation === 'logout')
     expect(row.actorId).toBe(7)
     expect(row.actorType).toBe('user')
@@ -6835,7 +6835,7 @@ describe('onLog callback', () => {
     await (db as any).asSystem().$audit({ operation: 'a' })
     await (db as any).asSystem().$audit({ operation: 'b', actorId: 'u9' })
     await flush()
-    const rows = await (db as any).auditLogs.findMany({})
+    const rows = await (db as any).auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'a').actorId).toBe(null)
     expect(rows.find((r: any) => r.operation === 'b').actorId).toBe('u9')
     db.$close()
@@ -6848,7 +6848,7 @@ describe('onLog callback', () => {
     await (db as any).$audit({ operation: 'x', actorId: 'stated' })
     await (db as any).$audit({ operation: 'y' })
     await flush()
-    const rows = await (db as any).auditLogs.findMany({})
+    const rows = await (db as any).auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'x').actorId).toBe('stated')
     expect(rows.find((r: any) => r.operation === 'y').actorId).toBe('from-onlog')
     db.$close()
@@ -6909,7 +6909,7 @@ describe('onLog callback', () => {
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     // Verify the written log rows reflect the overridden actor
-    const auditRows = await (db as any).auditLogs.findMany({})
+    const auditRows = await (db as any).auditTrail.findMany({})
     expect(auditRows.some((r: any) => r.actorId === 999 && r.actorType === 'service')).toBe(true)
     db.$close()
   })
@@ -6917,7 +6917,7 @@ describe('onLog callback', () => {
   // A uuid actor. @frontierjs/auth issues `id String @id @default(uuid())`, so
   // this is what an ordinary FrontierJS app writes — and the audit index's
   // `actorId` column was declared Int, making it
-  //   SQLiteError: cannot store TEXT value in INTEGER column auditLogs_idx.actorId
+  //   SQLiteError: cannot store TEXT value in INTEGER column auditTrail_idx.actorId
   // on the first audited write with a known actor. It took the request with it.
   //
   // Invisible until 2026-08-06 because Junction handed the Data boundary a
@@ -6928,7 +6928,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb(() => ({ actorId: uuid, actorType: 'user' }))
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const auditRows = await (db as any).auditLogs.findMany({})
+    const auditRows = await (db as any).auditTrail.findMany({})
     expect(auditRows.some((r: any) => r.actorId === uuid)).toBe(true)
     db.$close()
   })
@@ -6944,7 +6944,7 @@ describe('onLog callback', () => {
     await db.post.create({ data: { title: 'C', body: 'D' } })
     await flush()
 
-    const rows = await (db as any).auditLogs.findMany({})
+    const rows = await (db as any).auditTrail.findMany({})
     expect(rows.some((r: any) => r.actorId === 42)).toBe(true)
     expect(rows.some((r: any) => r.actorId === 'usr_abc')).toBe(true)
     db.$close()
@@ -6961,10 +6961,10 @@ describe('onLog callback', () => {
 
     const dir  = tmpSub('ls-idx-drift-')
     mkdirSync(dir, { recursive: true })
-    const file = join(dir, 'auditLogs.jsonl')
+    const file = join(dir, 'auditTrail.jsonl')
 
     const model: any = {
-      name: 'auditLogs',
+      name: 'auditTrail',
       fields: [
         { name: 'id',      type: { kind: 'scalar', name: 'Int',    optional: false }, attributes: [{ kind: 'id' }] },
         { name: 'actorId', type: { kind: 'scalar', name: 'Any',    optional: true  }, attributes: [] },
@@ -6979,8 +6979,8 @@ describe('onLog callback', () => {
       JSON.stringify({ id: 2, actorId: 9, model: 'post' }) + '\n')
 
     const old = new Database(file + '.index.db')
-    old.run(`CREATE TABLE "auditLogs_idx" ("id" INTEGER, "actorId" INTEGER, "_offset" INTEGER NOT NULL, PRIMARY KEY ("id")) STRICT;`)
-    old.run(`INSERT INTO "auditLogs_idx" VALUES (1, 7, 0), (2, 9, 40)`)
+    old.run(`CREATE TABLE "auditTrail_idx" ("id" INTEGER, "actorId" INTEGER, "_offset" INTEGER NOT NULL, PRIMARY KEY ("id")) STRICT;`)
+    old.run(`INSERT INTO "auditTrail_idx" VALUES (1, 7, 0), (2, 9, 40)`)
     old.close()
 
     const table: any = makeJsonlTable(file, model, { models: [model], enums: [], types: [] })
@@ -6994,7 +6994,7 @@ describe('onLog callback', () => {
     expect((await table.findMany({})).length).toBe(3)
 
     const check = new Database(file + '.index.db')
-    expect((check.query(`SELECT type FROM pragma_table_info('auditLogs_idx') WHERE name='actorId'`).get() as any).type)
+    expect((check.query(`SELECT type FROM pragma_table_info('auditTrail_idx') WHERE name='actorId'`).get() as any).type)
       .toBe('ANY')
     check.close()
 
@@ -7007,7 +7007,7 @@ describe('onLog callback', () => {
     })
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const auditRows = await (db as any).auditLogs.findMany({})
+    const auditRows = await (db as any).auditTrail.findMany({})
     const withMeta  = auditRows.find((r: any) => r.meta != null)
     expect(withMeta).toBeDefined()
     const meta = typeof withMeta.meta === 'string' ? JSON.parse(withMeta.meta) : withMeta.meta
@@ -7026,7 +7026,7 @@ describe('onLog callback', () => {
     db.$close()
   })
 
-  test('onLog not called when no @log / @@log on model', async () => {
+  test('onLog not called when no @trail / @@trail on model', async () => {
     const PLAIN_SCHEMA = `
       database main { path env("MAIN_DB", "./main.db") }
       model Note { id Int @id; text String @@db(main) }
@@ -7070,15 +7070,15 @@ describe('onLog callback', () => {
 // to it is not, and the log has none of the column's read protections.
 //
 // This is load-bearing for @secret in particular, which expands to
-// @encrypted + @guarded + @log(<first logger db>) — so merely DECLARING a
-// logger database is enough to start logging every @secret field.
+// @encrypted + @guarded + @trail(<first trail db>) — so merely DECLARING a
+// trail database is enough to start logging every @secret field.
 
 describe('audit log redaction', () => {
   const ENC_KEY = 'a'.repeat(64)
 
   const REDACT_SCHEMA = `
     database main  { path env("MAIN_DB", "./main.db") }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
 
     model Vault {
       id       Int     @id
@@ -7091,7 +7091,7 @@ describe('audit log redaction', () => {
       plain    String?
 
       @@db(main)
-      @@log(audit)
+      @@trail(audit)
     }
   `
 
@@ -7250,15 +7250,15 @@ describe('audit log redaction', () => {
   async function makeLogDbForPlain(onLog: (...args: any[]) => any) {
     const r = parse(`
       database main  { path env("MAIN_DB", "./main.db") }
-      database audit { path "./audit/" driver logger }
+      database audit { path "./audit/" driver trail }
 
       model Post {
         id    Int    @id
         title String
-        body  String @log(audit)
+        body  String @trail(audit)
 
         @@db(main)
-        @@log(audit)
+        @@trail(audit)
       }
     `)
     if (!r.valid) throw new Error(r.errors.join('\n'))
@@ -7282,7 +7282,7 @@ describe('audit log redaction', () => {
 // ─── 19b2. Bulk writes reach the audit trail ─────────────────────────────────
 //
 // updateMany / deleteMany / removeMany / restore / upsertMany used to write NO
-// audit entry at all on an @@log model — not an entry without snapshots, no
+// audit entry at all on an @@trail model — not an entry without snapshots, no
 // entry. A bulk delete of audited rows left a trail saying nothing happened,
 // and createMany's entry named no rows because an autoincrement id does not
 // exist until SQLite assigns it. A trail that omits the most destructive
@@ -7295,7 +7295,7 @@ describe('audit trail covers bulk writes', () => {
 
   const BULK_SCHEMA = `
     database main  { path env("MAIN_DB", "./main.db") }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
 
     model Widget {
       id        Int    @id @default(autoincrement())
@@ -7306,13 +7306,13 @@ describe('audit trail covers bulk writes', () => {
 
       @@db(main)
       @@softDelete
-      @@log(audit)
+      @@trail(audit)
     }
   `
 
   const PLAIN_SCHEMA = `
     database main  { path env("MAIN_DB", "./main.db") }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
 
     model Note {
       id   Int    @id @default(autoincrement())
@@ -7339,10 +7339,10 @@ describe('audit trail covers bulk writes', () => {
 
   function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
 
-  // Model-level entries only — a @log field would double every row below.
+  // Model-level entries only — a @trail field would double every row below.
   async function entries(db: any) {
     await flush()
-    const rows = await db.auditLogs.findMany({})
+    const rows = await db.auditTrail.findMany({})
     return rows.map((r: any) => ({
       operation: r.operation,
       records:   typeof r.records === 'string' ? JSON.parse(r.records) : r.records,
@@ -7438,12 +7438,12 @@ describe('audit trail covers bulk writes', () => {
     db.$close()
   })
 
-  test('a model with no @@log logs nothing and still returns the right counts', async () => {
+  test('a model with no @@trail logs nothing and still returns the right counts', async () => {
     const db = await makeBulkDb(PLAIN_SCHEMA)
     await db.note.createMany({ data: [{ text: 'x' }, { text: 'y' }] })
     expect((await db.note.updateMany({ where: { text: 'x' }, data: { text: 'z' } })).count).toBe(1)
     expect((await db.note.deleteMany({ where: {} })).count).toBe(2)
-    expect(await (db as any).auditLogs.findMany({})).toEqual([])
+    expect(await (db as any).auditTrail.findMany({})).toEqual([])
     db.$close()
   })
 })
@@ -19286,7 +19286,7 @@ describe('trait declarations', () => {
 
   test('trait cannot contain @@db', () => {
     const r = parse(`
-      database audit { path "./audit/" driver logger }
+      database audit { path "./audit/" driver trail }
       trait Bad { @@db(audit) }
       model M { id Int @id; @@trait(Bad) }
     `)

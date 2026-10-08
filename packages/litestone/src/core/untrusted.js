@@ -14,7 +14,7 @@
 //             one file the caller handed in
 //   refused   import (reads a file), database (names one), tenancy, function,
 //             extends, a claim read off a model, and on a model or view
-//             @@auth, @@external, @@db, @@log and @@tenant — each reaches a
+//             @@auth, @@external, @@db, @@trail and @@tenant — each reaches a
 //             principal, another database or a file
 //
 // Every offense is reported at once, by name and line where the parse kept one,

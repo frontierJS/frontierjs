@@ -114,7 +114,7 @@ index.ts     public API
   the one every request is graded by, silently, and only near a gate boundary.
 - **An app IMPORTS `db/auth.lite` and says the rest with `extend model`.** Three
   things it needs are ones this package cannot know: a relation back to the
-  app's own `User`, `@@log(audit)`, and `@@tenant(none)` under row tenancy. Until
+  app's own `User`, `@@trail(audit)`, and `@@tenant(none)` under row tenancy. Until
   litestone had `extend model` the only way to say them was to paste the models
   in and edit them, which basecamp did for four models — and one of them ended up
   with `@guarded` where this file writes `@secret`, so a basecamp that
@@ -216,18 +216,18 @@ index.ts     public API
   429 cannot also erase the attempt from the trail. `onLogin` throwing records
   `reason: 'refused-by-app'` with the message: a veto that leaves no trace is
   the class of defect `FJS-277` was.
-- **Auth records events through `db.$audit`, beside the `@@log(audit)` rows
+- **Auth records events through `db.$audit`, beside the `@@trail(audit)` rows
   rather than instead of them.** `login.succeeded`, `login.failed`,
   `login.challenged`, `logout`, `session.revoked`, `password.reset.refused`,
   the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
   `oauth.link.refused`) and the `support.*` pair (`support.started`,
-  `support.ended`) — `@@log` covers writes, so it covered the sign-in (`create:session`, with
+  `support.ended`) — `@@trail` covers writes, so it covered the sign-in (`create:session`, with
   `actorId: null`, because an `asSystem()` write names no principal) and missed
   the failed attempt entirely, which is the one an app rate-limits on
   (`FJS-276`, `FJS-277`). The `create:session` row records the WRITE and cannot
   name the actor; this one records the EVENT and does.
 - **Two softenings on the login path, both deliberate.** An app is not required
-  to declare a logger database — auth's own fragment does, but an app may bring
+  to declare a trail database — auth's own fragment does, but an app may bring
   its own `User`, and a login that throws because there is nowhere to write the
   record is a worse failure than the missing record. And a failed audit WRITE
   does not fail the request; it is reported, not swallowed. An app wanting a

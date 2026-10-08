@@ -5070,7 +5070,7 @@ describe('broker target', () => {
   it('reports liveness: connected, when it last received, and down once the broker is gone', async () => {
     const broker = fakeBroker()
     const checks = new Map<string, () => boolean>()
-    const c = createConduit({ registerHealth: (n, f) => checks.set(n, f) })
+    const c = createConduit({ registerReadiness: (n, f) => checks.set(n, f) })
     await c.register(brokerTarget(broker.url))
     await c.subscribe('broker:orders', () => {})
 
@@ -5138,7 +5138,7 @@ describe('broker target', () => {
 
   it('reports down for a broker that never answered, rather than nothing', async () => {
     const checks = new Map<string, () => boolean>()
-    const c = createConduit({ registerHealth: (n, f) => checks.set(n, f) })
+    const c = createConduit({ registerReadiness: (n, f) => checks.set(n, f) })
     await c.register(brokerTarget('ws://127.0.0.1:1/'))
     await c.subscribe('broker:orders', () => {})
     expect(checks.get('conduit:broker:orders')!()).toBe(false)

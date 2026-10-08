@@ -1,5 +1,5 @@
 // @ts-check
-// audit-log.js — `@log` and `@@log`: which reads and writes are recorded,
+// audit-log.js — `@trail` and `@@trail`: which reads and writes are recorded,
 // the entry each one writes, and the fire-and-forget write of it.
 
 /** @import { LitestoneSchema, ModelDef, LogEntry, LogRequestContext } from '../index.d.ts' */
@@ -7,15 +7,15 @@
 
 // ─── Logger driver helpers ────────────────────────────────────────────────────
 
-// The auto-generated model AST for driver:logger databases in auto mode.
+// The auto-generated model AST for driver:trail databases in auto mode.
 // Shape is fixed — owned by Litestone, not the user.
-// Model name: <dbName>Logs  e.g. audit → auditLogs
+// Model name: <dbName>Trail  e.g. audit → auditTrail
 /**
  * @param {string} dbName
  * @returns {ModelDef}
  */
 export function makeLoggerAutoModel(dbName) {
-  const name = dbName + 'Logs'
+  const name = dbName + 'Trail'
   const f = (/** @type {string} */ fieldName, /** @type {string} */ typeName, optional = false) => ({
     name: fieldName,
     type: { kind: 'scalar', name: typeName, optional, array: false },
@@ -68,7 +68,7 @@ export function makeLoggerAutoModel(dbName) {
       f('origin',        'String', true),
       f('ip',            'String', true),
       f('userAgent',     'String', true),
-      // Under `strategy database` one logger database is shared by the whole
+      // Under `strategy database` one trail database is shared by the whole
       // fleet by design, so without this the trail cannot tell two tenants
       // apart at all.
       f('tenant',        'String', true),
@@ -89,11 +89,11 @@ export function makeLoggerAutoModel(dbName) {
   }
 }
 
-// Build a map of @log and @@log declarations from the schema.
+// Build a map of @trail and @@trail declarations from the schema.
 // Returns:
 //   fields: { 'ModelName.fieldName': [{ db, reads, writes }] }
 //   models: { 'ModelName':           [{ db, reads, writes }] }
-/** @typedef {{ db: unknown, reads: unknown, writes: unknown }} LogTarget  one `@log`/`@@log` declaration, as the parser wrote it */
+/** @typedef {{ db: unknown, reads: unknown, writes: unknown }} LogTarget  one `@trail`/`@@trail` declaration, as the parser wrote it */
 /** @param {LitestoneSchema} schema */
 export function buildLogMap(schema) {
   /** @type {Record<string, LogTarget[]>} */
@@ -102,17 +102,17 @@ export function buildLogMap(schema) {
   const models = {}
 
   for (const model of schema.models) {
-    // Field-level @log
+    // Field-level @trail
     for (const field of model.fields) {
-      const logAttr = field.attributes.find(a => a.kind === 'log')
+      const logAttr = field.attributes.find(a => a.kind === 'trail')
       if (!logAttr) continue
       const key = `${model.name}.${field.name}`
       if (!fields[key]) fields[key] = []
       fields[key].push({ db: logAttr.db, reads: logAttr.reads, writes: logAttr.writes })
     }
-    // Model-level @@log (can appear multiple times)
+    // Model-level @@trail (can appear multiple times)
     for (const attr of model.attributes) {
-      if (attr.kind !== 'log') continue
+      if (attr.kind !== 'trail') continue
       if (!models[model.name]) models[model.name] = []
       models[model.name].push({ db: attr.db, reads: attr.reads, writes: attr.writes })
     }

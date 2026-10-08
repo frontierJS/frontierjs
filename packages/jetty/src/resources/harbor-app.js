@@ -62,7 +62,7 @@ export function harborApp() {
   }
 
   // Every return to connected is a `connected` frame, and every one after the
-  // first emits `resync`: Harbor's worker may have been stopped in between,
+  // first emits `reconnected`: Harbor's worker may have been stopped in between,
   // and a live list reloads rather than trusting it heard everything.
   let up = false
   onConnectionChange((state) => {

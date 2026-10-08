@@ -299,7 +299,7 @@ export interface CreateClientOptions {
    * `schema` is text the app did not write — a row, a tenant's model. It is
    * parsed as text only (never read from disk), held to the one `db` given,
    * and a `database`, `import`, `tenancy`, `function`, `extend`, a claim read
-   * off a model, or a model's `@@auth`, `@@external`, `@@db`, `@@log` or
+   * off a model, or a model's `@@auth`, `@@external`, `@@db`, `@@trail` or
    * `@@tenant` is refused by name, every one in one error (`FJS-1633`).
    */
   untrusted?: boolean
@@ -371,7 +371,7 @@ export interface CreateClientOptions {
   announce?:   AnnounceMode
   /** Fires on every SQL query — use for logging, slow query detection */
   onQuery?:    (event: QueryEvent, ctx: LitestoneCtx) => void | Promise<void>
-  /** Fires when a @log / @@log entry is written — return extra fields to merge */
+  /** Fires when a @trail / @@trail entry is written — return extra fields to merge */
   onLog?:      (entry: LogEntry, ctx: LitestoneCtx) => Partial<Pick<LogEntry, 'actorId' | 'actorType' | 'meta'>> | void
   /**
    * WHERE a write came from, for the audit trail. Called when an entry is
@@ -707,7 +707,7 @@ export interface LitestoneClient {
    */
   $scopes(accessor: string): Record<string, string>
   /**
-   * Record something in the audit trail that `@@log(audit)` cannot see for
+   * Record something in the audit trail that `@@trail(audit)` cannot see for
    * itself — an event that performs no write (a failed login), or one whose
    * write goes through `asSystem()` and so names no actor.
    *
@@ -715,7 +715,7 @@ export interface LitestoneClient {
    * accessor a caller could write directly; two writers with no shared
    * definition is how a second `operation` vocabulary starts drifting.
    *
-   * THROWS, where `@@log(audit)` is fire-and-forget: there the record is a side
+   * THROWS, where `@@trail(audit)` is fire-and-forget: there the record is a side
    * effect of a write that already succeeded and must not fail it, here the
    * record is what the caller asked for. `actorId` defaults to this client's
    * principal — a system context has none, so state it.
@@ -836,11 +836,11 @@ export interface LitestoneSchema {
 export interface DatabaseBlock {
   name:       string
   path:       { kind: 'literal'; value: string } | { kind: 'env'; var: string; default: string | null }
-  driver:     'sqlite' | 'jsonl' | 'logger'
+  driver:     'sqlite' | 'jsonl' | 'trail'
   replication: boolean
   retention:  string | null
   maxSize:    string | null
-  logModel:   string | null
+  trailModel:   string | null
 }
 
 export interface ModelDef {
@@ -1552,7 +1552,7 @@ export interface RetentionResult {
  */
 export interface RetainResult extends RetentionResult {
   database: string
-  driver:   'sqlite' | 'jsonl' | 'logger'
+  driver:   'sqlite' | 'jsonl' | 'trail'
 }
 
 // Both of these were declared with the wrong arity — `runSqliteRetention(db,

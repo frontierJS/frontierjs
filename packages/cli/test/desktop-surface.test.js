@@ -20,6 +20,7 @@ import { tmpdir } from 'os'
 
 import {
   scaffoldDesktopSurface, desktopScripts, desktopNames, desktopSurfaceDirs,
+  desktopBinary, desktopApiTarget, desktopLauncher,
 } from '../core/desktop-surface.js'
 import { runChecks } from '../core/checks.js'
 import { port, PROJECTS } from '../core/ports.js'
@@ -166,5 +167,62 @@ describe('deploy/build.mjs refuses before it builds', () => {
     const without = build(root)
     expect(without.status).toBe(1)
     expect(without.stderr).toMatch(/refused — desktop\.config\.js names no api/)
+  })
+})
+
+describe('what desktop:run reads', () => {
+  test('the binary is named for the crate Cargo.toml declares, not for the app', () => {
+    const root = appRoot('run-bin')
+    scaffoldDesktopSurface({ root, appName: 'run-bin' })
+    const surface = join(root, 'desktop')
+    expect(desktopBinary(surface)).toBe(join(surface, 'shell', 'target', 'debug', 'run-bin-desktop'))
+    expect(desktopBinary(surface, { release: true, platform: 'win32' }))
+      .toBe(join(surface, 'shell', 'target', 'release', 'run-bin-desktop.exe'))
+
+    writeFileSync(join(surface, 'shell', 'Cargo.toml'), '[package]\nname = "renamed"\n')
+    expect(desktopBinary(surface)).toBe(join(surface, 'shell', 'target', 'debug', 'renamed'))
+  })
+
+  test('no crate is no binary', () => {
+    expect(desktopBinary(join(ROOT, 'nowhere', 'desktop'))).toBeNull()
+  })
+
+  test('only a loopback api is this machine\'s to start', () => {
+    expect(desktopApiTarget('http://localhost:8120')).toEqual({ origin: 'http://localhost:8120', port: 8120, local: true })
+    expect(desktopApiTarget('http://127.0.0.1:7120/')).toMatchObject({ port: 7120, local: true })
+    expect(desktopApiTarget('https://api.example.com')).toEqual({ origin: 'https://api.example.com', port: 443, local: false })
+    expect(desktopApiTarget(null)).toBeNull()
+  })
+})
+
+describe('what desktop:install writes', () => {
+  const launcher = (root, extra = {}) => desktopLauncher({
+    root, surface: join(root, 'desktop'),
+    bun: '/opt/bun/bin/bun', fli: '/src/cli/bin/fli.js',
+    path: '/opt/bun/bin:node_modules/.bin:/usr/bin:/opt/bun/bin', dataHome: '/home/u/.local/share', ...extra,
+  })
+
+  test('the entry opens through desktop:run, named and iconed from tauri.conf.json', () => {
+    const root = appRoot('install-app')
+    scaffoldDesktopSurface({ root, appName: 'install-app' })
+    const { file, body } = launcher(root)
+    expect(file).toBe('/home/u/.local/share/applications/dev.install-app.desktop.desktop')
+    expect(body).toContain('Name=install-app\n')
+    expect(body).toContain('Exec=env PATH=/opt/bun/bin:/usr/bin /opt/bun/bin/bun /src/cli/bin/fli.js desktop:run --no-build\n')
+    expect(body).toContain(`Path=${root}\n`)
+    expect(body).toContain(`Icon=${join(root, 'desktop', 'shell', 'icons', 'icon.png')}\n`)
+    expect(body).toContain('StartupWMClass=install-app-desktop\n')
+  })
+
+  test('an Exec argument is quoted for both of the parses it gets', () => {
+    const root = appRoot('install-quote')
+    scaffoldDesktopSurface({ root, appName: 'install-quote' })
+    const { body } = launcher(root, { path: '/a b:/c$d', bun: '/x\\y/bun' })
+    expect(body).toContain('"PATH=/a b:/c\\\\$d"')
+    expect(body).toContain('"/x\\\\\\\\y/bun"')
+  })
+
+  test('no crate is no entry', () => {
+    expect(launcher(join(ROOT, 'nowhere'))).toBeNull()
   })
 })

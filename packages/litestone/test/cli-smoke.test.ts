@@ -1360,7 +1360,7 @@ describe('a schema importing a package by name', () => {
 
 // ─── backup: a declared logger with no directory ──────────────────────────────
 //
-// A jsonl/logger database is a DIRECTORY the driver creates on its first write,
+// A jsonl/trail database is a DIRECTORY the driver creates on its first write,
 // so *absent* has two causes and they are not the same fact. Both used to be
 // `backup INCOMPLETE` and exit 1, which made the pre-deploy snapshot of every
 // app's FIRST deploy report that the restore point did not exist — and a
@@ -1401,12 +1401,12 @@ describe('migrate dev — a file that deletes values is created and not applied'
 describe('backup — a declared logger directory that is not there', () => {
   const SCHEMA = (auditPath: string) => `
 database main  { path "main.db" }
-database audit { driver logger  path "${auditPath}" }
+database audit { driver trail  path "${auditPath}" }
 
 model Widget {
   id   Int    @id @default(autoincrement())
   name String
-  @@log(audit)
+  @@trail(audit)
 }
 `
 

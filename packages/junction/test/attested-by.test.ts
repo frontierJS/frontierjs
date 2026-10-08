@@ -28,8 +28,8 @@ async function harness() {
     resolveFrom: dir,
     schema: `
       database main  { path ":memory:" }
-      database audit { path "${dir}/audit/" driver logger }
-      model Order { id Int @id  status String  @@log(audit) }
+      database audit { path "${dir}/audit/" driver trail }
+      model Order { id Int @id  status String  @@trail(audit) }
     `,
   })
   const auth = {
@@ -42,7 +42,7 @@ async function harness() {
   await app._startForTest()
   return {
     app, db,
-    rows: async () => { await tick(); return (db as any).asSystem().auditLogs.findMany({}) },
+    rows: async () => { await tick(); return (db as any).asSystem().auditTrail.findMany({}) },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   }
 }

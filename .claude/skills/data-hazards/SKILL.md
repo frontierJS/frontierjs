@@ -88,10 +88,10 @@ Detail: `references/columns-and-clocks.md`
 Detail: `references/the-audit-trail-and-the-log.md`
 
 - **An audit row says WHERE the write came from, and junction is what tells it.**
-- **A `driver logger` trail is written by every process, and the index database's write transaction is what serializes them** (`FJS-D180`)
+- **A `driver trail` trail is written by every process, and the index database's write transaction is what serializes them** (`FJS-D180`)
 - **An audit row names the TABLE, not the model**
 - **An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it.**
-- **`@@log(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
+- **`@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
 
 ## Reads and windows
 Detail: `references/reads-and-windows.md`

@@ -14,7 +14,7 @@
 //   main       — core app database (accounts, users, products, etc.)
 //   analytics  — separate SQLite database for aggregated metrics
 //   logs       — JSONL append-only request log (no migrations, just write)
-//   audit      — logger driver, auto-managed schema, all @@log / @log writes here
+//   audit      — logger driver, auto-managed schema, all @@trail / @trail writes here
 
 database main {
   path env("MAIN_DB_PATH", "./example.db")
@@ -32,7 +32,7 @@ database logs {
 
 database audit {
   path      env("AUDIT_PATH", "./audit/")
-  driver    logger
+  driver    trail
   retention 90d
 }
 
@@ -94,8 +94,8 @@ model Account {
 // Demonstrates:
 //   @@allow / @@deny   — row-level access policy
 //   @allow('read')     — field-level: salary only visible to admins
-//   @secret            — encrypted + guarded + audit logged (via @log(audit))
-//   @@log(audit)       — model-level audit log: create/update/delete
+//   @secret            — encrypted + guarded + audit logged (via @trail(audit))
+//   @@trail(audit)       — model-level audit log: create/update/delete
 
 model User {
   id          Int   @id
@@ -122,7 +122,7 @@ model User {
   @@allow('read',   accountId == auth().accountId)
   @@allow('update', id == auth().id || auth().role == 'admin')
   @@allow('delete', auth().role == 'admin')
-  @@log(audit)
+  @@trail(audit)
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ model ApiRequest {
   @@db(logs)
 }
 
-// ─── Audit log — logger database ─────────────────────────────────────────────
-// driver logger auto-creates auditLogs in audit.db with the unified log shape.
-// User model writes here via @secret (expands to @log(audit)) and @@log(audit).
-// Query via: db.auditLogs.findMany({ where: { model: 'User' } })
+// ─── Audit log — trail database ─────────────────────────────────────────────
+// driver trail auto-creates auditTrail in audit.db with the unified log shape.
+// User model writes here via @secret (expands to @trail(audit)) and @@trail(audit).
+// Query via: db.auditTrail.findMany({ where: { model: 'User' } })

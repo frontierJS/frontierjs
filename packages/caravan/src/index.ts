@@ -1119,8 +1119,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // load balancer. So the threshold is the LONGEST declared timeout, past
       // which every bounded job should already have been given up on — and a
       // queue where nothing declares one is never unhealthy here.
-      if (typeof app.registerHealthCheck === 'function') {
-        app.registerHealthCheck('jobs', () => {
+      if (typeof app.registerReadiness === 'function') {
+        app.registerReadiness('jobs', () => {
           const bounds = caravan.registrations().map(r => r.timeout).filter((t): t is number => t != null)
           if (!bounds.length) return true
           const limit  = Math.max(...bounds)

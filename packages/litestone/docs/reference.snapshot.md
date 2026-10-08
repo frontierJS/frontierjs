@@ -31,7 +31,7 @@ and shows you the diff first.
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
-- *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
+- *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
 - *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field)
@@ -42,7 +42,7 @@ and shows you the diff first.
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
-- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@log`](#log-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
 
@@ -71,9 +71,9 @@ database logs {
 }
 ```
 
-- **`driver`** — `sqlite` · `jsonl` · `logger`
+- **`driver`** — `sqlite` · `jsonl` · `trail`
 - **Deeper** — [multi-database.md](multi-database.md)
-- **See also** — [`@@db`](#db-model) · [`@log`](#log-field)
+- **See also** — [`@@db`](#db-model) · [`@trail`](#trail-field)
 
 ### `tenancy` `{ strategy database | row, … }` <a id="tenancy-declaration"></a>
 
@@ -249,7 +249,7 @@ extend model Session {
 }
 ```
 
-- **Note** — The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@log(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own.
+- **Note** — The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@trail(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own.
 - **Deeper** — [traits.md](traits.md)
 - **See also** — [`trait`](#trait-declaration)
 
@@ -679,11 +679,11 @@ model Example {
 - **`category`** — `contact` · `device` · `location` · `government` · `financial` · `employment` · `communication` · `demographic` · `health` · `genetic` · `biometric` · `characteristic` · `criminal`
 - **Also typed** — `pii` · `gdpr` · `personal data`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@@person`](#person-model) · [`@log`](#log-field) · [`@omit`](#omit-field)
+- **See also** — [`@@person`](#person-model) · [`@trail`](#trail-field) · [`@omit`](#omit-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
-Expands at parse into @encrypted @guarded @log(&lt;logger db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
+Expands at parse into @encrypted @guarded @trail(&lt;trail db&gt;). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
 
 ```lite
 model Example {
@@ -694,7 +694,7 @@ model Example {
 
 - **Legal** — on a model's field · on a trait's field
 - **Deeper** — [encryption.md](encryption.md)
-- **See also** — [`@encrypted`](#encrypted-field) · [`@guarded`](#guarded-field) · [`@log`](#log-field)
+- **See also** — [`@encrypted`](#encrypted-field) · [`@guarded`](#guarded-field) · [`@trail`](#trail-field)
 
 #### `@check` `("sql expression")` <a id="check-field"></a>
 
@@ -784,25 +784,25 @@ model Example {
 - **Deeper** — [file-storage.md](file-storage.md)
 - **See also** — [`@hardDelete`](#harddelete-field) · [`@version`](#version-field)
 
-#### `@log` `(<database>[, reads: false][, writes: false])` <a id="log-field"></a>
+#### `@trail` `(<database>[, reads: false][, writes: false])` <a id="trail-field"></a>
 
-Log reads and writes of this one field into a logger database. Both by default.
+Log reads and writes of this one field into a trail database. Both by default.
 
 ```lite
 database audit {
   path   "./audit.db"
-  driver logger
+  driver trail
 }
 
 model Example {
   id Int @id
-  balance Int @log(audit)
+  balance Int @trail(audit)
 }
 ```
 
-- **Also typed** — `audit` · `history` · `trail`
+- **Also typed** — `audit` · `history`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@@log`](#log-model) · [`database`](#database-declaration)
+- **See also** — [`@@trail`](#trail-model) · [`database`](#database-declaration)
 
 ### Clean a value on write
 
@@ -1814,28 +1814,28 @@ model Example {
 - **Deeper** — [audit-logging.md](audit-logging.md)
 - **See also** — [`@personal`](#personal-field) · [`@@auth`](#auth-model)
 
-#### `@@log` `(<database>[, reads: false][, writes: false])` <a id="log-model"></a>
+#### `@@trail` `(<database>[, reads: false][, writes: false])` <a id="trail-model"></a>
 
-Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 database audit {
   path   "./audit.db"
-  driver logger
+  driver trail
 }
 
 model Example {
   id Int @id
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@log`](#log-field) · [`database`](#database-declaration) · [`@@anonymous`](#anonymous-model)
+- **See also** — [`@trail`](#trail-field) · [`database`](#database-declaration) · [`@@anonymous`](#anonymous-model)
 
 #### `@@anonymous` <a id="anonymous-model"></a>
 
-No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
+No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
 
 ```lite
 model Example {
@@ -1848,7 +1848,7 @@ model Example {
 
 - **Also typed** — `unattributed` · `ballot` · `survey` · `confidential`
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@log`](#log-field) · [`@createdBy`](#createdby-field) · [`@date`](#date-field)
+- **See also** — [`@trail`](#trail-field) · [`@createdBy`](#createdby-field) · [`@date`](#date-field)
 
 #### `@@db` `(<database>)` <a id="db-model"></a>
 

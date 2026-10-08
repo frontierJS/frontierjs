@@ -140,11 +140,11 @@ const TOP = [
     'A named database. `driver` is sqlite (default), jsonl or logger; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.',
     'database logs {\n  path   env("LOGS_PATH", "./logs.db")\n  driver jsonl\n}',
     {
-      seeAlso: ['db', 'log'],
+      seeAlso: ['db', 'trail'],
       values: [
         vals(
           'driver',
-          ['sqlite', 'jsonl', 'logger'],
+          ['sqlite', 'jsonl', 'trail'],
           'database probe {\n  path   "./probe.db"\n  driver %s\n}'
         )
       ]
@@ -275,7 +275,7 @@ const TOP = [
       context:
         'model Session {\n  id     String @id @default(uuid())\n  userId String\n  @@gate("8")\n}\nmodel User {\n  id String @id @default(uuid())\n  @@gate("4")\n}',
       seeAlso: ['trait'],
-      note: "The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@log(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own."
+      note: "The opposite direction of @@trait, and both exist: a trait is opted INTO by the model, which needs the model's author to have known about it. An extend does not. @@tenant(none) and @@trail(audit) are the other two an app usually adds here. Applied before traits, so an extend may carry a @@trait(T) of its own."
     }
   ),
 
@@ -558,7 +558,7 @@ const FIELD = [
     'A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.',
     'email String @personal(contact)',
     {
-      seeAlso: ['person', 'log', 'omit'],
+      seeAlso: ['person', 'trail', 'omit'],
       values: [
         vals(
           'category',
@@ -574,9 +574,9 @@ const FIELD = [
     'field',
     'protect',
     '[(rotate: …)]',
-    'Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.',
+    'Expands at parse into @encrypted @guarded @trail(<trail db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.',
     'apiKey String @secret',
-    { seeAlso: ['encrypted', 'guarded', 'log'] }
+    { seeAlso: ['encrypted', 'guarded', 'trail'] }
   ),
   t(
     'check',
@@ -696,15 +696,15 @@ const FIELD = [
     { seeAlso: ['hardDelete', 'version'] }
   ),
   t(
-    'log',
+    'trail',
     'field',
     'stamp',
     '(<database>[, reads: false][, writes: false])',
-    'Log reads and writes of this one field into a logger database. Both by default.',
-    'balance Int @log(audit)',
+    'Log reads and writes of this one field into a trail database. Both by default.',
+    'balance Int @trail(audit)',
     {
-      context: 'database audit {\n  path   "./audit.db"\n  driver logger\n}',
-      seeAlso: ['log', 'database']
+      context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',
+      seeAlso: ['trail', 'database']
     }
   ),
 
@@ -1251,15 +1251,15 @@ const MODEL = [
     }
   ),
   t(
-    'log',
+    'trail',
     'model',
     'operate',
     '(<database>[, reads: false][, writes: false])',
-    'Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
-    '@@log(audit)',
+    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
+    '@@trail(audit)',
     {
-      context: 'database audit {\n  path   "./audit.db"\n  driver logger\n}',
-      seeAlso: ['log', 'database', 'anonymous']
+      context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',
+      seeAlso: ['trail', 'database', 'anonymous']
     }
   ),
   t(
@@ -1267,11 +1267,11 @@ const MODEL = [
     'model',
     'operate',
     '',
-    'No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail\'s clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.',
+    'No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail\'s clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.',
     '@@anonymous',
     {
       extraFields: 'rating Int\n  answeredOn String @date',
-      seeAlso: ['log', 'createdBy', 'date']
+      seeAlso: ['trail', 'createdBy', 'date']
     }
   ),
   t(
@@ -1473,7 +1473,7 @@ export const DOCS = {
   'field:point': 'geo.md',
   'field:vector': 'vectors.md',
   'field:keepVersions': 'file-storage.md',
-  'field:log': 'audit-logging.md',
+  'field:trail': 'audit-logging.md',
 
   // transform
   'field:trim': 'schema.md',
@@ -1540,7 +1540,7 @@ export const DOCS = {
   'model:transitions': 'schema.md',
   'model:auth': 'access-control.md',
   'model:person': 'audit-logging.md',
-  'model:log': 'audit-logging.md',
+  'model:trail': 'audit-logging.md',
   'model:anonymous': 'audit-logging.md',
   'model:db': 'multi-database.md',
   'model:trait': 'traits.md',
@@ -1641,7 +1641,7 @@ export const TIERS = {
     'model:allow',
     'model:deny',
     'model:transitions',
-    'model:log',
+    'model:trail',
     'model:person',
     'model:db',
     'model:export',
@@ -1683,7 +1683,7 @@ export const TIERS = {
     'field:unit',
     'field:point',
     'field:vector',
-    'field:log',
+    'field:trail',
     'field:endsWith',
     'field:contains',
     'field:minItems',
@@ -1747,7 +1747,7 @@ export const SYNONYMS = {
   'field:scale':       ['precision'],
   'field:money':       ['price', 'cents'],
   'field:version':     ['etag'],
-  'field:log':         ['audit', 'history', 'trail'],
+  'field:trail':       ['audit', 'history'],
   'field:immutable':   ['write-once', 'append-only'],
   'field:hashed':      ['password', 'bcrypt', 'argon'],
   'field:encrypted':   ['at-rest'],

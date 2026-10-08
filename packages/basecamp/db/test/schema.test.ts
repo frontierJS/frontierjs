@@ -112,7 +112,7 @@ function freshDb(): string {
 /**
  * A throwaway directory this file owns. The env owns its own (`env.dir`); this
  * is for the two things that need one BEFORE a client exists — the raw
- * migration replay, and the `audit` logger database, whose path has to be
+ * migration replay, and the `audit` trail database, whose path has to be
  * passed in as a client option.
  */
 function scratchDir(label: string): string {
@@ -122,7 +122,7 @@ function scratchDir(label: string): string {
 }
 
 /**
- * The rows a @@log(audit) write produces, once they are on disk.
+ * The rows a @@trail(audit) write produces, once they are on disk.
  *
  * POLLED, not slept. The writer buffers ~1s and a fixed wait against that is a
  * coin toss under load — this file failed once in a full run and passed on its
@@ -131,7 +131,7 @@ function scratchDir(label: string): string {
  * genuine failure is still a failure. Every caller states a timeout above that.
  */
 async function auditEntries(dir: string, model: string, ops: string[]): Promise<any[]> {
-  const file = join(dir, 'auditLogs.jsonl')
+  const file = join(dir, 'auditTrail.jsonl')
   const read = () => {
     try {
       return readFileSync(file, 'utf8').trim().split('\n')
@@ -466,7 +466,7 @@ describe('audit logging', () => {
     const entries = await auditEntries(auditDir, 'secret', ['create', 'update'])
     db.$close()
 
-    const file = join(auditDir, 'auditLogs.jsonl')
+    const file = join(auditDir, 'auditTrail.jsonl')
     expect(existsSync(file)).toBe(true)
     const log = readFileSync(file, 'utf8')
 
@@ -1577,7 +1577,7 @@ describe('ApiKey — the token Basecamp issues', () => {
   })
 
   test('issuing and revoking a key are both in the row-level audit trail', async () => {
-    // @@log(audit) on ApiKey. Handing out and taking away access is the class
+    // @@trail(audit) on ApiKey. Handing out and taking away access is the class
     // of thing the trail exists for, so it is asserted rather than assumed —
     // and the hint is not a secret, so unlike Secret.data it may appear.
     const auditDir = scratchDir('audit-apikey')

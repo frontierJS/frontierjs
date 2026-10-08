@@ -263,7 +263,7 @@ t('usage.writtenWordNotNodeKind', await evaluate(`
   };
 `), { translated: true, counted: true, none: true })
 
-// db.$schema is the AUGMENTED parse: it carries a log model per logger database
+// db.$schema is the AUGMENTED parse: it carries a log model per trail database
 // and a stub per view, so a count taken off it reports declarations nobody made.
 // That is the same class of lie as counting `trait` off the parse, and it is the
 // only panel where it matters.

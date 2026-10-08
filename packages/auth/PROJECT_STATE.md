@@ -57,7 +57,7 @@ Reproduce: `cd packages/auth && bun run test && bun run typecheck`.
 
 The suites need a real Chrome-free bun only, but they DO build a real SQLite
 database per file under `os.tmpdir()`. Those dirs are reaped at **process exit**,
-not in `afterAll` — `@@log(audit)` flushes asynchronously through the jsonl
+not in `afterAll` — `@@trail(audit)` flushes asynchronously through the jsonl
 driver after the awaited call returns, and tearing the directory down early
 raced it into `SQLITE_READONLY_DBMOVED`. See the note in `test/harness.ts`;
 it is consistent with the audit-logger landmine in `../../CLAUDE.md`.

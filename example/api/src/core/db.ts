@@ -122,7 +122,7 @@ const registry = await createTenantRegistry({
   // `File` column has nowhere to put the bytes.
   clientOptions: {
     // Every tenant client anchors its declared paths the same way. `database
-    // audit` is the one file the registry does NOT redirect — a logger database
+    // audit` is the one file the registry does NOT redirect — a trail database
     // is shared across the fleet by design — so it is the one that was still
     // following the process CWD, and it is now the declaration's `./db/audit/`
     // read from the app root.

@@ -35,7 +35,7 @@ trait Audited {
   updatedAt DateTime @updatedAt
   @@createdBy
   @@updatedBy
-  @@log(audit)
+  @@trail(audit)
 }
 
 model Order   { id Int @id; ...; @@trait(Audited) }
@@ -60,7 +60,7 @@ trait <Name> {
 }
 ```
 
-Inside a trait you can put almost anything you'd put in a model: scalar fields with attributes, optional fields, arrays, relations, validators, transforms, encrypted fields, computed fields, `@from` derived fields, model-level policies (`@@allow` / `@@deny`), `@@gate`, `@@softDelete`, `@@log`, `@@index`, `@@unique`, `@@noStrict`, even other traits.
+Inside a trait you can put almost anything you'd put in a model: scalar fields with attributes, optional fields, arrays, relations, validators, transforms, encrypted fields, computed fields, `@from` derived fields, model-level policies (`@@allow` / `@@deny`), `@@gate`, `@@softDelete`, `@@trail`, `@@index`, `@@unique`, `@@noStrict`, even other traits.
 
 What you **can't** put in a trait:
 
@@ -127,7 +127,7 @@ model M {
 }
 ```
 
-**3. Model-level attributes are additive.** If `Dates` adds `@@index([createdAt])` and `Audited` adds `@@log(audit)`, the host gets both. If two traits both add `@@allow('read', X)`, the host gets both rows in its policy list — same effect as if you'd written them inline.
+**3. Model-level attributes are additive.** If `Dates` adds `@@index([createdAt])` and `Audited` adds `@@trail(audit)`, the host gets both. If two traits both add `@@allow('read', X)`, the host gets both rows in its policy list — same effect as if you'd written them inline.
 
 ## Nested traits
 
@@ -146,13 +146,13 @@ trait Dates {
 trait Audited {
   createdById Int?
   createdBy   User?    @relation("created", fields: [createdById], references: [id])
-  @@log(audit)
+  @@trail(audit)
   @@trait(Dates)        // includes Dates' fields and attributes
 }
 
 model Order {
   id Int @id
-  @@trait(Audited)      // gets createdById, createdBy, createdAt, updatedAt, @@log(audit)
+  @@trait(Audited)      // gets createdById, createdBy, createdAt, updatedAt, @@trail(audit)
 }
 ```
 
@@ -227,7 +227,7 @@ import "@frontierjs/auth/db/auth.lite"
 extend model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@tenant(none)
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
@@ -251,4 +251,4 @@ Order does not matter. Extends are collected across the whole import tree and ap
 
 - [schema.md](./schema.md) — full schema language reference
 - [access-control.md](./access-control.md) — `@@allow` / `@@deny` policies
-- [audit-logging.md](./audit-logging.md) — `@@log` for audit trails
+- [audit-logging.md](./audit-logging.md) — `@@trail` for audit trails

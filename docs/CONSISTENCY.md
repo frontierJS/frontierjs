@@ -27,7 +27,7 @@ One row per seam. Each row is a guarantee, the way it fails, the file that keeps
 | Seam | Guarantee | How it fails | Kept by | Proved by |
 | --- | --- | --- | --- | --- |
 | A second process, same file | `database main { announce crossProcess }` records each write's id after commit, and the other processes re-read it. At most once, **one machine only**. | A second host sees none of the first host's writes, and nothing reports it. A refusal at boot waits until `outpost` knows the fleet's shape. | `litestone/src/core/cross-process.js` | `litestone/test/cross-process.test.ts` |
-| A reconnect | Frames carry no sequence number. A reconnect is a gap: the client emits `resync` and a live list refetches, with jitter. | — | `junction/src/client/index.ts` | `junction/test/resync.test.ts` |
+| A reconnect | Frames carry no sequence number. A reconnect is a gap: the client emits `reconnected` and a live list refetches, with jitter. | — | `junction/src/client/index.ts` | `junction/test/reconnected.test.ts` |
 | An offline write | Queued first, cleared on acknowledgement, keyed so a replay is idempotent. A model with no `@@sync` refuses it (`FJS-D298`). | — | `sierra/src/resource/pending.js` | `sierra/test/pending-queue.test.js`, `sync-policies.test.js` |
 | Replicas | Litestream ships the WAL to object storage, for recovery only. Nothing reads from a replica. | A read from a replica would be stale, and none exists to make one. | `litestone/docs/replication.md` | — |
 

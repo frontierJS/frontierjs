@@ -10,7 +10,7 @@ and not here. Read the section for a path before changing code under it.
   queues nothing for an absent socket, so every write between a drop and the
   next `connected` frame reached this client and nobody else's copy of it — and
   `resource.stale`, which exists to count exactly this, read 0 with nothing on
-  screen saying anything was missing (`FJS-701`). The client emits `resync` on
+  screen saying anything was missing (`FJS-701`). The client emits `reconnected` on
   a `connected` frame that is not the FIRST one, and a live list answers it with
   the `refetch` it already gives `changed`: *some unknown rows moved*, which is
   the only sound answer, since nothing in a browser knows what it did not
@@ -297,7 +297,7 @@ nothing for it to be inside of.
   its own port, and the transport puts `Connection: close` on every response so
   a client holding a keep-alive socket does not send its next request into a
   process that is closing. A flag in one closure makes the three disagree —
-  `_healthChecksApp`'s argument (`FJS-414`) applied to a second fact. It is
+  `_readinessApp`'s argument (`FJS-414`) applied to a second fact. It is
   false for the whole life of a running app, which is what keeps
   `_finalizeWithHeaders`'s no-op fast path intact.
 - **Plugin phases run breadth-first, and only `ready` is forgiving.** `register`

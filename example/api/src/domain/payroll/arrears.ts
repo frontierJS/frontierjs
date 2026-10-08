@@ -41,7 +41,7 @@
 // terms were in force and nothing says when we learnt them. So the first
 // question is answerable **only because a document happened to freeze the
 // answer** — ask the terms table about March after a backdate and it tells you
-// today's belief. `@@log(audit)` holds the other axis as a log nothing can be
+// today's belief. `@@trail(audit)` holds the other axis as a log nothing can be
 // joined against, which is not the same thing as a dimension.
 
 import { lastDayOf, payAsAtMany } from './employment.ts'

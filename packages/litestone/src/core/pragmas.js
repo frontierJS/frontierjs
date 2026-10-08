@@ -159,6 +159,11 @@ export function applyBusyTimeout(db, timeout) {
  *
  * The jsonl index does NOT use this: it wants a short wait for the switch and
  * the long one after, because a rolling deploy holds the file (`drivers/jsonl-index.js`).
+ *
+ * Two openers outside litestone restate the order because they cannot import
+ * it: caravan's `openDb` (its `auto_vacuum` must land between the wait and the
+ * switch) and the cli's `core/journal-runner.mjs` (a deploy target has no
+ * node_modules).
  */
 export function applyWal(db, timeout) {
   applyBusyTimeout(db, timeout)

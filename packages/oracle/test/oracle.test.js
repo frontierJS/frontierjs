@@ -10,11 +10,11 @@ import { ACTORS, ENTITIES, ENTITY, TYPES, RULES, brief, checkAnswer, emit } from
 import hiring from './fixtures/hiring.json'
 
 // What `fli new` declares that the emitted models lean on: the two databases
-// (`@@log(audit)` names one) and an `@@auth` User. The real scaffold imports
+// (`@@trail(audit)` names one) and an `@@auth` User. The real scaffold imports
 // @frontierjs/auth for the rest, which this package does not depend on.
 const SCAFFOLD = `
 database main  { path ":memory:" }
-database audit { path "./audit/" driver logger }
+database audit { path "./audit/" driver trail }
 
 model User {
   id     String  @id @default(uuid())

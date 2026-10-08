@@ -104,7 +104,7 @@ describe('$retain() — because startup is not a schedule', () => {
     const { sys } = await seeded()
     for (const r of sys.$retain()) {
       expect(typeof r.database).toBe('string')
-      expect(['sqlite', 'jsonl', 'logger']).toContain(r.driver)
+      expect(['sqlite', 'jsonl', 'trail']).toContain(r.driver)
     }
   })
 
@@ -178,7 +178,7 @@ describe('the jsonl half', () => {
       database main { path "${join(tmp(), 'app.db')}" }
       database logs { path "${join(dir, 'logs/')}"  driver jsonl  retention 90d }
       // An @@index is what puts a companion index.db beside the file, and it is
-      // the shape a logger database always has — makeLoggerAutoModel declares
+      // the shape a trail database always has — makeLoggerAutoModel declares
       // two of them. Without one the driver opens no index and this proves nothing.
       model Entry { id Int @id @default(autoincrement())  body String  createdAt DateTime @default(now())  @@db(logs)  @@index([body]) }
     `

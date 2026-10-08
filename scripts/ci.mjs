@@ -1247,9 +1247,9 @@ function publishedLiteTargets(name) {
 
 // A fragment is not a whole schema: both of auth's say in their own headers
 // that they parse standalone against a host declaring `main` and `audit`, and
-// `Session` carries `@@log(audit)`. So the host is supplied here rather than
+// `Session` carries `@@trail(audit)`. So the host is supplied here rather than
 // the fragment being parsed bare, which would refuse a correct file.
-const LITE_HOST = 'database main {\n  path "./ci.db"\n}\n\ndatabase audit {\n  path "./ci-audit/"\n  driver logger\n}\n\n'
+const LITE_HOST = 'database main {\n  path "./ci.db"\n}\n\ndatabase audit {\n  path "./ci-audit/"\n  driver trail\n}\n\n'
 // The parser counts lines in what it was HANDED, so every position it reports
 // is the host's lines further down than the file a reader will open — and a
 // line number that is confidently wrong sends somebody to the wrong line rather

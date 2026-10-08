@@ -19,7 +19,7 @@ const KEY = 'a'.repeat(64)
 
 const SCHEMA = `
   database main  { path env("MAIN_DB", "./main.db") }
-  database audit { path "./audit/" driver logger }
+  database audit { path "./audit/" driver trail }
 
   model Device {
     id    Int    @id @default(autoincrement())

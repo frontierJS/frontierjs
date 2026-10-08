@@ -223,7 +223,7 @@ function emitModel(m, backs, access) {
       ? `@@unique([${m.container.link}Id, ${m.container.user}Id], nullsDistinct: true)`
       : `@@relator([${m.container.link}Id, ${m.container.user}Id], once)`)
   }
-  if (m.patterns.includes('audit')) attrs.push('@@log(audit)')
+  if (m.patterns.includes('audit')) attrs.push('@@trail(audit)')
 
   attrs.push(`@@gate("${access.gate.join('.')}")`)
   if (m.lifecycle) attrs.push(transitions(m.lifecycle))

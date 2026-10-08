@@ -176,12 +176,12 @@ migrating means re-collecting the values from wherever they still exist. See
 
 ## @secret
 
-Composite attribute — expands at parse time to `@encrypted + @guarded + @log(audit)`. Every read and write is logged to the audit logger database.
+Composite attribute — expands at parse time to `@encrypted + @guarded + @trail(audit)`. Every read and write is logged to the audit trail database.
 
 ```prisma
 database audit {
   path "./audit/"
-  driver logger
+  driver trail
   retention 90d
 }
 

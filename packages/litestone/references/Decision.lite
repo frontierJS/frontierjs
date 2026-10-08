@@ -26,7 +26,7 @@
 ///
 /// `Timesheet` has approve, reopen and export. A column pair per verb is six
 /// columns and a row that remembers only the last of each; a `Decision` pair
-/// records the latest settling and the audit trail (`@@log(audit)`) records
+/// records the latest settling and the audit trail (`@@trail(audit)`) records
 /// the rest with their actors for free. A host that genuinely needs two
 /// standing stamps — submitted AND approved, both shown — declares the second
 /// pair under its own names; `@seals` on the approving transition is what

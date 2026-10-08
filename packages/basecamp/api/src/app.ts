@@ -130,7 +130,7 @@ export async function buildBasecampApp(
   //
   // Four of the five are the package's own models, imported by db/schema.lite
   // and adjusted with `extend model` — this app adds the relation back to its
-  // User, @@log(audit) and @@tenant(none), and owns none of the columns. `User`
+  // User, @@trail(audit) and @@tenant(none), and owns none of the columns. `User`
   // is the one it does own and declares.
   //
   // `sessionFields` is how this app's OWN User columns reach the session.

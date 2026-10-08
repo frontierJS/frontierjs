@@ -285,7 +285,7 @@ try {
 const FALLBACK_FIELD_ATTRS = [
   '@id', '@unique', '@default(now())', '@default(uuid())', '@relation', '@generated',
   '@computed', '@updatedAt', '@omit', '@guarded', '@encrypted', '@hashed', '@secret',
-  '@log', '@from', '@map', '@email', '@url', '@regex', '@length', '@trim',
+  '@trail', '@from', '@map', '@email', '@url', '@regex', '@length', '@trim',
 ]
 const FALLBACK_MODEL_ATTRS = ['@@db', '@@index', '@@unique', '@@fts', '@@softDelete', '@@gate', '@@auth', '@@allow', '@@deny']
 const FALLBACK_TOP         = ['model', 'enum', 'function', 'database', 'import']
@@ -351,7 +351,7 @@ function catalogHover(typed: string): string | null {
   return out.join('')
 }
 
-const DATABASE_DRIVERS = ['sqlite', 'jsonl', 'logger']
+const DATABASE_DRIVERS = ['sqlite', 'jsonl', 'trail']
 
 connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
   const doc = documents.get(pos.textDocument.uri)
@@ -458,11 +458,11 @@ connection.onCompletion((pos: TextDocumentPositionParams): CompletionItem[] => {
     }
   }
 
-  // @log / @@log — database name completions (inArgsOf strips both @ forms)
-  if (inModel && inArgsOf === 'log') {
+  // @trail / @@trail — database name completions (inArgsOf strips both @ forms)
+  if (inModel && inArgsOf === 'trail') {
     const dbs = extractDatabaseNames(text)
     for (const db of dbs) {
-      items.push({ label: db, kind: CompletionItemKind.Module, detail: 'logger database' })
+      items.push({ label: db, kind: CompletionItemKind.Module, detail: 'trail database' })
     }
   }
 
@@ -547,10 +547,10 @@ const ATTR_DOCS: Record<string, string> = {
     'HMAC-SHA256. **One-way** — no ciphertext, no key recovers it, `$rotateKey` cannot touch it.\n\nEquality `where` filters work; the value never comes back, `asSystem()` included. Naming it in a `select`, `groupBy` or aggregate throws.\n\n```\nloginToken String @hashed\n// WHERE loginToken = tok   ✓ matches\n// user.loginToken          → undefined\n```\n\nString columns only. Does not compose with `@encrypted`, `@secret`, `@guarded` or `@allow`.',
 
   '@secret':
-    'Composite attribute — expands to `@encrypted + @guarded + @log(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit logger database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()` — the column is then UNREADABLE after a rotation, because the key swap is global, and `$rotateKey` refuses while one exists unless it is orphaned by name. `@secret(deterministic: true)` is a secret that must also be looked up by value.',
+    'Composite attribute — expands to `@encrypted + @guarded + @trail(audit)`.\n\nThe field is encrypted at rest, hidden from all reads unless `asSystem()`, and every read/write is logged to the audit trail database.\n\nUse `@secret(rotate: false)` to exclude from `db.$rotateKey()` — the column is then UNREADABLE after a rotation, because the key swap is global, and `$rotateKey` refuses while one exists unless it is orphaned by name. `@secret(deterministic: true)` is a secret that must also be looked up by value.',
 
-  '@log':
-    'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @log(audit) is implicit via @secret\nsalary Float @log(audit)\n```\n\nSee also: `@@log` for model-level logging.',
+  '@trail':
+    'Logs reads and writes of this field to a `logger` database.\n\n```\napiKey String @secret   // @trail(audit) is implicit via @secret\nsalary Float @trail(audit)\n```\n\nSee also: `@@trail` for model-level logging.',
 
   '@keepVersions':
     'On `File?` and `File[]` fields: keeps the old S3/R2 object when the field is updated instead of deleting it. Useful for versioned assets.',
@@ -644,8 +644,8 @@ const ATTR_DOCS: Record<string, string> = {
   '@@deny':
     'Row-level deny policy — always wins over `@@allow`.\n\n```\n@@deny(\'delete\', status == \'published\')\n@@deny(\'update\', status == \'archived\', "Archived posts cannot be edited")\n```\n\nOptional third argument is a custom error message.',
 
-  '@@log':
-    'Model-level audit log — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@log(audit)\n}\n```\n\nRequires a `database` block with `driver logger`.',
+  '@@trail':
+    'Model-level audit log — fires a log entry for every `create`, `update`, and `delete` on this model.\n\n```\nmodel User {\n  @@trail(audit)\n}\n```\n\nRequires a `database` block with `driver trail`.',
 
   '@@external':
     'Marks this model\'s table as managed outside Litestone (e.g. a view, a FTS virtual table, or a table from another tool). Litestone will not emit DDL or run migrations for it, but it is fully queryable.\n\n```\nmodel search_index {\n  id    Int @id\n  body  String\n  @@external\n}\n```',

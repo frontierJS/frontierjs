@@ -261,7 +261,7 @@ describe('the declaration', () => {
   })
 
   test('refuses a driver with no table to record into', () => {
-    // A jsonl or logger database is a FILE — no table, and no transaction to
+    // A jsonl or trail database is a FILE — no table, and no transaction to
     // record with — so the declaration would parse and do nothing.
     const r = parse(`database logs { path "./a.jsonl"  driver jsonl  announce crossProcess }\nmodel P { id Int @id }`)
     expect(r.valid).toBe(false)

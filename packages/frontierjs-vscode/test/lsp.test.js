@@ -75,7 +75,7 @@ function col2(text, lineNo, needle) {
 
 const VALID = [
   'database audit {',                                                 // 0
-  '  driver logger',
+  '  driver trail',
   '  path   "./audit.jsonl"',
   '}',
   '',
@@ -100,7 +100,7 @@ const VALID = [
   '  ownerId Int',
   '  owner   Owner  @relation(fields: [ownerId], references: [id])',  // 24
   '  @@gate("4.4.4.4")',                                              // 25
-  '  @@log(audit)',                                                   // 26
+  '  @@trail(audit)',                                                   // 26
   '}',
   '',
 ].join('\n')
@@ -184,7 +184,7 @@ async function main() {
 
   completion('inside a database block',
     labels(await c.completion(u('valid'), 1, 9)),
-    { has: ['sqlite', 'jsonl', 'logger'], hasNot: ['Int'] })
+    { has: ['sqlite', 'jsonl', 'trail'], hasNot: ['Int'] })
 
   completion('at top level',
     labels(await c.completion(u('valid'), 13, 0)),
@@ -291,8 +291,8 @@ async function main() {
     labels(await c.completion(u('valid'), 25, col(25, '@@gate(') + 8)),
     { has: ['STRANGER', 'USER', 'SYSADMIN'], hasNot: ['Int', '@id'] })
 
-  completion('inside @@log(...)',
-    labels(await c.completion(u('valid'), 26, col(26, '@@log(') + 6)),
+  completion('inside @@trail(...)',
+    labels(await c.completion(u('valid'), 26, col(26, '@@trail(') + 8)),
     { has: ['audit'], hasNot: ['Int', '@id'] })
 
   // ── Hover ──────────────────────────────────────────────────────────────────
@@ -474,7 +474,7 @@ async function main() {
       errors.slice(0, 2).map(d => d.message).join(' | '))
     for (const w of warnings) console.log(`  note  ${name}: ${w.message}`)
 
-    // A bare field line INSIDE a model — `driver logger` in a database block
+    // A bare field line INSIDE a model — `driver trail` in a database block
     // matches the same shape, so track which block we are in rather than
     // pattern-matching the line alone.
     const lines = text.split('\n')

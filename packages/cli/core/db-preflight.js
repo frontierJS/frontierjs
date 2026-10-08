@@ -52,7 +52,7 @@ const BOOKKEEPING = new Set(['_migrations', '_litestone_migrations', 'migrations
  * up disagreeing about what a block is.
  *
  *   `database main  { path env("DATABASE_URL", "./db/app.db") }`
- *   `database audit { path "./db/audit/" driver logger retention 90d }`
+ *   `database audit { path "./db/audit/" driver trail retention 90d }`
  *
  * @returns {Array<{ name: string, body: string, driver: string }>}
  */
@@ -65,7 +65,7 @@ export function databaseBlocks(text) {
 
 /**
  * The databases that are a DIRECTORY of append-only files rather than a SQLite
- * file — `driver jsonl` and `driver logger`.
+ * file — `driver jsonl` and `driver trail`.
  *
  * Reported with how their path is written, because that is the whole question a
  * deploy asks of them: a bare literal cannot be pointed at the mounted volume
@@ -97,7 +97,7 @@ export function declaredLogDatabases(dbDir) {
 /**
  * Every database the schema declares, resolved to a filesystem path.
  *
- * Non-sqlite drivers are skipped: a `driver logger` database is a directory of
+ * Non-sqlite drivers are skipped: a `driver trail` database is a directory of
  * jsonl and "no rows" says nothing about it.
  *
  * @returns {Array<{ name: string, path: string }>}

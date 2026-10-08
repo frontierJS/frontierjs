@@ -603,7 +603,7 @@ export function createConduit(
     // Registered before the dial: a broker that never answers must already be
     // reporting down, since that is the case the reading exists for.
     subscriptions.set(target, transport)
-    opts.registerHealth?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
+    opts.registerReadiness?.(`conduit:${target}`, () => subscriptions.get(target)?.health().connected ?? true)
     try {
       await transport.subscribe(handler, () => withTrace({ target, method: 'CONNECT' }, transport).headers)
     } catch (err) {

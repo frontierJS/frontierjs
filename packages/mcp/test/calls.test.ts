@@ -2,7 +2,7 @@
  * test/calls.test.ts — every tool call lands in the app's audit trail, and
  * `GET /mcp/calls` reads it back for an operator.
  *
- * `@@log` records a write and cannot say an agent made it, nor see a call the
+ * `@@trail` records a write and cannot say an agent made it, nor see a call the
  * boundary refused. So each row here is one the trail could not have held
  * before: a done write naming its row and field names, a refusal with the
  * message the agent was given, and a read with how many rows it answered.
@@ -19,10 +19,10 @@ import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcpPlugin } from '../src/plugin.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'mcp-calls-'))
-// The shop, with the logger database an app's `fli auth:install` declares.
+// The shop, with the trail database an app's `fli auth:install` declares.
 const SCHEMA =
   `database main  { path "${join(dir, 'main.db')}" }\n` +
-  `database audit { path "${join(dir, 'audit')}/" driver logger }\n` +
+  `database audit { path "${join(dir, 'audit')}/" driver trail }\n` +
   readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
 let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>

@@ -64,7 +64,7 @@ export class BrokerTransport extends BaseTransport {
     })
   }
 
-  // The reading `app.registerHealthCheck` is handed. A subscription that has
+  // The reading `app.registerReadiness` is handed. A subscription that has
   // stopped consuming looks exactly like a quiet broker, so `connected` is the
   // half that cannot be mistaken for quiet, and `last_received_at` the half an
   // operator compares against what the broker says it sent.

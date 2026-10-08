@@ -3,7 +3,7 @@
 // A harness that makes a database in os.tmpdir() has no moment at which it can
 // delete it:
 //
-//   - not when the test finishes: `@@log(audit)` flushes through the jsonl
+//   - not when the test finishes: `@@trail(audit)` flushes through the jsonl
 //     driver AFTER the awaited call returns, so tearing the directory down in
 //     an afterAll() races it into SQLITE_READONLY_DBMOVED.
 //   - not at exit: `process.on('exit')` DOES NOT FIRE under `bun test`. Probed

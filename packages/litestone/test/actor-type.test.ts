@@ -20,13 +20,13 @@ const tick = () => new Promise((r) => setImmediate(r))
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
+  database audit { path "${dir}/audit/" driver trail }
   model Thing {
     id    String @id @default(uuid())
     token String @default("t")
     name  String
     @@gate("0")
-    @@log(audit)
+    @@trail(audit)
   }
 `
 
@@ -37,7 +37,7 @@ async function writeAs(pick: (db: any) => any) {
     const db: any = await createClient({ schema: SCHEMA(dir), resolveFrom: dir })
     await pick(db).thing.create({ data: { name: 'x' } })
     await tick()
-    const rows = await db.asSystem().auditLogs.findMany({})
+    const rows = await db.asSystem().auditTrail.findMany({})
     db.$close()
     return rows[0]
   } finally { rmSync(dir, { recursive: true, force: true }) }
@@ -87,7 +87,7 @@ describe('actorType grades the principal it was handed', () => {
       db.$logContext(() => ({ bearerId: 'link-7', bearerSubject: 'client-3' }))
       await db.$setAuth({ portalClientId: 'client-3' }).thing.create({ data: { name: 'x' } })
       await tick()
-      const row = (await db.asSystem().auditLogs.findMany({}))[0]
+      const row = (await db.asSystem().auditTrail.findMany({}))[0]
       db.$close()
 
       expect(row.actorType).toBe('bearer')
@@ -107,7 +107,7 @@ describe('actorType grades the principal it was handed', () => {
       db.$logContext(() => ({ operatorId: 'op-9', episodeId: 'ep-1', bearerId: 'link-7', bearerSubject: 'client-3' }))
       await db.$setAuth({ id: 'subject-1', type: 'user' }).thing.create({ data: { name: 'x' } })
       await tick()
-      const row = (await db.asSystem().auditLogs.findMany({}))[0]
+      const row = (await db.asSystem().auditTrail.findMany({}))[0]
       db.$close()
 
       expect(row.actorId).toBe('op-9')

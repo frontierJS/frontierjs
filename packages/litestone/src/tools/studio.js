@@ -420,7 +420,7 @@ export async function cmdStudio(cfg) {
   function getAllMigrationStatus() {
     const result = {}
     for (const db of parseResult.schema.databases) {
-      if (db.driver === 'jsonl' || db.driver === 'logger') continue
+      if (db.driver === 'jsonl' || db.driver === 'trail') continue
       const handle = rawDbs[db.name]
       if (!handle) continue
       try { result[db.name] = migStatus(handle, join(cfg.migrations, db.name)) } catch { result[db.name] = [] }
@@ -499,7 +499,7 @@ export async function cmdStudio(cfg) {
       for (const [name, meta] of entries) {
         const { driver = 'sqlite', path: absPath } = meta
 
-        if (driver === 'jsonl' || driver === 'logger') {
+        if (driver === 'jsonl' || driver === 'trail') {
           // No SQLite connection — report file/dir size only
           let size = 0
           if (absPath) {
@@ -724,7 +724,7 @@ export async function cmdStudio(cfg) {
           const stats     = getDbStats()
           const counts    = await getRowCounts()
           // Use db.$schema — the augmented schema that includes auto-generated
-          // logger models (e.g. auditLogs) and view stubs. parseResult.schema
+          // logger models (e.g. auditTrail) and view stubs. parseResult.schema
           // is the raw parsed result and is missing these synthetic models.
           const liveSchema = activeDb.$schema
           const multiDb   = liveSchema.databases.some(db => !db.driver || db.driver === 'sqlite')
@@ -1766,7 +1766,7 @@ export async function cmdStudio(cfg) {
             const modelName = model.name
             const tableName = modelToTableName(model, pluralize)
 
-            // A model assigned to a jsonl/logger database has no SQLite indexes
+            // A model assigned to a jsonl/trail database has no SQLite indexes
             // to be missing, and lives in a different handle if it has any.
             const dbName = model.attributes?.find(a => a.kind === 'db')?.name ?? 'main'
             if ((activeDb.$databases?.[dbName]?.driver ?? 'sqlite') !== 'sqlite') continue

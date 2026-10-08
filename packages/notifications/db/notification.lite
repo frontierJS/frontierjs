@@ -4,7 +4,7 @@
 // @frontierjs/auth makes between user.lite and auth.lite. It is APPENDED to the
 // app's own db/schema.lite rather than imported, because everything an app does
 // next happens here: a relation back to its own User, a tenant key under row
-// tenancy, @@log(audit), a column its own bell menu wants, and the constraint
+// tenancy, @@trail(audit), a column its own bell menu wants, and the constraint
 // on contextType that only the app can know.
 //
 // What this package does with it is narrower than what the app does: it writes

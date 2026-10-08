@@ -139,7 +139,7 @@ function buildTemplate(schema, schemaText, migrations) {
 
   if (declared.some(d => !d.driver || d.driver === 'sqlite')) {
     for (const d of declared) {
-      if (d.driver === 'jsonl' || d.driver === 'logger') continue
+      if (d.driver === 'jsonl' || d.driver === 'trail') continue
       files[d.name] = `${d.name}.db`
       build(join(dir, files[d.name]), d.name, generateDDLForDatabase(schema, d.name))
     }
@@ -183,7 +183,7 @@ export function cloneInto(dir, schema, schemaText, migrations = null) {
 
   for (const d of declared) {
     dbOverrides[d.name] = {
-      path: (d.driver === 'jsonl' || d.driver === 'logger')
+      path: (d.driver === 'jsonl' || d.driver === 'trail')
         ? join(dir, d.name) + '/'
         : (d.name === 'main' ? path : join(dir, `${d.name}.db`)),
     }

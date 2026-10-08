@@ -529,7 +529,7 @@ export interface App {
    *
    * `false` or a throw is a failing check; a throw's message is reported.
    */
-  registerHealthCheck: (name: string, fn: () => boolean | Promise<boolean>) => void
+  registerReadiness: (name: string, fn: () => boolean | Promise<boolean>) => void
 
   /**
    * Announce a SECOND LISTENER this app started — a dev mail catcher, a stand-in
@@ -580,8 +580,8 @@ export interface App {
    *  this is the store, not the seam. */
   _metricsSources: Map<string, () => unknown>
   /** Plugin-registered readiness checks — keyed by plugin name. Write through
-   *  `registerHealthCheck`; this is the store, not the seam. */
-  _healthChecks: Map<string, () => boolean | Promise<boolean>>
+   *  `registerReadiness`; this is the store, not the seam. */
+  _readiness: Map<string, () => boolean | Promise<boolean>>
   /** The checks the APP declared, through `healthPlugin({ checks })`. Kept
    *  apart from the plugin registry rather than merged into it, because the
    *  precedence between them is by OWNER and not by who configured first: an
@@ -590,13 +590,13 @@ export interface App {
    *  every reader sees the same set — the devtools console answers readiness on
    *  its own port, and an option living in a plugin closure made it answer a
    *  smaller one than `/health` did. */
-  _healthChecksApp: Map<string, () => boolean | Promise<boolean>>
+  _readinessApp: Map<string, () => boolean | Promise<boolean>>
   /** True from the first line of `stop()` until the process goes away.
    *
    *  Readiness has to answer differently while a process is leaving, or a load
    *  balancer keeps sending it traffic: measured, a request arriving during the
    *  drain was answered 200 and `/health` stayed 200 throughout (`FJS-693`).
-   *  Held on the APP for `_healthChecksApp`'s reason — two surfaces answer
+   *  Held on the APP for `_readinessApp`'s reason — two surfaces answer
    *  readiness, `/health` and the devtools console on its own port, and a flag
    *  in one closure makes them disagree about whether this process is up. */
   draining: boolean
@@ -1439,8 +1439,8 @@ export function createApp(opts: AppOptions = {}): App {
     _plugins:  [],
 
     _metricsSources: new Map<string, () => unknown>(),
-    _healthChecks:    new Map<string, () => boolean | Promise<boolean>>(),
-    _healthChecksApp: new Map<string, () => boolean | Promise<boolean>>(),
+    _readiness:    new Map<string, () => boolean | Promise<boolean>>(),
+    _readinessApp: new Map<string, () => boolean | Promise<boolean>>(),
     draining: false,
     _devtools:        { status: 'off' as const },
     _devServices:     new Map<string, DevService>(),
@@ -1449,8 +1449,8 @@ export function createApp(opts: AppOptions = {}): App {
       app._metricsSources.set(name, fn)
     },
 
-    registerHealthCheck(name: string, fn: () => boolean | Promise<boolean>): void {
-      app._healthChecks.set(name, fn)
+    registerReadiness(name: string, fn: () => boolean | Promise<boolean>): void {
+      app._readiness.set(name, fn)
     },
 
     registerDevService(svc: DevService): void {

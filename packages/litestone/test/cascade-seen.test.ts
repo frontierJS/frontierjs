@@ -3,7 +3,7 @@
 //
 // The cascade runs inside SQLite's own DELETE statement, so the client only
 // ever named the ONE row the caller did. Measured in the jazzhr stressor:
-// deleting 288 candidates wrote 0 `application.delete` lines to a `@@log(audit)`
+// deleting 288 candidates wrote 0 `application.delete` lines to a `@@trail(audit)`
 // trail and left all 288 résumés in the file store (FJS-1497).
 
 import { describe, test, expect } from 'bun:test'
@@ -45,13 +45,13 @@ const SCHEMA = `
     personId  Int
     person    Person @relation(fields: [personId], references: [id], onDelete: Cascade)
     cards     Scorecard[]
-    @@log(main)
+    @@trail(main)
   }
   model Scorecard {
     id     Int @id
     appId  Int
     app    Application @relation(fields: [appId], references: [id], onDelete: Cascade)
-    @@log(main)
+    @@trail(main)
   }
   model Note {
     id        Int @id
@@ -203,13 +203,13 @@ describe('the @hardDelete children of a soft cascade are removed rows too (FJS-1
       personId  Int
       person    Person @relation(fields: [personId], references: [id], onDelete: Cascade)
       pages     Page[]
-      @@log(main)
+      @@trail(main)
     }
     model Page {
       id     Int @id
       docId  Int
       doc    Document @relation(fields: [docId], references: [id], onDelete: Cascade)
-      @@log(main)
+      @@trail(main)
     }
   `
 
@@ -263,7 +263,7 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
       id        Int @id
       personId  Int?
       person    Person? @relation(fields: [personId], references: [id], onDelete: SetNull)
-      @@log(main)
+      @@trail(main)
     }
   `
 

@@ -23,7 +23,7 @@
 // Every path that reaches git is one this file found by walking the root, and
 // it is one argv element after `-C` — never a shell, never a caller's string.
 
-import { readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative } from 'node:path'
 
@@ -40,8 +40,12 @@ export type LocalRepo = {
   /** Entries `git status` reports — staged, unstaged and untracked together. */
   changes:       number
   remote:        string | null
+  /** UTC, so two repositories order by it as strings — `%cI` carries the
+   *  committer's own offset, and a DST change alone flips a string compare. */
   lastCommitAt:  string | null
   lastCommit:    string | null
+  /** A `frontier.config.js` at the repository root — a FrontierJS app. */
+  frontier:      boolean
 }
 
 /** Directories a project tree holds thousands of and no repository lives in. */
@@ -155,8 +159,9 @@ export async function describeRepo(root: string, dir: string): Promise<LocalRepo
     name:         basename(dir),
     ...s,
     remote:       pickRemote(remotes ?? ''),
-    lastCommitAt: at || null,
+    lastCommitAt: at ? new Date(at).toISOString() : null,
     lastCommit:   subject ?? null,
+    frontier:     existsSync(join(dir, 'frontier.config.js')),
   }
 }
 

@@ -26,11 +26,11 @@ import { authSchemaFragments, authUserModel, authMachineryModels, retargetDb } f
 import { parse } from '@frontierjs/litestone/parser'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
 
-// The fragments are injected into a host schema; @@db(main) and @@log(audit)
+// The fragments are injected into a host schema; @@db(main) and @@trail(audit)
 // can't resolve standalone.
 const PREAMBLE = `
 database main  { path "./app.db" }
-database audit { path "./audit/"; driver logger; retention 90d }
+database audit { path "./audit/"; driver trail; retention 90d }
 `
 
 function parsed() {

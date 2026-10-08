@@ -476,7 +476,7 @@ import "./auth.lite" into auth
 
 #### `database` <name> { path · driver · replication · retention · maxSize · model }
 
-tier: **essential** · see also: `db`, `log`
+tier: **essential** · see also: `db`, `trail`
 
 A named database. `driver` is sqlite (default), jsonl or logger; `path` takes env("VAR", "./default") or a literal. A second database keeps its declared path even when createClient({ db }) moves main.
 
@@ -869,7 +869,7 @@ passwordHash String @hashed
 
 #### `@personal` [(<category>)]
 
-tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: pii, gdpr, personal data · see also: `person`, `log`, `omit`
+tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: pii, gdpr, personal data · see also: `person`, `trail`, `omit`
 
 A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.
 
@@ -879,9 +879,9 @@ email String @personal(contact)
 
 #### `@secret` [(rotate: …)]
 
-tier: **common** · legal in: on a model's field, on a trait's field · see also: `encrypted`, `guarded`, `log`
+tier: **common** · legal in: on a model's field, on a trait's field · see also: `encrypted`, `guarded`, `trail`
 
-Expands at parse into @encrypted @guarded @log(<logger db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
+Expands at parse into @encrypted @guarded @trail(<trail db>). `deterministic: true` stores the same value as the same bytes, so it can be looked up by equality and still rotated — an API key is both. Beside @hashed (`token String @secret @hashed`) it is one-way instead: no @encrypted half, matchable in a where, never readable even by asSystem(), @guarded and logged, and skipped by $rotateKey unless orphaned by name — a device token a server verifies and never shows.
 
 ```lite
 apiKey String @secret
@@ -949,14 +949,14 @@ On a File field: keep old objects on update instead of cleaning them up.
 document File @keepVersions
 ```
 
-#### `@log` (<database>[, reads: false][, writes: false])
+#### `@trail` (<database>[, reads: false][, writes: false])
 
-tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: audit, history, trail · see also: `log`, `database`
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: audit, history · see also: `trail`, `database`
 
-Log reads and writes of this one field into a logger database. Both by default.
+Log reads and writes of this one field into a trail database. Both by default.
 
 ```lite
-balance Int @log(audit)
+balance Int @trail(audit)
 ```
 
 **Clean a value on write**
@@ -1620,21 +1620,21 @@ Every row is a person — where forgetting and export start. An @@auth model is 
 @@person
 ```
 
-#### `@@log` (<database>[, reads: false][, writes: false])
+#### `@@trail` (<database>[, reads: false][, writes: false])
 
-tier: **common** · legal in: in a model, in a trait · see also: `log`, `database`, `anonymous`
+tier: **common** · legal in: in a model, in a trait · see also: `trail`, `database`, `anonymous`
 
-Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
-@@log(audit)
+@@trail(audit)
 ```
 
 #### `@@anonymous`
 
-tier: **situational** · legal in: in a model, in a trait · also called: unattributed, ballot, survey, confidential · see also: `log`, `createdBy`, `date`
+tier: **situational** · legal in: in a model, in a trait · also called: unattributed, ballot, survey, confidential · see also: `trail`, `createdBy`, `date`
 
-No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
+No row of this model may be attributed. Refused on the model: @@trail, @trail, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
 
 ```lite
 @@anonymous

@@ -207,13 +207,13 @@ describe('the blocks a device cannot have', () => {
 
   // The pairing, and it is the reason the drop is not cosmetic. `db:` overrides
   // a declared `main` and overrides nothing else, so a SECOND block keeps the
-  // path it declares — `example`'s is `database audit { driver logger }` over
+  // path it declares — `example`'s is `database audit { driver trail }` over
   // `./db/audit/`, a fleet-wide file on a server and a host filesystem path
   // `host/browser.js` refuses by name.
   test('unfiltered, a second database keeps its own path — filtered, it is not there at all', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'device-schema-'))
     const src = SOURCE + `\ndatabase main { path "${join(dir, 'main.db')}" }\n` +
-                         `\ndatabase audit { path "${join(dir, 'audit/')}" driver logger }\n`
+                         `\ndatabase audit { path "${join(dir, 'audit/')}" driver trail }\n`
 
     const unfiltered = await createClient({ parsed: parse(src), db: ':memory:' })
     expect(unfiltered.$databases.main.path).toBe(':memory:')

@@ -34,6 +34,11 @@ const main = async () => {
   const db    = new Database(input.db, { create: true })
 
   try {
+    // Before anything that takes a lock. bun:sqlite's default wait is zero, so a
+    // write landing while another process holds the lock (a reader opening a
+    // fresh WAL file, a second fli on the same target) answered SQLITE_BUSY at
+    // once and the deploy failed on its own bookkeeping.
+    db.exec('PRAGMA busy_timeout = 5000')
     // WAL so a reader — `fli deploy:journal`, or the Outpost answering basecamp
     // — never blocks the deploy writing its own history.
     db.exec('PRAGMA journal_mode = WAL')

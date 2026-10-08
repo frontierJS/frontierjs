@@ -27,6 +27,20 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d661"></a>2026-10-08 · `FJS-D661` — Wave 5's four words: the trail is spelled *trail* everywhere it is declared (`@@trail`, `@trail`, `driver trail`, `db.auditTrail`), the client's reconnect event is `reconnected`, a health check is `registerReadiness` — and `correlationId` keeps its name.
+
+Asked by [`IDEAS/observability.md`](IDEAS/observability.md) § 6 and [`IDEAS/consistency.md`](IDEAS/consistency.md) § Open questions, each swept across the tree before it was put to the owner. **Nothing here has shipped, so each rename moves every caller and keeps no alias** (*preservation vs. evolution*).
+
+**The trail — `@@log` → `@@trail`, and its family with it.** `FJS-D633` already says *the audit trail*, and the observability paper's § 4 rests on the trail not being the log: one is a record the Data boundary owes, the other is what the process says. The seed is where the word is first met, so the seed spelled the collision. Field-level `@log` becomes `@trail`, a database's `driver logger` becomes `driver trail`, and the synthesized `<db>Logs` model becomes `<db>Trail` (`db.auditTrail`) — one concept, one stem, so knowing one spelling predicts the other three (§ V 4). The argument — the database a declaration writes into — is unchanged. `db.$audit()` keeps its name: it records an EVENT nothing wrote, and the trail is the place, not the verb.
+
+**`resync` → `reconnected`.** The client emitted it on every `connected` after the first, beside `connect`, `disconnect` and `reconnecting`; an event names what happened, and its siblings already do. *Reload* — the paper's word — names what a listener should do, which is the listener's business and the docs'. The rename also leaves `sync` as `@@sync`'s word and nothing else's (the consistency paper's sweep). orion's local `resync()` is a different function and stays.
+
+**`registerHealthCheck` → `registerReadiness`.** `FJS-D440` made `/health` readiness and liveness consult nothing, so every registered check feeds readiness and the name should say which probe it answers. The route stays `/health`, the store is `app._readiness`, and conduit's adapter option is `registerReadiness` beside it. `checks` stays the word for one entry of `/health`'s body and of `healthPlugin({ checks })` — the health-check format's own word for one probe, naming the entry rather than the probe it feeds. Basecamp's `healthCheck` column and outpost's `healthCheck()` probe are a third party's endpoint, probed from outside — a different sense, and untouched.
+
+**`correlationId` is kept.** Under `FJS-D660` an adopted `x-request-id` is any 1–128 characters of a safe set, so the value is a W3C trace id on two of three paths and not on the third; `traceId` would be false exactly where a reader trusts it. The trace id is the W3C value; `correlationId` is the request's one id, and the two are equal whenever a `traceparent` arrived or junction minted the id.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`@trail`, `@@trail`) · `packages/litestone/src/core/audit-log.js` · `packages/junction/src/client/index.ts` (`reconnected`) · `packages/junction/src/transport/health.ts` · `VOCABULARY.md` (Trail).
+
 ### <a id="fjs-d657"></a>2026-10-08 · `FJS-D657` — A column about a person is **`@personal`**, with an optional category from a closed list of thirteen. A model whose rows are people is **`@@person`**, and `@@person(child)` marks rows that are children in the legal sense. **Subject** is the role (the person something is about) and never a model word. No retention clock is declared.
 
 Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/data-classification.md`](IDEAS/data-classification.md). **C** was picked over **A** (a bare `@personal`, with no category for a record of processing to group by) and **B** (a graded `@sensitivity(level)`, whose levels carry no behavior that anything grades).

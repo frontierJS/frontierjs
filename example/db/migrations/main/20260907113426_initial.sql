@@ -782,7 +782,7 @@ CREATE INDEX IF NOT EXISTS "idx_stock_reservation_variantId_expiresAt" ON "stock
 -- 
 -- `stock` is the running total and this is the tape behind it: nothing writes
 -- that column without writing a row here in the same breath, which is what
--- makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+-- makes the two reconcilable at all. It is not the audit trail — `@@trail(audit)`
 -- records that SOMEBODY changed a row and Litestone owns its format. This
 -- records what happened to the SHELF, in the shop's own words, and a customer
 -- service agent reads it.

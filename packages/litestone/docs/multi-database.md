@@ -10,7 +10,7 @@ Declare databases at the top of your schema file. Models without `@@db` go to th
 database main      { path env("MAIN_DB", "./app.db") }
 database analytics { path env("ANALYTICS_DB", "./analytics.db") }
 database logs      { path "./logs/";  driver jsonl;   retention 30d }
-database audit     { path "./audit/"; driver logger;  retention 90d }
+database audit     { path "./audit/"; driver trail;  retention 90d }
 ```
 
 `env("VAR", "fallback")` reads from environment variables with an optional fallback.
@@ -40,7 +40,7 @@ model ApiRequest {
 }
 
 model User {
-  @@log(audit)    // writes fire entries into the audit logger database
+  @@trail(audit)    // writes fire entries into the audit trail database
 }
 ```
 
@@ -72,7 +72,7 @@ Supports: `create`, `createMany`, `findMany`, `findFirst`, `count`. Retention pr
 
 ### logger
 
-Auto-managed audit log that receives `@log` and `@@log` write entries. Auto-creates `<dbName>Logs` model with a structured log entry schema. Queryable through the standard ORM API.
+Auto-managed audit log that receives `@trail` and `@@trail` write entries. Auto-creates `<dbName>Trail` model with a structured log entry schema. Queryable through the standard ORM API.
 
 See [audit-logging.md](audit-logging.md) for full details.
 

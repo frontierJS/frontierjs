@@ -16,7 +16,7 @@ bun db/generate.js --print   # dump DDL to stdout
 
 ```
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
-database audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }
+database audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }
 ```
 
 Both paths resolve against the **app root**, not the process CWD —
@@ -78,7 +78,7 @@ Two deliberate deviations from the shipped fragment, each noted in the schema:
    *by value*, which needs `@encrypted(searchable: true)`. `Credential.value`
    already holds a hash, so encrypting it buys little. Revisit in the API pass.
 
-`@@log(audit)` is kept, as auth ships it.
+`@@trail(audit)` is kept, as auth ships it.
 
 **Everything Basecamp adds to `User` is nullable or defaulted on purpose.**
 `auth.createUser()` writes only `{ email, name, role }` — a required Basecamp
@@ -274,12 +274,12 @@ char) key.` It fails closed, which is what we want, but the API pass has to add
 ## Audit logging
 
 ```prisma
-database audit { path "./audit/" driver logger retention 90d }
+database audit { path "./audit/" driver trail retention 90d }
 ```
 
-Every write to a `@@log(audit)` model lands in `./audit/auditLogs.jsonl` with
+Every write to a `@@trail(audit)` model lands in `./audit/auditTrail.jsonl` with
 before/after snapshots and actor attribution, and is queryable through the
-`auditLogs` accessor (`sys.auditLogs.findMany()`). **All 16 non-event models
+`auditTrail` accessor (`sys.auditTrail.findMany()`). **All 16 non-event models
 carry it**, including `Secret`, `Credential`, `Session` and `Verification` —
 an access trail over a credential is the whole point of having one.
 
@@ -298,7 +298,7 @@ SSH key written and then rotated through `Secret` produces a full create+update
 trail with **0 occurrences of the key material in the log or in the SQLite
 file**.
 
-The trap the redaction closes: `@@log(audit)` on a
+The trap the redaction closes: `@@trail(audit)` on a
 model with an `@encrypted` column would otherwise write the plaintext into the
 JSONL while the database row is correctly ciphertext, which is why these models
 could not be
@@ -306,7 +306,7 @@ logged at all. **Basecamp now requires a Litestone with that fix**; on an older
 one, the four identity models and `Secret` would leak.
 
 **2. Reads lag writes within a session.** Entries flush on a ~1s timer and on
-process exit. Immediately after a write, `auditLogs.findMany()` returns 0 rows
+process exit. Immediately after a write, `auditTrail.findMany()` returns 0 rows
 and the JSONL file may not exist yet; the next process sees everything. Measured:
 1 write → 0 rows visible, +2s → 1 row, +50 more writes → still 1 row, next
 process → 51 rows. **Nothing is lost** — this is visibility lag, not data loss,
@@ -322,7 +322,7 @@ failing on either side (`FJS-633`). Both are anchored to the schema now, so the
 CWD no longer isolates anything by accident, and `db/test/db-paths.test.ts`
 asserts that every caller redirecting one names the other.
 
-The `AuditEvent` model is a different thing and both are wanted: `@@log(audit)`
+The `AuditEvent` model is a different thing and both are wanted: `@@trail(audit)`
 is automatic row-level change capture, `AuditEvent` is the application-level
 operational trail docs/VISION.md §Operate asks for ("every operational action
 attributable to a person") — deploys, provisions, rotations. One answers *what

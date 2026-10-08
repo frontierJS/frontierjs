@@ -64,7 +64,7 @@ export async function makeAuth(
 
   const source = `
 database main  { path "${dbPath}" }
-database audit { path "${dir}/audit/"; driver logger; retention 90d }
+database audit { path "${dir}/audit/"; driver trail; retention 90d }
 ` + authSchemaFragments('main')
 
   const parsed = parse(source)

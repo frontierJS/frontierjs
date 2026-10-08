@@ -116,10 +116,10 @@ describe('a push reaches the relayed client\'s live store', () => {
     close()
   })
 
-  test('a second `connected` is a reconnect, and emits resync', () => {
+  test('a second `connected` is a reconnect, and emits reconnected', () => {
     const page: any = createJunctionClient({ relay: async () => null })
     let n = 0
-    page.on('resync', () => { n++ })
+    page.on('reconnected', () => { n++ })
     page.receive({ type: 'connected' })
     page.receive({ type: 'connected' })
     expect(n).toBe(1)

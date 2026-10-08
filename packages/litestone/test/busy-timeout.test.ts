@@ -137,8 +137,8 @@ describe('every database a client opens waits', () => {
       db:     join(dir, 'app.db'),
       schema: `
         database main  { path "${join(dir, 'app.db')}" }
-        database audit { path "${join(dir, 'audit')}/"  driver logger }
-        model Note { id Int @id  body String  @@log(audit) }
+        database audit { path "${join(dir, 'audit')}/"  driver trail }
+        model Note { id Int @id  body String  @@trail(audit) }
       `,
     }) as any
 
@@ -258,8 +258,8 @@ describe('the option reaches the connection', () => {
       busyTimeout: { default: DEFAULT_BUSY_TIMEOUT_MS, audit: 0 },
       schema: `
         database main  { path "${join(dir, 'app.db')}" }
-        database audit { path "${join(dir, 'audit')}/"  driver logger }
-        model Note { id Int @id  body String  @@log(audit) }
+        database audit { path "${join(dir, 'audit')}/"  driver trail }
+        model Note { id Int @id  body String  @@trail(audit) }
       `,
     }) as any
 

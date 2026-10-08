@@ -21,7 +21,7 @@ A SaaS app with:
 // schema.lite
 database audit {
   path      "./audit/"
-  driver    logger
+  driver    trail
   retention 90d
 }
 
@@ -38,7 +38,7 @@ model User {
 
   @@softDelete
   @@auth
-  @@log(audit)
+  @@trail(audit)
   @@allow('read',   id == auth().id || auth().role == 'admin')
   @@allow('update', id == auth().id || auth().role == 'admin')
   @@allow('delete', auth().role == 'admin')
@@ -115,7 +115,7 @@ export async function dbMiddleware(req, res, next) {
 Every query through `req.db` has:
 - Row-level policies applied (only returns rows the user is allowed to see)
 - `@default(auth().id)` stamped on create
-- `@@log(audit)` entries attributed to `req.user.id`
+- `@@trail(audit)` entries attributed to `req.user.id`
 
 ---
 
@@ -181,7 +181,7 @@ await tenants.migrate()
 The audit log is shared across all tenants — query it via `asSystem()`:
 
 ```js
-const audit = await db.asSystem().auditLogs.findMany({
+const audit = await db.asSystem().auditTrail.findMany({
   where:   { model: 'projects', operation: 'delete' },
   orderBy: { createdAt: 'desc' },
   limit:   100,

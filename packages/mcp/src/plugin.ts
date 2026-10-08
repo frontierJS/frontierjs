@@ -268,10 +268,10 @@ async function levels(app: App, ctx: RouteCtx<App>, views: SchemaViews, shapes: 
 /**
  * What agents did here, newest first — `GET {path}/calls?limit=`, for an
  * operator's *history*. The `mcp.call` entries `recordCall` wrote, read back
- * from the same logger database.
+ * from the same trail database.
  *
  * ADMINISTRATOR and above, as `/levels` is: it names who called what on which
- * row, across every caller. An app with no logger database records nothing,
+ * row, across every caller. An app with no trail database records nothing,
  * and says so rather than answering an empty list that reads as *no agent has
  * been here*.
  */
@@ -485,9 +485,9 @@ interface TrailRow {
 }
 
 /**
- * The log model of the app's first logger database — the one `$audit` writes
+ * The log model of the app's first trail database — the one `$audit` writes
  * to when no `database` is named — or null when it declares none. A logger
- * database's model is always `<name>Logs`; only a SQL one may rename it.
+ * database's model is always `<name>Trail`; only a SQL one may rename it.
  *
  * Asked of the app-wide client at boot: a scoped client answers `$databases`
  * by throwing. Under `tenancy { strategy database }` there is none, so calls
@@ -497,13 +497,13 @@ function trailOf(db: unknown): string | null {
   let dbs: Record<string, { driver?: string }> = {}
   // A Litestone client THROWS on an unknown property (`FJS-673`).
   try { dbs = (db as { $databases?: typeof dbs }).$databases ?? {} } catch { return null }
-  const name = Object.entries(dbs).find(([, d]) => d?.driver === 'logger')?.[0]
-  return name ? `${name}Logs` : null
+  const name = Object.entries(dbs).find(([, d]) => d?.driver === 'trail')?.[0]
+  return name ? `${name}Trail` : null
 }
 
 /**
  * Put one tool call in the app's audit trail: who, which tool, how it ended,
- * and which rows it named. `@@log` records a write and cannot say it came from
+ * and which rows it named. `@@trail` records a write and cannot say it came from
  * an agent, nor see a call that was refused — and the refused call is the one
  * an operator most needs to find.
  *

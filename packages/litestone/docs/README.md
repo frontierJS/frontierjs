@@ -37,7 +37,7 @@
 - [geo.md](geo.md) — `@point`: a coordinate indexed as two columns and read as one, with bounding-box pruning (`FJS-D316`, `FJS-D317`)
 - [vectors.md](vectors.md) — `@vector`: a float32 embedding column, compared by angle — where the comparison runs differs on a server and in a browser
 - [file-storage.md](file-storage.md) — FileStorage plugin, S3/R2/local, autoResolve, fileUrl, ExternalRefPlugin
-- [audit-logging.md](audit-logging.md) — @log, @@log, logger driver, onLog callback
+- [audit-logging.md](audit-logging.md) — @trail, @@trail, logger driver, onLog callback
 - [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/logger), @@db, @@external
 - [sequences.md](sequences.md) — @sequence per-scope auto-increment
 - [edge-fields.md](edge-fields.md) — @edge / @scoped: per-relationship & per-viewer values, scopedBy binder, eject-to-model
@@ -73,6 +73,6 @@ Point-in-time reviews. Read them for the reasoning; re-verify before citing a nu
 Task-oriented walkthroughs for real scenarios:
 
 - [guides/multi-tenant-saas.md](guides/multi-tenant-saas.md) — per-tenant databases, encryption, audit log, migrations
-- [guides/audit-trail.md](guides/audit-trail.md) — @@log setup, before/after snapshots, onLog enrichment, querying
+- [guides/audit-trail.md](guides/audit-trail.md) — @@trail setup, before/after snapshots, onLog enrichment, querying
 - [guides/file-uploads.md](guides/file-uploads.md) — FileStorage + presigned URLs end-to-end
 - [guides/row-level-security.md](guides/row-level-security.md) — policies + GatePlugin together, layered security

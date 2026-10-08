@@ -57,7 +57,7 @@ If Orion needs something the framework cannot express, that is a finding against
 
 - **The executor writes its checkpoint through the litestone client directly.** Not through a Junction service, which roughly doubles the per-step cost, and not through a Caravan job per step, which adds a second checkpoint to the one the engine already writes. The gate stays on, since it costs almost nothing.
 - **A step's ACTION is not the engine's bookkeeping.** An action that touches app data runs as the flow's principal through the gated client or a service (§ Non-negotiables); only the engine's own run and step records take the direct path.
-- **`RunStep` carries no `@@log`.** Run history is already a log, and auditing it writes the trail twice at the rate the engine runs. `Flow`, `FlowVersion` and credentials are what the audit trail is for.
+- **`RunStep` carries no `@@trail`.** Run history is already a log, and auditing it writes the trail twice at the rate the engine runs. `Flow`, `FlowVersion` and credentials are what the audit trail is for.
 - **The step store sits behind one interface.** If a measured flow shows checkpointing dominates, that one table moves to prepared statements and nothing above it changes. Measure first: an action spends milliseconds on I/O where a checkpoint spends microseconds, so the gap shows only in flows that do little I/O.
 
 The measurements behind this are `IDEAS/operational-edge.md` § durable workflows.

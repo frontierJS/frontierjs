@@ -1,5 +1,21 @@
 # Changes — Basecamp
 
+## 2026-10-08 — the desktop app wears the brand icon
+
+`desktop/shell/tauri.conf.json`'s `bundle.icon` names `brand/assets/icons/basecamp.png` directly, so the window and the launcher entry `fli desktop:install` writes both carry it, and a brand edit reaches both after a rebuild. The scaffold's placeholder `shell/icons/icon.png` is deleted. Proof: after `bun run build:desktop`, `xprop` reads the window's `_NET_WM_ICON` as 96 x 96, the brand file's size (the placeholder was 32 x 32).
+
+## 2026-10-08 — `/git-activity/local/` sorts by last commit, files changed or name
+
+The Repository, Working tree and Last commit headers sort the table, newest commit first by default, and the choice is remembered per viewer. The column `name`s are now the record's fields, so `comparatorFor` from the Junction client orders the rows with no sort of the page's own. `lastCommitAt` comes back in UTC rather than with the committer's offset, because a string compare across two offsets orders by the offset. `verify:provision` checks the default order and both headers; 85/85.
+
+## 2026-10-08 — `/git-activity/local/` marks a FrontierJS app and can show only those
+
+A repository with a `frontier.config.js` at its root comes back from `git.localRepos` as `frontier: true`, the table pills it, the totals count it, and a *FrontierJS apps only* checkbox filters the list to them (remembered per viewer). The test fixture and `verify:provision` give alpha the file and check that the filter drops beta; 82/82.
+
+## 2026-10-08 — the desktop app's identifier is `my.basecamp.desktop`, and `fli desktop:run` opens it
+
+`desktop/shell/tauri.conf.json` names `my.basecamp.desktop` instead of the scaffold's `dev.basecamp.desktop`. The OS keeps the app's data under this ID, and no install had written any under the old one. The run block in `CLAUDE.md` gains `fli desktop:run`, which builds the app, starts `bun run api` if nothing answers on 8120, and opens the window.
+
 ## 2026-10-08 — basecamp has a `desktop/` surface wrapping `web/`
 
 `fli make:desktop --wraps web` scaffolded `desktop/`: a Tauri shell with the SPA built into it, pointed at `http://localhost:8120` (`VITE_API_URL` overrides). `bun run build:desktop` writes `desktop/shell/target/debug/basecamp-desktop`; the API still runs beside it (`bun run api`), since the scan and everything else live there. Three things it needed. The API's CORS list names `tauri://localhost` and `http://tauri.localhost`. `session.js` fetches through the client's `origin` rather than a relative path, which in the shell went to `tauri://localhost` and left a signed-in session with no workspace. And the shell's Cargo.lock is `example/desktop/`'s, which pins Tauri 2.11.5, because the scaffold's unpinned `tauri = "2"` resolved 2.12 and that needs rustc 1.90 (`FJS-2068`). `bun run verify:desktop` drives it to `/git-activity/local/`, 10/10; `verify:provision` is still 80/80 after the `session.js` change.

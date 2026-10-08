@@ -148,7 +148,7 @@ describe('the one read that wants the lapsed row', () => {
     await expect(auth.completeLogin!('TICKET',  '000000')).rejects.toThrow()
     await expect(auth.completeLogin!('NOTHING', '000000')).rejects.toThrow()
 
-    const trail = await sys.auditLogs.findMany({})
+    const trail = await sys.auditTrail.findMany({})
     const reasons = trail
       .filter((r: any) => r.operation === 'login.failed')
       .map((r: any) => (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta)?.reason)

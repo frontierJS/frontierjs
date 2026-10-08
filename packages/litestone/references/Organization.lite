@@ -128,7 +128,7 @@ model Member {
   @@allow('update', orgId == auth().orgId)
   @@allow('delete', orgId == auth().orgId)
 
-  // Every instance audits this row (`@@log(audit)`) — who was added, by whom,
+  // Every instance audits this row (`@@trail(audit)`) — who was added, by whom,
   // with what role is the first question after a breach. The line is the
   // host's because it names the host's `database audit` block.
 }

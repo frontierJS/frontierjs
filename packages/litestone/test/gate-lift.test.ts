@@ -152,13 +152,13 @@ describe('the trail names the person, and says the gate was lifted', () => {
 
   const LOGGED = `
     database main  { path env("MAIN_DB", "./main.db") }
-    database audit { path "./audit/" driver logger }
+    database audit { path "./audit/" driver trail }
     model Invoice {
       id      Int    @id
       ownerId Int
       number  String
       @@db(main)
-      @@log(audit)
+      @@trail(audit)
       @@gate("1.8.8.9")
     }
   `

@@ -556,7 +556,7 @@ describe('?search= — a search box over a name, which answered 400 on every use
 // ─── The application trail ───────────────────────────────────────────────────
 // `AuditEvent.diff` is `Json?` and nothing wrote it, so the trail could say a
 // server was drained and not what state it was in (FJS-154). The row-level
-// `@@log(audit)` JSONL carries before/after on the host; the application trail,
+// `@@trail(audit)` JSONL carries before/after on the host; the application trail,
 // which is the one the UI reads, did not.
 describe('the audit trail records what changed', () => {
   test('a custom method writes a before/after diff', async () => {

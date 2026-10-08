@@ -27,7 +27,7 @@
  *
  *   `refuses.*` — the ways a restore could leave an app half-there, each of
  *   which must write nothing: a replica with nothing in it, files already in
- *   place, a logger database with no backup to come from, and one tenant whose
+ *   place, a trail database with no backup to come from, and one tenant whose
  *   replica is gone.
  *
  *   `at.*` — `--at` an instant between two writes: the first comes back and
@@ -276,7 +276,7 @@ try {
   t('restore.registryMatches',  matches('shops-registry.db'))
   t('restore.flagshipMatches',  matches('shops/flagship.db'))
   t('restore.latecomerMatches', matches('shops/latecomer.db'))
-  const trail = (root) => existsSync(join(root, 'audit', 'auditLogs.jsonl')) ? readFileSync(join(root, 'audit', 'auditLogs.jsonl'), 'utf8') : null
+  const trail = (root) => existsSync(join(root, 'audit', 'auditTrail.jsonl')) ? readFileSync(join(root, 'audit', 'auditTrail.jsonl'), 'utf8') : null
   t('restore.auditTrailFromBackup', trail(live) !== null && trail(back) === trail(live))
 
   const listed = litestone(back, 'tenant', 'list').out

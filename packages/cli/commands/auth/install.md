@@ -278,7 +278,7 @@ if (alreadyInstalled) {
 // Check the requested db block exists. `main` is checked like any other — it is
 // not implicit, and exempting it let auth inject models naming a database that
 // was never declared, which fails the whole parse at createClient.
-// `audit` is separate: User and Session both carry @@log(audit).
+// `audit` is separate: User and Session both carry @@trail(audit).
 for (const name of [flag.db, 'audit']) {
   if (new RegExp(`database\\s+${name}\\s*\\{`).test(schemaContents)) continue
   log.error(`Database block '${name}' not found in schema.lite`)

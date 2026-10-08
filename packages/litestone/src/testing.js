@@ -182,7 +182,7 @@ async function _buildEnv(schemaText, opts = {}) {
       const dbName = modelDbMap[model.name] ?? 'main'
       const dbDef  = result.schema.databases.find(d => d.name === dbName)
       const driver = dbDef?.driver ?? 'sqlite'
-      if (driver === 'jsonl' || driver === 'logger') continue
+      if (driver === 'jsonl' || driver === 'trail') continue
       const writableFields = model.fields.filter(f => !_shouldSkipField(f, model))
       if (!writableFields.length) continue
       // `factories` is passed as the registry BEFORE it is filled — the object

@@ -77,7 +77,7 @@ async function http(method, url, { token, body } = {}) {
 }
 
 /** Cases over the `fli new` app: a gated read, a list, and a gated write that
- *  lands in the audit trail (User is `@@log(audit)`). Signs a throwaway user in
+ *  lands in the audit trail (User is `@@trail(audit)`). Signs a throwaway user in
  *  through the app's own auth routes and seeds notes through its own service, so
  *  what is timed is the path a client takes. `base` is `http://host:port/api`.
  *  The scaffold has no model with a relation, so there is no list-with-include

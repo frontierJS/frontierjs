@@ -1,7 +1,7 @@
 // tenant.js — Database-per-tenant registry for Litestone
 //
 // Multi-DB note: In schemas with multiple database blocks, each tenant only
-// gets a SQLite file for the 'main' database. The jsonl/logger databases are
+// gets a SQLite file for the 'main' database. The jsonl/trail databases are
 // schema-global (not per-tenant) and are not managed here. If you need
 // per-tenant analytics or audit databases, create them separately.
 //
@@ -312,11 +312,11 @@ class TenantRegistry {
   async _init(parseResult) {
     this.#parseResult = parseResult
 
-    // Warn if schema has jsonl/logger databases — these are global, not per-tenant.
+    // Warn if schema has jsonl/trail databases — these are global, not per-tenant.
     // All tenants will write to the same log/audit files unless you handle this
     // separately in your application layer.
     const sharedDbs = parseResult.schema.databases
-      .filter(d => d.driver === 'jsonl' || d.driver === 'logger')
+      .filter(d => d.driver === 'jsonl' || d.driver === 'trail')
     if (sharedDbs.length) {
       console.warn(
         `[litestone:tenants] Schema has ${sharedDbs.length} shared database(s): ` +
@@ -397,7 +397,7 @@ class TenantRegistry {
     // send EVERY tenant to the same shared files — a cross-tenant isolation
     // hole. Override every sqlite database to this tenant's own file (all of a
     // tenant's sqlite databases live in one file, per the documented layout).
-    // jsonl/logger databases stay schema-global by design.
+    // jsonl/trail databases stay schema-global by design.
     const sqliteOverrides = {}
     if (!this.#inMemory) {
       for (const d of (this.#parseResult.schema.databases ?? [])) {

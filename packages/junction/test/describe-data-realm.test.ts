@@ -26,7 +26,7 @@ const litestoneLike = (over: Record<string, unknown> = {}) => ({
   },
   $databases: {
     main:  { driver: 'sqlite', path: `${process.cwd()}/db/shop.db` },
-    audit: { driver: 'logger', path: `${process.cwd()}/db/audit` },
+    audit: { driver: 'trail', path: `${process.cwd()}/db/audit` },
   },
   ...over,
 })
@@ -37,7 +37,7 @@ describe('describeDataRealm', () => {
       models:    3,
       enums:     1,
       gated:     '2/3',
-      databases: 'main → ./db/shop.db (sqlite), audit → ./db/audit (logger)',
+      databases: 'main → ./db/shop.db (sqlite), audit → ./db/audit (trail)',
       // The paths above are shortened against the CWD, so the CWD is what makes
       // them mean anything — without it the correct run and the one that opened
       // a database it had just created in the wrong directory print the same

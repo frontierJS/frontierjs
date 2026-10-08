@@ -33,8 +33,8 @@
  * generated app has it for the day it writes one.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { resolve, dirname }                     from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve, dirname, basename }           from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 
@@ -483,6 +483,87 @@ export function scaffoldDesktopSurface({
     written.push(`${dir}/${rel}`)
   }
   return { written, skipped }
+}
+
+// ─── running it ───────────────────────────────────────────────────────────────
+
+/**
+ * Where `deploy/build.mjs` leaves the shell, or `null` with no crate. The binary
+ * is named for the crate, so Cargo.toml is read rather than derived from the
+ * app's name — an app that renamed its crate would otherwise launch nothing.
+ */
+export function desktopBinary(surface, { release = false, platform = process.platform } = {}) {
+  const toml = resolve(surface, 'shell', 'Cargo.toml')
+  if (!existsSync(toml)) return null
+  const crate = readFileSync(toml, 'utf8')
+    .split('\n')
+    .find(l => /^name\s*=/.test(l))
+    ?.split('"')[1]
+  if (!crate) return null
+  return resolve(surface, 'shell', 'target', release ? 'release' : 'debug', platform === 'win32' ? `${crate}.exe` : crate)
+}
+
+/**
+ * The API the bundled page calls, read off `desktop.config.js`'s `api`, and
+ * whether it is this machine's to start. `null` is an app with no API.
+ */
+export function desktopApiTarget(api) {
+  if (!api) return null
+  const url = new URL(api)
+  return {
+    origin: url.origin,
+    port:   Number(url.port || (url.protocol === 'https:' ? 443 : 80)),
+    local:  ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname),
+  }
+}
+
+// ─── the launcher entry ───────────────────────────────────────────────────────
+
+/**
+ * The XDG desktop entry `desktop:install` writes, so the app is found by the
+ * OS launcher's search. It runs `desktop:run --no-build` rather than the
+ * binary, because the binary alone opens a window onto an API nobody started.
+ *
+ * `path` is the installing shell's PATH, written into the entry: a launcher
+ * starts the process without the shell's rc files, so bun and the api script
+ * would not be found. `StartupWMClass` is the crate name because that is the
+ * WM_CLASS the shell's window carries — the identifier is not, and a mismatch
+ * shows the window in the dock under a generic icon.
+ *
+ * @returns {{ file: string, body: string } | null} null with no crate
+ */
+export function desktopLauncher({ root, surface, bun, fli, path, dataHome }) {
+  const binary = desktopBinary(surface, { platform: 'linux' })
+  if (!binary) return null
+  const conf  = JSON.parse(readFileSync(resolve(surface, 'shell', 'tauri.conf.json'), 'utf8'))
+  const icon  = conf.bundle?.icon?.find(i => i.endsWith('.png')) ?? conf.bundle?.icon?.[0]
+  // A relative entry would resolve against whatever directory the launcher is in.
+  const dirs  = [...new Set(path.split(':').filter(d => d.startsWith('/')))].join(':')
+  const exec  = ['env', `PATH=${dirs}`, bun, fli, 'desktop:run', '--no-build'].map(execArg).join(' ')
+  const lines = [
+    '[Desktop Entry]',
+    'Type=Application',
+    `Name=${entryValue(conf.productName ?? basename(binary))}`,
+    `Exec=${exec}`,
+    `Path=${entryValue(root)}`,
+    ...(icon ? [`Icon=${entryValue(resolve(surface, 'shell', icon))}`] : []),
+    'Terminal=false',
+    `StartupWMClass=${basename(binary)}`,
+  ]
+  return {
+    file: resolve(dataHome, 'applications', `${conf.identifier ?? basename(binary)}.desktop`),
+    body: lines.join('\n') + '\n',
+  }
+}
+
+// The Exec key is parsed twice: as a string value, then as a quoted argv.
+function execArg(arg) {
+  const quoted = /^[A-Za-z0-9_./:=-]+$/.test(arg) ? arg : `"${arg.replace(/["`$\\]/g, '\\$&')}"`
+  return entryValue(quoted).replace(/%/g, '%%')
+}
+
+function entryValue(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/\n/g, '\\n')
 }
 
 /**

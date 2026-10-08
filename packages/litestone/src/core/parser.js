@@ -254,7 +254,7 @@ class Parser {
     let replication = false
     let retention   = null
     let maxSize     = null
-    let logModel    = null   // 'auto' (implicit) or a model name (user-defined)
+    let trailModel    = null   // 'auto' (implicit) or a model name (user-defined)
     let announce    = 'inProcess'
 
     while (!this.check(TK.RBRACE)) {
@@ -266,7 +266,7 @@ class Parser {
         case 'driver': {
           const val = this.eat(TK.IDENT).value
           if (!DATABASE_DRIVERS.has(val))
-            throw new ParseError(`database '${name}': driver must be 'sqlite', 'jsonl', or 'logger', got '${val}'`, this.peek())
+            throw new ParseError(`database '${name}': driver must be 'sqlite', 'jsonl', or 'trail', got '${val}'`, this.peek())
           driver = val
           break
         }
@@ -283,9 +283,9 @@ class Parser {
           break
         case 'model': {
           // model <name> — user-defined log model
-          // Absence of this key = auto mode (Litestone generates <dbName>Logs)
+          // Absence of this key = auto mode (Litestone generates <dbName>Trail)
           const val = this.eat(TK.IDENT).value
-          logModel = val
+          trailModel = val
           break
         }
         // How far a write announcement travels. `inProcess` is a callback list
@@ -319,14 +319,14 @@ class Parser {
       throw new ParseError(`database '${name}' must declare a 'path'`, this.peek())
 
     // The mechanism is a table in this database read by another process's
-    // client. A jsonl or logger database is a FILE with no reader and no
+    // client. A jsonl or trail database is a FILE with no reader and no
     // transaction, so the declaration could be written and would do nothing.
     if (announce === 'crossProcess' && driver !== 'sqlite')
       throw new ParseError(
         `database '${name}': announce crossProcess needs driver 'sqlite' — a '${driver}' database is a log file, ` +
         `so there is no table to record an announcement in and no transaction to record it with`, this.peek())
 
-    return { name, path, driver, replication, retention, maxSize, logModel, announce }
+    return { name, path, driver, replication, retention, maxSize, trailModel, announce }
   }
 
   // ── Tenancy block ────────────────────────────────────────────────────────────
@@ -1159,7 +1159,7 @@ class Parser {
       //                                  and still rotated. An API key is both.
       //
       // Expands at parse time (expandSecretAttributes) to:
-      //   @encrypted @guarded @log(<first logger db>)   (log only if logger db declared)
+      //   @encrypted @guarded @trail(<first trail db>)   (log only if trail db declared)
       // The { kind: 'secret', rotate } attr is kept for key rotation tracking.
       case 'secret': {
         let rotate        = true
@@ -1205,13 +1205,13 @@ class Parser {
       case 'keepVersions': return { kind: 'keepVersions' }
 
       // ── Field-level logging ────────────────────────────────────────────────
-      // @log(audit)                   — log reads + writes (default)
-      // @log(audit, reads: false)     — writes only
-      // @log(audit, writes: false)    — reads only
-      case 'log': {
-        const args = this.parseLogArgs()
+      // @trail(audit)                   — log reads + writes (default)
+      // @trail(audit, reads: false)     — writes only
+      // @trail(audit, writes: false)    — reads only
+      case 'trail': {
+        const args = this.parseTrailArgs()
         delete args.readsExplicit
-        return { kind: 'log', ...args }
+        return { kind: 'trail', ...args }
       }
 
       // ── Transforms (applied before validation + write) ─────────────────────
@@ -1833,9 +1833,9 @@ class Parser {
   // it has one owner and this is its caller.
   parsePolicyExpr() { return parseExpression(this) }
 
-  // Parse @log(dbName) or @log(dbName, reads: false) or @log(dbName, writes: false)
+  // Parse @trail(dbName) or @trail(dbName, reads: false) or @trail(dbName, writes: false)
   // Returns { db, reads, writes, readsExplicit } — readsExplicit tracks if user set reads
-  parseLogArgs() {
+  parseTrailArgs() {
     this.eat(TK.LPAREN)
     const db     = this.eat(TK.IDENT).value
     let reads    = true
@@ -1850,7 +1850,7 @@ class Parser {
         const bool = val === true || val === 'true'
         if (key === 'reads')  { reads = bool; readsExplicit = true }
         else if (key === 'writes') writes = bool
-        else throw new ParseError(`@log only accepts reads and writes options, got '${key}'`, this.peek())
+        else throw new ParseError(`@trail only accepts reads and writes options, got '${key}'`, this.peek())
         this.maybeEat(TK.COMMA)
       }
     }
@@ -2546,14 +2546,14 @@ class Parser {
             `(customer, employee, applicant) is the model's name already`, tok)
         return { kind: 'person', child: true }
       }
-      case 'log': {
-        // @@log(audit)               — log create/update/delete (default)
-        // @@log(audit, reads: true)  — also log findMany/findFirst (opt-in)
+      case 'trail': {
+        // @@trail(audit)               — log create/update/delete (default)
+        // @@trail(audit, reads: true)  — also log findMany/findFirst (opt-in)
         // reads defaults to false at model level — collection reads can be high volume
-        const args = this.parseLogArgs()
+        const args = this.parseTrailArgs()
         if (!args.readsExplicit) args.reads = false
         delete args.readsExplicit
-        return { kind: 'log', ...args }
+        return { kind: 'trail', ...args }
       }
       case 'db': {
         this.eat(TK.LPAREN)
@@ -3257,7 +3257,7 @@ function normalizePolicyOps(str, token) {
 
 // ─── @secret expansion ────────────────────────────────────────────────────────
 // Runs between parseSchema() and validate().
-// Synthesizes @encrypted, @guarded, and optionally @log(<loggerDb>) onto
+// Synthesizes @encrypted, @guarded, and optionally @trail(<trailDb>) onto
 // every field marked @secret, keeping the { kind: 'secret', rotate } attr for
 // key rotation tracking via db.$rotateKey().
 //
@@ -3290,17 +3290,17 @@ function normalizePolicyOps(str, token) {
 // them and `test/catalog.test.ts` binds the two.
 export const ALLOWED_TOKENIZERS   = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
 export const ON_DELETE_ACTIONS    = new Set(['Cascade', 'SetNull', 'Restrict', 'NoAction'])
-// Why a database named by `@@log` is not one a trail can be written to. Two
+// Why a database named by `@@trail` is not one a trail can be written to. Two
 // different mistakes with two different fixes, and a single "must use driver
 // logger" told half of them the wrong one.
 function logTargetHint(schema, dbName) {
   const db = schema.databases.find(d => d.name === dbName)
   if (db?.driver === 'jsonl')
-    return `'${dbName}' is 'driver jsonl', which is ordinary append-only storage. A trail is 'driver logger', or a SQLite database declaring 'model <Name>'`
-  return `'${dbName}' is 'driver ${db?.driver ?? 'sqlite'}' and declares no log model. Either add 'model <Name>' to it, naming a model assigned to it with @@db(${dbName}), or write the trail to a 'driver logger' database`
+    return `'${dbName}' is 'driver jsonl', which is ordinary append-only storage. A trail is 'driver trail', or a SQLite database declaring 'model <Name>'`
+  return `'${dbName}' is 'driver ${db?.driver ?? 'sqlite'}' and declares no log model. Either add 'model <Name>' to it, naming a model assigned to it with @@db(${dbName}), or write the trail to a 'driver trail' database`
 }
 
-export const DATABASE_DRIVERS     = new Set(['sqlite', 'jsonl', 'logger'])
+export const DATABASE_DRIVERS     = new Set(['sqlite', 'jsonl', 'trail'])
 
 export const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id'])
 export const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
@@ -3753,7 +3753,7 @@ function validateTypes(schema) {
 }
 
 function expandSecretAttributes(schema) {
-  const loggerDb = schema.databases.find(db => db.driver === 'logger')
+  const trailDb = schema.databases.find(db => db.driver === 'trail')
 
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -3771,11 +3771,11 @@ function expandSecretAttributes(schema) {
         field.attributes.push({ kind: 'encrypted', deterministic: !!secretAttr.deterministic })
       field.attributes.push({ kind: 'guarded' })
 
-      // Synthesize @log(<loggerDb>) — audit writes only by default.
-      // reads:false matches @@log model-level default — reads are high-volume and opt-in.
-      // To audit reads, declare @log(audit, reads: true) explicitly on the field.
-      if (loggerDb && !field.attributes.some(a => a.kind === 'log'))
-        field.attributes.push({ kind: 'log', db: loggerDb.name, reads: false, writes: true })
+      // Synthesize @trail(<trailDb>) — audit writes only by default.
+      // reads:false matches @@trail model-level default — reads are high-volume and opt-in.
+      // To audit reads, declare @trail(audit, reads: true) explicitly on the field.
+      if (trailDb && !field.attributes.some(a => a.kind === 'trail'))
+        field.attributes.push({ kind: 'trail', db: trailDb.name, reads: false, writes: true })
     }
   }
 }
@@ -4038,12 +4038,12 @@ function expandTenancy(schema) {
     const tag = model.attributes.find(a => a.kind === 'tenant')
     if (tag?.mode === 'none') continue
 
-    // A log row is appended, never policied — jsonl and logger models have no
+    // A log row is appended, never policied — jsonl and trail models have no
     // policy engine to deny with, so scoping one would be a rule that reads as
     // enforcement and is not.
     const dbName = model.attributes.find(a => a.kind === 'db')?.name
     const driver = dbName ? drivers[dbName] : 'sqlite'
-    if (driver === 'jsonl' || driver === 'logger') continue
+    if (driver === 'jsonl' || driver === 'trail') continue
     if (model.attributes.some(a => a.kind === 'external')) continue
 
     if (tag?.mode === 'via') { undecided.push({ model, via: tag.via }); continue }
@@ -4118,7 +4118,7 @@ function expandTenancy(schema) {
 
     const dbName = view.db
     const driver = dbName ? drivers[dbName] : 'sqlite'
-    if (driver === 'jsonl' || driver === 'logger') continue
+    if (driver === 'jsonl' || driver === 'trail') continue
 
     const column = tag.column ?? t.column
     if (!view.fields.some(f => f.name === column)) {
@@ -5726,15 +5726,15 @@ function validate(schema) {
 
   const dbNames    = new Set(schema.databases.map(d => d.name))
   const jsonlNames = new Set(schema.databases.filter(d => d.driver === 'jsonl').map(d => d.name))
-  const loggerNames = new Set(schema.databases.filter(d => d.driver === 'logger').map(d => d.name))
+  const trailNames = new Set(schema.databases.filter(d => d.driver === 'trail').map(d => d.name))
   // Where a trail may be written. Two kinds, and the difference is what the
-  // trail can then DO: `driver logger` is a directory of append-only jsonl —
+  // trail can then DO: `driver trail` is a directory of append-only jsonl —
   // cheap, fleet-shared, and reachable by no join, no policy and no screen —
   // while a SQLite database with a declared `model` puts the trail in an
   // ordinary table the app owns, which can be joined to `User`, gated, indexed,
   // paged with a cursor and replicated by litestream.
   const logTargets = new Set(schema.databases
-    .filter(d => d.driver === 'logger' || (d.driver !== 'jsonl' && d.logModel))
+    .filter(d => d.driver === 'trail' || (d.driver !== 'jsonl' && d.trailModel))
     .map(d => d.name))
 
   // Duplicate database names
@@ -5746,19 +5746,19 @@ function validate(schema) {
     if (db.maxSize && db.driver !== 'jsonl')
       errors.push(`database '${db.name}': maxSize is only valid for jsonl databases`)
     // replication not valid on jsonl or logger
-    if (db.replication && (db.driver === 'jsonl' || db.driver === 'logger'))
+    if (db.replication && (db.driver === 'jsonl' || db.driver === 'trail'))
       errors.push(`database '${db.name}': replication is not supported for ${db.driver} databases`)
-    // `model` names the trail's own table. On a logger database it is optional
-    // — an auto `<db>Logs` is synthesized when it is absent — and on a SQLite
+    // `model` names the trail's own table. On a trail database it is optional
+    // — an auto `<db>Trail` is synthesized when it is absent — and on a SQLite
     // one it is required, because there is nothing to synthesize INTO: a table
     // the app never declared cannot carry a `@@gate`, an `@@allow`, an index or
     // a migration, and those are the whole reason to put a trail in SQLite
     // rather than in a directory of jsonl.
-    if (db.logModel && db.driver === 'jsonl')
-      errors.push(`database '${db.name}': model key is not valid for jsonl databases — it names an audit trail's own table, and a jsonl database that is not 'driver logger' is ordinary storage`)
+    if (db.trailModel && db.driver === 'jsonl')
+      errors.push(`database '${db.name}': model key is not valid for jsonl databases — it names an audit trail's own table, and a jsonl database that is not 'driver trail' is ordinary storage`)
     // maxSize not valid on logger
-    if (db.maxSize && db.driver === 'logger')
-      errors.push(`database '${db.name}': maxSize is not valid for logger databases — use retention instead`)
+    if (db.maxSize && db.driver === 'trail')
+      errors.push(`database '${db.name}': maxSize is not valid for trail databases — use retention instead`)
   }
 
   // JSONL single-file path (.jsonl extension) with multiple models — ambiguous
@@ -5801,23 +5801,23 @@ function validate(schema) {
       }
     }
 
-    // @log on fields — db must be a logger database
+    // @trail on fields — db must be a trail database
     for (const field of model.fields) {
-      const logAttr = field.attributes.find(a => a.kind === 'log')
+      const logAttr = field.attributes.find(a => a.kind === 'trail')
       if (!logAttr) continue
       if (!dbNames.has(logAttr.db))
-        errors.push(`Model '${model.name}', field '${field.name}': @log references unknown database '${logAttr.db}'`)
+        errors.push(`Model '${model.name}', field '${field.name}': @trail references unknown database '${logAttr.db}'`)
       else if (!logTargets.has(logAttr.db))
-        errors.push(`Model '${model.name}', field '${field.name}': @log database '${logAttr.db}' is not an audit trail — ${logTargetHint(schema, logAttr.db)}`)
+        errors.push(`Model '${model.name}', field '${field.name}': @trail database '${logAttr.db}' is not an audit trail — ${logTargetHint(schema, logAttr.db)}`)
     }
 
-    // @@log on models — the target must be a declared audit trail
+    // @@trail on models — the target must be a declared audit trail
     for (const attr of model.attributes) {
-      if (attr.kind !== 'log') continue
+      if (attr.kind !== 'trail') continue
       if (!dbNames.has(attr.db))
-        errors.push(`Model '${model.name}': @@log references unknown database '${attr.db}'`)
+        errors.push(`Model '${model.name}': @@trail references unknown database '${attr.db}'`)
       else if (!logTargets.has(attr.db))
-        errors.push(`Model '${model.name}': @@log database '${attr.db}' is not an audit trail — ${logTargetHint(schema, attr.db)}`)
+        errors.push(`Model '${model.name}': @@trail database '${attr.db}' is not an audit trail — ${logTargetHint(schema, attr.db)}`)
     }
 
     // @required carries a message for a rule it does not create. On a nullable
@@ -5945,9 +5945,9 @@ function validate(schema) {
       if (dbAttr && jsonlNames.has(dbAttr.name))
         errors.push(`Model '${model.name}', field '${field.name}': @secret (and @encrypted) are not supported on jsonl databases`)
 
-      // Warn if no logger database exists — @log won't be synthesized
-      if (!schema.databases.some(db => db.driver === 'logger'))
-        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no logger database declared — audit logging will not be active. Add a 'database audit { driver logger }' block to enable it.`)
+      // Warn if no trail database exists — @trail won't be synthesized
+      if (!schema.databases.some(db => db.driver === 'trail'))
+        warnings.push(`Model '${model.name}', field '${field.name}': @secret has no trail database declared — audit logging will not be active. Add a 'database audit { driver trail }' block to enable it.`)
     }
   }
 
@@ -6093,7 +6093,7 @@ function validate(schema) {
     hashed:      'a digest is what gets stored instead of the value; @transient stores nothing',
     encrypted:   'ciphertext is what gets stored instead of the value; @transient stores nothing',
     keepVersions: 'history is kept per column',
-    log:         'the audit trail records column writes, and a transient value is deliberately absent from it',
+    trail:       'the audit trail records column writes, and a transient value is deliberately absent from it',
     guarded:     'a caller writes a transient field by definition — @guarded locks the write',
     system:      'the application writes a @system column and a caller writes a @transient field; they are opposite ends',
     secret:      'a transient value is never read back, so there is nothing to hide from a reader',
@@ -7519,26 +7519,26 @@ function validate(schema) {
         `If that is the intent this is nothing to fix — say so with an @@allow naming the level you mean.`)
   }
 
-  // ── Logger database validation ────────────────────────────────────────────────
+  // ── Trail database validation ────────────────────────────────────────────────
   for (const db of schema.databases) {
     if (db.driver === 'jsonl') continue
-    if (!db.logModel) continue   // logger auto mode — no model to validate
+    if (!db.trailModel) continue   // logger auto mode — no model to validate
 
-    // User-defined mode: logModel must reference a declared model
-    if (!modelNames.has(db.logModel))
-      errors.push(`database '${db.name}': model '${db.logModel}' not found in schema`)
+    // User-defined mode: trailModel must reference a declared model
+    if (!modelNames.has(db.trailModel))
+      errors.push(`database '${db.name}': model '${db.trailModel}' not found in schema`)
     else {
       // That model must be @@db(this database)
-      const logModelDef = schema.models.find(m => m.name === db.logModel)
-      const logModelDb  = logModelDef?.attributes.find(a => a.kind === 'db')?.name ?? 'main'
-      if (logModelDb !== db.name)
-        errors.push(`database '${db.name}': model '${db.logModel}' must be assigned to this database with @@db(${db.name})`)
+      const trailModelDef = schema.models.find(m => m.name === db.trailModel)
+      const trailModelDb  = trailModelDef?.attributes.find(a => a.kind === 'db')?.name ?? 'main'
+      if (trailModelDb !== db.name)
+        errors.push(`database '${db.name}': model '${db.trailModel}' must be assigned to this database with @@db(${db.name})`)
 
       // Must have minimum required fields: operation, model, createdAt
-      const fieldNames = new Set(logModelDef?.fields.map(f => f.name) ?? [])
+      const fieldNames = new Set(trailModelDef?.fields.map(f => f.name) ?? [])
       for (const required of ['operation', 'model', 'createdAt']) {
         if (!fieldNames.has(required))
-          errors.push(`database '${db.name}': log model '${db.logModel}' is missing required field '${required}'`)
+          errors.push(`database '${db.name}': log model '${db.trailModel}' is missing required field '${required}'`)
       }
     }
   }
@@ -7865,13 +7865,13 @@ function validate(schema) {
   for (const model of schema.models) {
     if (!model.attributes.some(a => a.kind === 'anonymous')) continue
     const where = `Model '${model.name}' is @@anonymous`
-    for (const log of model.attributes.filter(a => a.kind === 'log'))
-      errors.push(`${where}, and @@log(${log.db}) stamps the writer and the whole row on every write. Remove the log`)
+    for (const log of model.attributes.filter(a => a.kind === 'trail'))
+      errors.push(`${where}, and @@trail(${log.db}) stamps the writer and the whole row on every write. Remove the log`)
     for (const field of model.fields) {
       const kinds = new Set(field.attributes.map(a => a.kind))
       const dflt  = field.attributes.find(a => a.kind === 'default')?.value
-      if (kinds.has('log'))
-        errors.push(`${where}, and field '${field.name}' is logged (@log, or the one @secret implies) — an audit entry names its writer`)
+      if (kinds.has('trail'))
+        errors.push(`${where}, and field '${field.name}' is logged (@trail, or the one @secret implies) — an audit entry names its writer`)
       if (kinds.has('createdBy') || kinds.has('updatedBy') || (dflt?.kind === 'call' && dflt.fn === 'auth'))
         errors.push(`${where}, and field '${field.name}' is stamped from the writer (@createdBy, @updatedBy or auth())`)
       if (kinds.has('updatedAt') || (dflt?.kind === 'call' && dflt.fn === 'now'))

@@ -122,7 +122,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `app.principal()` / `app.runAs(userId, fn)` | `packages/junction/src/core/app.ts` | yes | 6 |
 | `createLitestoneAuth(db, { sessionFields })` | `packages/auth/auth.ts` | yes | — |
 | `manifestPlugin()` | `packages/junction/src/plugins/manifest/index.ts` | yes | — |
-| `app.registerMetricsSource(name, fn)` / `app.registerHealthCheck(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
+| `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` | `packages/junction/src/core/app.ts` | yes | — |
 | `app.registerDevService({ name, url, note })` | `packages/junction/src/core/app.ts` | yes | — |
 | `devtools({ port, auth })` | `packages/junction/src/plugins/devtools/index.ts` | yes | 1 |
 ## API → UI

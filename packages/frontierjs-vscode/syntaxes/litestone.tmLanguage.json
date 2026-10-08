@@ -137,7 +137,7 @@
         {
           "comment": "Model-level attributes (@@)",
           "name": "meta.attribute.model.litestone",
-          "match": "@@(index|unique|fts|noStrict|strict|map|softDelete|gate|auth|allow|deny|db|log|anonymous|external)\\b",
+          "match": "@@(index|unique|fts|noStrict|strict|map|softDelete|gate|auth|allow|deny|db|trail|anonymous|external)\\b",
           "captures": {
             "0": { "name": "entity.other.attribute-name.model.litestone" }
           }
@@ -160,7 +160,7 @@
         {
           "comment": "Field-level attributes with known names (@)",
           "name": "meta.attribute.field.litestone",
-          "match": "@(id|unique|default|relation|generated|computed|hardDelete|email|url|phone|trim|lower|upper|slug|regex|length|gt|gte|lt|lte|startsWith|endsWith|contains|date|datetime|omit|guarded|encrypted|secret|updatedAt|updatedBy|map|sequence|log|keepVersions|accept|syntax|from)\\b",
+          "match": "@(id|unique|default|relation|generated|computed|hardDelete|email|url|phone|trim|lower|upper|slug|regex|length|gt|gte|lt|lte|startsWith|endsWith|contains|date|datetime|omit|guarded|encrypted|secret|updatedAt|updatedBy|map|sequence|trail|keepVersions|accept|syntax|from)\\b",
           "captures": {
             "0": { "name": "entity.other.attribute-name.field.litestone" }
           }

@@ -53,7 +53,7 @@ const ROOT = join(HERE, '../..')
 const API  = process.env.API_URL ?? 'http://localhost:8110'
 const MAIL = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const BASE = `${API}/api`
-const TRAIL = join(ROOT, 'db/audit/auditLogs.jsonl')
+const TRAIL = join(ROOT, 'db/audit/auditTrail.jsonl')
 
 const PASSWORD = 'correct-horse-battery'
 const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test'
@@ -217,7 +217,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 // ─── The trail ─────────────────────────────────────────────────────────────
 //
 // A write the SUBJECT is entitled to make, from inside the episode. `User`
-// carries `@@log(audit)` and `@@allow('update', id == auth().id || …)`, so this
+// carries `@@trail(audit)` and `@@allow('update', id == auth().id || …)`, so this
 // is the shopper editing their own row — and every part of the entry that
 // matters is about who really did it.
 

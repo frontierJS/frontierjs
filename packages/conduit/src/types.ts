@@ -595,10 +595,10 @@ export interface ConduitOptions {
   trace?:       (req: ConduitRequest) => Record<string, string> | null | undefined
 
   // Told of each broker subscription's liveness so a host can report it. The
-  // junction plugin passes `app.registerHealthCheck`; a subscription that
+  // junction plugin passes `app.registerReadiness`; a subscription that
   // cannot say whether it is still consuming does not ship (`FJS-D235`).
   // `check()` is false while the connection is down.
-  registerHealth?: (name: string, check: () => boolean) => void
+  registerReadiness?: (name: string, check: () => boolean) => void
 
   // Expose management routes as a Junction service. Disabled by default.
   //

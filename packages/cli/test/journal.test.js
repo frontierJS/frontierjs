@@ -16,6 +16,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { spawnSync } from 'child_process'
+import { Database } from 'bun:sqlite'
 import { readFileSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { resolve } from 'path'
@@ -347,6 +348,27 @@ describe('the journal, through the runner that ships to the target', () => {
     await j.open({ app: 'shop', host: 'deploy@prod' })
     const { journal } = await j.open({ app: 'shop', host: 'deploy@prod' })
     expect(journal.app).toBe('shop')
+  })
+
+  // Another process holding the write lock when the deploy writes. The runner
+  // has to wait it out; with no busy timeout it answered SQLITE_BUSY at once.
+  test('a write waits out a lock another process holds', async () => {
+    await j.open({ app: 'shop', host: 'deploy@prod' })
+    const holder = new Database(db)
+    holder.exec('BEGIN IMMEDIATE')
+    const waiting = journalClient({
+      db, ddl: DDL,
+      exec: async (stdin) => {
+        const child = Bun.spawn(['bun', RUNNER], { stdin: new Blob([stdin]), stdout: 'pipe' })
+        return await new Response(child.stdout).text()
+      },
+    })
+    const write = waiting.begin({ release: RELEASE, transition: TRANSITION, steps: steps('t1') })
+    await Bun.sleep(300)
+    holder.exec('COMMIT')
+    holder.close()
+    await write
+    expect((await j.live({ app: 'shop', environment: 'production' }))?.transition.id).toBe('t1')
   })
 
   test('a journal belonging to another app refuses by name', async () => {

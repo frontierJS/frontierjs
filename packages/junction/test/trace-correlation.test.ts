@@ -25,8 +25,8 @@ const PARENT = `00-${TRACE}-00f067aa0ba902b7-01`
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
-  model Order { id Int @id  status String  @@log(audit) }
+  database audit { path "${dir}/audit/" driver trail }
+  model Order { id Int @id  status String  @@trail(audit) }
 `
 
 const lines: LogEntry[] = []
@@ -58,7 +58,7 @@ afterAll(async () => {
 /** POST an order with these headers; answer the id on its log line and its trail row. */
 async function place(headers: Record<string, string>) {
   const id = nextId++
-  const before = (await db.asSystem().auditLogs.findMany({})).length
+  const before = (await db.asSystem().auditTrail.findMany({})).length
   const res = await fetch(`http://localhost:${app.http.port}/orders`, {
     method:  'POST',
     headers: { 'content-type': 'application/json', ...headers },
@@ -68,7 +68,7 @@ async function place(headers: Record<string, string>) {
   await new Promise(r => setImmediate(r))
   const line = lines.filter(l => l.message === 'placing').at(-1)
   // The jsonl trail appends in order, so this request's row is the one it added.
-  const rows = await db.asSystem().auditLogs.findMany({})
+  const rows = await db.asSystem().auditTrail.findMany({})
   expect(rows).toHaveLength(before + 1)
   return { log: line?.data?.correlationId as string, trail: rows.at(-1).correlationId as string }
 }

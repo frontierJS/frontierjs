@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-45 services · 51 routes · 15 plugins · prefix /api
+46 services · 51 routes · 15 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -620,6 +620,22 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `people`
+
+- **methods** — `get`, `remove`, `revokeSession`, `revokeApiKey`, `signOut`, `invite`
+- **custom methods** — `revokeSession`, `revokeApiKey`, `signOut`, `invite`
+- **who may call** —
+  - `get` — standing 5 or above — declared `gate: 5`
+  - `remove` — standing 5 or above — declared `gate: 5`
+  - `revokeSession` — standing 5 or above — declared `gate: 5`
+  - `revokeApiKey` — standing 5 or above — declared `gate: 5`
+  - `signOut` — standing 5 or above — declared `gate: 5`
+  - `invite` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
 
 ### `pickupPoints` · model `PickupPoint`
 

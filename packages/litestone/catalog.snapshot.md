@@ -17,7 +17,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | word | arity | accepts |
 | --- | --- | --- |
 | `import` | "path" [into <database>] |  |
-| `database` | <name> { path · driver · replication · retention · maxSize · model } | driver: sqlite · jsonl · logger |
+| `database` | <name> { path · driver · replication · retention · maxSize · model } | driver: sqlite · jsonl · trail |
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
 | `claim` | <name> [from <Model>(<subject>)[.<column>]] |  |
 | `model` | <PascalCaseSingular> { … } |  |
@@ -72,7 +72,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
-| `@log` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
+| `@trail` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@trim` | Clean a value on write |  |  |  |  |
 | `@lower` | Clean a value on write |  |  |  |  |
 | `@upper` | Clean a value on write |  |  |  |  |
@@ -135,7 +135,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
-| `@@log` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
+| `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@@anonymous` | Wire it to the app |  |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |
 | `@@trait` | Wire it to the app | (<TraitName>) |  |  |  |

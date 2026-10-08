@@ -151,7 +151,7 @@ export const RULES = [
   { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a polymorphic pair names which models it can point at' },
   { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
-    title: 'a jsonl/logger database the deploy can point at the volume' },
+    title: 'a jsonl/trail database the deploy can point at the volume' },
   { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
     title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
   { id: 'command-resolves',     scope: 'app',  severity: 'error', invariant: 15,
@@ -2310,7 +2310,7 @@ const CHECKS = {
   // Only for a surface whose routes actually READ: a site with no companion
   // pulls no data, so there is nothing to observe and no client to want.
   // ─── log-db-unbound ────────────────────────────────────────────────────────
-  // A `driver jsonl` / `driver logger` database is a DIRECTORY beside the app,
+  // A `driver jsonl` / `driver trail` database is a DIRECTORY beside the app,
   // and the deploy mounts one volume at `/db` while the app root is `/app`. So
   // a declared `./db/audit/` is written inside the container and goes with it on
   // the next swap — silently, because the app works perfectly without its own
@@ -2328,7 +2328,7 @@ const CHECKS = {
     if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'no db/schema.lite' }
 
     const logDbs = declaredLogDatabases(join(root, 'db'))
-    if (!logDbs.length) return { skipped: 'no jsonl or logger database declared' }
+    if (!logDbs.length) return { skipped: 'no jsonl or trail database declared' }
 
     // No deploy block is no volume, so there is nothing for a path to be outside
     // of. An app run from a directory keeps its trail wherever it declared it.

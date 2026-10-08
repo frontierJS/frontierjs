@@ -85,8 +85,8 @@ try {
   ok('no real scan goes unreported',          missed.length === 0,        missed.slice(0,3).join(' | '))
 
   // a logger-database model has no SQLite indexes to miss
-  ok('logger-db models are not audited', !issues.some(i => /auditLogs/i.test(i.table ?? '')),
-     issues.filter(i=>/auditLogs/i.test(i.table??'')).map(i=>i.title).join(', '))
+  ok('logger-db models are not audited', !issues.some(i => /auditTrail/i.test(i.table ?? '')),
+     issues.filter(i=>/auditTrail/i.test(i.table??'')).map(i=>i.title).join(', '))
 } finally { studio.kill('SIGKILL') }
 console.log(fails ? `\n${fails} FAILED` : '\nall passed')
 process.exit(fails ? 1 : 0)

@@ -158,8 +158,8 @@ describe('a due row is transitioned', () => {
     const dir    = mkdtempSync(join(tmpdir(), 'fjs-commit-audit-'))
     const logged = SCHEMA
       .replace('database main { path "./app.db" }',
-        `database main { path "./app.db" }\ndatabase audit { path "${dir}/audit/" driver logger }`)
-      .replace('@@db(main)', '@@db(main)\n  @@log(audit)')
+        `database main { path "./app.db" }\ndatabase audit { path "${dir}/audit/" driver trail }`)
+      .replace('@@db(main)', '@@db(main)\n  @@trail(audit)')
     const { app, db, advance, status } = await started(logged)
     const order = await db.order.create({ data: {} })
 
@@ -168,7 +168,7 @@ describe('a due row is transitioned', () => {
     await until('the order to be abandoned', async () => (await status(order.id)) === 'cancelled')
     await Bun.sleep(20)
 
-    const rows = await db.asSystem().auditLogs.findMany({})
+    const rows = await db.asSystem().auditTrail.findMany({})
     const move = rows.find((r: any) => r.operation === 'update')
     expect(move.transition).toBe('abandon')
     expect(JSON.parse(move.after).status).toBe('cancelled')

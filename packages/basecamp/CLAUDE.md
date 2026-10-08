@@ -27,6 +27,8 @@ bun run build:cli      # …compiled: cli/dist/bcamp (fli cli:build; --target fo
 bun run build:desktop  # desktop/: web/ bundled into a Tauri shell, at
                        # desktop/shell/target/debug/basecamp-desktop; needs `bun run api`
 bun run verify:desktop # that shell, signed in and scanning, on 7120 — rebuild after
+fli desktop:run        # build it, start the API if nothing answers on 8120, open the window
+fli desktop:install    # add it to the app launcher; a click opens it through desktop:run
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it

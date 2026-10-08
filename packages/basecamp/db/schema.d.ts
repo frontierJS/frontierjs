@@ -211,7 +211,7 @@ export interface Session {
    * second model. A session minted for the subject would be a credential to
    * keep somewhere, swap for, and lose with the tab; clearing a column is a
    * way back that cannot be forgotten. The permanent record is the audit
-   * trail, which this model already writes through @@log(audit) and which
+   * trail, which this model already writes through @@trail(audit) and which
    * outlives the row by construction — a second table recording the same
    * episode would be a second origin for it.
    * 
@@ -240,7 +240,7 @@ export interface SessionCreate {
    * second model. A session minted for the subject would be a credential to
    * keep somewhere, swap for, and lose with the tab; clearing a column is a
    * way back that cannot be forgotten. The permanent record is the audit
-   * trail, which this model already writes through @@log(audit) and which
+   * trail, which this model already writes through @@trail(audit) and which
    * outlives the row by construction — a second table recording the same
    * episode would be a second origin for it.
    * 

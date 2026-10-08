@@ -263,7 +263,7 @@ class EventEmitter {
       try { h(...args) } catch {}
     })
     // Synthetic 'connection' event — fires on any connection state change
-    if (event === 'connect' || event === 'disconnect' || event === 'reconnecting' || event === 'resync') {
+    if (event === 'connect' || event === 'disconnect' || event === 'reconnecting' || event === 'reconnected') {
       this._handlers.get('connection')?.forEach((h) => {
         try { h(event, ...args) } catch {}
       })
@@ -1218,7 +1218,7 @@ export class JunctionClient extends EventEmitter {
     this.emit('connect')
 
     if (this._everConnected) {
-      this.emit('resync', { downMs: this._downSince ? Date.now() - this._downSince : 0 })
+      this.emit('reconnected', { downMs: this._downSince ? Date.now() - this._downSince : 0 })
     }
     this._everConnected = true
     this._downSince     = null
@@ -1605,7 +1605,7 @@ export class JunctionClient extends EventEmitter {
     // every client in the fleet querying in the same tick, which is `FJS-703`'s
     // shape one layer up. Up to 2s, which is short against a person noticing
     // and long against a herd.
-    this.on('resync', () => refetch(Math.random() * 2000))
+    this.on('reconnected', () => refetch(Math.random() * 2000))
 
     // ── Where in the list, and whether this list can say ────────────────────
     // Membership is only half the question (`FJS-011`); a row also has a
@@ -2189,7 +2189,7 @@ export class JunctionClient extends EventEmitter {
    * The socket's own handler calls this for both, and a relayed client is fed
    * through it by whoever holds the connection, so the two cannot answer one
    * frame differently. A `connected` after the first is a reconnect and emits
-   * `resync`, which is what reloads a live list across the gap.
+   * `reconnected`, which is what reloads a live list across the gap.
    */
   receive(msg: Record<string, unknown>): void {
     if (msg.type === 'connected') {

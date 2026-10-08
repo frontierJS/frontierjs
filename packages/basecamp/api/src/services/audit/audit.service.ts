@@ -22,7 +22,7 @@
 // There are TWO trails and they answer different questions. This one is the
 // APPLICATION trail: `servers.create` by a named actor, written by the
 // basecampAuditLog hook in core/hooks.ts. The other is Litestone's row-level
-// `@@log(audit)` JSONL, which records every column change with before/after
+// `@@trail(audit)` JSONL, which records every column change with before/after
 // snapshots and redacts protected fields. This service exposes the first;
 // the second is a file an operator reads on the host.
 //

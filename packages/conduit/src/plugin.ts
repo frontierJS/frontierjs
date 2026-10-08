@@ -119,7 +119,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
     register(app: App): void {
       const instance = createConduit({
         trace: junctionTrace(),
-        registerHealth: (name, check) => app.registerHealthCheck(name, check),
+        registerReadiness: (name, check) => app.registerReadiness(name, check),
         ...opts,
       })
       instances.set(app, instance)

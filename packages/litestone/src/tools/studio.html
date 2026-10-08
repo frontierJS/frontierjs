@@ -2261,7 +2261,7 @@ function selectTable(name, { skipLoad = false } = {}) {
   const dbAttr  = model?.attributes?.find(a => a.kind === 'db')
   const dbName  = dbAttr?.name ?? 'main'
   const dbDef   = databases.find(d => d.name === dbName)
-  const isJsonl = dbDef?.driver === 'jsonl' || dbDef?.driver === 'logger'
+  const isJsonl = dbDef?.driver === 'jsonl' || dbDef?.driver === 'trail'
   currentTableAppendOnly = isJsonl
   // Per-table view state resets
   serverSearch = ''
@@ -3071,7 +3071,7 @@ const _erDragged = new Set()
 // Map each database name to a CSS class slot
 function getDbClass(dbName, driver) {
   if (driver === 'jsonl')   return 'er-db-jsonl'
-  if (driver === 'logger')  return 'er-db-logger'
+  if (driver === 'trail')  return 'er-db-logger'
   if (!dbName || dbName === 'main') return 'er-db-main'
   // Assign stable color slot based on alphabetical order of non-main sqlite dbs
   const sqliteDbs = (schema?.databases ?? [])
@@ -3203,7 +3203,7 @@ const ER_GOLDEN_ANGLE = 137.508
 
 function erStem(name) {
   // PascalCase head. A leading run of capitals is one word (`APIKey` → `API`),
-  // and a name that is not PascalCase at all (`auditLogs`) is its own stem.
+  // and a name that is not PascalCase at all (`auditTrail`) is its own stem.
   const m = /^([A-Z][a-z0-9]*|[A-Z]+(?![a-z])|[a-z0-9]+)/.exec(name)
   return m ? m[1] : name
 }
@@ -3304,8 +3304,8 @@ function renderSchema() {
     const isSoft   = softDeleteMap[model.name]
     const hasFts   = model.attributes?.find(a => a.kind === 'fts')
     const isAuto   = model.attributes?.some(a => a.kind === 'auto') ||
-                     // logger auto-models: named <dbName>Logs and db is a logger driver
-                     (driver === 'logger' && model.name === dbName + 'Logs')
+                     // logger auto-models: named <dbName>Trail and db is a logger driver
+                     (driver === 'trail' && model.name === dbName + 'Trail')
     // Show DB label only in multi-DB mode and only when it's not main
     const showDbLabel = multiDb && dbName !== 'main'
 
@@ -4700,7 +4700,7 @@ async function loadStats() {
       const driverLabel = db.driver !== 'sqlite' ? `<span class="badge primary">${esc(db.driver)}</span>` : ''
       let html = `<div class="section-header">${esc(db.name)}${driverLabel}</div><div class="tiles">`
 
-      if (db.driver === 'jsonl' || db.driver === 'logger') {
+      if (db.driver === 'jsonl' || db.driver === 'trail') {
         html += [
           { label: 'File Size', value: fmtBytes(db.size || 0) },
           { label: 'Driver',    value: db.driver, sub: 'append-only' },
@@ -4784,7 +4784,7 @@ async function exInit() {
 // ── What is declared ──────────────────────────────────────────────────────────
 //
 // Counted off the parse, which means IN EFFECT rather than as typed: @secret
-// expands into @encrypted @guarded @log, so a schema using it reports all four.
+// expands into @encrypted @guarded @trail, so a schema using it reports all four.
 // That is the honest number for "does this schema do this" and the panel says
 // which it is.
 //
@@ -4798,19 +4798,19 @@ const EX_KIND_TO_WORD = { uniqueIndex: 'unique', partialUnique: 'unique', fieldA
 
 /**
  * The models Litestone wrote, not the app. `db.$schema` is the AUGMENTED parse —
- * it carries a log model per logger database and a stub per view, which is what
+ * it carries a log model per trail database and a stub per view, which is what
  * lets Browse list those tables — and counting them here reports a `model` and
  * two `@@index` nobody typed, in the one panel whose subject is what you did and
  * did not write.
  *
- * A logger database that declares its own `model` is the app's, so the test is
+ * A trail database that declares its own `model` is the app's, so the test is
  * the absence of that key rather than the driver alone.
  */
 function exGenerated() {
   const s   = schema || {}
   const out = new Set()
   for (const db of s.databases || [])
-    if (db.driver === 'logger' && !db.logModel)
+    if (db.driver === 'trail' && !db.trailModel)
       for (const m of s.models || [])
         if ((m.attributes || []).some(a => a.kind === 'db' && a.name === db.name)) out.add(m.name)
   for (const v of s.views || []) out.add(v.name)
@@ -5159,7 +5159,7 @@ function exInstanceCard(word, i) {
     ? `<button class="btn ghost compact" onclick="event.stopPropagation();selectTable('${esc(i.name)}')">Browse rows</button>` : ''
 
   const gen = i.generated
-    ? '<span class="badge muted" title="Written by Litestone for a logger database, not declared in the schema">generated</span>' : ''
+    ? '<span class="badge muted" title="Written by Litestone for a trail database, not declared in the schema">generated</span>' : ''
 
   return `<article class="ex-card stack">
     <div class="cluster"><b class="ex-word">${esc(i.name)}</b>${gen}<span class="spacer"></span>${open}</div>

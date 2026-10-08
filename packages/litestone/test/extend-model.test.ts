@@ -24,7 +24,7 @@ import { join } from 'path'
 
 const HOST = `
 database main  { path "./a.db" }
-database audit { path "./audit/"; driver logger; retention 90d }
+database audit { path "./audit/"; driver trail; retention 90d }
 
 model User {
   id    String @id @default(uuid())
@@ -78,12 +78,12 @@ describe('extend model', () => {
   test('adds model attributes, and the base keeps its own', () => {
     const schema = ok(HOST + `
       extend model Session {
-        @@log(audit)
+        @@trail(audit)
         @@index([userId])
       }
     `)
     const kinds = model(schema, 'Session').attributes.map((a: any) => a.kind)
-    expect(kinds).toContain('log')
+    expect(kinds).toContain('trail')
     expect(kinds).toContain('index')
     expect(kinds).toContain('gate')     // the package's statement, still there
     expect(kinds).toContain('db')
@@ -178,7 +178,7 @@ model Session {
   const app = (body: string) => {
     writeFileSync(join(dir, 'schema.lite'), `
 database main  { path "./a.db" }
-database audit { path "./audit/"; driver logger; retention 90d }
+database audit { path "./audit/"; driver trail; retention 90d }
 
 import "./auth.lite"
 
@@ -197,14 +197,14 @@ ${body}
     const out = app(`
 extend model Session {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@log(audit)
+  @@trail(audit)
 }
 `) as any
     if (!out.valid) throw new Error(out.errors.join(' · '))
 
     const s = out.schema.models.find((m: any) => m.name === 'Session')
     expect(s.fields.map((f: any) => f.name)).toContain('user')
-    expect(s.attributes.map((a: any) => a.kind)).toContain('log')
+    expect(s.attributes.map((a: any) => a.kind)).toContain('trail')
     // And the package's own statement about the model survives untouched.
     expect(s.attributes.find((a: any) => a.kind === 'gate').value).toBe('8')
   })

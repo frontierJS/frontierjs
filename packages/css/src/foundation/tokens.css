@@ -579,10 +579,18 @@
  * roomier, `--space-*-base` for a different ladder shape. A rung set
  * DIRECTLY on an element (`--space-2xl: 3rem`) still loses to this rule
  * on that element's descendants — set the base instead.
+ *
+ * `:host` is on the list because `*` inside a shadow tree does not match the
+ * host, and `--control-padding-block` is declared on `:root, :host` FROM a
+ * rung. In a page `*` matches `<html>`, so the rung is there when that
+ * declaration resolves; at a host it was not, and the token took the HOST
+ * PAGE's `--space-sm` through inheritance (40px on ela's hostile test page)
+ * or nothing.
  */
 *,
 *::before,
-*::after {
+*::after,
+:host {
   --space-3xs: calc(var(--space-3xs-base, 0.125rem) * var(--density));  /*  2px */
   --space-2xs: calc(var(--space-2xs-base, 0.25rem)  * var(--density));  /*  4px */
   --space-xs:  calc(var(--space-xs-base,  0.375rem) * var(--density));  /*  6px */
@@ -595,6 +603,54 @@
   --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  /* 24px */
   --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  /* 32px */
   --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  /* 48px */
+}
+
+/*
+ * ── Inside a shadow tree, nothing is registered ───────────────
+ *
+ * An `@property` rule in a shadow root's stylesheet is ignored — a
+ * registration is the document's, and a Sierra widget adopts this whole
+ * package into a shadow root on a page that never loaded it. So every token
+ * the package registers is, in a widget, an ordinary inheriting custom
+ * property with no initial value, and each one breaks differently:
+ *
+ *   --density       no value, so every rung's calc() above is invalid and
+ *                   every padding and gap in the kit computes to nothing
+ *   --ring-style    no value, so the focus outline is invalid and there is
+ *                   no ring at all — the one failure focus.css is built to
+ *                   make impossible
+ *   --bg-mix,       `inherits: false` is gone, so a tone leaks into every
+ *   --on-bg-mix,    descendant: the button inside a danger Alert paints red
+ *   --ring-color
+ *
+ * The declarations below put back what the registration would have given,
+ * and only where a registration cannot reach. `:host` matches nothing in a
+ * document, so a page's cascade is untouched; in a shadow tree the initial
+ * values sit on the host and inherit, and the non-inheriting tokens are
+ * reset on every element so only the one that declares a tone has it. It
+ * also seals the widget from the page around it, which a registration would
+ * not: the host inherits the page's custom properties, and
+ * `html { --density: 2 }` there must not reach in.
+ *
+ * In the tokens layer, the first that declares anything, so a theme, a tone
+ * class, `.field:focus` and every later layer override the reset by layer
+ * order rather than by specificity — `:host *` is (0,1,0) and would tie a
+ * tone class. What a declaration cannot restore is the registration itself:
+ * inside a widget density does not interpolate and `--ring-style: none` is
+ * not refused. `test/specs/shadow.spec.js` holds every registered token to
+ * its document value inside a shadow root.
+ */
+:host {
+  --density:    1;
+  --ring-style: solid;
+}
+
+:host *,
+:host *::before,
+:host *::after {
+  --bg-mix:     initial;
+  --on-bg-mix:  initial;
+  --ring-color: initial;
 }
 
 /*

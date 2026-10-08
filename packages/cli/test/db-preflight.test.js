@@ -70,7 +70,7 @@ describe('declaredDatabases — where the app actually keeps its data', () => {
 
   test('a non-sqlite database is skipped — "no rows" says nothing about jsonl', () => {
     const root = app('logger', {
-      schema: 'database main { path "./db/a.db" }\n\ndatabase audit { path "./db/audit/" driver logger retention 90d }\n',
+      schema: 'database main { path "./db/a.db" }\n\ndatabase audit { path "./db/audit/" driver trail retention 90d }\n',
     })
     expect(declaredDatabases(root, join(root, 'db')).map(d => d.name)).toEqual(['main'])
   })

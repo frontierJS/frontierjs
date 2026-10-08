@@ -105,14 +105,14 @@ const resource = (service, opts = '') => `<script module>
 
 /** The shape a passing app has — every rule runs, nothing fires. */
 const CLEAN = {
-  // The schema PLUS a logger database, so `log-db-unbound` RUNS on the clean
+  // The schema PLUS a trail database, so `log-db-unbound` RUNS on the clean
   // tree rather than skipping — a rule that only ever skips is the failure this
   // file exists to prevent — and finds nothing, because the path is written as
   // an `env()` and the key file declares the variable. That pair is the shape
   // an app with a trail is meant to be in: the deploy binds it under the volume
   // it mounts, and the trail survives the swap that replaces the container.
   'db/schema.lite':
-    SCHEMA + '\ndatabase audit { path env("AUDIT_PATH", "./db/audit/") driver logger retention 90d }\n',
+    SCHEMA + '\ndatabase audit { path env("AUDIT_PATH", "./db/audit/") driver trail retention 90d }\n',
   'frontier.config.js': "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n",
   '.env.example':       'AUDIT_PATH=/db/audit/\n',
   // A dependency that ships a schema fragment, and no copy of its model here.
@@ -820,7 +820,7 @@ describe('package-model-drift', () => {
   })
 
   test('a model-level attribute the app added is not a finding', () => {
-    // `@@tenant(none)`, `@@log(audit)` and the app's own policies are the app's
+    // `@@tenant(none)`, `@@trail(audit)` and the app's own policies are the app's
     // business by construction — they are the three things a package cannot know.
     const root = tree('pmd-attrs', withModel([
       'model Token {',
@@ -828,7 +828,7 @@ describe('package-model-drift', () => {
       '  secret  String  @secret',
       '  label   String?',
       '  @@tenant(none)',
-      '  @@log(audit)',
+      '  @@trail(audit)',
       '  @@allow(\'read\', ownerId == auth().id)',
       '}',
     ].join('\n')))
@@ -3362,7 +3362,7 @@ describe('the baseline', () => {
 
 describe('log-db-unbound', () => {
   const DEPLOY = "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n"
-  const LOGGER = (path) => SCHEMA + `\ndatabase audit { path ${path} driver logger retention 90d }\n`
+  const LOGGER = (path) => SCHEMA + `\ndatabase audit { path ${path} driver trail retention 90d }\n`
 
   test('a literal path cannot be pointed at the volume, and that is certain', () => {
     // basecamp's real shape. The app root is /app and the volume is /db, so the

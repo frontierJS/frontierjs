@@ -21,7 +21,7 @@ Set up a complete audit trail that records every write, captures before/after sn
 // schema.lite
 database audit {
   path      "./audit/"
-  driver    logger
+  driver    trail
   retention 365d    // keep 1 year of audit history
 }
 
@@ -32,7 +32,7 @@ model User {
   role      String    @default("member")
   apiKey    String?   @secret           // @encrypted + @guarded + auto-logged to audit
 
-  @@log(audit)     // log every create/update/delete
+  @@trail(audit)     // log every create/update/delete
 }
 
 model Order {
@@ -43,7 +43,7 @@ model Order {
   deletedAt DateTime?
 
   @@softDelete
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
@@ -96,7 +96,7 @@ export function dbMiddleware(req, res, next) {
 
 ## What gets logged
 
-Every `create`, `update`, and `delete` on `@@log` models produces an entry:
+Every `create`, `update`, and `delete` on `@@trail` models produces an entry:
 
 ```js
 // After: db.user.update({ where: { id: 1 }, data: { role: 'admin' } })
@@ -122,7 +122,7 @@ Every `create`, `update`, and `delete` on `@@log` models produces an entry:
 
 ```js
 // All writes to orders in the last 24 hours
-const recent = await db.asSystem().auditLogs.findMany({
+const recent = await db.asSystem().auditTrail.findMany({
   where: {
     model:     'orders',
     createdAt: { gte: new Date(Date.now() - 86400000).toISOString() },
@@ -133,14 +133,14 @@ const recent = await db.asSystem().auditLogs.findMany({
 // → [{ operation: 'update', model: 'orders', records: [5], ... }]
 
 // All changes by a specific actor
-const actorHistory = await db.asSystem().auditLogs.findMany({
+const actorHistory = await db.asSystem().auditTrail.findMany({
   where:   { actorId: 42 },
   orderBy: { createdAt: 'desc' },
 })
 
 // Full history for a specific record
 const sql = await import('@frontierjs/litestone').then(m => m.sql)
-const recordHistory = await db.asSystem().auditLogs.findMany({
+const recordHistory = await db.asSystem().auditTrail.findMany({
   where: {
     model: 'orders',
     $raw:  sql`json_extract(records, '$[0]') = ${orderId}`,
@@ -150,7 +150,7 @@ const recordHistory = await db.asSystem().auditLogs.findMany({
 // → [{ operation: 'create', ... }, { operation: 'update', before: {...}, after: {...} }, ...]
 
 // Count deletes per day (audit analytics)
-const deletesPerDay = await db.asSystem().auditLogs.groupBy({
+const deletesPerDay = await db.asSystem().auditTrail.groupBy({
   by:       ['createdAt'],
   interval: { createdAt: 'day' },
   where:    { operation: 'delete' },
@@ -167,17 +167,17 @@ Log reads/writes of a specific field, not the whole model:
 
 ```prisma
 model User {
-  salary Float? @log(audit)    // log every read and write of salary
+  salary Float? @trail(audit)    // log every read and write of salary
 }
 ```
 
-Produces entries with `field: 'salary'` for reads (via `asSystem()`) and writes. Combined with `@@log` on the model, you get both model-level and field-level granularity.
+Produces entries with `field: 'salary'` for reads (via `asSystem()`) and writes. Combined with `@@trail` on the model, you get both model-level and field-level granularity.
 
 ---
 
 ## @secret — automatic logging
 
-`@secret` fields are logged automatically — no `@@log` needed:
+`@secret` fields are logged automatically — no `@@trail` needed:
 
 ```prisma
 model User {
@@ -191,12 +191,12 @@ Every access (read via `asSystem()`) and every write produces an audit entry.
 
 ## Retention
 
-The `retention` config on the logger database prunes old entries on startup:
+The `retention` config on the trail database prunes old entries on startup:
 
 ```prisma
 database audit {
   path      "./audit/"
-  driver    logger
+  driver    trail
   retention 365d
 }
 ```

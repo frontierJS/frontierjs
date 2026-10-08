@@ -42,7 +42,7 @@ beforeAll(async () => {
 
   // A plugin contributing to both seams, which is the shape this file is about.
   app.registerMetricsSource('widgets', () => ({ pending: 3, spun: 41 }))
-  app.registerHealthCheck('widgets', () => dbUp)
+  app.registerReadiness('widgets', () => dbUp)
 
   await app.start()
 })
@@ -94,11 +94,11 @@ describe('readiness takes checks from plugins', () => {
   })
 
   it('reports a throwing check as failed, carrying its message', async () => {
-    app.registerHealthCheck('angry', () => { throw new Error('disk full') })
+    app.registerReadiness('angry', () => { throw new Error('disk full') })
     const body = await (await fetch(`http://localhost:${PORT}/health`)).json()
     expect(body.checks.angry.status).toBe('fail')
     expect(body.checks.angry.error).toBe('disk full')
-    app._healthChecks.delete('angry')
+    app._readiness.delete('angry')
   })
 
   it('lets an app-declared check win the name', async () => {
@@ -112,7 +112,7 @@ describe('readiness takes checks from plugins', () => {
       },
     })
     solo.configure(healthPlugin({ checks: { widgets: () => false } }))
-    solo.registerHealthCheck('widgets', () => true)
+    solo.registerReadiness('widgets', () => true)
     await solo.start()
     try {
       const body = await (await fetch(`http://localhost:${PORT + 40}/health`)).json()

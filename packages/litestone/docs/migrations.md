@@ -286,7 +286,7 @@ the file and once in the report.
 - `@@allow` / `@@deny` row-level policies
 - `@allow` field-level policies
 - `@secret`, `@encrypted`, `@guarded`
-- `@@log` / `@log`
+- `@@trail` / `@trail`
 - `@@gate`
 - `@@fts`
 - `@@db` (database assignment)

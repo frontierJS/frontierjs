@@ -154,7 +154,7 @@ open editor correctly stale after one lands.
                                  writable by a non-system caller
 @encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
 @hashed                          HMAC-SHA256, one-way — matchable in a WHERE, never readable
-@secret                          @encrypted + @guarded + @log(auditDb)
+@secret                          @encrypted + @guarded + @trail(auditDb)
 @secret(rotate: false)           same but excluded from $rotateKey — and therefore
                                  unreadable after one, since the key swap is global.
                                  $rotateKey refuses while one exists
@@ -474,7 +474,7 @@ closed twice and left open sixteen times in the same codebase.
 ```
 @syntax(sql)                     semantic — the text is in this syntax: md, sql, js, html… (no validation)
 @hardDelete                      on relation field: hard-delete children in @@softDelete(cascade)
-@log(dbName)                     field-level audit log to a logger database
+@trail(dbName)                     field-level audit log to a trail database
 ```
 
 ## `@minItems` / `@maxItems` on a relation — how many children
@@ -1028,7 +1028,7 @@ See [access-control.md](./access-control.md).
 
 ### Audit logging
 ```
-@@log(dbName)                    log all writes to a logger database
+@@trail(dbName)                    log all writes to a trail database
 ```
 See [audit-logging.md](./audit-logging.md).
 

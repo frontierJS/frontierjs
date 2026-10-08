@@ -77,10 +77,10 @@ It is the only place that scheme is written down.
   the socket would have carried, `service:call` hands it to Harbor, and Harbor's
   own client makes it with `forward()`. The live store, query matching, `stale`
   and the patch baseline are therefore sierra's and junction's, with nothing
-  here to resync. Three things are not obvious. **A service's channel is joined
+  here to reload. Three things are not obvious. **A service's channel is joined
   on its first call, BEFORE the call leaves**, so a push between the answer and
   the join cannot fall in the gap. **Every return to connected is a `connected`
-  frame**, and every one after the first emits `resync`, because Harbor's
+  frame**, and every one after the first emits `reconnected`, because Harbor's
   worker may have been stopped in between. **A call only HTTP can carry** (a
   file, a filtered bulk write, a findFirst) is refused by the client by name.
   Sign-in stays `login()`/`logout()` here, because Harbor owns the token.

@@ -216,7 +216,7 @@ src/
     field-policy.js — field @allow(read) applied to read rows
     include.js — include, and @from on a path that builds its own SQL
     hooks.js — the hooks, onEvent, onQuery and announce options
-    audit-log.js — @log/@@log: the entry, and the fire-and-forget write of it
+    audit-log.js — @trail/@@trail: the entry, and the fire-and-forget write of it
     errors.js — every error the client throws; junction builds them by name
     engine.js — the SQL engine seam
     pragmas.js — busy_timeout, the one owner

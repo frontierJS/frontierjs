@@ -24,12 +24,12 @@ import { enterRequest } from '../src/core/context.ts'
 import { bearerClaim, header } from '../index.ts'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 
-// A logger database is a DIRECTORY of jsonl, so this one needs a real path —
+// A trail database is a DIRECTORY of jsonl, so this one needs a real path —
 // `:memory:` has nowhere to append.
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
-  model Order { id Int @id  status String  @@log(audit) }
+  database audit { path "${dir}/audit/" driver trail }
+  model Order { id Int @id  status String  @@trail(audit) }
 `
 
 // fireLog defers one tick and the jsonl driver appends synchronously, so
@@ -46,7 +46,7 @@ async function harness() {
     app, db, dir,
     rows: async () => {
       await tick()
-      return (db as any).asSystem().auditLogs.findMany({})
+      return (db as any).asSystem().auditTrail.findMany({})
     },
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   }
@@ -140,13 +140,13 @@ describe('an audit row says where the write came from', () => {
         claims: ['cartOwner'],
         schema: `
           database main  { path ":memory:" }
-          database audit { path "${dir}/audit/" driver logger }
+          database audit { path "${dir}/audit/" driver trail }
           model Grant { id Int @id @default(autoincrement())  cartId Int  tokenHash String @unique @guarded  @@gate("8") }
           model Note  { id Int @id @default(autoincrement())  cartId Int  body String
                         @@gate("0")
                         @@allow('create', cartId == auth().cartOwner)
                         @@allow('read',   cartId == auth().cartOwner)
-                        @@log(audit) }
+                        @@trail(audit) }
         `,
       })
       const KEY = 'audit-test-key'
@@ -169,7 +169,7 @@ describe('an audit row says where the write came from', () => {
         () => app.service('notes').create({ cartId: 42, body: 'mine' }),
       )
       await tick()
-      const [row] = await (db as any).asSystem().auditLogs.findMany({})
+      const [row] = await (db as any).asSystem().auditTrail.findMany({})
 
       expect(row.actorType).toBe('bearer')
       expect(row.actorId).toBe(1)     // the grant row
@@ -261,7 +261,7 @@ describe('an audit row says where the write came from', () => {
       const before = (h.db as any).$logStats()
       expect(before.written).toBeGreaterThan(0)
 
-      const trail = join(h.dir, 'audit', 'auditLogs.jsonl')
+      const trail = join(h.dir, 'audit', 'auditTrail.jsonl')
       // The appender holds an open fd, which a chmod does not touch. Swapping
       // the path for a directory fails its inode check and then its reopen.
       const parked = `${trail}.parked`

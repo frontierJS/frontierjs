@@ -274,7 +274,7 @@ model Doc {
 
 // ── 13. The audit trail: jsonl append vs a SQLite insert (IDEAS/litestone-scope.md § 2) ──
 // What could overturn retiring `driver jsonl`: a create() on a logged model,
-// trail and all, with the trail as a jsonl append (`driver logger`) against an
+// trail and all, with the trail as a jsonl append (`driver trail`) against an
 // insert into a second SQLite database. Both writes are deferred, so each batch
 // ends with flushPendingLogs() and the write is inside the timing. Rounds
 // alternate A and B so drift on the machine lands on both.
@@ -297,7 +297,7 @@ await run('audit-trail-ab', async () => {
   tenant        String?
   meta          Json?
   createdAt     DateTime @default(now())`
-  const THING = `model Thing { id Int @id @default(autoincrement())  name String  qty Int  note String?  @@log(audit) }`
+  const THING = `model Thing { id Int @id @default(autoincrement())  name String  qty Int  note String?  @@trail(audit) }`
   const open = async (label, auditDecl, extra = '') => {
     const dir = `${DIR}/ab-${label}`
     mkdirSync(dir, { recursive: true })
@@ -309,7 +309,7 @@ ${THING}` })
     await autoMigrate(db)
     return db.asSystem()
   }
-  const jsonl = await open('jsonl', d => `database audit { path "${d}/audit/" driver logger }`)
+  const jsonl = await open('jsonl', d => `database audit { path "${d}/audit/" driver trail }`)
   const sqlite = await open('sqlite', d => `database audit { path "${d}/audit.db" model AuditRow }`,
                              `model AuditRow { ${TRAIL}\n  @@db(audit) }`)
   const N = 500, ROUNDS = 12

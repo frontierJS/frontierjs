@@ -384,8 +384,8 @@ function authStamped(row, modelName, ctx) {
  * @property {{ byParent: any[], byChild: any[], requiresChildren: any[] | null }} cardinality
  * @property {any[]} exclusions                 this model's `@@exclude` memberships, each with its `scope` name
  * @property {any[]} valueSets                  the `@values` bindings its columns carry
- * @property {Map<string, any[]>} fieldLogs    `@log` targets by field
- * @property {any[] | null} modelLogs           `@@log` targets
+ * @property {Map<string, any[]>} fieldLogs    `@trail` targets by field
+ * @property {any[] | null} modelLogs           `@@trail` targets
  * @property {Set<string>} guardedKeys          columns a non-system caller may not name
  * @property {boolean} reachesGuarded           can any argument walk to one, through any relation
  * @property {Set<string>} fieldReadKeys        columns carrying a read predicate
@@ -1926,7 +1926,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // ── Logging helpers ───────────────────────────────────────────────────────
   //
   // All log configuration is pre-computed once at makeTable() time.
-  // Tables with no @log / @@log get tableHasLogWork = false — the hot path
+  // Tables with no @trail / @@trail get tableHasLogWork = false — the hot path
   // (findMany, create, update, remove, delete) checks this single boolean and
   // exits immediately with zero allocation cost.
   //
@@ -1934,12 +1934,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //   tableFieldLogs  — Map<fieldName, [{db, reads, writes}]> for THIS table only
   //   tableModelLogs  — [{db, reads, writes}] for THIS table only, or null
   //   tableHasLogWork  — pre-computed boolean: skip all log work if false
-  //   tableNeedsModel — pre-computed: does any @@log declaration exist for this table
-  //   tableNeedsField — pre-computed: does any @log declaration exist for this table
+  //   tableNeedsModel — pre-computed: does any @@trail declaration exist for this table
+  //   tableNeedsField — pre-computed: does any @trail declaration exist for this table
 
   // Both keyed by THIS model in `shapeFor`, by model name: keyed by table name
   // they matched only while the two spellings agreed, and under PascalCase
-  // every field-level @log recorded nothing and said nothing.
+  // every field-level @trail recorded nothing and said nothing.
   const tableFieldLogs   = shape.fieldLogs
   const tableModelLogs   = shape.modelLogs
   // An @@anonymous table has no log (the parser refuses one) and still takes
@@ -1956,7 +1956,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _logTableCache = new Map()
   function getLogTable(dbName) {
     if (_logTableCache.has(dbName)) return _logTableCache.get(dbName)
-    const dbEntry = ctx.loggerDbMap?.[dbName]
+    const dbEntry = ctx.trailDbMap?.[dbName]
     // A SQL trail is an ordinary table and is written through a SYSTEM context:
     // the row is the engine's record of what happened, not something the
     // calling principal is asking to insert, so it must not be graded by the
@@ -1964,8 +1964,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // to make the trail append-only and readable by staff alone.
     const table   = !dbEntry ? null
       : dbEntry.kind === 'sql'
-        ? (ctx.sqlLogTableFor?.(dbEntry.logModel) ?? null)
-        : (ctx.jsonlTableCache?.[dbEntry.logModel ?? (dbName + 'Logs')] ?? null)
+        ? (ctx.sqlLogTableFor?.(dbEntry.trailModel) ?? null)
+        : (ctx.jsonlTableCache?.[dbEntry.trailModel ?? (dbName + 'Trail')] ?? null)
     // Only cache hits — a null result may mean jsonlTableCache wasn't ready yet
     // (timing: initial makeAllTables runs before ctx.jsonlTableCache is assigned).
     if (table) _logTableCache.set(dbName, table)
@@ -1988,7 +1988,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return parseArgs({ ...select, [idField]: true }, include)
   }
 
-  // Emit a log entry fire-and-forget to a logger database.
+  // Emit a log entry fire-and-forget to a trail database.
   function emitLog(dbName, entry) {
     const table = getLogTable(dbName)
     if (!table) return
@@ -2003,8 +2003,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // not, and the log file has none of the column's read protections.
   //
   // This matters most for @secret, which expands to
-  // @encrypted + @guarded + @log(<first logger db>) — so declaring a
-  // logger database is on its own enough to start logging every @secret field.
+  // @encrypted + @guarded + @trail(<first trail db>) — so declaring a
+  // trail database is on its own enough to start logging every @secret field.
   // Redaction is what makes that expansion safe.
   //
   // null is preserved rather than redacted: it holds nothing to leak, and
@@ -6325,7 +6325,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
               if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
               // The plugin hooks are not skipped here — `_canFastFindUnique`
               // requires there to be none. The LOG is a separate question: a
-              // table can declare `@@log` with no plugin installed anywhere.
+              // table can declare `@@trail` with no plugin installed anywhere.
               if (tableHasLogWork && rows[0]) emitLogs('read', [rows[0]])
               return rows[0] ?? null
             }
@@ -6357,7 +6357,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       //     column read by `find` — an `<img src>` that works in a list and is
       //     broken on the detail screen beside it, and an edit form handed the
       //     storage handle instead of the photograph (`FJS-541`).
-      //   · a `@@log` model recorded reads through every path but this one.
+      //   · a `@@trail` model recorded reads through every path but this one.
       //
       // `beforeRead` above was already here, which is what made the gap look
       // like plugin support rather than half of it.
@@ -8598,11 +8598,11 @@ export async function createClient({
 
   // ── Build working schema ──────────────────────────────────────────────────
   // Start from the parsed schema, then augment with:
-  //   • auto logger models (<dbName>Logs) for driver:logger databases in auto mode
+  //   • auto logger models (<dbName>Trail) for driver:trail databases in auto mode
   //   • view-as-model stubs so ctx.models[viewName] works inside makeTable
   const rawSchema     = parseResult.schema
   const autoLogModels = rawSchema.databases
-    .filter(db => db.driver === 'logger' && !db.logModel)
+    .filter(db => db.driver === 'trail' && !db.trailModel)
     .map(db => makeLoggerAutoModel(db.name))
 
   // View-as-model stubs let ctx.models[viewName] resolve in makeTable for read
@@ -8670,7 +8670,7 @@ export async function createClient({
   for (const conn of Object.values(dbRegistry)) {
     // Read-only clients keep the plain connection: their writeDb is a throwing
     // stub, and they can never open a transaction to route into it.
-    if (conn.driver === 'jsonl' || conn.driver === 'logger') continue
+    if (conn.driver === 'jsonl' || conn.driver === 'trail') continue
     if (!conn.readDb || !conn.rawWriteDb) continue
     conn.readDb = makeReadRouter(conn.readDb, conn.writeDb, txState)
   }
@@ -8967,7 +8967,7 @@ function makeLockPrimitive(rawWriteDb) {
   const lockPrimitive = makeLockPrimitive(rawWriteDb)
 
   // ── Build log map ──────────────────────────────────────────────────────────
-  // Scans schema for @log/@@@log attributes — used by makeTable to fire entries.
+  // Scans schema for @trail/@@trail attributes — used by makeTable to fire entries.
   const logMap = buildLogMap(schema)
 
   // ── Retention ──────────────────────────────────────────────────────────────
@@ -8995,7 +8995,7 @@ function makeLockPrimitive(rawWriteDb) {
       // The jsonl half compacts inside `makeJsonlTable`, so the boot pass skips
       // it rather than doing it twice; a later `$retain()` has to do it here,
       // because nothing reopens those tables.
-      if (jsonl && (conn.driver === 'jsonl' || conn.driver === 'logger')) {
+      if (jsonl && (conn.driver === 'jsonl' || conn.driver === 'trail')) {
         for (const model of _retentionModels(dbName)) {
           const filePath = jsonlFilePath(conn.absPath, model.name)
           try {
@@ -9113,7 +9113,7 @@ function makeLockPrimitive(rawWriteDb) {
   // Every map above answers one question for every model, and a reader used to
   // ask it as `ctx.xMap?.[modelName]`: an entry the builder never wrote read as
   // *this model declares no such rule*, which is the silent direction — a
-  // `@log` keyed under a table name recorded nothing and said nothing. Here the
+  // `@trail` keyed under a table name recorded nothing and said nothing. Here the
   // answers are gathered once per model into a frozen record with EVERY facet
   // present, so a reader asks `shape.x` with nothing optional-chained and
   // nothing defaulted at the read. A builder that answers for every model and
@@ -9419,7 +9419,7 @@ function makeLockPrimitive(rawWriteDb) {
   const exclusionLedger = exclusionMap.any
     ? createExclusionLedger(exclusionMap, (model) => {
         const conn = dbRegistry[modelDbMap[model] ?? 'main'] ?? dbRegistry.main
-        if (conn.driver === 'jsonl' || conn.driver === 'logger') return null
+        if (conn.driver === 'jsonl' || conn.driver === 'trail') return null
         return conn.rawWriteDb ? conn.writeDb : conn.rawReadDb ? conn.readDb : null
       })
     : null
@@ -9713,12 +9713,12 @@ function makeLockPrimitive(rawWriteDb) {
     announce:      checkAnnounce(announceDefault, 'createClient') ?? 'collection',
     pluralize:     pluralizeTableNames,   // used by makeTable to derive child SQL table names during cascades
     // Where a trail is written, by database name. TWO kinds, and the entry
-    // carries which — `logger` is a directory of append-only jsonl, `sql` is an
+    // carries which — `jsonl` is a directory of append-only jsonl, `sql` is an
     // ordinary table the app declared, which is the one a screen can read.
-    loggerDbMap:   Object.fromEntries(
+    trailDbMap:   Object.fromEntries(
       Object.entries(dbRegistry)
-        .filter(([, v]) => v.driver === 'logger' || (v.driver !== 'jsonl' && v.logModel))
-        .map(([k, v]) => [k, { logModel: v.logModel, kind: v.driver === 'logger' ? 'logger' : 'sql' }])
+        .filter(([, v]) => v.driver === 'trail' || (v.driver !== 'jsonl' && v.trailModel))
+        .map(([k, v]) => [k, { trailModel: v.trailModel, kind: v.driver === 'trail' ? 'jsonl' : 'sql' }])
     ),
   }
 
@@ -9735,7 +9735,7 @@ function makeLockPrimitive(rawWriteDb) {
   for (const model of schema.models) {
     const dbName = shapes[model.name].db
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
-    if (conn.driver === 'jsonl' || conn.driver === 'logger') {
+    if (conn.driver === 'jsonl' || conn.driver === 'trail') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
       const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout)
       jsonlTableCache[model.name] = table
@@ -9768,7 +9768,7 @@ function makeLockPrimitive(rawWriteDb) {
   function buildTableForModel(model, ctx) {
     const conn      = dbRegistry[shapes[model.name].db] ?? dbRegistry.main
 
-    if (conn.driver === 'jsonl' || conn.driver === 'logger') {
+    if (conn.driver === 'jsonl' || conn.driver === 'trail') {
       return withArgValidation(jsonlTableCache[model.name], model, ctx)
     }
     return withArgValidation(makeTable(conn.readDb, conn.writeDb, shapes[model.name], ctx), model, ctx)
@@ -9791,7 +9791,7 @@ function makeLockPrimitive(rawWriteDb) {
   function buildTableForView(view, ctx) {
       const dbName = view.db ?? 'main'
       const conn   = dbRegistry[dbName] ?? dbRegistry.main
-      if (conn.driver === 'jsonl' || conn.driver === 'logger') return null
+      if (conn.driver === 'jsonl' || conn.driver === 'trail') return null
 
       // A view's shape comes from the same builder as a model's, through the
       // view-as-model stub: every facet a projection cannot declare is its
@@ -10511,7 +10511,7 @@ function makeLockPrimitive(rawWriteDb) {
   // about who is asking.
   //
   // It exists because an application keeps a trail of its own. Litestone
-  // redacts these fields in `@@log(audit)` — the repo states that as an
+  // redacts these fields in `@@trail(audit)` — the repo states that as an
   // invariant — but an app writing "who did what" into its own table has
   // nothing to ask, and the alternative is a hand-copied list of column names
   // that goes stale the first time somebody adds a `@secret`. One reading of
@@ -10891,7 +10891,7 @@ function makeLockPrimitive(rawWriteDb) {
   //
   // $audit({ operation, model, records, actorId, meta }) → the written row
   //
-  // Record something the audit trail cannot see for itself. `@@log(audit)` is a
+  // Record something the audit trail cannot see for itself. `@@trail(audit)` is a
   // side effect of a write, so it covers exactly the events that ARE writes —
   // and the ones an app most wants are not. A failed login performs no write, so
   // it left no trace at all; a successful one left `create:session` with
@@ -10903,7 +10903,7 @@ function makeLockPrimitive(rawWriteDb) {
   // definition is how a second `operation` vocabulary starts drifting from the
   // first. Everything that records goes through here.
   //
-  // It THROWS, where @@log(audit) is fire-and-forget, and that difference is the
+  // It THROWS, where @@trail(audit) is fire-and-forget, and that difference is the
   // point: there, logging is a side effect of a write that already succeeded and
   // must not fail it. Here, the record IS what the caller asked for — swallowing
   // the failure would mean a security event silently unrecorded.
@@ -10926,15 +10926,15 @@ function makeLockPrimitive(rawWriteDb) {
           `$audit: unknown key '${key}'. Anything of your own belongs in 'meta'. ` +
           `Known keys: ${AUDIT_KEYS.join(', ')}.`)
 
-    const loggers = Object.keys(ctx.loggerDbMap ?? {})
+    const loggers = Object.keys(ctx.trailDbMap ?? {})
     const dbName  = opts.database ?? loggers[0]
 
     if (!dbName)
-      throw new Error(`$audit: no database in this schema declares 'driver logger', so there is nowhere to write.`)
+      throw new Error(`$audit: no database in this schema declares 'driver trail', so there is nowhere to write.`)
     if (!loggers.includes(dbName))
-      throw new Error(`$audit: '${dbName}' is not a logger database. Declared: ${loggers.join(', ') || 'none'}.`)
+      throw new Error(`$audit: '${dbName}' is not a trail database. Declared: ${loggers.join(', ') || 'none'}.`)
 
-    const table = jsonlTableCache[ctx.loggerDbMap[dbName].logModel ?? `${dbName}Logs`]
+    const table = jsonlTableCache[ctx.trailDbMap[dbName].trailModel ?? `${dbName}Trail`]
     if (!table) throw new Error(`$audit: the log table for '${dbName}' is not available.`)
 
     const built = buildLogEntry(entry, { ...ctx, auth: principal ?? ctx.auth }, ctx.onLog)
@@ -10947,7 +10947,7 @@ function makeLockPrimitive(rawWriteDb) {
     if (entry.meta      != null) built.meta      = JSON.stringify(entry.meta)
 
     // An explicit event lines up with an @@anonymous row by clock exactly as a
-    // @@log entry does, and the trail is not rolled back with the transaction.
+    // @@trail entry does, and the trail is not rolled back with the transaction.
     if (tx.owns()) {
       const other = tx.noteWrite('$audit', false)
       if (other) throw new Error(
@@ -11297,7 +11297,7 @@ function makeLockPrimitive(rawWriteDb) {
     const names = only == null ? null : (Array.isArray(only) ? only : [only])
 
     // SQLite-only — backs up all open SQLite connections.
-    // For a full backup including JSONL/logger databases, use: litestone backup
+    // For a full backup including JSONL/trail databases, use: litestone backup
     const sqliteDbs = Object.entries(dbRegistry)
       .filter(([name, conn]) => conn.driver === 'sqlite' && conn.rawWriteDb && (!names || names.includes(name)))
 

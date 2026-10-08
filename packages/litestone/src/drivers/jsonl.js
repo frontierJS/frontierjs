@@ -75,7 +75,7 @@ function parseLinesInto(out, content) {
 function ensureFile(filePath) {
   if (existsSync(filePath)) return
   const dir = dirname(filePath)
-  // Same signal as a minted SQLite directory: a jsonl/logger database whose
+  // Same signal as a minted SQLite directory: a jsonl/trail database whose
   // directory did not exist is a relative declared path resolved from one
   // directory away, and it is silent — an orphan `<surface>/db/audit/` sat in
   // this repo for two days under the `*.db*` ignore rule (`FJS-449`).
@@ -297,10 +297,10 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     // moment anything writes a line at a position the index already holds.
     //
     // That is not hypothetical and it is not a race inside one client: a jsonl
-    // or logger database is schema-GLOBAL under `tenancy { strategy database }`,
+    // or trail database is schema-GLOBAL under `tenancy { strategy database }`,
     // so every tenant's client writes the audit trail through its own driver
     // instance over one file, and the first second shop to be opened crashed the
-    // app with `UNIQUE constraint failed: auditLogs_idx._offset` — from inside
+    // app with `UNIQUE constraint failed: auditTrail_idx._offset` — from inside
     // an audit write, about a table nobody named. `rebuildIndex` in `jsonl-index.js` has
     // always used OR REPLACE for the same reason.
     const verb = 'INSERT OR REPLACE'

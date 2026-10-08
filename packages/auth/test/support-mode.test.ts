@@ -184,7 +184,7 @@ describe('the trail names the operator', () => {
     await h.auth.endSupport!(operator.token)
     await new Promise((r) => setImmediate(r))
 
-    const rows = await h.sys.auditLogs.findMany({ where: { actorId: operator.userId } })
+    const rows = await h.sys.auditTrail.findMany({ where: { actorId: operator.userId } })
     const ops  = rows.map((r: any) => r.operation)
     expect(ops).toContain('support.started')
     expect(ops).toContain('support.ended')
@@ -196,7 +196,7 @@ describe('the trail names the operator', () => {
 
     // Paired with the inverse, which is the whole complaint `FJS-142` files:
     // nothing about this episode is filed under the person it was done to.
-    const underSubject = await h.sys.auditLogs.findMany({ where: { actorId: subject.userId } })
+    const underSubject = await h.sys.auditTrail.findMany({ where: { actorId: subject.userId } })
     expect(underSubject.map((r: any) => r.operation)).not.toContain('support.started')
   })
 })

@@ -1,6 +1,14 @@
 # Changes — @frontierjs/css
 
 
+## 2026-10-08 — the kit keeps its space, its ring and its tone scoping inside a widget's shadow root (`FJS-1989`)
+
+An `@property` rule in a shadow root's stylesheet is ignored, and a Sierra widget adopts this package into one on a page that never loaded it. So in a widget `--density` had no value, every `--space-*` rung's `calc()` was invalid, and every padding and gap in the kit computed to 0. `--ring-style` had none either, so a focused field had no outline. `--bg-mix`, `--on-bg-mix` and `--ring-color` lost `inherits: false`, so the button inside a danger Alert painted red. Separately, `--control-padding-block` is declared on `:root, :host` from `var(--space-sm)` and `*` does not match a shadow host, so it resolved where no rung existed. On ela's hostile test page that meant the page's own `--space-sm: 40px`.
+
+tokens.css now declares what the registrations would have given, and only where they cannot reach: `:host { --density: 1; --ring-style: solid }`, a reset of the three non-inheriting tokens to `initial` on `:host *` and its pseudo-elements, and `:host` beside `*` on the space ladder. `:host` matches nothing in a document, so a page's cascade is unchanged. The rules sit in the tokens layer, so themes, tone classes and `.field:focus` override the reset by layer order. In a widget, density still does not interpolate and `--ring-style: none` is not refused, because no declaration can bring back a registration.
+
+`shadow.spec.js` adopts the flattened `index.css` into a shadow root inside an about:blank iframe, which is a document with nothing registered. It does this on a bare page and on one whose `<html>` sets hostile values. Every `@property` token is held to its document value, read off the CSSOM, on a plain element, a toned element, the child of a toned element, a pill in a toned card, a card in `.dense`, and a field. Card, stack, cluster, button and field spacing, a toned Alert's button colors, and the ring style are each compared with the page. Four of its five tests fail without the change. Measured in ela's built widgets on a plain host page: card padding 0 → 20px, button 0 → 8px 14px, field 0 → 8px 12px, focus outline `none` → `solid 2px`. 537 passing.
+
 ## 2026-10-07 — a Drawer's or Modal's close button draws its × (`FJS-1943`)
 
 `.dialog-close` joins the parents `icon.css` sizes. Drawer and Modal put an `<svg>` in it, and it was the one owner of an icon the list missed, so the svg rendered 0×0 and the button was an empty box with a focus ring — found in the ela shell's phone drawer. `core-gaps.spec.js` grades a drawer header's close icon among the icon contexts. 532 passing.

@@ -117,7 +117,7 @@ Cold entries are the eviction victim before any hot one, within a ring sized to
 the fan-out's concurrency (capped at half the pool) — Postgres uses a ring
 buffer for sequential scans and MySQL midpoint insertion for the same reason.
 
-### JSONL and logger databases are NOT per-tenant
+### JSONL and trail databases are NOT per-tenant
 
 A tenant's file holds every **sqlite** database the schema declares. `jsonl` and
 `logger` databases stay schema-global — one audit trail for the fleet — and the

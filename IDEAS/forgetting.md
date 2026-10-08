@@ -1,12 +1,14 @@
 ---
 id: forgetting
-status: proposed
+status: partial
 dated: 2026-09-29
 ---
 
 # Idea — forgetting: what erasure means, declared per column
 
-**Status: IDEA, nothing built.** Dated 2026-09-29. Every number below was
+**Status: partial.** `@personal`, `@@person` and the trail's `[personal]` are
+built (`FJS-D657`); `forget()`, the walk and the export are not. Dated
+2026-09-29. Every number below was
 measured by the jazzhr stressor's Phase 2 probes
 ([`fjs-prototypes/jazzhr/.probe/phase2/`](../../fjs-prototypes/jazzhr/.probe/phase2/))
 against the real app client, its caravan queue and its audit trail, not read
@@ -143,10 +145,10 @@ Three things in that table are not app mistakes:
 
 ```prisma
 model Candidate {
-  name   String   @personal @length(1, 120)
-  email  String   @personal @email
-  phone  String?  @personal @phone
-  @@subject                     // a row of this model IS a person
+  name   String   @personal(contact) @length(1, 120)
+  email  String   @personal(contact) @email
+  phone  String?  @personal(contact) @phone
+  @@person                      // a row of this model IS a person
 }
 
 model Application {
@@ -157,8 +159,7 @@ model Application {
 }
 
 model Message {
-  body String
-  @@personal                    // the whole row is about the person: deleted
+  body String   @personal       // kept with body nulled, or deleted: Q2
 }
 ```
 
@@ -168,10 +169,12 @@ model Message {
   reads it and the trail does not keep it*. On a required column it is required
   at create and nullable in storage, and only the erase verb may null it: the
   `@@check` above, derived.
-- **`@@subject`** — where forgetting starts. `db.candidate.forget(id)` walks the
-  inbound relations: a `@@personal` model's rows are deleted **one at a time,
-  through the plugins** (bytes removed, a trail line each); a model with
-  `@personal` columns is kept with them nulled; anything else is kept. It
+- **`@@person`** — where forgetting starts. `db.candidate.forget(id)` walks the
+  inbound relations: a `@@relator` row naming the person is deleted **one at a
+  time, through the plugins** (bytes removed, a trail line each), because a
+  relator cannot outlive its relata (`FJS-D350`); a row with `@personal`
+  columns is kept with them nulled (Q2); anything else is kept. It stops at a
+  relation into another `@@person` model and refuses it by name (`FJS-D657`). It
   writes one trail line, `operation: 'forget'`, with no snapshot. It refuses by
   name what it cannot do — a `Restrict` child, a sealed `@immutable` personal
   column — before it changes anything. It runs its statements under
@@ -203,9 +206,9 @@ model Message {
 1. **Origin** — the column's declaration is the one origin for *read it*, *log
    it*, *erase it*, *export it*. Today they are four places: the policy, a
    comment, `forget.ts`, nothing.
-2. **Concept** — two words: `@personal` (a column) and `@@subject` (where the
-   walk starts), plus `@@personal` as the whole-row shorthand. The verb is a
-   method, not a word.
+2. **Concept** — two words: `@personal` (a column) and `@@person` (where the
+   walk starts). Which rows the walk deletes is derived from `@@relator` (Q2).
+   The verb is a method, not a word.
 3. **Complexity** — removes `forget.ts`, the `@@check`, the `forgottenAt`
    convention and the trail problem. Adds a relation walk the engine already
    half has in `include`, and the cascade-through-plugins FJS-1497 needs anyway.
@@ -235,7 +238,7 @@ model Message {
 
 ## Open questions
 
-- **FJS-D547 — Q1: does litestone take `@personal`, and is it redacted in the trail at WRITE or rewritten at ERASE?**
+- ~~**FJS-D547 — Q1: does litestone take `@personal`, and is it redacted in the trail at WRITE or rewritten at ERASE?**~~ **Answered 2026-10-08 (`FJS-D657`): D657 takes @personal and the trail writes [personal] at write, answer A; built and graded by the audit-redaction test.**
   FJS-1485 waits on it: `protectedLogFields` (`packages/litestone/src/core/client.js`,
   above `redactValue`) is built from `encrypted || guarded || hashed`, each of
   which also stops the caller reading the column, so a readable column's value
@@ -252,17 +255,32 @@ model Message {
   - **Recommend A** — the trail's job is *who did what, when*; §3 shows the
     value is where every re-identification ended.
 
-- **Q2 — What does `forget()` do to a kept row: tombstone or delete?**
-  - **A** — tombstone by default (null the `@personal` columns, keep the row),
-    `@@personal` for delete. The reports read the raw rows, unchanged (§2).
-  - **B** — delete by default, and reports are aggregate tables the app writes.
-    §2: works, costs a table per report and FJS-1498's workaround.
-  *Recommendation: A.* It is what the declaration naturally says, and B is still
-  open to an app that wants it.
+- **Q2 — Does a non-relator row about the person get a word for *delete on forget*, and what is it?**
+  This paper first proposed `@@personal`, which `FJS-D657` refuses: two letters
+  from `@@person`, both legal on one schema, one marking where the walk STARTS
+  and one what it DELETES, so a slip parses and does the wrong thing in silence.
+  `@@relator` already answers for a relator row (it goes with the person), so
+  what is left is a row ABOUT the person that relates nothing — a note, a
+  message body. *Delete when nulling leaves only keys* was refused before it
+  was offered: adding a `sentAt` column would flip the row from deleted to kept
+  with nothing saying so.
+  - **A** — no word. The walk tombstones every non-relator row it reaches:
+    `@personal` columns nulled, the row kept. A `Message` keeps its keys and
+    timestamps and loses its `body`; §2's reports read the rows unchanged.
+  - **B** — a relation argument, `onForget: Delete`, beside `onDelete`. The
+    edge says it, not the model, so a `Message` naming a sender and a
+    recipient is deleted when one is forgotten and only nulled when the
+    other is.
+  - **C** — a model word that is not a sibling of `@@person`, such as
+    `@@erase`: every row of the model goes when the walk reaches it.
+  - **Recommend A** — after the null, the row holds nothing a `@personal` mark
+    missed, and the facts it keeps are the ones §2's reports need. B is what
+    gets added when a product needs a row's *existence* gone and not only its
+    content, and a relation argument puts that on the edge the walk travels.
 
-- **Q3 — Does the retention clock get a word (`@@retain(180d, from:, when:)`)?**
+- ~~**Q3 — Does the retention clock get a word (`@@retain(180d, from:, when:)`)?**~~ **Answered 2026-10-08 (`FJS-D657`): D657 coins no retention clock; retention stays a job the app schedules, answer A.**
   - **A** — no; a job, as measured.
-  - **B** — yes, on the `@@subject`, compiled to the same sweep `$retain` runs.
+  - **B** — yes, on the `@@person`, compiled to the same sweep `$retain` runs.
   *Recommendation: A* until a second product asks for a clock that is a column
   trait rather than a query over children.
 

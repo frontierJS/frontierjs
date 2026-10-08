@@ -213,8 +213,8 @@ export async function collectHealth(
   // Map keeps a re-set key in its original position, so an app-declared name
   // still replaces the plugin's without moving in the answer.
   const entries = new Map<string, () => boolean | Promise<boolean>>()
-  for (const [name, fn] of app._healthChecks    ?? new Map()) entries.set(name, fn)
-  for (const [name, fn] of app._healthChecksApp ?? new Map()) entries.set(name, fn)
+  for (const [name, fn] of app._readiness    ?? new Map()) entries.set(name, fn)
+  for (const [name, fn] of app._readinessApp ?? new Map()) entries.set(name, fn)
 
   // Concurrently. Sequentially, a probe's latency was the SUM of every check,
   // so an app grows its own timeout by adding a dependency — and one check
@@ -415,7 +415,7 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
       // strange shape but not an error, and a wholesale assignment would make
       // the second one silently the only one.
       for (const [name, fn] of Object.entries(opts.checks ?? {}))
-        app._healthChecksApp.set(name, fn)
+        app._readinessApp.set(name, fn)
 
 
       // ── GET /health · /health/ready · /health/live ────────────────

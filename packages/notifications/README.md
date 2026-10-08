@@ -48,7 +48,7 @@ model Notification {
 
 **It is copied rather than imported, on purpose.** Everything an app does next
 happens to this model — a relation back to its own `User`, a tenant key, a
-column its bell menu wants, `@@log(audit)` — and none of that is this package's
+column its bell menu wants, `@@trail(audit)` — and none of that is this package's
 to decide. What the copy costs is drift, which is why the file is exported:
 `fli check`'s `package-model-drift` compares your copy against it and names a
 column this package writes that yours does not have.

@@ -968,7 +968,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
       })
     } catch {
       // Intentionally swallowed — the audit write must never break the request.
-      // Note this is the APPLICATION trail; @@log(audit) captures row-level
+      // Note this is the APPLICATION trail; @@trail(audit) captures row-level
       // changes separately and does not depend on this hook running.
     }
   }

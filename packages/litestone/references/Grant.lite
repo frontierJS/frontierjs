@@ -44,7 +44,7 @@
 /// product has it, and a trait that ships it makes every other grant look
 /// scoped when it is not.
 ///
-/// **No `createdBy`.** Who issued it is `@@log(audit)` on the host, which
+/// **No `createdBy`.** Who issued it is `@@trail(audit)` on the host, which
 /// records the create with its actor for free.
 trait Grant {
   /// The hash of the token the bearer holds. `@unique` because a lookup by

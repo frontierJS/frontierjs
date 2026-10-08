@@ -570,7 +570,7 @@ export interface CaravanApp {
   /** Junction's metrics seam — if present, Caravan contributes job stats */
   registerMetricsSource?: (name: string, fn: () => unknown) => void
   /** Junction's readiness seam — if present, Caravan contributes a stall check */
-  registerHealthCheck?: (name: string, fn: () => boolean | Promise<boolean>) => void
+  registerReadiness?: (name: string, fn: () => boolean | Promise<boolean>) => void
   /** Junction's telemetry bus — if present, Caravan emits job lifecycle events */
   telemetry?: CaravanTelemetry
   /** Where Caravan attaches itself — Junction's augmentable `App.jobs` slot */

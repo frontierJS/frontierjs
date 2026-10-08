@@ -1,6 +1,6 @@
 // jsonl-index-drift.test.ts — the companion index rebuilds when its SHAPE moves.
 //
-// A jsonl/logger database keeps a `<file>.index.db` of byte offsets beside it,
+// A jsonl/trail database keeps a `<file>.index.db` of byte offsets beside it,
 // with one column per indexed field. The index is a CACHE — every column is
 // re-derivable from the .jsonl, which is the source of truth — so the right
 // answer to a shape that no longer matches is always to drop it and refill.
@@ -8,7 +8,7 @@
 // Two ways the shape can be wrong and only one was checked. A changed TYPE
 // fails a write with a datatype error; a MISSING column fails it with `has no
 // column named …`, and that is what an EXISTING trail does the first time its
-// model gains an indexed field. `@@log(audit)` is fire-and-forget and swallows
+// model gains an indexed field. `@@trail(audit)` is fire-and-forget and swallows
 // the failure, so the symptom is a deployment that upgrades, warns once, and
 // silently stops recording — measured while adding `@@index([correlationId])`
 // to the logger auto-model, which is exactly that upgrade for every app that
@@ -25,16 +25,16 @@ const tick = () => new Promise((r) => setImmediate(r))
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
-  model Thing { id String @id @default(uuid())  name String  @@log(audit) }
+  database audit { path "${dir}/audit/" driver trail }
+  model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
 `
 
 /** A trail whose index table was built with `cols`, as an older release left it. */
 function seedIndex(dir: string, cols: string) {
   mkdirSync(join(dir, 'audit'), { recursive: true })
-  appendFileSync(join(dir, 'audit', 'auditLogs.jsonl'), '')
-  const d = new Database(join(dir, 'audit', 'auditLogs.jsonl.index.db'))
-  d.run(`CREATE TABLE "auditLogs_idx" (${cols}, "_offset" INTEGER NOT NULL, PRIMARY KEY ("_offset")) STRICT;`)
+  appendFileSync(join(dir, 'audit', 'auditTrail.jsonl'), '')
+  const d = new Database(join(dir, 'audit', 'auditTrail.jsonl.index.db'))
+  d.run(`CREATE TABLE "auditTrail_idx" (${cols}, "_offset" INTEGER NOT NULL, PRIMARY KEY ("_offset")) STRICT;`)
   d.close()
 }
 
@@ -42,7 +42,7 @@ async function writeOne(dir: string) {
   const db: any = await createClient({ schema: SCHEMA(dir), resolveFrom: dir })
   await db.asSystem().thing.create({ data: { name: 'x' } })
   await tick()
-  const rows = await db.asSystem().auditLogs.findMany({})
+  const rows = await db.asSystem().auditTrail.findMany({})
   db.$close()
   return rows
 }
@@ -59,8 +59,8 @@ describe('the jsonl companion index rebuilds rather than failing every write', (
       expect(rows).toHaveLength(1)
       expect(rows[0].operation).toBe('create')
       // Rebuilt with the column, not merely tolerated.
-      const d = new Database(join(dir, 'audit', 'auditLogs.jsonl.index.db'))
-      const cols = d.query('SELECT name FROM pragma_table_info(?)').all('auditLogs_idx') as any[]
+      const d = new Database(join(dir, 'audit', 'auditTrail.jsonl.index.db'))
+      const cols = d.query('SELECT name FROM pragma_table_info(?)').all('auditTrail_idx') as any[]
       d.close()
       expect(cols.map(c => c.name)).toContain('correlationId')
     } finally { rmSync(dir, { recursive: true, force: true }) }

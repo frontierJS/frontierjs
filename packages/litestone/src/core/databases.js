@@ -53,12 +53,12 @@ import { ClientClosedError } from './errors.js'
  * One row of the registry `buildDbRegistry` answers. The write half is null on a
  * readonly or `access: false` name, and both halves are null for a file driver.
  * @typedef {object} DbEntry
- * @property {'sqlite' | 'jsonl' | 'logger'}      driver
+ * @property {'sqlite' | 'jsonl' | 'trail'}      driver
  * @property {'readwrite' | 'readonly' | false}   access
  * @property {string}                             absPath
  * @property {string | null}                      retention
  * @property {string | null}                      [maxSize]
- * @property {string | null}                      [logModel]
+ * @property {string | null}                      [trailModel]
  * @property {unknown}                            [busyTimeout]
  * @property {RawDb | null}                       rawWriteDb
  * @property {RawDb | null}                       rawReadDb
@@ -571,21 +571,21 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     const access  = accessConfig[db.name] ?? 'readwrite'
     const absPath = pathFor(db)
 
-    if (db.driver === 'jsonl' || db.driver === 'logger') {
+    if (db.driver === 'jsonl' || db.driver === 'trail') {
       // In-memory mode: use a unique tmpdir so test runs don't pollute the filesystem.
       // The dir is created immediately so the driver can write to it.
       let resolvedPath = absPath
       if (inMemory) {
         resolvedPath = mkdtempSync(join(tmpdir(), `litestone-${db.name}-`)) + '/'
       }
-      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, retention: db.retention, maxSize: db.maxSize, logModel: db.logModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
+      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, retention: db.retention, maxSize: db.maxSize, trailModel: db.trailModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
       continue
     }
 
     // `access: false` opens nothing of its own. Another block on the same file
     // may still open it — the refusal is this NAME's, not the file's.
     if (access === false) {
-      registry[db.name] = { driver: 'sqlite', access: false, absPath, retention: null, logModel: db.logModel, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb(db.name, false), readDb: makeThrowingDb(db.name, false) }
+      registry[db.name] = { driver: 'sqlite', access: false, absPath, retention: null, trailModel: db.trailModel, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb(db.name, false), readDb: makeThrowingDb(db.name, false) }
       continue
     }
 
@@ -593,9 +593,9 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     const conns = connectionsFor(absPath, db.name, wantsWrite)
 
     if (access === 'readonly') {
-      registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, logModel: db.logModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }
+      registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, trailModel: db.trailModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }
     } else {
-      registry[db.name] = { driver: 'sqlite', access: 'readwrite', absPath, retention: db.retention, logModel: db.logModel, ...conns }
+      registry[db.name] = { driver: 'sqlite', access: 'readwrite', absPath, retention: db.retention, trailModel: db.trailModel, ...conns }
     }
   }
 

@@ -4,17 +4,17 @@ Litestone provides field-level and model-level audit logging via the `logger` da
 
 ## Setup
 
-Declare a logger database in your schema:
+Declare a trail database in your schema:
 
 ```prisma
 database audit {
   path      "./audit/"
-  driver    logger
+  driver    trail
   retention 90d          // prune entries older than 90 days on startup
 }
 ```
 
-## Model-level logging — @@log
+## Model-level logging — @@trail
 
 Log every write (create, update, delete) on a model:
 
@@ -23,20 +23,20 @@ model User {
   id    Int @id
   email String
   name  String?
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
-Every `create`, `update`, and `delete` on `users` produces an entry in the audit logger database.
+Every `create`, `update`, and `delete` on `users` produces an entry in the audit trail database.
 
-## Field-level logging — @log
+## Field-level logging — @trail
 
 Log reads and writes of a specific sensitive field:
 
 ```prisma
 model User {
-  salary Float?   @log(audit)
-  apiKey String?   @secret    // @secret implies @log(audit) automatically
+  salary Float?   @trail(audit)
+  apiKey String?   @secret    // @secret implies @trail(audit) automatically
 }
 ```
 
@@ -46,7 +46,7 @@ model User {
 {
   operation:  'update',             // create | update | delete | read
   model:      'users',
-  field:      'salary',             // only for @log field-level entries
+  field:      'salary',             // only for @trail field-level entries
   records:    [1],                  // array of affected IDs
   before:     { salary: 50000 },    // single-row writes only
   after:      { salary: 75000 },
@@ -66,7 +66,7 @@ model User {
 
 Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created.
 
-An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@log` / `@@log`.
+An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@trail` / `@@trail`.
 
 ## Protected fields are redacted
 
@@ -77,7 +77,7 @@ model Vault {
   id      Int     @id
   name    String
   apiKey  String? @secret
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
@@ -91,7 +91,7 @@ model Vault {
   after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
 ```
 
-This is what makes `@secret`'s expansion safe. `@secret` is `@encrypted + @guarded + @log(<first logger db>)`, so **declaring a logger database is on its own enough to start logging every `@secret` field in the schema** — without redaction that would write plaintext to a file sitting next to a correctly-encrypted database row, with none of the column's read protections.
+This is what makes `@secret`'s expansion safe. `@secret` is `@encrypted + @guarded + @trail(<first trail db>)`, so **declaring a trail database is on its own enough to start logging every `@secret` field in the schema** — without redaction that would write plaintext to a file sitting next to a correctly-encrypted database row, with none of the column's read protections.
 
 Two details worth knowing:
 
@@ -111,7 +111,7 @@ model Candidate {
   coverLetter String? @personal
   stage       String
   @@person
-  @@log(audit)
+  @@trail(audit)
 }
 ```
 
@@ -152,19 +152,19 @@ Log entries are queryable through the standard ORM API:
 
 ```js
 // All writes to users table
-const writes = await db.auditLogs.findMany({
+const writes = await db.auditTrail.findMany({
   where:   { model: 'users' },
   orderBy: { createdAt: 'desc' },
   limit:   50,
 })
 
 // Writes by a specific actor
-const actorWrites = await db.auditLogs.findMany({
+const actorWrites = await db.auditTrail.findMany({
   where: { actorId: 'user_abc', operation: { in: ['create', 'update', 'delete'] } }
 })
 
 // All changes to a specific record
-const history = await db.auditLogs.findMany({
+const history = await db.auditTrail.findMany({
   where: {
     model:   'users',
     records: { $raw: sql`json_extract(records, '$[0]') = ${userId}` }
@@ -172,7 +172,7 @@ const history = await db.auditLogs.findMany({
 })
 ```
 
-The auto-generated model name for a logger database is `<dbName>Logs` — `audit` → `auditLogs`.
+The auto-generated model name for a trail database is `<dbName>Trail` — `audit` → `auditTrail`.
 
 ## @secret — encrypted + guarded + logged
 
@@ -180,7 +180,7 @@ The auto-generated model name for a logger database is `<dbName>Logs` — `audit
 
 ```prisma
 model User {
-  apiKey String? @secret                 // @encrypted + @guarded + @log(audit)
+  apiKey String? @secret                 // @encrypted + @guarded + @trail(audit)
   token  String? @secret(rotate: false)  // same, but excluded from $rotateKey
 }
 ```
@@ -206,7 +206,7 @@ model SurveyResponse {
 }
 ```
 
-- **At parse**, the model may not carry `@@log` or `@log` (including the one
+- **At parse**, the model may not carry `@@trail` or `@trail` (including the one
   `@secret` implies), a column stamped from the writer (`@createdBy`,
   `@updatedBy`, `@@createdBy`, `@default(auth().…)`), or a clock
   (`@updatedAt`, `@default(now())`).
@@ -221,12 +221,12 @@ attributable stay attributable, so declare it before the first row (`FJS-D349`).
 
 ## Retention
 
-The `retention` value on a logger database prunes old entries on startup:
+The `retention` value on a trail database prunes old entries on startup:
 
 ```prisma
 database audit {
   path      "./audit/"
-  driver    logger
+  driver    trail
   retention 90d    // prune entries older than 90 days
 }
 ```

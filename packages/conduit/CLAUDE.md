@@ -191,7 +191,7 @@ src/
 - **A `broker` target is subscribed to, and the ack follows the handler**
   (`FJS-D235`). The handler is where the app dispatches under `message.id`
   (caravan's `dispatch({ id })`); an ack sent before it is a lost message. Every
-  subscription registers `conduit:<target>` through `registerHealth` — *connected*,
+  subscription registers `conduit:<target>` through `registerReadiness` — *connected*,
   not *recent message*, since a quiet broker is not an outage — and a new broker
   path that cannot say so does not ship.
 - **A target is declared, not constructed at the call site.** That is the whole

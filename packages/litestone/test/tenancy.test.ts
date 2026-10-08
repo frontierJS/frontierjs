@@ -390,8 +390,8 @@ describe('createTenantRegistry reads the block', () => {
     const text = `
       tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db" }
       database main { path "./main.db" }
-      database logs { path "./logs/"  driver logger }
-      model Post { id Int @id  title String  @@log(logs) }
+      database logs { path "./logs/"  driver trail }
+      model Post { id Int @id  title String  @@trail(logs) }
     `
     await Bun.write(join(dir, 'schema.lite'), text)
 

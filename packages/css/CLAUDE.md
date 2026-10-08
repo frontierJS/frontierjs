@@ -388,6 +388,12 @@ test/run.js        the harness
   past every `.dense`. Silent, because the token still holds a good value —
   just the wrong one everywhere. Same mechanism `tones.css` uses for the
   tint ramp, and `space.spec.js` goes red in three places if it moves back.
+- **A registration does not reach a widget's shadow root.** An `@property`
+  rule in a shadow root's stylesheet is ignored, so every registered token
+  is unregistered there, with no initial value and with inheritance on.
+  `tokens.css` § *Inside a shadow tree* restores each by hand on `:host` /
+  `:host *`. A new `@property` token needs its line there, and
+  `shadow.spec.js` is what catches a missing one (`FJS-1989`).
 - **`--align` is unregistered, and that is what lets a Bar split.** A
   registered property needs an initial value, and then `var(--align,
   space-between)` could never fall back. `.align-start` writes `normal`, not

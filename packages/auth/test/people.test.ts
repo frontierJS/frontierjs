@@ -142,13 +142,13 @@ describe('an administrator ends another person\'s access', () => {
     const u = await person()
     const [{ id: sessionId }] = (await h.auth.listSessions!(u.userId)) as any[]
     const { id: keyId } = await h.auth.createApiKey(u.userId, { name: 'trail' })
-    const before = (await h.sys.auditLogs.findMany({})).length
+    const before = (await h.sys.auditTrail.findMany({})).length
 
     await act(admin.token, `/${u.userId}`, 'revokeSession', { sessionId })
     await act(admin.token, `/${u.userId}`, 'revokeApiKey', { keyId })
     await act(admin.token, '', 'invite', { email: `trail-${Date.now()}@example.com` })
 
-    const rows = (await h.sys.auditLogs.findMany({})).slice(before)
+    const rows = (await h.sys.auditTrail.findMany({})).slice(before)
     for (const op of ['session.revoked', 'apikey.revoked', 'invitation.created']) {
       const row = rows.find((r: any) => r.operation === op)
       expect(row?.actorId).toBe(admin.userId)
@@ -183,7 +183,7 @@ describe('an administrator removes somebody', () => {
     const admin = await person('admin')
     const u = await person()
     await h.auth.createApiKey(u.userId, { name: 'gone' })
-    const before = (await h.sys.auditLogs.findMany({})).length
+    const before = (await h.sys.auditTrail.findMany({})).length
 
     const res = await request(app).delete(`/people/${u.userId}`).auth(admin.token)
     expect(res.status).toBe(200)
@@ -191,7 +191,7 @@ describe('an administrator removes somebody', () => {
     expect(await h.sys.user.findFirst({ where: { id: u.userId } })).toBeNull()
     expect(await h.sys.credential.findMany({ where: { userId: u.userId } })).toHaveLength(0)
     expect(await h.sys.session.findMany({ where: { userId: u.userId } })).toHaveLength(0)
-    const row = (await h.sys.auditLogs.findMany({})).slice(before).find((r: any) => r.operation === 'user.removed')
+    const row = (await h.sys.auditTrail.findMany({})).slice(before).find((r: any) => r.operation === 'user.removed')
     expect(row?.actorId).toBe(admin.userId)
   })
 

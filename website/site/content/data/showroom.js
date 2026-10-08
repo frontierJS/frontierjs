@@ -25,7 +25,7 @@ export const SCHEMA = [
   /* 9*/ "  @@gate(\"0.4.4.5\")",
   /*10*/ "  @@allow('read', ownerId == auth().id)",
   /*11*/ "  @@index([status, createdAt])",
-  /*12*/ "  @@log(audit)",
+  /*12*/ "  @@trail(audit)",
   /*13*/ "}",
 ]
 

@@ -185,7 +185,7 @@ t('backdate.andItAnswersTheNewRate',                     nowAtMarch.rate === 4_2
 
 // **Where the previous belief actually is.** The row was overwritten in place:
 // `effectiveTo` said null and now says March, and nothing on it records that.
-// What holds the old value is the audit log — `@@log(audit)`, a `logger`
+// What holds the old value is the audit log — `@@trail(audit)`, a `logger`
 // database — so the second axis is not absent, it is a FILE.
 //
 // That is the distinction worth pinning. *What did we believe about March* is
@@ -194,7 +194,7 @@ t('backdate.andItAnswersTheNewRate',                     nowAtMarch.rate === 4_2
 // dimension: no read of `PayWindow` can be asked to stand at a past moment of
 // KNOWLEDGE the way `asOf` stands at a past moment of validity.
 await new Promise(r => setTimeout(r, 50))   // the logger defers one tick
-const trail = await sys.auditLogs.findMany({
+const trail = await sys.auditTrail.findMany({
   where: { model: 'pay_window', operation: 'update' },
   orderBy: { createdAt: 'desc' }, limit: 50,
 })

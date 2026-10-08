@@ -1,6 +1,6 @@
 // sql-audit-trail.test.ts — an audit trail that is an ordinary table.
 //
-// `@@log(x)` could only ever name a `driver logger` database: a directory of
+// `@@trail(x)` could only ever name a `driver trail` database: a directory of
 // append-only jsonl, reachable by no join, no policy, no screen and no
 // litestream replica. So an app that wanted a trail its own UI could show had
 // to write a SECOND one by hand beside it — which is what basecamp does, and
@@ -53,7 +53,7 @@ describe('a trail in SQLite', () => {
     const db = await client(`
       database main { path ":memory:" model AuditRow }
       model AuditRow { ${TRAIL} }
-      model Thing { id Int @id  name String  @@log(main) }
+      model Thing { id Int @id  name String  @@trail(main) }
     `)
     await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
     await tick()
@@ -77,7 +77,7 @@ describe('a trail in SQLite', () => {
         ${TRAIL}
         actor User? @relation(fields: [actorId], references: [id])
       }
-      model Thing { id Int @id  name String  @@log(main) }
+      model Thing { id Int @id  name String  @@trail(main) }
     `)
     await db.asSystem().user.create({ data: { id: 'u1', email: 'ada@example.test' } })
     await db.$setAuth({ id: 'u1' }).thing.create({ data: { id: 1, name: 'one' } })
@@ -99,7 +99,7 @@ describe('a trail in SQLite', () => {
     const db = await client(`
       database main { path ":memory:" model AuditRow }
       model AuditRow { ${TRAIL}  @@gate("5.8.9.9") }
-      model Thing { id Int @id  name String  @@log(main) }
+      model Thing { id Int @id  name String  @@trail(main) }
     `)
     await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
     await tick()
@@ -113,21 +113,21 @@ describe('a trail in SQLite', () => {
     db.$close()
   })
 
-  test('a `driver logger` trail is untouched', async () => {
+  test('a `driver trail` trail is untouched', async () => {
     // The negative control. This feature adds a second kind of target; it must
     // not quietly change the one every existing app is using.
     const db: any = await createClient({
       schema: `
         database main  { path ":memory:" }
-        database audit { path "./audit/" driver logger }
-        model Thing { id Int @id  name String  @@log(audit) }
+        database audit { path "./audit/" driver trail }
+        model Thing { id Int @id  name String  @@trail(audit) }
       `,
       databases: ':memory:',
     })
     await autoMigrate(db)
     await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
     await tick()
-    const rows = await db.asSystem().auditLogs.findMany({})
+    const rows = await db.asSystem().auditTrail.findMany({})
     expect(rows).toHaveLength(1)
     // Still the jsonl shape: strings, because there is no column type under it.
     expect(typeof rows[0].records).toBe('string')
@@ -146,11 +146,11 @@ describe('the parser says which mistake was made', () => {
   test('a SQLite target with no `model` key names the two ways out', () => {
     const msg = refuse(`
       database main { path ":memory:" }
-      model Thing { id Int @id  @@log(main) }
+      model Thing { id Int @id  @@trail(main) }
     `)
     expect(msg).toMatch(/is not an audit trail/)
     expect(msg).toMatch(/model <Name>/)
-    expect(msg).toMatch(/driver logger/)
+    expect(msg).toMatch(/driver trail/)
   })
 
   test('`model` on a plain jsonl database is refused — that is storage, not a trail', () => {
@@ -167,7 +167,7 @@ describe('the parser says which mistake was made', () => {
       database main  { path ":memory:" model AuditRow }
       database other { path ":memory:" }
       model AuditRow { id Int @id  operation String  model String  createdAt DateTime @default(now()) @@db(other) }
-      model Thing { id Int @id  @@log(main) }
+      model Thing { id Int @id  @@trail(main) }
     `)
     expect(msg).toMatch(/must be assigned to this database/)
   })
@@ -176,7 +176,7 @@ describe('the parser says which mistake was made', () => {
     const msg = refuse(`
       database main { path ":memory:" model AuditRow }
       model AuditRow { id Int @id  operation String }
-      model Thing { id Int @id  @@log(main) }
+      model Thing { id Int @id  @@trail(main) }
     `)
     expect(msg).toMatch(/missing required field 'model'/)
     expect(msg).toMatch(/missing required field 'createdAt'/)
@@ -208,7 +208,7 @@ describe('every write path files an entry (FJS-1042)', () => {
       state   String  @default("draft")
       deletedAt DateTime?
       @@softDelete
-      @@log(main)
+      @@trail(main)
     }
     model Quiet { id Int @id  name String }
   `
@@ -350,7 +350,7 @@ describe('a logged read names its rows whatever it selects (FJS-1422)', () => {
   const schema = `
     database main { path ":memory:" model AuditRow }
     model AuditRow { ${TRAIL} }
-    model Rule { id Int @id  domain String  @@log(main, reads: true) }
+    model Rule { id Int @id  domain String  @@trail(main, reads: true) }
   `
   const seed = async (db: any) => {
     for (const id of [1, 2, 3]) await db.asSystem().rule.create({ data: { id, domain: `d${id}.com` } })

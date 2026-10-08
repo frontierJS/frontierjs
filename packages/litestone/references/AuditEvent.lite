@@ -1,8 +1,8 @@
 /// Who did what to which row, kept.
 ///
-/// ─── This is NOT `@@log(audit)`, and the difference is the point ──────────
+/// ─── This is NOT `@@trail(audit)`, and the difference is the point ──────────
 ///
-/// `@@log(audit)` records a WRITE — litestone's own trail, into a declared
+/// `@@trail(audit)` records a WRITE — litestone's own trail, into a declared
 /// `database audit` block, with `@encrypted`/`@guarded`/`@secret` columns
 /// redacted (Invariant 7). It is free, it is complete, and it can only ever see
 /// writes.

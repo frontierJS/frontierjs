@@ -539,7 +539,7 @@ describe('broker subscription health', () => {
     })
     await conduitOf(app).subscribe('broker:orders', () => {})
 
-    const check = (app as unknown as { _healthChecks: Map<string, () => boolean> })._healthChecks.get('conduit:broker:orders')
+    const check = (app as unknown as { _readiness: Map<string, () => boolean> })._readiness.get('conduit:broker:orders')
     expect(check).toBeDefined()
     expect(check!()).toBe(false)
   })

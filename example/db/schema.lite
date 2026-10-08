@@ -76,8 +76,8 @@ database main {
   path env("SHOP_DB_PATH", "./db/shop.db")
 }
 
-// @@log(audit) writes here, and this is the ONE database a tenant registry does
-// not redirect — a logger database is shared across the whole fleet by design,
+// @@trail(audit) writes here, and this is the ONE database a tenant registry does
+// not redirect — a trail database is shared across the whole fleet by design,
 // so it is the one whose declared path is used as written.
 //
 // Three scripts here `cd <surface>` before running, and this path is read from
@@ -89,7 +89,7 @@ database main {
 // everywhere.
 database audit {
   path      env("AUDIT_PATH", "./db/audit/")
-  driver    logger
+  driver    trail
   retention 90d
 }
 
@@ -490,7 +490,7 @@ model ProductVariant {
   @@softDelete(cascade)
   
   @@gate("0.4.4.5")
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// The variants a photograph may be pinned to: THIS product's, and no other
@@ -701,7 +701,7 @@ model Customer {
   
   @@softDelete
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// What a shop may record about a person, and the type it is.
@@ -948,7 +948,7 @@ model Discount {
           "a percentage discount cannot be more than 100%")
 
   @@gate("5.5.5.5")
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// A place a customer collects an order from, and the one model in this shop
@@ -1327,7 +1327,7 @@ model Order {
   
   @@softDelete(cascade)
   
-  @@log(audit)
+  @@trail(audit)
   
   /// One customer's orders — the console's customer screen, and what
   /// `Customer`'s cascade walks to find them. The read policy above correlates
@@ -1564,7 +1564,7 @@ model PaymentMethod {
   /// only the default rows.
   @@unique([customerId], where: isDefault == true)
 
-  @@log(audit)
+  @@trail(audit)
 }
 
 model Payment {
@@ -1686,7 +1686,7 @@ model Payment {
   @@gate("1.8.8.9")
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// Every event the provider has delivered, once each. Append-only.
@@ -2558,7 +2558,7 @@ model StockReservation {
 ///
 /// `stock` is the running total and this is the tape behind it: nothing writes
 /// that column without writing a row here in the same breath, which is what
-/// makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+/// makes the two reconcilable at all. It is not the audit trail — `@@trail(audit)`
 /// records that SOMEBODY changed a row and Litestone owns its format. This
 /// records what happened to the SHELF, in the shop's own words, and a customer
 /// service agent reads it.
@@ -2841,7 +2841,7 @@ model JournalEntry {
   /// property a period close would otherwise have to be built on.
   @@gate("5.8.9.9")
   
-  @@log(audit)
+  @@trail(audit)
   
   /// *What did this sale post* and *what did this pay run post* — the two ways
   /// into the books that are not by entry id. Both `Restrict`, so both are also
@@ -2923,7 +2923,7 @@ model Employee {
   @@check("endedOn IS NULL OR startedOn < endedOn",
           "somebody cannot leave before they started")
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// What somebody is paid, over the interval it was true for.
@@ -3022,7 +3022,7 @@ model PayWindow {
   /// answers both halves of it.
   @@index([employeeId, effectiveFrom])
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// What a `PayRate` band is FOR.
@@ -3109,7 +3109,7 @@ model PayRate {
   /// holding the invariant for it.
   @@unique([kind, fromAmount], where: effectiveTo == null)
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// Where a pay run has got to.
@@ -3211,7 +3211,7 @@ model PayRun {
     pay:       approved   -> paid       @system
   )
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// What one person was paid for one period. A DOCUMENT.
@@ -3327,7 +3327,7 @@ model Payslip {
   @@index([employeeId])
   @@index([payWindowId])
   
-  @@log(audit)
+  @@trail(audit)
 }
 
 /// One line of one payslip. SIGNED, and not all of them count.
@@ -3582,7 +3582,7 @@ model User {
   // — they hold the credential material, and that is the case 8 is for.
   @@gate("4.4.4.5")
   @@allow('update', id == auth().id || auth().isAdmin)
-  @@log(audit)
+  @@trail(audit)
 
   // The principal `auth()` reads. Declaring it is what makes a claim GRADED:
   // without it `auth().isStff` parses, builds and then denies every reader on

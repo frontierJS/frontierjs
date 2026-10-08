@@ -362,7 +362,7 @@ function ensureParentDir(absPath) {
 //   Single-DB (no database blocks): cfg.migrations/
 //   Multi-DB:                       cfg.migrations/<dbName>/
 //
-// jsonl and logger databases are always skipped — they have no SQL schema.
+// jsonl and trail databases are always skipped — they have no SQL schema.
 
 
 // Returns array of { name, rawDb, migrationsDir } for every sqlite database.
@@ -381,7 +381,7 @@ function openSqliteDbs(parseResult, cfg) {
 
   const result = []
   for (const db of schema.databases) {
-    if (db.driver === 'jsonl' || db.driver === 'logger') continue  // no SQL schema
+    if (db.driver === 'jsonl' || db.driver === 'trail') continue  // no SQL schema
     const absPath = resolveDbPath(db.path, null, schemaAnchor(cfg.schema))
     if (!absPath) {
       console.log(`  ${yellow('⚠')}  database '${db.name}' has no resolvable path — skipping`)
@@ -420,7 +420,7 @@ function openSqliteDbs(parseResult, cfg) {
 function migrationDirsFor(parseResult, cfg) {
   if (!declaresDatabases(parseResult)) return [{ name: 'main', migrationsDir: cfg.migrations }]
   return parseResult.schema.databases
-    .filter(db => db.driver !== 'jsonl' && db.driver !== 'logger')
+    .filter(db => db.driver !== 'jsonl' && db.driver !== 'trail')
     .map(db => ({ name: db.name, migrationsDir: join(cfg.migrations, db.name) }))
 }
 
@@ -3838,7 +3838,7 @@ async function cmdBackup(dest, cfg) {
         raw?.close()
       }
 
-    } else if (info.driver === 'jsonl' || info.driver === 'logger') {
+    } else if (info.driver === 'jsonl' || info.driver === 'trail') {
       // ── JSONL / logger: directory copy ──────────────────────────────────
       if (!info.path) {
         console.log(`  ${yellow('⚠')}  ${cyan(name)}: no path configured, skipping`)
@@ -3848,7 +3848,7 @@ async function cmdBackup(dest, cfg) {
       const srcDir  = resolve(info.path)
       const destDir = resolve(resolvedDest, name)
       if (!existsSync(srcDir)) {
-        // A jsonl/logger database is a DIRECTORY the driver creates on its first
+        // A jsonl/trail database is a DIRECTORY the driver creates on its first
         // write, so absent has two causes and they are not the same fact. Both
         // used to be `backup INCOMPLETE` and exit 1, which made the first deploy
         // of every app report that its restore point did not exist — and a
@@ -4020,7 +4020,7 @@ async function cmdBackup(dest, cfg) {
 //   litestone replicate --db main                    → one database
 //   litestone replicate ./litestone.config.js        → config path positionally
 //
-// Litestream replicates SQLite. A jsonl or logger database is a directory of
+// Litestream replicates SQLite. A jsonl or trail database is a directory of
 // append-only files with no WAL, so it CANNOT be covered here — reported by
 // name rather than omitted, because a replication report that lists only what
 // it did reads as though it did everything.
@@ -4079,7 +4079,7 @@ async function cmdReplicate(cfg) {
   if (!targets.length) {
     fatal(
       `Nothing to replicate — no SQLite databases declared${onlyDb ? ` matching --db=${onlyDb}` : ''}.\n` +
-      `     litestream streams SQLite WAL; jsonl and logger databases need ${cyan('litestone backup')}.`
+      `     litestream streams SQLite WAL; jsonl and trail databases need ${cyan('litestone backup')}.`
     )
   }
 
@@ -4141,7 +4141,7 @@ async function cmdRestore(cfg) {
   } : targets
   if (!sqlite.length && !other.length && !dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
-  // jsonl and logger databases were never streamed, so their only way back is
+  // jsonl and trail databases were never streamed, so their only way back is
   // a `litestone backup` directory — and without one this is the partial the
   // command exists to refuse.
   if (other.length && !fromBackup)

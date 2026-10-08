@@ -83,7 +83,7 @@ export function deviceSchema(parseResult) {
   const typesByName    = new Map((source.types    ?? []).map(t => [t.name, t]))
   const valuesByName   = new Map((source.valuesets ?? []).map(v => [v.name, v]))
   const viewNames      = new Set((source.views    ?? []).map(v => v.name))
-  const loggerDbNames  = new Set((source.databases ?? []).map(d => d.name))
+  const trailDbNames  = new Set((source.databases ?? []).map(d => d.name))
 
   const neededEnums  = new Set()
   const neededTypes  = new Set()
@@ -142,12 +142,12 @@ export function deviceSchema(parseResult) {
       fields.push(stripComments({
         ...field,
         attributes: (field.attributes ?? []).filter((attr) => {
-          // `@log(audit)` names a database this device does not have. The
+          // `@trail(audit)` names a database this device does not have. The
           // attribute writes a row into it on every read or write, so leaving
           // it in is a throw on the first query rather than a missing column.
-          if (attr.kind === 'log' && loggerDbNames.has(attr.db)) {
-            note('lost', `${model.name}.${field.name} @log(${attr.db})`,
-              'a logger database is a fleet-wide file on a server; a device has one database')
+          if (attr.kind === 'trail' && trailDbNames.has(attr.db)) {
+            note('lost', `${model.name}.${field.name} @trail(${attr.db})`,
+              'a trail database is a fleet-wide file on a server; a device has one database')
             return false
           }
           return true
@@ -193,7 +193,7 @@ export function deviceSchema(parseResult) {
 
   // `createClient({ db })` overrides a declared `main`, and overrides NOTHING
   // ELSE: every other block keeps the path it declares. `example` declares a
-  // second one — `database audit { path "./db/audit/" driver logger }` — which
+  // second one — `database audit { path "./db/audit/" driver trail }` — which
   // resolves against the working directory and is a fleet-wide file on a
   // server, so a device carrying the block opens a host filesystem path that
   // `host/browser.js` refuses by name.

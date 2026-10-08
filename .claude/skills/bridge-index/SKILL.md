@@ -88,7 +88,7 @@ Detail: `references/api-internals.md`
 - `app.principal()` / `app.runAs(userId, fn)` — the seam deferred work runs through — `junction/src/core/app.ts`
 - `createLitestoneAuth(db, { sessionFields })` — the one place an app's `User` columns reach the session — `auth/auth.ts`
 - `manifestPlugin()` + litestone `status()` — migration state into `/manifest` — `junction/src/plugins/manifest/index.ts`
-- `app.registerMetricsSource(name, fn)` / `app.registerHealthCheck(name, fn)` — what a plugin says about itself in `/metrics` and `/health` — `junction/src/core/app.ts`
+- `app.registerMetricsSource(name, fn)` / `app.registerReadiness(name, fn)` — what a plugin says about itself in `/metrics` and `/health` — `junction/src/core/app.ts`
 - `app.registerDevService({ name, url, note })` — a sidecar listener, announced — `junction/src/core/app.ts`
 - `devtools({ port, auth })` — the dev console on 8503; fails closed in production — `junction/src/plugins/devtools/index.ts`
 

@@ -36,7 +36,7 @@ for (const p of toRemove.map(p => `${__dir}/${p}`)) {
 console.log()
 
 // ─── Create SQLite tables for main + analytics databases ──────────────────────
-// JSONL and logger databases are schema-less — the driver manages them.
+// JSONL and trail databases are schema-less — the driver manages them.
 
 function initSqliteDb(absPath: string, dbName: string) {
   const raw = new Database(absPath)
@@ -212,11 +212,11 @@ const errors = await sys.apiRequest.findMany({ where: { status: { gte: 400 } } }
 console.log(`       errors (status >= 400): ${errors.length} — "${errors[0]?.error}"`)
 
 // ─── Audit logger — seed some traceable writes + reads ───────────────────────
-// The audit database is auto-populated by any model with @@log(audit) or @log(audit).
-// Users has @@log(audit) (create/update/delete) and apiKey has @secret → @log(audit).
+// The audit database is auto-populated by any model with @@trail(audit) or @trail(audit).
+// Users has @@trail(audit) (create/update/delete) and apiKey has @secret → @trail(audit).
 // createMany bypasses emitLogs, so we do a few targeted single-row ops here.
 
-// Single creates — each fires @@log(audit) → auditLogs entry
+// Single creates — each fires @@trail(audit) → auditTrail entry
 const auditUser1 = await sys.user.create({ data: {
   id: 8, accountId: acme.id, email: 'audit1@acme.com',
   firstName: 'Audit', lastName: 'One', role: 'viewer', salary: 55000
@@ -225,10 +225,10 @@ await sys.user.update({ where: { id: 8 }, data: { salary: 58000 } })
 await sys.user.remove({ where: { id: 8 } })
 
 // @secret defaults to reads:false — reads are high-volume and opt-in.
-// To audit apiKey reads, declare: apiKey Text? @secret @log(audit, reads: true)
+// To audit apiKey reads, declare: apiKey Text? @secret @trail(audit, reads: true)
 // The 3 write ops above (create + update + remove) still fire audit entries.
-const auditCount = await sys.auditLogs.count()
-console.log(`  ✓  auditLogs (audit):  ${auditCount} entries (create + update + delete)`)
+const auditCount = await sys.auditTrail.count()
+console.log(`  ✓  auditTrail (audit):  ${auditCount} entries (create + update + delete)`)
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
@@ -237,7 +237,7 @@ console.log('  Databases:')
 console.log(`    main       ./example.db`)
 console.log(`    analytics  ./analytics.db`)
 console.log(`    logs       ./logs/apiRequest.jsonl`)
-console.log(`    audit      ./audit/auditLogs.jsonl  (logger driver — auto-populated)`)
+console.log(`    audit      ./audit/auditTrail.jsonl  (logger driver — auto-populated)`)
 console.log()
 
 const counts = {
@@ -249,7 +249,7 @@ const counts = {
   'pageViews (analytics)': await sys.pageView.count(),
   'dailyStats(analytics)': await sys.dailyStat.count(),
   'apiReqs   (logs)':      await sys.apiRequest.count(),
-  'auditLogs (audit)':     await sys.auditLogs.count(),
+  'auditTrail (audit)':     await sys.auditTrail.count(),
 }
 const maxLen = Math.max(...Object.keys(counts).map(k => k.length))
 for (const [t, n] of Object.entries(counts))

@@ -23,8 +23,8 @@ const tick = () => new Promise((r) => setImmediate(r))
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
-  model Thing { id String @id @default(uuid())  name String  @@log(audit) }
+  database audit { path "${dir}/audit/" driver trail }
+  model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
 `
 
 const PRINCIPAL = { id: 'subject-1', type: 'user' }
@@ -35,7 +35,7 @@ async function writeOne(dir: string, from: Record<string, unknown> | null) {
   if (from) db.$logContext(() => from)
   await db.$setAuth(PRINCIPAL).thing.create({ data: { name: 'x' } })
   await tick()
-  const rows = await db.asSystem().auditLogs.findMany({})
+  const rows = await db.asSystem().auditTrail.findMany({})
   db.$close()
   return rows[0]
 }
@@ -94,7 +94,7 @@ describe('an audit entry names the operator when there is one', () => {
       db.$logContext(() => ({ operatorId: 'operator-9', episodeId: 'sess-7' }))
       await db.asSystem().thing.create({ data: { name: 'x' } })
       await tick()
-      const row = (await db.asSystem().auditLogs.findMany({}))[0]
+      const row = (await db.asSystem().auditTrail.findMany({}))[0]
       db.$close()
       expect(row.actorId).toBe('operator-9')
       expect(row.subjectId).toBeNull()
@@ -105,7 +105,7 @@ describe('an audit entry names the operator when there is one', () => {
 describe('a trail the app declared itself keeps only what it declared', () => {
 
   test('the operator is dropped in silence, and that is the accepted gap', async () => {
-    // `@@log` may name a real model instead of the auto one, and an entry is
+    // `@@trail` may name a real model instead of the auto one, and an entry is
     // written with the keys that model does not declare dropped — no error, no
     // warning, `dropped: 0`. So an app that declared its own trail before this
     // existed records episodes with the operator missing.
@@ -118,7 +118,7 @@ describe('a trail the app declared itself keeps only what it declared', () => {
     try {
       const schema = `
         database main  { path ":memory:" }
-        database audit { path "${dir}/audit.db" driver logger model AuditRow }
+        database audit { path "${dir}/audit.db" driver trail model AuditRow }
         model AuditRow {
           id String @id @default(uuid())
           operation String
@@ -127,7 +127,7 @@ describe('a trail the app declared itself keeps only what it declared', () => {
           createdAt DateTime @default(now())
           @@db(audit)
         }
-        model Thing { id String @id @default(uuid())  name String  @@log(audit) }
+        model Thing { id String @id @default(uuid())  name String  @@trail(audit) }
       `
       const db: any = await createClient({ schema, resolveFrom: dir })
       db.$logContext(() => ({ operatorId: 'operator-9', episodeId: 'sess-7' }))

@@ -2152,7 +2152,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   //
   // `createResource` is not a cheap call and it is not a pure one: it makes a
   // junction resource, which makes a Store, binds it to the node registry,
-  // opens the socket and registers a `resync` listener that nothing can remove
+  // opens the socket and registers a `reconnected` listener that nothing can remove
   // — junction's `resource()` hands back no dispose. So a picker that built one
   // per render left a listener per render behind it, and after a single
   // reconnect a form rendered 500 times fired 500 identical `find` requests
@@ -2793,7 +2793,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       find:     service.find,
       loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
-      onResync: (fn) => client.on('resync', fn),
+      onReconnected: (fn) => client.on('reconnected', fn),
     }, listQuery, opts)
   }
 

@@ -142,7 +142,7 @@ attribute, which is what that file exists to make visible.
   a faded card reads as unavailable rather than unused
 - Clicking a declaration gives a card per instance: a model's gate, columns,
   relations, row policies and protected fields; an enum's values; a database's
-  driver and path. Models Litestone generated for a logger database are listed
+  driver and path. Models Litestone generated for a trail database are listed
   and badged `generated`, and are left out of every count
 - Search reaches both halves at once — the language, and what this schema
   declares

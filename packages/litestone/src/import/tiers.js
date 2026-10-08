@@ -125,7 +125,7 @@ const NOTED = [
   // decision the author makes and the database cannot hold. Reported only where
   // there is real evidence (a now() default, a 0/1 default), because one row per
   // TEXT column is one row per column and nobody reads that.
-  'application-attributes',   // @@gate, @@allow, @secret, @@log, @@fts, @@transitions, @@label and every
+  'application-attributes',   // @@gate, @@allow, @secret, @@trail, @@fts, @@transitions, @@label and every
                               // validator. Not LOST: a SQLite file never held one, so nothing was
                               // dropped in the reading — it is the half only the author can supply
   'datetime-as-text',         // TEXT with a now() default: DateTime is stored as exactly this

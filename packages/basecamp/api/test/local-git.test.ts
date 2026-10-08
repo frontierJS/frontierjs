@@ -69,6 +69,7 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'local-git-'))
   const a = repo('work/alpha')
   writeFileSync(join(a, 'README'), 'x')
+  writeFileSync(join(a, 'frontier.config.js'), 'export default {}')
   sh(a, 'add', '.'); sh(a, 'commit', '-q', '-m', 'first')
   sh(a, 'remote', 'add', 'origin', 'https://me:tok@example.test/alpha.git')
   writeFileSync(join(a, 'dirty.txt'), 'y')
@@ -93,10 +94,11 @@ test('each repository is described by git itself, the token cut from its remote'
   const { repos } = await listLocalRepos(dir)
   const alpha = repos.find(r => r.name === 'alpha')!
   // dirty.txt, and the nested checkout git reports as one untracked entry
-  expect(alpha).toMatchObject({ relative: 'work/alpha', branch: 'main', changes: 2, remote: 'https://example.test/alpha.git', lastCommit: 'first' })
+  expect(alpha).toMatchObject({ relative: 'work/alpha', branch: 'main', changes: 2, remote: 'https://example.test/alpha.git', lastCommit: 'first', frontier: true })
+  expect(alpha.lastCommitAt).toMatch(/Z$/)
   expect(alpha.head).toMatch(/^[0-9a-f]{7}$/)
   const beta = repos.find(r => r.name === 'beta')!
-  expect(beta).toMatchObject({ branch: 'main', head: null, lastCommitAt: null, remote: null })
+  expect(beta).toMatchObject({ branch: 'main', head: null, lastCommitAt: null, remote: null, frontier: false })
 })
 
 // A downloaded tree can carry a .git/config naming a command, and `git status`

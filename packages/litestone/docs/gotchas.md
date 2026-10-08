@@ -184,9 +184,9 @@ cd /app && litestone studio --port=8502
 
 ---
 
-## select: false is silently ignored on @@log models
+## select: false is silently ignored on @@trail models
 
-`select: false` skips `RETURNING *` for maximum write performance. On models with `@@log` or fields with `@log`, Litestone needs the before/after row snapshot for the audit entry. On these models, `select: false` is silently ignored and the full `RETURNING` path runs. This is intentional — the audit entry is more important than the write speed optimization.
+`select: false` skips `RETURNING *` for maximum write performance. On models with `@@trail` or fields with `@trail`, Litestone needs the before/after row snapshot for the audit entry. On these models, `select: false` is silently ignored and the full `RETURNING` path runs. This is intentional — the audit entry is more important than the write speed optimization.
 
 ---
 
@@ -239,7 +239,7 @@ SELECT id FROM vault WHERE blob IS NOT NULL;   -- then read each back through th
 
 ## Audit log reads lag writes within a session
 
-The logger driver buffers and flushes on a **~1s timer and on process exit**. Immediately after a write, `auditLogs.findMany()` returns 0 rows and the `.jsonl` file may not exist yet — the next process sees everything. Measured on a fresh database: 1 write → 0 rows, no file; +2s → 1 row; +50 more writes in the same process → still 1 row; next process → 51 rows.
+The logger driver buffers and flushes on a **~1s timer and on process exit**. Immediately after a write, `auditTrail.findMany()` returns 0 rows and the `.jsonl` file may not exist yet — the next process sees everything. Measured on a fresh database: 1 write → 0 rows, no file; +2s → 1 row; +50 more writes in the same process → still 1 row; next process → 51 rows.
 
 **Nothing is lost.** This is visibility lag, not data loss, and it is why reading the trail immediately after writing (as several examples do) reports an empty log.
 

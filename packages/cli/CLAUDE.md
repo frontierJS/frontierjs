@@ -321,7 +321,9 @@ core/
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
-  desktop-surface.js    what a `desktop/` surface IS — `make:desktop`. `example/desktop/`
+  desktop-surface.js    what a `desktop/` surface IS — `make:desktop`, the binary and
+                        API origin `desktop:run` reads off one, and the launcher
+                        entry `desktop:install` writes. `example/desktop/`
                         is its output, compared byte for byte in the suite, because
                         only `verify:desktop` can build a shell and it runs the example
   shortcuts.js  what a SHORTCUT is — a project-local name for a command line,

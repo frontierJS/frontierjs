@@ -1,6 +1,6 @@
 // The audit trail with more than one process writing it (`FJS-665`).
 //
-// A `driver logger` database is schema-global — every tenant's client and every
+// A `driver trail` database is schema-global — every tenant's client and every
 // process appends to one file and one companion index — and `docs/concurrency.md`
 // recommends running a second process. Three things were wrong with that, and
 // each destroys a trail rather than inconveniencing it.

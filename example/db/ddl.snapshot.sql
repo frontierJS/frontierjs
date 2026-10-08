@@ -854,7 +854,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("de
 -- 
 -- `stock` is the running total and this is the tape behind it: nothing writes
 -- that column without writing a row here in the same breath, which is what
--- makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+-- makes the two reconcilable at all. It is not the audit trail — `@@trail(audit)`
 -- records that SOMEBODY changed a row and Litestone owns its format. This
 -- records what happened to the SHELF, in the shop's own words, and a customer
 -- service agent reads it.
@@ -1368,5 +1368,5 @@ CREATE INDEX IF NOT EXISTS "idx_credit_note_invoiceId" ON "credit_note" ("invoic
 CREATE VIEW IF NOT EXISTS "revenueByStatus" AS
 SELECT status, COUNT(*) AS orders, SUM(total) AS total FROM [order] WHERE deletedAt IS NULL GROUP BY status;
 
--- ─── database audit · logger ─────────────────────────────────────────────
--- No DDL — a logger database has no schema. 0 model(s)
+-- ─── database audit · trail ──────────────────────────────────────────────
+-- No DDL — a trail database has no schema. 0 model(s)

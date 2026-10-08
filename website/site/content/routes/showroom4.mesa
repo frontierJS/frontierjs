@@ -110,7 +110,7 @@ render: static
           <div class="fact"><b>Releases</b><span>what is deployed where, and the roll-back button</span></div>
           <div class="fact"><b>Migrations</b><span>schema drift between your file and the live database</span></div>
           <div class="fact"><b>Jobs</b><span>caravan queues, failures, retries, cron</span></div>
-          <div class="fact"><b>Audit</b><span><code>@@log(audit)</code> trails, per model</span></div>
+          <div class="fact"><b>Audit</b><span><code>@@trail(audit)</code> trails, per model</span></div>
           <div class="fact"><b>Egress</b><span>every conduit target — the complete outbound surface</span></div>
           <div class="fact"><b>Tenants</b><span>db-per-tenant registries and their status</span></div>
         </div>

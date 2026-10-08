@@ -143,7 +143,7 @@ SELECT * FROM leads
       "  @@gate(\"0.4.4.5\")",
       "  @@allow('read', ownerId == auth().id)",
       "  @@index([ownerId, createdAt])",
-      "  @@log(audit)",
+      "  @@trail(audit)",
       "}",
     ],
     fresh:[10,11],

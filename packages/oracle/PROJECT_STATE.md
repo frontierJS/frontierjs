@@ -22,5 +22,5 @@ _Verified 2026-10-06 by running the code._
 
 - **The `inferred` check is a word match.** In the corpus it refused 2 of 21 first answers whose "not stated" explained an omission rather than an inference. That cost a turn each. The doctrine words it mechanically (`IDEAS/oracle-reasoning.md` § 8).
 - **No soft delete in the contract.** A vault's trash had to be dropped, because a `deletedAt` field without `@@softDelete` is inert and advise says so.
-- **Behavior.** Only the `audit` pattern becomes a declaration (`@@log(audit)`).
+- **Behavior.** Only the `audit` pattern becomes a declaration (`@@trail(audit)`).
 - **`mockup/`** stays as reference and is not ported.

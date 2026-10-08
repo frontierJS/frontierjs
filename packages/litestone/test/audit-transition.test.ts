@@ -17,14 +17,14 @@ const tick = () => new Promise((r) => setImmediate(r))
 
 const SCHEMA = (dir: string) => `
   database main  { path ":memory:" }
-  database audit { path "${dir}/audit/" driver logger }
+  database audit { path "${dir}/audit/" driver trail }
   enum S { pending paid cancelled }
   model Order {
     id     Int    @id
     note   String @default("")
-    status S      @default(pending) @log(audit)
+    status S      @default(pending) @trail(audit)
     @@gate("0")
-    @@log(audit)
+    @@trail(audit)
     @@transitions(status,
       pay:     pending -> paid,
       cancel:  pending -> cancelled,
@@ -43,7 +43,7 @@ async function withDb(fn: (db: any) => Promise<void>) {
 /** Every update row the trail holds for one order, model-level first. */
 async function updatesFor(db: any, id: number) {
   await tick()
-  const rows = await db.asSystem().auditLogs.findMany({})
+  const rows = await db.asSystem().auditTrail.findMany({})
   return rows.filter((r: any) => r.operation === 'update' && JSON.parse(r.records).includes(id))
 }
 
@@ -59,7 +59,7 @@ describe('an audited update names the move it made', () => {
 
       const cancelled = await updatesFor(db, 1)
       const abandoned = await updatesFor(db, 2)
-      // Both levels: the model row and the field row `@log` on status adds.
+      // Both levels: the model row and the field row `@trail` on status adds.
       expect(cancelled.map((r: any) => r.transition)).toEqual(['cancel', 'cancel'])
       expect(abandoned.map((r: any) => r.transition)).toEqual(['abandon', 'abandon'])
       // The snapshots alone are the same, which is what the column is for.

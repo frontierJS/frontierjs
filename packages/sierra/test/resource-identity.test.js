@@ -185,7 +185,7 @@ describe('the identity epoch', () => {
 describe('options() does not build a resource it is about to throw away', () => {
   test('N cached renders construct exactly one related resource', async () => {
     // `createResource` is not a pure call: it makes a Store, binds it to the
-    // node registry, opens the socket and registers a `resync` listener that
+    // node registry, opens the socket and registers a `reconnected` listener that
     // nothing can remove. Built above the cache check, a picker left one per
     // render behind it — measured against a real stack at 501 listeners and
     // +1.4 MB after 500 renders, and after one reconnect that form fires 500
