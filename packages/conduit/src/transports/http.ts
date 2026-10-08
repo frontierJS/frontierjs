@@ -184,10 +184,11 @@ export class HttpTransport extends BaseTransport {
 
     const replayable = IDEMPOTENT_METHODS.has(method) || key !== undefined || req.replayable === true
 
-    // A 401 is answered once by a fresh credential, whatever the method: the
-    // target refused the request before acting on it, so the replay is safe
-    // where a retry of a POST is not. Not an attempt — a session expiring
-    // between pages is not the target failing.
+    // A refused credential is answered once by a fresh one, whatever the
+    // method: the target refused the request before acting on it, so the
+    // replay is safe where a retry of a POST is not. Not an attempt — a session
+    // expiring between pages is not the target failing. See `refusedCredential`
+    // for what counts as refused.
     let reminted = false
 
     while (attempt <= retries) {
@@ -212,7 +213,7 @@ export class HttpTransport extends BaseTransport {
       const spent  = {} as { value?: string }
       const result = await this.attempt<T>(sent, remaining, spent)
 
-      if (result.meta.status === 401 && !reminted && spent.value !== undefined
+      if (refusedCredential(result) && !reminted && spent.value !== undefined
         && this.credentials.invalidate && this.descriptor.auth.type !== 'none') {
         reminted = true
         this.credentials.invalidate(this.descriptor.auth.ref, spent.value)
@@ -712,6 +713,21 @@ class SerializeError extends Error {
 function isMarkupType(contentType: string): boolean {
   const type = contentType.split(';')[0].trim().toLowerCase()
   return type === 'text/html' || type === 'application/xhtml+xml'
+}
+
+// A 401, or a 2xx web page where a payload was expected. Service Autopilot
+// answers a session it does not honor with 200 and its login page, and its
+// login answers 200 whatever the password — under a 401-only rule its dead
+// cookie stays cached at ttl Infinity and every send fails until a restart.
+// The page is the captive-portal signature, which is also not the target
+// acting, so the replay is as safe as a 401's; a cached secret that was never
+// minted pays one extra get() and one replay for it.
+function refusedCredential(result: ConduitResult<unknown>): boolean {
+  const { status, headers } = result.meta
+  if (status === 401) return true
+  return result.error?.kind === 'invalid_response'
+    && status !== undefined && status >= 200 && status < 300
+    && isMarkupType(headers?.['content-type'] ?? '')
 }
 
 function isJsonType(contentType: string): boolean {

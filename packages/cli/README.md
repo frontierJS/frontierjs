@@ -87,7 +87,7 @@ A rule earns its place by being **silent when broken**:
 | `resource-file-name` · `resource-one-per-file` | 19 | A Resource not named for its noun, or two in one file |
 | `vite-strict-port` | — | A Vite config without `strictPort` — vite otherwise hops to the next free port in silence and the second app's drive tests the first app's app |
 | `body-tag-in-comment` | — | The body tag mentioned inside an HTML comment. Vite injects the built `<script>` at the first textual match and does not skip comments, so the build succeeds and the page loads no JavaScript |
-| `app-layout` | 3 | A surface hiding inside another one, or a schema that is not at the root |
+| `app-layout` | 3 | A surface hiding inside another one, a schema that is not at the root, or a file in the wrong `src/` folder (`FJS-D625`–`D627`) |
 | `widget-entry-name` | 19 | A widget whose name cannot be a custom element |
 | `package-root-md` | 17 | A fifth markdown file at a package root — a warning naming it, because the rule cannot tell a stray design note from the next thing everyone needs |
 | `command-parses` | 15 | A project command under `cli/src/routes/` whose compiled JavaScript does not parse — compiled with its `_module.md`, since the two share a scope, and reported at the `.md` line. A command compiles when it runs, so one nobody has run is broken in silence. Run it after editing a command: `fli check --only command-parses` |

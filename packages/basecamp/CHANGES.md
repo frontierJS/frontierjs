@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-07 — `check-baseline.json` holds `app-layout` at 11 while the `src/` layout is moved (`FJS-1888`)
+
+`fli check` now grades `FJS-D625`–`D627`'s folders, and this app holds eleven: five modules and `RelationCell.mesa` loose in `web/src/`, four helpers in `services/` that `app.ts`, a job or `core/` import, and `core/mailer.ts` exporting a plugin. The ceiling falls as each moves; no source changed.
+
 ## 2026-10-06 — the outpost nonce table holds a nonce for twice the tolerance (`FJS-1833`)
 
 `rememberNonce` swept a nonce after one tolerance (300s), but a signed request's timestamp is accepted up to 300s either side of this clock, so a request from a machine running ahead could replay once its row was swept. The window is now twice the tolerance. `services.test.ts` § *a nonce is remembered for as long as its timestamp can still be fresh* seeds a nonce seen 400s ago and expects 401; it goes red at one tolerance.

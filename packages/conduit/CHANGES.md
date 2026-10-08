@@ -1,5 +1,19 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-07 — A 200 login page refuses a credential the way a 401 does (`FJS-1906`)
+
+Service Autopilot answers a session it does not honor with 200 and its HTML login page, and its login answers
+200 with a cookie whatever the password. The remint rule read a 401 only, so that page came back as a
+non-retryable `invalid_response`, `withCache({ ttl_ms: Infinity })` kept the dead cookie, and every send failed
+until the process restarted — a wrong or rotated password the same. `refusedCredential` in the http transport
+now reads a 2xx markup body where a payload was expected — the captive-portal signature the transport already
+treats as something other than the target acting — as a refusal too: the credential is invalidated and the send
+replayed once, any method, as on a 401. No option: the decision is derived from the resolver having
+`invalidate` and the existing `isMarkupType`, so a target with a plain `secrets()` resolver is unchanged. The
+suite's session stand-in gains SA's own shape (`loginPage`): an expired session replays once onto a fresh
+login, a wrong password recovers when the vault catches up without a restart, a page on a fresh credential is
+`invalid_response` after one replay rather than a loop, and a resolver that cannot forget sends once.
+
 ## 2026-10-07 — A credential a login mints: a 401 forgets it and replays once, and every `Set-Cookie` survives (`FJS-1905`, `FJS-1904`)
 
 A system of record with no API key — Service Autopilot, ELA's: a username and password that mint a cookie

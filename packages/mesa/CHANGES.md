@@ -1,5 +1,11 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-07 — a reactive name used as a computed key is read, so `{ [name]: v }` keys by the value (`FJS-1917`)
+
+`rewriteExpr` skipped every identifier sitting under a `key`. That is right for `{ name: v }`, but in `{ [name]: v }` the key is an expression, so a derived `const` or reactive `let` there was left bare. The object was keyed by the signal itself, `[object Object]`, while `${name}` beside it read the value. base44's Connect screen rendered an MCP config under that key with no error and no warning. A computed key on a `Property`, `MethodDefinition` or `PropertyDefinition` is now marked the same way a computed member access already was, and is rewritten as a read. A plain key is still left alone.
+
+Proof: `test/computed-key-read.test.js`. It covers a derived key in a script function, a reactive `let` key next to a plain key of the same name, a key in a template expression and a computed class member, and it parses each output. A server render must show the value. All five fail against HEAD, and the render there gives `{"[object Object]":1}`.
+
 ## 2026-10-06 — the REPL boots offline, and its drive is in `test` (`FJS-326`)
 
 `example/index.html` fetched nineteen things off the internet, so its drive was manual and out of CI. The Tailwind Play script and its config line are gone, since the REPL's own chrome used no utility class. lz-string and the sixteen importmap entries are now `example/vendor/`, committed, written by `bun example/build-vendor.mjs` as one `Bun.build` with splitting so the CodeMirror packages share a single `@codemirror/state`. The importmap names those files, which means the page the drive loads is the page that ships. The ten packages behind them (CodeMirror, lezer, vim, lz-string) are mesa devDependencies.

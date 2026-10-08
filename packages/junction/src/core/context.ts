@@ -1070,10 +1070,30 @@ export function inheritedCaller(): { ip?: string; userAgent?: string; headers: R
 
 export function resolvePrincipal(opts: CallOptions): SessionContext | null {
   if ('auth' in opts && opts.auth !== undefined)
-    return opts.auth?.user ? freezeUser(opts.auth.user) : null
+    return opts.auth?.user ? freezeUser(statedSession(opts.auth.user)) : null
 
   const inherited = _requestStore.getStore()?.user
   return inherited ? freezeUser(inherited) : null
+}
+
+// A stated principal is a SessionContext, and the caller's id is `userId`.
+// A User row puts it at `id` — Litestone's spelling, the one `actingAs` takes —
+// and run as given, `$.me.userId`, the audit line, the logger and the response
+// cache key all read no caller while the Data boundary, through
+// `toDataPrincipal`, reads one. A service written against either spelling then
+// passes every test written in the other (`FJS-1890`).
+function statedSession(user: SessionContext): SessionContext {
+  const u = user as unknown as Record<string, unknown>
+  if (u.userId !== undefined && u.userId !== null) return user
+  const shape = 'id' in u ? `it has 'id' (${JSON.stringify(u.id)}), which is a row's spelling` : `its keys are ${Object.keys(u).join(', ') || 'none'}`
+  throw new Error(
+    `[Junction] auth.user has no 'userId' — ${shape}.
+` +
+    `An internal call's principal is a SessionContext, and the caller's id is ` +
+    `'userId'; a service reads it as $.me.userId. Build one with ` +
+    `session({ userId }) from @frontierjs/testing, run deferred work through ` +
+    `app.runAs(userId, fn), or pass { auth: { user: null } } to call as nobody.`
+  )
 }
 
 // ─── Auth principal sharing ──────────────────────────────────────────────

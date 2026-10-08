@@ -11872,7 +11872,7 @@ work, not a decision.)*
 
 Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dvt1QFJo4LCqXpfyYRsjP), row 6); the owner accepted the recommendation. Transit's `api/src/reports/index.ts` imports `../../../web/src/reports/RevenueReport.query.js`, so `web/` cannot be built, moved or dropped alone, and surfaces are peers (Invariant 3). The query runs on the server, so it moves to `api/src/domain/reports/`. The template renders on screen and in email, and it follows `example/`'s precedent: a `.mesa` file the server renders lives in `api/src/emails/`, and the screen gets the rendered report through the service.
 
-A relative import that crosses from one surface into another is graded by nothing yet (`FJS-1888`).
+A relative import that crosses from one surface into another is a warning in `app-layout` (`FJS-1888`).
 
 ### <a id="fjs-d626"></a>2026-10-07 · `FJS-D626` — Where does a Route live — `api/src/routes/`, and a file's path there is the URL it answers. Junction loads the folder the way it loads `*.service.ts`.
 
@@ -11880,7 +11880,7 @@ Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dv
 
 **Path = URL keeps `routes/` one meaning.** `web/src/routes/` and `cli/src/routes/` already mean *the path is the address*. A folder where each file exports `register(app)` was the cheaper option, and it was rejected because it gives `routes/` a third meaning. A plugin that only mounts raw routes moves here.
 
-README § Project Structure gains `routes/` when the loader is built (`FJS-1889`), not before, the way `FJS-D397` treated `cli/`. A warning for `app.get` or `app.post` outside `routes/` is part of `FJS-1888`.
+README § Project Structure gains `routes/` when the loader is built (`FJS-1889`), not before, the way `FJS-D397` treated `cli/`. A warning for `app.get` or `app.post` outside `routes/` is in `app-layout` (`FJS-1888`).
 
 ### <a id="fjs-d625"></a>2026-10-07 · `FJS-D625` — How is an app's `src/` laid out — Kind first, area second. A file goes in the folder named for its kind, and an area is a subfolder inside that kind's folder: `domain/<area>/`, `components/<area>/`, `lib/<area>/`. There is no feature folder.
 
@@ -11893,7 +11893,7 @@ Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dv
 - **`web/src/stores/` holds state only the browser has**, a `watchProxy` that a component watches. A cache of server reads is not a store: it belongs to the Resource, and where the Resource cannot express it, that is a gap (`FJS-1891`). A split by kind (`state/`, `logic/`, `registrations/`) was rejected as five folders for about ten files. `stores/` is the one exception because the ecosystem names the folder and its test has two clear halves. It does not make *store* a framework noun: screen-local state stays unnamed (`FJS-D390`).
 - **Every `.mesa` file that is not a route or resource goes in `components/`** (`FJS-D382`).
 
-*Familiarity vs. precision*: `lib/` and `stores/` take the ecosystem's shape and words where the words fit. Nothing grades any of this yet (`FJS-1888`).
+*Familiarity vs. precision*: `lib/` and `stores/` take the ecosystem's shape and words where the words fit. `app-layout` grades each folder rule as a warning (`FJS-1888`).
 
 ### <a id="fjs-d608"></a>2026-10-06 · `FJS-D608` — Which tooling gaps in `site-kit-parity.md` § 4 become framework owners — Wire every gap Sierra already owns (`defer-js`, `speculation`, `sierra/analytics`); fix the two filed as Sierra's (FJS-1539 head, FJS-1540 host function) in Sierra; start every gap with no owner (images, per-page JSON-LD, the lead fallback, animations) as site-kit code, and move one to Sierra when a consumer that is not a site-kit site needs it.
 

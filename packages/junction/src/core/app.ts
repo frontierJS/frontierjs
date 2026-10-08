@@ -1140,7 +1140,11 @@ export function createApp(opts: AppOptions = {}): App {
         })
       }
 
-      async function call(ctx: ServiceContext): Promise<unknown> {
+      // Takes the context unbuilt: makeCtx refuses a principal with no
+      // `userId`, and built by a caller method that is not async, that refusal
+      // throws past a .catch() instead of rejecting.
+      async function call(build: () => ServiceContext): Promise<unknown> {
+        const ctx = build()
         const svc = services.get(name)
         if (!svc) throw new NotFound(`Service '${name}' not found`)
         // The bridge's own refusal, because an in-process caller can be
@@ -1161,52 +1165,54 @@ export function createApp(opts: AppOptions = {}): App {
 
       const caller: ServiceCaller = {
         find(query?: Record<string, unknown>, opts?: CallOptions) {
-          return call(makeCtx('find', null, null, query ?? {}, opts))
+          return call(() => makeCtx('find', null, null, query ?? {}, opts))
         },
         // The spec travels as DATA, which is where an HTTP caller puts it —
         // `parseAggregate` reads one shape whoever is asking, and ctx.query
         // stays what every hook narrows.
         aggregate(spec?: Record<string, unknown>, opts?: CallOptions) {
-          return call(makeCtx('aggregate' as ServiceMethod, null, spec ?? {}, {}, opts))
+          return call(() => makeCtx('aggregate' as ServiceMethod, null, spec ?? {}, {}, opts))
         },
         get(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('get', null, null, idOrQuery, opts))
+            return call(() => makeCtx('get', null, null, idOrQuery, opts))
           }
-          return call(makeCtx('get', idOrQuery, null, {}, opts))
+          return call(() => makeCtx('get', idOrQuery, null, {}, opts))
         },
         create(data: Record<string, unknown>, opts?: CallOptions) {
-          return call(makeCtx('create', null, data, {}, opts))
+          return call(() => makeCtx('create', null, data, {}, opts))
         },
         patch(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('patch', null, data, idOrQuery, opts))
+            return call(() => makeCtx('patch', null, data, idOrQuery, opts))
           }
-          return call(makeCtx('patch', idOrQuery, data, {}, opts))
+          return call(() => makeCtx('patch', idOrQuery, data, {}, opts))
         },
         update(idOrQuery: string | number | Record<string, unknown>, data: Record<string, unknown>, opts?: CallOptions) {
           // update is patch's full-replace sibling; same routing.
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('update' as ServiceMethod, null, data, idOrQuery, opts))
+            return call(() => makeCtx('update' as ServiceMethod, null, data, idOrQuery, opts))
           }
-          return call(makeCtx('update' as ServiceMethod, idOrQuery, data, {}, opts))
+          return call(() => makeCtx('update' as ServiceMethod, idOrQuery, data, {}, opts))
         },
         remove(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('remove', null, null, idOrQuery, opts))
+            return call(() => makeCtx('remove', null, null, idOrQuery, opts))
           }
-          return call(makeCtx('remove', idOrQuery, null, {}, opts))
+          return call(() => makeCtx('remove', idOrQuery, null, {}, opts))
         },
         restore(idOrQuery: string | number | Record<string, unknown>, opts?: CallOptions) {
           if (typeof idOrQuery === 'object') {
-            return call(makeCtx('restore', null, null, idOrQuery, opts))
+            return call(() => makeCtx('restore', null, null, idOrQuery, opts))
           }
-          return call(makeCtx('restore', idOrQuery, null, {}, opts))
+          return call(() => makeCtx('restore', idOrQuery, null, {}, opts))
         },
         call(methodName: string, id?: string | number | null, data?: Record<string, unknown> | null, opts?: CallOptions) {
-          const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
-          ctx.method = methodName
-          return call(ctx)
+          return call(() => {
+            const ctx = makeCtx(methodName as import('../transport/bridge.ts').ServiceMethod, id ?? null, data ?? null, {}, opts)
+            ctx.method = methodName
+            return ctx
+          })
         },
 
         // ── Hook-bypass methods ─────────────────────────────────────────────────

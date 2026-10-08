@@ -225,7 +225,9 @@ src/
   owns the vendor's paths, payload shapes and webhook signature scheme, and gets
   its own package once a second one exists to design the interface against. The
   first is `example/api/src/providers/stripe/index.ts`.
-- **A 401 replays once, POST included, when the resolver can `invalidate`.**
+- **A 401 replays once, POST included, when the resolver can `invalidate`** —
+  and so does a 2xx HTML page where a payload was expected, because Service
+  Autopilot refuses a session with 200 and its login page (`refusedCredential`).
   The target refused before acting, so the replay is safe where a retry of a
   POST is not; it sits outside `retry_limit` and `declineReplay`. `withCache`'s
   `invalidate` is a compare-and-set on the refused value — an unconditional

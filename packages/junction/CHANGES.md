@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-07 — an internal call's principal carries `userId`, or it is refused (`FJS-1890`)
+
+`$.me` hands a service the principal as it arrived. Under a session the caller's id is `userId`, and under an internal call made as a User row it was `id`. A service reading `$.me.userId` got null for every such caller and passed every test written with a session. `toDataPrincipal()` reconciled the two for the Data side only. Measured in quo: `sentById` was null for every real send. The bound logger, the audit line and the response cache key read `userId` too, so an id-only principal shared one cache segment across callers.
+
+`resolvePrincipal()` is the owner of an internal call's principal, and it now refuses a stated `auth.user` with no `userId`. The refusal names the `id` it found and points at `session({ userId })`, `app.runAs(userId, fn)` and `{ user: null }`. Translating `id` to `userId` was not chosen, because it would bless a row as a session: it would carry a row's columns onto `ctx.auth.user` and guess `userType` and `authMethod`. The caller methods now hand `call()` an unbuilt context, so the refusal rejects the promise instead of throwing past a `.catch()`.
+
+`test/call-scope.test.ts` § *$.me — one spelling of the caller* was red before the fix. `test/adapter-cache-key.test.ts` now states `userId`. 2647 pass. The one failure is that file's timing floor, which fails the same way at HEAD in a full run (filed).
+
 ## 2026-10-07 — a move named for a CRUD verb refuses start() (`FJS-1909`)
 
 A `@@transitions` move whose name a service already answers (`restore`, `remove`, `create`, a service option) was dropped from the method table without a word. The screen still drew its button, and the call reached the verb: base44's `Project` declared `archive`/`restore`, and restore answered 400 *the model declares no @@softDelete*. `resolveTable` now reports each such move as an authoring finding, so `check-authoring` refuses start, naming the move.

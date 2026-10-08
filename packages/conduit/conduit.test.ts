@@ -5148,8 +5148,11 @@ describe('broker target', () => {
 // ─── A credential the target refuses: minted, shared, re-minted on 401 ───
 
 // A system of record with no API key: a login mints a cookie session, and a
-// session it no longer honors answers 401. Service Autopilot is the case.
-function sessionServer() {
+// session it no longer honors answers 401. `loginPage` is Service Autopilot's
+// own shape: the login answers 200 with a cookie whatever the password, and a
+// session it does not honor answers 200 with its HTML login page.
+function sessionServer({ loginPage = false } = {}) {
+  let password = 'hunter2'
   const valid = new Set<string>()
   let minted  = 0
   let logins  = 0
@@ -5164,9 +5167,10 @@ function sessionServer() {
         // Slow enough that a burst of sends arrives while it is in flight.
         await Bun.sleep(20)
         const body = await req.json() as { User?: string; Password?: string }
-        if (body.Password !== 'hunter2') return Response.json({ d: false })
+        const accepted = body.Password === password
+        if (!accepted && !loginPage) return Response.json({ d: false })
         const sid = `s${++minted}`
-        valid.add(sid)
+        if (accepted) valid.add(sid)
         const headers = new Headers({ 'content-type': 'application/json' })
         // Two cookies, the first with a comma in its Expires — what a
         // comma-joined header cannot carry.
@@ -5177,7 +5181,11 @@ function sessionServer() {
       const cookie = req.headers.get('cookie')
       hits.push({ path: url.pathname, method: req.method, cookie })
       const sid = /sid=(\w+)/.exec(cookie ?? '')?.[1]
-      if (!sid || !valid.has(sid) || !cookie!.includes('lang=en')) return new Response('', { status: 401 })
+      if (!sid || !valid.has(sid) || !cookie!.includes('lang=en')) {
+        return loginPage
+          ? new Response('<!doctype html><form action="/login">', { headers: { 'content-type': 'text/html; charset=utf-8' } })
+          : new Response('', { status: 401 })
+      }
       return Response.json({ ok: true, sid })
     },
   })
@@ -5185,8 +5193,9 @@ function sessionServer() {
   return {
     url:    `http://localhost:${server.port}`,
     hits,
-    logins: () => logins,
-    expire: () => valid.clear(),
+    logins:      () => logins,
+    expire:      () => valid.clear(),
+    setPassword: (next: string) => { password = next },
     stop:   () => server.stop(true),
   }
 }
@@ -5335,6 +5344,64 @@ describe('a minted credential', () => {
       expect(sa.hits.length).toBe(0)
       await c.destroy()
     } finally { sa.stop() }
+  })
+
+  it('a session answered by a 200 login page is re-minted and the POST replayed once', async () => {
+    const sa = sessionServer({ loginPage: true })
+    try {
+      const c = await sessionConduit(sa.url)
+      await c.send({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 0 } })
+
+      sa.expire()
+      const page2 = await c.send<{ sid: string }>({ target: 'sa', method: 'POST', path: '/query', body: { StartRow: 50 } })
+
+      expect(page2.error).toBeNull()
+      expect(page2.data?.sid).toBe('s2')
+      expect(sa.logins()).toBe(2)
+      expect(sa.hits.map(h => h.method)).toEqual(['POST', 'POST', 'POST'])
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a login that 200s on a wrong password is not cached past the send it failed', async () => {
+    const sa = sessionServer({ loginPage: true })
+    try {
+      const c = await sessionConduit(sa.url, 'rotated')
+      const before = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(before.error?.kind).toBe('invalid_response')
+
+      // The vault catches up; no restart.
+      sa.setPassword('rotated')
+      const after = await c.send({ target: 'sa', method: 'GET', path: '/query' })
+      expect(after.error).toBeNull()
+      await c.destroy()
+    } finally { sa.stop() }
+  })
+
+  it('a login page on a freshly minted credential is invalid_response, not a loop', async () => {
+    const s = recorder(() => new Response('<html>', { headers: { 'content-type': 'text/html' } }))
+    let mints = 0
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, withCache({ async get() { return `token-${++mints}` } }), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'POST', path: '/x', body: {} })
+
+      expect(res.error?.kind).toBe('invalid_response')
+      expect(s.seen.length).toBe(2)
+      expect(mints).toBe(2)
+    } finally { s.stop() }
+  })
+
+  it('markup to a resolver that cannot forget is sent once', async () => {
+    const s = recorder(() => new Response('<html>', { headers: { 'content-type': 'text/html' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+      const res = await t.send({ target: target.id, method: 'GET', path: '/x' })
+
+      expect(res.error?.kind).toBe('invalid_response')
+      expect(s.seen.length).toBe(1)
+    } finally { s.stop() }
   })
 
   it('withCache.invalidate forgets only the value it was handed', async () => {

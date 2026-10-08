@@ -152,7 +152,7 @@ const CLEAN = {
   // catch — and finds nothing, because a one-shot read is not the defect.
   // The style block reads a token the dependency above declares and one the file
   // declares itself, which is the shape `css-token-undefined` must stay quiet on.
-  'web/src/pages/lead.mesa':            "<script>\n  async function label(id) {\n" +
+  'web/src/components/lead.mesa':       "<script>\n  async function label(id) {\n" +
                                         "    const row = await leads.service.get(id)\n" +
                                         "    return row.name\n  }\n</script>\n" +
                                         "<style>\n  .card { --pad: 4px; gap: var(--gap); padding: var(--pad) }\n</style>\n",
@@ -2136,8 +2136,8 @@ describe('detail-read-dead', () => {
     // run, and reporting the two as one number is how coverage quietly stops.
     // CLEAN carries a legitimate `service.get()` so the rule runs there, so
     // this tree has to drop the whole surface and rebuild the part it needs.
-    const root = tree('drd-none', without('web/src/pages/',
-      { 'web/src/pages/x.mesa': "<script>\n  let x = 1\n</script>\n" }))
+    const root = tree('drd-none', without('web/src/components/',
+      { 'web/src/components/x.mesa':"<script>\n  let x = 1\n</script>\n" }))
     const res = only(root, 'detail-read-dead')
     expect(res.findings).toEqual([])
     expect(res.ran).not.toContain('detail-read-dead')
@@ -3954,5 +3954,79 @@ describe('a .mesa <style> holds no raw color, size or spacing value', () => {
     })
     const { findings } = only(root, 'css-raw-literal')
     expect(findings.map(f => [f.line, f.message.split(' ')[0]])).toEqual([[6, '16px']])
+  })
+})
+
+// FJS-1888: `src/` layout (FJS-D625, FJS-D626, FJS-D627). Each case is the
+// clean tree plus one file in the wrong place, graded as a warning by
+// `app-layout` — the same rule, so the allowance and the baseline are one.
+describe('app-layout grades the src/ layout (FJS-1888)', () => {
+  const layout = (name, files) => only(tree(name, { ...CLEAN, ...files }), 'app-layout').findings
+  const about  = (findings, re) => findings.filter(f => re.test(f.message))
+
+  test('a clean tree, with the scaffold files loose in web/src, finds nothing', () => {
+    expect(layout('lay-clean', {
+      'web/src/main.js': '\n', 'web/src/App.mesa': '<p>a</p>\n', 'web/src/datetime.js': '\n', 'web/src/db.d.ts': '\n',
+      'web/src/components/Card.mesa': '<p>c</p>\n', 'web/src/lib/money.js': '\n',
+      'api/src/routes/hook.ts': "app.post('/hook', () => {})\n",
+    })).toEqual([])
+  })
+
+  test('a module loose in web/src that the scaffold does not write', () => {
+    const f = layout('lay-loose', { 'web/src/money.js': 'export const m = 1\n' })
+    expect(f).toHaveLength(1)
+    expect(f[0].file).toMatch(/web\/src\/money\.js$/)
+    expect(f[0].message).toMatch(/lib\//)
+  })
+
+  test('a .mesa outside routes/, resources/ and components/', () => {
+    const f = layout('lay-mesa', {
+      'web/src/RelationCell.mesa': '<p>r</p>\n',
+      'web/src/lib/Chip.mesa':     '<p>c</p>\n',
+    })
+    expect(f.map(x => x.file.replace(/.*\/web\//, 'web/')).sort()).toEqual(['web/src/RelationCell.mesa', 'web/src/lib/Chip.mesa'])
+    expect(f[0].message).toMatch(/components\//)
+  })
+
+  test('app.get and app.post outside api/src/routes/', () => {
+    const f = layout('lay-route', {
+      'api/src/core/search.ts': "export const s = app => app.get('/search', () => {})\n",
+      'api/src/plugins/hook.ts': 'app.post(`/hook`, () => {})\n',
+      'api/src/core/note.ts':   "// app.get('/x') in a comment\nconst c = cache.get('k')\napp.get('db')\n",
+    })
+    expect(f.map(x => x.file.replace(/.*\/api\//, 'api/')).sort()).toEqual(['api/src/core/search.ts', 'api/src/plugins/hook.ts'])
+    expect(f[0].message).toMatch(/routes\//)
+  })
+
+  test('a loader-folder helper imported from another folder', () => {
+    const f = layout('lay-helper', {
+      'api/src/services/orders/fees.ts':            'export const fee = 1\n',
+      'api/src/services/orders/order.service.ts':   "import { fee } from './fees.js'\n",
+      'api/src/jobs/send.ts':                       'export const send = 1\n',
+      'api/src/domain/billing.ts':                  "import { send } from '../jobs/send.js'\n",
+      'api/src/services/private.ts':                'export const p = 1\n',
+    })
+    expect(f).toHaveLength(1)
+    expect(f[0].file).toMatch(/jobs\/send\.ts$/)
+    expect(f[0].message).toMatch(/domain\//)
+  })
+
+  test('a core/ file that exports a plugin', () => {
+    const f = layout('lay-plugin', {
+      'api/src/core/mine.ts': "import type { Plugin } from '@frontierjs/junction'\nexport const mine: Plugin = { name: 'mine', register() {} }\n",
+      'api/src/core/env.ts':  'export const env = process.env\n',
+    })
+    expect(f).toHaveLength(1)
+    expect(f[0].file).toMatch(/core\/mine\.ts$/)
+    expect(f[0].message).toMatch(/plugins\//)
+  })
+
+  test('a relative import from one surface into another', () => {
+    const f = layout('lay-cross', {
+      'api/src/domain/report.ts': "import { Q } from '../../../web/src/reports/Q.query.js'\n",
+      'web/src/lib/api-types.js': "import type { T } from '../../../api/src/types.ts'\nimport { x } from '../../../db/gen.js'\nimport { y } from './own.js'\n",
+    })
+    expect(f).toHaveLength(2)
+    expect(f.map(x => x.message).join('\n')).toMatch(/service/)
   })
 })
