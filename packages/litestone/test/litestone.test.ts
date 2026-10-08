@@ -152,13 +152,16 @@ describe('parser', () => {
     expect(r.valid).toBe(true)
   })
 
+  // With an argument the spelling is ambiguous between an attribute and a
+  // function, so the message names both; '@pii(contact)' once sent a reader
+  // looking for a function that was never the problem (FJS-2060).
   test('validates @funcCall unknown function', () => {
     const r = parse(`
       model T { id Int @id
         val Int
         r Int @missingFn(val) }
     `)
-    expect(r.errors.some((e: string) => e.includes('unknown function'))).toBe(true)
+    expect(r.errors.some((e: string) => e.includes("'@missingFn' is neither a field attribute nor a function"))).toBe(true)
   })
 
   test('validates @funcCall arg count', () => {
@@ -7083,6 +7086,8 @@ describe('audit log redaction', () => {
       secretF  String? @secret
       encF     String? @encrypted
       guardedF String? @guarded
+      hashedF  String? @hashed
+      emailF   String? @personal(contact)
       plain    String?
 
       @@db(main)
@@ -7115,7 +7120,7 @@ describe('audit log redaction', () => {
 
   function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
 
-  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED']
+  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED', 'PLAINTEXT-HASHED', 'person@example.com']
 
   async function captureCreate() {
     const calls: any[] = []
@@ -7123,7 +7128,7 @@ describe('audit log redaction', () => {
     const row = await db.asSystem().vault.create({
       data: {
         name: 'k', secretF: SECRETS[0], encF: SECRETS[1],
-        guardedF: SECRETS[2], plain: 'not-a-secret',
+        guardedF: SECRETS[2], hashedF: SECRETS[3], emailF: SECRETS[4], plain: 'not-a-secret',
       },
     })
     await flush()
@@ -7144,6 +7149,27 @@ describe('audit log redaction', () => {
     expect(after.secretF).toBe('[redacted]')
     expect(after.encF).toBe('[redacted]')
     expect(after.guardedF).toBe('[redacted]')
+    db.$close()
+  })
+
+  // The digest is a stable keyed identifier, so it must not reach the trail
+  // any more than the plaintext (FJS-1250). A read strips it even under
+  // asSystem(), so the snapshot never names it; the stored bytes are the check.
+  test('no @hashed digest appears in any log entry', async () => {
+    const { calls, db } = await captureCreate()
+    const [{ hashedF: digest }] = await db.asSystem().sql`SELECT hashedF FROM vault`
+    expect(digest).toBeTruthy()
+    expect(JSON.stringify(calls)).not.toContain(digest)
+    db.$close()
+  })
+
+  // A reader may see a @personal column; the trail, which outlives the row,
+  // may not keep it (FJS-D657). The mark says which kind was dropped.
+  test('model-level snapshot writes [personal] for a @personal field', async () => {
+    const { calls, row, db } = await captureCreate()
+    const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
+    expect(JSON.parse(modelLog.after).emailF).toBe('[personal]')
+    expect(row.emailF).toBe(SECRETS[4])
     db.$close()
   })
 

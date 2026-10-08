@@ -61,7 +61,7 @@ import { dueAt, offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/d
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildLiteralDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
-  buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
+  buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, shapesRead, isProtected, buildSecretMap,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildExclusionMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
@@ -453,7 +453,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   })()
   const { computedFns, tx, emitter, globalFilters } = ctx
   const plugins = ctx.plugins   // PluginRunner
-  const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
+  const hasFieldPolicy = shapesRead(fieldPolicy)
   const _hasEnumFields = Object.keys(enumFields).length > 0
 
   // A @derived field is an EXPRESSION, not a column, so anywhere a bare
@@ -2013,17 +2013,24 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // A @hashed digest is redacted too: it is the value every read path refuses
   // to hand back, and a stable keyed identifier, so a digest in a 409 lets a
   // caller ask whose value matches whose (FJS-1250).
-  const REDACTED = '[redacted]'
-  const protectedLogFields = new Set(
-    Object.keys(fieldPolicy).filter(f => fieldPolicy[f].encrypted || fieldPolicy[f].guarded || fieldPolicy[f].hashed)
-  )
-  const hasProtectedLogFields = protectedLogFields.size > 0
+  //
+  // A @personal value is not a secret, and a reader of the row may see it, but
+  // the trail outlives the row: an erased person's email would otherwise stay
+  // in every snapshot for the trail's whole retention (FJS-D657). It logs as
+  // `[personal]` so the entry still says which kind of value was dropped. A
+  // column that is both protected and personal logs as `[redacted]`.
+  const logMarks = new Map()
+  for (const [f, p] of Object.entries(fieldPolicy)) {
+    if (isProtected(p))   logMarks.set(f, '[redacted]')
+    else if (p.personal)  logMarks.set(f, '[personal]')
+  }
+  const hasProtectedLogFields = logMarks.size > 0
 
   // Field-level entries: the entry IS about this field, so it stays — only the
   // value is replaced.
   function redactValue(field, value) {
     if (value == null) return null
-    return protectedLogFields.has(field) ? REDACTED : value
+    return logMarks.get(field) ?? value
   }
 
   // Model-level entries: before/after are whole rows. Copy on write — these
@@ -2031,10 +2038,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function redactSnapshot(row) {
     if (!row || !hasProtectedLogFields || typeof row !== 'object') return row
     let out = null
-    for (const f of protectedLogFields) {
+    for (const [f, mark] of logMarks) {
       if (row[f] == null) continue
       if (!out) out = { ...row }
-      out[f] = REDACTED
+      out[f] = mark
     }
     return out ?? row
   }
@@ -2446,6 +2453,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   const _fieldsByName = new Map(shape.model.fields.map(f => [f.name, f]))
+  const _authDefaultOf = new Map(shape.authDefaults.map(d => [d.field, d.authField]))
   const NUMERIC_TYPES = new Set(['Int', 'Float', 'BigInt', 'Decimal'])
 
   function refuseOp(key, msg) { throw new ValidationError([{ path: [key], message: msg }]) }
@@ -2926,6 +2934,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     for (const f of model.fields) {
       if (f.type.optional || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
       const attrs = f.attributes ?? []
+      // `@default(auth().x)` is server-filled only when there is a principal
+      // carrying x: the stamp ran before this, so a gap here is a create no
+      // principal could fill, and it reached the INSERT as SQLite's raw
+      // NOT NULL — a 500 for what an anonymous caller asked (FJS-1793).
+      const authField = _authDefaultOf.get(f.name)
+      if (authField && data?.[f.name] == null) {
+        if (!ctx.auth && !ctx.isSystem) refuseAnonymousAuthDefault(f.name, authField)
+        missing.push({
+          path: [f.name],
+          message: `${f.name} defaults to auth().${authField} and ` +
+            `${ctx.auth ? `the principal carries no ${authField}` : 'this create has no principal'} — name ${f.name} on the call`,
+        })
+        continue
+      }
       if (isServerFilled(f)) continue
       // A required @transient field is required OF THE CALLER, on the wire,
       // where the API validates it. It is lifted off the payload before the
@@ -2942,6 +2964,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (data?.[f.name] == null) missing.push(requiredFailure(f))
     }
     if (missing.length) throw new ValidationError(missing)
+  }
+
+  // A 401 and not the gate's 403: the create is open to this caller, and a
+  // signed-in one would succeed. Junction reads `status` before the class name.
+  function refuseAnonymousAuthDefault(field, authField) {
+    const err = new AccessDeniedError(
+      `${modelName}.create needs a principal: ${field} defaults to auth().${authField}, and the caller is not signed in. ` +
+      `Sign in, or name ${field} on the call.`,
+      { model: modelName, operation: 'create' })
+    err.status = 401
+    throw err
   }
 
   function refuseClearingRequired(data) {
@@ -4111,7 +4144,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     !ctx.hasPolicies &&
     !_staticGlobalFilter && !_dynamicGlobalFilter &&
     !plugins?.hasPlugins &&
-    Object.keys(fieldPolicy).length === 0 &&
+    !hasFieldPolicy &&
     !_hasFrom &&
     !hasTemplates &&
     !effective
@@ -10594,7 +10627,7 @@ function makeLockPrimitive(rawWriteDb) {
 
     // 3. The shape.
     const fp = shapes[modelName].fieldPolicy
-    return fp && Object.keys(fp).length
+    return fp && shapesRead(fp)
       ? applyFieldPolicyTo(row, modelName, fp, readCtx, { mode: 'single' })
       : row
   }

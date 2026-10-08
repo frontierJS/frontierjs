@@ -1660,7 +1660,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
               <option value="mask">mask a column</option>
               <option value="set">set/add a column</option>
               <option value="rename">rename a column</option>
-              <option value="redact">redact SECRETS/PII</option>
+              <option value="redact">redact SECRETS/PERSONAL</option>
             </optgroup>
             <optgroup label="Table ops">
               <option value="drop-table">drop a table</option>
@@ -6828,10 +6828,10 @@ function txRenderEditor() {
       html = `<div class="field-group">
         <label for="${fieldId('mode')}">Mode</label>
         <select class="field" id="${fieldId('mode')}" onchange="txUpdateField(${txSelected},'mode',this.value)">
-          ${[['both','SECRETS + PII'],['SECRETS','SECRETS only'],['PII','PII only']].map(([v,l])=>`<option value="${v}"${s.mode===v?' selected':''}>${l}</option>`).join('')}
+          ${[['both','SECRETS + PERSONAL'],['SECRETS','SECRETS only'],['PERSONAL','PERSONAL only']].map(([v,l])=>`<option value="${v}"${s.mode===v?' selected':''}>${l}</option>`).join('')}
         </select>
       </div>`
-      hint = 'SECRETS: password, token, apiKey… · PII: email, phone, firstName…'
+      hint = 'SECRETS: @secret, @hashed, @guarded, @encrypted · PERSONAL: @personal'
       break
     case 'drop-table':
       html = tableField('Table', 'target')

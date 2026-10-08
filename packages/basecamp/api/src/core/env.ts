@@ -148,10 +148,18 @@ export const env = defineEnv({
   // spending call including ones nobody has written yet.
   ALLOW_CLOUD_SPEND: {},
 
-  // `1` lets a Basecamp running on an operator's own machine list the Host
-  // aliases in their ~/.ssh/config (`core/local-ssh.ts`). Refused under
+  // `1` says this Basecamp runs on its operator's own machine, so it may read
+  // that machine: the Host aliases in ~/.ssh/config (`core/local-ssh.ts`) and
+  // the git repositories under a folder (`core/local-git.ts`). Refused under
   // `NODE_ENV=production` whatever it says: a deployed control plane would be
-  // listing its server's ssh config, and dialing with its agent. `bun run dev`
+  // reading ITS server's files, and dialing with its agent. `bun run api`
   // sets it.
-  LOCAL_SSH: {},
+  LOCAL_MACHINE: {},
 })
+
+/** Why reading the operator's own machine is not offered, or null when it is. */
+export function localMachineRefusal(e: { NODE_ENV?: string, LOCAL_MACHINE?: string } = env): string | null {
+  if (e.NODE_ENV === 'production')  return 'not offered under NODE_ENV=production'
+  if (e.LOCAL_MACHINE !== '1')      return 'not offered — set LOCAL_MACHINE=1 on a Basecamp running on your own machine'
+  return null
+}

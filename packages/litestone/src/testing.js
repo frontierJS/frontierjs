@@ -25,6 +25,7 @@ import { isServerAssignedId }       from './core/ids.js'
 import { Factory }                  from './seeder.js'
 import { tempDir }                  from './tmp-dirs.js'
 import { parseDuration }            from './core/retention.js'
+import { fieldPolicyOf, isProtected } from './core/schema-maps.js'
 import { existsSync, readFileSync } from 'fs'
 import { join }                     from 'path'
 
@@ -1253,8 +1254,8 @@ export async function createTestEnv(opts = {}) {
       try {
         for (const model of schema.models) {
           if (!_isValidatable(model, schema)) continue
-          const protectedFields = model.fields.filter(f =>
-            f.attributes.some(a => a.kind === 'guarded' || a.kind === 'encrypted' || a.kind === 'secret' || a.kind === 'hashed'))
+          const policy          = fieldPolicyOf(model)
+          const protectedFields = model.fields.filter(f => isProtected(policy[f.name]))
           if (!protectedFields.length) continue
 
           const acc = modelToAccessor(model.name)

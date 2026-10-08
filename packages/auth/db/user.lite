@@ -19,8 +19,8 @@ model User {
   // account taken over by whoever holds a session, with `emailVerified` still
   // true for an address nobody proved; a new one has to be verified before it
   // is kept, and a flow that does that writes through asSystem().
-  email          String    @email @unique @lower @allow('write', auth().isAdmin)
-  name           String?   @trim
+  email          String    @email @unique @lower @allow('write', auth().isAdmin) @personal(contact)
+  name           String?   @trim @personal(contact)
   // The columns a caller must not write about themselves. role is what an
   // app's own resolver grades on, and marking your own address verified is
   // skipping the verification. auth().isAdmin is the standing

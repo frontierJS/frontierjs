@@ -20,7 +20,10 @@ const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 export default {
   // ── Middleware ────────────────────────────────────────────────────────
-  // The SPA's dev origin (project 2, frontend — packages/cli/core/ports.js).
+  // The SPA's dev origin (project 2, frontend — packages/cli/core/ports.js),
+  // and the desktop shell's: its page is served from tauri://localhost
+  // (http://tauri.localhost on Windows), so without these every call from
+  // desktop/ is refused before it reaches a service (FJS-1090).
   // A deployment names its own through CORS_ORIGINS, which wins over this:
   // the origin an app is served from is not a fact about the app.
   //
@@ -28,7 +31,7 @@ export default {
   // in app.ts pointed at a key nothing writes.
   middleware: {
     cors: {
-      origins:     ['http://localhost:8020'],
+      origins:     ['http://localhost:8020', 'tauri://localhost', 'http://tauri.localhost'],
       // The SPA sends its session cookie, so the browser needs this to accept
       // the response at all.
       credentials: true,

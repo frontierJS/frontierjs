@@ -24,6 +24,9 @@ bun run verify:mcp     # /mcp at four roles over a real MCP client, no browser
 bun run cli servers status   # the app on a command line — login --api-key - first
 bun run verify:cli     # that program as a process against a real /mcp, no browser
 bun run build:cli      # …compiled: cli/dist/bcamp (fli cli:build; --target for others)
+bun run build:desktop  # desktop/: web/ bundled into a Tauri shell, at
+                       # desktop/shell/target/debug/basecamp-desktop; needs `bun run api`
+bun run verify:desktop # that shell, signed in and scanning, on 7120 — rebuild after
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
@@ -110,11 +113,14 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
           core/local-ssh.ts is the operator's own ~/.ssh/config, read on THEIR
-          laptop for the import form (`servers.localSshHosts`/`localSshProbe`).
-          Off unless LOCAL_SSH=1 (`bun run api` sets it) and refused under
-          NODE_ENV=production whatever it says; ssh is always handed `-F` with
-          the file that was listed, because ssh finds ~ through passwd and Bun
-          through $HOME
+          laptop for the import form (`servers.localSshHosts`/`localSshProbe`),
+          and core/local-git.ts the git checkouts under a folder there
+          (`git.localRepos`, /git-activity/local/). Both are off unless
+          LOCAL_MACHINE=1 (`bun run api` sets it) and refused under
+          NODE_ENV=production whatever it says (`localMachineRefusal`). ssh is
+          always handed `-F` with the file that was listed, because ssh finds ~
+          through passwd and Bun through $HOME; git is always handed
+          `core.fsmonitor=false`, because a status runs that command
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan (`jobsDir`), and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —

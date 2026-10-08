@@ -849,7 +849,7 @@ hostname String @capability
 
 #### `@encrypted`
 
-tier: **common** · legal in: on a model's field, on a trait's field · also called: pii, at-rest · see also: `secret`, `hashed`, `guarded`
+tier: **common** · legal in: on a model's field, on a trait's field · also called: at-rest · see also: `secret`, `hashed`, `guarded`
 
 Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow('write', …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
 
@@ -865,6 +865,16 @@ One-way hashed on write. There is no read back — the comparison happens at the
 
 ```lite
 passwordHash String @hashed
+```
+
+#### `@personal` [(<category>)]
+
+tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: pii, gdpr, personal data · see also: `person`, `log`, `omit`
+
+A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.
+
+```lite
+email String @personal(contact)
 ```
 
 #### `@secret` [(rotate: …)]
@@ -1592,7 +1602,7 @@ This model's rows may be written with no server reachable: the client holds the 
 
 #### `@@auth`
 
-tier: **essential** · legal in: in a model, in a trait · see also: `scoped`
+tier: **essential** · legal in: in a model, in a trait · see also: `scoped`, `person`
 
 This model is the principal auth() reads. One per schema; @scoped resolves against it.
 
@@ -1600,11 +1610,21 @@ This model is the principal auth() reads. One per schema; @scoped resolves again
 @@auth
 ```
 
+#### `@@person` [(child)]
+
+tier: **common** · legal in: in a model, in a trait · also called: data subject · see also: `personal`, `auth`
+
+Every row is a person — where forgetting and export start. An @@auth model is one without saying so. On a person model a column named like personal data (email, phone, dob) with no @personal is a warning. `(child)` says every row is a child in the legal sense; it states a status, never an age.
+
+```lite
+@@person
+```
+
 #### `@@log` (<database>[, reads: false][, writes: false])
 
 tier: **common** · legal in: in a model, in a trait · see also: `log`, `database`, `anonymous`
 
-Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret) log as [redacted], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 @@log(audit)

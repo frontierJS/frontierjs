@@ -17,6 +17,7 @@ import { pointColumns } from './parser.js'
 // this function and the server compiles the extension's, so the two have to
 // agree about the layout and about which vectors are unusable.
 import { toVectorBytes } from './vector.js'
+import { fieldPolicyOf } from './schema-maps.js'
 
 // ─── identifier quoting ───────────────────────────────────────────────────────
 //
@@ -2511,8 +2512,9 @@ export function filterableKeysFor(model) {
   // inside a policy predicate EVERY kind compares plaintext against stored bytes.
   const encryptedAny = new Set()
   const transient    = new Set()
+  const policy       = fieldPolicyOf(model)
   for (const f of model.fields) {
-    if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret' || a.kind === 'hashed')) encryptedAny.add(f.name)
+    if (policy[f.name]?.encrypted || policy[f.name]?.hashed) encryptedAny.add(f.name)
     if (f.attributes?.some(a => a.kind === 'computed')) { computed.add(f.name); continue }
     // @transient has no column at all, so this is the same hazard as @computed
     // — an identifier SQLite cannot bind is read as a string literal.

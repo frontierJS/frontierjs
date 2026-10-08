@@ -70,7 +70,7 @@ An unlogged model pays none of this — the `RETURNING` path is taken only when 
 
 ## Protected fields are redacted
 
-The audit trail records **that** a protected field was written — by whom, to which rows, when — never what it holds. Any field carrying `@encrypted`, `@guarded`, or `@secret` (which implies both) has its value replaced with `'[redacted]'` in every log entry, in both the field-level entry and the model-level `before`/`after` snapshot:
+The audit trail records **that** a protected field was written — by whom, to which rows, when — never what it holds. Any field carrying `@encrypted`, `@guarded`, `@hashed`, or `@secret` (which implies the first two) has its value replaced with `'[redacted]'` in every log entry, in both the field-level entry and the model-level `before`/`after` snapshot:
 
 ```prisma
 model Vault {
@@ -99,6 +99,32 @@ Two details worth knowing:
 - **Unprotected fields on the same model are logged in full.** Redaction is per-field, not per-model, so the trail stays useful.
 
 The value returned to the caller is never affected — redaction happens on the way to the log, on a copy.
+
+## Personal data — @personal and @@person
+
+A column about a person is `@personal`, optionally with a category. A reader the gate admits still sees it; the trail does not keep it, because the trail outlives the row and an erased person's email would otherwise stay in every snapshot. It logs as `'[personal]'`, so an entry still says which kind of value was dropped:
+
+```prisma
+model Candidate {
+  id          Int     @id
+  email       String  @personal(contact)
+  coverLetter String? @personal
+  stage       String
+  @@person
+  @@log(audit)
+}
+```
+
+```js
+{ operation: 'update', model: 'candidate', field: null, records: [3],
+  after: { id: 3, email: '[personal]', coverLetter: '[personal]', stage: 'interview' }, ... }
+```
+
+- **The category is a closed list**, refused by name: `contact`, `device`, `location`, `government`, `financial`, `employment`, `communication`, `demographic`, `health`, `genetic`, `biometric`, `characteristic`, `criminal`. It changes no enforcement; it is what a data map groups by, and which categories GDPR Art. 9/10 or the CPRA treat as special is one framework table (`PERSONAL_CATEGORIES`), not something an app restates.
+- **`@@person` says every row is a person.** An `@@auth` model is one without saying so. `@@person(child)` says every row is a child in the legal sense — a status, never an age.
+- **On a person model, a column named like personal data** (`email`, `phone`, `firstName`, `dob`, …) with no `@personal` is a parse warning naming the category to add. Nothing warns on another model, so `Company.email` stays quiet.
+- **A column that is both protected and personal logs as `'[redacted]'`.**
+- **`@personal` does not imply `@omit`.** Who may read the column is the gate's question (`FJS-D205`); a recruiter has to see a candidate's email.
 
 ## onLog — enrich log entries
 

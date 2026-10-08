@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { parse } from '@frontierjs/litestone'
+import { create, apply } from '@frontierjs/litestone/migrations'
 import { createTestEnv } from '@frontierjs/litestone/testing'
 import { ACTORS, ENTITIES, ENTITY, TYPES, RULES, brief, checkAnswer, emit } from '../src/index.js'
 import hiring from './fixtures/hiring.json'
@@ -64,6 +69,14 @@ describe('the catalog', () => {
     }
   })
 })
+
+// An owned row anybody may file: the shape behind calendly's Invitee.
+const PUBLIC_OWNED = { entities: [{
+  name: 'Invitee', rung: 'novel', why: 'probe',
+  fields: [{ name: 'email', type: 'email', required: true }],
+  links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
+  access: { public: ['create'], why: 'the booking page' },
+}] }
 
 describe('emit', () => {
   test('the hiring answer emits a schema that parses', () => {
@@ -138,6 +151,13 @@ describe('emit', () => {
     expect(text).toContain('interviewerId  String       @default(auth().id)')
   })
 
+  test('a public create stamps no owner, since a visitor has no id to stamp (FJS-1793)', () => {
+    const text = emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text
+    expect(text).toContain('@@gate("4.0.4.4")')
+    expect(text).toMatch(/ownerId +String\n/)
+    expect(text).not.toContain('@default(auth().id)')
+  })
+
   test('an op nobody holds is raised to 8, not left signed-in', () => {
     const a = { entities: [{ name: 'Receipt', rung: 'novel', why: 'probe', fields: [{ name: 'total', type: 'money', required: true }], links: [{ name: 'customer', to: 'User', actor: 'subject', required: true }], access: { system: true } }] }
     const text = emit(a, { scaffold: SCAFFOLD }).text
@@ -180,6 +200,21 @@ describe('emitted access, on a real client', () => {
       }
       // A draft job is nobody's but the company's; an open one is the careers page.
       expect(await env.actingAs(null).job.findMany({})).toEqual([])
+    } finally {
+      env.close()
+    }
+  })
+
+  // A visitor's create reached the INSERT with ownerId NULL and answered 500.
+  test('a visitor\'s create of an owned row is refused by name, never by SQLite (FJS-1793)', async () => {
+    const env = await createTestEnv({ schema: emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text })
+    try {
+      const err = await env.actingAs(null).invitee.create({ data: { email: 'v@example.com' } }).then(() => null, e => e)
+      expect(err?.message).toMatch(/ownerId/)
+      expect(err?.message).not.toMatch(/NOT NULL/)
+      const host = await env.system.user.create({ data: { email: 'h@example.com' } })
+      const row = await env.actingAs(host).invitee.create({ data: { email: 'v@example.com', ownerId: host.id } })
+      expect(row.ownerId).toBe(host.id)
     } finally {
       env.close()
     }
@@ -228,6 +263,7 @@ describe('checkAnswer refuses', () => {
     access:    a => { a.entities[5].links.pop(); a.entities[5].access = {} },
     members:   a => { a.entities[1].links.shift() },
     pattern:   a => { a.entities[4].patterns = ['approvals'] },
+    rename:    a => { a.entities[2].fields[1].was = 'title' },
   }
 
   test('every rule has a case here', () => {
@@ -309,6 +345,79 @@ describe('checkAnswer refuses', () => {
       'Job: Anyone, signed in or not, reads a Job where status is open — the careers page lists open jobs.',
       'Candidate: Anyone, signed in or not, creates a Candidate: an unauthenticated write — the careers form.',
     ])
+  })
+})
+
+// A rename reaches the database as a RENAME only if something says it was one,
+// and the schema cannot (`FJS-D603`). The answer's word is `was`; the emitter
+// hands back the document `litestone migrate create --operations` reads.
+describe('a renamed field', () => {
+  const project = (field) => ({
+    summary: 'projects',
+    entities: [{
+      name: 'Project', rung: 'novel', why: 'the thing worked on',
+      fields: [field, { name: 'name', type: 'text', required: true }],
+      links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }],
+    }],
+  })
+  const v1 = () => project({ name: 'description', type: 'text' })
+  const v2 = () => project({ name: 'brief', type: 'text', was: 'description' })
+
+  test('emits the document and writes no trace of the old name into the schema', () => {
+    const out = emit(v2(), { scaffold: SCAFFOLD })
+    expect(out.ok).toBe(true)
+    expect(out.document).toEqual({ operations: [{ op: 'rename', model: 'Project', from: 'description', to: 'brief' }] })
+    expect(parses(out.text)).toBe(true)
+    expect(out.text).not.toContain('description')
+    expect(out.text).not.toContain('was')
+  })
+
+  test('an answer that renames nothing hands back no document', () => {
+    expect(emit(v1(), { scaffold: SCAFFOLD }).document).toBe(null)
+    expect(emit(hiring, { scaffold: SCAFFOLD }).document).toBe(null)
+  })
+
+  test('is refused where it is not a rename', () => {
+    const refuse = (mutate) => {
+      const a = v2()
+      mutate(a)
+      return checkAnswer(a).refusals.filter(r => r.rule === 'rename').map(r => r.message)
+    }
+    expect(refuse(a => { a.entities[0].fields[0].was = 'brief' })[0]).toContain('not a rename')
+    expect(refuse(a => { a.entities[0].fields[0].was = 'Not Camel' })[0]).toContain('camelCase')
+    expect(refuse(a => { a.entities[0].fields[0].was = 'name' })[0]).toContain('still')
+    expect(refuse(a => { a.entities[0].fields[1].was = 'description' })[0]).toContain('two fields')
+    expect(refuse(a => { a.entities[0].fields[0].was = 'owner' })[0]).toContain('still')
+  })
+
+  // The whole path: the answer, the document, `migrate create`, `apply`, and the
+  // values read back from the table that has them.
+  test('reaches a populated database as RENAME COLUMN, and the values stay', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oracle-rename-'))
+    try {
+      const db = new Database(':memory:')
+      create(db, parse(emit(v1(), { scaffold: SCAFFOLD }).text), 'init', dir)
+      await apply(db, dir)
+      db.run(`INSERT INTO user (id, email) VALUES ('u1', 'a@example.com')`)
+      for (const [i, d] of ['first', 'second', 'third'].entries())
+        db.run(`INSERT INTO project (name, description, ownerId) VALUES ('p${i}', '${d}', 'u1')`)
+
+      const out = emit(v2(), { scaffold: SCAFFOLD })
+      const made = create(db, parse(out.text), 'rename', dir, { operations: out.document.operations })
+      expect(made.created).toBe(true)
+      expect(made.loss).toEqual([])
+
+      const file = readFileSync(join(dir, readdirSync(dir).sort().at(-1)), 'utf8')
+      expect(file).toContain('RENAME COLUMN "description" TO "brief"')
+      expect(file).not.toContain('DESTRUCTIVE')
+
+      await apply(db, dir)
+      expect(db.query('SELECT name, brief FROM project ORDER BY id').all()).toEqual([
+        { name: 'p0', brief: 'first' }, { name: 'p1', brief: 'second' }, { name: 'p2', brief: 'third' },
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

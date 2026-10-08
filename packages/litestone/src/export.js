@@ -35,9 +35,11 @@
 import { isStoredField, modelToAccessor } from './core/ddl.js'
 import { policyExprToString }  from './core/policy.js'
 import { parseGateString }     from './plugins/gate.js'
+import { fieldPolicyOf, isProtected } from './core/schema-maps.js'
 
-/** Attributes that make a column protected — omitted from an extract by default. */
-const PROTECTED_ATTRS = new Set(['encrypted', 'secret', 'guarded', 'hashed'])
+// The manifest names the word the schema wrote, so a @secret column says
+// @secret rather than one of the two attributes it expands to.
+const PROTECTION_WORDS = ['secret', 'hashed', 'guarded', 'encrypted']
 
 const FORMATS = new Set(['ndjson', 'csv'])
 
@@ -79,6 +81,7 @@ function notStoredReason(f) {
 export function columnPlan(decl, { includeProtected = false } = {}) {
   const columns = []
   const omitted = []
+  const policy  = fieldPolicyOf(decl)
   for (const f of decl.fields ?? []) {
     // `isStoredField` ([ddl.js]) is the one owner of *is this a column*: a
     // relation's key is on the other side, an implicit m2m is a join table,
@@ -91,7 +94,9 @@ export function columnPlan(decl, { includeProtected = false } = {}) {
       continue
     }
 
-    const protectedBy = (f.attributes ?? []).map(a => a.kind).find(a => PROTECTED_ATTRS.has(a))
+    const protectedBy = isProtected(policy[f.name])
+      ? PROTECTION_WORDS.find(w => f.attributes.some(a => a.kind === w))
+      : null
     if (protectedBy && !includeProtected) { omitted.push({ name: f.name, reason: 'protected', by: `@${protectedBy}` }); continue }
 
     columns.push({ name: f.name, type: f.type?.name ?? 'String', protected: Boolean(protectedBy) })

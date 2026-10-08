@@ -5,11 +5,10 @@
 // rather than retyping an address, and installing Basecamp on one is a command
 // with the alias already in it (`fli deploy:setup --server <alias>`).
 //
-// **Off unless `LOCAL_SSH=1`, and refused under `NODE_ENV=production` even
-// then.** `NODE_ENV` defaults to development, so a control plane deployed
-// without setting it would otherwise list ITS server's ssh config — and run
-// ssh with its agent — to any admin. The flag is opt-in for the same reason
-// `ALLOW_CLOUD_SPEND` is (`core/env.ts`).
+// **Off unless `LOCAL_MACHINE=1`, and refused under `NODE_ENV=production`
+// even then** (`localMachineRefusal`, `core/env.ts`). `NODE_ENV` defaults to
+// development, so a control plane deployed without setting it would otherwise
+// list ITS server's ssh config — and run ssh with its agent — to any admin.
 //
 // Nothing here holds a key or opens a session Basecamp keeps (`FJS-D241`): the
 // aliases are read, `ssh -G` resolves each one without connecting, and the
@@ -22,20 +21,12 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, isAbsolute, dirname } from 'node:path'
-import { env } from './env.ts'
 
 export type SshHost = {
   alias:    string
   hostname: string
   user:     string | null
   port:     number
-}
-
-/** Why the listing is not offered, or null when it is. */
-export function localSshRefusal(e: { NODE_ENV?: string, LOCAL_SSH?: string } = env): string | null {
-  if (e.NODE_ENV === 'production') return 'not offered under NODE_ENV=production'
-  if (e.LOCAL_SSH !== '1')        return 'not offered — set LOCAL_SSH=1 on a Basecamp running on your own machine'
-  return null
 }
 
 /** A name ssh could take as an option rather than a host. */

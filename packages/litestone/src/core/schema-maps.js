@@ -325,6 +325,11 @@ export function schemaDeclaresAccessRules(schema) {
 //   guarded:   true | false             — DECLARED @guarded/@secret only
 //   encrypted: { deterministic: bool } | null
 //   hashed:    bool
+//   personal:  { category: string | null } | null   — @personal (FJS-D657)
+//
+// An entry that carries only `personal` shapes no read: @personal decides what
+// the audit trail and a redacted copy keep, never who sees the column.
+// `shapesRead` is the question a read path asks before taking the slow path.
 //
 // `guarded` is a system-context lock in BOTH directions: the read strips it and
 // writeData refuses it. That is why @encrypted no longer sets it. @encrypted
@@ -344,9 +349,10 @@ export function buildFieldPolicyMap(schema) {
       const systemAttr    = field.attributes.find(a => a.kind === 'system')
       const immutableAttr = field.attributes.find(a => a.kind === 'immutable')
       const vectorAttr    = field.attributes.find(a => a.kind === 'vector')
+      const personalAttr  = field.attributes.find(a => a.kind === 'personal')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !personalAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -373,6 +379,7 @@ export function buildFieldPolicyMap(schema) {
         // @hashed is not a flavor of encrypted — no ciphertext, no decrypt, and it
         // strips from asSystem() too, which no other protection does.
         hashed:    !!hashedAttr,
+        personal:  personalAttr ? { category: personalAttr.category ?? null } : null,
         // @system — readable by anyone, writable only by the system. The
         // orthogonal sibling of @guarded, which locks both directions.
         system:    !!systemAttr,
@@ -393,6 +400,40 @@ export function buildFieldPolicyMap(schema) {
     }
   }
   return map
+}
+
+/**
+ * One model's field policy, for a caller holding the model and not the client.
+ * The AST tools ask this rather than listing protection attributes themselves,
+ * so a new protection lands in one place.
+ */
+const _policyOf = new WeakMap()
+export function fieldPolicyOf(model) {
+  let p = _policyOf.get(model)
+  if (!p) {
+    const fields = (model.fields ?? []).map(f => f.attributes ? f : { ...f, attributes: [] })
+    p = buildFieldPolicyMap({ models: [{ ...model, fields }] })[model.name] ?? {}
+    _policyOf.set(model, p)
+  }
+  return p
+}
+
+/**
+ * Whether a column's value is protected: hidden from a non-system reader and
+ * kept out of the audit trail, a default extract and a redacted copy. @personal
+ * is not — a reader the gate admits sees it.
+ */
+export function isProtected(p) {
+  return !!(p && (p.encrypted || p.guarded || p.hashed))
+}
+
+/** Whether one model's field policy holds an entry that is more than @personal. */
+export function shapesRead(fieldPolicy) {
+  for (const name in fieldPolicy) {
+    const { personal, json, ...rest } = fieldPolicy[name]
+    if (Object.values(rest).some(v => v)) return true
+  }
+  return false
 }
 
 // ─── Secret map ───────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ const only         = onlyArg ? onlyArg.split(',').map(v => v.trim()) : null
 const concurrency  = parseInt(args.find(a => a.startsWith('--concurrency='))?.split('=')[1] ?? '8')
 const paramsArg    = args.find(a => a.startsWith('--params='))?.split('=').slice(1).join('=')
 const configPath   = args.find(a => !a.startsWith('--')) ?? './index.js'
+const schemaPath   = args.find(a => a.startsWith('--schema='))?.split('=').slice(1).join('=') ?? null
 
 if (paramsArg) {
   try {
@@ -30,7 +31,7 @@ if (previewMode) {
     process.exit(1)
   })
 } else {
-  main(configPath, { dryRun, verbose: true, outputPath, only, concurrency, skipExisting, force }).catch(err => {
+  main(configPath, { dryRun, verbose: true, outputPath, only, concurrency, skipExisting, force, schemaPath }).catch(err => {
     console.error('Fatal:', err.message)
     process.exit(1)
   })

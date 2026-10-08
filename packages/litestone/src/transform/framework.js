@@ -1,5 +1,8 @@
 import { openDatabase } from '../core/engine.js'
 import { parseIndexColumns, indexPredicate } from '../core/migrate.js'
+import { parseFile } from '../core/parser.js'
+import { fieldPolicyOf, isProtected } from '../core/schema-maps.js'
+import { columnMapFor, modelToTableName } from '../core/ddl.js'
 import workerBundleSource from './split-worker.source.js'
 import { existsSync, copyFileSync, writeFileSync, statSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
@@ -551,7 +554,7 @@ function runOne(srcPath, outPath, pipeline, { verbose, suppressWarnings = false 
   return { outPath, elapsed, sizeBytes }
 }
 
-export async function execute(configPath, { dryRun = false, verbose = true, outputPath, only = null, concurrency = 8, skipExisting = false, force = false } = {}, run) {
+export async function execute(configPath, { dryRun = false, verbose = true, outputPath, only = null, concurrency = 8, skipExisting = false, force = false, schemaPath = null } = {}, run) {
   const totalT0 = performance.now()
   const abs = resolve(configPath)
   const mod = await import(`file://${abs}`)
@@ -576,11 +579,12 @@ export async function execute(configPath, { dryRun = false, verbose = true, outp
   srcDb.close()
 
   // Stamp resolved redact config onto any redactBlock ops so workers get plain data
+  const declared = loadRedactSchema(pipeline, { schemaPath, redactConfig })
   function stampRedact(steps) {
     return steps.map(s => {
       if (s._type !== 'target') return s
       return { ...s, ops: s.ops.map(op =>
-        op._type === 'redactBlock' ? { ...op, cfg: redactConfig ?? {} } : op
+        op._type === 'redactBlock' ? { ...op, cfg: { ...(redactConfig ?? {}), declared } } : op
       )}
     })
   }
@@ -947,20 +951,59 @@ const maskStrategies = {
 }
 
 // ─── Redact lists ────────────────────────────────────────────────────────────
+//
+// What redact() nulls is what the schema declares, per table: SECRETS is every
+// protected column (@encrypted, @guarded, @secret, @hashed) and PERSONAL every
+// @personal one (FJS-D657). A list of likely column names caught `email` and
+// passed `applicantEmail` and `stripeKey String @secret` through untouched
+// (FJS-2059). A config `redact: { SECRETS, PERSONAL }` names columns ON TOP of
+// the declared ones — a legacy table the schema does not describe.
 
-export const REDACT_DEFAULTS = {
-  SECRETS: ['password', 'token', 'accessToken', 'secrets', 'apiKey'],
-  PII:     ['email', 'phone', 'dob', 'firstName', 'lastName', 'address1', 'address2', 'city', 'zip', 'postalCode', 'country'],
+const REDACT_MODES = ['SECRETS', 'PERSONAL']
+
+/** Per table, the columns each redact mode nulls, read from the schema. */
+export function declaredRedactColumns(schema) {
+  const out = {}
+  for (const model of schema.models ?? []) {
+    const policy = fieldPolicyOf(model)
+    const cols   = columnMapFor(model)
+    const SECRETS = [], PERSONAL = []
+    for (const [name, p] of Object.entries(policy)) {
+      if (isProtected(p)) SECRETS.push(cols[name] ?? name)
+      if (p.personal)     PERSONAL.push(cols[name] ?? name)
+    }
+    if (SECRETS.length || PERSONAL.length) out[modelToTableName(model)] = { SECRETS, PERSONAL }
+  }
+  return out
 }
 
-// Resolve the column names to null for a given mode, merging config overrides
-function resolveRedactColumns(mode, configRedact = {}) {
-  const secrets = configRedact.SECRETS ?? REDACT_DEFAULTS.SECRETS
-  const pii     = configRedact.PII     ?? REDACT_DEFAULTS.PII
-  if (!mode || mode === 'ALL') return [...new Set([...secrets, ...pii])]
+// The columns to null in one table for a given mode. `cfg.declared` is the
+// schema's map, stamped onto the op so a split worker needs no schema.
+function resolveRedactColumns(mode, cfg = {}, tableName) {
+  const declared = cfg.declared?.[tableName] ?? { SECRETS: [], PERSONAL: [] }
+  const secrets  = [...declared.SECRETS,  ...(cfg.SECRETS  ?? [])]
+  const personal = [...declared.PERSONAL, ...(cfg.PERSONAL ?? [])]
+  if (!mode || mode === 'ALL') return [...new Set([...secrets, ...personal])]
   if (mode === 'SECRETS')      return secrets
-  if (mode === 'PII')          return pii
-  throw new Error(`redact() unknown mode "${mode}". Use 'SECRETS', 'PII', or omit for both.`)
+  if (mode === 'PERSONAL')     return personal
+  throw new Error(`redact() unknown mode "${mode}". Use 'SECRETS', 'PERSONAL', or omit for both.`)
+}
+
+// A pipeline that redacts reads the schema, and a redact with none to read
+// would null nothing and say it had — so the run is refused before it starts.
+function loadRedactSchema(steps, { schemaPath, redactConfig }) {
+  const redacts = steps.some(s => s._type === 'target' && s.ops.some(op => op._type === 'redactBlock'))
+  for (const key of Object.keys(redactConfig ?? {}))
+    if (!REDACT_MODES.includes(key))
+      throw new Error(`redact config key "${key}" is not a mode. The modes are ${REDACT_MODES.join(' and ')}.`)
+  if (!redacts) return {}
+  if (!schemaPath)
+    throw new Error(
+      `redact() nulls the columns the schema declares (@secret, @hashed, @guarded, @encrypted, @personal), ` +
+      `and no schema was found. Pass --schema=<path to schema.lite>.`)
+  const parsed = parseFile(resolve(schemaPath))
+  if (!parsed.valid) throw new Error(`redact(): ${schemaPath} does not parse:\n  ${parsed.errors.join('\n  ')}`)
+  return declaredRedactColumns(parsed.schema)
 }
 
 // ─── Primitives (internal) ───────────────────────────────────────────────────

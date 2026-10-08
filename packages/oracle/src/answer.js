@@ -91,6 +91,7 @@ export const RULES = {
   access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
   pattern:     'A cited pattern is one the catalog lists.',
+  rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field.',
 }
 
 /** @typedef {{ rule: string, at: string, message: string }} Finding */
@@ -186,6 +187,8 @@ export function checkAnswer(answer) {
 
     /** @type {import('./catalog.js').Field[]} */
     const fields = []
+    /** @type {{ op: 'rename', model: string, from: string, to: string }[]} */
+    const renames = []
     for (const [j, f] of [...kept, ...added].entries()) {
       const fat = `${at}.${f?.name ?? `fields[${j - kept.length}]`}`
       if (!f || typeof f.name !== 'string' || !IDENT.test(f.name)) { refuse('field', fat, 'A field has a camelCase name.'); continue }
@@ -197,6 +200,13 @@ export function checkAnswer(answer) {
         if (STATE_NAMES.includes(f.name) && f.values?.length > 2) refuse('state', fat, `\`${f.name}\` names ${f.values.length} states of one thing. Declare it as the entity's \`lifecycle\` with the moves between them, so a move nobody declared is refused.`)
       } else if (f.values != null) refuse('field', fat, 'Only an enum lists values.')
       if (typeof f.why === 'string' && GUESS.test(f.why)) refuse('inferred', fat, `This field's reason reads as a guess. Ask it in \`open\` instead.`)
+      if (f.was != null) {
+        if (j < kept.length) refuse('rename', fat, 'A catalog field has no former name; `was` belongs on a field you added.')
+        else if (typeof f.was !== 'string' || !IDENT.test(f.was)) refuse('rename', fat, '`was` is the camelCase name the column has in the app now.')
+        else if (f.was === f.name) refuse('rename', fat, '`was` is the field\'s own name, which is not a rename.')
+        else if (renames.some(r => r.from === f.was)) refuse('rename', fat, `\`was: ${f.was}\` is claimed by two fields; one column becomes one field.`)
+        else renames.push({ op: 'rename', model: e.name, from: f.was, to: f.name })
+      }
       if (f.type === 'json') {
         const doc = jsonDefault(f.default)
         if (f.default != null && doc == null) { refuse('document', fat, `The default of a json field is a document, \`{}\` or \`[]\` or one with content; \`${JSON.stringify(f.default)}\` is not one.`); continue }
@@ -245,12 +255,15 @@ export function checkAnswer(answer) {
     if (life) claim(life.field, 'the lifecycle column')
     for (const f of fields) claim(f.name, 'a field')
     for (const l of links) { claim(l.name, 'a link'); claim(`${l.name}Id`, `the key of link \`${l.name}\``) }
+    // The old name leaves the schema. A column of that name still on the entity
+    // would make the rename a second column, and migrate create refuses it.
+    for (const r of renames) if (columns.has(r.from)) refuse('rename', `${at}.${r.to}`, `\`was: ${r.from}\` is still ${columns.get(r.from)} of ${e.name}, so the schema would hold both and this is not a rename.`)
 
     models.push({
       name: e.name, from: base && !base.reserved ? base.name : null, kinds, rung: e.rung,
       why: e.why, cost: e.cost, escape: e.escape, risk: e.risk,
       fields, links, lifecycle: life, access: e.access ?? {}, patterns: e.patterns ?? [],
-      members: null, container: null,
+      renames, members: null, container: null,
     })
   }
 
@@ -333,6 +346,7 @@ export function checkAnswer(answer) {
     actors: Array.isArray(answer.actors) ? answer.actors : [],
     open: Array.isArray(answer.open) ? answer.open.filter(q => typeof q === 'string') : [],
     models,
+    operations: models.flatMap(m => m.renames),
     findings,
   } : null
   return { ok, refusals, findings, plan }
@@ -347,10 +361,14 @@ export function checkAnswer(answer) {
  *   lifecycle: import('./catalog.js').Lifecycle|null,
  *   access: { via?: string, members?: string, public?: string[], publicWhen?: Record<string, any>, shared?: string, system?: boolean, why?: string },
  *   patterns: string[],
+ *   renames: Operation[],
  *   members: { model: string, link: string, user: string }|null,
  *   container: { model: string, link: string, user: string }|null,
  * }} Model
- * @typedef {{ summary: string, actors: any[], open: string[], models: Model[], findings: Finding[] }} Plan
+ * A row-keeping operation `litestone migrate create` takes (`FJS-D603`). Only
+ * `rename` is written so far; `backfill` and `split` join this union.
+ * @typedef {{ op: 'rename', model: string, from: string, to: string }} Operation
+ * @typedef {{ summary: string, actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
  */
 
 function readLifecycle(raw, at, refuse) {

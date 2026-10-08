@@ -1,5 +1,17 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-08 — `required-system-unfilled`: a required `@system` column nothing fills, under a service serving create (`FJS-1825`)
+
+A required `@system` column with no `@default` is out of create-mode `required`, so no form asks for it and a page sending it is refused by name; where no code fills it, every create is refused at the Data boundary. Litestone's `advise` already warned on the column under this id and cannot see code, so a schema-first build read past it. The new rule, a warning, reports such a column when a service over its model serves `create` (no `methods:`, or one naming `create`) and no non-test file under `api/` fills it: `system: [...]` naming it, `ctx.system.add(...)` naming it, or an `asSystem()` create of the model naming it. A model with no service yet is graded on nothing, for `transition-methods`' reason (`FJS-1778`). A scalar list is skipped (`FJS-2044`). Over the real apps: `example` and `basecamp` are silent (basecamp's `ApiKey.tokenHint` is filled by `system:`, and `Payslip`'s figures sit under a `methods: ['find', 'get']` service). In base44's derived apps it names `09-posthog`'s `Project.apiToken` and `Event.occurredAt` and `07-lago-stripe-billing`'s `UsageEvent.occurredAt` and `Fee.amount`. `test/checks.test.js` § required-system-unfilled; the clean tree gains `Lead.code`, filled by a hook, so the rule runs there.
+
+## 2026-10-08 — `fli db:migrate --rename Model.old=new` and `--operations <file>` (`FJS-D603`)
+
+Passed through to `litestone migrate create` / `migrate dev`, so a renamed column keeps its values.
+
+## 2026-10-08 — Invariant 7's enforcer names `@hashed` and `@personal` (`FJS-D657`)
+
+`core/invariants.js` § 7's *Covers* now matches the widened invariant: `[personal]` for `@personal`, and no `@hashed` digest in any entry. `invariants.snapshot.md` is regenerated.
+
 ## 2026-10-08 — scaffolds import the Resource from `@frontierjs/sierra/resource` (`FJS-D650`)
 
 `fli make:model`, `fli admin:generate`, `fli web:route`, `fli new` and the tutor steps now write `@frontierjs/sierra/resource`, since sierra renamed the subpath and kept nothing for `./junction`. Proof: `test/generated-mesa.test.js`, `test/checks.test.js` and `test/ask.test.js` pass; the full suite's only other failure was a tty timing test that passes alone.

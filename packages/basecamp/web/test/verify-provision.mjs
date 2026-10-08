@@ -42,7 +42,7 @@
 //   Backgrounding a server from a tool call is unreliable; this spawns, polls
 //   until each answers, asserts, and kills.
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -102,6 +102,19 @@ const SSH_HOME = join(SCRATCH, 'home')
 mkdirSync(join(SSH_HOME, '.ssh'), { recursive: true })
 writeFileSync(join(SSH_HOME, '.ssh', 'config'),
   'Host desk\n  HostName 192.0.2.7\n  User ops\n  Port 2201\nHost named\n  HostName example.invalid\n')
+// …and two checkouts under ~/code for /git-activity/local/: one committed with
+// a token in its remote and a file left uncommitted, one empty.
+const gitIn = (cwd, ...args) => spawnSync('git', args, { cwd, env: { ...process.env, HOME: SSH_HOME,
+  GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } })
+for (const name of ['alpha', 'beta']) {
+  mkdirSync(join(SSH_HOME, 'code', name), { recursive: true })
+  gitIn(join(SSH_HOME, 'code', name), 'init', '-q', '-b', 'main')
+}
+const ALPHA = join(SSH_HOME, 'code', 'alpha')
+writeFileSync(join(ALPHA, 'README'), 'x')
+gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
+gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
+writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
 
 console.log('\nBasecamp — provisioning a machine\n')
 console.log(`  seeding ${DB}`)
@@ -172,7 +185,7 @@ const api = spawn('bun', ['api/index.ts'], {
     DIGITALOCEAN_URL: SINK,
     HETZNER_URL:      HZ_SINK,
     PORT:             String(API_PORT),
-    LOCAL_SSH:        '1',
+    LOCAL_MACHINE:    '1',
     HOME:             SSH_HOME,
   },
 })
@@ -869,6 +882,31 @@ try {
   check('the screen still refuses to call it a bill',
     /not what the vendor will bill/i.test(await body()))
 
+  // ─── The operator's own checkouts ──────────────────────────────────────
+  // LOCAL_MACHINE=1 again, and two repositories under the scratch HOME. The
+  // table is git's answer about each; the remote reaches the screen with its
+  // token cut out, since a screen is a thing people share.
+  console.log('\n  /git-activity/local/ — the checkouts on this machine')
+  await goto('/git-activity/local/')
+  await until(`!!document.getElementById('root')`, v => v, 'the folder field never rendered')
+  await fill({ root: '~/code' })
+  await evaluate(`document.querySelector('#local-repos-form button[type=submit]').click()`)
+  await until(`document.getElementById('local-repos-list')?.textContent ?? ''`, t => /alpha/.test(t),
+    'the scan never listed a repository', 15_000)
+  const listed = await text('#local-repos-list')
+  check('both checkouts under ~/code are listed', /alpha/.test(listed) && /beta/.test(listed))
+  check('with their branch and whether the tree is clean',
+    /main/.test(listed) && /1 changed/.test(listed) && /no commits/.test(listed), listed?.replace(/\s+/g, ' ').slice(0, 300))
+  check('and the remote with its token cut out',
+    /https:\/\/example\.test\/alpha\.git/.test(listed) && !/tok_secret/.test(await body()))
+  check('the totals say how many have uncommitted work',
+    /1 with uncommitted work/.test(await text('#local-repos-totals')))
+  await fill({ root: 'code' })
+  await evaluate(`document.querySelector('#local-repos-form button[type=submit]').click()`)
+  await until(`document.getElementById('screen-error')?.textContent ?? ''`, t => /absolute/.test(t),
+    'a relative folder was not refused')
+  check('a relative folder is refused by name', true)
+
   // ─── The other act ─────────────────────────────────────────────────────
   // The screen this one was split from. Asserted because the split is only a
   // gain if BOTH halves still work: a rename that left importing broken would
@@ -882,7 +920,7 @@ try {
     await evaluate(`!document.getElementById('account') && !document.getElementById('size')`))
 
   // ─── …and, on an operator's own machine, their ssh aliases ─────────────
-  // LOCAL_SSH=1 and a HOME holding two aliases. The pick fills what ssh -G
+  // LOCAL_MACHINE=1 and a HOME holding two aliases. The pick fills what ssh -G
   // resolved; a HostName that is a NAME is left out of the address column,
   // which feeds DNS records.
   await until(`!!document.getElementById('sshAlias')`, v => v, 'the ssh alias picker never rendered')

@@ -651,12 +651,14 @@ app.configure(helmet())
 app.configure(rateLimit({ max: 100, window: 60_000 }))
 app.configure(requestLogger())
 
-// Generates/forwards X-Request-ID, stamps ctx.requestId, echoes in every response
+// Stamps ctx.requestId and echoes it as X-Request-ID on every response
 app.configure(correlationId())
 
 // CSRF protection for cookie-session APIs — see section below
 app.configure(csrf({ origins: ['https://myapp.com'] }))
 ```
+
+> **One id per request.** A request's correlation id is the trace id of the `traceparent` it states, else its `X-Request-ID`, else 32 hex junction mints, and the log line, the audit row, a job's row and conduit's outbound call all carry it. An inbound id that is malformed (a `traceparent` that does not parse, an `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]`) is replaced, not refused (`FJS-D660`).
 
 > **Rate limiting is per-process.** Counters live in memory and are not shared across workers or machines. For single-process deployments this is not an issue. For multi-process deployments, apply rate limiting at the load balancer layer (nginx `limit_req`, Cloudflare, Fly.io, etc.) in addition to or instead of this middleware.
 

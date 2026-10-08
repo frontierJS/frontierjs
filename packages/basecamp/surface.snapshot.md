@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-43 services · 39 routes · 17 plugins · prefix (none)
+45 services · 41 routes · 17 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -35,7 +35,7 @@ and what it does.
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (98)
+### A service hook runs in front of the body (92)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -75,9 +75,6 @@ name, and is as unread as the body.
 | `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.build` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.succeed` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `deployments.fail` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -95,9 +92,6 @@ name, and is as unread as the body.
 | `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `jobs.start` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `jobs.idle` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `jobs.fail` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
@@ -433,13 +427,10 @@ name when it declares none.
 
 ### `deployments` · model `Deployment`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `build`, `succeed`, `fail`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
-- **custom methods** — `build`, `succeed`, `fail`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **custom methods** — `cancel`, `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `build` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `succeed` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `fail` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -615,6 +606,24 @@ name when it declares none.
 | after | `patch` | `anonymous` |
 | after | `remove` | `anonymous` |
 
+### `git` · model `git`
+
+- **methods** — `localRepos`
+- **custom methods** — `localRepos`
+- **who may call** —
+  - `localRepos` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `all` | `sessionScope` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `hub` · model `hub`
 
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
@@ -705,13 +714,10 @@ name when it declares none.
 
 ### `jobs` · model `Job`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `start`, `idle`, `fail`, `cancel`, `trigger`, `startRun`, `finishRun`
-- **custom methods** — `start`, `idle`, `fail`, `cancel`, `trigger`, `startRun`, `finishRun`
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `cancel`, `trigger`, `startRun`, `finishRun`
+- **custom methods** — `cancel`, `trigger`, `startRun`, `finishRun`
 - **who may call** —
   - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `start` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `idle` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
-  - `fail` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
   - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
@@ -813,6 +819,22 @@ name when it declares none.
 | before | `aggregate` | `autoFilter` |
 | before | `create` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `people`
+
+- **methods** — `get`, `remove`, `revokeSession`, `revokeApiKey`, `signOut`, `invite`
+- **custom methods** — `revokeSession`, `revokeApiKey`, `signOut`, `invite`
+- **who may call** —
+  - `get` — standing 5 or above — declared `gate: 5`
+  - `remove` — standing 5 or above — declared `gate: 5`
+  - `revokeSession` — standing 5 or above — declared `gate: 5`
+  - `revokeApiKey` — standing 5 or above — declared `gate: 5`
+  - `signOut` — standing 5 or above — declared `gate: 5`
+  - `invite` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
 
 ### `portal` · model `portal`
 
@@ -1140,6 +1162,8 @@ once; everything else was registered by hand or by a plugin.
 | DELETE | `/mcp` | raw |
 | GET | `/mcp` | raw |
 | POST | `/mcp` | raw |
+| GET | `/mcp/calls` | raw |
+| GET | `/mcp/levels` | raw |
 | GET | `/metrics` | raw |
 | POST | `/orion/hooks/{path}` | raw |
 | POST | `/orion/wait/{key}` | raw |

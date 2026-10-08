@@ -183,6 +183,11 @@ and turn generation off. A `@@transitions` column is left out: it changes by a
 move, one button per entry of `orders.transitions(row, session.level)` calling
 `orders.service.invoke(t.name, id)`.
 
+**A required `@system` column is the API's to fill, never the page's.** The form
+leaves it out and the Data boundary refuses a payload naming it, so a create needs
+a `before.create` hook that sets it and calls `ctx.system.add('col')`, or a
+`@default`. `fli check` names a column nothing fills (`required-system-unfilled`).
+
 **A `409` from a `@version` column is the right answer**, not a bug to retry
 around: `orders.conflict(err)` gives `{ model, field, expected, actual }`.
 

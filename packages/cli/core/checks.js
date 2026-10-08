@@ -142,6 +142,8 @@ export const RULES = [
     title: 'every model the app runs is one the committed artefacts describe' },
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
+  { id: 'required-system-unfilled', scope: 'app', severity: 'warn', invariant: null,
+    title: 'a required @system column with no @default is filled by code the service runs' },
   { id: 'commitment-swept',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a move a @@commitment owes is made by the commitment, not by a job too' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
@@ -2833,6 +2835,78 @@ const CHECKS = {
     return { findings }
   },
 
+  // ─── required-system-unfilled ───────────────────────────────────────────
+  //
+  // `@system` is out of create-mode `required`, so a generated form never asks
+  // for the column and a page that sends it anyway is refused by name. A
+  // required one with no `@default` therefore has exactly one filler — the
+  // application — and where the application never names it, every create is
+  // refused at the Data boundary: *apiToken is @system and was not supplied*.
+  // Its first sighting was a schema-first build where that model was the root
+  // of every other row, so nobody could create anything (`FJS-1825`).
+  //
+  // Litestone's `advise` carries the schema half under the same id; it cannot
+  // read code, so it reports every such column whether or not something fills
+  // it. This is the half that can.
+  //
+  // ── Filled means any of three spellings, in a file that is not a test ──
+  //
+  // `system: ['col']` on a litestone call, `ctx.system.add('col')` in a hook
+  // (junction passes the set on as `system:`), and an `asSystem()` create of
+  // the model naming the column. Matched loosely — the column's literal in a
+  // file that names `system:` at all — because a list built in a constant is a
+  // legal spelling, and this rule misses rather than misfires. A test seeding a
+  // row through `asSystem()` is not the application filling it.
+  //
+  // ── Graded only once a service serves create ──
+  //
+  // The schema is written first and the service after it (`transition-methods`,
+  // `FJS-1778`), so a model with no service, or one whose `methods:` leaves
+  // `create` out, has no create for the gap to break yet.
+  'required-system-unfilled': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const columns = requiredSystemColumns(schema)
+    if (!columns.length) return { skipped: 'no required @system column without a @default in db/schema.lite' }
+
+    const files = scripts(root, 'api')
+    if (!files.length) return { skipped: 'no api/ source — no service serves a create' }
+
+    const code     = files.map(p => readCode(p))
+    const served   = servingServices(root, files, code, schema)
+    const isTest   = (p) => /(^|[/\\])tests?[/\\]/.test(relative(root, p)) || /\.(test|spec)\.[cm]?[jt]s$/.test(p)
+    const app      = code.filter((_, i) => !isTest(files[i]))
+    const findings = []
+
+    const fills = (src, model, field) => {
+      const quoted = new RegExp(`['"\`]${field}['"\`]`)
+      if (quoted.test(src) && /\bsystem\s*:|\.system\s*\.\s*add\s*\(/.test(src)) return true
+      const accessor = model[0].toLowerCase() + model.slice(1)
+      return /\basSystem\s*\(/.test(src) &&
+        new RegExp(`\\.${accessor}\\s*\\.\\s*(create|createMany|upsert|upsertMany)\\b`).test(src) &&
+        new RegExp(`\\b${field}\\b`).test(src)
+    }
+
+    for (const c of columns) {
+      const over = (served.get(c.model) ?? []).filter(svc => svc.servesCreate)
+      if (!over.length) continue
+      if (app.some(src => fills(src, c.model, c.field))) continue
+      findings.push({
+        file: schema.path, line: c.line,
+        message: `${c.model}.${c.field} is required and @system with no @default, ` +
+                 `${over.map(svc => basename(svc.path)).join(', ')} serves create, and nothing under api/ ` +
+                 `supplies it — no system: ['${c.field}'] on a write, no ctx.system.add('${c.field}') in a ` +
+                 `hook, no asSystem() create naming it. So every create is refused at the Data boundary ` +
+                 `("${c.field} is @system and was not supplied"), and a page cannot fill it: @system ` +
+                 `refuses a caller's payload naming the column. Fill it in a before.create hook ` +
+                 `(ctx.data.${c.field} = …; ctx.system.add('${c.field}')), give it a @default, or make it optional.`,
+      })
+    }
+
+    return { findings }
+  },
+
   // ─── commitment-swept ───────────────────────────────────────────────────
   //
   // `@@commitment` hands a move to junction's `commitments()`, which makes it
@@ -3962,6 +4036,8 @@ function declaredCommitments({ text }) {
  * move (`FJS-1255`) — true unless it declares `methods:`. A declared list
  * serves the moves it names, and a name in it is already a literal the
  * either-spelling test counts, so the list needs no parse of its own.
+ * `servesCreate` is the same question for `create`: `'readOnly'` answers no,
+ * and a list answers yes only when it names the verb.
  * Junction resolves a service's model as `service-model` does: `model:` when
  * stated, else the name its registry gives the file.
  */
@@ -3976,7 +4052,54 @@ function servingServices(root, files, code, schema) {
     const model  = resolves(stated ? stated[1] : camel(basename(files[i]).replace(/\.service\.[cm]?[jt]s$/, '')))
     if (!model) continue
     if (!out.has(model)) out.set(model, [])
-    out.get(model).push({ path: files[i], servesAll: !/\bmethods\s*:/.test(src) })
+    const narrowed = /\bmethods\s*:/.test(src)
+    out.get(model).push({
+      path: files[i], servesAll: !narrowed,
+      servesCreate: !narrowed || (!/\bmethods\s*:\s*['"`]readOnly/.test(src) && /['"`]create['"`]/.test(src)),
+    })
+  }
+  return out
+}
+
+/**
+ * Every column a create cannot leave out and no caller may supply — required,
+ * `@system`, and nothing at the Data boundary that fills it. `{ model, field,
+ * line }`, a line scan for `declaredMoves`' reason.
+ *
+ * A scalar list is not one: its column is `NOT NULL DEFAULT '[]'`, so a create
+ * that never names it succeeds (`FJS-2044`). `@updatedAt` stamps the create too.
+ * Only depth-one lines of a model are fields, which keeps a `@system` move
+ * inside `@@transitions( … )` out.
+ */
+function requiredSystemColumns({ text }) {
+  const out   = []
+  const lines = text.split('\n')
+  let model   = null, depth = 0, inBlock = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
+    const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{/)
+    if (m && depth === 0) {
+      depth = (line.match(/[{(]/g) ?? []).length - (line.match(/[})]/g) ?? []).length
+      model = depth > 0 && !bodyOf(lines, i).includes('@@external') ? m[1] : null
+      if (depth < 0) depth = 0
+      continue
+    }
+    const atDepth = depth
+    for (const c of line) {
+      if (c === '{' || c === '(') depth++
+      if (c === '}' || c === ')') depth--
+    }
+    if (depth <= 0) { depth = 0; model = null; continue }
+    if (!model || atDepth !== 1) continue
+
+    const f = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)(\[\])?(\?)?(.*)$/)
+    if (!f || f[3] || f[4]) continue
+    const attrs = f[5]
+    if (!/@system\b/.test(attrs)) continue
+    if (/@(default|generated|sequence|updatedAt|computed|derived|from)\b/.test(attrs)) continue
+    out.push({ model, field: f[1], line: i + 1 })
   }
   return out
 }

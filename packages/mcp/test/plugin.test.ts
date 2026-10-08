@@ -190,6 +190,78 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
   })
 })
 
+// ─── a @system move ──────────────────────────────────────────────────────────
+
+// FJS-1925's shape, both halves, in an app of its own so the services here do
+// not appear in the breadcrumbs the app above is graded on. `purchases` writes
+// no method, so junction derives each move Order declares, and `lapse` is
+// `@system`. `settlements` writes the method that lifts it, as `example`'s
+// `invoices.settle` does.
+describe('a @system move is offered only where a method lifts it (FJS-1925)', () => {
+  let own:   { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
+  let url:   string
+  let store: Record<string, { create(a: unknown): Promise<unknown>; findFirst(a: unknown): Promise<{ status: string }> }>
+
+  beforeAll(async () => {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA, encryptionKey: '0'.repeat(64) }) as Record<string, never>
+    own = createApp({
+      db, auth: createStubAuth({ users: [{ id: 'staff', isAdmin: true }, { id: 'shopper' }] }),
+      config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      logLevel: 'silent',
+    }) as never
+    own.services.register(createService({ name: 'purchases', model: 'Order' }))
+    type Lapsing = { order: { transition(id: unknown, name: string, o: { system: true }): Promise<unknown> } }
+    own.services.register(createService({
+      name: 'settlements', model: 'Order',
+      lapse: async () => ($.db as unknown as Lapsing).order.transition(Number($.id), 'lapse', { system: true }),
+      methods: ['get', 'lapse'],
+    }))
+    own.configure(mcpPlugin({ name: 'shop' }))
+    await own.start()
+    url   = `http://localhost:${own.http.port}/mcp`
+    store = (db as unknown as { asSystem(): typeof store }).asSystem()
+    for (const id of [61, 62]) await store.order!.create({ data: { id, reference: `ORD-${id}`, total: 100 } })
+  })
+  afterAll(async () => { await own?.stop?.() })
+
+  const speak = async (method: string, params: unknown, token: string) => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+                 authorization: `Bearer test-token-${token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    })
+    return JSON.parse(await res.text()) as { result?: { isError?: boolean; tools?: Array<{ name: string }> }; error?: unknown }
+  }
+  const names  = async (who: string) => ((await speak('tools/list', {}, who)).result?.tools ?? []).map(t => t.name)
+  const call   = (name: string, id: number, who: string) => speak('tools/call', { name, arguments: { id } }, who)
+  const status = async (id: number) => (await store.order!.findFirst({ where: { id } })).status
+
+  test('a generated service does not offer lapse at any level a person holds, while its other moves are', async () => {
+    for (const who of ['shopper', 'staff']) {
+      const offered = await names(who)
+      expect(offered, who).toContain('purchases_pay')
+      expect(offered, who).not.toContain('purchases_lapse')
+    }
+  })
+
+  test('the written method is offered from the update level, and moves the row', async () => {
+    expect(await names('shopper')).toContain('settlements_lapse')
+    expect(await status(61)).toBe('pending')
+    expect((await call('settlements_lapse', 61, 'shopper')).result?.isError ?? false).toBe(false)
+    expect(await status(61)).toBe('cancelled')
+  })
+
+  test('naming the derived tool anyway is refused and the row stays', async () => {
+    const r = await call('purchases_lapse', 62, 'staff')
+    expect(r.result?.isError === true || r.error !== undefined).toBe(true)
+    expect(await status(62)).toBe('pending')
+    // The paired control: the same row moves by a tool that is offered.
+    expect((await call('purchases_pay', 62, 'staff')).result?.isError ?? false).toBe(false)
+    expect(await status(62)).toBe('paid')
+  })
+})
+
 // ─── an app's own narrowing ──────────────────────────────────────────────────
 
 describe('narrow withholds what a standing cannot say (FJS-D407)', () => {

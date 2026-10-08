@@ -90,8 +90,34 @@ About a day, and none of it touches the core:
 4. **Studio's saved queries out of the app's database.** A sidecar file beside the
    database rather than `_litestone_studio_queries` inside it.
 
-The axis column on the catalog, which would let `catalog.test.ts` grade *a new
-word names its axis*, is a fifth item and is priced separately.
+The fifth item is the axis column on the catalog, which would let `catalog.test.ts` grade
+*a new word names its axis*.
+
+**Priced 2026-10-08.** The catalog has 113 rows in 11
+groups, and 12 words sit at two levels (`log`, `check`, `allow`, `scope` and others), so an axis is
+keyed by (word, level) and never by word alone. Against the four axes:
+
+- **Four groups are one axis whole.** `identity`, `relate`, `transform` and `validate` are shape:
+  40 rows and no judgment.
+- **Five groups have a default and a few rows that differ.** `declare` is shape except `claim`,
+  `tenancy` and `scope`, which are access. `derive` is shape except `hardDelete` and `keep`, which
+  are moves. `protect` is access except `immutable` and `sealed`, which are moves, and `check`,
+  which is shape. `access` is access except `transitions`, which is moves. `shape` is shape except
+  `softDelete`, `expires`, `effective` and `commitment` (moves) and `external` and `noStrict`
+  (migration). That is about 18 rows that differ from their group's default.
+- **`operate` has no default.** `sync` is moves, `auth` and `anonymous` are access, and `db`,
+  `trait`, `createdBy` and `updatedBy` are shape: 8 rows, one at a time.
+- **Three are real judgment calls, not lookups.** `log`/`@@log` and `keepVersions`: the trail is a
+  record of moves, but nothing in it decides a move. `version`: is optimistic concurrency a move or
+  access? A fourth question comes from the count: migration has two words, because it is mostly
+  verbs (`migrate`, `autoMigrate`) and not vocabulary. Whether migration is an axis the language
+  has words for, or only a property of the client, needs answering before the column claims four
+  values.
+
+Cost: about half a day once the three are answered. That covers an axis per group, overrides on
+roughly 26 rows, the test (every row resolves to one of the four axes; a new group names its
+default), and the reference snapshot regenerated. A column on all 113 rows is the same data
+written about 87 more times.
 
 ## Open questions
 
@@ -115,6 +141,18 @@ word names its axis*, is a fifth item and is priced separately.
     failing test (§ V's ninth question), and A stays open as a later move with
     nothing to untangle first. C makes "done" unreachable, which is the question
     this paper set out to answer.
+- **How does the catalog carry a word's axis?** § 3's fifth item, priced there.
+  - **A** — An axis per GROUP, with an `axis:` override on the about 26 rows that differ from
+    their group, and none for `operate`. A test fails on a row with no axis and on a group with no
+    default. `log`, `keepVersions` and `version` are ruled first.
+  - **B** — An `axis` column on every row. Same test, but 113 cells, and 87 of them repeat the
+    group's answer.
+  - **C** — No column. D635's edge stays graded by directory and import, which
+    `test/edge.test.ts` already does, and a new word's axis is a review question.
+  - **Recommend A** — the axis is mostly DERIVED from the group, so writing it on every row is a
+    restatement that can drift from the group (§ V's fifth question). C leaves the ruling's third
+    sentence (*a new `.lite` word names the axis it serves*) with no artefact, which is the
+    `none` answer to § V's ninth question, and the sentence then reads as enforced when it is not.
 - **What happens to `driver jsonl`?** **On hold (owner, 2026-10-08):** not to be built or ruled until the owner reopens it. The measurement below stands.
   § 2: a second engine in the language, whose one real user is the audit trail.
   - **A** — Keep both drivers, and move `jsonl` behind the engine seam

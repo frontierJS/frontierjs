@@ -1,0 +1,150 @@
+---
+title: Local repositories
+---
+<script>
+  // The git checkouts under a folder on the machine this Basecamp runs on.
+  //
+  // Offered only by a Basecamp running on the operator's machine with
+  // LOCAL_MACHINE=1 (api core/local-git.ts); anywhere else the call is a 404
+  // and the screen says so rather than drawing an empty list that reads like a
+  // folder with no repositories in it.
+  import { ago }  from '../../datetime.js'
+  import { git }  from '../../resources/Git.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  // The last folder scanned, per viewer — a convenience, so storage that
+  // throws or comes back empty only costs retyping it.
+  const KEY = 'basecamp.localRepos.root'
+  const remembered = () => { try { return localStorage.getItem(KEY) } catch { return null } }
+  const remember   = (v) => { try { localStorage.setItem(KEY, v) } catch {} }
+
+  let root     = remembered() ?? '~/code'
+  let answer   = null
+  let error    = null
+  let offered  = true
+  let scanning = false
+  let search   = ''
+
+  async function scan(e) {
+    e?.preventDefault()
+    error = null; scanning = true
+    try {
+      answer = await git.service.invoke('localRepos', null, { root })
+      remember(root)
+    } catch (err) {
+      // 404 is *not on this machine*; anything else is about the folder.
+      if (err.code === 404) offered = false
+      error = err.message
+      answer = null
+    } finally {
+      scanning = false
+    }
+  }
+
+  if (remembered()) scan()
+
+  $: repos = (answer?.repos ?? []).filter(r => !search
+    || r.relative.toLowerCase().includes(search.toLowerCase())
+    || (r.remote ?? '').toLowerCase().includes(search.toLowerCase()))
+  $: dirty = (answer?.repos ?? []).filter(r => r.changes).length
+  $: noRemote = (answer?.repos ?? []).filter(r => !r.remote).length
+
+  const COLUMNS = [
+    { name: 'repo',   label: 'Repository' },
+    { name: 'branch', label: 'Branch' },
+    { name: 'state',  label: 'Working tree' },
+    { name: 'remote', label: 'Remote' },
+    { name: 'last',   label: 'Last commit' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Local repositories</h1>
+  <Button variant="ghost" href="/git-activity/">Git activity</Button>
+</div>
+
+{#if !offered}
+  <Callout tone="muted" title="Not offered on this Basecamp">
+    <p class="text-body">
+      This lists the git checkouts on the machine Basecamp runs on, so it is only offered by a
+      Basecamp on your own machine, started with <code>LOCAL_MACHINE=1</code>
+      (<code>bun run api</code> sets it) and never under <code>NODE_ENV=production</code>.
+    </p>
+    <p class="text-sm text-muted">{error}</p>
+  </Callout>
+{:else}
+  <form class="cluster" id="local-repos-form" on:submit={scan}>
+    <Input label="Folder" name="root" id="root" placeholder="~/code"
+           value={root} oninput={(e) => root = e.target.value}
+           hint="An absolute path, or one starting ~/. Looks four folders down; node_modules and hidden folders are skipped." />
+    <Button type="submit" disabled={scanning}>{scanning ? 'Scanning…' : 'Scan'}</Button>
+  </form>
+
+  {#if error}
+    <article class="alert danger" id="screen-error">
+      <div class="alert-content">{error}</div>
+    </article>
+  {/if}
+
+  {#if answer}
+    {#if !answer.repos.length}
+      <EmptyState title="No repositories">
+        Nothing under <code>{answer.root}</code> holds a <code>.git</code> within four folders.
+      </EmptyState>
+    {:else}
+      <div class="cluster" id="local-repos-totals">
+        <Badge tone="muted">{answer.repos.length} repositories</Badge>
+        {#if dirty}<Badge tone="warning">{dirty} with uncommitted work</Badge>{/if}
+        {#if noRemote}<Badge tone="muted">{noRemote} with no remote</Badge>{/if}
+        {#if answer.truncated}<Badge tone="danger">stopped at {answer.repos.length} — narrow the folder</Badge>{/if}
+      </div>
+
+      <div class="cluster">
+        <label class="visually-hidden" for="local-repos-search">Filter repositories</label>
+        <Input id="local-repos-search" placeholder="Filter by path or remote…" value={search}
+               oninput={(e) => search = e.target.value} />
+      </div>
+
+      <div id="local-repos-list">
+        <Table columns={COLUMNS} rows={repos} striped emptyText="Nothing matches the filter">
+          {#snippet row(r)}
+            <tr>
+              <td>
+                <strong>{r.name}</strong>
+                <div class="text-sm text-muted"><code>{r.relative}</code></div>
+              </td>
+              <td class="text-sm">
+                {#if r.branch}<code>{r.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+                {#if r.head}<span class="text-muted"> · <code>{r.head}</code></span>{/if}
+              </td>
+              <td class="text-sm">
+                {#if r.changes}<Pill tone="warning">{r.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+                {#if r.ahead}<Pill tone="info">↑{r.ahead}</Pill>{/if}
+                {#if r.behind}<Pill tone="info">↓{r.behind}</Pill>{/if}
+                {#if r.branch && !r.upstream}<span class="text-muted"> no upstream</span>{/if}
+              </td>
+              <td class="text-sm">
+                {#if r.remote}
+                  <code>{r.remote}</code> <CopyButton text={r.remote} />
+                {:else}
+                  <span class="text-muted">—</span>
+                {/if}
+              </td>
+              <td class="text-sm text-muted">
+                {#if r.lastCommitAt}{ago(r.lastCommitAt)} · {r.lastCommit}{:else}no commits{/if}
+              </td>
+            </tr>
+          {/snippet}
+        </Table>
+      </div>
+    {/if}
+  {/if}
+{/if}

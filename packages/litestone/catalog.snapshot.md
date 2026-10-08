@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**113 words** — 13 declarations · 66 field attributes · 34 model attributes.
+**115 words** — 13 declarations · 67 field attributes · 35 model attributes.
 
 ## Declarations
 
@@ -57,6 +57,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@hashed` | Hide or lock a value |  |  |  |  |
+| `@personal` | Hide or lock a value | [(<category>)] |  | category: contact · device · location · government · financial · employment · communication · demographic · health · genetic · biometric · characteristic · criminal |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
 | `@check` | Hide or lock a value | ("sql expression") |  |  |  |
 | `@allow` | Decide who may | ('read'\|'write'\|'all', <expression>) | on a model's field · on a trait's field |  |  |
@@ -133,6 +134,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
 | `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
+| `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@log` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@@anonymous` | Wire it to the app |  |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |

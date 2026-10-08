@@ -909,7 +909,7 @@ export function createApp(opts: AppOptions = {}): App {
       return enterRequest({
         origin:        'http',
         headers:       ctx?.headers ?? {},
-        correlationId: ctx?.headers?.['x-request-id'] ?? ctx?.requestId,
+        correlationId: ctx?.requestId,
         user:          ctx?.user ?? null,
         caller:        { ip: ctx?.ip, userAgent: ctx?.headers?.['user-agent'], headers: ctx?.headers ?? {} },
       }, () => handler(ctx, ...rest))
@@ -2339,10 +2339,9 @@ export function registerServiceRoutes(app: App): void {
       return await enterRequest({
         origin:  'http',
         headers: ctx.headers,
-        // The transport's own id where the header is absent; `x-request-id`
-        // itself is enterRequest's to read, and stated beats derived there.
-        correlationId: ctx.headers['x-request-id']
-          ?? (ctx as unknown as { requestId?: string }).requestId,
+        // The `correlationId()` middleware's id where it is installed, which
+        // read the headers by the same rule; otherwise enterRequest reads them.
+        correlationId: (ctx as unknown as { requestId?: string }).requestId,
         // WHO, request-wide. This is what makes `ctx.auth` propagate: an
         // internal call naming no principal reads it back out of the store.
         user:   svcCtx.auth.user,

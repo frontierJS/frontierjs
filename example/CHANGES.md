@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-08 — `User.email` and `User.name` are `@personal(contact)` (`FJS-D657`)
+
+The parser now warns about an undeclared `email` on a person model, so the appended `User` declares both columns, as auth's fragment does.
+
 ## 2026-10-08 — `FileStorage` comes from `@frontierjs/litestone/storage` (`FJS-D635`)
 
 litestone's main entry no longer re-exports its batteries, so `api/src/core/db.ts` imports `FileStorage` from the storage subpath.

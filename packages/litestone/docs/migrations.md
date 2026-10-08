@@ -47,6 +47,25 @@ Answer it in the file: keep the values (the rename the box gives, then delete th
 box) or change `no` to `yes`. The answer is in the file, so a deploy replays it.
 `create()` returns the same list as `loss`, `[{ table, columns, renameTo }]`.
 
+**Say it was a rename, and nothing is lost.** The differ cannot know, so the
+person (or the tool acting for one) states it when the file is created
+(`FJS-D603`):
+
+```bash
+litestone migrate create rename --rename Issue.description=brief
+```
+
+`create(db, parsed, label, dir, { operations: [{ op: 'rename', model, from, to }] })`
+is the same call. The statement `ALTER TABLE … RENAME COLUMN` runs first in the
+file, and the schema is then diffed against the history *as renamed*, so any
+rebuild the rest of the change forces starts from a column that already has its
+new name; its indexes, constraints and views follow it by SQLite's own rule.
+`from` is the column the history holds, `to` is a field of the model (its
+`@map`ped column is what is written). A model the schema does not declare, a
+`from` the schema still declares or the history lacks, and a `to` no field holds
+are each refused by name before a file exists. On a terminal, `create` asks
+about each probable rename instead (`[y/N]`, default no).
+
 ### A rebuild SQLite refuses is graded, not thrown
 
 A rebuild copies surviving values through `INSERT … SELECT`, and a STRICT table

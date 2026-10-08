@@ -79,6 +79,7 @@ export function brief() {
   out.push('- `why`, `cost`, `escape` — the collapse argument. A variant states all three. `risk` — what being wrong costs:')
   for (const [r, d] of Object.entries(RISKS)) out.push(`  - \`${r}\` — ${d}`)
   out.push('- `omit` — catalog fields this app does not need. Every other catalog field is kept. `fields` — what this app adds, typed from the table below; `required` defaults to false, `unique` and `system` (the app writes it, a person does not) are flags.')
+  out.push('- `was` — on a field you added in a REVISION of an app that already holds rows: the camelCase name that column has now. The values stay under the new name. Without it a renamed field is a column that goes and another that arrives, and the old column\'s values are deleted. Never on a first answer.')
   out.push('- `links` — a relation to one row of another entity in this answer, or to `User`. The emitter writes the key, the relation, the index and the list on the far side. A link to `User` names the `actor` who reaches the row through it. Many-to-many is an entity of its own with two links (rung `property`).')
   out.push('- `lifecycle` — `"catalog"` to take the entry\'s own, or `{ field, states, moves }`. The first state is where a row is created. `from` is a list of states or `"*"` (every other state). `by: "system"` marks a move the application makes rather than a person.')
   out.push('- `access` — how a row is reached beyond its actor links:')

@@ -13,6 +13,7 @@
 // type-only escape hatch (erased at compile time, no runtime coupling).
 
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { parseTraceparent } from '@frontierjs/toolbelt/trace'
 import type { FrameworkError } from './errors.ts'
 import { BadRequest } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
@@ -457,9 +458,9 @@ export interface RequestMeta {
    * position in the trace is carried there and dropping it breaks the chain
    * for that vendor alone.
    *
-   * Captured rather than parsed: what is done with it belongs to whoever
-   * continues the trace, and a parse here would be a second reading of the
-   * spec beside theirs. It is CARRIED and not emitted — junction traces
+   * Carried verbatim: the trace id is read out of it once, as
+   * `correlationId` (`FJS-D660`), and the span half belongs to whoever
+   * continues the trace. It is CARRIED and not emitted — junction traces
    * nothing itself; this is the value an outbound call needs to hang off the
    * inbound one, and without it every call this process makes is the root of
    * an unrelated trace (`FJS-742`).
@@ -573,7 +574,8 @@ export interface RequestSource {
   headers?: Record<string, string | undefined>
 
   /** Stated explicitly. Wins over `headers` — a transport that already
-   *  resolved a correlation id of its own is not overruled by a header. */
+   *  resolved a correlation id of its own is not overruled by a header. A
+   *  value a CLIENT stated goes through `acceptedRequestId` first. */
   correlationId?:  string
   idempotencyKey?: string
   locale?:         string
@@ -627,11 +629,43 @@ export function resolveMadeAt(madeAt: string | undefined, sentAt: string | undef
   return new Date(Math.min(made + (now - sent), now))
 }
 
+// ─── Correlation id ───────────────────────────────────────────────────────
+// One id per request, read by the log line, the trail row, the job row and
+// conduit's outbound trace (`FJS-D660`). Where the request states a trace, the
+// trace id is the correlation id, so an operator holding either finds the
+// other. A caller chooses the inbound id, and a trusted proxy hop does not
+// change that (the shipped edge forwards the client's headers), so the guard is
+// the shape: a malformed id is replaced rather than filed into a log line.
+
+const REQUEST_ID = /^[\w.:@-]{1,128}$/
+
+/** A caller-stated request id, where it is safe to file under; else undefined. */
+export function acceptedRequestId(value: unknown): string | undefined {
+  return typeof value === 'string' && REQUEST_ID.test(value) ? value : undefined
+}
+
+/**
+ * The correlation id a request's headers name — the `traceparent` trace id,
+ * then a well-formed `x-request-id` (or the header a `correlationId()`
+ * middleware was configured with). Undefined where they name none.
+ */
+export function inboundCorrelationId(
+  headers: Record<string, string | undefined> | undefined,
+  header = 'x-request-id',
+): string | undefined {
+  return parseTraceparent(headers?.['traceparent'])?.trace_id ?? acceptedRequestId(headers?.[header])
+}
+
+/** A fresh id, shaped as a W3C trace id so conduit continues it unchanged. */
+export function mintCorrelationId(): string {
+  return crypto.randomUUID().replace(/-/g, '')
+}
+
 export function enterRequest<T>(src: RequestSource, fn: () => T): T {
   const h = src.headers
   const madeAt = resolveMadeAt(src.madeAt ?? h?.[MADE_AT_HEADER], src.sentAt ?? h?.[SENT_AT_HEADER])
   return open({
-    correlationId:  src.correlationId  ?? h?.['x-request-id'] ?? crypto.randomUUID(),
+    correlationId:  src.correlationId  ?? inboundCorrelationId(h) ?? mintCorrelationId(),
     idempotencyKey: src.idempotencyKey ?? h?.['idempotency-key'],
     locale:         src.locale         ?? h?.['accept-language']?.split(',')[0]?.trim(),
     traceparent:    src.traceparent    ?? h?.['traceparent'],

@@ -1,5 +1,24 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-08 — a request has one id, and a stated trace is it (`FJS-D660`)
+
+A request carrying a `traceparent` and no `X-Request-ID` was filed under a fresh UUID on its log line and its audit row, while conduit continued the upstream trace outbound, so one request had two ids. `enterRequest` now takes `correlationId` from `inboundCorrelationId(headers)`: the `traceparent` trace id first (read by `@frontierjs/toolbelt/trace`), then a well-formed `X-Request-ID`, and otherwise `mintCorrelationId()`, which is 32 hex shaped as a trace id rather than a dashed UUID.
+
+- **`traceparent` wins** over a disagreeing `X-Request-ID`, which used to win.
+- **A malformed inbound id is replaced, not refused.** An `X-Request-ID` outside 1–128 characters of `[A-Za-z0-9_.:@-]` was adopted verbatim into every log line. It and a WebSocket frame's stated `correlationId` now pass `acceptedRequestId` first.
+- **The `correlationId()` middleware reads by the same rule**, so the echoed `X-Request-ID` header and the log line no longer differ. Its default generator is `mintCorrelationId`. The two transport entry points state `ctx.requestId` alone and leave the headers to `enterRequest`.
+
+`test/trace-correlation.test.ts` (new, 5 cases, fails 4 of 5 on the old rule); 2 cases in `test/index.test.ts`, 1 in `test/request-scope.test.ts`. 2643 pass, typecheck clean.
+
+## 2026-10-08 — a `@system` move is not served as a derived method (`FJS-1925`)
+
+`FJS-1255` served every `@@transitions` move as `transition(id, move)` on the caller's client. For a `@system` move that is refused for every caller at every level, because only a method that lifts it with `{ system: true }` can say the application makes the move (`FJS-D150`), yet the method was listed in `describe()`, the manifest, OpenAPI and `/mcp` from the model's update level. `declaredMoveMethods` now skips a `@system` move, so it is not listed and not callable (404/405); the app writes the method that lifts it, and that written method is served as always.
+
+- **A `methods:` list that names a `@system` move with no method written is now an authoring mistake** and refuses `start()` by name, where it used to list a method no one could call.
+- Basecamp's `surface.snapshot.md` loses `deployments.build/succeed/fail` and `jobs.start/idle/fail`, which it had advertised as open to any signed-in caller.
+
+`test/declared-moves.test.ts`, 2 cases added and 1 rewritten; 2647 pass, typecheck clean.
+
 ## 2026-10-08 — the email tiers are deleted (`FJS-D644`)
 
 `src/plugins/email/`, the `./email` subpath and the `AppEmail` slot are gone. Nothing outside junction imported them. `app.mail` (`./mail`) stays and is the one mail battery: mail to a person with an account goes through `@frontierjs/notifications`, which sends through it, and an app calls `app.mail` itself for an address that may have no account. The README's § Email is replaced by § Mail, which documents `mailerPlugin` with the SMTP and Resend mailers. `example/email-system.ts`, `test/email.test.ts` and the shim test in `test/p3-fixes.test.ts` went with it.

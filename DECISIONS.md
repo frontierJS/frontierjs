@@ -3397,6 +3397,22 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d659"></a>2026-10-08 · `FJS-D659` — The consistency model is written down once, in `docs/CONSISTENCY.md`, with one row per seam naming its guarantee, how it fails and the test that holds it. `asSystem()` checks a `@version` the caller supplies. An `afterCommit` callback that reaches mail or a Conduit target warns in development.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/consistency.md`](IDEAS/consistency.md). **A, with B's warning** was picked over **B** in full (renaming the delivery guarantee at the call site, which the names already state: `enqueue` *is* the durable one) and **C** (a commit position carried end to end, which is built for a topology no app here runs).
+
+**The model, as read off the code:** serializable per file, revision-checked per row, announced after commit, effects at-most-once unless they go through the outbox, and a gap on the wire answered by a reload. Every row already existed and was correct. What was missing was the one page that says so.
+
+**The page is a Map and cites rather than restates.** Each row names the file that keeps the guarantee and the test that proves it. It does not repeat the comment above the code, so the two cannot drift into disagreeing. Nothing grades the citations yet, so § V 9 is answered **none** for the page itself until a `fli check` rule does it the way `FJS-D656`'s `threat-row` does for `THREATS.md`.
+
+**`asSystem()` and a supplied version: check it when present.** A missing version stays exempt, because a migration or a backfill does not edit as a second person. A present version is the caller saying it read first, and ignoring it is the silent kind of permissive: a job that read an `Invoice`, did two seconds of network work and wrote it back overwrote a person's save with no error. It is [FJS-2069](ISSUES.md#fjs-2069), and it waits for the uncommitted litestone client work in the tree to land, because the branch sits in `client.js`.
+
+**B's warning only.** `afterCommit` and `enqueue` give opposite crash guarantees under adjacent names. A dev-mode warning, not a refusal, fires when an `afterCommit` callback sends mail or calls a Conduit target. A toast from `afterCommit` is correct, so a refusal would be out of proportion (§ V 8). It is [FJS-2070](ISSUES.md#fjs-2070).
+
+**Where the page lives:** at the root, beside `TESTING.md`, because four of its rows are Junction's and two are Sierra's. **A second host** is documented, not refused: detecting one is the hard part, and the refusal comes when `outpost` knows the fleet shape. **`resync` is not renamed** here. That is a vocabulary question, and it stays listed in the paper.
+
+*Lives in:* `docs/CONSISTENCY.md` · [FJS-2069](ISSUES.md#fjs-2069) · [FJS-2070](ISSUES.md#fjs-2070).
+
 ### <a id="fjs-d613"></a>2026-10-06 · `FJS-D613` — Where is a `$raw` refused when it sits below the top of a `where` — Litestone drops the plain-string `where.$raw` and takes only a `sql` tag value, which `orderBy.$raw` already requires. Nothing off a wire can produce one, at any depth, through any transport or custom method. The Data boundary owns it (Invariants 6 and 8), and `where` stops behaving unlike its sibling. In-tree string uses are tests only (`litestone.test.ts`, `raw-clause-brand.test.ts`'s *untouched* case, toolbelt `match.spec.js`). The tag already runs the bare-clock check and expands a `now()` token, so nothing moves with it.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the refusal walks the whole filter tree and refuses a `$` key at any depth, in the bridge's owner, so HTTP, WS and `makeCtx` all get it. A custom method calling Litestone directly with user input stays open), **C** (both).
@@ -6634,6 +6650,22 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d660"></a>2026-10-08 · `FJS-D660` — A request has one id. When it states a well-formed `traceparent`, that header's trace id IS `correlationId`. Otherwise a well-formed `x-request-id` is used, and otherwise junction mints a 32-hex id. A malformed inbound id is replaced, never refused. The name `correlationId` stays.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/observability.md`](IDEAS/observability.md). **A** was picked over **B** (A plus one OTLP export door, `telemetry({ endpoint })`) and **C** (a native observe store and viewer). B is the next step, and its own questions stay open in the paper: plugin or package, and what it samples. C is refused for the paper's reason: it duplicates three papers' phases and competes with every vendor.
+
+**The failure it closes was measured.** A request carrying `traceparent` and no `x-request-id` filed its log line and trail row under a fresh UUID, while conduit continued the upstream trace on the outbound call. That gave two ids for one request, and nothing reported the disagreement.
+
+**`traceparent` wins over `x-request-id` when both arrive.** The W3C header is the one a collector, a load balancer and a vendor SDK all agree on, and conduit already continues it outbound. Whichever header had won, the other id would have disagreed with the outbound call.
+
+**Inbound trust is format, not position.** The paper's question was adopt always, adopt only behind a configured proxy, or mint and link. *Behind a trusted proxy* was the recommendation, and it was dropped once probed: the shipped Caddy edge (`packages/cli/core/edge.js`) forwards a client's headers untouched. A trusted hop therefore says nothing about who wrote the id. What a caller-chosen id can do is put a hostile string into a log line and file its own trail rows under a value it picked. It cannot change the actor or the tenant, which are recorded beside it. So the guard is the shape. A `traceparent` must parse as version `00` with a non-zero trace and parent id. An `x-request-id` must be 1–128 characters of `[A-Za-z0-9_.:@-]`. Anything else is replaced by a minted id, because refusing a request over its correlation id would be a failure out of proportion to the mistake (§ V 8). `x-request-id` was adopted unconditionally until now, so the same rule now covers both headers, and a WebSocket frame's stated id meets it too.
+
+**The traceparent parse has one owner, and it moved out of conduit.** It is `@frontierjs/toolbelt/trace`, read by junction to derive the id and by conduit to continue the trace. Junction had read the header *verbatim and unparsed* so that it would not hold a second reading of the spec. A shared kit removes that reason, and junction still carries both headers verbatim for whoever continues the span.
+
+**`correlationId` is not renamed `traceId`.** The value changed. The noun is a separate vocabulary question across five packages and the trail column, and it is not needed to close the defect. It stays listed in the paper.
+
+*Lives in:* `packages/junction/src/core/context.ts` (`inboundCorrelationId`, read by `enterRequest` and by the `correlationId()` middleware) · `packages/toolbelt/src/trace/` · `packages/junction/test/request-scope.test.ts` · `packages/conduit/junction-integration.test.ts`.
 
 ### <a id="fjs-d646"></a>2026-10-08 · `FJS-D646` — Does basecamp's raw SQLite handle open through litestone — Litestone exports an opener that applies its own WAL and busy-timeout rule, and basecamp calls it.
 

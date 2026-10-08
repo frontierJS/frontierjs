@@ -692,10 +692,14 @@ request that caused them:
 
 - a `traceparent` the caller sent is **continued** — same trace, a fresh span,
   so the target's work hangs off yours;
-- with none, the trace id is **derived from the correlation id**, so every call
-  made during one request shares one trace. A random id per call would make six
-  calls six unrelated traces. Junction mints correlation ids with
-  `crypto.randomUUID()`, and a uuid with its dashes out already IS a trace id;
+- with none, the trace id is **the correlation id**, so every call made during
+  one request shares one trace. A random id per call would make six calls six
+  unrelated traces. Junction's correlation id is the inbound trace id or 32 hex
+  it minted, which already IS a trace id; any other `X-Request-Id` a caller
+  stated is folded to one;
+- the `X-Request-Id` sent is junction's correlation id, which is the inbound
+  trace id whenever the caller sent a `traceparent`, so the target's log line,
+  yours and the trace share one id;
 - outside a request — a job, a script — a fresh trace is minted, which is the
   right answer rather than a missing one.
 

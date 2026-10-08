@@ -68,6 +68,10 @@
       "types": "./src/sse/sse.d.ts",
       "default": "./src/sse/sse.js"
     },
+    "./trace": {
+      "types": "./src/trace/trace.d.ts",
+      "default": "./src/trace/trace.js"
+    },
     "./units": "./src/units/units.js"
   },
   "files": [

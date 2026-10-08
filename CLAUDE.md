@@ -30,7 +30,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 4. **One owner per translation.** Exactly one place turns a thrown value into an HTTP status, one wraps/unwraps the result envelope, one parses `$`-params into `ctx.directives`, one announces a write, one startup phase list every caller runs. Add to the owner, never beside it; the owners are § Bridge index.
 5. **One owner per `app.<thing>`.** Claim it with `app.claim(name, value)`; type it by augmenting an exported interface, never by redeclaring the property — declaration merging requires identical types, so a redeclaration silently loses. The verb is not `provide`, because a Provider is a third party the app speaks to (`FJS-D06`).
 6. **Access is declared in the schema, not in hooks.** Gates, `@encrypted`, `@guarded`, `@@transitions` are enforced at the Data boundary. `x-gate` on the client is a UI affordance only — unknown answers are permissive and the server enforces regardless. No exceptions.
-7. **Protected fields are redacted in the audit trail.** `@encrypted`/`@guarded`/`@secret` log as `[redacted]` in field entries and in `before`/`after` snapshots.
+7. **Protected fields are redacted in the audit trail.** `@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and `@personal` as `[personal]`, in field entries and in `before`/`after` snapshots.
 8. **Caller-supplied names never enter a SQL pattern.**
 9. **Patch semantics: an explicit `null` clears.** Test key presence (`key in updates`), not `??`.
 10. **A `$`-PREFIXED KEY is transport syntax only.** `ctx.query` is filters, `ctx.directives` is `{limit, offset, orderBy, select}`, and no `$`-prefixed key survives the bridge — one the table does not name is REFUSED there by name (`FJS-D237`). The table is `@frontierjs/toolbelt/directives`; what the values mean is `@frontierjs/toolbelt/query` (`FJS-D125`). Junction's ambient `$`, the call in progress, is a different thing sharing a character.
@@ -156,6 +156,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **How to know something is true** → `VERIFYING.md`.
 - **The workspace, read rather than described** → `fli ws:atlas` (`--as=report` is the runbook: what to run, from where, every snapshot and its generator).
 - **Testing, CI and ports reference** → `docs/TESTING.md`, `docs/CI.md`, `docs/PORTS.md`.
+- **What a write guarantees after it returns** → `docs/CONSISTENCY.md`.
 - **Trying a change end to end** → `example/`, the kitchen sink across every surface; start at its `PROJECT_STATE.md`.
 
 ## Communication style

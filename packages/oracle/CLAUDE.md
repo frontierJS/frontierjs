@@ -45,6 +45,10 @@ mockup/          the old React recognizer. Not a workspace member, not ported,
 - **A create is an AND.** The caller is the owner/author the row names AND may
   read the parent. Either alone files a row under somebody else's name or
   under a parent the caller cannot see.
+- **The owner stamp needs a principal.** `@default(auth().id)` is written only
+  where the create gate is above 0; under a public create a visitor has no id,
+  and a required stamped column answered every anonymous create with a 500
+  (`FJS-1793`).
 - **`via` must be a REQUIRED link.** `check()` over a null key allows, so an
   optional parent link admits every row that names no parent.
 - **An op nobody holds is gate 8, never a signed-in level with no policy.**

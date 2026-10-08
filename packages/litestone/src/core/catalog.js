@@ -551,6 +551,25 @@ const FIELD = [
     { seeAlso: ['encrypted', 'secret'] }
   ),
   t(
+    'personal',
+    'field',
+    'protect',
+    '[(<category>)]',
+    'A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.',
+    'email String @personal(contact)',
+    {
+      seeAlso: ['person', 'log', 'omit'],
+      values: [
+        vals(
+          'category',
+          ['contact', 'device', 'location', 'government', 'financial', 'employment', 'communication',
+           'demographic', 'health', 'genetic', 'biometric', 'characteristic', 'criminal'],
+          'email String @personal(%s)'
+        )
+      ]
+    }
+  ),
+  t(
     'secret',
     'field',
     'protect',
@@ -1217,14 +1236,26 @@ const MODEL = [
     '',
     'This model is the principal auth() reads. One per schema; @scoped resolves against it.',
     '@@auth',
-    { seeAlso: ['scoped'] }
+    { seeAlso: ['scoped', 'person'] }
+  ),
+  t(
+    'person',
+    'model',
+    'operate',
+    '[(child)]',
+    "Every row is a person — where forgetting and export start. An @@auth model is one without saying so. On a person model a column named like personal data (email, phone, dob) with no @personal is a warning. `(child)` says every row is a child in the legal sense; it states a status, never an age.",
+    '@@person',
+    {
+      seeAlso: ['personal', 'auth'],
+      values: [vals('kind', ['child'], '@@person(%s)')]
+    }
   ),
   t(
     'log',
     'model',
     'operate',
     '(<database>[, reads: false][, writes: false])',
-    'Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret) log as [redacted], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
+    'Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
     '@@log(audit)',
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver logger\n}',
@@ -1427,6 +1458,7 @@ export const DOCS = {
   'field:guarded': 'encryption.md',
   'field:encrypted': 'encryption.md',
   'field:hashed': 'encryption.md',
+  'field:personal': 'audit-logging.md',
   'field:secret': 'encryption.md',
 
   // stamp
@@ -1507,6 +1539,7 @@ export const DOCS = {
   'model:tenant': 'multi-tenancy.md',
   'model:transitions': 'schema.md',
   'model:auth': 'access-control.md',
+  'model:person': 'audit-logging.md',
   'model:log': 'audit-logging.md',
   'model:anonymous': 'audit-logging.md',
   'model:db': 'multi-database.md',
@@ -1589,6 +1622,7 @@ export const TIERS = {
     'field:datetime',
     'field:time',
     'field:hashed',
+    'field:personal',
     'field:secret',
     'field:allow',
     'field:updatedBy',
@@ -1608,6 +1642,7 @@ export const TIERS = {
     'model:deny',
     'model:transitions',
     'model:log',
+    'model:person',
     'model:db',
     'model:export',
     'model:capabilities',
@@ -1715,7 +1750,9 @@ export const SYNONYMS = {
   'field:log':         ['audit', 'history', 'trail'],
   'field:immutable':   ['write-once', 'append-only'],
   'field:hashed':      ['password', 'bcrypt', 'argon'],
-  'field:encrypted':   ['pii', 'at-rest'],
+  'field:encrypted':   ['at-rest'],
+  'field:personal':    ['pii', 'gdpr', 'personal data'],
+  'model:person':      ['data subject'],
   'field:required':    ['not null', 'notnull', 'mandatory'],
   'field:omit':        ['hide', 'private'],
   'model:exclude':     ['no overlap', 'exclusion constraint', 'double booking'],

@@ -21,6 +21,7 @@ import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
 } from './migrate.js'
+import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -188,7 +189,11 @@ export function describeSkipped(skipped) {
 // over a shadow missing part of its history. Callers are handed the files named
 // and refuse with them.
 
-export function buildShadow(dir = './migrations', only = null) {
+// `after` is statements run once the files have been, as the file about to be
+// written will run them. `create` asks the question *what is still missing once
+// the operations I was given have happened*, and SQLite's own RENAME COLUMN is
+// what carries a column's indexes, constraints and views to its new name.
+export function buildShadow(dir = './migrations', only = null, after = []) {
   const files = listMigrationFiles(dir).filter(f => !only || only.has(f))
   const js    = files.filter(f => f.endsWith('.js'))
   if (js.length) return { ok: false, reason: 'js-migrations', files: js, schema: null }
@@ -201,6 +206,12 @@ export function buildShadow(dir = './migrations', only = null) {
         catch (e) {
           return { ok: false, reason: 'replay-failed', file, error: e.message, schema: null }
         }
+      }
+    }
+    for (const stmt of after) {
+      try { db.run(stmt) }
+      catch (e) {
+        return { ok: false, reason: 'replay-failed', file: 'the requested operations', error: e.message, schema: null }
       }
     }
     return { ok: true, schema: introspect(db), files }
@@ -310,8 +321,51 @@ export function baseline(rawDb, parseResult, dir = './migrations', { pluralize =
 // Diffs schema.lite (via pristine in-memory db) against live db.
 // Writes a new timestamped migration file if there are changes.
 
-export function create(db, parseResult, label = 'migration', dir = './migrations', { pluralize = false } = {}) {
-  return createAgainstHistory(parseResult, 'main', label, dir, { pluralize })
+export function create(db, parseResult, label = 'migration', dir = './migrations', { pluralize = false, operations = [] } = {}) {
+  return createAgainstHistory(parseResult, 'main', label, dir, { pluralize, operations })
+}
+
+// The comparison `create` and `renameCandidates` both need: the declared schema
+// against the history as it stands AFTER the given operations. A rename is
+// therefore not a special case of the diff — it is a statement that has already
+// happened by the time the diff is read, so the rebuild that follows has nothing
+// to drop and the column's values never leave the table.
+function planAgainstHistory(parseResult, dbName, dir, { pluralize = false, operations = [] } = {}) {
+  const resolved = resolveOperations(parseResult, dbName, operations, { pluralize })
+  if (!resolved.ok) return { created: false, blocked: true, message: resolved.message }
+  const ops = resolved.ops
+
+  let shadow = buildShadow(dir)
+  if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
+  if (ops.length) {
+    const refusal = checkAgainstHistory(ops, shadow.schema)
+    if (refusal) return { created: false, blocked: true, message: refusal }
+    shadow = buildShadow(dir, null, ops.map(renameStatement))
+    if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
+  }
+
+  const pristineDb = openDatabase(':memory:')
+  let pristineSchema
+  try {
+    pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
+  } finally {
+    pristineDb.close()
+  }
+
+  const diffResult = diffSchemas(pristineSchema, shadow.schema, parseResult, dbName, { pluralize })
+  return { blocked: false, diffResult, ops, files: shadow.files }
+}
+
+/**
+ * The renames `migrate create` would ask about: a column the history has that
+ * the schema no longer declares, beside one the schema declares that the
+ * history lacks, of the same type. A guess, so it is only ever put as a
+ * question (see `askRenames`).
+ */
+export function renameCandidates(parseResult, dir = './migrations', { dbName = 'main', pluralize = false, operations = [] } = {}) {
+  const planned = planAgainstHistory(parseResult, dbName, dir, { pluralize, operations })
+  if (planned.blocked) return []
+  return guessRenames(planned.diffResult.tableDiffs, parseResult, { pluralize })
 }
 
 // The body both create() and createForDatabase() run.
@@ -326,30 +380,22 @@ export function create(db, parseResult, label = 'migration', dir = './migrations
 // The live database is therefore not consulted here at all, which is what makes
 // `migrate create` answerable with no database — and is why the same walk can
 // run in `fli check` and before an image is built.
-function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = false } = {}) {
-  const shadow = buildShadow(dir)
-  if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
+function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = false, operations = [] } = {}) {
+  const planned = planAgainstHistory(parseResult, dbName, dir, { pluralize, operations })
+  if (planned.blocked) return planned
+  const { diffResult, ops } = planned
 
-  const pristineDb = openDatabase(':memory:')
-  let pristineSchema
-  try {
-    pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
-  } finally {
-    pristineDb.close()
-  }
-
-  const diffResult = diffSchemas(pristineSchema, shadow.schema, parseResult, dbName, { pluralize })
-
-  if (!diffResult.hasChanges) return {
+  if (!diffResult.hasChanges && !ops.length) return {
     created: false,
-    message: shadow.files.length
+    message: planned.files.length
       ? 'the migration history already builds the schema — no migration needed'
       : 'the schema declares nothing to build — no migration needed',
   }
 
-  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize })
+  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize, first: ops.map(renameStatement) })
   const name    = nextMigrationName(dir, label)
-  const summary = summarizeDiff(diffResult)
+  const diffSummary = diffResult.hasChanges ? summarizeDiff(diffResult) : ''
+  const summary = [...ops.map(o => `  ~ ${o.table}  ${describeOperation(o)}`), diffSummary].filter(Boolean).join('\n')
 
   // A dropped column is one line of the diff summary, sitting among the adds
   // and the index changes, and it is the only line that destroys something. The
@@ -365,6 +411,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   // is what a deploy replays, so a flag on any command could not carry it there.
   const loss   = describeDataLoss(diffResult.tableDiffs)
   const rename = loss.find(l => l.renameTo)
+  const guess  = guessRenames(diffResult.tableDiffs, parseResult, { pluralize })[0]
   const banner = loss.length ? [
     `-- ╔${'═'.repeat(74)}╗`,
     `-- ║ DESTRUCTIVE — applying this deletes the values in these columns:`,
@@ -373,6 +420,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
     ...(rename ? [
       `-- ║ To keep them, replace the rebuild below with a rename, then delete this box:`,
       `-- ║     ALTER TABLE "${rename.table}" RENAME COLUMN "${rename.columns[0]}" TO "${rename.renameTo}";`,
+      ...(guess ? [`-- ║ Or delete this file and create it again with:  --rename ${guess.model}.${guess.from}=${guess.to}`] : []),
     ] : [
       `-- ║ To keep them, copy the values before the old table is dropped, then delete this box.`,
     ]),
@@ -386,8 +434,8 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const header = [
     `-- Litestone migration${dbName === 'main' ? '' : ` (database: ${dbName})`}`,
     `-- Created:   ${new Date().toISOString()}`,
-    `-- Changes:`,
-    summary.split('\n').map(l => `--   ${l}`).join('\n'),
+    ...(ops.length ? [`-- Operations:`, ...ops.map(o => `--   ${describeOperation(o)}`)] : []),
+    ...(diffSummary ? [`-- Changes:`, diffSummary.split('\n').map(l => `--   ${l}`).join('\n')] : []),
     ``,
     banner,
     ``,
@@ -397,7 +445,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const filePath = join(resolve(dir), name)
   writeFileSync(filePath, header + sql, 'utf8')
 
-  return { created: true, name, filePath, summary, sql, loss }
+  return { created: true, name, filePath, summary, sql, loss, operations: ops }
 }
 
 // The box create writes over a loss, and the line in it that answers the box.
@@ -464,8 +512,8 @@ export function shadowRefusal(shadow) {
 // Like create() but scoped to a specific named database.
 // Used by CLI multi-DB migrate create to write per-database migration files.
 
-export function createForDatabase(rawDb, parseResult, dbName, label = 'migration', dir = './migrations', { pluralize = false } = {}) {
-  return createAgainstHistory(parseResult, dbName, label, dir, { pluralize })
+export function createForDatabase(rawDb, parseResult, dbName, label = 'migration', dir = './migrations', { pluralize = false, operations = [] } = {}) {
+  return createAgainstHistory(parseResult, dbName, label, dir, { pluralize, operations })
 }
 
 // ─── APPLY ────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createService, createBaseService } from '../src/core/service.ts'
+import { $ } from '../index.ts'
 
 const SCHEMA = `
 database main { path "./a.db" }
@@ -70,6 +71,12 @@ beforeAll(async () => {
     async complete() { return { handwritten: true } },
   }))
 
+  // The method that lifts an @system move, as example's invoices.settle does.
+  app.services.register(createService({
+    name: 'shelf', model: 'Todo',
+    async archive() { return $.db.todo.transition($.id!, 'archive', { system: true }) },
+  }))
+
   // An allow-list that names one move and not the others. A move listed with no
   // function written is not a finding — start() below would refuse if it were.
   app.services.register(createService({
@@ -121,7 +128,7 @@ describe('a base service with no custom methods serves the moves', () => {
   test('it is on the service object as well as in the table, as a written method is', async () => {
     const svc = app.services.get('todos')
     expect(typeof svc.complete).toBe('function')
-    expect(Object.keys(svc._customMethods)).toEqual(['complete', 'reopen', 'archive'])
+    expect(Object.keys(svc._customMethods)).toEqual(['complete', 'reopen'])
   })
 
   test('a second complete on the same row is refused, and the row stays done', async () => {
@@ -150,15 +157,48 @@ describe('the Data boundary grades the move', () => {
     expect(await statusOf(t.id)).toBe('open')
   })
 
-  test('an @system move is refused for a user caller — the system client, paired, makes it', async () => {
+  // The application decides an @system move, and a derived method has no
+  // decision to hold: it ran on the caller's client and was refused for every
+  // caller, yet was listed (`FJS-1925`). It is not served; the method that lifts
+  // it with `{ system: true }` is the app's to write.
+  test('an @system move is not served, so it is not listed and not callable — the system client, paired, makes it', async () => {
+    const d = app.services.get('todos').describe()
+    expect(d.methods).not.toContain('archive')
+    expect(d.customMethods).not.toContain('archive')
+    expect(typeof app.services.get('todos').archive).toBe('undefined')
+
     const t = await seed()
     await invoke('owner', 'todos', 'complete', t.id)
     const res = await invoke('owner', 'todos', 'archive', t.id)
-    expect(res.status).toBe(403)
-    expect(JSON.stringify(res.body)).toContain('@system')
+    expect([404, 405]).toContain(res.status)
     expect(await statusOf(t.id)).toBe('done')
     await db.asSystem().todo.transition(t.id, 'archive')
     expect(await statusOf(t.id)).toBe('archived')
+  })
+
+  test('a methods: list that names it with no method written refuses start(), by name', async () => {
+    const svc = createService({ name: 'shelved', model: 'Todo', methods: ['get', 'archive'] })
+    const a = (await import('../index.ts')).createApp({
+      db, config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    } as never)
+    a.services.register(svc)
+    expect(svc._authoringFindings!.join('\n')).toContain(`'archive'`)
+    await expect(a.start()).rejects.toThrow(/archive/)
+    await a.stop()
+  })
+
+  test('a written method that lifts it with { system: true } is served, to the caller the model lets update', async () => {
+    const t = await seed()
+    await invoke('owner', 'todos', 'complete', t.id)
+    expect((await invoke('owner', 'shelf', 'archive', t.id)).status).toBe(200)
+    expect(await statusOf(t.id)).toBe('archived')
+
+    // The row policy still holds: a stranger cannot update the row, so nothing
+    // moves. A written method answers the null as it likes; this one passes it on.
+    const u = await seed()
+    await invoke('owner', 'todos', 'complete', u.id)
+    await invoke('stranger', 'shelf', 'archive', u.id)
+    expect(await statusOf(u.id)).toBe('done')
   })
 })
 
@@ -176,7 +216,7 @@ describe('one table', () => {
 
   test('the moves are in the allowed-methods list and the 405 names them', async () => {
     const d = app.services.get('todos').describe()
-    for (const m of ['complete', 'reopen', 'archive']) {
+    for (const m of ['complete', 'reopen']) {
       expect(d.methods).toContain(m)
       expect(d.customMethods).toContain(m)
     }

@@ -26,13 +26,14 @@ import { create, apply, status, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
          baseline, historyGap, driftAgainstLive,
-         unacceptedLoss, unresolvedBlocks }            from '../core/migrations.js'
+         unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
+import { parseRenameFlag, readOperations, askRenames } from '../core/operations.js'
 import { backupSqliteTo }                              from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
 import { modelToAccessor, modelToTableName }           from '../core/ddl.js'
 import { findPrincipal }                               from './principal.js'
-import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag,
+import { c, bold, dim, green, yellow, red, cyan, args, positional, flag, getFlag, getFlags,
          fatal, rel, header, loadSchema, getEncKey, resolveDbPath,
          declaresDatabases, clientDb, loadGateResolver,
          loadBaselineSchema, parseBaseline }        from './cli-helpers.js'
@@ -153,6 +154,8 @@ const HELP = `
   ${bold('Commands')}
     ${cyan('litestone init')}                      create schema.lite + litestone.config.js
     ${cyan('litestone migrate create')} [label]    diff schema → write migration file
+                                     ${dim('--rename Model.oldColumn=newField   keep a renamed column\'s values (repeatable)')}
+                                     ${dim('--operations ops.json               the same, as a document')}
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
     ${dim('  --backup[=dir]')}                       copy every database first — there is no down
@@ -477,8 +480,45 @@ export default {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The operations a run was given by flag or document, before any prompt.
+// Parsed once per process; a malformed one stops the run before a file is written.
+function givenOperations() {
+  const ops = []
+  try {
+    for (const text of getFlags('rename')) ops.push(parseRenameFlag(text))
+    const path = getFlag('operations')
+    if (path) {
+      if (!existsSync(path)) throw new Error(`--operations ${path}: no such file`)
+      let doc
+      try { doc = JSON.parse(readFileSync(path, 'utf8')) }
+      catch (e) { throw new Error(`--operations ${path}: not JSON (${e.message})`) }
+      ops.push(...readOperations(doc))
+    }
+  } catch (e) {
+    fatal(e.message)
+  }
+  return ops
+}
+
+// The given operations, plus whatever a person says yes to. A prompt only where
+// a person can answer it: with no terminal the DESTRUCTIVE box is what stops a
+// guess from being applied, and a hung CI job is worse than that.
+async function operationsFor(parseResult, name, dir, cfg, given) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return given
+  const guesses = renameCandidates(parseResult, dir, { dbName: name, pluralize: cfg.pluralize, operations: given })
+  if (!guesses.length) return given
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    return [...given, ...await askRenames(guesses, q => rl.question(`  ${q}`))]
+  } finally {
+    rl.close()
+  }
+}
+
 async function cmdCreate(label, cfg) {
   header('litestone migrate create')
+  const given = givenOperations()
 
   const parseResult = loadSchema(cfg.schema)
   const dbs         = openSqliteDbs(parseResult, cfg)
@@ -488,9 +528,10 @@ async function cmdCreate(label, cfg) {
   try {
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
+      const operations = await operationsFor(parseResult, name, migrationsDir, cfg, given)
       const result = multi
-        ? createForDatabase(rawDb, parseResult, name, label || 'migration', migrationsDir, { pluralize: cfg.pluralize })
-        : create(rawDb, parseResult, label || 'migration', migrationsDir, { pluralize: cfg.pluralize })
+        ? createForDatabase(rawDb, parseResult, name, label || 'migration', migrationsDir, { pluralize: cfg.pluralize, operations })
+        : create(rawDb, parseResult, label || 'migration', migrationsDir, { pluralize: cfg.pluralize, operations })
 
       // A refusal printed under ✓ with exit 0 told a script a migration was written.
       if (result.blocked) { console.error(`\n  ${red('✗')}  ${result.message}\n`); process.exit(1) }
@@ -769,6 +810,7 @@ async function cmdBaseline(cfg) {
 
 async function cmdDev(label, cfg) {
   header('litestone migrate dev')
+  const given = givenOperations()
 
   const parseResult = loadSchema(cfg.schema)
   const dbs         = openSqliteDbs(parseResult, cfg)
@@ -804,7 +846,8 @@ async function cmdDev(label, cfg) {
         console.log(`  ${dim(`${drift.pending.length} migration${drift.pending.length === 1 ? '' : 's'} pending`)}`)
       }
 
-      const result = createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg)
+      const operations = await operationsFor(parseResult, name, migrationsDir, cfg, given)
+      const result = createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg, operations)
       if (result.blocked) { console.error(`\n  ${red('✗')}  ${result.message}\n`); process.exit(1) }
       if (!result.created) { console.log(`  ${green('✓')}  ${result.message}\n`); continue }
 
@@ -825,8 +868,8 @@ async function cmdDev(label, cfg) {
 
 // create() and createForDatabase() differ only in which database's models they
 // build, and cmdDev needs whichever this one is.
-function createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg) {
-  return createForDatabase(null, parseResult, name, label || 'migration', migrationsDir, { pluralize: cfg.pluralize })
+function createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg, operations = []) {
+  return createForDatabase(null, parseResult, name, label || 'migration', migrationsDir, { pluralize: cfg.pluralize, operations })
 }
 
 async function cmdApply(cfg) {
@@ -5065,7 +5108,10 @@ async function main() {
     if (previewMode) {
       await preview(configPath)
     } else {
-      await execute(configPath, { dryRun, verbose: true, outputPath, only, concurrency, skipExisting, force }, run)
+      // The schema is resolved the way every other command resolves it; redact()
+      // reads its declarations, and a pipeline with no redact never opens it.
+      const { schema: schemaPath } = await loadConfig()
+      await execute(configPath, { dryRun, verbose: true, outputPath, only, concurrency, skipExisting, force, schemaPath }, run)
     }
     return
   }

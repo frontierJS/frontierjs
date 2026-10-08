@@ -13,7 +13,7 @@
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
 import { Forbidden, toFrameworkError }          from '../core/errors.ts'
-import { clientIp, requestMeta }                from '../core/context.ts'
+import { clientIp, requestMeta, inboundCorrelationId, mintCorrelationId } from '../core/context.ts'
 import {
   createRateLimiter,
   refuseLegacyRateLimitOptions,
@@ -421,7 +421,9 @@ export function bodyLimit(maxBytes: number) {
 }
 
 // ─── Correlation ID ───────────────────────────────────────────────────────
-// Reads X-Request-ID from incoming request headers, or generates a new UUID.
+// Reads the id by enterRequest's rule (`inboundCorrelationId`: the traceparent
+// trace id, then a well-formed X-Request-ID), or generates one. A second rule
+// here would give the response header and the log line two ids.
 // Stamps the id on ctx as ctx.requestId so handlers and services can log it.
 // Always echoes the id back in the response as X-Request-ID.
 //
@@ -438,18 +440,17 @@ export function bodyLimit(maxBytes: number) {
 export interface CorrelationIdOptions {
   // Header name to read from / write to. Default: 'x-request-id'
   header?:    string
-  // Custom id generator. Default: crypto.randomUUID()
+  // Custom id generator. Default: 32 hex, shaped as a W3C trace id
   generator?: () => string
 }
 
 export function correlationId(opts: CorrelationIdOptions = {}) {
 
   const header    = (opts.header ?? 'x-request-id').toLowerCase()
-  const generate  = opts.generator ?? (() => crypto.randomUUID())
+  const generate  = opts.generator ?? mintCorrelationId
 
   const middleware: MiddlewareFn = async (ctx, next) => {
-    // Use existing id from client, or mint a new one
-    const id = ctx.headers[header] ?? generate()
+    const id = inboundCorrelationId(ctx.headers, header) ?? generate()
 
     // Stamp on ctx so handlers can reach it without parsing headers again
     ;(ctx).requestId = id

@@ -51,8 +51,8 @@ import { connectorFor, targetFor, computeProviders, markFor, fleetMark, priceIn,
 import { sendVia }               from '../../providers/compute/accounts.ts'
 import { DEPLOY_TIMEOUT_MS }     from '../../providers/executor.ts'
 import { mintEnrollToken, cloudInit, installCommand, ENROLL_WINDOW_MS } from '../../providers/compute/enrollment.ts'
-import { env }                   from '../../core/env.ts'
-import { localSshRefusal, listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
+import { env, localMachineRefusal } from '../../core/env.ts'
+import { listSshHosts, probeSshHost } from '../../core/local-ssh.ts'
 
 /** The port an outpost listens on. `packages/cli/core/ports.js` — project 8
  *  (outpost), backend. Named once: it reaches a machine twice, in the cloud-init
@@ -909,7 +909,7 @@ export function createServersService(app: BasecampApp) {
     // than an empty list when it is not offered, so a screen can tell *no
     // aliases* from *not here*.
     async localSshHosts() {
-      const refused = localSshRefusal()
+      const refused = localMachineRefusal()
       if (refused) throw new NotFound(`The local ssh listing is ${refused}`)
       return { hosts: await listSshHosts() }
     },
@@ -919,7 +919,7 @@ export function createServersService(app: BasecampApp) {
     // One key-only `ssh <alias> true`. The alias must be one the config names;
     // anything else is answered unreachable before a process starts.
     async localSshProbe() {
-      const refused = localSshRefusal()
+      const refused = localMachineRefusal()
       if (refused) throw new NotFound(`The local ssh listing is ${refused}`)
       const alias = ($.data as Record<string, unknown> | null)?.alias ?? $.query.alias
       if (!alias) throw new BadRequest('alias is required — which Host in the ssh config to try')

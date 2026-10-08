@@ -1,5 +1,34 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — a required `@default(auth().x)` with no principal is refused by name (`FJS-1793`)
+
+With no principal the auth-default stamp writes nothing, and `isServerFilled` excused the column from the required pre-flight, so a create that did not name it reached the INSERT as NULL and answered SQLite's raw `NOT NULL constraint failed` — a 500 for an anonymous caller on a model whose create gate is 0. `refuseMissingRequired` (`src/core/client.js`) now holds an auth-default column it finds empty after the stamps. An anonymous caller gets `AccessDeniedError` with `status = 401`, naming the column and the claim (`Invitee.create needs a principal: ownerId defaults to auth().id, and the caller is not signed in. Sign in, or name ownerId on the call.`); Junction reads `status` before the class name. `asSystem()` with no principal, or a principal missing the claim, gets a `ValidationError` on the field. Every create path goes through it: `create`, `createMany`, `upsert`, `upsertMany`. A value in the payload still wins, and an optional column is left null. `docs/access-control.md` § `@default(auth().id)` says so. Proof: `test/create-policy-stamp.test.ts`, three new cases, two red before.
+
+## 2026-10-08 — a rename reaches the database as a RENAME (`FJS-D603` step 1)
+
+`migrate create` takes the row-keeping operations the schema cannot say: `--rename Model.oldColumn=newField` (repeatable), `--operations ops.json` (`{ "operations": [{ "op": "rename", "model", "from", "to" }] }`), or a yes at a terminal prompt (default no; asked only when stdin and stdout are a TTY). `migrate dev` takes the same. The file runs `ALTER TABLE … RENAME COLUMN` first, the schema is then diffed against the history as renamed (`buildShadow(dir, only, after)`), and any rebuild the rest of the change forces starts from the new name, so the values stay and no DESTRUCTIVE box is written. The file's header names each operation.
+
+- **Refused by name before a file exists:** an unknown op or model, a `to` no stored field holds, a `from` the schema still declares or the history lacks, a column named twice. A name reaches SQL only after matching a real column, and is quoted through `quoteIdent`.
+- `create()`/`createForDatabase()` take `{ operations }` and return `operations`; `renameCandidates()` is exported. New `src/core/operations.js` — `OPERATIONS` is the fixed set, and backfill and split join it. The collective noun is provisional.
+- `migrate dry-run` still diffs against the live database and ignores operations, so a previewed rename shows as a drop plus an add.
+
+`test/operations.test.ts`, 28 cases, including a prompt driven through a real pty.
+
+## 2026-10-08 — `@personal` and `@@person` (`FJS-D657`)
+
+- **The grammar.** `@personal` and `@personal(<category>)` on a column; the category list is closed (thirteen, in `src/core/personal.js`) and an unlisted one is refused by name. `@@person` and `@@person(child)` on a model; any other argument is refused. An `@@auth` model is a person without declaring it. `@personal` on a relation is refused, since the relation holds no value.
+- **The trail.** `buildFieldPolicyMap` carries `personal`, and the audit trail writes `[personal]` in place of the value in field entries and in `before`/`after` snapshots. A column that is also protected writes `[redacted]`. `isProtected(p)` in `schema-maps.js` is now the one answer to *which kinds are protected*: the trail, `export.js` (through `fieldPolicyOf`), `testing.js`'s `verifyFieldProtection` and `query.js`'s `filterableKeysFor` all read it, where each used to list the attributes itself. A field-policy entry that carries only `personal` does not slow a read: `shapesRead` keeps the fast `findUnique` and the include path.
+- **The warning.** On a person model, a column named like personal data (`email`, `phone`, `firstName`, `dob`, …) with no `@personal` is a parse warning naming the category to add. Other models never warn.
+- **`redact()` reads the schema** (`FJS-2059`). SECRETS is every protected column and PERSONAL every `@personal` one, per table and under its `@map` name. `REDACT_DEFAULTS` is gone, the mode `'PII'` is now `'PERSONAL'` with no alias, and a config `redact: { SECRETS, PERSONAL }` adds names to the declared set. A pipeline that redacts with no schema is refused before it runs. `execute` takes `schemaPath`; the CLI passes the one `loadConfig` resolves, and Studio and `run.js` pass theirs. Studio's picker says PERSONAL.
+- **An unknown attribute with an argument** now reads *'@pii' is neither a field attribute nor a function this schema declares* (`FJS-2060`).
+- Catalog rows for both words, documented in `docs/audit-logging.md`; the search for `pii` now finds `@personal` instead of `@encrypted`.
+
+Proof: 5843 tests, 0 failures, plus `test/transform-redact.test.ts` (5). The audit-redaction block gained a `[personal]` row and a row asserting no `@hashed` digest reaches the trail. Removing the `[personal]` mark fails two rows. Removing `@hashed` from the redaction set fails nothing, because a read strips the digest before the trail sees it. Filed while building: `FJS-2063` (redact writes NULL into a required column) and `FJS-2064` (Studio's transform call).
+
+## 2026-10-08 — the catalog test's header names no count
+
+`test/catalog.test.ts` said the catalog held eighty-six words when it holds 113. The count is gone because nothing kept it true.
+
 ## 2026-10-08 — `verify:studio:access` grades again (`FJS-1238`)
 
 The drive looked for `auth().cartToken`, a claim `example` had renamed to `cartId`, so it died on a missing row before printing any result. It now takes a top-level claim from `/api/access`, which is where the panel reads it too. The real Studio defect behind that one: `esc()` threw on a non-string, so a `@@transitions` on a Boolean column (`reminded false → true`) blanked the Moves view. `esc` now coerces. `verify:studio` passes 6 of 6.

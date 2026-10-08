@@ -1,12 +1,14 @@
 ---
 id: observability
-status: proposed
+status: partial
 dated: 2026-10-08
 ---
 
 # Idea — observability: four streams that already exist, and the one id that should join them
 
-**Status: IDEA, nothing built.** Dated 2026-10-08. Written for wave 5 of the
+**Ruled 2026-10-08 as `FJS-D660`: A is built**, with the inbound-trust question answered by format rather than by proxy position. B and the renames below are still open.
+
+Dated 2026-10-08. Written for wave 5 of the
 vocabulary atlas ("papers before nouns"): the nouns for this region come from
 here. Every claim marked *measured* was produced by running a probe against
 `packages/junction` on this date; the rest is cited `file:line`. Do not cite

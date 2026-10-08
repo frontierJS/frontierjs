@@ -36,7 +36,7 @@ import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
-import { MADE_AT_HEADER, SENT_AT_HEADER } from '../core/context.ts'
+import { MADE_AT_HEADER, SENT_AT_HEADER, acceptedRequestId } from '../core/context.ts'
 import { serviceAccessor }      from '../core/service.ts'
 import { wsSend }               from './send-queue.ts'
 import { logSocketCall }        from './middleware.ts'
@@ -1449,10 +1449,12 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // every later write a replay of the first.
               const started = Date.now()
               let status = 200
+              // A client wrote it, so it meets the same shape check a header does.
+              const correlationId = acceptedRequestId(extra.correlationId)
               try {
                 await _enterRequest!({
                   origin:         'websocket',
-                  correlationId:  extra.correlationId as string | undefined,
+                  correlationId,
                   headers:        _frameProtocolHeaders(extra.headers),
                   // Same as the HTTP path — the principal is request-wide, and
                   // it is what an internal call inherits when it names none.
@@ -1470,7 +1472,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 logSocketCall(app, {
                   service: svc.name, method: method as string, id: svcCtx.id == null ? null : String(svcCtx.id),
                   status, ms: Date.now() - started, ip: ctx.ip,
-                  correlationId: extra.correlationId as string | undefined,
+                  correlationId,
                 })
               }
             })().catch(() => {})

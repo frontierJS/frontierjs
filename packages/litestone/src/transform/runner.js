@@ -267,14 +267,14 @@ function applyOpsToTable(db, tableName, ops, schema) {
     }
 
     else if (op._type === 'redactBlock') {
-      const targets = resolveRedactColumns(op.mode, op.cfg).filter(n => columns.find(col => col.name === n))
+      const targets = resolveRedactColumns(op.mode, op.cfg, tableName).filter(n => columns.find(col => col.name === n))
       if (targets.length === 0) continue
       rows = rows.map(r => {
         const patched = { ...r }
         for (const n of targets) patched[n] = null
         return patched
       })
-      const label = op.mode ? op.mode : 'SECRETS+PII'
+      const label = op.mode ? op.mode : 'SECRETS+PERSONAL'
       log(`   🔴 ${tbl(tableName)}  redact [${targets.join(', ')}]  ${c.magenta}${label}${c.reset}`)
     }
 
@@ -462,6 +462,6 @@ const describeOp = op => {
   if (op._type === 'setField')     return `⚡ ${col(op.name)}`
   if (op._type === 'keepColumns')  return `📌 ${op.names.map(col).join(c.gray + ', ' + c.reset)}`
   if (op._type === 'mask')         return `🎭 ${col(op.name)}  ${c.magenta}${op.strategy}${c.reset}`
-  if (op._type === 'redactBlock')  return `🔴 redact ${c.magenta}${op.mode ?? 'SECRETS+PII'}${c.reset}`
+  if (op._type === 'redactBlock')  return `🔴 redact ${c.magenta}${op.mode ?? 'SECRETS+PERSONAL'}${c.reset}`
   return op._type
 }

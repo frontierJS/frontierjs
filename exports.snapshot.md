@@ -383,6 +383,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./signature` | `src/signature/signature.js` | yes |
 | exports | `./sse (types)` | `src/sse/sse.d.ts` | yes |
 | exports | `./sse (default)` | `src/sse/sse.js` | yes |
+| exports | `./trace (types)` | `src/trace/trace.d.ts` | yes |
+| exports | `./trace (default)` | `src/trace/trace.js` | yes |
 | exports | `./units` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-08 — `User.email` and `User.name` are `@personal(contact)` (`FJS-D657`)
+
+`User` is `@@auth` and so a person model, and a person model's `email` with no `@personal` is now a parse warning. The fragment declares both columns itself, so a scaffolded app's trail logs them as `[personal]`. Proof: `bun run test`, 557 pass.
+
 ## 2026-10-08 — the README imports `createResource` from `@frontierjs/sierra/resource` (`FJS-D650`)
 
 It followed sierra's rename of `./junction`.

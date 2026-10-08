@@ -3047,6 +3047,25 @@ describe('correlationId middleware', () => {
     expect(res.headers['x-request-id']).toBe('my-trace-123')
   })
 
+  // The middleware and the request store read the headers by one rule
+  // (`FJS-D660`); a rule of its own here would echo one id and log another.
+  it('echoes the traceparent trace id, over a disagreeing x-request-id', async () => {
+    const app = await makeApp()
+    const res = await request(app)
+      .get('/pings')
+      .set('x-request-id', 'my-trace-123')
+      .set('traceparent', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
+    expect(res.headers['x-request-id']).toBe('4bf92f3577b34da6a3ce929d0e0e4736')
+  })
+
+  it('replaces a malformed client id rather than echoing it', async () => {
+    const app = await makeApp()
+    const res = await request(app)
+      .get('/pings')
+      .set('x-request-id', 'has spaces; and <tags>')
+    expect(res.headers['x-request-id']).toMatch(/^[0-9a-f]{32}$/)
+  })
+
   it('includes the id on error responses too', async () => {
     const app = await createTestApp({
       services: [() => createService({

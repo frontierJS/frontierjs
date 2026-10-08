@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Git.mesa — the Resource layer for git, as this app sees it.
+  //
+  // No model, like Portal and Edge: a branch and a dirty count are the working
+  // tree's to state and this app keeps no copy. `model: null` declares that
+  // rather than letting a missing schema read as a misspelt one.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const git = createResource('git', { model: null })
+</script>

@@ -1,7 +1,7 @@
 // test/catalog.test.ts
 //
-// The catalog is a claim of COMPLETENESS about the .lite language — eighty-six
-// words, and the whole reason to read it is that nothing is missing. A word the
+// The catalog is a claim of COMPLETENESS about the .lite language — every
+// word, and the whole reason to read it is that nothing is missing. A word the
 // parser accepts and the catalog does not know makes the table a lie about the
 // one thing it offers, and it goes wrong silently: nobody gets an error for a
 // feature they never heard of.

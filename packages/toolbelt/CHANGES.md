@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-08 — `/trace`: the one reading of a `traceparent` (`FJS-D660`)
+
+`parseTraceparent(header)` moved here from conduit unchanged, so junction can take a request's correlation id from the trace id without holding a second reading of the spec. Conduit re-exports it. Proof: `test/specs/trace.spec.js` (3 cases, 12 refused headers); 613 pass.
+
 ## 2026-10-07 — the datetime fixtures are vectors, the frontmatter script compares (`FJS-D631`)
 
 `test/fixtures/datetime-oracle.{json,mjs}` are `datetime-vectors.{json,mjs}` and `frontmatter-oracle.mjs` is `frontmatter-compare.mjs`, because `oracle` is a package's name. The spec's `ORACLE` table is `VECTORS`. Proof: `bun run test` 610 pass, `node test/run.js datetime` 42 pass.

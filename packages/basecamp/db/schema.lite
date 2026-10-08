@@ -397,8 +397,8 @@ model User {
   // it is an account taken over by whoever holds a session, with
   // `emailVerified` still true for an address nobody verified. `accountId`
   // moves a person between organizations, which is the hub's act.
-  email          String    @email @unique @lower @allow('write', auth().isSystemAdmin)
-  name           String?   @trim
+  email          String    @email @unique @lower @allow('write', auth().isSystemAdmin) @personal(contact)
+  name           String?   @trim @personal(contact)
   // Both carry auth's own field policy, and they carry it because this model
   // lets a person update their own row (`users.patch`, the profile form).
   // Without it the field policy is the only thing between a caller and their

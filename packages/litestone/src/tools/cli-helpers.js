@@ -53,6 +53,17 @@ export const getFlag    = name => {
   const v = _flagMap.get(name)
   return (v === undefined || v === true || v === false) ? null : v
 }
+// A flag that may be given more than once. `_flagMap` keeps the last, so this
+// reads the arguments again.
+export const getFlags   = name => {
+  const out = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === `--${name}` && args[i + 1] !== undefined && !args[i + 1].startsWith('--')) out.push(args[++i])
+    else if (a.startsWith(`--${name}=`)) out.push(a.slice(name.length + 3))
+  }
+  return out
+}
 
 export function fatal(msg) {
   console.error(`\n  ${red('✗')}  ${msg}\n`)

@@ -7,7 +7,7 @@ import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg } from './qu
 import { ValidationError } from './validate.js'
 import { buildPolicyFilter } from './policy.js'
 import { CapabilityNotDeclaredError } from './errors.js'
-import { nowISO } from './schema-maps.js'
+import { nowISO, shapesRead } from './schema-maps.js'
 import { suggestKey } from './args.js'
 import { applyComputed } from './computed.js'
 import { wideDb, mappedDb, plainDb } from './databases.js'
@@ -164,7 +164,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     resolveFromRowRefs(readDb, got, tFrom, ctx, depth + 1)
     got = got.map(r => applyComputed(r, target, ctx.computedFns, ctx))
     const fp = tShape.fieldPolicy
-    if (Object.keys(fp).length)
+    if (shapesRead(fp))
       got = got.map(r => applyFieldPolicyTo(r, target, fp, ctx, { mode: 'single' }))
 
     if (repick) {
@@ -496,7 +496,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const targetFieldPolicy = shapes[rel.targetModel].fieldPolicy
     /** @param {Row[]} rows_ @param {{ mode?: 'list' | 'single' | 'select', selectedFields?: Set<string> | null }} opts */
     const shapeRelated = (rows_, opts) =>
-      targetFieldPolicy && Object.keys(targetFieldPolicy).length
+      targetFieldPolicy && shapesRead(targetFieldPolicy)
         ? rows_.map(r => applyFieldPolicyTo(r, rel.targetModel, targetFieldPolicy, ctx, opts))
         : rows_
 

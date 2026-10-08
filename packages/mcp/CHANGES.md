@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mcp
 
+## 2026-10-08 — a `@system` move is offered only where a method lifts it (`FJS-1925`)
+
+No projection change. Junction no longer derives a method for a `@system` move (`FJS-1925`), so `/mcp` offers one only when the app wrote the method, from the model's update level, as `FJS-D150` has it. `test/plugin.test.ts` boots the lago shape, a generated service beside a written `{ system: true }` method over one model, and asserts both halves at levels 4 and 5, with the row's state after each call.
+
 ## 2026-10-07 — every tool call is recorded in the audit trail; `GET {path}/calls` and `GET {path}/levels` for an operator
 
 `run` writes one `$audit` entry per `tools/call`, operation `mcp.call`, into the app's first logger database. Each entry records the caller as `actorId`, the row it named in `records`, and `meta` with `{ tool, kind, method, outcome, fields?, count?, code?, message?, key? }`. `outcome` is `done`, `refused` (401/403), `rejected` (another 4xx) or `failed` (5xx). Only field names are recorded, never values. `message` is the text the agent was given, and only for a 4xx. `key` is the API key's `credentialId`. `@@log` cannot record a refused call, and cannot say a write came from an agent. A trail that fails to write logs a warning and leaves the call's answer as it was. An app with no logger database, or one under `tenancy { strategy database }` with no `app.db`, records nothing.

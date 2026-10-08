@@ -70,6 +70,10 @@ model Lead {
   // A File column, so \`file-column-storage\` RUNS over the clean tree against
   // the FileStorage api/src/app.ts installs, and finds nothing.
   brief       File?
+  // Required and @system with no default, so \`required-system-unfilled\` RUNS
+  // on the clean tree rather than skipping — and finds nothing, because the
+  // service's create hook names it, which is the one filler such a column has.
+  code        String @system
   @@gate("2.4.4.5")
   @@transitions(status,
     qualify: new              -> qualified,
@@ -208,7 +212,8 @@ const CLEAN = {
     "import { createBaseService } from '@frontierjs/junction'\n" +
     "export default () => createBaseService({})\n" +
     "export const qualify = () => $.db.lead.transition($.id, 'qualify')\n" +
-    "export const close   = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n",
+    "export const close   = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n" +
+    "export const stamp   = (ctx) => { ctx.data.code = 'L-1'; ctx.system.add('code') }\n",
   // The resolver, for the third time: SCHEMA declares a delete gate at
   // ADMINISTRATOR(5), which nothing can reach without one — so `gate-unreachable`
   // runs here and is answered. It is its own file rather than a line in app.ts
@@ -2688,6 +2693,87 @@ describe('transition-methods', () => {
   test('an app with no api/ source skips — the machine is driven elsewhere', () => {
     const root = tree('tm-noapi', without('api/'))
     expect(only(root, 'transition-methods').skipped[0].why).toMatch(/no api\/ source/)
+  })
+})
+
+describe('required-system-unfilled', () => {
+  // The clean tree's `Lead.code` is required, @system and undefaulted, and its
+  // service fills it in a hook. `service` replaces the service file; `extra`
+  // adds files beside it.
+  const STAMP = "export const stamp   = (ctx) => { ctx.data.code = 'L-1'; ctx.system.add('code') }\n"
+  const SERVICE = CLEAN['api/src/services/leads.service.ts']
+  const app = ({ service = SERVICE.replace(STAMP, ''), extra = {}, schema } = {}) => {
+    const files = { ...CLEAN, 'api/src/services/leads.service.ts': service, ...extra }
+    if (service === null) delete files['api/src/services/leads.service.ts']
+    if (schema) files['db/schema.lite'] = schema(CLEAN['db/schema.lite'])
+    return files
+  }
+
+  test('the clean tree fills its column, so the rule runs and finds nothing', () => {
+    const { findings, skipped } = only(tree('rsu-clean', CLEAN), 'required-system-unfilled')
+    expect(skipped).toHaveLength(0)
+    expect(findings).toHaveLength(0)
+  })
+
+  test('a column nothing fills, under a service serving create, is a warning', () => {
+    // FJS-1825: Project.apiToken, and no person could create a Project.
+    const { findings } = only(tree('rsu-unfilled', app()), 'required-system-unfilled')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toMatch(/Lead\.code is required and @system/)
+    expect(findings[0].message).toMatch(/leads\.service\.ts serves create/)
+    expect(findings[0].message).toMatch(/ctx\.system\.add\('code'\)/)
+  })
+
+  test('system: [...] on a write anywhere under api/ fills it', () => {
+    const extra = { 'api/src/domain/leads.ts':
+      "export const open = (db, data) => db.lead.create({ data: { ...data, code: 'L-1' }, system: ['code'] })\n" }
+    expect(only(tree('rsu-system-key', app({ extra })), 'required-system-unfilled').findings).toHaveLength(0)
+  })
+
+  test('an asSystem() create of the model naming the column fills it', () => {
+    const extra = { 'api/src/domain/leads.ts':
+      "export const open = (db, data) => db.asSystem().lead.create({ data: { ...data, code: 'L-1' } })\n" }
+    expect(only(tree('rsu-as-system', app({ extra })), 'required-system-unfilled').findings).toHaveLength(0)
+  })
+
+  test('a test seeding the column is not the application filling it', () => {
+    const extra = { 'api/test/leads.test.ts':
+      "await db.lead.create({ data: { name: 'x', code: 'L-1' }, system: ['code'] })\n" }
+    expect(only(tree('rsu-test-only', app({ extra })), 'required-system-unfilled').findings).toHaveLength(1)
+  })
+
+  test('the column named only in a comment does not fill it', () => {
+    const service = SERVICE.replace(STAMP, "// ctx.system.add('code') belongs here\n")
+    expect(only(tree('rsu-comment', app({ service })), 'required-system-unfilled').findings).toHaveLength(1)
+  })
+
+  test('a model with no service yet is graded on nothing — the schema is written first', () => {
+    expect(only(tree('rsu-schema-first', app({ service: null })), 'required-system-unfilled').findings).toHaveLength(0)
+  })
+
+  test('a methods: list serves create only when it names it', () => {
+    const svc = (methods) => "import { createBaseService } from '@frontierjs/junction'\n" +
+      `export default () => createBaseService({ methods: ${methods} })\n`
+    expect(only(tree('rsu-readonly', app({ service: svc("'readOnly'") })), 'required-system-unfilled').findings).toHaveLength(0)
+    expect(only(tree('rsu-no-create', app({ service: svc("['find', 'get']") })), 'required-system-unfilled').findings).toHaveLength(0)
+    expect(only(tree('rsu-create', app({ service: svc("['find', 'create']") })), 'required-system-unfilled').findings).toHaveLength(1)
+  })
+
+  test('a default, an optional column, a scalar list and a @system move are not owed a filler', () => {
+    for (const [name, spelling] of [
+      ['rsu-default',  'code        String @system @default("L")'],
+      ['rsu-optional', 'code        String? @system'],
+      // FJS-2044: the column is NOT NULL DEFAULT '[]', so a create omitting it succeeds.
+      ['rsu-list',     'code        String[] @system'],
+      ['rsu-move',     ''],
+    ]) {
+      const schema = (text) => text.replace('code        String @system', spelling)
+        .replace('close:   [new, qualified] -> closed)', 'close:   [new, qualified] -> closed,\n    reopen:  closed -> new @system)')
+      const { findings, skipped } = only(tree(name, app({ schema })), 'required-system-unfilled')
+      expect(findings).toHaveLength(0)
+      expect(skipped[0].why).toMatch(/no required @system column/)
+    }
   })
 })
 

@@ -27,7 +27,7 @@ title: Import a machine
 
   // ─── the operator's own ssh aliases ───────────────────────────────────
   // Offered only by a Basecamp running on the operator's machine with
-  // LOCAL_SSH=1 (api core/local-ssh.ts); anywhere else the call is a 404 and
+  // LOCAL_MACHINE=1 (api core/local-ssh.ts); anywhere else the call is a 404 and
   // the panel never draws. null is "not offered", [] is "offered, none".
   let sshHosts = null
   let sshAlias = ''

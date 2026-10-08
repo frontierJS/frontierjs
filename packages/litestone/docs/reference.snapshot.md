@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**113 words** — 13 declarations · 66 field attributes · 34 model attributes.
+**115 words** — 13 declarations · 67 field attributes · 35 model attributes.
 
 ## Index
 
@@ -30,7 +30,7 @@ and shows you the diff first.
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
-- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
+- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
@@ -42,7 +42,7 @@ and shows you the diff first.
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
-- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@log`](#log-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
 
@@ -646,7 +646,7 @@ model Example {
 ```
 
 - **Legal** — on a model's field · on a trait's field
-- **Also typed** — `pii` · `at-rest`
+- **Also typed** — `at-rest`
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@secret`](#secret-field) · [`@hashed`](#hashed-field) · [`@guarded`](#guarded-field)
 
@@ -664,6 +664,22 @@ model Example {
 - **Also typed** — `password` · `bcrypt` · `argon`
 - **Deeper** — [encryption.md](encryption.md)
 - **See also** — [`@encrypted`](#encrypted-field) · [`@secret`](#secret-field)
+
+#### `@personal` `[(<category>)]` <a id="personal-field"></a>
+
+A column about a person. The audit trail logs it as [personal] in place of the value, and a redacted copy drops it. It does not hide the column from a reader — that is @omit and the gate. The category is one of a closed list and feeds the data map only; free text that fits none is a bare @personal.
+
+```lite
+model Example {
+  id Int @id
+  email String @personal(contact)
+}
+```
+
+- **`category`** — `contact` · `device` · `location` · `government` · `financial` · `employment` · `communication` · `demographic` · `health` · `genetic` · `biometric` · `characteristic` · `criminal`
+- **Also typed** — `pii` · `gdpr` · `personal data`
+- **Deeper** — [audit-logging.md](audit-logging.md)
+- **See also** — [`@@person`](#person-model) · [`@log`](#log-field) · [`@omit`](#omit-field)
 
 #### `@secret` `[(rotate: …)]` <a id="secret-field"></a>
 
@@ -1780,11 +1796,27 @@ model Example {
 ```
 
 - **Deeper** — [access-control.md](access-control.md)
-- **See also** — [`@scoped`](#scoped-field)
+- **See also** — [`@scoped`](#scoped-field) · [`@@person`](#person-model)
+
+#### `@@person` `[(child)]` <a id="person-model"></a>
+
+Every row is a person — where forgetting and export start. An @@auth model is one without saying so. On a person model a column named like personal data (email, phone, dob) with no @personal is a warning. `(child)` says every row is a child in the legal sense; it states a status, never an age.
+
+```lite
+model Example {
+  id Int @id
+  @@person
+}
+```
+
+- **`kind`** — `child`
+- **Also typed** — `data subject`
+- **Deeper** — [audit-logging.md](audit-logging.md)
+- **See also** — [`@personal`](#personal-field) · [`@@auth`](#auth-model)
 
 #### `@@log` `(<database>[, reads: false][, writes: false])` <a id="log-model"></a>
 
-Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret) log as [redacted], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 database audit {

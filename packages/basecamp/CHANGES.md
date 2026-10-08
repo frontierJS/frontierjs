@@ -1,5 +1,17 @@
 # Changes — Basecamp
 
+## 2026-10-08 — basecamp has a `desktop/` surface wrapping `web/`
+
+`fli make:desktop --wraps web` scaffolded `desktop/`: a Tauri shell with the SPA built into it, pointed at `http://localhost:8120` (`VITE_API_URL` overrides). `bun run build:desktop` writes `desktop/shell/target/debug/basecamp-desktop`; the API still runs beside it (`bun run api`), since the scan and everything else live there. Three things it needed. The API's CORS list names `tauri://localhost` and `http://tauri.localhost`. `session.js` fetches through the client's `origin` rather than a relative path, which in the shell went to `tauri://localhost` and left a signed-in session with no workspace. And the shell's Cargo.lock is `example/desktop/`'s, which pins Tauri 2.11.5, because the scaffold's unpinned `tauri = "2"` resolved 2.12 and that needs rustc 1.90 (`FJS-2068`). `bun run verify:desktop` drives it to `/git-activity/local/`, 10/10; `verify:provision` is still 80/80 after the `session.js` change.
+
+## 2026-10-08 — `/git-activity/local/` lists the git checkouts under a folder, and `LOCAL_SSH` is `LOCAL_MACHINE`
+
+A Basecamp running on its operator's machine now scans a folder they name (`~/code`, four levels down, skipping `node_modules` and hidden folders) and shows each repository's branch, ahead/behind, uncommitted count, remote and last commit. The scan is `core/local-git.ts` behind `git.localRepos`, a service with no model at ADMINISTRATOR. It runs every git call with `core.fsmonitor=false`, because `git status` otherwise starts the command a repository's config names, and it cuts a credential out of an `https` remote before returning it. The flag that turns this on is the ssh listing's, renamed `LOCAL_MACHINE` because it now covers both readers, and `localMachineRefusal` in `core/env.ts` is the one check. `verify:provision` drives the screen.
+
+## 2026-10-08 — `User.email` and `User.name` are `@personal(contact)` (`FJS-D657`)
+
+The parser now warns about an undeclared `email` on a person model, so `User` declares both columns, as auth's fragment does.
+
 ## 2026-10-08 — the raw handle opens through litestone (`FJS-D646`)
 
 `api/src/core/sqlite.ts` calls litestone's `openWalDatabase` instead of `new Database()`, so the busy timeout goes on before WAL and a fresh file's WAL switch is retried (`FJS-655`, `FJS-729`). It still sets `synchronous` and `foreign_keys` itself.

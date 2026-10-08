@@ -3232,7 +3232,7 @@ describe('removing a server that is not online', () => {
 
 // ─── The local ssh listing ───────────────────────────────────────────────────
 // A development affordance on the servers service (`core/local-ssh.ts`). Off
-// unless LOCAL_SSH=1, which this process does not set, so the owner hears it
+// unless LOCAL_MACHINE=1, which this process does not set, so the owner hears it
 // is not offered — and a developer is refused before that is even asked, by
 // the ADMINISTRATOR gate the method declares.
 
@@ -3244,8 +3244,20 @@ describe('the local ssh listing', () => {
 
   test('an owner is told it is not offered here, rather than handed an empty list', async () => {
     await expect(env.as(owner).service('servers').call('localSshHosts', undefined, {}))
-      .rejects.toThrow(/LOCAL_SSH=1/)
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
     await expect(env.as(owner).service('servers').call('localSshProbe', undefined, { alias: 'box' }))
-      .rejects.toThrow(/LOCAL_SSH=1/)
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
+  })
+})
+
+describe('the local repository listing', () => {
+  test('a developer is refused by the declared gate, before anything reads a folder', async () => {
+    await expect(env.as(developer).service('git').call('localRepos', undefined, { root: '~' }))
+      .rejects.toThrow(/requires level 5/)
+  })
+
+  test('an owner is told it is not offered here, rather than handed an empty list', async () => {
+    await expect(env.as(owner).service('git').call('localRepos', undefined, { root: '~' }))
+      .rejects.toThrow(/LOCAL_MACHINE=1/)
   })
 })

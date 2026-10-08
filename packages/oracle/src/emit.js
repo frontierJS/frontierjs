@@ -29,7 +29,9 @@
 // and `checkAnswer` lists each as a finding.
 //
 // The first owner/author/coordinator column is stamped `@default(auth().id)`,
-// so a create through the API names its caller without being told.
+// so a create through the API names its caller without being told — except
+// under a public create, where the caller may be a visitor with no id to
+// stamp. There the column is the caller's to name, as any other link is.
 
 import { camel, pascal, pluralize } from '@frontierjs/toolbelt/inflect'
 import { ACTORS } from './catalog.js'
@@ -44,11 +46,14 @@ const WIDTH = 96
  * @param {{ scaffold?: string }} [opts]  the app's db/schema.lite as `fli new`
  *   wrote it. The emitted models are appended to it; User and Notification
  *   stay the scaffold's.
- * @returns {{ ok: boolean, text: string|null, models: string[], refusals: import('./answer.js').Finding[], findings: import('./answer.js').Finding[] }}
+ * @returns {{ ok: boolean, text: string|null, models: string[], document: { operations: import('./answer.js').Operation[] }|null, refusals: import('./answer.js').Finding[], findings: import('./answer.js').Finding[] }}
+ *   `document` is what `litestone migrate create --operations` reads, or null
+ *   when the answer asks to keep nothing. The schema alone carries no history,
+ *   so a rename reaches the database only through this (`FJS-D603`).
  */
 export function emit(answer, { scaffold = '' } = {}) {
   const graded = checkAnswer(answer)
-  if (!graded.ok) return { ok: false, text: null, models: [], refusals: graded.refusals, findings: graded.findings }
+  if (!graded.ok) return { ok: false, text: null, models: [], document: null, refusals: graded.refusals, findings: graded.findings }
   const plan = /** @type {import('./answer.js').Plan} */ (graded.plan)
   const section = emitPlan(plan)
   const head = scaffold.trimEnd()
@@ -56,6 +61,7 @@ export function emit(answer, { scaffold = '' } = {}) {
     ok: true,
     text: `${head}${head ? '\n\n\n' : ''}${section}`,
     models: plan.models.map(m => m.name),
+    document: plan.operations.length ? { operations: plan.operations } : null,
     refusals: [],
     findings: graded.findings,
   }
@@ -170,7 +176,10 @@ function emitModel(m, backs, access) {
     rows.push([f.name, `${type}${optional ? '?' : ''}`, extra.join(' ')])
   }
 
-  const stamp = m.access.system || m.container ? null
+  // A visitor has no auth().id, so a stamp under a create gate of 0 filled a
+  // required column with NULL and every anonymous create answered 500 on NOT
+  // NULL (FJS-1793).
+  const stamp = m.access.system || m.container || access.gate[1] === 0 ? null
     : m.links.find(l => l.to === 'User' && STAMPS.includes(l.actor))
   const indexes = []
   for (const l of m.links) {

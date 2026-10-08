@@ -386,6 +386,7 @@ title: App
   // live and can be withdrawn, a failure is what a retry would replace. Older
   // rows are history, and rolling one of them back puts back something two
   // releases stale.
+  $: session.level
   $: latest      = app?.recent_deployments?.[0] ?? null
   $: rollbackIt  = latest ? deployments.transitions(latest, session.level).find(m => m.name === 'rollback') : null
   $: canRetry    = latest && (latest.status === 'failed' || latest.status === 'cancelled')

@@ -9,7 +9,8 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hostAliases, parseSshG, localSshRefusal, listSshHosts, probeSshHost } from '../src/core/local-ssh.ts'
+import { hostAliases, parseSshG, listSshHosts, probeSshHost } from '../src/core/local-ssh.ts'
+import { localMachineRefusal } from '../src/core/env.ts'
 
 const files = (map: Record<string, string>) => (p: string) => map[p] ?? null
 
@@ -43,13 +44,13 @@ test('parseSshG reads what ssh resolved', () => {
   expect(parseSshG('web', 'user deploy\nhostname 10.0.0.9\nport 2222\n')).toEqual({ alias: 'web', hostname: '10.0.0.9', user: 'deploy', port: 2222 })
 })
 
-describe('localSshRefusal', () => {
+describe('localMachineRefusal', () => {
   // NODE_ENV defaults to development, so the flag is what turns it on, and
   // production refuses whatever the flag says.
   test('off unless asked, and never in production', () => {
-    expect(localSshRefusal({ NODE_ENV: 'development' })).toMatch(/LOCAL_SSH=1/)
-    expect(localSshRefusal({ NODE_ENV: 'development', LOCAL_SSH: '1' })).toBeNull()
-    expect(localSshRefusal({ NODE_ENV: 'production', LOCAL_SSH: '1' })).toMatch(/production/)
+    expect(localMachineRefusal({ NODE_ENV: 'development' })).toMatch(/LOCAL_MACHINE=1/)
+    expect(localMachineRefusal({ NODE_ENV: 'development', LOCAL_MACHINE: '1' })).toBeNull()
+    expect(localMachineRefusal({ NODE_ENV: 'production', LOCAL_MACHINE: '1' })).toMatch(/production/)
   })
 })
 

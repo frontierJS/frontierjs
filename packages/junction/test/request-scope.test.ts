@@ -91,11 +91,12 @@ afterAll(async () => { await app?.stop() })
 // audit row from the same request unjoinable, which is the exact failure the
 // provenance columns exist to close.
 //
-// They agree because both transport entry points read
-// `x-request-id ?? ctx.requestId` — the store DEFERS to the middleware rather
-// than minting beside it. Pinned here because nothing said so, and because the
-// deferral is one `??` in two files: delete it and every reader still works,
-// separately, on different ids.
+// They agree because both transport entry points state `ctx.requestId` and the
+// middleware read the headers by enterRequest's own rule
+// (`inboundCorrelationId`) — the store DEFERS to the middleware rather than
+// minting beside it. Pinned here because the deferral is one field in two
+// files: delete it and every reader still works, separately, on different ids.
+// Which header wins and what a malformed one becomes is `trace-correlation`.
 describe('the correlation id has one value per request', () => {
 
   test('a stated x-request-id is what the store carries', async () => {
@@ -215,6 +216,30 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.correlationId).toBe('corr-ws')
     expect(seen!.idempotencyKey).toBe('idem-ws')
     expect(seen!.caller).toBeDefined()
+  })
+
+  // A frame's id is a client's, like a header's, and meets the same shape
+  // check (`FJS-D660`) — a socket is not a way round it.
+  test('WebSocket — a malformed frame id is replaced, not filed', async () => {
+    seen = undefined
+    const ws = new WebSocket(`ws://localhost:${PORT}/ws`)
+    await new Promise<void>((ok, no) => {
+      ws.onopen  = () => ok()
+      ws.onerror = () => no(new Error('ws did not open'))
+    })
+    const done = new Promise<void>(ok => {
+      ws.onmessage = (e: any) => {
+        const f = JSON.parse(e.data)
+        if (f.type === 'service_result' || f.type === 'service_error') ok()
+      }
+    })
+    ws.send(JSON.stringify({
+      type: 'service_call', id: 'c2', service: 'probe', method: 'find',
+      meta: { correlationId: 'line one\nline two' },
+    }))
+    await done
+    ws.close()
+    expect(seen!.correlationId).toMatch(/^[0-9a-f]{32}$/)
   })
 
   test('runAs(userId) — the principal is re-resolved, not restored', async () => {

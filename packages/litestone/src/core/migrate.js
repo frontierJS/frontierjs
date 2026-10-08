@@ -1262,7 +1262,10 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   return lines.join('\n')
 }
 
-export function generateMigrationSQL(diffResult, parseResult, { pluralize = false } = {}) {
+// `first` is statements that run inside the transaction before anything the diff
+// asks for: an operation has already happened in the history the diff was read
+// from, and the file has to do it before the rest of its statements assume so.
+export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [] } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
           changedTriggers, droppedTriggers, changedFts, droppedFts } = diffResult
   const lines = []
@@ -1270,6 +1273,12 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
   lines.push(`PRAGMA foreign_keys = OFF;`)
   lines.push(`BEGIN;`)
   lines.push(``)
+
+  if (first.length) {
+    lines.push(`-- ─── operations ${'─'.repeat(52)}`)
+    lines.push(...first)
+    lines.push(``)
+  }
 
   // Implicit m2m join tables are invisible to introspection (underscore
   // prefix), so the diff never lists them — emit them unconditionally with

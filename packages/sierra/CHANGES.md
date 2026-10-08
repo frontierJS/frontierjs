@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — `AGENTS.md` says a page never fills a required `@system` column (`FJS-1825`)
+
+§ Writes and forms gains one paragraph: the form leaves the column out, the Data boundary refuses a payload naming it, and the create needs a `before.create` hook calling `ctx.system.add('col')`, or a `@default`. Nothing in the guides said so, and a base44 build stopped at the root model's create. No code changes.
+
 ## 2026-10-08 — `analytics:` reaches a static page (`FJS-2058`, `FJS-D658`)
 
 A static build writes the vendor's tag before every prerendered page's `</head>` (`postbuild/inject-analytics.js`). Before this, `analytics:` on `static` did nothing and said nothing, because `initAnalytics` runs only from `virtual:sierra`, which a prerendered page never loads. The island entry calls the new `configureAnalytics(config)`, which resolves the provider and loads nothing, so `track()` inside an island reaches the page's tag. A custom provider object, an unknown provider name, or Plausible without `domain` or GTM without `containerId`, is refused by name at build.

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/conduit
 
+## 2026-10-08 — `parseTraceparent` is toolbelt's, and the outbound id is the trace id (`FJS-D660`)
+
+`parseTraceparent` moved to `@frontierjs/toolbelt/trace` unchanged and is re-exported from here, because junction now reads the same header to set its correlation id, and two parsers would disagree about which headers are well formed. Under junction, the outbound `X-Request-Id` is the inbound trace id when the caller sent a `traceparent`, where it used to be the caller's own `X-Request-Id`. `junction-integration.test.ts` has 1 case rewritten to match and 1 added for a `traceparent` sent with no `X-Request-Id`. 362 pass, typecheck clean.
+
 ## 2026-10-07 — a target's own numbers are `resilience`, and `TargetResilience` is exported (`FJS-D631`, `FJS-1400`)
 
 `TargetDescriptor.policy` is `resilience` and `TargetPolicy` is `TargetResilience`, with `Resilience.setResilience` and `RESILIENCE_FIELDS` beside them. The seven numbers were a third sense of *policy*, which `FJS-D45` refuses; *resilience* is the word `ResilienceOptions`, the type they shadow, already used. A refusal now reads `Target '<id>' resilience: unknown field …`. `TargetResilience` is exported from the entry point, which `FJS-1400` measured as a TS2305. A SQLite registry written before this keeps the old key and reads back with no per-target numbers: delete the file. Proof: `bun run test`, 361 pass.

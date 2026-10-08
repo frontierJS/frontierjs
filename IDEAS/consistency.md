@@ -1,12 +1,14 @@
 ---
 id: consistency
-status: proposed
+status: partial
 dated: 2026-10-08
 ---
 
 # Idea — Consistency: what a caller can rely on after a write
 
-**Status: IDEA, nothing built.** Dated 2026-10-08. The rows marked *ran* were
+**Ruled 2026-10-08 as `FJS-D659`: A with B's warning.** `docs/CONSISTENCY.md` is written. The `asSystem()` check is FJS-2069 and the warning is FJS-2070.
+
+Dated 2026-10-08. The rows marked *ran* were
 measured by a throwaway `bun test` against `createClient({ db: ':memory:' })`
 on this date; the rest are read from source at the cited line and are leads to
 verify (`VERIFYING.md`). Do not cite this file as describing behavior.

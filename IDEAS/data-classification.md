@@ -1,12 +1,12 @@
 ---
 id: data-classification
-status: proposed
+status: partial
 dated: 2026-10-08
 ---
 
 # Idea — data classification: how a field's sensitivity and retention are declared
 
-**Status: ruled as `FJS-D657`, nothing built.** Corrections from the re-probe before ruling: the protected-set owner already exists (`buildFieldPolicyMap`), so C moves three call sites onto it rather than adding a table; `@@retain` is dropped, because the measured clock is a query over children; `subject` had five live senses, all roles, so the model word is `@@person`. Dated 2026-10-08. Every "exists" line below
+**Status: ruled as `FJS-D657`; built 2026-10-08 except the data map and `forget()`'s stop at a second person model, which wait on `forgetting.md`'s ruling.** The grammar, the trail's `[personal]`, the warning, `redact()` over declarations and the three call sites moved onto the owner are in `packages/litestone/CHANGES.md`. The regime table is `PERSONAL_CATEGORIES` in `src/core/personal.js` and nothing reads it yet. Corrections from the re-probe before ruling: the protected-set owner already exists (`buildFieldPolicyMap`), so C moves three call sites onto it rather than adding a table; `@@retain` is dropped, because the measured clock is a query over children; `subject` had five live senses, all roles, so the model word is `@@person`. Dated 2026-10-08. Every "exists" line below
 cites a file and line, and the parser claims were probed by running
 `parse()` from `packages/litestone/src/index.js`, not read from docs. Do not
 cite this file as describing behavior — see `VERIFYING.md`.

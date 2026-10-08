@@ -7,7 +7,7 @@ export declare const $: Record<string, {
   keep(...cols: string[]): unknown
   limit(n: number): unknown
   sample(n: number): unknown
-  redact(mode?: 'email' | 'phone' | 'both'): unknown
+  redact(mode?: 'SECRETS' | 'PERSONAL'): unknown
   mask(col: string, strategy?: string): unknown
   rename(from: string, to: string): unknown
   scope(sql: string): unknown

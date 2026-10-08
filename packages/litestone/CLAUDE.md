@@ -120,7 +120,9 @@ Then, because every other package sits on this one: `example` and `basecamp`
   both ways and takes no level; `@encrypted` hides a value and stays writable.
 - **Three schemas, and a migration question compares two** — declared, shadow,
   live (`FJS-D123`, `test/migration-history.test.ts`). A column leaving the schema
-  is refused without `acceptDataLoss`, because a rename is a drop plus an add.
+  is refused without `acceptDataLoss`, because a rename is a drop plus an add
+  unless `migrate create` was told it was one (`--rename`, `--operations`;
+  `src/core/operations.js`, `FJS-D603`).
 - **A `jsonl` model has no update, delete, migration, FTS or cursor.**
 
 ### Computed fields
@@ -229,6 +231,7 @@ src/
     cardinality.js — @minItems/@maxItems on a relation, graded at the outermost commit (FJS-D347)
     commitment.js — @@commitment due times, in SQL and in JS, graded against each other
     seal.js — which states of a machine are sealed, derived from @seals
+    personal.js — @personal's closed categories and their regimes, which models are people (FJS-D657)
     three-way.js — @@sync(field)'s per-column merge (FJS-D334)
     cross-process.js — announce crossProcess (FJS-642)
     encryption.js — @encrypted/@hashed + comparisonEncoderFor: value to stored bytes, one owner

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/oracle
 
+## 2026-10-08 — A public create stamps no owner (`FJS-1793`)
+
+The first owner/author/coordinator link to User was stamped `@default(auth().id)` whatever the create gate said. Under `public: ['create']` the gate is 0 and the caller may be a visitor, who has no id, so calendly's Invitee (`@@gate("4.0.4.4")`, `ownerId String @default(auth().id)`) answered every anonymous create with a 500 on NOT NULL. The stamp now follows the gate: a create gate of 0 writes no default, and the link is a column the caller names, as any other link is. The other options were refused: making the column optional rewrites the answer's `required`, raising the create gate overrides its `public`, and refusing the answer at `checkAnswer` refuses a legitimate public form whose server fills the owner. A visitor naming an owner it cannot read is still refused by litestone as a missing parent; that is non-disclosure, and the server-side method is the way through. Proof: `test/oracle.test.js`, *a public create stamps no owner* and *a visitor's create of an owned row is refused by name, never by SQLite* (a real client); both red before. 45 pass.
+
+## 2026-10-08 — an answer can say a field was renamed (`FJS-1787`, rename only)
+
+A field you add takes `was`: the camelCase name its column has in the app now. `checkAnswer` grades it under a new `rename` rule — refused on a catalog field, equal to the field's own name, not camelCase, claimed by two fields, or an old name the entity still has. The plan carries `operations`; `emit()` returns `document: { operations: [{ op: 'rename', model, from, to }] } | null`, which is what `litestone migrate create --operations` reads, and writes no trace of the old name into the `.lite`. `brief()` documents `was`. Backfill and split are not built. `test/oracle.test.js` runs answer v1 → emit → create → apply → rows → answer v2 with `was` → emit → create → apply and reads the values back under the new name.
+
 ## 2026-10-07 — A move named `restore` is refused (`FJS-1909`)
 
 `restore` is a CRUD verb, and Junction now refuses to start with a move of that name. Six base44 Phase 2 answers wrote it as the inverse of `archive`, because `MOVE_RESERVED` lacked it and `aggregate`. Both are on the list now, and the `lifecycle` rule text renders the list, so the brief names them before an answer is written. In the catalog, the Asset lifecycle's `maintenance -> in_service` is `reinstate` and the Site lifecycle's `maintenance -> published` is `republish`. A new case in `checkAnswer refuses` refuses `restore` and takes `reopen` (red before); 38 pass.

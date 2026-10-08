@@ -1039,4 +1039,12 @@ model Post {
 }
 ```
 
-Requires a scoped client (`db.$setAuth(user)`).
+Filled only through a scoped client (`db.$setAuth(user)`).
+
+A value in the payload wins, so a create with no principal may still name the
+column. One that does not, on a REQUIRED column, is refused by name before
+SQLite sees it: an anonymous caller gets `AccessDeniedError` with `status: 401`,
+since a signed-in caller would have succeeded, and `asSystem()` or a principal
+missing the claim gets a `ValidationError` on the field. An optional column is
+left `null`. A create gate of `0` over a required `@default(auth().id)` is
+therefore a model a visitor creates only by naming its owner.

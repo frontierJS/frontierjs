@@ -50,6 +50,15 @@ litestone migrate create [label]
 ```
 Generate a new SQL migration file from the diff between your schema and the live database. Creates `migrations/<timestamp>_<label>.sql`.
 
+A renamed column is a drop plus an add to a diff, so say it was a rename and its values stay (`ALTER TABLE … RENAME COLUMN`, written into the file and named in its header):
+
+```bash
+litestone migrate create rename --rename Issue.description=brief     # Model.oldColumn=newField, repeatable
+litestone migrate create rename --operations ops.json                # the same, as a document
+```
+
+On a terminal with neither, `create` asks about each column that left beside one of the same type that arrived. `migrate dev` takes the same flags. The document is `{ "operations": [{ "op": "rename", "model": "Issue", "from": "description", "to": "brief" }] }`; `@frontierjs/oracle`'s `emit()` returns it as `document`.
+
 ```bash
 litestone migrate apply
 ```

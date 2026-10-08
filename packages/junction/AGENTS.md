@@ -156,11 +156,17 @@ entry exists — including one added only to carry an `input:` — every verb it
 does not name is a 405.
 
 **Every `@@transitions` move is already a method, named for the move.** It is
-`transition(id, move)` on the caller's client, so the gate, the row policy,
-`@system` and `@gate(n)` grade it at the Data boundary, and a row the caller
-cannot see is a 404, not 200 null. A list declares which moves are offered,
-like any method. Write a method of the same name only when the move does more
-than move; yours replaces the served one.
+`transition(id, move)` on the caller's client, so the gate, the row policy and
+`@gate(n)` grade it at the Data boundary, and a row the caller cannot see is a
+404, not 200 null. A list declares which moves are offered, like any method.
+Write a method of the same name only when the move does more than move; yours
+replaces the served one.
+
+**A `@system` move is not served, and the method that offers it is yours.** The
+application decides a `@system` move, and only a method lifting it with
+`{ system: true }` (`$.db.invoice.transition($.id, 'lapse', { system: true })`)
+says so; a derived one could only be refused for every caller. Give the method
+a `gate:` for who may ask, and `/mcp` offers it from there.
 
 **A custom method takes the model's READ gate as a floor** and runs nothing for
 a caller below it. `gate: n` raises that floor for one method. A method called by

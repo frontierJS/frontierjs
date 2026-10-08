@@ -1,0 +1,3 @@
+# cargo's output, and the schemas tauri-build writes on every build.
+/target/
+/gen/

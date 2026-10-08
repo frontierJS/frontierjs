@@ -14,6 +14,7 @@ import { expandCapabilityType } from './capabilities.js'
 import { EXACT_INT_MAX, validateJsonPatch } from './validate.js'
 import { compileStatic, policyExprToString } from './policy.js'
 import { sealedStates, sealFaults } from './seal.js'
+import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
 // What a `@values` binding may say about a value the set does not contain.
 // `required` refuses it, `open` accepts it AND adds it to the set, `suggested`
@@ -1125,6 +1126,24 @@ class Parser {
       // @encrypted, because an option inherits the parent's promise and the parent
       // promises the value comes back.
       case 'hashed': return { kind: 'hashed' }
+
+      // ── @personal — a column about a person (FJS-D657) ──────────────────────
+      // @personal            → about a person, no category (free text, behavior)
+      // @personal(contact)   → one of personal.js's closed list
+      // The trail keeps `[personal]` in place of the value. Who may read the
+      // column is untouched: that is the gate and @omit.
+      case 'personal': {
+        if (!this.check(TK.LPAREN)) return { kind: 'personal', category: null }
+        this.eat(TK.LPAREN)
+        const tok      = this.eat(TK.IDENT)
+        const category = tok.value
+        this.eat(TK.RPAREN)
+        if (!Object.hasOwn(PERSONAL_CATEGORIES, category))
+          throw new ParseError(
+            `@personal(${category}) is not a category. The list is closed: ${Object.keys(PERSONAL_CATEGORIES).join(', ')}. ` +
+            `A column that fits none of them is a bare @personal`, tok)
+        return { kind: 'personal', category }
+      }
 
       case 'check':    return { kind: 'check',     ...this.parseCheckArgs() }
 
@@ -2510,6 +2529,23 @@ class Parser {
       case 'gate':   return { kind: 'gate',         value: this.parseGateArg() }
       case 'transitions': return { kind: 'transitions', ...this.parseTransitionsArg() }
       case 'auth':   return { kind: 'auth' }
+      // @@person         — every row is a person; where forget() and export start
+      // @@person(child)  — every row is a child in the legal sense (COPPA, GDPR
+      //                    Art. 8). A status and never an age, because the age
+      //                    differs by jurisdiction. `child` is the only value: any
+      //                    other kind of person is already the model's name.
+      // An @@auth model is a person without saying so (personal.js).
+      case 'person': {
+        if (!this.check(TK.LPAREN)) return { kind: 'person', child: false }
+        this.eat(TK.LPAREN)
+        const tok = this.eat(TK.IDENT)
+        this.eat(TK.RPAREN)
+        if (tok.value !== 'child')
+          throw new ParseError(
+            `@@person(${tok.value}) — the one argument is (child). Every other kind of person ` +
+            `(customer, employee, applicant) is the model's name already`, tok)
+        return { kind: 'person', child: true }
+      }
       case 'log': {
         // @@log(audit)               — log create/update/delete (default)
         // @@log(audit, reads: true)  — also log findMany/findFirst (opt-in)
@@ -5232,7 +5268,7 @@ function validate(schema) {
       if (!call) continue
       const fn = schema.functions.find(f => f.name === call.fn)
       if (!fn) {
-        errors.push(`Model '${model.name}', field '${field.name}': @${call.fn} references unknown function '${call.fn}'`)
+        errors.push(`Model '${model.name}', field '${field.name}': '@${call.fn}' is neither a field attribute nor a function this schema declares`)
         continue
       }
       if (call.args.length !== fn.params.length) {
@@ -5950,6 +5986,30 @@ function validate(schema) {
       const dbAttr = model.attributes.find(a => a.kind === 'db')
       if (dbAttr && jsonlNames.has(dbAttr.name))
         errors.push(`Model '${model.name}', field '${field.name}': @hashed is not supported on jsonl databases`)
+    }
+  }
+
+  // ── @personal and @@person (FJS-D657) ───────────────────────────────────────
+  // A relation holds no value of its own, so there is nothing for the trail to
+  // keep or drop: the columns it is built from are where @personal goes.
+  //
+  // The warning reads only person models, where a missed declaration is a
+  // person's email kept in every before/after snapshot for the trail's life.
+  // `Company.email` never warns, so there is no word for "not personal".
+  for (const model of schema.models) {
+    const person = isPersonModel(model)
+    for (const field of model.fields) {
+      const personal = field.attributes.find(a => a.kind === 'personal')
+      const relation = field.type?.kind === 'relation' || field.type?.kind === 'implicitM2M'
+      if (personal && relation)
+        errors.push(`Model '${model.name}', field '${field.name}': @personal on a relation — the relation holds no value. Declare it on the foreign-key column the relation is built from`)
+      if (personal || relation || !person) continue
+      const category = personalNameCategory(field.name)
+      if (!category) continue
+      warnings.push(
+        `Model '${model.name}', field '${field.name}': ${model.name} is a person model and '${field.name}' is named like ` +
+        `personal data, so a logged write keeps its value in every snapshot. Declare it @personal(${category}), ` +
+        `which logs it as [personal] and leaves who may read it to the gate`)
     }
   }
 

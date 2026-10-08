@@ -53,7 +53,11 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
   const token = auth ? getClient()?.token : null
   if (token) headers['authorization'] = `Bearer ${token}`
 
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  // The client's origin, not a relative path: a page the desktop shell serves
+  // from tauri://localhost would send a relative one to the shell, and
+  // /workspaces answering nothing leaves every scoped call without a workspace.
+  const base = getClient()?.origin ?? ''
+  const res = await fetch(base + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
 
   // Read the body once, then decide. With the API down, Vite answers 502 with
   // an empty body and res.json() throws "Unexpected end of JSON input" from

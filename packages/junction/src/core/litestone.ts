@@ -526,9 +526,17 @@ type ParsedModel = { name: string; attributes?: Array<{ kind: string; transition
  * because a generated service is one line.
  *
  * Each one is `transition(id, move)` on `ctx.locals.db`, the CALLER's client:
- * the gate, the row policy, `@system` and the move's own `@gate(n)` are graded
+ * the gate, the row policy and the move's own `@gate(n)` are graded
  * at the Data boundary exactly as for the hand-written
  * `return $.db.order.transition($.id, 'ship')`. Nothing here decides access.
+ *
+ * A `@system` move is not served. It says the APPLICATION makes the move
+ * (`FJS-D150`), and the only thing that can say so is a method that lifts it
+ * with `{ system: true }`, a decision this derivation has no way to hold. On
+ * the caller's client it is refused for every caller at every level, so
+ * serving it listed a method no standing could use, and /mcp offered it from
+ * the model's update level (`FJS-1925`). An app that wants a person to request
+ * one writes the method; a written method of that name is served as always.
  *
  * `{}` for a schema that names no such model or a model with no machine.
  */
@@ -545,7 +553,8 @@ export function declaredMoveMethods(
   const out: Record<string, (ctx: ServiceContext) => Promise<unknown>> = {}
   for (const attr of model?.attributes ?? []) {
     if (attr.kind !== 'transitions' || !attr.transitions) continue
-    for (const move of Object.keys(attr.transitions)) {
+    for (const [move, spec] of Object.entries(attr.transitions)) {
+      if ((spec as { system?: boolean } | null)?.system) continue
       if (!out[move]) out[move] = moveMethod(resolved, model!.name, move, serviceName, idField)
     }
   }

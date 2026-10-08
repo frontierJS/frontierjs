@@ -9,7 +9,7 @@ dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/inflect`,
 `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
-`/query`, `/redact`, `/search`, `/signature`, `/sse`, `/transforms` and `/units` today; a caller
+`/query`, `/redact`, `/search`, `/signature`, `/sse`, `/trace`, `/transforms` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -138,6 +138,12 @@ src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      junction's resolver is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier
+src/trace/           what a W3C `traceparent` says — `parseTraceparent`.
+                     Junction derives a request's correlation id from it and
+                     conduit continues the trace with it, so a header one
+                     accepted and the other refused would split one request
+                     into two ids (`FJS-D660`). Ships a `.d.ts` — both
+                     callers are TypeScript
 src/sse/             the `text/event-stream` frame, both ways — `formatEvent`,
                      which junction's `ctx.sse()` writes with, and
                      `parseEvents`, incremental over decoded text, which

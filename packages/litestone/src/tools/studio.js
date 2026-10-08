@@ -1998,7 +1998,7 @@ export async function cmdStudio(cfg) {
             const outputs = []
             const result = await execute(
               absDb,
-              { verbose: true, outputPath: resolvedOut },
+              { verbose: true, outputPath: resolvedOut, schemaPath: cfg.schema },
               run,
               pipeline,
             ).catch(e => { throw e })

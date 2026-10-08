@@ -446,8 +446,27 @@ describe('an outbound call carries the request that caused it', () => {
       // being the root of something unrelated.
       expect(sent.traceparent).toMatch(/^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/)
       expect(sent.traceparent).not.toContain('00f067aa0ba902b7')
-      // And the caller's own id, verbatim — this is the join a log search uses.
-      expect(sent['x-request-id']).toBe('req-abc-123')
+      // One id for the request (`FJS-D660`): the trace id won over the
+      // caller's x-request-id, and it is what junction's log line and trail
+      // row carry — so a log search and the vendor's trace find each other.
+      expect(sent['x-request-id']).toBe('4bf92f3577b34da6a3ce929d0e0e4736')
+    } finally {
+      rec.stop()
+    }
+  })
+
+  // The measured failure: a traceparent and no x-request-id. The outbound call
+  // continued the trace while junction filed the request under a fresh UUID.
+  it('names the inbound trace id outbound when the caller stated only a traceparent', async () => {
+    const rec = headerRecorder()
+    try {
+      const app = await appCalling(rec)
+      await request(app).get('/go')
+        .set('traceparent', '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01')
+
+      const sent = rec.seen[0]!
+      expect(sent.traceparent!.split('-')[1]).toBe('4bf92f3577b34da6a3ce929d0e0e4736')
+      expect(sent['x-request-id']).toBe('4bf92f3577b34da6a3ce929d0e0e4736')
     } finally {
       rec.stop()
     }

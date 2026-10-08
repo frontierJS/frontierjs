@@ -7,6 +7,8 @@ examples:
   - fli db:migrate --create-only
   - fli db:migrate --apply-only
   - fli db:migrate --dry
+  - fli db:migrate --rename Issue.description=brief
+  - fli db:migrate --operations ops.json
 flags:
   create-only:
     type: boolean
@@ -20,6 +22,13 @@ flags:
     type: boolean
     description: Show what would be done without executing
     defaultValue: false
+  rename:
+    type: string
+    multiple: true
+    description: Keep a renamed column's values - Model.oldColumn=newField, repeatable
+  operations:
+    type: string
+    description: A JSON document of row-keeping operations for the migration to carry
 ---
 
 ```js
@@ -27,6 +36,15 @@ if (!requireSchema($)) return
 
 const { schema } = resolveDb($, flag)
 const ls = litestone($)
+
+// A rename is a drop plus an add to a diff, so the person says it was one. The
+// flags go to migrate create, which writes RENAME COLUMN into the file.
+const sq = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`
+const operationFlags = [
+  ...[flag.rename ?? []].flat().filter(Boolean).map(r => `--rename ${sq(r)}`),
+  ...(flag.operations ? [`--operations ${sq(flag.operations)}`] : []),
+].join(' ')
+const withOps = operationFlags ? ` ${operationFlags}` : ''
 
 if (flag['apply-only']) {
   if (flag.dry) {
@@ -45,7 +63,7 @@ if (flag['create-only']) {
     return
   }
   log.info('Creating migration from schema changes...')
-  $.exec({ command: `${ls} migrate create --schema ${schema}` })
+  $.exec({ command: `${ls} migrate create --schema ${schema}${withOps}` })
   log.success('Migration file created in db/migrations/')
   return
 }
@@ -61,7 +79,7 @@ if (flag.dry) {
 // about to write, and `duplicate column name` from the middle of a generated
 // file is not an answer anybody can act on (FJS-D123).
 log.info('Creating and applying the migration...')
-$.exec({ command: `${ls} migrate dev --schema ${schema}` })
+$.exec({ command: `${ls} migrate dev --schema ${schema}${withOps}` })
 log.success('Migration created and applied')
 
 log.info('Regenerating JSON Schema...')
