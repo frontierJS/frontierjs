@@ -105,7 +105,7 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
     // duplication of shared deps. Benefit: every island is a single-file
     // content script with no extra round trips.
     for (const island of found.islands) {
-      await build(islandsViteConfig({
+      await build(await islandsViteConfig({
         extRoot:     root,
         islandId:    island.id,
         islandEntry: autoGenPaths.islands[island.id].path,

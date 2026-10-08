@@ -19,4 +19,4 @@ marketing site depends on.
 ## Next
 
 `IDEAS/site-kit-plan.md` is the order of work. Phases 1 and 2 are done; Phase 3
-moves the generic line out of `@kobami/ksite`, starting with `Section.mesa`.
+moves the generic line out of `@kobami/ksite`, starting with `Block.mesa`.

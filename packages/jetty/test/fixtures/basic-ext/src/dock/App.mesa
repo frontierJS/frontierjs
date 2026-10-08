@@ -10,7 +10,8 @@
   //
   // It has no connection of its own. `harbor` is the port to the service
   // worker, supplied by auto-gen, and every call goes through it.
-  import { createResource, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  import { createResource } from '@frontierjs/sierra/resource'
+  import { harborApp, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
 
   export let harbor = null
 
@@ -25,6 +26,7 @@
   let error    = ''
 
   const leadsResource = createResource('leads', {
+    app: harborApp(),
     hooks: {
       around: {
         all: [async (ctx, next) => {

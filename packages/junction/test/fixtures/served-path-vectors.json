@@ -1,0 +1,67 @@
+{
+  "about": "Which file does this URL name, and is it inside the root -- one set of cases for the two copies of the answer (FJS-D653): junction's transport/static.ts, read by test/served-path-vectors.test.ts, and sierra's serve/served-path.js, read through both of its origins by packages/sierra/test/served-path-vectors.test.js. Each copy found the symlink hole alone (FJS-746, FJS-783), so a case found by one is added here and the other is graded against it. Paths in files and links are relative to a scratch directory; root is the published one. Every link target is relative to that same directory.",
+
+  "root": "public",
+
+  "files": {
+    "public/assets/real.css": "real-css-bytes",
+    "public/assets/a..b.css": "dotted-name-bytes",
+    "private/secret.txt":     "outside-secret-bytes",
+    "public2/secret.txt":     "lookalike-secret-bytes",
+    "shared/logo.svg":        "shared-logo-bytes"
+  },
+
+  "links": {
+    "public/assets/inside.css": "public/assets/real.css",
+    "public/assets/link.css":   "private/secret.txt",
+    "public/assets/twin.css":   "public2/secret.txt",
+    "public/brand":             "shared"
+  },
+
+  "verdicts": {
+    "serves":    "200, and the body is the named file's",
+    "missing":   "404 -- the answer a file that does not exist gets, so a way out of the root is not confirmed to whoever found it",
+    "malformed": "400 -- not a URL, so not a file nobody has",
+    "refused":   "any 4xx, in the server's own word: junction refuses a .. segment with 403, sierra normalizes it to a path inside the root and answers 404"
+  },
+
+  "cases": [
+    { "url": "/assets/real.css",   "verdict": "serves", "body": "public/assets/real.css",
+      "why": "The control: a check that refused everything would satisfy every other case." },
+    { "url": "/assets/inside.css", "verdict": "serves", "body": "public/assets/real.css",
+      "why": "Containment is about where a link LANDS, so a link that stays inside is served." },
+    { "url": "/assets/%72eal.css", "verdict": "serves", "body": "public/assets/real.css",
+      "why": "An escaped ordinary character names the same file." },
+    { "url": "/assets/a..b.css",   "verdict": "serves", "body": "public/assets/a..b.css",
+      "why": "Two dots inside a name are not a segment; only a whole .. segment walks." },
+
+    { "url": "/nope.css",          "verdict": "missing",
+      "why": "The control for missing: what every escape below must be indistinguishable from." },
+    { "url": "/assets/link.css",   "verdict": "missing",
+      "why": "A link inside the root pointing out of it (FJS-746)." },
+    { "url": "/assets/twin.css",   "verdict": "missing",
+      "why": "public2 shares public's string prefix; containment compares a path segment." },
+    { "url": "/brand/logo.svg",    "verdict": "missing",
+      "why": "A directory link out of the root is refused until the operator names it." },
+    { "url": "/brand/logo.svg",    "verdict": "serves", "body": "shared/logo.svg", "allowOutside": ["shared"],
+      "why": "Named in allowOutside, compared as a realpath, it is published." },
+    { "url": "/%2fprivate%2fsecret.txt", "verdict": "missing",
+      "why": "A leading slash that survives decoding is still rooted at the root, never at the filesystem's." },
+
+    { "url": "/%zz",                     "verdict": "malformed",
+      "why": "decodeURIComponent throws; outside a try it killed the process (FJS-784)." },
+    { "url": "/assets/real.css%00.png",  "verdict": "malformed",
+      "why": "A NUL truncates at the syscall, so an extension check reads .png and the file read is real.css." },
+
+    { "url": "/../private/secret.txt",                    "verdict": "refused",
+      "why": "The plain walk. A client normalizes it away, so it only arrives raw." },
+    { "url": "/%2e%2e/private/secret.txt",                "verdict": "refused",
+      "why": "The walk escaped, which a URL parser also treats as .." },
+    { "url": "/assets/%2e%2e/%2e%2e/private/secret.txt",  "verdict": "refused",
+      "why": "Two segments up from one level down." },
+    { "url": "/..%2fprivate%2fsecret.txt",                "verdict": "refused",
+      "why": "An escaped slash is a slash once decoded, so this is one segment to a parser and three to the filesystem." },
+    { "url": "/..%5cprivate%5csecret.txt",                "verdict": "refused",
+      "why": "A backslash, which is a separator on Windows and a filename character elsewhere." }
+  ]
+}

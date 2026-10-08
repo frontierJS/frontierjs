@@ -4039,7 +4039,7 @@ border-top:1px solid var(--rule);margin-top:var(--space-2xl)}
   </div>
   
   <div class="surface-footer">
-    <span class="cluster gap-2xs"><span class="pill">3 dep</span></span>
+    <span class="cluster gap-2xs"><span class="pill">4 dep</span></span>
     <span class="text-xs text-muted">0.0.6</span>
   </div>
 </a><a class="card atlas-plate b-ui" href="#/part/mesa"
@@ -5660,14 +5660,14 @@ border-top:1px solid var(--rule);margin-top:var(--space-2xl)}
   <div class="cluster gap-2xs"><span class="chip">audit</span><span class="chip">browser</span><span class="chip">define</span><span class="chip">dev</span><span class="chip">island</span><span class="chip">junction</span><span class="chip">resources</span><span class="chip">runtime</span></div>
       <p class="text-xs text-muted">Directories under <code>packages/jetty/src/</code>. Structure, not features — the answer to <em>where does this live</em>.</p>
 </section><section class="atlas-block" data-block>
-  <h3 class="h6">Crossings <span class="pill">3</span></h3>
+  <h3 class="h6">Crossings <span class="pill">4</span></h3>
   
-      <p class="text-xs text-muted">depends on</p><div class="cluster gap-2xs"><a class="chip link" href="#/part/junction">junction</a><a class="chip link" href="#/part/mesa">mesa</a><a class="chip link" href="#/part/toolbelt">toolbelt</a></div>
+      <p class="text-xs text-muted">depends on</p><div class="cluster gap-2xs"><a class="chip link" href="#/part/junction">junction</a><a class="chip link" href="#/part/mesa">mesa</a><a class="chip link" href="#/part/sierra">sierra</a><a class="chip link" href="#/part/toolbelt">toolbelt</a></div>
       
     
 </section><section class="atlas-block" data-block>
   <h3 class="h6">What proves a change here <span class="pill">1</span></h3>
-  <div class="table-wrap"><table class="table striped dense"><tbody><tr><td class="atlas-key">jetty — the adapter, the harbor, resources/</td><td>example: verify:extension — the only place a jetty app talks to a real Junction, and nothing else here loads an extension into a profile</td></tr></tbody></table></div><p class="text-xs text-muted">From the root <a class="link" href="CLAUDE.md">CLAUDE.md</a>. A suite proves the package; these prove the seams either side of it.</p>
+  <div class="table-wrap"><table class="table striped dense"><tbody><tr><td class="atlas-key">jetty — the adapter, the harbor, resources/</td><td>example: verify:extension — nothing else here loads an extension into a profile. The relay itself (page → Harbor → a real Junction app) is packages/jetty: test/phase3.test.js</td></tr></tbody></table></div><p class="text-xs text-muted">From the root <a class="link" href="CLAUDE.md">CLAUDE.md</a>. A suite proves the package; these prove the seams either side of it.</p>
 </section>
             <p class="text-xs text-muted">Inside view: <a class="link" href="packages/jetty/CLAUDE.md">packages/jetty/CLAUDE.md</a></p></div>
 </dialog><dialog class="dialog atlas-sheet b-ui" data-dossier="part/mesa">
@@ -5877,10 +5877,10 @@ border-top:1px solid var(--rule);margin-top:var(--space-2xl)}
   <div class="cluster gap-2xs"><span class="chip">analytics</span><span class="chip">components</span><span class="chip">devtools</span><span class="chip">fetch</span><span class="chip">islands</span><span class="chip">postbuild</span><span class="chip">presence</span><span class="chip">resource</span><span class="chip">router</span><span class="chip">scanner</span><span class="chip">serve</span><span class="chip">site</span><span class="chip">theme</span><span class="chip">tools</span><span class="chip">virtual</span><span class="chip">widget</span></div>
       <p class="text-xs text-muted">Directories under <code>packages/sierra/src/</code>. Structure, not features — the answer to <em>where does this live</em>.</p>
 </section><section class="atlas-block" data-block>
-  <h3 class="h6">Crossings <span class="pill">6</span></h3>
+  <h3 class="h6">Crossings <span class="pill">7</span></h3>
   
       <p class="text-xs text-muted">depends on</p><div class="cluster gap-2xs"><a class="chip link" href="#/part/junction">junction</a><a class="chip link" href="#/part/litestone">litestone</a><a class="chip link" href="#/part/mesa">mesa</a><a class="chip link" href="#/part/toolbelt">toolbelt</a></div>
-      <p class="text-xs text-muted">depended on by</p><div class="cluster gap-2xs"><a class="chip link" href="#/part/basecamp">basecamp</a><a class="chip link" href="#/part/orion">orion</a></div>
+      <p class="text-xs text-muted">depended on by</p><div class="cluster gap-2xs"><a class="chip link" href="#/part/basecamp">basecamp</a><a class="chip link" href="#/part/jetty">jetty</a><a class="chip link" href="#/part/orion">orion</a></div>
     
 </section><section class="atlas-block" data-block>
   <h3 class="h6">What proves a change here <span class="pill">8</span></h3>

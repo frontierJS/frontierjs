@@ -143,7 +143,12 @@ export class PagePort {
         clearTimeout(timer)
         unsubscribe()
         if (responsePayload?._error) {
-          reject(new Error(responsePayload._error))
+          // `code` and `data` as Junction's client sets them, so a screen reads
+          // a refusal relayed through Harbor the way it reads one from a socket.
+          const err = new Error(responsePayload._error)
+          if (responsePayload._code != null)      err.code = responsePayload._code
+          if (responsePayload._data !== undefined) err.data = responsePayload._data
+          reject(err)
         } else {
           resolve(responsePayload?.value ?? responsePayload)
         }

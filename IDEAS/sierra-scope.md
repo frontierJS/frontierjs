@@ -9,8 +9,8 @@ dated: 2026-10-08
 **Status: PROPOSED — RULED 2026-10-08, PARTLY BUILT.** Dated 2026-10-08; every
 count in § 1–2 was measured on the working tree that day, with a path named. All
 five questions are ruled (`FJS-D649` to `FJS-D653`), each as recommended, and
-§ 3 is the build. Items 1, 3 and 4 are built (sierra `CHANGES.md`, 2026-10-08);
-2, 5 and 6 are not. It is
+§ 3 is the build. Items 1 to 5 are built (sierra, jetty and junction
+`CHANGES.md`, 2026-10-08); 6 is not. It is
 [`litestone-scope.md`](litestone-scope.md) and [`junction-scope.md`](junction-scope.md)
 asked of the UI realm, and the answer is shaped differently: sierra hosts few
 batteries and they are small. **Its finding is that the realm's own noun lives
@@ -191,10 +191,30 @@ is its own piece of work:
    is `./build`'s. **Built**; `VERSION` went with it.
 5. **Jetty de-forked** (Q2 **B**) — jetty hands sierra's Resource a
    client-shaped object over its relay and deletes `store.js` and
-   `resource.js`. Its own work, after the rename, and measured by jetty's
-   bundle with the router in it.
+   `resource.js`. **Built.** The object is not hand-written: it is a real
+   Junction client created with `relay`, a third carriage beside the socket
+   and HTTP. Each call leaves as the `service_call` frame, Harbor's client
+   makes it with `forward()`, and pushes come back through `receive()`, so
+   `client.resource()` (live store, matching, `stale`, nodes) has one
+   implementation. `harborApp()` (`@frontierjs/jetty/resources`) is the
+   handle, `{ client, registry, user }`, built the way `connectApp()` builds
+   one. **The measurement Q3 asked for:** the example extension's pages share
+   one Resource chunk of 414 kB (134 kB gzip, unminified, which is jetty's
+   build), and the router is about 90 kB of the roughly 600 kB of source
+   behind it. The island grew 211 → 545 kB because a content script inlines
+   everything. That is weight an extension, loaded from disk, carries, so
+   Q3's **A** is not owed on this evidence. Sierra's build stubs the device
+   database's worker, and jetty's did not: the first build shipped a 1.1 MB
+   litestone worker. Jetty's build now installs sierra's own
+   `localDbPlugin`.
 6. **Path vectors** (Q5 **C**) — one vector set for *which file does this URL
    name, and is it inside the root*, read by sierra's and junction's tests.
+   **Built.** It is junction's `test/fixtures/served-path-vectors.json`.
+   Junction found the hole first and may read nothing of sierra's, so sierra
+   reads it by path, through both of its origins. Seventeen cases. The first
+   run found junction wrong on three: `%zz` and NUL got 403 where they should
+   get 400, and `a..b.css` was refused because the check was a substring. Sierra
+   answered every case as the vectors say.
 
 ## Open questions
 

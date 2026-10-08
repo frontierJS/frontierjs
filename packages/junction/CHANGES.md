@@ -1,5 +1,21 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-08 — the static server is graded on the vectors sierra's origins are (`FJS-D653`)
+
+`test/fixtures/served-path-vectors.json` holds the cases for *which file does this URL name, and is it inside the root*: 17 URLs over a scratch tree with links in and out of the root, each with a verdict of `serves`, `missing`, `malformed` or `refused`. `test/served-path-vectors.test.ts` runs them against `serveStatic`, and sierra's `test/served-path-vectors.test.js` reads the same file by path. Junction cannot import sierra's copy (Invariant 1) and toolbelt cannot hold `realpath`, so the two copies share their cases and not their code.
+
+The first run found three cases where the copies disagreed, and junction was wrong on all three. **An undecodable URL (`/%zz`) and a NUL byte answer 400, not 403.** They aren't URLs, which is sierra's answer and `FJS-784`'s. **Only a whole `..` segment is refused.** The check was a substring, so `/assets/a..b.css`, a legal filename, got a 403. A `..` segment still answers 403.
+
+Proof: the vectors 17/17, `static-root.test.ts` unchanged and passing, the full suite 2664/2664, typecheck clean.
+
+## 2026-10-08 — `relay`: a client whose connection is somebody else's (`FJS-D650`)
+
+`createJunctionClient({ relay })` hands every service call to `relay` as the `service_call` frame `_wsCall` would have sent (`RelayedCall`: `service`, `method`, `id`, `data`, `query`, `opts`), instead of opening a socket. `client.forward(call)` makes a relayed call on the holder's client, the socket when it is up and HTTP when it is not. `client.receive(frame)` delivers a `connected` or `event` frame. The socket's own `onmessage` now calls `receive()` for both, so a relayed client and a socket client cannot answer one frame differently.
+
+On a relayed client, `connect()` opens nothing, and `_request` and `fetch()` refuse by name. That covers a file upload, a filtered bulk write, a findFirst, an `/auth` route and a raw route. They would otherwise have gone to the page's own origin. It exists for an extension page, whose connection lives in the service worker (`@frontierjs/jetty`'s `harborApp()`), so `resource()` has one implementation there too.
+
+Proof: `test/client-relay.test.ts`, 8/8, two real clients over a real app, with the holder on its socket and on HTTP. The full suite is 2646/2646 and typecheck is clean.
+
 ## 2026-10-08 — the edge: four axes and a host, batteries behind subpaths (`FJS-D639`–`FJS-D644`)
 
 **The main entry re-exports no battery.** Mail, AI, cache, scheduler, email, webhooks, openapi, outbox, backfill, commitments, manifest, devtools, export and metrics each come from their own subpath. `./export` and `./metrics` are new. `buildRoutes` and `serializeHookMap` moved from the manifest plugin into `core/app-model.ts` and are on the main entry. `test/edge.test.ts` grades the edge in five ways: every `src/` directory is classified, no axis file imports a battery outside its allow-list, every allow-list row is still used, the entry re-exports no battery, and every battery has a subpath. The allow-list rows are `cache/` and `scheduler/`, which `FJS-D640` keeps constructed, and `plugins/declared.ts`. That module holds the `config.plugins` installer, moved out of `core/app.ts` (`FJS-D256`, pending `FJS-D645`).

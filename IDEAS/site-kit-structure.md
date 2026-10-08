@@ -162,7 +162,7 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
    - **B** — the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`
    - **C** — give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)
    - **Recommend A** — a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px
-5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code. *Grid and `align` passed it and shipped in css on 2026-10-06 (`.grid`, `.align-start`/`-center`/`-end`); the template and role names wait for `Section.mesa`.*
+5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code. *Grid and `align` passed it and shipped in css on 2026-10-06 (`.grid`, `.align-start`/`-center`/`-end`); the template and role names wait for `Block.mesa`'s move.*
    - **A** — the names in § *The proposed shape*: templates `content`, `media`,
      `columns`, `grid`, and roles `header`, `body`, `media`, `card`.
    - **B** — the `template` key takes the Layout helper's own word (`stack`,
@@ -174,9 +174,14 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
      under `FJS-D614` a role is never written, only emitted as the element it
      lands on. That leaves no new noun to coin. C is the set the proposal
      already cut.
+6. ~~**What is ksite's `Block.mesa` called once it moves to site-kit?**~~ **Answered 2026-10-08 (`FJS-D654`): A — `Block.mesa`: the authoring noun stays, and a top-level block emits css's `band` plus one Layout helper (`FJS-D621`, `FJS-D622`).** This file's first draft wrote `Section.mesa` as a placeholder, and no ruling took it.
+   - **A** — `Block.mesa`: the authoring noun stays, and a top-level block emits css's `band` plus one Layout helper (`FJS-D621`, `FJS-D622`).
+   - **B** — `Section.mesa`, the placeholder in § *The proposed shape*.
+   - **C** — `Band.mesa`, after the css term a top-level block emits.
+   - **Recommend A** — a block is not always a section: the element follows position, `<section>` at the top, `<article>` nested, `<a>` with a `url`, none when unwrapped, so a name for one of the four misleads on the other three. B collides twice, with the HTML element and with css's existing `Section` term that `FJS-D622` declined to reuse, and makes Band's stripe a second word. C names one output of four in the same way. Authors already write `layout: Block`, so A coins nothing.
 
 **The first pieces to build are in css** — built 2026-10-06: Band, `.bleed`,
 Grid and the align axis, each named in `vocabulary.js`. Then ksite's
-`Block.mesa` moves to site-kit as `Section.mesa`, reading typed keys and
-emitting those words — what `website/packages/site-kit/PROJECT_STATE.md` § Next
+`Block.mesa` moves to site-kit under its own name (question 6), reading typed
+keys and emitting those words — what `website/packages/site-kit/PROJECT_STATE.md` § Next
 names.

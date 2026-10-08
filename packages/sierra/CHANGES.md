@@ -1,5 +1,15 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — both static origins are graded on junction's served-path vectors (`FJS-D653`)
+
+`test/served-path-vectors.test.js` runs junction's `test/fixtures/served-path-vectors.json` through `serveSite` and `serveWidgets`. It sends each request with `node:http` and the path as written, because `fetch` folds `..` and `%2e%2e` away before the server sees them. Sierra's copy answered all 17 cases as the vectors say. With `withinRoot`'s containment test removed, the three escape cases fail on both origins. `src/` is unchanged.
+
+Proof: 34/34, and the suite 1971/1971.
+
+## 2026-10-08 — `createSchemaRegistry` and `localDbPlugin` are exported, for jetty (`FJS-D650`)
+
+`@frontierjs/sierra/resource` exports `createSchemaRegistry`, which jetty's `harborApp()` builds its handle from, the same way `connectApp()` does. `@frontierjs/sierra/build` exports `localDbPlugin`, which jetty's build installs so an extension carrying the Resource leaves out the device database's worker. Nothing else changed. Proof: sierra's suite passes and typecheck is clean.
+
 ## 2026-10-08 — the Resource is `src/resource/` and `@frontierjs/sierra/resource` (`FJS-D650`)
 
 **Breaking:** `@frontierjs/sierra/junction` is now `@frontierjs/sierra/resource`, and `src/junction/` is `src/resource/`. Nothing is kept for the old spelling: an import of `./junction` fails at resolve, naming the path. Every caller moved in the same change: example, basecamp, orion, jetty's comments, ui, the cli scaffolds and tutor steps, the bridge-index skill and the docs. The exported names are unchanged, `initJunction` included, because that function does start the Junction client.

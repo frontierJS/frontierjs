@@ -2153,6 +2153,9 @@ export class JunctionClient extends EventEmitter {
    * status — so a caller reads a body only from a response that is a file.
    */
   async fetch(path: string, init: RequestInit = {}): Promise<Response> {
+    if (this._relay) {
+      throw new Error(`${path} cannot be relayed — a raw route is HTTP, and this client's connection is held elsewhere. Fetch it where the connection is.`)
+    }
     const headers = new Headers(init.headers)
     if (this.token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${this.token}`)
     for (const [k, v] of Object.entries(this.callHeaders())) if (!headers.has(k)) headers.set(k, v)

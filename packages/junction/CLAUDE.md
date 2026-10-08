@@ -57,7 +57,9 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **A CRLF in a mail address or header is refused at the builder AND at
   `sendMessage()`** (`FJS-677`, `test/mail-injection.test.ts`).
 - **The static server serves a file inside its root**, symlinks resolved, 404 on
-  the way out (`FJS-746`, `test/static-root.test.ts`).
+  the way out (`FJS-746`, `test/static-root.test.ts`). Its cases are shared with
+  sierra's origins: one found by either goes in
+  `test/fixtures/served-path-vectors.json` (`FJS-D653`).
 - **`$` throws outside a call, and a call that has ended is outside it**
   (`FJS-687`, `test/call-scope.test.ts`).
 - **A claim resolver runs inside the data hook, for a guest as well as a

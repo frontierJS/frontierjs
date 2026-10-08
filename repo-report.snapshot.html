@@ -383,7 +383,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr><tr data-row>
         <td class="m">@frontierjs/jetty</td>
         <td class="m sub">0.0.6</td>
-        <td class="m sub">junction · mesa · toolbelt</td>
+        <td class="m sub">junction · mesa · sierra · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/junction</td>
@@ -2333,7 +2333,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">140 rows · 236 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">140 rows · 237 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>a migration, db/migrations/, or a column whose KIND of time changed</td>
       <td>example: verify:migrate — the only thing that reads the committed files, since autoMigrate means nothing else ever does</td>
@@ -2792,8 +2792,8 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td><span class="sub">—</span></td>
     </tr><tr data-row>
       <td>jetty — the adapter, the harbor, resources/</td>
-      <td>example: verify:extension — the only place a jetty app talks to a real Junction, and nothing else here loads an extension into a profile</td>
-      <td><span class="tally"><b>example</b>verify:extension</span></td>
+      <td>example: verify:extension — nothing else here loads an extension into a profile. The relay itself (page → Harbor → a real Junction app) is packages/jetty: test/phase3.test.js</td>
+      <td><span class="tally"><b>example</b>verify:extension</span><span class="tally"><b>packages/jetty</b>test/phase3.test.js</span></td>
     </tr><tr data-row>
       <td>the desktop surface — desktop/shell/, desktop/deploy/build.mjs, wraps, core/desktop-surface.js, a page served from a custom scheme</td>
       <td>packages/cli: test/desktop-surface.test.js, which holds example/desktop/ to the generator byte for byte — then example: verify:desktop, the only place a page runs from a scheme that is not http(s), and the only drive that builds a native binary, so it is what proves the generator. packages/sierra: test/router-hardening.test.js for the link guard alone</td>

@@ -68,8 +68,6 @@ export function createJunctionAdapter(config = {}) {
     return client
   }
 
-  function svc(name) { return need().service(name) }
-
   return {
     // ── Connection ────────────────────────────────────────────────────
     async connect(opts = {}) {
@@ -115,23 +113,17 @@ export function createJunctionAdapter(config = {}) {
 
     // ── Calls ─────────────────────────────────────────────────────────
     //
-    // `args` is the envelope `resources/resource.js` builds, and the mapping is
-    // one line each. `params` is Junction's FindParams — kept structured on the
-    // way here, flattened to `$limit`/`$orderBy` by the client, which is the one
-    // owner of that spelling (Invariant 10).
+    // `args` is the rest of the frame a page's relayed client built
+    // (`harborApp()`), already in wire spelling, so Harbor's client makes it
+    // as it would have made its own — no mapping here to drift from it.
     async call(service, method, args = {}) {
-      const s = svc(service)
-      switch (method) {
-        case 'find':   return s.find(args.query ?? {}, args.params)
-        case 'get':    return s.get(args.id, args.params)
-        case 'create': return s.create(args.data, args.params)
-        case 'patch':  return s.patch(args.id, args.data, args.params)
-        case 'remove': return s.remove(args.id, args.params)
-        // Everything else is a custom method, `restore` included: it is a
-        // Litestone capability rather than one of the six, and it reaches a
-        // service under its own name like any other.
-        default:       return s.invoke(method, args.id ?? null, args.data ?? {}, args.query)
-      }
+      return need().forward({
+        service, method,
+        id:    args.id    ?? null,
+        data:  args.data  ?? null,
+        query: args.query ?? null,
+        ...(args.opts ? { opts: args.opts } : {}),
+      })
     },
 
     // ── Auth ──────────────────────────────────────────────────────────

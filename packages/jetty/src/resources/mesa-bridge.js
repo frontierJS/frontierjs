@@ -1,22 +1,11 @@
-// mesa-bridge.js — Mesa interop helpers.
+// mesa-bridge.js — Harbor's connection state as Mesa signals.
 //
-// These helpers turn jetty's plain-JS state into Mesa-reactive signals so
-// components can consume them with normal `$:` path watching or expression
-// reading.
+// The state is jetty's own: Junction lives in Harbor, so `connected` follows
+// the port's lifecycle and the session broadcasts rather than a socket in the
+// page. A Resource's store goes through sierra's `useStore`, like any other.
 //
-// Sierra has equivalent helpers in @frontierjs/sierra/resource:
-//   connected, reconnecting (Mesa signals)
-//   useStore(store) — bridges a Junction store into a component
-//
-// Jetty mirrors the API. The shape diverges underneath because:
-//   - Sierra's `connected` is driven by Junction client lifecycle directly
-//     (live in the page).
-//   - Jetty's `connected` is driven by harbor port lifecycle + session events
-//     (Junction lives in the SW, page sees only the proxy).
-//
-// Mesa runtime availability: same lazy-load pattern as runtime/mount.js. If
-// Mesa isn't installed (sandbox), the Mesa-flavored signals fall back to
-// plain getter-style values so non-component code still works.
+// Mesa loads lazily, as in runtime/mount.js; without it the accessors fall back
+// to plain getters so non-component code still works.
 
 import { onConnectionChange, getConnectionState } from './active-port.js'
 
@@ -116,39 +105,4 @@ function _initSignals() {
 export async function getConnectionSignals() {
   await _initSignals()
   return _signals
-}
-
-/**
- * Wrap a jetty store as a Mesa-compatible signal. Mirrors Sierra's useStore —
- * call this once per component instance (at the top of your <script> block,
- * not inside a reactive computation) so the subscription is created once.
- *
- * Returns { get, value, unsubscribe }. Pass unsubscribe to $onDestroy:
- *
- *   const { get, unsubscribe } = await useStore(leadsStore)
- *   $onDestroy(unsubscribe)
- *
- * Falls back to non-reactive read if Mesa runtime is unavailable.
- *
- * @param {{ get(): any, subscribe(fn: (v: any) => void): () => void }} store
- */
-export async function useStore(store) {
-  const rt = await loadRuntime()
-  if (rt && typeof rt.createSignal === 'function') {
-    const [read, write] = rt.createSignal(store.get())
-    const unsubscribe = store.subscribe((v) => write(v))
-    return {
-      get: read,
-      get value() { return read() },
-      unsubscribe,
-    }
-  }
-  // Fallback — direct passthrough.
-  let v = store.get()
-  const unsubscribe = store.subscribe((next) => { v = next })
-  return {
-    get: () => v,
-    get value() { return v },
-    unsubscribe,
-  }
 }

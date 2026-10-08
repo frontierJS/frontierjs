@@ -216,7 +216,7 @@ before you meet it.
 | Slider | open | | | | |
 | Toaster | open | | | | |
 | Pass | open | | | | |
-| Origin | open | | | | |
+| Origin | open | Shared | | | Two live senses, neither ruled ([`FJS-D656`](DECISIONS.md#fjs-d656)): the doctrine's *one origin* of truth (PHILOSOPHY axiom 1, the Schema row) and the browser's scheme+host+port (csrf, `FJS-D345`). litestone's cross-process `origin` column names a writer, and SQLite's index `origin` is SQLite's word |
 | Start | open | | | | |
 | Ring | open | Framework | | one band of the order a newcomer reads the workspace in, center out — a package's is the `Ring` column of the root `CLAUDE.md` table | `fli ws:atlas --as=rings`. Not a dependency layer: the spine imports the substrate one ring out, and is read first anyway |
 | Environment | blessed | Deployment | | a named place a Release serves from — it supplies configuration only, and is mutable but generational: serving state is (Release, generation). Qualified at every use: a *deploy environment*, a *test environment* | [`FJS-D636`](DECISIONS.md#fjs-d636). `createTestEnv` stands up the test sense. The port schema's ENV digit and environment variables are ordinary English; basecamp's `model Environment` is an app's |
@@ -229,3 +229,7 @@ before you meet it.
 | Snapshot | blessed | Testing | | a committed `*.snapshot.*` file that names the command that generated it — the `snapshots` CI phase reruns it with `--check` | [`FJS-D638`](DECISIONS.md#fjs-d638). The audit trail's before/after copies are an *audit snapshot* |
 | Vector | blessed | Testing | | conformance data — an input and its expected output, runnable against any implementation, each set pairing a positive case with its negative control | [`FJS-D638`](DECISIONS.md#fjs-d638), `FJS-D631`. `IDEAS/specifications.md` |
 | Fixture | blessed | Testing | | a file a test reads | [`FJS-D638`](DECISIONS.md#fjs-d638). Not a Seed, which is rows written (`FJS-D632`) |
+| Adversary | blessed | Shared | | one named class of attacker, a row key in `THREATS.md` | [`FJS-D656`](DECISIONS.md#fjs-d656). The operator is a trusted row |
+| Promise | blessed | Shared | Boundary | what holds on the far side of a boundary whatever an adversary sends; it cites the ruling that holds it | [`FJS-D656`](DECISIONS.md#fjs-d656). Not a Commitment, which is a schema-level obligation on a row |
+| Fault | blessed | API | | a classified failure — a kind from `FAULT_KINDS`, with `retryable` and `indeterminate` derived from it | [`FJS-D655`](DECISIONS.md#fjs-d655), building `FJS-D201`. Whoever sees the failure classifies it. Every layer that may try again reads it |
+| Dead | blessed | API | Fault | the state of a durable retrier's row once it has given up; `retry(id)` is the way back | [`FJS-D655`](DECISIONS.md#fjs-d655). Caravan and webhooks store it. The outbox derives it from `attempts`. Webhooks' `failed` is an attempt that will be retried, not a terminal state |

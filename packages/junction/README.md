@@ -1932,6 +1932,20 @@ createJunctionClient({ url: 'ws://localhost:3000' })   // works fine
 createJunctionClient({ url: 'wss://api.example.com' }) // works fine
 ```
 
+**`relay`**: a client whose connection is somebody else's. Some contexts cannot keep a socket. An extension page is one, because MV3 keeps the connection in the service worker. Such a page still needs the whole client, since `resource()`'s live store is what a Resource is built on. A relayed client hands each call to `relay` as the frame the socket would have carried. The client that holds the connection makes it with `forward()` and hands each push back through `receive()`:
+
+```typescript
+// the page
+const page = createJunctionClient({ relay: (call) => port.request('call', call) })
+port.on('frame', (frame) => page.receive(frame))   // { type: 'event', event, data }, or { type: 'connected' }
+
+// whoever holds the connection
+port.on('call', (call) => holder.forward(call))    // the socket when it is up, HTTP when it is not
+holder.on('event', (event, data) => port.send('frame', { type: 'event', event, data }))
+```
+
+Every `connected` after the first emits `resync`, as a socket's reconnect does. `connect()` opens nothing. A call only HTTP can carry is refused by name, because there is no origin to send it to: a file upload, a filtered bulk write, a findFirst, an `/auth` route, or `client.fetch()`. `@frontierjs/jetty`'s `harborApp()` is the one in use.
+
 ---
 
 ## Email

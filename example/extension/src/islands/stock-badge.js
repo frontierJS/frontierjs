@@ -6,8 +6,8 @@
 // shop's staff looking at their own public site and seeing the shelf behind it.
 //
 // It holds no connection. `props.harbor` is the port to the service worker, and
-// `createResource` here is the same orchestrator the dock uses — one socket, in
-// the one context that outlives both surfaces.
+// `harborApp()` relays every call through it — one socket, in the one context
+// that outlives both surfaces, and sierra's Resource on this side of it.
 //
 // Islands are FLAT files in src/islands/ and are built in LIB MODE, which is
 // not cosmetic: Vite injects a preload helper written with `import.meta` into
@@ -16,7 +16,8 @@
 // (`FJS-030`).
 
 import { defineIsland }   from '@frontierjs/jetty'
-import { createResource } from '@frontierjs/jetty/resources'
+import { createResource } from '@frontierjs/sierra/resource'
+import { harborApp }      from '@frontierjs/jetty/resources'
 
 /** `/products/explorer-tee/` → `explorer-tee`; anything else → null. */
 export function slugFromPath(pathname) {
@@ -56,8 +57,9 @@ export default defineIsland({
     // is a URL segment, so it is kebab-case, and `product-variants` inflects to
     // nothing the schema declares — the miss is a console warning and a bare
     // `make()`, which is a screen that renders and validates against nothing.
-    const products = createResource('products')
-    const variants = createResource('product-variants', { model: 'ProductVariant' })
+    const app      = harborApp()
+    const products = createResource('products', { app })
+    const variants = createResource('product-variants', { app, model: 'ProductVariant' })
 
     ;(async () => {
       try {

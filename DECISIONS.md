@@ -27,6 +27,42 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d656"></a>2026-10-08 · `FJS-D656` — The threat model is one root table, `THREATS.md`: a row per **adversary** and boundary, its **promise**, where it is enforced and the test that proves it, graded by `fli check`. The operator is a trusted row. An agent never sees more than a person at its level.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/threat-model.md`](IDEAS/threat-model.md). **A** was picked over **B** (a `## Threats` section in each package's `CLAUDE.md`) and **C** (one test identity per adversary in `@frontierjs/testing`, now). B was refused because every hole open today sits at a seam between packages (FJS-1607, FJS-1833, FJS-1858), where a per-package section has no owner. C is the later shape of the Data and API rows, and the table's *Proved by* column is the seam it fills.
+
+**A promise cites its ruling and does not restate it.** The table is a Map (PHILOSOPHY § VII): it says which ruling or invariant holds the boundary, which file enforces it and which test proves it. A promise written out in the row would be a second origin for the ruling. `fli check`'s `threat-row` rule fails a row that names no test, or names one that does not exist.
+
+**The operator is a row, and it is trusted.** Whoever holds the machine, the keys and `asSystem()` is promised only Invariant 7's redaction. The row says so, so an audit does not spend a run on it. Anything more is a new ruling.
+
+**An agent is at most the person.** An MCP agent sees what a person at the same level sees, or less. `narrow` only removes (`FJS-D258`). The admin `levels` preview skips `narrow` because it reports a level, not a principal (`packages/mcp/src/plugin.ts`).
+
+**Origin stays open.** The paper proposed the browser sense for the bare word. It missed the doctrine's sense: PHILOSOPHY axiom 1, *one origin* of truth, used in 74 markdown files. Both are live, and this ruling picks neither.
+
+The paper's seed rows were re-probed before ruling. The 2026-09 litestone findings it cited as open (where-key injection, the transaction bypass) are FJS-634 and FJS-638, closed. The Bearer sent off-origin is FJS-788, closed. Their tests pass.
+
+*Lives in:* `THREATS.md` (to be built) · `VOCABULARY.md` (Adversary, Promise, Origin) · `FJS-D06` · `FJS-D258` · `FJS-D345`.
+
+### <a id="fjs-d655"></a>2026-10-08 · `FJS-D655` — A failure is a **Fault**, and every layer that may try again reads it. A durable retrier that gives up is **dead**, and `retry(id)` is the one way back.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/failure-handling.md`](IDEAS/failure-handling.md). **The paper's B, amended**, was picked over **A** (the fault only, terminal words left alone) and over B as written. B as written renamed `retry(id)` to `revive(id)` and stored the outbox's dead count as a status. Both extras were dropped. Caravan and webhooks already share `retry(id)` as the operator verb. The outbox derives *dead* from `attempts` on purpose (`plugins/outbox/engine.ts`), and a stored status would be a second origin for it.
+
+**`FJS-D201` is built as ruled.** `@frontierjs/toolbelt/fault` holds `FAULT_KINDS` and, for each kind, `{ retryable, tripsBreaker, audience }`. A thrown value carries `fault: { kind, retryable, indeterminate, retryAfterMs? }`. Whoever sees the failure still classifies it: conduit from a status, litestone from its error class, junction from both. `CONDUIT_ERROR_KINDS` becomes a subset of `FAULT_KINDS`.
+
+**Caravan reads `retryable`.** `retryable === false` is dead after that attempt, and `retryAfterMs` sets the earliest next `run_at`. The app-set `err.terminal` flag is deleted, because a flag an app has to remember is the double charge `FJS-D194` was written to prevent ([`FJS-2046`](ISSUES.md#fjs-2046)). An indeterminate fault inside a job is dead at once. A reconcile hook is a new option and waits for a stressor that needs one.
+
+**Dead is the word for giving up.** Caravan's `JobStatus` `'failed'` becomes `'dead'`, which webhooks already use. In webhooks, `failed` means an attempt that will be retried, so as the terminal word it would have meant two opposite things. Caravan's dead and webhooks' dead now read the same way. The outbox's dead stays derived.
+
+**The kind crosses to the browser.** `toFrameworkError` carries `fault.kind` beside `retryable`, so a form can tell a provider outage from a bug. Running `toFrameworkError({ retryable: false, kind: 'server_error' })` today returns no kind. `sanitizeError` still owns the message.
+
+*Lives in:* `FJS-D201` · `FJS-D194` · `VOCABULARY.md` (Fault, Dead) · `packages/caravan/test/fault.test.ts`.
+
+### <a id="fjs-d654"></a>2026-10-08 · `FJS-D654` — What is ksite's `Block.mesa` called once it moves to site-kit — `Block.mesa`: the authoring noun stays, and a top-level block emits css's `band` plus one Layout helper (`FJS-D621`, `FJS-D622`).
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (`Section.mesa`, the placeholder in § *The proposed shape*), **C** (`Band.mesa`, after the css term a top-level block emits).
+
+The paper's recommendation, taken as written: a block is not always a section: the element follows position, `<section>` at the top, `<article>` nested, `<a>` with a `url`, none when unwrapped, so a name for one of the four misleads on the other three. B collides twice, with the HTML element and with css's existing `Section` term that `FJS-D622` declined to reuse, and makes Band's stripe a second word. C names one output of four in the same way. Authors already write `layout: Block`, so A coins nothing.
+
 ### <a id="fjs-d636"></a>2026-10-07 · `FJS-D636` — The Deployment realm's remaining nouns — an **Environment** is a named place a Release serves from, qualified at every use. *Promote* is the verb for a deploy the journal can recognize, and *Promotion* is not a noun. *Audience* stays open, and the webhook's sense of it becomes *subscriber*.
 
 Asked by the vocabulary atlas of 2026-10-07, wave 4. `ARCHITECT.md` § 2 listed Environment and Audience as not yet named, and the realm had two ruled nouns, Release and Pivot. **Promote as a verb only** was picked over blessing *Promotion* as a noun. **Audience left open** was picked over blessing it for Deployment once the sweep found four live senses of it.

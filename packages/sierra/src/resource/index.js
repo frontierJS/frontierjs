@@ -17,6 +17,9 @@ export {
   registerSchemas, schemaFor, modelNameFor, allSchemas, allDefs, hasSchemas,
   resolveRef, suggestModel,
 } from './schema-registry.js'
+// A registry of its own, for a handle on an app other than the page's —
+// `connectApp()` builds one, and so does an extension page's `harborApp()`.
+export { createSchemaRegistry } from './schema-registry.js'
 import { createSchemaRegistry } from './schema-registry.js'
 import { createJunctionClient, localTokenStore } from '@frontierjs/junction/client'
 

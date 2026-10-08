@@ -126,9 +126,9 @@ export async function serveStatic(
     untrusted = false
   } = opts
 
-  // Normalize and sanitize path — prevent directory traversal
   const safe = sanitizePath(urlPath)
-  if (!safe) return new Response('Forbidden', { status: 403 })
+  if (safe === 400) return new Response('Bad Request', { status: 400 })
+  if (safe === 403) return new Response('Forbidden', { status: 403 })
 
   let filePath = join(root, safe)
 
@@ -361,26 +361,25 @@ function buildCacheControl(ext: string, maxAge: number): string {
   return NOCACHE
 }
 
-// Prevent path traversal — returns null if suspicious
-function sanitizePath(urlPath: string): string | null {
-  // Decode once
+// The path a URL names, or the status that refuses it. Undecodable and NUL are
+// 400 — not a URL, so not a file anybody has — and a `..` SEGMENT is 403, since
+// `a..b.css` is a legal name. Sierra's origins answer the same question in their
+// own copy; the cases both are graded on are `test/fixtures/served-path-vectors.json`.
+function sanitizePath(urlPath: string): string | 400 | 403 {
   let p: string
   try {
     p = decodeURIComponent(urlPath)
   } catch {
-    return null
+    return 400
   }
 
-  // Block null bytes
-  if (p.includes('\0')) return null
+  // A NUL truncates at the syscall, so an extension read off the URL is not
+  // the extension of the file opened.
+  if (p.includes('\0')) return 400
 
-  // Block traversal
-  if (p.includes('..')) return null
+  if (p.split(/[\\/]/).includes('..')) return 403
 
-  // Normalize slashes
   p = p.replace(/\\/g, '/')
-
-  // Must start with /
   if (!p.startsWith('/')) p = '/' + p
 
   return p

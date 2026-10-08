@@ -106,7 +106,8 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
 **Phase 3 — the generic line moves.** In this order, each a move from
 `@kobami/ksite` to site-kit with ksite's baselines green after it:
 
-1. `Block.mesa` → `Section.mesa`, typed keys for `classes:`, per
+1. `Block.mesa`, keeping its name (`FJS-D654`): typed keys replace
+   `classes:`, and a top-level block emits `band` plus one Layout helper, per
    `site-kit-structure.md`.
 2. The markdown dialect: `===`, and the use-site classes FJS-1502 unblocked.
 3. Collections, and menus and settings back to `.md`, which FJS-D549 unblocked.

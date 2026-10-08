@@ -6,7 +6,7 @@ dated: 2026-10-08
 
 # Idea — failure handling: one fault, read the same way by every layer that may try again
 
-**Status: IDEA, nothing built.** Dated 2026-10-08. Do not cite this file as
+**Status: ruled as `FJS-D655` (B amended), nothing built.** Dated 2026-10-08. Do not cite this file as
 describing behavior — see `VERIFYING.md`. Rows marked *(ran)* were probed;
 the rest are read from source at the cited line.
 

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/caravan
 
+## 2026-10-08 — `fault.test.ts` pins a job retried after `retryable: false` (`FJS-2046`)
+
+A handler that throws `retryable: false` is still run again on the ladder, because the worker reads only `err.terminal`. The test is `it.failing` until `FJS-D655` is built, paired with a retryable throw that climbs the ladder. No source change.
+
 ## 2026-10-06 — `commitments.test.ts` pins a fire on a row the app cannot see (`FJS-1788`)
 
 A row policy hiding the order from the app's principal must fail the fire by name rather than count it fired; the gate test also asserts the missing `createApp({ system })` is named. The fix is junction's `fireCommitment`; no source change here.

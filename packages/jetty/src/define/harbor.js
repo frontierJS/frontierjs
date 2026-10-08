@@ -311,7 +311,7 @@ async function handleServiceCall(port, msg, ctx) {
       const result = await ctx.authFlow.login(args)
       respond(port, msg, { value: result })
     } catch (e) {
-      respond(port, msg, { _error: e.message })
+      respond(port, msg, errorPayload(e))
     }
     return
   }
@@ -324,7 +324,7 @@ async function handleServiceCall(port, msg, ctx) {
       const result = await ctx.authFlow.submitCode(args?.code)
       respond(port, msg, { value: result })
     } catch (e) {
-      respond(port, msg, { _error: e.message })
+      respond(port, msg, errorPayload(e))
     }
     return
   }
@@ -333,12 +333,13 @@ async function handleServiceCall(port, msg, ctx) {
       const result = await ctx.authFlow.logout()
       respond(port, msg, { value: result })
     } catch (e) {
-      respond(port, msg, { _error: e.message })
+      respond(port, msg, errorPayload(e))
     }
     return
   }
 
-  // Generic service call → forward to Junction.
+  // Generic service call → forward to Junction. `args` is the rest of the
+  // frame the page's relayed client built — `{ id, data, query, opts }`.
   try {
     if (!ctx.adapter.isConnected()) {
       throw new Error('Junction not connected')
@@ -346,7 +347,21 @@ async function handleServiceCall(port, msg, ctx) {
     const value = await ctx.adapter.call(service, method, args)
     respond(port, msg, { value })
   } catch (e) {
-    respond(port, msg, { _error: e.message })
+    respond(port, msg, errorPayload(e))
+  }
+}
+
+/**
+ * A thrown value as it crosses the port. A port carries JSON, so an Error
+ * arrives as `{}`; the message alone cost a page the status and the per-field
+ * list, which is what a form puts under each box and what tells a 409 from a
+ * 400. The page rebuilds the error in `PagePort.request`.
+ */
+function errorPayload(e) {
+  return {
+    _error: e?.message ?? String(e),
+    ...(e?.code != null      ? { _code: e.code } : {}),
+    ...(e?.data !== undefined ? { _data: e.data } : {}),
   }
 }
 

@@ -140,7 +140,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | bin | `jetty-manifest` | `bin/manifest.js` | yes |
 | main | `main` | `src/index.js` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/sierra`: `^0.1.0`
 
 ## `@frontierjs/junction`
 

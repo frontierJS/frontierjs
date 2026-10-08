@@ -1,5 +1,19 @@
 # Changes — @frontierjs/jetty
 
+## 2026-10-08 — a page runs sierra's Resource over Harbor; the fork is gone (`FJS-D650`, `FJS-2024`)
+
+**Breaking:** `@frontierjs/jetty/resources` no longer exports `createResource`, `createStore`, `createMakeFromSchema`, `ResourceHookError`, `useStore` or the hook utilities, and the main entry no longer exports the first five. A page writes `createResource(name, { app: harborApp() })`, taking `createResource` and `useStore` from `@frontierjs/sierra/resource`. `src/resources/resource.js` and `store.js` are deleted.
+
+`harborApp()` (`src/resources/harbor-app.js`) is the `{ client, registry, user }` handle `connectApp()` already gave a Resource over another app. Its client is junction's own, created with `relay`. Each call goes to Harbor as the `service_call` frame, Harbor's client makes it with `forward()`, and pushes come back through `receive()`. So the patch baseline the fork never had (`FJS-2024`), the live store, query matching and `stale` are sierra's and junction's. A service's channel is joined on its first call, before the call leaves. Every return to connected is a `connected` frame, so a page reloads its live lists after Harbor's worker was stopped.
+
+`service:call`'s `args` is now the rest of that frame, `{ id, data, query, opts }`, and `createJunctionAdapter`'s `call()` is one `forward()` where it had a switch per method. A refusal crosses the port as `_error`, `_code` and `_data`, and `PagePort.request` rebuilds `err.code` and `err.data`. Before this, a 409 reached a page as a bare message.
+
+The build installs sierra's `localDbPlugin` on pages and islands whenever sierra resolves. Without it the first build emitted the 1.1 MB litestone worker, and an inlined island carried an `import.meta.url`. `src/build/auto-gen.js` imports `active-port.js` rather than the subpath, so a page that makes no call bundles neither sierra nor junction. `@frontierjs/sierra` is an optional peer.
+
+Measured on `example`'s extension: the pages share one Resource chunk of 414 kB (134 kB gzip; jetty builds unminified), and the stock-badge island went 211 → 545 kB because a content script inlines everything. The router is about 90 kB of the source behind it.
+
+Proof: `test/phase3.test.js` is rewritten as the chain end to end — a PagePort, Harbor's real router, `createJunctionAdapter` and a real Junction app, with the port serializing through JSON. 20/20, and it runs under bun because a Junction app is Bun-only. Every phase passes, typecheck is clean, and the fixture and the example extension both build.
+
 ## 2026-10-08 — comments name sierra's Resource at `src/resource/` (`FJS-D650`)
 
 The four comments naming the sierra file `store.js` and `resource.js` were ported from now give its new path. No code changed; the de-fork onto sierra's Resource is still to come.

@@ -1,16 +1,27 @@
-// Phase 3 unit tests — Resources.
+// Phase 3 — a page's Resources, which are sierra's, over Harbor.
+//
+// A page holds no connection: MV3 keeps it in the service worker. So the page's
+// Junction client RELAYS (`harborApp()`), and sierra's own Resource runs on top
+// of it — the live store, query matching, the patch baseline — rather than a
+// copy of it that drifted (`FJS-D650`, `FJS-2024`).
+//
+// The first group is the whole chain and nothing in it is a fake: a PagePort,
+// Harbor's real message router, `createJunctionAdapter`, and a real Junction
+// app on a real socket. The port between page and Harbor is the one stand-in,
+// and it serializes through JSON the way a chrome.runtime port does — which is
+// what turned a refusal into a bare message before (`code` and `data` lost).
+//
+// Runs under BUN, not node: a Junction app is Bun-only.
 //
 // Coverage:
-//   - createMakeFromSchema: types, defaults, anyOf, nullable, date-time, skip, clone semantics
-//   - createStore: subscribe/upsert/remove/populate/notify
-//   - hooks (mergeHooks, runPhase, runAroundHooks, runHooks)
-//   - createResource: argument normalization, dispatch via mock port,
-//     hook pipeline (before/after/around/error), error recovery,
-//     channel subscription auto-wiring, push event store updates
+//   - load → rows and the store, over the relay
+//   - a push the server sends lands in the page's store, graded by the query
+//   - save() patches what changed against the row read
+//   - a refusal crosses the port with its status and data
+//   - a call only HTTP can carry is refused by name
+//   - a custom method relays
 //   - login/logout (mocked port)
 //   - getConnectionState reflects port lifecycle + session events
-//   - useStore fallback (no Mesa runtime) — Mesa-runtime path covered manually
-//     when Mesa is linked
 
 let pass = 0
 let fail = 0
@@ -80,623 +91,160 @@ function mockPagePort() {
   return port
 }
 
-// --- the pure halves are the substrate's ---
-//
-// `createMakeFromSchema` and the hook pipeline are `@frontierjs/toolbelt`'s
-// (`FJS-059`): pure, zero-dependency, and a hand copy of Sierra's until they
-// moved. Their behavior is asserted there, in `test/specs/jsonschema.spec.js`
-// and `hooks.spec.js`, and restating it here would be two owners again by
-// another route. What is jetty's — and what the copy got WRONG — is the wiring
-// below.
+// --- the whole chain ---
 
-group('the substrate halves')
+group('a Resource over Harbor, against a real Junction app')
 {
-  const jetty    = await import('../src/resources/index.js')
-  const schemaKit = await import('@frontierjs/toolbelt/jsonschema')
-  const hooksKit  = await import('@frontierjs/toolbelt/hooks')
+  const { createApp, createService, channels, defaultConfig } = await import('../../junction/index.ts')
+  const { Conflict }               = await import('../../junction/src/core/errors.ts')
+  const { createResource }         = await import('../../sierra/src/resource/index.js')
+  const { createJunctionAdapter }  = await import('../src/junction/junction-adapter.js')
+  const { handleConnect }          = await import('../src/define/harbor.js')
+  const { makeHarborRegistry, makePagesApi } = await import('../src/runtime/harbor-registry.js')
+  const { makeChannelRegistry }    = await import('../src/runtime/channel-registry.js')
+  const { PagePort }               = await import('../src/runtime/page-port.js')
+  const { _registerActivePort }    = await import('../src/resources/active-port.js')
+  const { harborApp }              = await import('../src/resources/index.js')
 
-  if (jetty.createMakeFromSchema === schemaKit.createMakeFromSchema) ok('createMakeFromSchema re-exports toolbelt\'s, not a copy')
-  else bad('createMakeFromSchema is not toolbelt\'s')
+  const ROOM = 'everyone'
+  const rows = [
+    { id: 1, status: 'paid',  note: '' },
+    { id: 2, status: 'paid',  note: '' },
+    { id: 3, status: 'draft', note: '' },
+  ]
+  const patches = []
 
-  const same = ['mergeHooks', 'runPhase', 'runAroundHooks', 'runHooks']
-    .every((n) => jetty[n] === hooksKit[n])
-  if (same) ok('and so do all four hook runners')
-  else bad('a hook runner is not toolbelt\'s')
+  const app = createApp({
+    config: { port: 0, services: { dir: '/nonexistent' }, http: { ...defaultConfig.http } },
+  })
+  app.configure(channels((a) => {
+    a.channels.on('connection', (_s, conn) => { a.channel(ROOM).join(conn) })
+  }))
+  app.services.register(createService({
+    name:    'orders',
+    methods: ['find', 'get', 'patch', 'ship'],
+    async find(ctx) {
+      return rows.filter(r => ctx.query?.status === undefined || r.status === ctx.query.status)
+    },
+    async get(ctx) { return rows.find(r => r.id === Number(ctx.id)) ?? null },
+    async patch(ctx) {
+      patches.push(ctx.data)
+      if (ctx.data?.note === 'refuse') throw new Conflict('somebody else got there', { reason: 'raced' })
+      const row = rows.find(r => r.id === Number(ctx.id))
+      Object.assign(row, ctx.data)
+      return row
+    },
+    async ship(ctx) {
+      const row = rows.find(r => r.id === Number(ctx.id))
+      row.status = 'shipped'
+      return row
+    },
+  }))
+  await app.start()
+  const url = `http://127.0.0.1:${app.http.port}`
 
-  // mergeHooks answers a NEW map — toolbelt's license is that every export is
-  // pure. The older spelling merged in place, so a caller upgrading has to
-  // assign the result.
-  const target = { before: { all: ['A'] } }
-  const merged = jetty.mergeHooks(target, { before: { all: ['B'], find: ['F'] } })
-  if (target.before.all.length === 1) ok('mergeHooks leaves its target alone')
-  else bad('mergeHooks mutated its target')
-  if (merged.before.all.length === 2 && merged.before.find.length === 1) ok('and answers the merge, existing first')
-  else bad('merge result wrong', JSON.stringify(merged))
-}
+  // Harbor: the real adapter on a real socket, and the real router.
+  const adapter = createJunctionAdapter({ url })
+  await adapter.connect()
+  // connect() builds the client and opens the socket; `connect` is the server's
+  // frame, which cannot have arrived yet. Pushes need the socket up.
+  await new Promise((r) => { const off = adapter.on('connect', () => { off(); r() }) })
+  const registry = makeHarborRegistry()
+  const ctx = {
+    adapter,
+    pages:           makePagesApi(registry),
+    channelRegistry: makeChannelRegistry({ adapter }),
+    authFlow:        null,
+    schemaCache:     null,
+  }
 
-// --- the schema jetty hands it ---
-//
-// Sierra reads a registry its build populates; jetty is handed the schema
-// document itself, so `$ref` resolution and the foreign-key list are jetty's
-// own wiring. Both were absent while this was a copy of Sierra v0.1.0: an enum
-// field defaulted to null because nothing followed its `$ref`, a `readOnly`
-// column was seeded as a key the Data boundary refuses by name, and a foreign
-// key was seeded `0` — customer #0, which passes coercion and validation and is
-// refused by SQLite as a 500.
-
-group('createResource → make(), off a whole schema document')
-{
-  const { createResource } = await import('../src/resources/index.js')
-
-  const schema = {
-    $defs: {
-      Status: { type: 'string', enum: ['draft', 'sent'] },
-      orders: {
-        'x-relations': [{ name: 'customer', fields: ['customerId'] }],
-        properties: {
-          id:           { type: 'integer' },
-          reference:    { type: 'string' },
-          quantity:     { type: 'integer' },
-          customerId:   { type: 'integer' },
-          status:       { $ref: '#/$defs/Status' },
-          trackingCode: { type: 'string', readOnly: true },
-        },
+  // A chrome.runtime port carries JSON, so every message is cloned through it.
+  function pipe(name) {
+    const a = { on: [], off: [] }, b = { on: [], off: [] }
+    const end = (self, other) => ({
+      name,
+      postMessage(msg) {
+        const copy = JSON.parse(JSON.stringify(msg))
+        queueMicrotask(() => { for (const fn of other.on) fn(copy) })
       },
+      disconnect() { for (const fn of other.off) fn() },
+      onMessage:    { addListener(fn) { self.on.push(fn) } },
+      onDisconnect: { addListener(fn) { self.off.push(fn) } },
+    })
+    return [end(a, b), end(b, a)]
+  }
+  const runtime = {
+    connect({ name }) {
+      const [page, harbor] = pipe(name)
+      handleConnect(harbor, registry, () => ctx)
+      return page
     },
   }
-
-  const res  = createResource('orders', schema)
-  const blank = res.make()
-
-  if (blank.reference === '' && blank.quantity === 0) ok('a plain column still gets its blank')
-  else bad('plain columns wrong', JSON.stringify(blank))
-
-  if (blank.customerId === null) ok('a foreign key is null, never 0 — x-relations is the only place it is visible')
-  else bad('foreign key seeded', JSON.stringify(blank.customerId))
-
-  if (blank.status === null) ok('an enum with no default is null — the $ref resolved against the document')
-  else bad('enum default wrong', JSON.stringify(blank.status))
-
-  if (!('trackingCode' in blank)) ok('a readOnly column is not seeded at all')
-  else bad('readOnly column seeded')
-
-  if (!('id' in blank)) ok('and the server-managed columns are still skipped')
-  else bad('id seeded')
-}
-
-
-// --- createResource ---
-
-group('createResource — argument forms + service proxy')
-{
-  // We need to register a port in active-port before createResource works.
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
+  const port = new PagePort({ type: 'dock', id: 'dock', runtime })
   _registerActivePort(port)
 
-  // Form 1: createResource('leads', schema, opts)
-  {
-    const schema = {
-      $defs: {
-        leads: {
-          properties: { name: { type: 'string' }, status: { type: 'string', default: 'new' } },
-        },
-      },
-    }
-    const r = createResource('leads', schema, { idField: 'id' })
-    if (r.context.service === 'leads' && r.context.idField === 'id') ok('form 1: name + schema + opts')
-    if (r.make().status === 'new') ok('form 1: schema-driven make() works')
+  const settle = async (pred, ms = 2000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) { if (pred()) return true; await new Promise(r => setTimeout(r, 20)) }
+    return pred()
   }
 
-  // Form 2: createResource('leads', { schema, hooks })
-  {
-    const r = createResource('jobs', { schema: { properties: { title: { type: 'string' } } } })
-    if (r.make().title === '') ok('form 2: name + opts (with schema)')
-  }
-
-  // Form 3: object form
-  {
-    const r = createResource({ service: 'tasks', model: 'Task', schema: { properties: { name: { type: 'string' } } } })
-    if (r.context.service === 'tasks' && r.context.model === 'Task') ok('form 3: object form')
-  }
-
-  // No schema — make returns Object.assign({}, spec)
-  {
-    const r = createResource('plain')
-    const inst = r.make({ a: 1 })
-    if (inst.a === 1 && Object.keys(inst).length === 1) ok('no schema → make is pass-through')
-  }
-
-  // Service surface present
-  {
-    const r = createResource('plain')
-    const expected = ['find', 'get', 'create', 'patch', 'remove', 'restore', 'upsert', 'getOptions', 'on', 'call']
-    let allPresent = true
-    for (const m of expected) {
-      if (typeof r.service[m] !== 'function') {
-        bad(`service.${m} missing`)
-        allPresent = false
-        break
-      }
-    }
-    if (allPresent) ok('service has all 10 expected methods')
-  }
-}
-
-group('createResource — dispatch through harbor port')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-  const r = createResource('leads')
-
-  // service.find → request('service:call', { service:'leads', method:'find', args:{query:...}})
-  {
-    port._enqueueResponse((type, payload) => {
-      if (type !== 'service:call') return Promise.reject(new Error('wrong type'))
-      if (payload.service !== 'leads' || payload.method !== 'find') return Promise.reject(new Error('wrong target'))
-      if (JSON.stringify(payload.args.query) !== '{"status":"active"}') return Promise.reject(new Error('wrong args'))
-      return [{ id: 1, name: 'Acme' }]
-    })
-    const result = await r.service.find({ status: 'active' })
-    if (result?.length === 1 && result[0].id === 1) ok('find → service:call w/ query in args')
-  }
-
-  // service.get
-  {
-    port._enqueueResponse((type, payload) => {
-      if (payload.method !== 'get' || payload.args.id !== 7) return Promise.reject(new Error('wrong'))
-      return { id: 7, name: 'Bob' }
-    })
-    const result = await r.service.get(7)
-    if (result?.id === 7) ok('get → service:call w/ id in args')
-  }
-
-  // service.create
-  {
-    port._enqueueResponse((type, payload) => {
-      if (payload.method !== 'create' || payload.args.data?.name !== 'New') return Promise.reject(new Error('wrong'))
-      return { id: 99, name: 'New' }
-    })
-    const result = await r.service.create({ name: 'New' })
-    if (result?.id === 99) ok('create → service:call w/ data in args')
-  }
-
-  // service.patch
-  {
-    port._enqueueResponse((type, payload) => {
-      if (payload.method !== 'patch' || payload.args.id !== 1 || payload.args.data?.name !== 'P') return Promise.reject(new Error('wrong'))
-      return { id: 1, name: 'P' }
-    })
-    const result = await r.service.patch(1, { name: 'P' })
-    if (result?.name === 'P') ok('patch → service:call w/ id+data in args')
-  }
-
-  // service.upsert (no id → create)
-  {
-    port._enqueueResponse((type, payload) => {
-      if (payload.method !== 'create') return Promise.reject(new Error('expected create for upsert without id'))
-      return { id: 5, name: 'X' }
-    })
-    const result = await r.service.upsert({ name: 'X' })
-    if (result?.id === 5) ok('upsert without id → create')
-  }
-
-  // service.upsert (with id → patch)
-  {
-    port._enqueueResponse((type, payload) => {
-      if (payload.method !== 'patch' || payload.args.id !== 5) return Promise.reject(new Error('expected patch'))
-      return { id: 5, name: 'X2' }
-    })
-    const result = await r.service.upsert({ id: 5, name: 'X2' })
-    if (result?.name === 'X2') ok('upsert with id → patch')
-  }
-
-  // service.on(event, handler) → port.subscribe(`<service>:<event>`, handler)
-  {
-    let received = null
-    r.service.on('custom-event', (data) => { received = data })
-    if (port._activeSubscriptions().includes('leads:custom-event')) ok('service.on subscribes to <service>:<event>')
-
-    port._emitChannel('leads', { foo: 1 }, 'leads custom-event')
-    if (received?.foo === 1) ok('service.on handler fires on channel:event')
-  }
-}
-
-group('createResource — hook pipeline')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-
-  // before + after fire in order around the call
-  {
-    const order = []
-    const r = createResource('items', {
-      hooks: {
-        before: { find: [(c) => { order.push('before'); c.query.injected = 1 }] },
-        after:  { find: [(c) => { order.push('after'); c.result.push({ id: 99 }) }] },
-      },
-    })
-
-    port._enqueueResponse((type, payload) => {
-      // verify before hook ran (injected query property visible to dispatch)
-      if (payload.args.query.injected !== 1) return Promise.reject(new Error('before hook did not run'))
-      order.push('call')
-      return [{ id: 1 }]
-    })
-
-    const result = await r.service.find({ status: 'active' })
-    if (JSON.stringify(order) === '["before","call","after"]') ok('before → call → after order')
-    if (result.length === 2 && result[1].id === 99) ok('after hook can mutate ctx.result')
-  }
-
-  // around hook wraps everything (entry + exit)
-  {
-    const order = []
-    const r = createResource('z', {
-      hooks: {
-        around: { all: [async (c, next) => { order.push('enter'); await next(); order.push('exit') }] },
-        before: { all: [(c) => order.push('before')] },
-        after:  { all: [(c) => order.push('after')] },
-      },
-    })
-    port._enqueueResponse(() => { order.push('call'); return null })
-    await r.service.find({})
-    if (JSON.stringify(order) === '["enter","before","call","after","exit"]') ok('around wraps before+call+after')
-  }
-
-  // error hook can recover (clear ctx.error, resource returns ctx.result)
-  {
-    const r = createResource('e', {
-      hooks: {
-        error: { all: [(c) => { c.error = null; c.result = { fallback: true } }] },
-      },
-    })
-    port._enqueueResponse(() => Promise.reject(new Error('boom')))
-    const result = await r.service.find({})
-    if (result?.fallback === true) ok('error hook recovery returns ctx.result')
-  }
-
-  // error hook can re-throw (leave ctx.error set, propagates up)
-  {
-    const r = createResource('e2', {
-      hooks: {
-        error: { all: [(c) => { /* don't clear */ }] },
-      },
-    })
-    port._enqueueResponse(() => Promise.reject(new Error('still bad')))
-    try {
-      await r.service.find({})
-      bad('error hook did not propagate')
-    } catch (e) {
-      if (e.message === 'still bad') ok('error hook propagates when not cleared')
-    }
-  }
-
-  // A hook that breaks the chain is refused by name rather than resolving the
-  // call to the `null` the context was born with — the three shapes below all
-  // used to hand a screen an "answer" and throw a TypeError one hop later.
-  // Each is PAIRED with the legitimate version, because a guard that refused
-  // both would make the around phase useless for what it is for (`FJS-351`).
-  {
-    const { ResourceHookError } = await import('../src/resources/resource.js')
-
-    // (a) an around that forgets next()
-    const r = createResource('h1', { hooks: { around: { all: [async () => {}] } } })
-    try {
-      await r.service.find({})
-      bad('an around that forgot next() resolved instead of throwing')
-    } catch (e) {
-      if (e instanceof ResourceHookError && e.phase === 'around'
-          && e.message.includes('h1.find') && e.message.includes('next()'))
-        ok('an around that forgot next() is refused, naming the way out')
-      else bad('wrong error for a forgotten next()', e.message)
-    }
-
-    // (a-control) …one that short-circuits WITH an answer is honored, and the
-    // port is never asked. Skipping the call is the point of the phase.
-    const r2 = createResource('h2', {
-      hooks: { around: { all: [async (c) => { c.result = { cached: true } }] } },
-    })
-    const cached = await r2.service.find({})
-    if (cached?.cached === true) ok('an around that sets a result short-circuits')
-
-    // (a-control) …and `null` assigned on purpose is an answer, not a break.
-    const r3 = createResource('h3', {
-      hooks: { around: { all: [async (c) => { c.result = null }] } },
-    })
-    if (await r3.service.find({}) === null) ok('an around answering null is honored')
-
-    // (b) an around that swallows the failure
-    const r4 = createResource('h4', {
-      hooks: { around: { all: [async (c, next) => { try { await next() } catch {} }] } },
-    })
-    port._enqueueResponse(() => Promise.reject(new Error('boom')))
-    try {
-      await r4.service.find({})
-      bad('a swallowed failure reported success')
-    } catch (e) {
-      if (e instanceof ResourceHookError) ok('an around that swallows the failure is refused')
-      else bad('wrong error for a swallowed failure', e.message)
-    }
-
-    // (c) an error hook that clears ctx.error and sets nothing. The failure it
-    // discarded rides on `cause` — without it the outage is invisible and the
-    // report is only "your hook is wrong".
-    const r5 = createResource('h5', {
-      hooks: { error: { all: [(c) => { c.error = null }] } },
-    })
-    port._enqueueResponse(() => Promise.reject(new Error('discarded')))
-    try {
-      await r5.service.find({})
-      bad('an error hook cleared the error and answered null')
-    } catch (e) {
-      if (e instanceof ResourceHookError && e.phase === 'error' && e.cause?.message === 'discarded')
-        ok('an error hook that recovers with nothing is refused, carrying the cause')
-      else bad('wrong error for an empty recovery', e.message)
-    }
-  }
-
-  // resource.hooks() merges after creation
-  {
-    const order = []
-    const r = createResource('m', { hooks: { before: { all: [() => order.push('first')] } } })
-    r.hooks({ before: { all: [() => order.push('second')] } })
-    port._enqueueResponse(() => null)
-    await r.service.find({})
-    if (JSON.stringify(order) === '["first","second"]') ok('resource.hooks() appends in order')
-  }
-}
-
-group('createResource — channel push events update store')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-  const r = createResource('widgets')
-
-  // ONE subscription, to the CHANNEL. This asserted four — `widgets:created`,
-  // `widgets:patched`, … — names Junction has never published: a colon is the
-  // in-process BUS spelling, the wire carries a space, and a channel is not an
-  // event anyway (you join `widgets` and receive `widgets created`). The test
-  // passed, which is how it came to pin the bug rather than catch it (FJS-059).
-  port._enqueueResponse(() => [{ id: 1, name: 'a' }])
-  await r.service.find({})
-
-  const subs = port._activeSubscriptions()
-  if (subs.length === 1 && subs[0] === 'widgets') {
-    ok('lazy subscribe attaches ONE subscription, to the channel')
-  } else {
-    bad('expected exactly one subscription to "widgets"', JSON.stringify(subs))
-  }
-
-  if (!subs.some((c) => c.includes(':'))) ok('no colon-spelled channel is subscribed to')
-  else bad('a colon-spelled channel survived', JSON.stringify(subs))
-
-  // Push event → store.upsert. The EVENT decides, not the channel.
-  let storeData = null
-  r.store.subscribe((d) => { storeData = d })
-
-  port._emitChannel('widgets', { id: 2, name: 'b' }, 'widgets created')
-  if (storeData?.find((x) => x.id === 2)) ok('widgets created → store.upsert')
-
-  port._emitChannel('widgets', { id: 2, name: 'B' }, 'widgets patched')
-  if (storeData?.find((x) => x.id === 2)?.name === 'B') ok('widgets patched → store.upsert (replaces)')
-
-  port._emitChannel('widgets', { id: 2 }, 'widgets removed')
-  if (!storeData?.find((x) => x.id === 2)) ok('widgets removed → store.remove')
-
-  // THE REGRESSION THIS CLOSES. Every event arrived on one channel, so a
-  // subscriber that cannot read the event name upserts whatever it is handed —
-  // and a delete comes back onto the screen and stays until reload.
-  port._emitChannel('widgets', { id: 3, name: 'c' }, 'widgets created')
-  port._emitChannel('widgets', { id: 3 }, 'widgets removed')
-  if (!storeData?.find((x) => x.id === 3)) ok('a remove is not mistaken for an upsert')
-  else bad('remove was upserted — the event name is being ignored')
-
-  // The bus spelling must not be honored on the wire, or the two vocabularies
-  // are interchangeable and the separator stops discriminating anything.
-  port._emitChannel('widgets', { id: 4 }, 'widgets:created')
-  if (!storeData?.find((x) => x.id === 4)) ok('the colon spelling is not accepted from the wire')
-  else bad('a colon-spelled wire event was accepted')
-
-  // An event for another service, which a channel is not required to keep out.
-  port._emitChannel('widgets', { id: 5 }, 'gadgets created')
-  if (!storeData?.find((x) => x.id === 5)) ok('an event for another service is ignored')
-  else bad('an event for another service was applied')
-}
-
-group('createResource — a pushed record is graded against the loaded query (FJS-493)')
-{
-  // A record is an announcement about a ROW; this store is the answer to a
-  // QUERY. Nothing on the wire says a row has LEFT a filter — there is no such
-  // event — so upserting whatever arrives put a row the list had just filtered
-  // out straight back into it. Sierra has asked `matchesQuery` since `FJS-011`;
-  // this side upserted, and the two stores had one implementation between them.
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-  const r = createResource('orders')
-
-  port._enqueueResponse(() => [{ id: 1, status: 'paid' }, { id: 2, status: 'paid' }])
-  await r.load({ status: 'paid' })
-
-  let rows = null
-  r.store.subscribe((d) => { rows = d })
-
-  // Still in the filter — an ordinary update.
-  port._emitChannel('orders', { id: 1, status: 'paid', note: 'x' }, 'orders updated')
-  if (rows?.find((o) => o.id === 1)?.note === 'x') ok('a record still matching the query is upserted')
-  else bad('a matching record was not applied', JSON.stringify(rows))
-
-  // THE REGRESSION. The dock ships order 1; it comes back as `orders ship`
-  // carrying status `shipped`, which the loaded query does not admit.
-  port._emitChannel('orders', { id: 1, status: 'shipped' }, 'orders ship')
-  if (!rows?.find((o) => o.id === 1)) ok('a record that has LEFT the query is removed, not upserted')
-  else bad('a record outside the loaded query stayed in the list', JSON.stringify(rows))
-
-  // And one that never matched is not admitted by a create either.
-  port._emitChannel('orders', { id: 9, status: 'pending' }, 'orders created')
-  if (!rows?.find((o) => o.id === 9)) ok('a record outside the query is not added by a create')
-  else bad('a non-matching create was added', JSON.stringify(rows))
-
-  // Undecidable → ask the server. The filter names a column this record does
-  // not carry (a `select` that dropped it, a projection), so neither answer is
-  // available and guessing either way is silent.
-  port._enqueueResponse(() => [{ id: 2, status: 'paid' }, { id: 7, status: 'paid' }])
-  port._emitChannel('orders', { id: 7 }, 'orders updated')
-  await new Promise((r2) => setTimeout(r2, 0))
-  // Asserted on the SHAPE, not on presence: upserting the pushed record whole
-  // also puts id 7 in the list, so `find(id === 7)` passes with the grading
-  // taken out. What only a reload can produce is the row with the column the
-  // push did not carry.
-  if (rows?.find((o) => o.id === 7)?.status === 'paid') ok('an undecidable record reloads the list rather than guessing')
-  else bad('an undecidable record did not trigger a reload', JSON.stringify(rows))
-
-  // A burst is ONE reload, not N — every answer but the last is thrown away by
-  // the one after it, and the mock has exactly one response enqueued.
-  port._enqueueResponse(() => [{ id: 2, status: 'paid' }])
-  for (let i = 0; i < 5; i++) port._emitChannel('orders', { id: 100 + i }, 'orders updated')
-  await new Promise((r2) => setTimeout(r2, 0))
-  if (rows?.length === 1) ok('a burst of undecidable pushes coalesces into one reload')
-  else bad('a burst did not coalesce', JSON.stringify(rows))
-}
-
-group('createResource — the query is only applied where there IS one')
-{
-  // The grading must not over-reach. A store nobody has loaded is the answer to
-  // no question, and a `set()` from elsewhere is rows this store can say nothing
-  // about — grading either against a remembered filter is how a correct row
-  // disappears.
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-  const r = createResource('parts')
-
-  // Attach the subscription without going through load(), so no query is set.
-  port._enqueueResponse(() => [])
-  await r.service.find({})
-
-  let rows = null
-  r.store.subscribe((d) => { rows = d })
-
-  port._emitChannel('parts', { id: 1, status: 'anything' }, 'parts created')
-  if (rows?.find((p) => p.id === 1)) ok('with nothing loaded, a pushed record is upserted as before')
-  else bad('an unloaded store dropped a pushed record', JSON.stringify(rows))
-
-  // Now load a filter, then replace the rows by hand: the query goes with them.
-  port._enqueueResponse(() => [{ id: 2, status: 'paid' }])
-  await r.load({ status: 'paid' })
-  r.store.set([{ id: 3, status: 'shipped' }])
-
-  port._emitChannel('parts', { id: 4, status: 'shipped' }, 'parts created')
-  if (rows?.find((p) => p.id === 4)) ok('a set() clears the query, so the old filter grades nothing')
-  else bad('a stale query graded rows it was not the answer to', JSON.stringify(rows))
-}
-
-group('the wire event names are Junction\'s, not a restatement of them')
-{
-  // The defect FJS-059 named was a VOCABULARY drift: jetty spoke a set of event
-  // names Junction does not publish, and nothing could notice, because both
-  // sides were only ever asserted against themselves.
-  //
-  // So this asks Junction. Its `AUTO_EVENT_MAP` is exported for exactly this —
-  // "the channel publisher must agree with it" — and read here out of the
-  // source, because jetty's tests run on plain node and that file is TypeScript.
-  // A relative path, not the package name: `bun install` copies a workspace dep,
-  // so an import by name would check the last install's snapshot.
-  //
-  // The DIRECTORY is scanned rather than one file named. The declaration lived
-  // in `service.ts` and was lifted into `events.ts` beside it; the file it sits
-  // in is Junction's business and is no part of what this asks, so naming one
-  // turned a vocabulary check into a red build about a refactor.
-  const { readFileSync, readdirSync } = await import('node:fs')
-  const { fileURLToPath } = await import('node:url')
-  const { dirname, join } = await import('node:path')
-
-  const here = dirname(fileURLToPath(import.meta.url))
-  const core = join(here, '..', '..', 'junction', 'src', 'core')
-
-  let decl = null
-  for (const f of readdirSync(core).filter((f) => f.endsWith('.ts'))) {
-    const m = readFileSync(join(core, f), 'utf8').match(/export const AUTO_EVENT_MAP[^{]*\{([^}]*)\}/)
-    if (m) { decl = m; break }
-  }
-  const pairs = decl ? [...decl[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g)].map((m) => [m[1], m[2]]) : []
-
-  if (pairs.length >= 5) ok(`read ${pairs.length} auto-event names out of Junction`)
-  else bad('could not read AUTO_EVENT_MAP from Junction — has it moved or changed shape?', decl ? decl[1] : 'no match')
-
-  const { wireEventMethod } = await import('../src/resources/resource.js')
-
-  // Every past-tense name Junction publishes must split back out of a wire
-  // event the way this package reads it.
-  let allSplit = true
-  for (const [, pastTense] of pairs) {
-    if (wireEventMethod(`widgets ${pastTense}`, 'widgets') !== pastTense) {
-      allSplit = false
-      bad(`wireEventMethod did not recover '${pastTense}'`, `widgets ${pastTense}`)
-    }
-  }
-  if (allSplit && pairs.length) ok('every Junction auto-event splits back to its method')
-
-  // And the store's REMOVE branch has to be keyed on the name Junction actually
-  // sends for a remove. Hard-coding 'removed' here would restate the map again;
-  // this reads it.
-  const removeName = pairs.find(([method]) => method === 'remove')?.[1]
-  if (removeName === 'removed') ok(`Junction publishes a remove as '${removeName}'`)
-  else bad('Junction publishes a remove under a name this package does not handle', String(removeName))
-
-  // The bus spelling is not the wire spelling, and must not split.
-  if (wireEventMethod('widgets:created', 'widgets') === null) ok('the colon spelling does not split')
-  else bad('a colon-spelled event split as though it were a wire event')
-
-  if (wireEventMethod('widgets created', 'gadgets') === null) ok('another service\'s event does not split')
-  if (wireEventMethod(undefined, 'widgets') === null) ok('a missing event name answers null rather than guessing')
-}
-
-group('createResource — load() populates store')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-  const r = createResource('items')
-
-  port._enqueueResponse(() => [{ id: 1 }, { id: 2 }, { id: 3 }])
-  const result = await r.load()
-  if (result.length === 3 && r.store.get().length === 3) ok('load() sets store from find result')
-}
-
-group('createResource — no port active')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  _registerActivePort(null)
-  const r = createResource('orphan')
-
+  const orders = createResource('orders', { app: harborApp() })
+
+  // load → the rows, and the store
+  const loaded = await orders.load({ status: 'paid' })
+  if (loaded.map(r => r.id).join() === '1,2') ok('load() relays through Harbor and answers the rows')
+  else bad('load() rows', JSON.stringify(loaded))
+  if (orders.store.get().map(r => r.id).join() === '1,2') ok('…and the store holds them')
+  else bad('store after load', JSON.stringify(orders.store.get()))
+
+  // A push the server sends, graded by the query this store answers.
+  rows[2].status = 'paid'
+  app.channel(ROOM).send('orders patched', { ...rows[2] })
+  if (await settle(() => orders.store.get().some(r => r.id === 3))) ok('a push that enters the filter lands in the page store')
+  else bad('push into the filter never arrived', JSON.stringify(orders.store.get()))
+
+  app.channel(ROOM).send('orders patched', { ...rows[0], status: 'shipped' })
+  if (await settle(() => !orders.store.get().some(r => r.id === 1))) ok('a push that LEAVES the filter removes the row (FJS-493)')
+  else bad('row that left the filter stayed', JSON.stringify(orders.store.get()))
+
+  // save() sends what changed against the row this screen read (FJS-2024) —
+  // the key travels too, since it addresses the write. `status` did not
+  // change, so a concurrent write to it is not overwritten.
+  const read = await orders.service.get(2)
+  patches.length = 0
+  await orders.save({ ...read, note: 'fragile' })
+  const sent = patches[0] ?? {}
+  if (!('status' in sent) && sent.note === 'fragile') ok('save() patches only the changed column (FJS-2024)')
+  else bad('save() sent the whole record', JSON.stringify(sent))
+
+  // A refusal crosses the port with its status and its data.
   try {
-    await r.service.find({})
-    bad('expected throw when no port active')
+    await orders.service.patch(2, { note: 'refuse' })
+    bad('a refused patch resolved')
   } catch (e) {
-    if (/no active port/.test(e.message)) ok('clear error when port not active')
-    else bad('error message wrong', e.message)
+    if (e.code === 409) ok('a refusal keeps its status across the port')
+    else bad('status lost across the port', JSON.stringify({ code: e.code, message: e.message }))
+    if (e.data?.data?.reason === 'raced') ok('…and its data, where a form reads the reason')
+    else bad('data lost across the port', JSON.stringify(e.data))
   }
+
+  // Only a framed call crosses; a findFirst travels as a URL.
+  try {
+    await orders.service.get({ status: 'paid' })
+    bad('a findFirst relayed')
+  } catch (e) {
+    if (/cannot be relayed/.test(e.message)) ok('a call only HTTP can carry is refused by name')
+    else bad('wrong refusal for an HTTP-only call', e.message)
+  }
+
+  // A custom method relays like CRUD.
+  const shipped = await orders.service.call('ship', 2, null)
+  if (shipped?.status === 'shipped') ok('a custom method relays')
+  else bad('custom method answer', JSON.stringify(shipped))
+
+  await adapter.disconnect()
+  await app.stop()
 }
 
 // --- login / logout ---
@@ -780,130 +328,6 @@ group('connection state')
   if (lastState?.schema?.version === 'v1') ok('schema message threads through state')
 
   off()
-}
-
-// --- useStore fallback (no Mesa runtime in sandbox) ---
-
-group('useStore fallback')
-{
-  const { useStore } = await import('../src/resources/mesa-bridge.js')
-  const { createStore } = await import('../src/resources/store.js')
-
-  const store = createStore({ initial: [{ id: 1 }] })
-  const wrapped = await useStore(store)
-
-  if (typeof wrapped.get === 'function' && wrapped.value?.length === 1) ok('useStore returns get + value getter')
-
-  store.upsert({ id: 2 })
-  if (wrapped.value.length === 2) ok('useStore tracks store updates')
-
-  wrapped.unsubscribe()
-  store.upsert({ id: 3 })
-  // After unsubscribe, value getter returns the last known value (no further updates)
-  if (wrapped.value.length === 2) ok('useStore unsubscribe stops updates')
-}
-
-// --- FindParams threading ---
-//
-// service.find used to be written `(query, _params) => _call(...)` — the
-// second argument was accepted and dropped, so paging or ordering a list
-// through a jetty resource silently returned the server's default page.
-// Sierra's copy of this file carried the identical bug.
-
-group('createResource — FindParams reach the adapter')
-{
-  const { _registerActivePort } = await import('../src/resources/active-port.js')
-  const { createResource } = await import('../src/resources/resource.js')
-
-  const port = mockPagePort()
-  _registerActivePort(port)
-
-  // find(query, params) puts params on args, structured — not flattened.
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
-    const r = createResource('leads')
-    await r.service.find({ status: 'new' }, { limit: 25, offset: 50, orderBy: 'name' })
-
-    if (JSON.stringify(seen?.query) === '{"status":"new"}') ok('find keeps query as filters only')
-    if (seen?.params?.limit === 25 && seen?.params?.offset === 50 && seen?.params?.orderBy === 'name') {
-      ok('find forwards FindParams to the adapter')
-    } else bad('find forwards FindParams to the adapter', JSON.stringify(seen))
-  }
-
-  // Omitted when empty, so adapters that ignore params see the old args.
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
-    const r = createResource('leads')
-    await r.service.find({ status: 'new' })
-    if (!('params' in (seen ?? {}))) ok('find omits params entirely when none are given')
-    else bad('find omits params entirely when none are given', JSON.stringify(seen))
-  }
-
-  // get(id, params)
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return { id: '1' } })
-    const r = createResource('leads')
-    await r.service.get('1', { select: ['id', 'name'] })
-    if (JSON.stringify(seen?.params?.select) === '["id","name"]') ok('get forwards FindParams')
-    else bad('get forwards FindParams', JSON.stringify(seen))
-  }
-
-  // getOptions falls back to optionsQuery.params
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
-    const r = createResource({
-      service: 'categories',
-      optionsQuery: { query: { active: true }, params: { orderBy: 'name', limit: 500 } },
-    })
-    await r.service.getOptions()
-    if (JSON.stringify(seen?.query) === '{"active":true}' && seen?.params?.limit === 500) {
-      ok('getOptions falls back to optionsQuery.params')
-    } else bad('getOptions falls back to optionsQuery.params', JSON.stringify(seen))
-  }
-
-  // A before hook can set pagination, same as Sierra.
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
-    const r = createResource('leads', {
-      hooks: { before: { find: [ctx => { ctx.directives.limit = 5 }] } },
-    })
-    await r.service.find({})
-    if (seen?.params?.limit === 5) ok('a before hook can set ctx.directives.limit')
-    else bad('a before hook can set ctx.directives.limit', JSON.stringify(seen))
-  }
-
-  // load(query, params) — store.populate accepted params all along; load
-  // never passed any, so the store could only hold the default page.
-  {
-    let seen = null
-    port._enqueueResponse((_t, payload) => { seen = payload.args; return [{ id: 1 }, { id: 2 }] })
-    const r = createResource('leads')
-    const rows = await r.load({ status: 'new' }, { limit: 2 })
-
-    if (seen?.params?.limit === 2) ok('load forwards FindParams')
-    else bad('load forwards FindParams', JSON.stringify(seen))
-    if (Array.isArray(rows) && rows.length === 2) ok('load resolves to the rows, matching Sierra')
-    else bad('load resolves to the rows, matching Sierra', JSON.stringify(rows))
-    if (r.store.get().length === 2) ok('load populates the store')
-  }
-
-  // The store holds rows whether find returns an array or a list envelope.
-  {
-    port._enqueueResponse(() => ({
-      kind: 'list', object: 'leads', errors: [],
-      data: [{ id: 7 }], total: 99, limit: 1, offset: 0,
-    }))
-    const r = createResource('leads')
-    const rows = await r.load({})
-    if (Array.isArray(rows) && rows[0]?.id === 7) ok('load unwraps a list envelope to rows')
-    else bad('load unwraps a list envelope to rows', JSON.stringify(rows))
-    if (r.store.get()[0]?.id === 7) ok('store holds rows, not the envelope')
-  }
 }
 
 // --- summary ---

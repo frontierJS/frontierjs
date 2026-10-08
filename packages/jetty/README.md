@@ -19,7 +19,8 @@ src/
   audit/         — permission audit: scans source for chrome.*/browser.* use
   junction/      — adapter contract, junction-adapter (the real one), default
                    WS adapter (placeholder), schema cache, auth flow
-  resources/     — the orchestrator; the pure logic lives in @frontierjs/toolbelt now
+  resources/     — harborApp (the handle sierra's createResource takes), the
+                   page's port, and Harbor's session as state and Mesa signals
   island/        — content-script runtime: shadow DOM mount, UnoCSS mirror, page-script bridge,
                    chrome.scripting registration
   build/         — Vite plugin pipeline, manifest emitter, auto-gen, discover, config loader
@@ -38,12 +39,12 @@ test/
 ## Build & test
 
 This package supports both Node 24+ and Bun 1.3+. **`bun run test` runs plain
-`node`** over the phase files in order — the runner is node, the launcher is
-whichever you have.
+`node`** over the phase files in order, except phase 3, which runs under bun
+because it boots a real Junction app (Junction is Bun-only).
 
 ```bash
 bun install
-bun run test                   # all phases, in order, under node
+bun run test                   # all phases, in order (phase 3 under bun)
 bun run test:bun               # the same phases under bun's runtime
 bun run build:fixture          # Chrome build → dist/chrome/
 bun run dev:fixture            # dev mode, Chrome only, WS on 8400
@@ -160,6 +161,27 @@ product is the extension — no `api/`, no `web/`.
 root, so `@frontierjs/mesa` lives at `<app>/node_modules` and jetty's compiler
 lookup walks up from the surface to find it.
 
+### Resources
+
+A page's Resource is sierra's own, the same one a web page uses. Only the app it
+talks to differs:
+
+```js
+import { createResource } from '@frontierjs/sierra/resource'
+import { harborApp }      from '@frontierjs/jetty/resources'
+
+export const orders = createResource('orders', { app: harborApp() })
+```
+
+A page holds no connection, because MV3 keeps it in the service worker.
+`harborApp()` is a Junction client created with `relay`: each call goes to Harbor
+as the frame the socket would have carried, Harbor's client makes it, and pushes
+come back over the port. So the live store, query matching, `stale` and
+`save()`'s patch-what-changed all behave as they do on a web page. A call only
+HTTP can carry (a file upload, a filtered bulk write, a findFirst) is refused by
+name. Sign-in is `login()` / `submitCode()` / `logout()` from the same import,
+because Harbor holds the token.
+
 ## What's not yet done
 
 - **AST-based audit.** The current audit uses string matching, which has
@@ -177,10 +199,8 @@ lookup walks up from the surface to find it.
 - Spec: the original planning document is not in this repo; what shipped is
   described here and in `CLAUDE.md`
 - Mesa vision: `packages/mesa/docs/VISION.md` (informed Phase 3 integration)
-- Sierra v0.1.0: studied to understand resource API. The pure logic is no longer
-  duplicated — it is `@frontierjs/toolbelt/{jsonschema,hooks}` (`FJS-059`). The
-  `@frontierjs/resources-core` package once proposed for it was refused
-  (`FJS-D16`).
+- Resources are sierra's, over a relaying Junction client (`FJS-D650`);
+  `IDEAS/sierra-scope.md` § 2.7 and § 3 item 5.
 
 ## FJS port scheme
 

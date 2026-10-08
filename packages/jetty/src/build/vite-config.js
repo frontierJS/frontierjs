@@ -20,6 +20,24 @@ import { mesaPlugin }      from './mesa-plugin.js'
 import { devClientPlugin } from '../dev/dev-plugin.js'
 import { loadUnoCSSPlugins } from './uno-plugin.js'
 
+// What a surface carrying sierra's Resource needs from sierra's own build. The
+// Resource reaches the device database through a dynamic import whose module is
+// a `new Worker(new URL(…))` — a static signal, so the bundler emits the whole
+// litestone browser client whether or not it ever runs: 1.1 MB into the
+// extension, and inside an inlined island an `import.meta.url` that a classic
+// content script refuses at parse (`FJS-030`). Sierra's plugin is the one owner
+// of that stub; an extension that never imports sierra gets nothing here.
+let _resourcePlugins = null
+function resourcePlugins() {
+  _resourcePlugins ??= import('@frontierjs/sierra/build')
+    .then((m) => [m.localDbPlugin({}, null)])
+    .catch((err) => {
+      if (String(err?.message).includes(`'@frontierjs/sierra`)) return []
+      throw err
+    })
+  return _resourcePlugins
+}
+
 function harborPlugins({ dev, islandMatches, extRoot } = {}) {
   const list = [mesaPlugin({ extRoot, dev: !!dev?.port })]
   if (dev?.port) {
@@ -60,7 +78,7 @@ export function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, isl
   }
 }
 
-export function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev = null }) {
+export async function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev = null }) {
   return {
     root: extRoot,
     configFile: false,
@@ -128,7 +146,7 @@ export function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev 
     },
     // No dev-client plugin — the auto-gen island entry already imports +
     // invokes startDevClient when dev mode is on.
-    plugins: [mesaPlugin({ extRoot, dev: !!dev?.port })],
+    plugins: [mesaPlugin({ extRoot, dev: !!dev?.port }), ...await resourcePlugins()],
     define: {
       'import.meta.env.JETTY_DEV_WS': dev?.port ? String(dev.port) : 'undefined',
       'import.meta.env.JETTY_DEV':    dev ? 'true' : 'false',
@@ -149,7 +167,7 @@ export async function pagesViteConfig({ cacheRoot, htmlEntries, outDir, dev = nu
   // UnoCSS — same shape as before.
   const unoPlugins = await loadUnoCSSPlugins({ extRoot, viteRoot: cacheRoot })
 
-  const plugins = [mesaPlugin({ extRoot, dev: isDev })]
+  const plugins = [mesaPlugin({ extRoot, dev: isDev }), ...await resourcePlugins()]
   if (unoPlugins) plugins.push(...unoPlugins)
 
   return {

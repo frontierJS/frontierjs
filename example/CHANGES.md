@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-08 — the extension's dock and island run sierra's Resource over Harbor (`FJS-D650`)
+
+`extension/src/dock/App.mesa` and `extension/src/islands/stock-badge.js` import `createResource` from `@frontierjs/sierra/resource` and pass `{ app: harborApp() }`, from `@frontierjs/jetty/resources`. Jetty's own copy of the Resource is gone. The dock's queue keeps its filter, its push handling and `ship`; what changed is whose code runs them. `bun run build:extension` builds, and `verify:extension` is the drive.
+
 ## 2026-10-08 — the Resource is imported from `@frontierjs/sierra/resource` (`FJS-D650`)
 
 Every resource file, route, store and drive helper that imported `@frontierjs/sierra/junction` now imports `@frontierjs/sierra/resource`; sierra kept nothing for the old subpath. `verify` failed the same three checks with and without the rename (`FJS-2028`), and `verify:site` passed 45/45.

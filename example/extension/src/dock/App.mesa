@@ -6,10 +6,11 @@
   // and every pushed event travels over it. That is the whole shape of a jetty
   // app: one socket, in the one context that outlives the surfaces.
   //
-  // Everything below is `@frontierjs/jetty/resources`, which is jetty's own
-  // orchestrator and deliberately NOT a copy of Sierra's — Sierra calls
-  // `client.service(name)` and this calls `harbor.request('service:call')`.
-  import { createResource, login, submitCode, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  // The Resource is sierra's, the same one a web page uses. `harborApp()` is
+  // the app it talks to: a client whose calls Harbor makes and whose pushes
+  // Harbor hands back.
+  import { createResource } from '@frontierjs/sierra/resource'
+  import { harborApp, login, submitCode, logout, getConnectionState } from '@frontierjs/jetty/resources'
   import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
   export let harbor = null
@@ -25,10 +26,10 @@
   let password = ''
   let code     = ''
 
-  // One resource, one channel. `createResource` subscribes to `orders` and the
-  // EVENT that arrives decides what happens to the store — `orders pay` from
-  // another tab is an upsert here, with nothing in this file polling.
-  const queue = createResource('orders')
+  // One resource, one channel. The first call joins `orders`, and the EVENT
+  // that arrives decides what happens to the store — `orders pay` from another
+  // tab is an upsert here, with nothing in this file polling.
+  const queue = createResource('orders', { app: harborApp() })
 
   // The store is the filter now. An order this dock has just SHIPPED arrives
   // back as `orders ship`, and the record no longer matches the query `load()`

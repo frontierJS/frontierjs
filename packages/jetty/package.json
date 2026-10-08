@@ -38,12 +38,12 @@
     "test:phase1": "node test/phase1.test.js",
     "test:phase2": "node test/phase2.test.js",
     "test:phase2.5": "node test/phase2.5.test.js",
-    "test:phase3": "node test/phase3.test.js",
+    "test:phase3": "bun test/phase3.test.js",
     "test:phase4": "node test/phase4.test.js",
     "test:phase5": "node test/phase5.test.js",
     "test:phase6": "node test/phase6.test.js",
     "test:phase7": "node test/phase7.test.js",
-    "test": "node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && node test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js && node test/phase9.test.js",
+    "test": "node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && bun test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js && node test/phase9.test.js",
     "test:bun:phase0": "bun test/phase0.test.js",
     "test:bun:phase1": "bun test/phase1.test.js",
     "test:bun:phase2": "bun test/phase2.test.js",
@@ -66,6 +66,7 @@
   "peerDependencies": {
     "@frontierjs/mesa": "^0.1.0",
     "@frontierjs/junction": "^0.1.0",
+    "@frontierjs/sierra": "^0.1.0",
     "vite": "^8.3.2",
     "ws": "^8.20.0"
   },
@@ -74,6 +75,9 @@
       "optional": true
     },
     "@frontierjs/junction": {
+      "optional": true
+    },
+    "@frontierjs/sierra": {
       "optional": true
     },
     "vite": {
@@ -93,6 +97,7 @@
   "devDependencies": {
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "vite": "^8.3.2",
