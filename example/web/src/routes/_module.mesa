@@ -3,7 +3,7 @@ siteName: Kitchen sink
 ---
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
-  import { session, signIn, submitCode, signOut, status, getClient } from '@frontierjs/sierra/junction'
+  import { session, signIn, submitCode, signOut, status, getClient } from '@frontierjs/sierra/resource'
   import { cart, refresh as refreshCart } from '@/stores/cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
@@ -27,7 +27,7 @@ siteName: Kitchen sink
   import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { useStore } from '@frontierjs/sierra/resource'
 
   $: (session.oauthError, session.oauthMessage)
 

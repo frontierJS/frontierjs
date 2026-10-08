@@ -19,7 +19,7 @@ title: Products
   import { productImages } from '@/resources/ProductImage.mesa'
   import { prefs }   from '@/stores/prefs.js'
   import { money }   from '@/lib/money.js'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
   import { goto }     from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

@@ -134,7 +134,8 @@ describe('routePaths', () => {
 // their own, and hasRoute() matches rather than exists. FJS-012 is what that
 // cost — a plugin route sitting somewhere nobody looked, for months.
 
-import { buildRoutes, manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { manifestPlugin } from '../src/plugins/manifest/index.ts'
+import { buildRoutes } from '../src/core/app-model.ts'
 import { createService } from '../src/core/service.ts'
 
 describe('buildRoutes', () => {

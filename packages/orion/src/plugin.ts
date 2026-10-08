@@ -35,6 +35,9 @@ import { redactSecrets } from "@frontierjs/toolbelt/redact"
 import { camel } from "@frontierjs/toolbelt/inflect"
 import { toDataPrincipal } from "@frontierjs/junction"
 import type { App, Plugin, SessionContext, TransportContext } from "@frontierjs/junction"
+// `app.ai` is typed by the AI battery augmenting its slot (FJS-D640), so the
+// slot is empty unless its subpath is in the program.
+import type {} from "@frontierjs/junction/ai"
 
 import { PluginRegistry } from "./engine/plugins"
 import type { PluginManifest } from "./engine/plugins"

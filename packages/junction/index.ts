@@ -1,11 +1,15 @@
 // index.ts
-// Framework public API — everything an app needs, from one import.
+// The four axes — admission, call, carriage, announcement — and the host that
+// holds them (`FJS-D639`). A battery is its own subpath and is not here.
 //
-//   import { createApp, createService, authenticate } from 'framework'
+//   import { createApp, createService, authenticate } from '@frontierjs/junction'
+//   import { mailerPlugin }                           from '@frontierjs/junction/mail'
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
 export type { App, AppConduit, AppDb, AppJobs, AppNotify, DevService, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
+// The battery slots (`FJS-D640`): each battery augments its own from its subpath.
+export type { AppCache, AppScheduler, AppMail, AppAI, AppEmail, AppOutbox, AppCommitments, AppWebhooks } from './src/core/app.ts'
 export { CALL_OPTIONS_AT } from './src/core/app.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -92,30 +96,8 @@ export type {
 export type { IAuth, LoginResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo, RateLimitHookOptions } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
-export { createScheduler }                                        from './src/scheduler/index.ts'
-export type { JobFn, JobHandle, SchedulerStats }                  from './src/scheduler/index.ts'
-
 export { createEventBus }                                         from './src/events/index.ts'
 export type { IEventBus, EventHandler }                           from './src/events/index.ts'
-
-// ─── Cache ────────────────────────────────────────────────────────────────
-export { createMemoryCache, createSqliteCache, CacheValueError }  from './src/cache/index.ts'
-export type { ICache, CacheStats, MemoryCacheOptions, SqliteCacheOptions } from './src/cache/index.ts'
-
-// ─── Scheduler ────────────────────────────────────────────────────────────
-
-// ─── Workers ──────────────────────────────────────────────────────────────
-export { createThread, createPool, workerHandler, workerData }    from './src/workers/index.ts'
-export type { WorkerHandle, WorkerPoolHandle, PoolStats }         from './src/workers/index.ts'
-
-// ─── Mail ─────────────────────────────────────────────────────────────────
-export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, MailBuilder,
-         assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './src/mail/index.ts'
-export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions, CredentialSource } from './src/mail/index.ts'
-
-// ─── AI ───────────────────────────────────────────────────────────────────
-export { AIRegistry, AIBuilder }                                   from './src/ai/index.ts'
-export type { IAIModel, AIRequest, AIResponse, AIMessage }               from './src/ai/index.ts'
 
 // ─── Result envelope ──────────────────────────────────────────────────────
 // One module owns wrap/unwrap/inspect. Import these instead of reaching into
@@ -165,11 +147,6 @@ export { healthPlugin, collectMetrics, renderPrometheus }          from './src/t
 // Beside `db/metrics.lite`, because an app that imports those models cannot
 // read a counter out of them without the reset rule and would write its own.
 export { counterIncrease, counterRate, isStale, seriesKey }        from './src/core/metrics.ts'
-export { exportPlugin }                                            from './src/plugins/export/index.ts'
-export type { ExportPluginOptions }                                from './src/plugins/export/index.ts'
-export { metricsPlugin }                                           from './src/plugins/metrics/index.ts'
-export type { MetricsApi, RecordOptions }                          from './src/plugins/metrics/index.ts'
-export type { MetricsPluginOptions }                               from './src/plugins/metrics/index.ts'
 export type { Reading }                                            from './src/core/metrics.ts'
 export type { HealthPluginOptions, HealthResponse, MetricsResponse, CheckResult } from './src/transport/health.ts'
 
@@ -180,64 +157,24 @@ export type { ILogger, LogLevel, LogEntry, LogWriter, LoggerOptions }       from
 export { defineEnv, generateEnvExample, printEnvExample }   from './src/core/env.ts'
 export type { EnvSpec, EnvFieldSpec, EnvOutput }            from './src/core/env.ts'
 
-// ─── Auth providers ───────────────────────────────────────────────────────
-export { createBetterAuthAdapter, createBetterAuthPlugin }        from './src/auth/providers/better-auth.ts'
-export type { BetterAuthAdapterOptions }                          from './src/auth/providers/better-auth.ts'
+// ─── Auth credentials ─────────────────────────────────────────────────────
 export { signedRequest, REFUSE }                                  from './src/auth/credentials.ts'
 export type { CredentialVerifier, CredentialAnswer, InboundRequest, SignedRequestOptions } from './src/auth/credentials.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 export { autoloadServices, loadServiceFile }                      from './src/core/loader.ts'
 
-// ─── Database ─────────────────────────────────────────────────────────────
-export { createDatabase, createInMemoryDatabase }                 from './src/storage/database/index.ts'
-export type { DatabaseClient, DatabaseOptions, MigrationResult }  from './src/storage/database/index.ts'
-
 // ─── Testing ──────────────────────────────────────────────────────────────
 export { createTestApp, createStubAuth, request, testCtx }        from './src/testing/index.ts'
 export type { TestApp, TestAppOptions, TestRequest, TestResponse, StubUser } from './src/testing/index.ts'
 
-// ─── Webhooks ─────────────────────────────────────────────────────────────
-export { webhooks, createSqliteWebhookStore }                              from './src/plugins/webhooks/index.ts'
-export type { WebhookOptions, WebhookManager, WebhookRegistration,
-              WebhookDelivery, DeliveryStatus, IWebhookStore }             from './src/plugins/webhooks/index.ts'
+// ─── The app model ────────────────────────────────────────────────────────
+// What is mounted and what runs, read off a built app — core, because the
+// registers and the manifest battery both render it.
+export { buildRoutes, serializeHookMap }                           from './src/core/app-model.ts'
+export type { RouteManifest, HookManifest }                        from './src/core/app-model.ts'
 
-// ─── OpenAPI ──────────────────────────────────────────────────────────────
-export { openapi, generateOpenAPI }                                from './src/plugins/openapi/index.ts'
-export type { OpenAPIOptions, ServiceSchemas, ScalarOptions }      from './src/plugins/openapi/index.ts'
-
-export { outbox }                                                  from './src/plugins/outbox/index.ts'
-export type { OutboxPluginOptions }                                from './src/plugins/outbox/index.ts'
-export { outboxSchemaFragment }                                    from './src/core/outbox.ts'
-export type { OutboxApi, OutboxRow, EnqueueOptions, EnqueueRef,
-              DeliverOptions, DeliverResult }                      from './src/core/outbox.ts'
-
-export { commitments, fireCommitment,
-         COMMITMENT_SWEEP_JOB, COMMITMENT_FIRE_JOB }               from './src/plugins/commitments/index.ts'
-export type { CommitmentsPluginOptions, CommitmentsApi, CommitmentSweepResult,
-              CommitmentHook, CommitmentHookContext, FirePayload,
-              FireOutcome }                                        from './src/plugins/commitments/index.ts'
-
-export { backfills }                                               from './src/plugins/backfill/index.ts'
-export type { BackfillPluginOptions, BackfillApi }                 from './src/plugins/backfill/index.ts'
-export { defineBackfill, backfillSchemaFragment, nextDelayMs,
-         assertField as assertBackfillField }                      from './src/core/backfill.ts'
-export type { BackfillDefinition, BackfillOptions, BackfillRow,
-              ChunkResult }                                        from './src/core/backfill.ts'
-
-export { manifestPlugin }                                          from './src/plugins/manifest/index.ts'
-export type { ManifestPluginOptions, AppManifest, ServiceManifest,
-              ChannelManifest, HookManifest, AppMeta }              from './src/plugins/manifest/index.ts'
-
-// ─── Devtools ────────────────────────────────────────────────────────────────
-export { devtools }                                           from './src/plugins/devtools/index.ts'
-export type { DevtoolsOptions, RequestEntry, ConnectionEntry } from './src/plugins/devtools/index.ts'
-
-// ─── Email ───────────────────────────────────────────────────────────────────
-export { email, sendSystemEmail, sendCampaignEmail,
-         SmtpError, SystemEmailError }                from './src/plugins/email/index.ts'
-export type { EmailOptions, EmailMessage, EmailResult,
-              SystemEmailConfig, CampaignEmailConfig,
-              IEmail, ISystemEmail, ICampaignEmail,
-              SmtpConfig, SmtpMessage,
-              SendEmailHookOptions }                  from './src/plugins/email/index.ts'
+// ─── Batteries ────────────────────────────────────────────────────────────
+// Not re-exported here (`FJS-D639`). Each is its own subpath — `/mail`, `/ai`,
+// `/cache`, `/scheduler`, `/email`, `/webhooks`, `/openapi`, `/outbox`,
+// `/backfill`, `/commitments`, `/manifest`, `/devtools`, `/export`, `/metrics`.

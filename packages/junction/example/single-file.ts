@@ -66,15 +66,14 @@ import {
   announce,
   authenticate,
   protect,
-  openapi,
   healthPlugin,
   correlationId,
   requestLogger,
   cors,
   defaultConfig,
-  mailerPlugin,
-  type IMail, type MailMessage, type SendResult,
 } from '../index.ts'
+import { openapi } from '../src/plugins/openapi/index.ts'
+import { mailerPlugin, type IMail, type MailMessage, type SendResult } from '../src/mail/index.ts'
 
 import { withLitestoneDb } from '../src/core/litestone.ts'
 
@@ -204,7 +203,6 @@ const app = createApp({
   config: {
     ...defaultConfig,
     port:     3000,
-    database: { url: '', log: false },   // we manage Litestone ourselves
   },
 
   auth: {

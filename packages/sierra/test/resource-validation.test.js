@@ -16,7 +16,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 let _proxy
 let _created
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => ({
@@ -30,8 +30,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 const {
   createResource, buildFieldRules, validateAgainstFields, normalizeBlanks,
   coerceToSchema, ResourceValidationError, toFieldErrors,
-} = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+} = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // What generateJsonSchema emits for this model, verbatim in shape.
 const DEFS = {

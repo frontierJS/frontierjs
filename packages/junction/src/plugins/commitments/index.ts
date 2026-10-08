@@ -47,8 +47,8 @@
 
 import type { App, Plugin } from '../../core/app.ts'
 import type { ServiceContext } from '../../core/context.ts'
-import { forEachAppDatabase, enqueueOutbox } from '../../core/outbox.ts'
-import type { EnqueueRef, EnqueueOptions, OutboxApi } from '../../core/outbox.ts'
+import { forEachAppDatabase, enqueueOutbox } from '../outbox/engine.ts'
+import type { EnqueueRef, EnqueueOptions, OutboxApi } from '../outbox/engine.ts'
 import { startOfDay }         from '@frontierjs/toolbelt/datetime'
 
 export interface CommitmentsPluginOptions {
@@ -411,4 +411,9 @@ export async function fireCommitment(
   if (rows.length && outbox) void outbox.deliver({ db: raw, tenant }).catch((err: unknown) =>
     console.warn(`[Junction] commitments(): the outbox kick after ${model}.${job.transition} failed:`, err))
   return 'fired'
+}
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.commitments`.
+declare module '../../core/app.ts' {
+  interface AppCommitments extends CommitmentsApi {}
 }

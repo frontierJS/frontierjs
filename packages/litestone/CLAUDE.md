@@ -11,9 +11,12 @@ tests, and **a feature is incomplete while only one of those paths knows about i
 Each names its pin. The failure behind each is `docs/internals.md`.
 
 - **Every path that reaches a row applies every rule that guards it**, in
-  `buildSQL`'s order — global filter, plugin read filters, soft-delete,
-  templates, the caller's where, the policy — because positional binds make the
-  order the correctness (`FJS-262`, `FJS-216`). `test/verbs-rules.test.ts`.
+  `READ_RULES`'s order (`src/core/client.js`, inside `makeTable`) — global
+  filter, plugin read filters, soft-delete, templates, the effective window, the
+  caller's where, the policy — because positional binds make the order the
+  correctness (`FJS-262`, `FJS-216`). A verb folds them through `visibleWhere`
+  and a verb the registry does not place is refused at build.
+  `test/verbs-rules.test.ts` is the independent oracle.
 - **An aggregate strips what `read()` strips**, and a name that is not a column
   is refused (`FJS-202`, `FJS-273`). `test/aggregate-expressions.test.ts`.
 - **A row is shaped only by `read()`.** Anything assembling one itself leaks
@@ -132,9 +135,10 @@ A bare function widens its read to `SELECT *`. A computed field cannot be sorted
 ## The context in this package
 
 **One, and it is not a request context** (`FJS-D03`). A plugin's `ctx` is the
-**client's compiled state** — `relationMap`, `policyMap`, `typeMap`,
-`computedFns`, `softDeleteMap`, `schema`, `now`, `tx`, and about forty more —
-plus `auth` and `isSystem`. It is built once in `createClient`, and `asSystem()`,
+**client's compiled state** — `shapes` (every per-model fact, one frozen
+record per model: `ctx.shapes[model].relations`, `.policy`, `.softDelete`, …),
+`typeMap`, `computedFns`, `schema`, `now`, `tx` and the rest — plus `auth` and
+`isSystem`. It is built once in `createClient`, and `asSystem()`,
 `$setAuth()` and `$scopedBy()` each SPREAD it with `auth`/`isSystem` changed.
 There is no `ctx.query`, `ctx.method` or `ctx.locals`; a hook gets `model`,
 `args` and `rows` as its own arguments.

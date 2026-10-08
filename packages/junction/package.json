@@ -18,8 +18,6 @@
     "./events": "./src/events/index.ts",
     "./cache": "./src/cache/index.ts",
     "./scheduler": "./src/scheduler/index.ts",
-    "./workers": "./src/workers/index.ts",
-    "./database": "./src/storage/database/index.ts",
     "./mail": "./src/mail/index.ts",
     "./ai": "./src/ai/index.ts",
     "./testing": "./src/testing/index.ts",
@@ -31,6 +29,8 @@
     "./backfill": "./src/plugins/backfill/index.ts",
     "./commitments": "./src/plugins/commitments/index.ts",
     "./devtools": "./src/plugins/devtools/index.ts",
+    "./export": "./src/plugins/export/index.ts",
+    "./metrics": "./src/plugins/metrics/index.ts",
     "./client": "./src/client/index.ts",
     "./email": "./src/plugins/email/index.ts",
     "./channels": "./src/transport/channels.ts",
@@ -63,7 +63,6 @@
     "access": "public"
   },
   "scripts": {
-    "init": "bun run tools/init.ts",
     "dev": "bun run --watch example/app.ts",
     "start": "NODE_ENV=production bun run example/app.ts",
     "test": "bun test test/",
@@ -71,10 +70,7 @@
     "test:example": "bun test ./example/test.ts",
     "test:all": "bun test test/ ./example/test.ts",
     "test:browser": "node test/browser/verify-devtools.mjs",
-    "repl": "bun run tools/repl.ts",
-    "build:app": "bun run tools/build-app.ts",
-    "setup": "bun run tools/setup.ts",
-    "setup:audit": "bun run tools/setup.ts audit"
+    "repl": "bun run tools/repl.ts"
   },
   "peerDependencies": {
     "@frontierjs/litestone": "^1.1.0"

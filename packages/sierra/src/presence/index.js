@@ -27,7 +27,7 @@
  */
 
 import { signal } from '../router/signals.js'
-import { getClient } from '../junction/index.js'
+import { getClient } from '../resource/index.js'
 import { onDestroy } from '@frontierjs/mesa/runtime'
 
 // ── Normalize ─────────────────────────────────────────────────────────────────

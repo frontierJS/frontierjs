@@ -24,7 +24,7 @@
 import { describe, test, expect } from "bun:test"
 
 import { BUILTIN_DESCRIPTORS } from "../src/engine/plugins/builtins"
-import { buildFieldRules, formFieldList } from "../../sierra/src/junction/field-rules.js"
+import { buildFieldRules, formFieldList } from "../../sierra/src/resource/field-rules.js"
 
 const WITH_CONFIG = BUILTIN_DESCRIPTORS.filter(d => d.configSchema)
 

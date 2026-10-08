@@ -57,7 +57,7 @@ import "${PKG}/backfill.lite"${db === 'main' ? '' : ` into ${db}`}
 const wiringHint = `
 // ─── api/src/backfills/order-shipped-at.ts ───────────────────────────────────
 
-import { defineBackfill } from '@frontierjs/junction'
+import { defineBackfill } from '@frontierjs/junction/backfill'
 
 export default defineBackfill({
   name:  'order-shipped-at',

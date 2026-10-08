@@ -27,7 +27,8 @@ import {
 } from '../errors.ts'
 import { notificationsPlugin } from '../plugin.ts'
 import { defineNotification } from '../define.ts'
-import { createTestApp, mailerPlugin } from '@frontierjs/junction'
+import { createTestApp } from '@frontierjs/junction'
+import { mailerPlugin } from '@frontierjs/junction/mail'
 import { makeApp, type Harness } from './harness.ts'
 import type { InAppMessage, MailMessage, Recipient, Transport } from '../types.ts'
 

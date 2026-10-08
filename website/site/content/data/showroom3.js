@@ -142,6 +142,6 @@ export const HOPS = [
     say:'Subscribers receive "leads created". The gate still applies on the way out, so nobody is pushed a row they could not have fetched.' },
   { r:'a', name:'bridge.toResponse()', where:'transport/bridge.ts',
     say:'Back across the same boundary. A thrown FrameworkError becomes its status code here; a Litestone AccessDeniedError was normalized to 403 on the way.' },
-  { r:'u', name:'The resource updates', where:'sierra/junction/index.js',
+  { r:'u', name:'The resource updates', where:'sierra/resource/index.js',
     say:'watchProxy() makes the result reactive, so whatever reads it re-renders. That seam — not a fetch call — is where the UI actually binds.' },
 ]

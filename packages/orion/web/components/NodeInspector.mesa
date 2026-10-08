@@ -30,7 +30,7 @@
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
-  import { buildFieldRules, formFieldList } from '@frontierjs/sierra/junction'
+  import { buildFieldRules, formFieldList } from '@frontierjs/sierra/resource'
 
   import ConfigValue from './ConfigValue.mesa'
 

@@ -1,7 +1,17 @@
+// @ts-check
 // stamps.js — the values a write puts in a row that the caller's payload did
 // not carry: generated defaults, the principal (`@createdBy`, `@updatedBy`,
 // `@default(auth().x)`), and `@sequence` counters.
 
+/** @import { DbHandle } from './databases.js' */
+
+/** @typedef {Record<string, unknown>} Row */
+
+/**
+ * @param {Row | null | undefined} data
+ * @param {{ field: string, generate: () => unknown }[] | null | undefined} entries
+ * @param {Set<string> | null} [stamped]
+ */
 export function applyGeneratedDefaults(data, entries, stamped = null) {
   if (!entries?.length) return data
   let out = data
@@ -35,20 +45,39 @@ export function applyGeneratedDefaults(data, entries, stamped = null) {
 // guarded column with a generated default refused its own stamp and made the
 // model uncreatable (FJS-565). Absence of the key is the test, not a null
 // value: naming a guarded column and setting it to null is still naming it.
+/**
+ * @param {Set<string> | null | undefined} stamped
+ * @param {Row | null | undefined} data
+ * @param {string} field
+ */
 export function noteStamp(stamped, data, field) {
   if (stamped && !(data != null && field in data)) stamped.add(field)
 }
 
+/**
+ * @param {Row | null | undefined} data
+ * @param {{ field: string, authField: string }[] | null | undefined} list
+ * @param {Row | null | undefined} auth
+ * @param {Set<string> | null} [stamped]
+ */
 export function stampFromAuth(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
+  /** @type {Row} */
   const stamps = {}
   for (const { field, authField } of list)
     if (auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }
 
+/**
+ * @param {Row | null | undefined} data
+ * @param {{ field: string, authField: string }[] | null | undefined} list
+ * @param {Row | null | undefined} auth
+ * @param {Set<string> | null} [stamped]
+ */
 export function applyAuthDefaults(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
+  /** @type {Row} */
   const stamps = {}
   for (const { field, authField } of list)
     if (data?.[field] == null && auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
@@ -61,6 +90,7 @@ export function applyAuthDefaults(data, list, auth, stamped = null) {
 
 const SEQUENCE_TABLE = '_litestone_sequences'
 
+/** @param {DbHandle} db */
 export function ensureSequenceTable(db) {
   db.run(`
     CREATE TABLE IF NOT EXISTS "${SEQUENCE_TABLE}" (
@@ -73,6 +103,12 @@ export function ensureSequenceTable(db) {
   `)
 }
 
+/**
+ * @param {DbHandle} db
+ * @param {string} model
+ * @param {string} field
+ * @param {unknown} scopeValue
+ */
 function nextSequenceValue(db, model, field, scopeValue) {
   // Atomic increment — SQLite serializes all writes so this is race-free.
   // Single statement (upsert + RETURNING) instead of upsert-then-select.
@@ -93,9 +129,15 @@ function nextSequenceValue(db, model, field, scopeValue) {
 // `modelName` is the PascalCase schema name (e.g. "User") — used both to look up
 // the sequences defined on that model AND as the key stored in _litestone_sequences.
 // Keeping these consistent matters because the counter is scoped by (model, field, scope).
-export function applySequences(data, modelName, sequenceMap, writeDb, stamped = null) {
-  const seqs = sequenceMap?.[modelName]
-  if (!seqs?.length || !data) return data
+/**
+ * @param {Row | null | undefined} data
+ * @param {string} modelName
+ * @param {{ field: string, scope: string }[]} seqs   the model's `@sequence` fields — `shape.sequences`
+ * @param {DbHandle} writeDb
+ * @param {Set<string> | null} [stamped]
+ */
+export function applySequences(data, modelName, seqs, writeDb, stamped = null) {
+  if (!seqs.length || !data) return data
   let out = data
   for (const { field, scope } of seqs) {
     const scopeValue = out[scope]

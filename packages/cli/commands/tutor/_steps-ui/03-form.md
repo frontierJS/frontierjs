@@ -81,7 +81,7 @@ if (!await must($, wrong.length === 0
   ? { ok: true,  name: 'each control is the one its type implies', asked: JSON.stringify(wanted), got: 'all three' }
   : { ok: false, name: 'each control is the one its type implies', asked: JSON.stringify(wanted),
       got: wrong.map(([n, t]) => `${n} wanted ${t}, got ${byName[n]?.type ?? 'no control'}`).join(' · ') }, {
-  likely: 'the control for a type is one table — packages/sierra/src/junction/field-rules.js',
+  likely: 'the control for a type is one table — packages/sierra/src/resource/field-rules.js',
 })) return
 
 // The columns the server owns. A form that offered one would be a form whose

@@ -97,7 +97,7 @@ async function bootAt(path, publicRoutes) {
   installEnv(path)
 
   const R = await import('../src/router/index.js')
-  const J = await import('../src/junction/index.js')
+  const J = await import('../src/resource/index.js')
 
   const tree = makeTree()
   R.initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' }, {})
@@ -165,7 +165,7 @@ describe('the matcher, stated', () => {
   beforeEach(async () => {
     vi.resetModules()
     installEnv('/')
-    ;({ isPublicRoute } = await import('../src/junction/index.js'))
+    ;({ isPublicRoute } = await import('../src/resource/index.js'))
   })
 
   test('a trailing * is a segment, not a string prefix', () => {

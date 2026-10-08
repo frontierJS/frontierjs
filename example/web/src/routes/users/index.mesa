@@ -52,7 +52,7 @@ title: Users
   // the boundary disagree, which is the case an affordance can never cover.
   import User, { users } from '@/resources/User.mesa'
   import { prefs }       from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar         from '@frontierjs/ui/components/display/Avatar.mesa'

@@ -10,7 +10,7 @@ import { dirname } from 'path'
 
 import { tmpDir } from './tmp.js'
 import { move404 } from '../src/postbuild/move-404.js'
-import { copyRobots } from '../src/postbuild/copy-robots.js'
+import { writeRobots } from '../src/postbuild/robots.js'
 import { generateRedirects } from '../src/postbuild/redirects.js'
 import { generateSitemap } from '../src/postbuild/sitemap.js'
 import { generateLlms } from '../src/postbuild/llms.js'
@@ -220,13 +220,13 @@ describe('runPostBuild — what counts as a page', () => {
   })
 
   // The FOUR tests below are about the CALL and not the unit. Every
-  // `generateSitemap`, `generateMarkdownPages` and `copyRobots` case in this
+  // `generateSitemap`, `generateMarkdownPages` and `writeRobots` case in this
   // file passes forever against a call site that never hands them the argument
   // — which is `FJS-473`'s lesson, and was true of all of these (`FJS-822`).
   // The robots one was measured: with `siteUrl` dropped at the call site, every
   // unit case for it still passed and only this row went red.
 
-  test('siteUrl reaches copyRobots, so the Sitemap line is absolute', async () => {
+  test('siteUrl reaches writeRobots, so the Sitemap line is absolute', async () => {
     const outDir = await setup('wiring-robots', { 'index.html': page })
     await runPostBuild({ llms: false, siteUrl: 'https://shop.example' },
       table, outDir, outDir, ['/'])
@@ -342,24 +342,25 @@ describe('move404', () => {
   })
 })
 
-// ─── copyRobots ───────────────────────────────────────────────────────────────
+// ─── writeRobots ───────────────────────────────────────────────────────────────
 
-describe('copyRobots', () => {
-  test('copies public/robots.txt when present', async () => {
-    const root = await setup('robots-root', {
-      'public/robots.txt': 'User-agent: *\nDisallow: /private/',
+describe('writeRobots', () => {
+  test('keeps the robots.txt Vite copied from the public directory', async () => {
+    // Wherever publicDir points: a site-kit site's is content/public, and
+    // reading <root>/public instead replaced its file with the default.
+    const outDir = await setup('robots-out', {
+      'robots.txt': 'User-agent: *\nDisallow: /private/',
     })
-    const outDir = await setup('robots-out')
-    const result = await copyRobots(root, outDir)
-    expect(result).toBe('robots.txt ← public/robots.txt')
+    const result = await writeRobots(outDir, 'https://shop.example')
+    expect(result).toBe('robots.txt ← the public directory')
     const content = await readFile(join(outDir, 'robots.txt'), 'utf8')
     expect(content).toContain('Disallow: /private/')
+    expect(content).not.toContain('Sitemap:')
   })
 
   test('generates default robots.txt when none exists', async () => {
-    const root = await setup('robots-root-empty')
     const outDir = await setup('robots-out-default')
-    const result = await copyRobots(root, outDir, 'https://shop.example')
+    const result = await writeRobots(outDir, 'https://shop.example')
     expect(result).toBe('robots.txt (default)')
     const content = await readFile(join(outDir, 'robots.txt'), 'utf8')
     expect(content).toContain('User-agent: *')
@@ -371,9 +372,8 @@ describe('copyRobots', () => {
   })
 
   test('a trailing slash on siteUrl does not double up', async () => {
-    const root = await setup('robots-root-slash')
     const outDir = await setup('robots-out-slash')
-    await copyRobots(root, outDir, 'https://shop.example/')
+    await writeRobots(outDir, 'https://shop.example/')
     const content = await readFile(join(outDir, 'robots.txt'), 'utf8')
     expect(content).toContain('Sitemap: https://shop.example/sitemap.xml')
   })
@@ -384,9 +384,8 @@ describe('copyRobots', () => {
      * crawler and only one of them says so — and a missing config value is the
      * operator's to fix, which nothing else in the build would mention.
      */
-    const root = await setup('robots-root-nosite')
     const outDir = await setup('robots-out-nosite')
-    const result = await copyRobots(root, outDir)
+    const result = await writeRobots(outDir)
     const content = await readFile(join(outDir, 'robots.txt'), 'utf8')
     expect(content).not.toContain('Sitemap:')
     expect(content).toContain('Allow: /')   // the rest is still written

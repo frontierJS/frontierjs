@@ -45,7 +45,7 @@ So the consuming build passes a list:
 // sierra/src/build/mesa-plugin.js
 externalSignals: {
   '@frontierjs/sierra/router':   ['activeRoute', 'params', 'page', …],
-  '@frontierjs/sierra/junction': ['connected', 'reconnecting'],
+  '@frontierjs/sierra/resource': ['connected', 'reconnecting'],
 }
 ```
 
@@ -215,6 +215,13 @@ not move* from the screen where the question is asked. `watchedHere` separates a
 component that watches nothing on the import (the value is fixed) from one that
 watches another path of it (it updates when some component's watch covers it —
 VISION RULE 47).
+
+**Every warning the path tier emits is also listed on `analysis.reactivityHints`**,
+the same strings that are on `analysis.warnings`. A hint is true only of code that
+re-renders in a browser, so a caller that knows a component never reaches one
+withholds these and keeps the rest. Sierra's static build does this (`FJS-D629`).
+A caller that picked them out by their wording would print them all again the
+first time one was reworded.
 
 Measured over 341 components in this repo — `example`, `basecamp`, the kit, orion,
 the website and sierra's own — plus linear's 40: **three** uncovered reads, all in a

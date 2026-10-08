@@ -9,7 +9,7 @@ title: Verify email
   // Open signed in or out (App.mesa): the link is opened wherever the mail is
   // read, which is often not the browser that holds the session.
   import { page }      from '@frontierjs/sierra/router'
-  import { getClient, refresh } from '@frontierjs/sierra/junction'
+  import { getClient, refresh } from '@frontierjs/sierra/resource'
   import { session }   from '../../session.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'

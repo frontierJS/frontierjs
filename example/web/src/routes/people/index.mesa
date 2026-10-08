@@ -31,7 +31,7 @@ title: People
   import { payWindows } from '@/resources/PayWindow.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, today } from '@/datetime.js'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 

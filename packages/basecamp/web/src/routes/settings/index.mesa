@@ -38,7 +38,7 @@ title: Your settings
   // this screen renders that distinction rather than flattening it — a person
   // resetting a kind has to be able to see that it went back to a default
   // rather than to off.
-  import { getClient } from '@frontierjs/sierra/junction'
+  import { getClient } from '@frontierjs/sierra/resource'
   import { session, currentWorkspace, reloadWorkspaces } from '../../session.js'
   import { ago }       from '../../datetime.js'
   import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'

@@ -25,8 +25,8 @@ because nothing needs them.
 ## Open questions
 
 The first three are the forks `site-kit-parity.md` left unanswered; the
-fourth came out of the website move; the fifth is the seam Phase 2 needs.
-All five are ruled.
+fourth came out of the website move; the fifth is the seam Phase 2 needs,
+and the sixth is the name that seam is spelled with.
 
 - ~~**Whose engine is site-kit — ksite's made generic, or a core sized to frontierjs.com?**~~ **Answered 2026-10-06 (`FJS-D604`): A — ksite's engine made generic. Everything `fli ksite:update` overwrote (`src/`, `config/`, `functions/`, `public/theme/`) moves to site-kit, except what is the cleaning-company template: its blocks, the lead widget, its theme. `@kobami/ksite` shrinks to those.**
   - **A** — ksite's engine made generic. Everything `fli ksite:update` overwrote (`src/`, `config/`, `functions/`, `public/theme/`) moves to site-kit, except what is the cleaning-company template: its blocks, the lead widget, its theme. `@kobami/ksite` shrinks to those.
@@ -57,6 +57,12 @@ All five are ruled.
   - **C** — the client writes a config file that composes the two.
   - **Recommend A** — one command and one shell for every site, and the site states its engine in the one file that is already its own. B gives each engine a second CLI to keep in step with site-kit's. C puts a non-content file back into the client, which is what Phase 4 measures as cost. The key's name, and the noun for what it names, go through `decision-rules` before code.
 
+- ~~**What is the `content/settings/site.js` key that names `@kobami/ksite`, and what is the noun for what it names?**~~ **Answered 2026-10-08 (`FJS-D648`): A — `preset: '@kobami/ksite'`, and the noun is *Preset*: a package that contributes blocks, layouts, stylesheets and build plugins to a site-kit site.** `FJS-D605` left both to `decision-rules`. The key sits in the default export beside `siteUrl`, which is site-kit's contract for that file; site-kit reads it and strips it before the rest reaches Sierra. The named package exports one entry that returns its blocks, layouts, stylesheets, remark plugins and post-build plugins, and a name that does not resolve to one fails the build by name.
+  - **A** — `preset: '@kobami/ksite'`, and the noun is *Preset*: a package that contributes blocks, layouts, stylesheets and build plugins to a site-kit site.
+  - **B** — `engine: '@kobami/ksite'`, `FJS-D605`'s own word.
+  - **C** — `theme: '@kobami/ksite'`, as Jekyll and Hugo spell it.
+  - **Recommend A** — *familiarity vs. precision*: UnoCSS, Docusaurus and Babel all use preset for a package the consumer names that adds a bundle of contributions to a host tool, and the word fits whole. B gives every site two engines: `FJS-D604` made site-kit the engine and shrank ksite to the template it carries, and `ARCHITECT.md` already refuses *engine* for a Rig. C is the closest ecosystem match, but `theme:` is already the switcher's key in this same file and `@frontierjs/css`'s word for a class on `<html>`. `extends` is not an option: it is tsconfig's word for merging two configs of the same shape, which this is not.
+
 `site-kit-structure.md` § Open questions holds the page-shape questions, which
 gate Phase 3.
 
@@ -86,6 +92,16 @@ to serving the legacy site, so a dead port server passes.
 `content/routes` (`FJS-D606`). FJS-1554 is moot
 for a site with no Vite config, which is worth confirming rather than assuming.
 site-kit's CI allowance (`scripts/ci-allowances.json`) comes out here.
+**Done 2026-10-08.** The key is `preset` (`FJS-D648`). `@kobami/ksite`'s
+`config/vite.js` became `config/preset.js`, a function of the site returning
+`{ sierra, plugins, shell }`; its `index.html` moved into the package, and the
+site is `content/` plus `deploy/`. Two rows were found and fixed:
+`FJS-2025` (Sierra's post-build overwrote a `robots.txt` outside
+`<root>/public`) and `FJS-2026` (a linked site-kit ran the workspace's vite).
+Graded 4/4 pixel-exact four ways: build and dev, from the workspace and from a
+tarball install of both packages. The website's `bun run test` is identical
+to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
+*no vite config*. The CI allowance had already gone in `edfd6ace`.
 
 **Phase 3 — the generic line moves.** In this order, each a move from
 `@kobami/ksite` to site-kit with ksite's baselines green after it:

@@ -282,7 +282,7 @@ the row itself is the only copy anywhere, and a screen whose next act references
 it had nowhere to read the key from. `err.data` is now the row.
 
 **The bytes are built too, as `FJS-D301` ruled: two queues.**
-`sierra/junction/attachments.js` has its own IndexedDB database — a blob store
+`sierra/resource/attachments.js` has its own IndexedDB database — a blob store
 is what fills a device's quota, and a quota failure must not take the writes
 down with it — its own retry, and objects immutable once named. A held write is
 split: the row replays without its bytes, each file replays after it as a patch
@@ -327,7 +327,7 @@ costing something real.
 opt-in with `offline: true`, and Sierra writes it where the app writes its
 manifest because a manifest is a DECLARATION and a precache list is a
 DERIVATION. It answers for a precached file and for a navigation and touches
-nothing else, so `/api` and `/ws` are not in its path; `junction/list-cache.js`
+nothing else, so `/api` and `/ws` are not in its path; `resource/list-cache.js`
 answers a load that could not arrive with the last list that question got, only
 for a model that declared `@@sync`, only on SILENCE and never on a refusal. The
 byte question is now a number the build prints: `example` is **89 files, 980
@@ -1043,7 +1043,7 @@ following the declaration rather than by adding one.
   - **D** — each entry records at enqueue which earlier entries it depends on, and the drain honours the graph
   - **Recommend B** — it derives, from two things the queue already holds (the ids it minted and the relation map the schema ships), exactly the set D would make every write declare, and it costs no enqueue-time bookkeeping. A sends writes it knows will fail and reports each with the wrong reason (#1's *Outside your workspaceId* is what a comment on a missing issue gets). C holds #3 and every other independent write of the day hostage to one private team, which on a train is the whole morning's work. None of the four helps #4, so B lands only with `FJS-1302`'s artifact, the way D300 was meant to
 
-- ~~**FJS-D469 — does a replayed write carry the moment it was made to the boundary, and does the server's `now()` resolve to it?**~~ **Answered 2026-09-28 (`FJS-D469`): B — A, and every `now()` litestone resolves inside that call — `@default(now())`, `@updatedAt` — resolves to `ctx.madeAt` as well. The audit trail keeps the server's landing time, which is what an audit records.** Found fixing `FJS-1278`: the queue entry holds `createdAt`, the device's clock at the press, and `_send` in `packages/sierra/src/junction/pending.js` puts `{ idempotencyKey, base, callHeaders }` on the call and nothing else, so a clock-in queued at 09:46 and drained at 17:46 stores `startedAt` 17:46 — 8 h, €96 of shift at the seeded rate. The red test is `pending-queue.test.js`: a drained entry's call options carry its `createdAt`, and today that key is absent. A service cannot mend it — `$` holds the request, not the entry, and cannot tell a replay from a fresh call — and an app mending it in the payload trusts a raw client clock with nothing to compare it to.
+- ~~**FJS-D469 — does a replayed write carry the moment it was made to the boundary, and does the server's `now()` resolve to it?**~~ **Answered 2026-09-28 (`FJS-D469`): B — A, and every `now()` litestone resolves inside that call — `@default(now())`, `@updatedAt` — resolves to `ctx.madeAt` as well. The audit trail keeps the server's landing time, which is what an audit records.** Found fixing `FJS-1278`: the queue entry holds `createdAt`, the device's clock at the press, and `_send` in `packages/sierra/src/resource/pending.js` puts `{ idempotencyKey, base, callHeaders }` on the call and nothing else, so a clock-in queued at 09:46 and drained at 17:46 stores `startedAt` 17:46 — 8 h, €96 of shift at the seeded rate. The red test is `pending-queue.test.js`: a drained entry's call options carry its `createdAt`, and today that key is absent. A service cannot mend it — `$` holds the request, not the entry, and cannot tell a replay from a fresh call — and an app mending it in the payload trusts a raw client clock with nothing to compare it to.
   - **A** — per call: the drain sends the entry's time and its own clock at send (`sentAt`) as call options, beside `base`. The boundary derives the device's offset from `sentAt` against its own clock, corrects the made-at by it, refuses one later than the server's now, and hands the result to the service as `ctx.madeAt` — arrival time on a live call, so it is always set. Services read `$.madeAt` where they stamp a time; litestone's defaults are untouched
   - **B** — A, and every `now()` litestone resolves inside that call — `@default(now())`, `@updatedAt` — resolves to `ctx.madeAt` as well. The audit trail keeps the server's landing time, which is what an audit records
   - **C** — a column-level declaration (`@madeAt` or `@default(made())`): only a column that says so is stamped with the device's time, and every other `now()` stays the landing time

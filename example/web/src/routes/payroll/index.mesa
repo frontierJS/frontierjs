@@ -26,7 +26,7 @@ title: Payroll
   import { payRates } from '@/resources/PayRate.mesa'
   import { prefs } from '@/stores/prefs.js'
   import { day, span } from '@/datetime.js'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'
 

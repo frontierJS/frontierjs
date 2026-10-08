@@ -7,7 +7,7 @@
   // No `model:` — `networks` is the regular plural of `Network`, which is what
   // modelNameFor() resolves, so the schema's labels, required list and field
   // rules arrive without restating any of them here.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const networks = createResource('networks')
 </script>

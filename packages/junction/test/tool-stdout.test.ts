@@ -25,7 +25,6 @@ export async function buildApp() {
   const app = createApp({
     config: {
       port:     0,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
     },
   })

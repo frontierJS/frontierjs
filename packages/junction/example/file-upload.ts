@@ -158,7 +158,7 @@ const app = createApp({
   // apiPrefix defaults to '' — without it the users service mounts at /users
   // while the hand-written avatar route below sits at /api/users/..., putting
   // the two halves of the documented flow on different paths.
-  config: { ...defaultConfig, port: 3000, apiPrefix: '/api', database: { url: '', log: false } },
+  config: { ...defaultConfig, port: 3000, apiPrefix: '/api' },
   auth: {
     async verifySession(token: string) {
       const userId = tokens.get(token)

@@ -127,7 +127,7 @@ generic validator only works on `definitions`.
 The document declares draft-07 but names its definition table `$defs`
 (2019-09's spelling, not draft-07's `definitions`). Every consumer in this repo
 resolves refs by hand and accepts both spellings —
-[sierra/src/junction/schema-registry.js:167](../../sierra/src/junction/schema-registry.js#L167) — but a
+[sierra/src/resource/schema-registry.js:167](../../sierra/src/resource/schema-registry.js#L167) — but a
 strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 
 ---

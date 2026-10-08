@@ -19,7 +19,7 @@
 import { accessorIfModel, toDataPrincipal } from '../../core/litestone.ts'
 
 /** Who a registration speaks for. `null` is nobody; `undefined` is a store that cannot say. */
-export type WebhookAudience = string | number | null | undefined
+export type WebhookSubscriber = string | number | null | undefined
 
 export type ShapeResult =
   | { deliver: true;  payload: unknown; graded: boolean }
@@ -148,7 +148,7 @@ export function sayUnowned(url: string, db: unknown): void {
 export function _resetWebhookWarnings(): void { _said.clear() }
 
 /**
- * The payload as this registration's audience may read it.
+ * The payload as this registration's subscriber may read it.
  *
  * Three answers, and the difference between the last two is the whole design.
  *
@@ -167,14 +167,14 @@ export function _resetWebhookWarnings(): void { _said.clear() }
  * Conflating the last two is how a fail-closed check becomes fail-open at the
  * first odd shape (`channels.ts` draws the same line for a broadcast).
  */
-export async function shapeForAudience(args: {
-  db:       unknown
-  app:      GradingApp
-  event:    string
-  payload:  unknown
-  audience: WebhookAudience
+export async function shapeForSubscriber(args: {
+  db:         unknown
+  app:        GradingApp
+  event:      string
+  payload:    unknown
+  subscriber: WebhookSubscriber
 }): Promise<ShapeResult> {
-  const { db, app, event, payload, audience } = args
+  const { db, app, event, payload, subscriber } = args
   const names = protectedNames(db)
 
   // Said once per REASON, and the key is what separates two different facts. An
@@ -204,10 +204,10 @@ export async function shapeForAudience(args: {
   if (!accessor) return ungraded(`'${serviceOf(event)}' names no model`)
   if (client.$readGrading(accessor) === 'open') return { deliver: true, payload, graded: true }
 
-  if (audience === undefined)
+  if (subscriber === undefined)
     return ungraded('the webhook store does not record who a registration speaks for')
 
-  // The audience is an ID and the principal is re-resolved HERE, never restored
+  // The subscriber is an ID and the principal is re-resolved HERE, never restored
   // from a snapshot, so a registrant demoted since is graded at the standing
   // they hold now. `runAs(null)` is `createApp({ system })`, and an app that
   // declares none gets a stranger — which is the fail-closed answer, not an
@@ -216,9 +216,9 @@ export async function shapeForAudience(args: {
   try {
     // Normalized to a string because that is what `sessionFor` is asked with,
     // and what the store wrote.
-    principal = await app.runAs(audience == null ? null : String(audience), () => app.principal())
+    principal = await app.runAs(subscriber == null ? null : String(subscriber), () => app.principal())
   } catch (err) {
-    return { deliver: false, reason: `the audience could not be resolved: ${(err as Error)?.message ?? err}` }
+    return { deliver: false, reason: `the subscriber could not be resolved: ${(err as Error)?.message ?? err}` }
   }
 
   let visible: unknown
@@ -227,7 +227,7 @@ export async function shapeForAudience(args: {
   } catch (err) {
     return { deliver: false, reason: `the read rule on '${accessor}' could not be answered: ${(err as Error)?.message ?? err}` }
   }
-  if (!visible) return { deliver: false, reason: `the audience may not read this ${accessor}` }
+  if (!visible) return { deliver: false, reason: `the subscriber may not read this ${accessor}` }
 
   return { deliver: true, payload: visible, graded: true }
 }

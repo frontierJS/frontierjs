@@ -15,7 +15,8 @@
 // that only the app knows a sidecar exists.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, manifestPlugin, defaultConfig } from '../index.ts'
+import { createApp, defaultConfig } from '../index.ts'
+import { manifestPlugin } from '../src/plugins/manifest/index.ts'
 import type { ILogger } from '../src/core/logger.ts'
 
 const PORT = 3401
@@ -45,7 +46,6 @@ beforeAll(async () => {
     logger: capturingLogger(),
     config: {
       port: PORT,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
@@ -115,7 +115,6 @@ describe('an app that started no second listener', () => {
     const quiet = createApp({
       config: {
         port: PORT + 1,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },

@@ -32,7 +32,7 @@ import { join }   from 'node:path'
 
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
 import { deliverOutbox, sweepOutbox, outboxCounts, outboxPass,
-         assertOutboxShape } from '../src/core/outbox.ts'
+         assertOutboxShape } from '../src/plugins/outbox/engine.ts'
 import type { App } from '../src/core/app.ts'
 
 const OUTBOX = await Bun.file(new URL('../db/outbox.lite', import.meta.url)).text()

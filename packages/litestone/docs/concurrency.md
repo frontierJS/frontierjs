@@ -83,8 +83,7 @@ the companion index beside a `jsonl`/`logger` file.
 
 `@frontierjs/caravan` (`createCaravan({ busyTimeout })`) and Junction's SQLite
 cache (`createSqliteCache({ busyTimeout })`) have their own, because they own
-their own connections. Junction's `createDatabase` takes `pragmas: [...]`, which
-runs after the defaults and therefore overrides it.
+their own connections.
 
 ### There is deliberately no `database { }` spelling
 

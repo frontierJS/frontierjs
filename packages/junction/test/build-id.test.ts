@@ -111,7 +111,6 @@ describe('the server states its build and the client compares', () => {
       config: {
         port: 0,
         ...(build ? { build } : {}),
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
       },
       logLevel: 'silent',

@@ -580,7 +580,7 @@ with two callers racing the refresh.
 ## The defect found while probing this
 
 **Sierra's boot restore short-circuits on `!client.token`**
-(`packages/sierra/src/junction/session.js`, in `initSession`). Under `cookieAuth`
+(`packages/sierra/src/resource/session.js`, in `initSession`). Under `cookieAuth`
 the browser holds no token, so the restore never asks, and `session.user` stays null
 on every cold load while a perfectly valid cookie sits in the jar — the app renders
 signed out. The comment explains the short-circuit as avoiding a 401 on every

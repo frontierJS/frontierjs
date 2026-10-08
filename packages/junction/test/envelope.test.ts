@@ -371,7 +371,6 @@ describe('a hook that answers with a stream is refused', () => {
     app = createApp({
       config: {
         port:     0,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http:     { ...defaultConfig.http, drainTimeout: 250 },
       },

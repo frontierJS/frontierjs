@@ -12,7 +12,7 @@
   // invoices at once has one, and so the model has the resource file Invariant
   // 18 asks for.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const invoiceLines = createResource('invoice-lines', { model: 'InvoiceLine' })
 </script>

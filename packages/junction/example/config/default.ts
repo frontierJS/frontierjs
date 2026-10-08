@@ -21,11 +21,6 @@ export default {
     apiKey: process.env.RESEND_API_KEY ?? '',
   },
 
-  database: {
-    url: process.env.DATABASE_URL ?? 'file:./demo.db',
-    log: false,
-  },
-
   http: {
     maxBodySize: 256 * 1024,
     compress:    true,

@@ -8,7 +8,7 @@
   // person has chosen over the kind's default — so what comes back is not a row
   // of this model. The resource is here for the service handle and for the
   // model's own labels, not to make() one.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const notificationPreferences =
     createResource('notification-preferences', { model: 'NotificationPreference' })

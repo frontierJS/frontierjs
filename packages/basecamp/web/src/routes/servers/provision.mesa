@@ -4,7 +4,7 @@ title: Provision a machine
 <script>
   import { goto } from '@frontierjs/sierra/router'
   import { servers } from '../../resources/Server.mesa'
-  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { ResourceValidationError } from '@frontierjs/sierra/resource'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import Select   from '@frontierjs/ui/components/forms/Select.mesa'
   import Input    from '@frontierjs/ui/components/forms/Input.mesa'

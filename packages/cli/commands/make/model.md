@@ -121,7 +121,7 @@ const makeResourceFile = (model, plural) => `<script module>
 // Read this next to db/schema.lite. Nothing here restates anything there: no
 // field list, no types, no enum values, no required list, no relations.
 
-import { createResource } from '@frontierjs/sierra/junction'
+import { createResource } from '@frontierjs/sierra/resource'
 
 export const ${plural} = createResource('${plural}', {
   // Stated rather than inferred, so an irregular plural cannot quietly resolve

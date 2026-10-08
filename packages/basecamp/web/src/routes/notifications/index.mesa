@@ -9,7 +9,7 @@ title: Notifications
   // `@@tenant(none)` and scoped by its recipient — so switching workspace does
   // not change this screen and nothing here reloads on it.
   import { goto }    from '@frontierjs/sierra/router'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { useStore } from '@frontierjs/sierra/resource'
   import {
     notifications, loadInbox, isUnread, titleOf, bodyOf, actionOf,
     markRead, markUnread, markAllRead, INBOX,

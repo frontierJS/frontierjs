@@ -137,7 +137,6 @@ const app = createApp({
     port:      3000,
     apiPrefix: '/api',   // apiPrefix defaults to '' — without this the service
                          // mounts at /leads and every documented /api/… path 404s
-    database:  { url: '', log: false },
   },
   auth: {
     async verifySession(token: string) {

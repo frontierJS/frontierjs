@@ -286,7 +286,7 @@ declared `type`, a `@scale` number, a rating, a rich editor — are controls you
 registrations, in one place, at startup:
 
 ```js
-import { registerControl }     from '@frontierjs/sierra/junction'
+import { registerControl }     from '@frontierjs/sierra/resource'
 import { registerFormControl } from '@frontierjs/ui/controls'
 import Rating from './Rating.mesa'
 

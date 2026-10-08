@@ -21,8 +21,8 @@ import type { App, Plugin } from '../../core/app.ts'
 import {
   runChunk, recordFailure, ensureRun, backfillStatus, chunkId, nextDelayMs,
   hasBackfillModel, isBackfillDefinition, BACKFILL_JOB, BACKFILL_MODEL,
-} from '../../core/backfill.ts'
-import type { BackfillDefinition, BackfillRow, ChunkResult } from '../../core/backfill.ts'
+} from './engine.ts'
+import type { BackfillDefinition, BackfillRow, ChunkResult } from './engine.ts'
 
 export interface BackfillPluginOptions {
   /**
@@ -182,7 +182,7 @@ export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginO
     },
   }
 
-  /** `updateMany` on the primary key, for the reason `SILENT` gives in core/backfill.ts. */
+  /** `updateMany` on the primary key, for the reason `SILENT` gives in engine.ts. */
   function runs(app: App) {
     return (app.db as { asSystem(): Record<string, { updateMany(a: unknown): Promise<unknown> }> })
       .asSystem().backfillRun
@@ -261,3 +261,9 @@ export function backfills(defs: BackfillDefinition[] = [], opts: BackfillPluginO
     }
   }
 }
+
+// The engine's public half, so `./backfill` is the one way in.
+export { defineBackfill, backfillSchemaFragment, nextDelayMs,
+         assertField as assertBackfillField }                from './engine.ts'
+export type { BackfillDefinition, BackfillOptions, BackfillRow,
+              ChunkResult }                                  from './engine.ts'

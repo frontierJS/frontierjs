@@ -174,7 +174,7 @@ function scaffold(servicesAt: string): string {
   `)
   writeFileSync(join(root, 'api/index.ts'), `
     import { createApp } from '${JUNCTION}/src/core/app.ts'
-    const app = createApp({ config: { port: 0, database: { url: '', log: false } } })
+    const app = createApp({ config: { port: 0 } })
     await app._startForTest()
     console.log('SERVICES=' + app.services.list().join(','))
   `)

@@ -100,7 +100,7 @@ async function serve(opts: { maxConcurrent?: number } = {}) {
 
   const app = createApp({
     db,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
     logLevel: 'silent',
   })
   app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
@@ -124,7 +124,7 @@ async function serveWithResolver() {
       const dept = ctx.caller?.headers?.['x-dept'] ?? ctx.reserved?.dept
       return dept ? { deptId: String(dept) } : {}
     },
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
     logLevel: 'silent',
   })
   app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })
@@ -258,7 +258,7 @@ describe('a session names the account userId and the boundary reads id', () => {
 
     const app = createApp({
       db,
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
       logLevel: 'silent',
     })
     // No `id` anywhere on it — the shape auth's own session context has.
@@ -303,7 +303,7 @@ describe('under database tenancy the extract is one tenant\'s', () => {
     }
     const app = createApp({
       tenants: registry as any,
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
       logLevel: 'silent',
     })
     app.setAuth({ verifySession: async (t: string) => (AS[t] ?? null) as any })

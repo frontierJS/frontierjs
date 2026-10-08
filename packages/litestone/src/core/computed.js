@@ -1,10 +1,20 @@
+// @ts-check
 // computed.js — `@computed` fields: the functions an app passes as
 // `createClient({ computed })`, normalized once, and applied to each row read.
 
 import { resolve, pathToFileURL } from '#host'
 
+/** @import { LitestoneSchema } from '../index.d.ts' */
+
+/**
+ * One computed field after `normalizeComputed`. `handler` is present only on
+ * a field that declared `needs`.
+ * @typedef {{ compute: Function, needs: string[] | null, handler?: ProxyHandler<object> }} ComputedPlan
+ */
+
 // ─── Extensions loading ───────────────────────────────────────────────────────
 
+/** @param {string | Record<string, unknown> | null | undefined} computedInput */
 export async function loadComputedFields(computedInput) {
   if (!computedInput) return {}
   // Accept an object directly — { modelName: { fieldName: fn } }
@@ -19,7 +29,7 @@ export async function loadComputedFields(computedInput) {
     // path form is a server's, and a browser refuses it at `pathToFileURL`.
     const mod = await import(/* @vite-ignore */ pathToFileURL(abs).href)
     return mod.default ?? mod
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     throw new Error(`Failed to load computed functions file: ${abs}\n  ${e.message}`)
   }
 }
@@ -36,9 +46,15 @@ export async function loadComputedFields(computedInput) {
 //
 // Keys beginning with `$` are not fields ($validate is a cross-field validator
 // array) and travel through untouched.
+/**
+ * @param {Record<string, unknown> | null | undefined} computedFns
+ * @param {LitestoneSchema} schema
+ * @returns {Record<string, unknown>}
+ */
 export function normalizeComputed(computedFns, schema) {
   if (!computedFns) return {}
 
+  /** @type {Record<string, Set<string>>} */
   const readableFields = {}
   for (const model of schema.models) {
     readableFields[model.name] = new Set(
@@ -49,9 +65,11 @@ export function normalizeComputed(computedFns, schema) {
     )
   }
 
+  /** @type {Record<string, unknown>} */
   const out = {}
   for (const [modelName, fields] of Object.entries(computedFns)) {
     if (!fields || typeof fields !== 'object') { out[modelName] = fields; continue }
+    /** @type {Record<string, unknown>} */
     const bag = out[modelName] = {}
 
     for (const [field, spec] of Object.entries(fields)) {
@@ -68,12 +86,15 @@ export function normalizeComputed(computedFns, schema) {
       if (!Array.isArray(spec.needs))
         throw new Error(`Computed field '${modelName}.${field}': 'needs' must be an array of field names`)
 
+      /** @type {string[]} */
+      const needs = [...spec.needs]
+
       // A name that is not a column of this model would be silently undefined
       // at read time, which is the whole failure this declaration exists to
       // stop — so it is refused here, where the list is written.
       const known = readableFields[modelName]
       if (known) {
-        const bad = spec.needs.filter(n => !known.has(n))
+        const bad = needs.filter(n => !known.has(n))
         if (bad.length)
           throw new Error(
             `Computed field '${modelName}.${field}': needs ${bad.map(n => `'${n}'`).join(', ')}, ` +
@@ -83,7 +104,6 @@ export function normalizeComputed(computedFns, schema) {
           )
       }
 
-      const needs = [...spec.needs]
       bag[field] = { compute: spec.compute, needs, handler: needsHandler(modelName, field, needs) }
     }
   }
@@ -97,6 +117,12 @@ export function normalizeComputed(computedFns, schema) {
 //
 // `in` is left alone so feature-detection still works, and the handler is built
 // once per field rather than once per row.
+/**
+ * @param {string} modelName
+ * @param {string} field
+ * @param {string[]} needs
+ * @returns {ProxyHandler<Record<string | symbol, unknown>>}
+ */
 function needsHandler(modelName, field, needs) {
   return {
     get(target, key) {
@@ -115,6 +141,15 @@ function needsHandler(modelName, field, needs) {
 // outside it is not run at all: its value would be trimmed away a moment later,
 // and running it over a row narrowed by that same select is how a fn ends up
 // computing from undefined.
+/**
+ * @template {Record<string, any> | null | undefined} T
+ * @param {T} row
+ * @param {string} modelName
+ * @param {Record<string, Record<string, any>> | null | undefined} computedFns  a model's bag mixes plans with `$`-keys
+ * @param {unknown} ctx
+ * @param {Set<string> | null} [wanted]
+ * @returns {T | Record<string, unknown>}  the row as handed in, or a copy with the computed values on it
+ */
 export function applyComputed(row, modelName, computedFns, ctx, wanted = null) {
   if (!row) return row
   const fns = computedFns?.[modelName]
@@ -129,7 +164,12 @@ export function applyComputed(row, modelName, computedFns, ctx, wanted = null) {
   return out
 }
 
+/**
+ * @param {Record<string, unknown>} row
+ * @param {{ needs: string[], handler: ProxyHandler<Record<string, unknown>> }} plan
+ */
 function needsView(row, plan) {
+  /** @type {Record<string, unknown>} */
   const view = {}
   for (const name of plan.needs) view[name] = row[name]
   return new Proxy(view, plan.handler)

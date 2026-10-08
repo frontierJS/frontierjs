@@ -57,7 +57,7 @@ const REPO_ROOT   = resolve(SIERRA_ROOT, '..', '..')
 const _calls = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => ({
@@ -70,8 +70,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas, stripProse, READ_MODE } = await import('../src/build/schema-plugin.js')
-const { registerSchemas, applySchemaModePatch } = await import('../src/junction/schema-registry.js')
-const { createResource } = await import('../src/junction/resource.js')
+const { registerSchemas, applySchemaModePatch } = await import('../src/resource/schema-registry.js')
+const { createResource } = await import('../src/resource/resource.js')
 
 beforeEach(() => {
   _calls.length = 0
@@ -293,7 +293,7 @@ describe('the read mode, which is what a display surface reads', () => {
       const schema = parseFile(resolve(REPO_ROOT, app, 'db', 'schema.lite')).schema
       const create = stripProse(generateJsonSchema(schema)?.$defs ?? {})
       const read   = stripProse(generateJsonSchema(schema, READ_MODE)?.$defs ?? {})
-      const patch  = (await import('../src/junction/schema-registry.js')).diffSchemaModes(create, read)
+      const patch  = (await import('../src/resource/schema-registry.js')).diffSchemaModes(create, read)
       for (const name of Object.keys(read))
         expect(applySchemaModePatch(create[name], patch[name])).toEqual(read[name])
     }

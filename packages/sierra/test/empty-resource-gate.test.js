@@ -19,9 +19,9 @@
 
 import { describe, test, expect, vi } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => null }))
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
-const { createResource } = await import('../src/junction/resource.js')
+const { createResource } = await import('../src/resource/resource.js')
 
 describe('the no-client resource grades every operation as no', () => {
   const r = createResource('orders')
@@ -52,7 +52,7 @@ describe('the no-client resource grades every operation as no', () => {
     // The other control, and it is what keeps the change narrow: unknown stays
     // permissive at `canAtLevel`, which is Invariant 6's own reading. Only the
     // stand-in changed.
-    const { canAtLevel } = await import('../src/junction/field-rules.js')
+    const { canAtLevel } = await import('../src/resource/field-rules.js')
     expect(canAtLevel(null, 'update', 0)).toBe(true)
   })
 })

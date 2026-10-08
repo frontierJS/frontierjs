@@ -7578,11 +7578,16 @@ function _checkExternalReactivity(ctx, imports) {
             if (seen.has(`p:${path}`)) continue
             seen.add(`p:${path}`)
             const at = where === 'template' ? 'in the template' : `by '${where}'`
-            ctx.analysis.warnings.push(
+            const hint =
               `'${path}' is read ${at} but no '$: ${path}' watch covers it. ` +
               `Imported objects are inert — the read compiles to a static value and will ` +
               `not update when '${name}' mutates. Add '$: ${path}' to the script block.`
-            )
+            ctx.analysis.warnings.push(hint)
+            // Named apart from the other warnings because it is true only of
+            // code that re-renders in a browser: a static build that publishes
+            // no script for this component holds it back (`FJS-D629`), and
+            // telling it from the rest by its wording breaks on a reword.
+            ;(ctx.analysis.reactivityHints ??= []).push(hint)
           }
         }
       }

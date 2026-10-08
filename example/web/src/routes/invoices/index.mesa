@@ -35,7 +35,7 @@ title: Invoices
   // The last two reach the cells as REGISTRATIONS rather than as branches
   // here, which is what keeps this table the same table the generator writes.
   import { invoices } from '@/resources/Invoice.mesa'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { prefs } from '@/stores/prefs.js'
   import { today } from '@/datetime.js'
 

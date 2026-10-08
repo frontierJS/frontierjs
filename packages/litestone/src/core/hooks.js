@@ -1,5 +1,9 @@
+// @ts-check
 // hooks.js — what watches a client: the `hooks`, `onEvent` and `onQuery`
 // options, and `announce`, what a bulk write tells the world.
+
+/** @import { HookContext } from '../index.d.ts' */
+/** @import { Ctx } from './field-policy.js' */
 
 // ─── What a bulk write tells the world ───────────────────────────────────────
 //
@@ -29,12 +33,15 @@ const ANNOUNCE_MODES = ['collection', 'rows', 'none']
  * caller named none. A typo is refused by NAME rather than falling back to the
  * default: `announce: 'row'` means somebody wanted per-row announcements, and
  * silently giving them the coarse one is the class of bug FJS-307 closed.
+ * @param {unknown} value
+ * @param {string} where
  */
 export function checkAnnounce(value, where) {
   if (value === undefined || value === null) return undefined
-  if (ANNOUNCE_MODES.includes(value)) return value
+  if (typeof value === 'string' && ANNOUNCE_MODES.includes(value)) return value
   // 400 rather than a 500: the request named something that does not exist, and
   // the identical call fails identically until the caller changes it.
+  /** @type {Error & { status?: number, retryable?: boolean }} */
   const err = new Error(
     `${where}: announce must be one of ${ANNOUNCE_MODES.map(m => `'${m}'`).join(', ')} — got ${JSON.stringify(value)}.`)
   err.name      = 'InvalidAnnounceError'
@@ -52,6 +59,12 @@ export function checkAnnounce(value, where) {
 //
 // Zero-cost when nothing is listening. Never throws and never blocks: a tap is
 // an observer, so a listener that fails must not fail the read it is watching.
+/**
+ * @param {Ctx} ctx
+ * @param {string} model
+ * @param {string} database
+ * @param {Record<string, unknown>} event
+ */
 export function emitQuery(ctx, model, database, event) {
   if (!ctx.onQuery && !ctx._queryListeners.size) return
   // `system` because `actorId` cannot say it: a bare client and `asSystem()`
@@ -62,7 +75,8 @@ export function emitQuery(ctx, model, database, event) {
   if (ctx._queryListeners.size) for (const fn of ctx._queryListeners) { try { const r = fn(e); if (r?.catch) r.catch(() => {}) } catch {} }
 }
 
-/** Is anything watching? The guard every include timer is behind. */
+/** Is anything watching? The guard every include timer is behind.
+ * @param {Ctx} ctx */
 export function queryTapped(ctx) {
   return !!(ctx.onQuery || ctx._queryListeners.size)
 }
@@ -99,18 +113,24 @@ const GETTER_OPS = new Set(['findMany','findFirst','findUnique','findManyCursor'
 
 // Table method → the operation a hook names it by. Everything in the two sets
 // above, plus the composite reads that are a findMany wearing another shape.
+/** @type {Map<string, string>} */
 const HOOKED_METHODS = new Map([
-  ...[...SETTER_OPS, ...GETTER_OPS].map(op => [op, op]),
+  ...[...SETTER_OPS, ...GETTER_OPS].map(op => /** @type {[string, string]} */ ([op, op])),
   ['findManyAndCount', 'findMany'],
 ])
 
+/** @typedef {Record<string, Function | Function[]>} HookPhase  key is an op, a group or `all` */
+
+/** @param {{ before?: HookPhase, after?: HookPhase } | null | undefined} hooks */
 export function buildHookRunner(hooks) {
   if (!hooks) return null
 
   // Flatten hook config into { before: Map<op, [fn]>, after: Map<op, [fn]> }
+  /** @param {'before' | 'after'} phase */
   function expand(phase) {
+    /** @type {Map<string, Function[]>} */
     const map = new Map()
-    const cfg = hooks[phase]
+    const cfg = hooks?.[phase]
     if (!cfg) return map
 
     for (const [key, fns] of Object.entries(cfg)) {
@@ -119,22 +139,22 @@ export function buildHookRunner(hooks) {
         // Apply to every operation
         for (const op of [...SETTER_OPS, ...GETTER_OPS]) {
           if (!map.has(op)) map.set(op, [])
-          map.get(op).push(...arr)
+          map.get(op)?.push(...arr)
         }
       } else if (key === 'setters') {
         for (const op of SETTER_OPS) {
           if (!map.has(op)) map.set(op, [])
-          map.get(op).push(...arr)
+          map.get(op)?.push(...arr)
         }
       } else if (key === 'getters') {
         for (const op of GETTER_OPS) {
           if (!map.has(op)) map.set(op, [])
-          map.get(op).push(...arr)
+          map.get(op)?.push(...arr)
         }
       } else {
         // Exact operation name
         if (!map.has(key)) map.set(key, [])
-        map.get(key).push(...arr)
+        map.get(key)?.push(...arr)
       }
     }
     return map
@@ -145,6 +165,7 @@ export function buildHookRunner(hooks) {
 
   return {
     // Run before hooks — mutates ctx.args in place, returns ctx
+    /** @param {HookContext} hctx @param {Ctx} clientCtx */
     runBefore(hctx, clientCtx) {
       const fns = before.get(hctx.operation) ?? []
       for (const fn of fns) {
@@ -154,6 +175,7 @@ export function buildHookRunner(hooks) {
       return hctx
     },
     // Run after hooks — mutates hctx.result in place, returns hctx
+    /** @param {HookContext} hctx @param {Ctx} clientCtx */
     runAfter(hctx, clientCtx) {
       const fns = after.get(hctx.operation) ?? []
       for (const fn of fns) {
@@ -164,8 +186,8 @@ export function buildHookRunner(hooks) {
       }
       return hctx
     },
-    hasBefore: (op) => (before.get(op)?.length ?? 0) > 0,
-    hasAfter:  (op) => (after.get(op)?.length ?? 0) > 0,
+    hasBefore: (/** @type {string} */ op) => (before.get(op)?.length ?? 0) > 0,
+    hasAfter:  (/** @type {string} */ op) => (after.get(op)?.length ?? 0) > 0,
   }
 }
 
@@ -188,21 +210,38 @@ export function buildHookRunner(hooks) {
 // `search` is the one method that is not (argsObject) — a before hook rewriting
 // `args.query` rewrites the search text, which is the useful thing to be able
 // to do there.
+/**
+ * @param {Record<string, any>} table  a built table — its methods and whatever else `makeTable` put on it
+ * @param {Ctx} ctx
+ * @param {string} modelName
+ */
 export function installHooks(table, ctx, modelName) {
   const runner = ctx.hookRunner
-  if (!runner) return table
+  // A symbol-keyed property is a seam (`PLAN`), not a method: no hook wraps
+  // it, no key listing shows it, and it must survive this layer either way.
+  const seams = Object.getOwnPropertySymbols(table)
+  if (!runner) {
+    for (const sym of seams) Object.defineProperty(table, sym, { value: /** @type {any} */ (table)[sym], enumerable: false })
+    return table
+  }
 
+  /** @type {Record<string, any>} */
   const outer = {}
+  for (const sym of seams) {
+    const fn = /** @type {any} */ (table)[sym]
+    Object.defineProperty(outer, sym, { value: typeof fn === 'function' ? (/** @type {any[]} */ ...a) => fn.apply(table, a) : fn, enumerable: false })
+  }
   for (const key of Object.keys(table)) {
     const fn = table[key]
     if (typeof fn !== 'function') { outer[key] = table[key]; continue }
 
     const op = HOOKED_METHODS.get(key)
-    if (!op) { outer[key] = (...a) => fn.apply(outer, a); continue }
-    if (!runner.hasBefore(op) && !runner.hasAfter(op)) { outer[key] = (...a) => fn.apply(table, a); continue }
+    if (!op) { outer[key] = (/** @type {any[]} */ ...a) => fn.apply(outer, a); continue }
+    if (!runner.hasBefore(op) && !runner.hasAfter(op)) { outer[key] = (/** @type {any[]} */ ...a) => fn.apply(table, a); continue }
 
     const isSearch = key === 'search'
-    outer[key] = async (...a) => {
+    outer[key] = async (/** @type {any[]} */ ...a) => {
+      /** @type {HookContext} */
       const hctx = {
         model:     modelName,
         operation: op,
@@ -222,10 +261,12 @@ export function installHooks(table, ctx, modelName) {
   return outer
 }
 
+/** @param {Record<string, Function | Function[]> | null | undefined} onEvent */
 export function buildEventEmitter(onEvent) {
   if (!onEvent) return null
   // Normalize: onEvent.create, onEvent.update, onEvent.remove, onEvent.change
   // Each can be a single function or array of functions
+  /** @type {Record<string, Function[]>} */
   const listeners = {}
   for (const [event, fns] of Object.entries(onEvent)) {
     listeners[event] = Array.isArray(fns) ? fns : [fns]
@@ -233,6 +274,7 @@ export function buildEventEmitter(onEvent) {
 
   // Precompute the merged (event + change) listener array per event —
   // previously two array spreads ran on every single write.
+  /** @type {Record<string, Function[]>} */
   const merged = {}
   for (const event of Object.keys(listeners)) {
     if (event === 'change') continue
@@ -241,6 +283,7 @@ export function buildEventEmitter(onEvent) {
   const changeOnly = listeners.change ?? []
 
   return {
+    /** @param {string} event @param {unknown} eventCtx @param {unknown} clientCtx */
     emit(event, eventCtx, clientCtx) {
       // Fire-and-forget — never blocks the caller
       const fns = merged[event] ?? changeOnly

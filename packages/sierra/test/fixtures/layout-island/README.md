@@ -2,7 +2,7 @@
 
 `FJS-549` and `FJS-550`, which were one failure wearing two descriptions: a
 prerendered site whose LAYOUT holds an island, and whose island's module graph
-reaches `@frontierjs/sierra/junction` through a store.
+reaches `@frontierjs/sierra/resource` through a store.
 
 It hung with no error, no output and no page — the client bundle finished,
 printed its chunk table, and then nothing, forever. Neither shape reproduces

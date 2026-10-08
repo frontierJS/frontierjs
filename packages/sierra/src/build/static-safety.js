@@ -82,8 +82,8 @@
  * is skipped entirely. A Sierra app without a database is unaffected.
  */
 
-import { registerSchemas, modelNameFor, schemaFor } from '../junction/schema-registry.js'
-import { buildGate } from '../junction/field-rules.js'
+import { registerSchemas, modelNameFor, schemaFor } from '../resource/schema-registry.js'
+import { buildGate } from '../resource/field-rules.js'
 
 /**
  * Install the generated defs so `modelNameFor` can resolve a table name.

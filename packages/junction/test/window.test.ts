@@ -181,7 +181,7 @@ describe('a window over HTTP', () => {
     const app: any = createApp({
       db,
       config: {
-        port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+        port: 0, services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 50 },
       },
     } as never)

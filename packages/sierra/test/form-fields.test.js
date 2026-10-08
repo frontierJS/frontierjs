@@ -23,7 +23,7 @@ let _rows  = []
 let _fail  = null
 let _total = undefined
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: (name) => ({
       find: async (query, params) => {
@@ -43,8 +43,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 const {
   createResource, controlFor, displayFor, defaultControlFor, formFieldList, labelFieldFor, buildFieldRules,
   registerControl, unregisterControl, registeredControls, validateAgainstFields,
-} = await import('../src/junction/resource.js')
-const { registerSchemas, serviceNameFor } = await import('../src/junction/schema-registry.js')
+} = await import('../src/resource/resource.js')
+const { registerSchemas, serviceNameFor } = await import('../src/resource/schema-registry.js')
 
 // What generateJsonSchema emits (create mode) for:
 //   model Order    { id Int @id  reference String @length(3,20)  status OrderStatus @default("pending")
@@ -361,7 +361,7 @@ describe('serviceNameFor — the crossing a relation needs', () => {
   })
 
   test('and what registerSchemas indexes resolves back', async () => {
-    const { modelNameFor } = await import('../src/junction/schema-registry.js')
+    const { modelNameFor } = await import('../src/resource/schema-registry.js')
     expect(modelNameFor(serviceNameFor('Customer'))).toBe('Customer')
   })
 })

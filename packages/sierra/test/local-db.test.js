@@ -31,15 +31,15 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 let _proxy
 let _client
 
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => _client }))
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => _client }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { createResource }  = await import('../src/junction/resource.js')
-const { _resetListCache, listCache, listKey } = await import('../src/junction/list-cache.js')
-const { warmOffline, _resetOffline } = await import('../src/junction/offline.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { createResource }  = await import('../src/resource/resource.js')
+const { _resetListCache, listCache, listKey } = await import('../src/resource/list-cache.js')
+const { warmOffline, _resetOffline } = await import('../src/resource/offline.js')
 const { writeThrough, readLocal, localDbConfigured, _resetLocalDb, _useLocalDbClient } =
-  await import('../src/junction/local-db.js')
+  await import('../src/resource/local-db.js')
 
 const SOURCE = `
 model Sheet { id String @id @default(uuid())  name String  closedAt DateTime?  @@gate("0.0.0.0")  @@sync(server) }
@@ -499,7 +499,7 @@ describe('the warm fills the device rather than the cache', () => {
   test('a declaration with no model keeps nothing and says so', async () => {
     const d = makeDevice()
     useDevice(d)
-    const { declareOffline } = await import('../src/junction/offline.js')
+    const { declareOffline } = await import('../src/resource/offline.js')
     declareOffline({ service: 'status', find: () => Promise.resolve([{ id: 1 }]) })
 
     const report = await warmOffline()
@@ -538,7 +538,7 @@ describe('the warm against a device with real foreign keys', () => {
   }
 
   const declare = async (service, model, rows) => {
-    const { declareOffline } = await import('../src/junction/offline.js')
+    const { declareOffline } = await import('../src/resource/offline.js')
     declareOffline({ service, model, find: () => Promise.resolve(rows) })
   }
 

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/jetty
 
+## 2026-10-08 — comments name sierra's Resource at `src/resource/` (`FJS-D650`)
+
+The four comments naming the sierra file `store.js` and `resource.js` were ported from now give its new path. No code changed; the de-fork onto sierra's Resource is still to come.
+
 ## 2026-10-05 — the dev server watches with `fs.watch`; chokidar dropped
 
 `src/dev/watch.js` `watchTree(dirs, { onChange })` replaces chokidar: one recursive `fs.watch` per directory, each path settled for 60 ms after its LAST event, so an atomic save is one rebuild. The ignore list moved there as `IGNORED`. Its dot-file entry used to match only `.` and `..`, and now matches any dot-named file. Bun reports an editor's temp file during an atomic save and Node does not, so without that entry Bun saw two changes for one save. Tests: a Watcher group in `phase5` (nested add, two writes settled to one, an atomic save, `node_modules` ignored, a delete), under node and bun. Run against `example/extension` with the real `jetty-dev-ext`, touching `src/dock/App.mesa` produced one `mesa:hot-update:dock`.

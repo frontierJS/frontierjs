@@ -151,7 +151,7 @@ describe('renderWaterfall', () => {
 
 describe('devtoolsPlugin', () => {
   it('does not inject in build mode (no ctx.server)', async () => {
-    const { devtoolsPlugin } = await import('../src/build/devtools-plugin.js')
+    const { devtoolsPlugin } = await import('../src/devtools/plugin.js')
     const plugin = devtoolsPlugin({ devtools: { port: 4000 } })
     const handler = plugin.transformIndexHtml?.handler ?? plugin.transformIndexHtml
     if (typeof handler !== 'function') return  // no-op if not defined
@@ -161,7 +161,7 @@ describe('devtoolsPlugin', () => {
   })
 
   it('injects script tag in dev mode (ctx.server present)', async () => {
-    const { devtoolsPlugin } = await import('../src/build/devtools-plugin.js')
+    const { devtoolsPlugin } = await import('../src/devtools/plugin.js')
     const plugin = devtoolsPlugin({ devtools: { port: 4000 } })
     const handler = plugin.transformIndexHtml?.handler ?? plugin.transformIndexHtml
     if (typeof handler !== 'function') return
@@ -172,7 +172,7 @@ describe('devtoolsPlugin', () => {
   })
 
   it('does NOT inject when devtools.enabled is false', async () => {
-    const { devtoolsPlugin } = await import('../src/build/devtools-plugin.js')
+    const { devtoolsPlugin } = await import('../src/devtools/plugin.js')
     const plugin = devtoolsPlugin({ devtools: { enabled: false, port: 4000 } })
     const handler = plugin.transformIndexHtml?.handler ?? plugin.transformIndexHtml
     if (typeof handler !== 'function') return
@@ -182,7 +182,7 @@ describe('devtoolsPlugin', () => {
   })
 
   it('applies only in serve mode', async () => {
-    const { devtoolsPlugin } = await import('../src/build/devtools-plugin.js')
+    const { devtoolsPlugin } = await import('../src/devtools/plugin.js')
     const plugin = devtoolsPlugin({})
     expect(plugin.apply).toBe('serve')
   })

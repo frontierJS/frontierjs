@@ -22,7 +22,7 @@
 // of `address` and `ref` in api/app.ts and nothing else.
 
 import type { App } from '@frontierjs/junction'
-import type { IMail, MailMessage, SendResult } from '@frontierjs/junction'
+import type { IMail, MailMessage, SendResult } from '@frontierjs/junction/mail'
 
 export const MAIL_TARGET = 'provider:mail'
 

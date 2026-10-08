@@ -25,7 +25,7 @@
   // schema registry answers by hand — the same escape `createResource('lenses',
   // { model: 'Lens' })` takes. Without it the resource resolves no definition,
   // and every affordance it offers answers from nothing (`FJS-999`).
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // `idField: null` is a STATEMENT, not a default being skipped: a projection
   // declares columns and no key, so there is no row identity to hold. The store

@@ -165,17 +165,6 @@ export interface AppConfig {
   // two instances behind a load balancer do not share it.
   idempotency?: import('../core/idempotency.ts').IdempotencyConfig
 
-  // Workers
-  workers: {
-    dir:        string
-  }
-
-  // Database
-  database?: {
-    url:        string         // bun:sqlite path or ':memory:'
-    log?:       boolean        // log SQL statements to console
-  }
-
   // AI
   /**
    * Outbound mail defaults.
@@ -269,10 +258,6 @@ export const defaultConfig: AppConfig = {
     enabled:    true,
     ttl:        '24 hours',
     pendingTtl: '2 minutes',
-  },
-
-  workers: {
-    dir: './workers',
   },
 }
 

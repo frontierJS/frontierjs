@@ -72,7 +72,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       // app.stop() races http.stop() against this. Bun's stop() without
       // force never closes WebSockets and they never drain on their own, so

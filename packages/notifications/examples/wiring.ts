@@ -36,7 +36,7 @@ model Notification {              // PascalCase singular → accessor db.notific
 
 /*
 import { notificationsPlugin } from '@frontierjs/notifications'
-import { mailerPlugin, createResendMailer } from '@frontierjs/junction'
+import { mailerPlugin, createResendMailer } from '@frontierjs/junction/mail'
 
 // mailerPlugin must be configured before notificationsPlugin
 app.configure(mailerPlugin(createResendMailer({

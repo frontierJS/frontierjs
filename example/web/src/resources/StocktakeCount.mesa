@@ -12,7 +12,7 @@
   // — a generated form over the row would ask for `expected` as if it were an
   // opinion.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const counts = createResource('stocktake-counts', { model: 'StocktakeCount' })
 </script>

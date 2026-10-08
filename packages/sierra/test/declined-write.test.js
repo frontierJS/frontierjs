@@ -23,7 +23,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { buildFieldRules, declinedFields } from '../src/junction/field-rules.js'
+import { buildFieldRules, declinedFields } from '../src/resource/field-rules.js'
 
 // The shape litestone emits: `x-litestone-write-policy` on the policed column
 // and nothing on the others. Written as a model definition rather than as a

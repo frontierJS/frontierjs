@@ -20,7 +20,6 @@ function bareApp() {
   return createApp({
     config: {
       port:     3398,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 200 },
     },

@@ -189,7 +189,6 @@ describe('the server merges only what the app declared', () => {
     app = createApp({
       config: {
         port: 0,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 250, callHeaders: ['X-Cart-Token'] },
       },

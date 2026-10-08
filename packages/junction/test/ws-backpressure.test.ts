@@ -146,7 +146,6 @@ describe('a burst big enough to drop frames still delivers every one', () => {
     app = createApp({
       config: {
         port: 0,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         // The held queue has to cover what Bun drops — 20MB of it here. The
         // 8MB default would close this socket instead, which is the other

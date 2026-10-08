@@ -24,7 +24,7 @@ title: Pickup points
   // carries its point and this page knows the center, so one kit call answers
   // *2.3 mi away* with no server contract at all.
   import { pickupPoints } from '@/resources/PickupPoint.mesa'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { prefs }   from '@/stores/prefs.js'
   import { distance, isPoint } from '@frontierjs/toolbelt/geo'
   import { formatDistance }    from '@frontierjs/toolbelt/units'

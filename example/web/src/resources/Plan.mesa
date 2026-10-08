@@ -10,7 +10,7 @@
   // client as an ordinary readOnly column, so a list of plans and their prices
   // is ONE query and never a join a screen writes.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const plans = createResource('plans')
 </script>

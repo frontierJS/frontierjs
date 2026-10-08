@@ -1,5 +1,24 @@
 # Changes — @frontierjs/junction
 
+## 2026-10-08 — the edge: four axes and a host, batteries behind subpaths (`FJS-D639`–`FJS-D644`)
+
+**The main entry re-exports no battery.** Mail, AI, cache, scheduler, email, webhooks, openapi, outbox, backfill, commitments, manifest, devtools, export and metrics each come from their own subpath. `./export` and `./metrics` are new. `buildRoutes` and `serializeHookMap` moved from the manifest plugin into `core/app-model.ts` and are on the main entry. `test/edge.test.ts` grades the edge in five ways: every `src/` directory is classified, no axis file imports a battery outside its allow-list, every allow-list row is still used, the entry re-exports no battery, and every battery has a subpath. The allow-list rows are `cache/` and `scheduler/`, which `FJS-D640` keeps constructed, and `plugins/declared.ts`. That module holds the `config.plugins` installer, moved out of `core/app.ts` (`FJS-D256`, pending `FJS-D645`).
+
+**One slot pattern.** `App.cache`, `scheduler`, `mail`, `ai`, `email`, `outbox`, `commitments` and `webhooks` are typed `AppCache` … `AppWebhooks`. Each is empty in `app.ts`, and its battery augments it. `ctx.enqueue` writes through `app.outbox.enqueue` and refuses when no relay is installed. The core asks for `OutboxRelay`, the half a call needs.
+
+**Deleted:** `workers/` with `config.workers`; `storage/database/` (`createDatabase`, `createInMemoryDatabase`) with `config.database`; the better-auth adapter; and `tools/{init,setup,generators,ui,build-app}` with their bin commands and scripts. The deletions changed four other things:
+
+- `createTestApp` makes no database, and its `seed:` option is gone.
+- `webhooks()` requires `store`, and `createSqliteWebhookStore` takes a bun:sqlite `Database`.
+- `/health` has no built-in `database` check, which only recognized the opener's wrapper.
+- The REPL loses `setup` and `litestone`. `litestone` ran a file that did not exist.
+
+`core/outbox.ts` and `core/backfill.ts` are `plugins/{outbox,backfill}/engine.ts`. `context-contract.test.ts` names every `ServiceContext` field's axis, and `config-surface.test.ts`'s rows carry one. Proof: `bun run test`, 2639 pass, 0 fail; typecheck clean.
+
+## 2026-10-07 — a webhook is graded as its subscriber, not its audience (`FJS-D636`)
+
+`WebhookAudience` is `WebhookSubscriber` and `shapeForAudience` is `shapeForSubscriber`, with its `audience:` argument now `subscriber:`, the name the registration's field already had. The principal a delivery is graded as is a Principal under `FJS-D633`, and *audience* is left to litestone's `audience: 'client' | 'system'` and to the deploy sense `FJS-D636` holds open. Nothing changed in behavior. 2650 pass.
+
 ## 2026-10-07 — the broadcast hook is `announce()`, and presence is `set()` / `clear()` (`FJS-D631`)
 
 `publish()` is `announce()`, the verb `FJS-D393` gave an Event. The family moves with it: `AnnounceFn`, `app.channels.announceDefault()`, the channel manager's `announce()`, `markAnnounceHook` / `isAnnounceHook`, `announceToChannels` inside `callService`, `ChannelDeclaration` for the type of `channel:`, and the `junction.channel.announce` telemetry event. The `publish as publishToChannels` export alias is removed. A service whose own custom METHOD is called `publish` is untouched, which is the reason `FJS-D79` named the option `channel`. `client.presence.announce()` / `release()` are `set()` / `clear()`, so `announce` has one meaning in the package. `test/publish-default.test.ts` and `test/publish-grading.test.ts` are `announce-default` and `announce-grading`. Proof: `bun run test`, 2650 pass.

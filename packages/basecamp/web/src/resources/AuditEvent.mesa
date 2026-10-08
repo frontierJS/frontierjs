@@ -5,7 +5,7 @@
   // because a trail anyone can write to answers no question worth asking.
   // No coerce/validate/blankToNull — those shape a payload being SENT, and
   // nothing is ever sent here.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // The service noun does not singularize to the model name — `audit` is
   // already singular, so the registry would resolve `Audit`, find nothing, and

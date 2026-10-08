@@ -33,19 +33,23 @@ import { createApp } from '../src/core/app.ts'
 // whose `how` is `registration` says so out loud: it is the weaker claim, and
 // it is what a middleware with no visible effect on a response leaves available.
 
-const COVERED: Record<string, { section: 'middleware' | 'plugins'; how: 'behavior' | 'registration' }> = {
-  cors:          { section: 'middleware', how: 'behavior' },
-  callHeaders:   { section: 'middleware', how: 'behavior' },
-  helmet:        { section: 'middleware', how: 'behavior' },
-  requestLogger: { section: 'middleware', how: 'registration' },
-  correlationId: { section: 'middleware', how: 'behavior' },
-  rateLimit:     { section: 'middleware', how: 'behavior' },
-  bodyLimit:     { section: 'middleware', how: 'behavior' },
-  csrf:          { section: 'middleware', how: 'behavior' },
-  health:        { section: 'plugins',    how: 'behavior' },
-  manifest:      { section: 'plugins',    how: 'behavior' },
-  openapi:       { section: 'plugins',    how: 'behavior' },
-  devtools:      { section: 'plugins',    how: 'registration' },
+// `axis` is FJS-D639's question asked of a key: which of the four a call has,
+// or the host that holds them, or a battery the key installs.
+type Axis = 'admission' | 'call' | 'carriage' | 'announcement' | 'host' | 'battery'
+
+const COVERED: Record<string, { section: 'middleware' | 'plugins'; how: 'behavior' | 'registration'; axis: Axis }> = {
+  cors:          { section: 'middleware', how: 'behavior',     axis: 'admission' },
+  callHeaders:   { section: 'middleware', how: 'behavior',     axis: 'carriage' },
+  helmet:        { section: 'middleware', how: 'behavior',     axis: 'carriage' },
+  requestLogger: { section: 'middleware', how: 'registration', axis: 'carriage' },
+  correlationId: { section: 'middleware', how: 'behavior',     axis: 'carriage' },
+  rateLimit:     { section: 'middleware', how: 'behavior',     axis: 'admission' },
+  bodyLimit:     { section: 'middleware', how: 'behavior',     axis: 'carriage' },
+  csrf:          { section: 'middleware', how: 'behavior',     axis: 'admission' },
+  health:        { section: 'plugins',    how: 'behavior',     axis: 'host' },
+  manifest:      { section: 'plugins',    how: 'behavior',     axis: 'battery' },
+  openapi:       { section: 'plugins',    how: 'behavior',     axis: 'battery' },
+  devtools:      { section: 'plugins',    how: 'registration', axis: 'battery' },
 }
 
 /** The keys an interface declares, read off the source it is declared in. */

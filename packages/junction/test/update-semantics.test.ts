@@ -41,7 +41,7 @@ async function appWith() {
   const db  = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({
     db: db as never,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
   })
   app.services.register(createService({ name: 'docs',   model: 'Doc'   } as never))
   app.services.register(createService({ name: 'plains', model: 'Plain', allowBulk: true } as never))

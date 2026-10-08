@@ -14,7 +14,7 @@
   // a model's default FORM, and a projection has nothing to write to: every
   // write verb on a view refuses by name at the Data boundary, and the service
   // declares `methods: 'readOnly'` so the router answers 405 before that.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // `idField: null` is a STATEMENT, not a default being skipped: a projection
   // declares columns and no key, so there is no row identity to hold. The store

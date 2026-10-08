@@ -20,7 +20,7 @@ import '@frontierjs/css'
 import './resources/InventoryMovement.mesa'
 import './resources/ProductVariant.mesa'
 
-import { getClient }        from '@frontierjs/sierra/junction'
+import { getClient }        from '@frontierjs/sierra/resource'
 import { useCartClient }    from './stores/cart.js'
 import { loadShopCalendar } from './datetime.js'
 import './displays.js'

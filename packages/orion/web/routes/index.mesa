@@ -4,7 +4,7 @@ title: Automations
 <script>
   // Every flow this caller can read, and a way to start one.
   import Flow, { flows } from '../resources/Flow.mesa'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

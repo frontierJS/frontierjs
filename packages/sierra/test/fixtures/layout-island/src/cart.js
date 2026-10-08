@@ -1,5 +1,5 @@
 // The hop the real one had: an island does not import junction, a store does.
-import { getClient } from '@frontierjs/sierra/junction'
+import { getClient } from '@frontierjs/sierra/resource'
 
 let items = []
 export function count()  { return items.length }

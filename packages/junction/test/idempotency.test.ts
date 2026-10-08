@@ -281,7 +281,7 @@ describe('over the socket', () => {
   test('two frames with the same key in meta.headers run the create once', async () => {
     const { svc, calls } = countingService('things')
     const app: any = createApp({
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+      config: { port: 0, services: { dir: '/nonexistent' },
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
     app.setAuth({ async verifySession(t: string) { return t === 'alice' ? { userId: 'u-alice', userType: 'user', roles: [], scopes: [] } : null } })

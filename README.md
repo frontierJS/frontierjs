@@ -151,7 +151,7 @@ export function createLeadsService() {
 // web/src/resources/Lead.mesa — API → UI connection
 
 <script module>
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const leads = createResource('leads', {
     model: 'Lead',

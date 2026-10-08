@@ -155,7 +155,7 @@ The three answers are the second open question below.
   computed once, so the Resource file — the one place outside a component the
   layout already provides — cannot derive either. The road is being kept: `example/`
   and `basecamp` write no `createMemo` or `createEffect` in a `.js` module, and
-  the framework's own (`sierra/src/junction/list.js`, `router/signals.js`,
+  the framework's own (`sierra/src/resource/list.js`, `router/signals.js`,
   `ui/dnd.js`, jetty's `mesa-bridge.js`) create signals as sources rather than
   derive.
   - **A** — RULE 51 stands. A derivation shared by two components is computed at

@@ -22,7 +22,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => ({
@@ -33,8 +33,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource, ResourceHookError } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource, ResourceHookError } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const DEFS = {
   Lead: {

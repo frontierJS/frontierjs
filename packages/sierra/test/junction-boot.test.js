@@ -92,13 +92,13 @@ const CONFIG = {
 
 /** Fresh module instance so _client state doesn't leak between tests. */
 async function freshInitJunction() {
-  const mod = await import('../src/junction/index.js?t=' + Math.random())
+  const mod = await import('../src/resource/index.js?t=' + Math.random())
   return mod.initJunction
 }
 
 /** Fresh module instance, returning both entry points. */
 async function freshModule() {
-  return import('../src/junction/index.js?t=' + Math.random())
+  return import('../src/resource/index.js?t=' + Math.random())
 }
 
 /** Advance fake time in steps until `flag()` is true; report where it settled. */

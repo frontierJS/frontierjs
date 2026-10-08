@@ -1,5 +1,9 @@
 # Changes — example
 
+## 2026-10-08 — the Resource is imported from `@frontierjs/sierra/resource` (`FJS-D650`)
+
+Every resource file, route, store and drive helper that imported `@frontierjs/sierra/junction` now imports `@frontierjs/sierra/resource`; sierra kept nothing for the old subpath. `verify` failed the same three checks with and without the rename (`FJS-2028`), and `verify:site` passed 45/45.
+
 ## 2026-10-07 — prose follows junction's `announce()` rename (`FJS-D631`)
 
 `api/src/services/payments.service.ts` names `announceDefault`, and `api/src/core/channels.ts` says *broadcast* where it said *publish*; `web/test/verify-live.mjs` likewise. No behavior changes.

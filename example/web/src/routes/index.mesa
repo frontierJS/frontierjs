@@ -6,7 +6,7 @@ title: Home
   import { prefs }   from '@/stores/prefs.js'
   import { orders }    from '../resources/Order.mesa'
   import { customers } from '../resources/Customer.mesa'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import AvatarGroup   from '@frontierjs/ui/components/display/AvatarGroup.mesa'

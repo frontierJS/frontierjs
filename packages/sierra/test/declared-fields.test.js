@@ -16,7 +16,7 @@ let CALLS = []
 let ANSWER = []
 let FAIL = false
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: (name) => ({
       on: () => {},
@@ -33,8 +33,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource, resetResourcesForIdentityChange } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource, resetResourcesForIdentityChange } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const str = { type: 'string' }
 const DEFS = {

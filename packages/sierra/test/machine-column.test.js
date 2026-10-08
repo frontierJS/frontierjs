@@ -11,7 +11,7 @@
 
 import { describe, test, expect, vi } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ on: () => {} }),
     resource: () => ({
@@ -23,9 +23,9 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { buildFieldRules, formFieldList, stripReadOnly, validateAgainstFields } =
-  await import('../src/junction/field-rules.js')
-const { createResource }  = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+  await import('../src/resource/field-rules.js')
+const { createResource }  = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const TODO = {
   type: 'object',

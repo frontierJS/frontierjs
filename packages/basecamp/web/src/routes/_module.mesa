@@ -3,7 +3,7 @@ siteName: Basecamp
 ---
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
-  import { status, useStore } from '@frontierjs/sierra/junction'
+  import { status, useStore } from '@frontierjs/sierra/resource'
   import { session, signOut, switchWorkspace } from '../session.js'
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'

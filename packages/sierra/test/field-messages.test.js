@@ -14,10 +14,10 @@
 
 import { describe, test, expect, vi } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => null }))
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
 const { buildFieldRules, validateAgainstFields, fieldLabel } =
-  await import('../src/junction/field-rules.js')
+  await import('../src/resource/field-rules.js')
 
 const ORDER = {
   type: 'object',

@@ -1,5 +1,15 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-08 — a site names its preset (`FJS-D605`, `FJS-D648`)
+
+`preset: '@kobami/ksite'` in the default export of `content/settings/site.js` names a package that adds to the site. Its `./preset` export is a function of `{ root, content, settings }`, where `settings` is the whole module, named exports included. It returns `sierra` (merged over site-kit's config and under the site's own keys), `plugins` (Vite plugins after Sierra's), and `shell` (`{ html, entry }`, the dev document and the file `/@site-kit/main.js` resolves to). `config/preset.js` loads it, and every way of failing to load one stops the build by name: a package that does not resolve from the site, one with no `./preset` export, a default that is not a function, a returned key outside those three, or a shell missing a half. A site that built without its preset would ship every page without its blocks.
+
+A preset can move neither the routes folder (`content/routes`, `FJS-D606`) nor `_configPath`, which stays the site's settings file, so the browser always reads the site's `theme`. `siteShell()` now takes `{ html, entry }`.
+
+`bin/site-kit.js` runs the site's vite, its peer, through `Bun.resolveSync('vite', root)` (`FJS-2026`). A bare import from a linked site-kit found the frontierjs workspace's copy, and Vite looks for a preset's `sass` beside its own copy.
+
+ksite is the first preset. It builds through `site-kit build site`, 4/4 pixel-exact from the workspace and from a tarball install, in dev and in the build. `test/preset.mjs` covers the loader. The website's `bun run test` is identical to its run before the change.
+
 ## 2026-10-04 — `--host` opens a server to the LAN
 
 `site-kit dev` and `site-kit preview` both take `--host`, which makes them listen on every interface. Without it, both answer on localhost only. Before this, `dev` was localhost-only with no way to change it, while `preview` was always on `0.0.0.0` through Sierra's `serveSite` default. `--host` takes no value, so `site-kit dev --host site` still reads `site` as the directory.

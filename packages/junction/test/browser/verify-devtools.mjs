@@ -35,7 +35,8 @@ const here     = new URL('.', import.meta.url).pathname
 // The app is a separate process on purpose: devtools binds its own Bun server,
 // and a drive that imported it would hold the port for the life of the runner.
 const APP = `
-import { createApp, createService, healthPlugin, devtools, defaultConfig } from '${join(here, '../../index.ts')}'
+import { createApp, createService, healthPlugin, defaultConfig } from '${join(here, '../../index.ts')}'
+import { devtools } from '${join(here, '../../src/plugins/devtools/index.ts')}'
 import { createCaravan, defineJob } from '${join(here, '../../../caravan/src/index.ts')}'
 
 // Fails its first attempt and succeeds on the next, so a retry driven from the
@@ -48,7 +49,7 @@ const boom  = defineJob('flaky-job', async () => {
 }, { maxAttempts: 1, timeout: 5000 })
 const sweep = defineJob('nightly-sweep', async () => 1, { cron: '0 3 * * *' })
 
-const app = createApp({ config: { port: ${APP_PORT}, database: { url: '', log: false },
+const app = createApp({ config: { port: ${APP_PORT},
   services: { dir: '/nonexistent' }, http: { ...defaultConfig.http, drainTimeout: 200 } } })
 
 const queue = createCaravan({ db: '${join(dir, 'jobs.db')}', pollInterval: 50 })

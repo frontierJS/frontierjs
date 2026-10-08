@@ -14,7 +14,6 @@ import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
-import { createDatabase, type DatabaseClient } from '../storage/database/index.ts'
 import { autoloadServices }         from './loader.ts'
 import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
 import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from './attachments.ts'
@@ -28,10 +27,7 @@ import { createLogger, noopLogger }             from './logger.ts'
 import type { ILogger, LoggerOptions }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
 import type { IAuth, SessionVerifier } from '../auth/types.ts'
-import type { IMail }               from '../mail/index.ts'
-import type { ICache }              from '../cache/index.ts'
 import type { IEventBus }           from '../events/index.ts'
-import type { AIRegistry }          from '../ai/index.ts'
 import type { RouteHandler, MiddlewareFn, WsHandlerSet } from '../transport/types.ts'
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────
@@ -190,6 +186,24 @@ export interface AppJobs {}
  */
 export interface AppNotify {}
 
+/**
+ * The slots of the batteries junction ships itself (`FJS-D639`, `FJS-D640`).
+ *
+ * The AppJobs contract, for the same reason: each battery augments its own slot
+ * from its own module, so the core names no battery's type, and `app.mail` in an
+ * app that never imported `@frontierjs/junction/mail` is a type error rather than
+ * a property typed by a module nobody loaded. `createApp` constructs the cache
+ * and the scheduler (`FJS-D640`), so those two augmentations are always present.
+ */
+export interface AppCache {}
+export interface AppScheduler {}
+export interface AppMail {}
+export interface AppAI {}
+export interface AppEmail {}
+export interface AppOutbox {}
+export interface AppCommitments {}
+export interface AppWebhooks {}
+
 /** What `app.runAs` may be told beyond the principal. */
 export interface RunAsOptions {
   /**
@@ -235,10 +249,9 @@ export interface App {
   /**
    * The application's database client.
    *
-   * Whatever was passed as `createApp({ db })`, or a raw bun:sqlite handle when
-   * only `config.database.url` was set. Typed loosely because both a Litestone
-   * client and a plain table-shaped object are valid — `createBaseService`
-   * adapts the latter.
+   * Whatever was passed as `createApp({ db })`. Typed loosely because both a
+   * Litestone client and a plain table-shaped object are valid —
+   * `createBaseService` adapts the latter.
    *
    * Augment `AppDb`, don't redeclare this field.
    */
@@ -252,15 +265,15 @@ export interface App {
   services:  ServiceRegistry
   events:    IEventBus
   telemetry: IEventBus   // low-level instrumentation bus — subscribe to 'junction.call'
-  cache:     ICache
-  scheduler: ReturnType<typeof createScheduler>
+  cache:     AppCache
+  scheduler: AppScheduler
   http:      HttpTransport
 
   // Optional — registered via configure()
   auth?:     SessionVerifier
-  mail?:     IMail
-  ai?:       AIRegistry
-  email?:    import('../plugins/email/types.ts').IEmail
+  mail?:     AppMail
+  ai?:       AppAI
+  email?:    AppEmail
   // Conduit is provided by @frontierjs/conduit. Typed as the augmentable
   // AppConduit below rather than `unknown`, so in-tree code (email/campaign)
   // can read app.conduit without a hard dep AND the conduit package can
@@ -277,16 +290,13 @@ export interface App {
   // rule as `conduit` above — never redeclare this property in the plugin.
   jobs?:     AppJobs
 
-  // The outbox relay, when `app.configure(outbox())` installed one. Declared
-  // concretely rather than as an augmentable slot: unlike conduit and caravan
-  // this plugin ships inside junction, so there is no dependency to avoid.
+  // The outbox relay, when `app.configure(outbox())` installed one.
   // `ctx.enqueue` refuses when it is absent — a row nothing delivers is worse
   // than a refusal.
-  outbox?:   import('./outbox.ts').OutboxApi
+  outbox?:   AppOutbox
 
   // The commitments sweep, when `app.configure(commitments())` installed one.
-  // Concrete for the reason `outbox` is.
-  commitments?: import('../plugins/commitments/index.ts').CommitmentsApi
+  commitments?: AppCommitments
 
   // Notifications are provided by @frontierjs/notifications, which attaches
   // app.notify in its register(). Same augmentable-interface rule: the plugin
@@ -307,16 +317,14 @@ export interface App {
   addOpenApiPaths?: (paths: Record<string, unknown>) => void
 
   // Webhooks manager — available after app.configure(webhooks(...)).
-  // Typed here so plugins attach via plain assignment, not type-erasing
-  // casts (the standard plugin-attachment pattern).
-  webhooks?: import('../plugins/webhooks/index.ts').WebhookManager
+  webhooks?: AppWebhooks
 
   // ── Internal plugin/subsystem attachment points (typed, not casts) ──
   /** OpenAPI extra paths registered via addOpenApiPaths(). */
   _openapiExtraPaths?: Record<string, unknown>
   /** Per-app service cache — created lazily by cache-declaring services,
    *  destroyed by stop(). See resolveCache in core/service.ts. */
-  _serviceCache?: ICache
+  _serviceCache?: AppCache
 
   // ── Service caller — Feathers-style internal service calls ────────
   //
@@ -686,9 +694,6 @@ export interface AppOptions {
    *
    * which is an option with exactly one correct answer — omitting it left
    * services running against an unscoped client. Passing `db` here does it.
-   *
-   * Takes precedence over `config.database.url`, which creates a raw bun:sqlite
-   * handle and is the older, lower-level path.
    */
   db?:          unknown
   /**
@@ -745,8 +750,8 @@ export interface AppOptions {
    * policies scope every query — so pass `db` there as usual.
    */
   tenants?:     import('./litestone.ts').TenantRegistryLike
-  mail?:        IMail
-  ai?:          AIRegistry
+  mail?:        AppMail
+  ai?:          AppAI
   /**
    * Service auto-discovery. ON by default: the `services/` directory next
    * to your entry file (Bun.main) is scanned for *.service.ts files.
@@ -997,19 +1002,12 @@ export function createApp(opts: AppOptions = {}): App {
   const scheduler = createScheduler({ held: true })
 
   // ── Database (optional) ──────────────────────────────────────────────
-  // Two ways in, in priority order:
-  //
-  //   1. opts.db            — a client you built (Litestone, or anything
-  //                           table-shaped that createBaseService can adapt)
-  //   2. config.database.url — creates a raw bun:sqlite handle
-  //
-  // Either way it lands on app.db, so services and hooks have one place to
-  // look. If the client supports $setAuth, per-request scoping is installed
-  // further down — see "Litestone scoping".
-  let db: unknown = opts.db
-  if (!db && config.database?.url) {
-    db = createDatabase({ path: config.database.url, log: config.database.log })
-  }
+  // One way in (`FJS-D641`): a client you built — Litestone, or anything
+  // table-shaped that createBaseService can adapt. It lands on app.db, so
+  // services and hooks have one place to look. If the client supports
+  // $setAuth, per-request scoping is installed further down — see
+  // "Litestone scoping".
+  const db: unknown = opts.db
 
   const http      = new HttpTransport({
     port:        config.port,
@@ -1845,8 +1843,9 @@ export function createApp(opts: AppOptions = {}): App {
 
       // The plugins an app declared. Refuses a plugin declared here AND
       // configured by hand: that is two owners for one route, and which of them
-      // wins is hook order.
-      { name: 'config-plugins', run: () => applyConfiguredPlugins(app, config, plugins) },
+      // wins is hook order. `plugins/declared.ts` is the one module under
+      // plugins/ the core names (`FJS-D256`), so the core names no battery.
+      { name: 'config-plugins', run: async () => (await import('../plugins/declared.ts')).applyConfiguredPlugins(app, config, plugins) },
 
       // register() already ran synchronously in configure(); async rejections
       // were captured there. Refuse to boot on one rather than run half-configured.
@@ -2281,67 +2280,6 @@ function applyConfiguredMiddleware(app: App, config: AppConfig): void {
 
   const rl = http.requestLogger
   if (rl) app.configure(requestLogger(typeof rl === 'object' ? rl as Record<string, never> : {}))
-}
-
-// ─── Declared plugins ─────────────────────────────────────────────────────
-/**
- * Install the plugins `config.plugins` declares.
- *
- * The line between this and `app.configure()` is what the option TAKES: data is
- * declared, code is constructed (`FJS-D256`). `health.checks`, `health.authFn`
- * and `manifest.db` are the three options here that are not data — an app
- * needing one configures the plugin by hand and declares nothing, and
- * `manifest.db` is not even a gap, since a manifest installed from here is
- * handed `app.db` already.
- *
- * Declaring a plugin here AND configuring it by hand is refused by name: two
- * registrations mount two routes on one path, and which answers is the order
- * they were added in.
- */
-async function applyConfiguredPlugins(app: App, config: AppConfig, configured: Plugin[]): Promise<void> {
-  const declared = (config.plugins ?? {}) as Record<string, unknown>
-  const byHand   = new Set(configured.map(p => p.name))
-
-  const clash = Object.keys(declared).filter(k => declared[k] && byHand.has(k))
-  if (clash.length) {
-    throw new Error(
-      `[Junction] ${clash.map(c => `'${c}'`).join(', ')} ` +
-      `${clash.length === 1 ? 'is' : 'are'} declared in config AND configured by hand. ` +
-      `One owner: declare it in junction.config.js's \`plugins:\`, or call ` +
-      `app.configure() and leave it out of the file. Configure by hand where the ` +
-      `plugin needs CODE — health's \`checks\`/\`authFn\` cannot be written in config.`
-    )
-  }
-
-  const opts = (k: string): Record<string, unknown> =>
-    typeof declared[k] === 'object' ? declared[k] as Record<string, unknown> : {}
-
-  // Imported on demand rather than at the top of this file: core would
-  // otherwise depend on every plugin under it, and an app declaring none would
-  // still load openapi's reference page and devtools' second server.
-  if (declared.health) {
-    const { healthPlugin } = await import('../transport/health.ts')
-    app.configure(healthPlugin(opts('health')))
-  }
-  // `db` is derived rather than declared: the manifest wants the client the app
-  // was built with, and there is exactly one.
-  if (declared.manifest) {
-    const { manifestPlugin } = await import('../plugins/manifest/index.ts')
-    app.configure(manifestPlugin({ ...opts('manifest'), ...(app.db ? { db: app.db } : {}) }))
-  }
-  if (declared.openapi) {
-    const { openapi } = await import('../plugins/openapi/index.ts')
-    const o = opts('openapi')
-    app.configure(openapi({
-      title:   (o.title   as string) ?? (config.name as string | undefined) ?? 'API',
-      version: (o.version as string) ?? '1.0.0',
-      ...o,
-    } as Parameters<typeof openapi>[0]))
-  }
-  if (declared.devtools) {
-    const { devtools } = await import('../plugins/devtools/index.ts')
-    app.configure(devtools(opts('devtools')))
-  }
 }
 
 /**

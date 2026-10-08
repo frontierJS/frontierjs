@@ -23,6 +23,7 @@ import { routeTablePath } from '../scanner/generate-route-table.js'
 // from the virtual:sierra module (which has no file path context for Node resolution).
 const _monoRoot   = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))))
 const _sierraRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const _sierraExports = JSON.parse(readFileSync(resolve(_sierraRoot, 'package.json'), 'utf8')).exports
 
 const VIRTUAL_ID = 'virtual:sierra'
 const RESOLVED_ID = '\0virtual:sierra'
@@ -239,46 +240,14 @@ export function virtualSierraPlugin(config, sierraContext) {
 
       // Resolve 'sierra/*' imports that originate from the virtual:sierra module.
       // Virtual modules have no file-system path, so Node can't walk up to find
-      // node_modules. We resolve them directly to sierra's source files.
+      // node_modules. They resolve through sierra's own `exports`: a list of
+      // subpaths kept here as well is a second copy, and it drifts.
       if (importer === RESOLVED_ID || importer === RESOLVED_CONFIG_ID) {
         const sub = id.startsWith('sierra/') ? id.slice('sierra/'.length)
                   : id.startsWith('@frontierjs/sierra/') ? id.slice('@frontierjs/sierra/'.length)
                   : null
-        if (sub) {
-          // Map known subpaths directly — mirrors the exports field in package.json
-          const subpathMap = {
-            'router':          'src/router/index.js',
-            'router/internals':'src/router/internals.js',
-            'theme':           'src/theme/index.js',
-            'junction':        'src/junction/index.js',
-            'analytics':       'src/analytics/index.js',
-            'fetch':           'src/fetch/index.js',
-          }
-          const rel = subpathMap[sub]
-          if (rel) return resolve(_sierraRoot, rel)
-        }
-      }
-      // Resolve 'sierra/*' imports that originate from the virtual:sierra module.
-      // Virtual modules have no file-system path, so Node can't walk up to find
-      // node_modules. We resolve them directly to sierra's source files.
-      if (importer === RESOLVED_ID || importer === RESOLVED_CONFIG_ID) {
-        const sub = id.startsWith('sierra/') ? id.slice('sierra/'.length)
-                  : id.startsWith('@frontierjs/sierra/') ? id.slice('@frontierjs/sierra/'.length)
-                  : null
-        if (sub) {
-          const subpathMap = {
-            'router':           'src/router/index.js',
-            'router/internals': 'src/router/internals.js',
-            'theme':            'src/theme/index.js',
-            'junction':         'src/junction/index.js',
-            'analytics':        'src/analytics/index.js',
-            'fetch':            'src/fetch/index.js',
-            'presence':         'src/presence/index.js',
-            'devtools':         'src/devtools/index.js',
-          }
-          const rel = subpathMap[sub]
-          if (rel) return resolve(_sierraRoot, rel)
-        }
+        const rel = sub && _sierraExports['./' + sub]
+        if (rel) return resolve(_sierraRoot, rel)
       }
     },
 
@@ -339,7 +308,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
   // Junction wiring — enabled when junction.url is configured
   if (config.junction?.url) {
     lines.push(`// ── Junction ───────────────────────────────────────────────────`)
-    lines.push(`import { initJunction } from '@frontierjs/sierra/junction'`)
+    lines.push(`import { initJunction } from '@frontierjs/sierra/resource'`)
     lines.push(``)
     // Not awaited. initJunction is synchronous now and exposes `whenReady`
     // for callers that specifically need the WebSocket transport; awaiting it
@@ -354,7 +323,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
   // a model's field shape without each resource file restating it.
   if (sierraContext?.schemaDefs && Object.keys(sierraContext.schemaDefs).length > 0) {
     lines.push(`// ── Model schemas (generated from ${sierraContext.schemaPath ?? 'schema.lite'}) ──`)
-    lines.push(`import { registerSchemas } from '@frontierjs/sierra/junction'`)
+    lines.push(`import { registerSchemas } from '@frontierjs/sierra/resource'`)
     // The whole $defs table goes over, plus which of its entries are models.
     // The table is what `$ref` points into (enum fields are emitted as
     // {"$ref":"#/$defs/Plan"}), and the model list is what keeps an enum from
@@ -397,7 +366,7 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
   // nothing else.
   if (sierraContext?.deviceSchema && config.offline && config.offline !== true && config.offline.db) {
     lines.push(`// ── The device's own database (offline: { db: true }) ──────────`)
-    lines.push(`import { configureLocalDb } from '@frontierjs/sierra/junction'`)
+    lines.push(`import { configureLocalDb } from '@frontierjs/sierra/resource'`)
     lines.push(
       `configureLocalDb(${JSON.stringify({
         schemaUrl: '/fjs-device-schema.json',

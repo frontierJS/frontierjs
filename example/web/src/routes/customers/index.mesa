@@ -27,7 +27,7 @@ title: Customers
   // one table.
   import Customer, {customers}   from '@/resources/Customer.mesa'
   import { prefs } from '@/stores/prefs.js'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
 
   import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Avatar               from '@frontierjs/ui/components/display/Avatar.mesa'

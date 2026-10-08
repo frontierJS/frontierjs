@@ -36,7 +36,7 @@ export function resourceFile(model, service) {
 // resource names a service and a model; everything a form needs is read back
 // off it at runtime as \`fields\`, \`relations\` and \`gate\`.
 
-import { createResource } from '@frontierjs/sierra/junction'
+import { createResource } from '@frontierjs/sierra/resource'
 
 export const ${service} = createResource('${service}', {
   // Stated rather than inferred, so an irregular plural cannot quietly resolve

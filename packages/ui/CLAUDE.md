@@ -134,7 +134,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   except})` and `resource.options(fk)` — because this kit peers only on mesa and
   css, so importing Sierra to learn what a `Float` is would invert the
   dependency, and because a hand-written form and a generated one have to agree.
-  The table is `sierra/src/junction/field-rules.js`. Children win; `auto` forces
+  The table is `sierra/src/resource/field-rules.js`. Children win; `auto` forces
   either way and renders the generated fields first. **A column the table has no
   control for is warned about by name** — a field missing from a form in silence
   is the failure generating it is meant to end.

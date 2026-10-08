@@ -31,7 +31,7 @@ title: Flow
   // activates to move.
   import { flows } from '../../resources/Flow.mesa'
   import { runs }  from '../../resources/Run.mesa'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

@@ -83,7 +83,7 @@ async function shop(getLevel?: (u: unknown) => number) {
   const { createApp, defaultConfig } = await import('../index.ts')
   const app: any = createApp({
     db,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+    config: { port: 0, services: { dir: '/nonexistent' },
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 

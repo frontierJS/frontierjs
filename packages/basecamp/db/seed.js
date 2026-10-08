@@ -26,10 +26,10 @@
 // the CHECK constraint at insert rather than sliding through.
 
 import { Factory, Seeder, runSeeder, apply } from '@frontierjs/litestone'
-import { createDatabase } from '@frontierjs/junction'
 import { createLitestoneAuth } from '@frontierjs/auth'
 
 import { createBasecampDb } from '../api/src/core/db.ts'
+import { openSqlite }       from '../api/src/core/sqlite.ts'
 import { BLUEPRINTS }        from './blueprints.js'
 import { env } from '../api/src/core/env.ts'
 import { grantsFor } from '../api/src/core/capabilities.ts'
@@ -1023,8 +1023,8 @@ if (import.meta.main) {
   // declares `database main`, and a runner that globs one level up finds
   // nothing and reports success.
   const migrationsDir = new URL('./migrations/main', import.meta.url).pathname
-  const raw = createDatabase({ path: env.DATABASE_URL })
-  const migrated = await apply(raw.db, migrationsDir)
+  const raw = openSqlite(env.DATABASE_URL)
+  const migrated = await apply(raw, migrationsDir)
   if (migrated.unmatched) throw new Error(`[seed] ${migrated.message} — db/migrations/main`)
   raw.close()
 

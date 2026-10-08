@@ -1,3 +1,4 @@
+// @ts-check
 // args.js — what a verb may be passed, and the refusal when it is not.
 //
 // Argument names per verb, the keys a `where`, `orderBy` or aggregate may
@@ -17,6 +18,22 @@ import { hoistedFieldRead } from './field-policy.js'
 // Used in write-data validation to give users actionable typo hints —
 // "Unknown field 'emial' on User. Did you mean: email?". Levenshtein with a
 // small ceiling, since field names are short and typos are usually 1–2 edits.
+/** @import { ModelDef } from '../index.d.ts' */
+/** @import { Ctx } from './field-policy.js' */
+/** @import { Shape } from './client.js' */
+
+/** @typedef {{ model: string, key: string }} Found  a protected name an argument reached, and on which model */
+/**
+ * What the walkers look for, named as the `Shape` facet that holds it: `@guarded`
+ * columns, columns carrying a read predicate, or `@from` aggregates over a
+ * policied target. A relation key hops to the next model through
+ * `shapes[m].relations`, and the facet is read off whichever model the hop
+ * lands on — one walk grades all three.
+ * @typedef {'guardedKeys' | 'fieldReadKeys' | 'policiedAggregates'} ProtectedFacet
+ */
+/** @typedef {Record<string, any>} KeyProblem  one refusal — `key`, `reason`, `message`, and per reason more */
+
+/** @param {string} unknown @param {Iterable<string>} allowed */
 export function suggestKey(unknown, allowed) {
   if (!unknown) return null
   const lower = String(unknown).toLowerCase()
@@ -47,6 +64,7 @@ export function suggestKey(unknown, allowed) {
 // any generated enum grows past it eventually.
 const ENUM_LIST_LIMIT = 12
 
+/** @param {Record<string, any>} meta @param {unknown} offending */
 export function enumOptions(meta, offending) {
   const values = [...meta.values]
   if (values.length <= ENUM_LIST_LIMIT) return `must be one of: ${values.join(', ')}`
@@ -88,6 +106,7 @@ export function enumOptions(meta, offending) {
 // API boundary alone).
 
 /** `{ field → the @point attribute }` for a model, empty for one with none. */
+/** @param {ModelDef} model */
 export function pointFieldsOf(model) {
   return new Map(
     (model?.fields ?? [])
@@ -96,6 +115,7 @@ export function pointFieldsOf(model) {
 }
 
 /** Is this orderBy entry a distance order rather than a sort of the column? */
+/** @param {ReturnType<typeof pointFieldsOf>} points @param {string} key @param {unknown} val */
 function isNearOrderFor(points, key, val) {
   return points.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && val.near != null
 }
@@ -108,6 +128,7 @@ function isNearOrderFor(points, key, val) {
  * near-order contributes nothing, so an orderBy that is ONLY a distance order
  * leaves an empty list and the guard has nothing to say about it.
  */
+/** @param {ReturnType<typeof pointFieldsOf>} points @param {any} orderBy */
 export function liftNearOrders(points, orderBy) {
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   const kept  = []
@@ -150,8 +171,8 @@ export function liftNearOrders(points, orderBy) {
 
 const REL_FILTER_MODES = new Set(['some', 'every', 'none', 'is', 'isNot'])
 const WHERE_LOGIC      = new Set(['AND', 'OR', 'NOT'])
-const NO_KEYS          = new Set()
 
+/** @param {Found[]} found @param {string} accessorName @param {string} method */
 function fieldReadRelationError(found, accessorName, method) {
   const first = found[0]
   const names = [...new Set(found.map(f => `"${f.key}"`))].join(', ')
@@ -168,35 +189,37 @@ function fieldReadRelationError(found, accessorName, method) {
 // Only a relation key or a logical/relation operator is descended into. A
 // nested object under an ordinary column is a typed-Json path, where a key that
 // happens to share a guarded column's name means something else entirely.
-function walkGuardedWhere(where, modelName, g, out, depth = 0) {
+/** @param {any} where @param {string} modelName @param {ProtectedFacet} facet @param {Record<string, Shape>} shapes @param {Found[]} out @param {number} [depth] */
+function walkGuardedWhere(where, modelName, facet, shapes, out, depth = 0) {
   if (!where || typeof where !== 'object' || depth > 12) return out
   if (Array.isArray(where)) {
-    for (const w of where) walkGuardedWhere(w, modelName, g, out, depth + 1)
+    for (const w of where) walkGuardedWhere(w, modelName, facet, shapes, out, depth + 1)
     return out
   }
-  const own  = g.own[modelName] ?? NO_KEYS
-  const rels = g.relationMap?.[modelName] ?? {}
+  const own  = shapes[modelName][facet]
+  const rels = shapes[modelName].relations
   for (const [k, v] of Object.entries(where)) {
-    if (WHERE_LOGIC.has(k)) { walkGuardedWhere(v, modelName, g, out, depth + 1); continue }
+    if (WHERE_LOGIC.has(k)) { walkGuardedWhere(v, modelName, facet, shapes, out, depth + 1); continue }
     if (own.has(k)) { out.push({ model: modelName, key: k }); continue }
     const rel = rels[k]
     if (!rel || !v || typeof v !== 'object') continue
     for (const [mode, inner] of Object.entries(v))
-      if (REL_FILTER_MODES.has(mode)) walkGuardedWhere(inner, rel.targetModel, g, out, depth + 1)
+      if (REL_FILTER_MODES.has(mode)) walkGuardedWhere(inner, rel.targetModel, facet, shapes, out, depth + 1)
   }
   return out
 }
 
-function walkGuardedOrderBy(orderBy, modelName, g, out, depth = 0) {
+/** @param {any} orderBy @param {string} modelName @param {ProtectedFacet} facet @param {Record<string, Shape>} shapes @param {Found[]} out @param {number} [depth] */
+function walkGuardedOrderBy(orderBy, modelName, facet, shapes, out, depth = 0) {
   if (!orderBy || typeof orderBy !== 'object' || depth > 12) return out
-  const own  = g.own[modelName] ?? NO_KEYS
-  const rels = g.relationMap?.[modelName] ?? {}
+  const own  = shapes[modelName][facet]
+  const rels = shapes[modelName].relations
   for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
     if (!item || typeof item !== 'object') continue
     for (const [k, v] of Object.entries(item)) {
       if (own.has(k)) { out.push({ model: modelName, key: k }); continue }
       const rel = rels[k]
-      if (rel && v && typeof v === 'object') walkGuardedOrderBy(v, rel.targetModel, g, out, depth + 1)
+      if (rel && v && typeof v === 'object') walkGuardedOrderBy(v, rel.targetModel, facet, shapes, out, depth + 1)
     }
   }
   return out
@@ -204,15 +227,16 @@ function walkGuardedOrderBy(orderBy, modelName, g, out, depth = 0) {
 
 // An include carries a whole nested read — its own where, orderBy and include —
 // against the target model, so it is the same questions asked one relation along.
-function walkGuardedInclude(include, modelName, g, out, depth = 0) {
+/** @param {any} include @param {string} modelName @param {ProtectedFacet} facet @param {Record<string, Shape>} shapes @param {Found[]} out @param {number} [depth] */
+function walkGuardedInclude(include, modelName, facet, shapes, out, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return out
-  const rels = g.relationMap?.[modelName] ?? {}
+  const rels = shapes[modelName].relations
   for (const [k, v] of Object.entries(include)) {
     const rel = rels[k]
     if (!rel || !v || typeof v !== 'object') continue
-    walkGuardedWhere(v.where, rel.targetModel, g, out, depth + 1)
-    walkGuardedOrderBy(v.orderBy, rel.targetModel, g, out, depth + 1)
-    walkGuardedInclude(v.include, rel.targetModel, g, out, depth + 1)
+    walkGuardedWhere(v.where, rel.targetModel, facet, shapes, out, depth + 1)
+    walkGuardedOrderBy(v.orderBy, rel.targetModel, facet, shapes, out, depth + 1)
+    walkGuardedInclude(v.include, rel.targetModel, facet, shapes, out, depth + 1)
   }
   return out
 }
@@ -235,9 +259,10 @@ function walkGuardedInclude(include, modelName, g, out, depth = 0) {
 // `walkGuardedInclude` already recurses this exact shape to ask whether a
 // column is @guarded. This is the existence check beside it, and it calls the
 // same generic graders the top level does rather than restating their wording.
+/** @param {any} include @param {string} modelName @param {string} method @param {Ctx} ctx @param {boolean} isWrite @param {number} [depth] */
 function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return
-  const rels = ctx.relationMap?.[modelName] ?? {}
+  const rels = ctx.shapes[modelName].relations
   for (const [k, v] of Object.entries(include)) {
     const rel    = rels[k]
     const target = rel && ctx.models?.[rel.targetModel]
@@ -245,11 +270,11 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
     const name = rel.targetModel
 
     const keys = filterableKeysFor(target)
-    for (const d of Object.values(ctx.edgeMap?.[name] ?? {})) keys.filterable.add(d.as)
+    for (const d of Object.values(ctx.shapes[name].edges)) keys.filterable.add(d.as)
     checkWhereKeys(v.where, keys, name, method, isWrite,
-      new Set(Object.keys(ctx.scopeMap?.[name] ?? {})), ctx)
+      new Set(Object.keys(ctx.shapes[name].scopes)), ctx)
     checkWhereKeys(v.cursor, keys, name, method, isWrite,
-      new Set(Object.keys(ctx.scopeMap?.[name] ?? {})), ctx)
+      new Set(Object.keys(ctx.shapes[name].scopes)), ctx)
 
     const { sortable, relations, computed, transient, opaque } = sortableKeysFor(target)
     const problems = collectOrderByKeyProblems(
@@ -263,7 +288,7 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
     if (v.select && typeof v.select === 'object' && !Array.isArray(v.select)) {
       const selectable = new Set()
       for (const f of target.fields) if (!transient.has(f.name)) selectable.add(f.name)
-      for (const d of Object.values(ctx.edgeMap?.[name] ?? {})) selectable.add(d.as)
+      for (const d of Object.values(ctx.shapes[name].edges)) selectable.add(d.as)
       for (const [sk, sv] of Object.entries(v.select)) {
         if (!sv || selectable.has(sk)) continue
         throw new ValidationError([{
@@ -281,9 +306,10 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
 // name on `modelName` to the sort sets of what it points at. Returned lazily
 // per hop rather than built for every model up front, because most orderBys
 // name no relation at all.
+/** @param {Ctx} ctx @param {string} modelName */
 export function sortHopFor(ctx, modelName) {
-  return (relName) => {
-    const rel    = ctx.relationMap?.[modelName]?.[relName]
+  return (/** @type {string} */ relName) => {
+    const rel    = ctx.shapes[modelName].relations[relName]
     const target = rel && ctx.models?.[rel.targetModel]
     if (!target) return null
     return { ...sortableKeysFor(target), model: rel.targetModel, hop: sortHopFor(ctx, rel.targetModel) }
@@ -292,17 +318,20 @@ export function sortHopFor(ctx, modelName) {
 
 // Every place a caller's arguments name a column. `select` is absent on purpose
 // — it is answered by the strip, which is the half that already worked.
-function collectGuardedArgs(args, modelName, g) {
+/** @param {any} args @param {string} modelName @param {ProtectedFacet} facet @param {Record<string, Shape>} shapes */
+function collectGuardedArgs(args, modelName, facet, shapes) {
   if (!args || typeof args !== 'object') return []
+  /** @type {Found[]} */
   const out = []
-  walkGuardedWhere(args.where, modelName, g, out)
-  walkGuardedOrderBy(args.orderBy, modelName, g, out)
-  walkGuardedInclude(args.include, modelName, g, out)
+  walkGuardedWhere(args.where, modelName, facet, shapes, out)
+  walkGuardedOrderBy(args.orderBy, modelName, facet, shapes, out)
+  walkGuardedInclude(args.include, modelName, facet, shapes, out)
   // A cursor is a row's column values, so it compares exactly as a where does.
-  walkGuardedWhere(args.cursor, modelName, g, out)
+  walkGuardedWhere(args.cursor, modelName, facet, shapes, out)
   return out
 }
 
+/** @param {Found[]} found @param {string} accessorName @param {string} method */
 function guardedArgsError(found, accessorName, method) {
   const first  = found[0]
   const names  = [...new Set(found.map(f => `"${f.key}"`))].join(', ')
@@ -326,25 +355,16 @@ function guardedArgsError(found, accessorName, method) {
 // every row that exists: `where: { kidCount: { gt: 1 } }` answered for a
 // parent whose second kid the caller cannot read (FJS-1647). So naming one is
 // refused while the target's read policy applies to this caller, as a gated
-// target's is (FJS-1646). In the walkers' `{ own, relationMap }` shape, so a
-// relation hop and an include are walked the same way a guarded column is.
-const policiedAggCache = new WeakMap()
-function policiedAggregates(ctx) {
-  const key = ctx.fromMap
-  if (!key) return null
-  if (policiedAggCache.has(key)) return policiedAggCache.get(key)
-  const own = {}
-  for (const [model, fields] of Object.entries(key))
-    for (const [name, f] of Object.entries(fields ?? {}))
-      if (f?.aggRef && ctx.policyMap?.[f.aggRef.model]?.read) (own[model] ??= new Set()).add(name)
-  const out = Object.keys(own).length ? { own, relationMap: ctx.relationMap } : null
-  policiedAggCache.set(key, out)
-  return out
-}
+// target's is (FJS-1646). Which aggregates those are is `shape.policiedAggregates`,
+// so a relation hop and an include are walked the same way a guarded column is;
+// this only says whether any model has one, so a schema with none pays nothing.
+/** @param {Ctx} ctx */
+const anyPoliciedAggregate = (ctx) => Object.values(ctx.shapes).some(s => s.policiedAggregates.size > 0)
 
+/** @param {Found[]} found @param {string} accessorName @param {string} method @param {Ctx} ctx */
 function policiedAggregateError(found, accessorName, method, ctx) {
   const first  = found[0]
-  const target = ctx.fromMap[first.model][first.key].aggRef.model
+  const target = ctx.shapes[first.model].fromFields[first.key].aggRef.model
   return new AccessDeniedError(
     `${first.model}: "${first.key}" is a @from aggregate over ${target}, and ${target}'s read policy ` +
     `decides which of its rows this caller counts. A where or an orderBy runs the aggregate over ` +
@@ -358,9 +378,10 @@ function policiedAggregateError(found, accessorName, method, ctx) {
 // edge namespace is a write-side shape the model does not declare, and
 // `withArgValidation` folds it into the caller's own where-key check the same
 // way — so a filter naming one is legitimate and must not be refused.
-export function globalFilterKeysFor(model, edgeMap) {
+/** @param {ModelDef} model @param {Record<string, any>} edges  the model's `@edge` fields — `shape.edges` */
+export function globalFilterKeysFor(model, edges) {
   const keys = filterableKeysFor(model)
-  for (const d of Object.values(edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
+  for (const d of Object.values(edges)) keys.filterable.add(d.as)
   return keys
 }
 
@@ -371,6 +392,7 @@ export function globalFilterKeysFor(model, edgeMap) {
 // `'nope' = 'x'` and empties the model, `{ nope: 'nope' }` compiles to
 // `'nope' = 'nope'` and returns every row of it past a filter that was supposed
 // to narrow. There is nobody to warn.
+/** @param {string} accessor @param {string} modelName @param {KeyProblem} problem */
 export function globalFilterRefusal(accessor, modelName, problem) {
   return `the global filter for "${accessor}" cannot be applied — ` +
          problem.message.replace('%MODEL%', modelName) +
@@ -382,15 +404,15 @@ export function globalFilterRefusal(accessor, modelName, problem) {
 }
 
 const WHERE_REASONS = {
-  computed:  (k) => `'${k}' is a @computed field on %MODEL% — it is derived in JS after the row is read, so SQLite cannot filter by it. `
+  computed:  (/** @type {string} */ k) => `'${k}' is a @computed field on %MODEL% — it is derived in JS after the row is read, so SQLite cannot filter by it. `
                   + `It is not a column, and comparing one is comparing string constants: it matches every row when the value happens to equal '${k}', and none otherwise. `
                   + `To filter by a derived value make it @from or @generated, or store it`,
-  encrypted: (k) => `'${k}' is @encrypted on %MODEL% — the column holds ciphertext under a random IV, so no plaintext can ever equal it and this filter matches nothing. `
+  encrypted: (/** @type {string} */ k) => `'${k}' is @encrypted on %MODEL% — the column holds ciphertext under a random IV, so no plaintext can ever equal it and this filter matches nothing. `
                   + `Use @encrypted(deterministic: true) if the value must be both looked up and read back, @hashed if it only ever needs matching (@secret @hashed if it also wants the lock and the audit trail), `
                   + `or filter on a column that is not encrypted`,
-  transient: (k) => `'${k}' is @transient on %MODEL% — it is a payload key the API accepts and nothing stores, so there is no column to filter by. `
+  transient: (/** @type {string} */ k) => `'${k}' is @transient on %MODEL% — it is a payload key the API accepts and nothing stores, so there is no column to filter by. `
                   + `Filter by what the service wrote instead (a @transient credential is looked up through the row it was lifted into)`,
-  unknown:   (k) => `Unknown field '${k}' in where for %MODEL%`,
+  unknown:   (/** @type {string} */ k) => `Unknown field '${k}' in where for %MODEL%`,
 }
 
 // ─── descending a relation filter ─────────────────────────────────────────────
@@ -430,18 +452,19 @@ const _whereKeyCache = new WeakMap()
 //
 // `asSystem()` discloses everything, and a model declaring no @guarded pays
 // nothing — the same Set is handed straight back.
-export const _guardedNames = (model, ctx) => {
-  const own = ctx?.guardedMap?.own?.[model?.name]
-  return own && own.size && !ctx.isSystem ? own : null
+export const _guardedNames = (/** @type {{ name: string }} */ model, /** @type {Ctx} */ ctx) => {
+  const own = ctx.shapes[model.name].guardedKeys
+  return own.size && !ctx.isSystem ? own : null
 }
 
-export const _shownSet = (set, hidden) => hidden ? new Set([...set].filter(n => !hidden.has(n))) : set
+export const _shownSet = (/** @type {Set<string>} */ set, /** @type {Set<string> | null | undefined} */ hidden) => hidden ? new Set([...set].filter(n => !hidden.has(n))) : set
 
+/** @param {ModelDef} model @param {Ctx} ctx */
 function whereKeysFor(model, ctx) {
   let keys = _whereKeyCache.get(model)
   if (!keys) {
     keys = filterableKeysFor(model)
-    for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
+    for (const d of Object.values(ctx.shapes[model.name].edges)) keys.filterable.add(d.as)
     // Keyed on the MODEL object, which belongs to the parsed schema — so two
     // clients over one schema share the answer and a second schema cannot
     // collide with it.
@@ -450,9 +473,21 @@ function whereKeysFor(model, ctx) {
   return keys
 }
 
+/**
+ * @param {any} where
+ * @param {Set<string>} filterable
+ * @param {Set<string>} computed
+ * @param {Set<string>} encrypted
+ * @param {KeyProblem[]} [out]
+ * @param {Set<string> | null} [scopes]
+ * @param {Set<string> | null} [transient]
+ * @param {{ ctx: Ctx, model: string } | null} [rel]  where this `where` sits, when one relation in
+ * @param {string} [path]
+ * @param {number} [depth]
+ */
 export function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null, transient = null, rel = null, path = '', depth = 0) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out
-  const at = (k) => path ? `${path}.${k}` : k
+  const at = (/** @type {string} */ k) => path ? `${path}.${k}` : k
   for (const [k, v] of Object.entries(where)) {
     if (k === 'AND' || k === 'OR' || k === 'NOT') {
       for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out, scopes, transient, rel, path, depth)
@@ -492,11 +527,11 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
     if (filterable.has(k)) {
       // A relation is filterable AND carries a nested where. Grade that where
       // against the TARGET's columns, or the inner key reaches SQL ungraded.
-      const link = depth < 12 ? rel?.ctx?.relationMap?.[rel.model]?.[k] : null
+      const link = depth < 12 ? rel?.ctx?.shapes[rel.model].relations[k] : null
       const targetModel = link && rel.ctx.models?.[link.targetModel]
       if (targetModel && v && typeof v === 'object' && !Array.isArray(v)) {
         const tk = whereKeysFor(targetModel, rel.ctx)
-        const tScopes = new Set(Object.keys(rel.ctx.scopeMap?.[targetModel.name] ?? {}))
+        const tScopes = new Set(Object.keys(rel.ctx.shapes[targetModel.name].scopes))
         for (const [mode, inner] of Object.entries(v)) {
           if (!REL_FILTER_MODES.has(mode)) {
             // The compiler throws on this as a bare Error, which reaches a
@@ -559,6 +594,18 @@ export function collectWhereKeyProblems(where, filterable, computed, encrypted, 
 //
 // `allowAggregates` is groupBy/aggregate, where `_count` and `_sum` are the
 // point of the query rather than a typo.
+/**
+ * @param {any} orderBy
+ * @param {Set<string>} sortable
+ * @param {Set<string>} relations
+ * @param {Set<string>} computed
+ * @param {Map<string, string>} opaque  key → why it cannot be sorted (`OPAQUE_SORT`'s keys)
+ * @param {boolean} allowAggregates
+ * @param {Set<string> | null} [transient]
+ * @param {KeyProblem[]} [out]
+ * @param {Set<string> | null} [shown]
+ * @param {((relName: string) => any) | null} [hop]
+ */
 export function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, allowAggregates, transient = null, out = [], shown = null, hop = null) {
   if (!orderBy) return out
   // What the caller is TOLD is sortable. Legality stays `sortable`.
@@ -667,14 +714,14 @@ export function collectOrderByKeyProblems(orderBy, sortable, relations, computed
 // Protection is asked separately, in makeTable, because it depends on the
 // CALLER and this does not.
 const AGG_REASONS = {
-  computed: (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a @computed field, a JS function over a row, so it is not a ` +
+  computed: (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is a @computed field, a JS function over a row, so it is not a ` +
                        `column SQLite can aggregate. Make it @generated to aggregate it in SQL, or aggregate in JS after the read.`,
-  from:     (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a @from field, a correlated subquery aliased into the SELECT ` +
+  from:     (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is a @from field, a correlated subquery aliased into the SELECT ` +
                        `rather than a column, so it cannot be aggregated in the same statement. Aggregate the target model instead.`,
-  relation: (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a relation, not a column. Aggregate the related model, or use ` +
+  relation: (/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is a relation, not a column. Aggregate the related model, or use ` +
                        `orderBy: { ${k}: { _count: … } } to sort by it.`,
-  opaque:   (k, op, why) => `Cannot ${op} '${k}' on %MODEL% — it is ${OPAQUE_AGG[why]}. Aggregate a column that holds the value itself.`,
-  transient:(k, op) => `Cannot ${op} '${k}' on %MODEL% — it is @transient, a payload key the API accepts and nothing stores, ` +
+  opaque:   (/** @type {string} */ k, /** @type {string} */ op, /** @type {keyof typeof OPAQUE_AGG} */ why) => `Cannot ${op} '${k}' on %MODEL% — it is ${OPAQUE_AGG[why]}. Aggregate a column that holds the value itself.`,
+  transient:(/** @type {string} */ k, /** @type {string} */ op) => `Cannot ${op} '${k}' on %MODEL% — it is @transient, a payload key the API accepts and nothing stores, ` +
                        `so there is no column to aggregate.`,
 }
 
@@ -690,6 +737,13 @@ const OPAQUE_AGG = {
              `A digest can be matched in a where and never read back, by any caller`,
 }
 
+/**
+ * @param {string[]} names
+ * @param {Record<string, any>} sets  the model's key sets — `aggregatable`, `computed`, `from`, `relations`, `opaque`, `transient`
+ * @param {string} op
+ * @param {any} valueRead
+ * @param {KeyProblem[]} [out]
+ */
 export function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
   const { columns, computed, transient, from, relations, opaque } = sets
   for (const key of names) {
@@ -714,6 +768,15 @@ export function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
   return out
 }
 
+/**
+ * @param {any} where
+ * @param {ReturnType<typeof whereKeysFor>} keys
+ * @param {string} modelName
+ * @param {string} method
+ * @param {boolean} isWrite
+ * @param {Set<string> | null} [scopes]
+ * @param {Ctx | null} [ctx]
+ */
 function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null, ctx = null) {
   // The CONTAINER first. A `where` that is not an object emits no clause at all
   // — `buildWhere` walks its entries and finds no column among them — which is
@@ -747,7 +810,7 @@ function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null, 
     // Both halves, or the fix closes the branch nobody takes: a real typo lands
     // on the suggestion, and `sn` suggested `ssn` before this.
     const hidden     = ctx ? _guardedNames({ name: p.model ?? modelName }, ctx) : null
-    const allowed    = hidden ? p.allowed.filter(n => !hidden.has(n)) : p.allowed
+    const allowed    = hidden ? p.allowed.filter((/** @type {string} */ n) => !hidden.has(n)) : p.allowed
     const suggestion = hidden && p.suggestion && hidden.has(p.suggestion)
       ? suggestKey(p.key, new Set(allowed))
       : p.suggestion
@@ -840,6 +903,11 @@ export const VIEW_REFUSED = new Set([
 
 // Non-mutating wrapper: returns a shallow copy so shared/cached table objects
 // (jsonl cache, per-scope rebuilds) never accumulate nested wrappers.
+/**
+ * @param {Record<string, any>} table  a built table — its methods, wrapped here
+ * @param {ModelDef} model
+ * @param {Ctx} ctx
+ */
 export function withArgValidation(table, model, ctx) {
   if (!table || !model) return table
   // These two are the only per-FLAVOR facts this wrapper needs, and they are
@@ -849,15 +917,14 @@ export function withArgValidation(table, model, ctx) {
   // shared ctx refuses. Both halves are a Set lookup, so asking per call costs
   // nothing that mattered; what it buys is that `asSystem()` and a caller's own
   // client are the same object.
-  const guardedMap     = ctx.guardedMap
-  const fieldReadMap   = ctx.fieldReadMap
-  const reachesGuarded   = guardedMap?.reaches.has(model.name)
-  const reachesFieldRead = fieldReadMap?.reaches.has(model.name)
+  const shape = ctx.shapes[model.name]
+  const reachesGuarded   = shape.reachesGuarded
+  const reachesFieldRead = shape.reachesFieldRead
   const checkGuarded   = () => reachesGuarded   && !ctx.isSystem
   const checkFieldRead = () => reachesFieldRead && !ctx.isSystem
   const whereKeys = filterableKeysFor(model)
-  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) whereKeys.filterable.add(d.as)
-  const scopeNames = new Set(Object.keys(ctx.scopeMap?.[model.name] ?? {}))
+  for (const d of Object.values(ctx.shapes[model.name].edges)) whereKeys.filterable.add(d.as)
+  const scopeNames = new Set(Object.keys(shape.scopes))
   const modelName = model.name
   const { sortable, relations, computed, transient, opaque } = sortableKeysFor(model)
 
@@ -870,20 +937,19 @@ export function withArgValidation(table, model, ctx) {
   // An orderBy is not a filter, so it narrows nothing (`FJS-1664`): a cell the
   // caller cannot read sorts as NULL and its row stays. Conjoined, a sort
   // changed the result set — count() said 2 and the sorted page held 1.
-  const readExprs   = (key) => ctx.fieldPolicyMap?.[modelName]?.[key]?.allow?.read
-  const predicateFor = (key) => compileFieldPredicate(
-    modelName, readExprs(key), 'read', ctx, ctx.policyMap ?? {}, ctx.schema, ctx.relationMap)
+  const readExprs   = (/** @type {string} */ key) => shape.fieldPolicy[key]?.allow?.read
+  const predicateFor = (/** @type {string} */ key) => compileFieldPredicate(modelName, readExprs(key), 'read', ctx)
 
-  const applyFieldRead = (args, method) => {
-    const found = collectGuardedArgs(args, modelName, fieldReadMap)
+  const applyFieldRead = (/** @type {any} */ args, /** @type {string} */ method) => {
+    const found = collectGuardedArgs(args, modelName, 'fieldReadKeys', ctx.shapes)
     if (!found.length) return args
 
     const foreign = found.filter(f => f.model !== modelName)
     if (foreign.length) throw fieldReadRelationError(foreign, modelName, method)
 
     const conjoin = new Set([
-      ...walkGuardedWhere(args.where, modelName, fieldReadMap, []),
-      ...walkGuardedWhere(args.cursor, modelName, fieldReadMap, []),
+      ...walkGuardedWhere(args.where, modelName, 'fieldReadKeys', ctx.shapes, []),
+      ...walkGuardedWhere(args.cursor, modelName, 'fieldReadKeys', ctx.shapes, []),
     ].map(f => f.key))
     if (method === 'groupBy' || method === 'aggregate')
       for (const f of found) conjoin.add(f.key)
@@ -915,9 +981,9 @@ export function withArgValidation(table, model, ctx) {
   // true sorts the column as it is, false is refused, because every cell would
   // be NULL and the order the caller asked for would silently be none. A
   // near-order cannot take an expression, so it is added to `conjoin`.
-  const maskOrderBy = (orderBy, method, conjoin) => {
+  const maskOrderBy = (/** @type {any} */ orderBy, /** @type {string} */ method, /** @type {any} */ conjoin) => {
     if (!orderBy || typeof orderBy !== 'object') return orderBy
-    const own = fieldReadMap.own[modelName] ?? NO_KEYS
+    const own = shape.fieldReadKeys
     let changed = false
     const items = (Array.isArray(orderBy) ? orderBy : [orderBy]).flatMap(item => {
       if (!item || typeof item !== 'object') return [item]
@@ -930,7 +996,8 @@ export function withArgValidation(table, model, ctx) {
         if (!plain) { conjoin.add(k); keep(); continue }
         const pred = predicateFor(k)
         if (!pred) { keep(); continue }
-        const answer = hoistedFieldRead(ctx, readExprs(k))
+        // A predicate compiled one line up, so the column carries read exprs.
+        const answer = hoistedFieldRead(ctx, /** @type {unknown[]} */ (readExprs(k)))
         if (answer === true) { keep(); continue }
         if (answer === false) throw new AccessDeniedError(
           `${modelName}.${method} cannot sort by "${k}": its @allow('read') admits this caller on no row, so every ` +
@@ -954,7 +1021,7 @@ export function withArgValidation(table, model, ctx) {
             throw new ValidationError([{ path: ['orderBy', k], message: `orderBy nulls must be 'first' or 'last', got: ${dir.nulls}` }])
           nulls = ` NULLS ${n}`
         }
-        const col = quoteIdent(ctx.columnMaps?.[modelName]?.[k] ?? k)
+        const col = quoteIdent(shape.columnMap[k] ?? k)
         out.push({ $raw: rawClause(`CASE WHEN (${pred.sql}) THEN ${col} END ${d}${nulls}`, pred.params) })
       }
       if (rest) out.push(rest)
@@ -966,9 +1033,9 @@ export function withArgValidation(table, model, ctx) {
 
   const _pointFields = pointFieldsOf(model)
 
-  const isNearOrder = (key, val) => isNearOrderFor(_pointFields, key, val)
+  const isNearOrder = (/** @type {string} */ key, /** @type {unknown} */ val) => isNearOrderFor(_pointFields, key, val)
 
-  const checkOrderBy = (args, method) => {
+  const checkOrderBy = (/** @type {any} */ args, /** @type {string} */ method) => {
     // Every call passes through here, and one naming no order has nothing to grade.
     if (!args?.orderBy) return
 
@@ -1013,14 +1080,14 @@ export function withArgValidation(table, model, ctx) {
   // nothing, which is the documented read strip and is checked above.
   const selectable = new Set()
   for (const f of model.fields) if (!transient.has(f.name)) selectable.add(f.name)
-  for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) selectable.add(d.as)
+  for (const d of Object.values(ctx.shapes[model.name].edges)) selectable.add(d.as)
   // `distinct` is a SQL clause and reaches real columns only. A relation, a
   // @computed field and a @transient key are each something SQLite has never
   // heard of, and DISTINCT over an identifier it cannot bind silently dedupes
   // nothing rather than failing.
   const distinctable = new Set([...sortable, ...opaque.keys()])
 
-  const selectRefusal = (position, key, allowed, method) => new ValidationError([{
+  const selectRefusal = (/** @type {string} */ position, /** @type {string} */ key, /** @type {Iterable<string>} */ allowed, /** @type {string} */ method) => new ValidationError([{
     path:    [position, key],
     message: transient.has(key)
       ? `Cannot ${position} '${key}' on ${modelName}.${method} — it is @transient, a payload key ` +
@@ -1042,7 +1109,7 @@ export function withArgValidation(table, model, ctx) {
   // exists and is empty (FJS-828). The list IS the wire spelling; junction's
   // `parseSelect` turns `$select=id,title` into the object before a read, and
   // accepting one here as well would be a second owner of that translation.
-  const selectContainerRefusal = (sel, method, isWrite) => new ValidationError([{
+  const selectContainerRefusal = (/** @type {unknown} */ sel, /** @type {string} */ method, /** @type {boolean} */ isWrite) => new ValidationError([{
     path:    ['select'],
     message: `'select' on ${modelName}.${method} must be an object naming columns — got ` +
              `${Array.isArray(sel) ? 'an array' : typeof sel}. Write ` +
@@ -1065,7 +1132,7 @@ export function withArgValidation(table, model, ctx) {
   // `select` plus `distinct: true`, and one whole row per value is `groupBy` —
   // where WHICH row survives is a question the caller answers rather than one
   // an arbitrary partition answers for them.
-  const distinctShapeRefusal = (d, method) => new ValidationError([{
+  const distinctShapeRefusal = (/** @type {unknown} */ d, /** @type {string} */ method) => new ValidationError([{
     path:    ['distinct'],
     message: `'distinct' on ${modelName}.${method} is a boolean — got ` +
              `${Array.isArray(d) ? 'an array' : typeof d}. SQLite has no DISTINCT ON, so a ` +
@@ -1082,7 +1149,7 @@ export function withArgValidation(table, model, ctx) {
   // because an include is one batched IN-query over every parent: a DISTINCT
   // there dedupes ACROSS parents, which is not what anyone writing it meant, and
   // per-parent is the same window `distinctShapeRefusal` declines to grow.
-  const refuseNestedDistinct = (include, method, depth = 0) => {
+  const refuseNestedDistinct = (/** @type {any} */ include, /** @type {string} */ method, depth = 0) => {
     if (!include || typeof include !== 'object' || depth > 12) return
     for (const v of Object.values(include)) {
       if (!v || typeof v !== 'object') continue
@@ -1097,7 +1164,7 @@ export function withArgValidation(table, model, ctx) {
     }
   }
 
-  const checkSelect = (args, method, isWrite) => {
+  const checkSelect = (/** @type {any} */ args, /** @type {string} */ method, /** @type {boolean} */ isWrite) => {
     const sel = args?.select
     if (sel == null && args?.distinct == null && !args?.include) return
     if (sel != null && (typeof sel !== 'object' || Array.isArray(sel))) {
@@ -1114,7 +1181,7 @@ export function withArgValidation(table, model, ctx) {
     refuseNestedDistinct(args?.include, method)
   }
 
-  const checkTakeSkip = (args, method) => {
+  const checkTakeSkip = (/** @type {any} */ args, /** @type {string} */ method) => {
     if (!args || typeof args !== 'object' || !('take' in args || 'skip' in args)) return
     for (const bad of ['take', 'skip']) {
       if (bad in args) throw new ValidationError([{
@@ -1128,8 +1195,8 @@ export function withArgValidation(table, model, ctx) {
   // The argument object's own keys, before anything inside them. A named
   // aggregate (`_revenue: { sum: 'total' }`) is a key the caller coins, so it
   // is graded by shape rather than by name.
-  const checkArgNames = (args, method) => {
-    const known = ARG_NAMES[method]
+  const checkArgNames = (/** @type {any} */ args, /** @type {string} */ method) => {
+    const known = ARG_NAMES[/** @type {keyof typeof ARG_NAMES} */ (method)]
     if (!known || !args || typeof args !== 'object') return
     const aggs = method === 'aggregate' || method === 'groupBy'
     for (const [k, v] of Object.entries(args)) {
@@ -1159,23 +1226,23 @@ export function withArgValidation(table, model, ctx) {
   // verb every future guard has to remember.
   //
   // Answers the args, because the field-read narrowing REWRITES them.
-  const guardArgs = (args, method, isWrite) => {
+  const guardArgs = (/** @type {any} */ args, /** @type {string} */ method, /** @type {boolean} */ isWrite) => {
     checkTakeSkip(args, method)
     checkArgNames(args, method)
     // Before the key checks: an unknown key on a read only warns, and a
     // guarded one is spelled right.
     if (checkGuarded()) {
-      const found = collectGuardedArgs(args, modelName, guardedMap)
+      const found = collectGuardedArgs(args, modelName, 'guardedKeys', ctx.shapes)
       if (found.length) throw guardedArgsError(found, modelName, method)
     }
-    const aggs = policiedAggregates(ctx)
-    if (aggs && args && typeof args === 'object') {
+    if (anyPoliciedAggregate(ctx) && args && typeof args === 'object') {
+      /** @type {Found[]} */
       const found = []
-      walkGuardedWhere(args.where, modelName, aggs, found)
-      walkGuardedOrderBy(args.orderBy, modelName, aggs, found)
-      walkGuardedInclude(args.include, modelName, aggs, found)
+      walkGuardedWhere(args.where, modelName, 'policiedAggregates', ctx.shapes, found)
+      walkGuardedOrderBy(args.orderBy, modelName, 'policiedAggregates', ctx.shapes, found)
+      walkGuardedInclude(args.include, modelName, 'policiedAggregates', ctx.shapes, found)
       const live = found.filter(f => buildPolicyFilter(
-        ctx.fromMap[f.model][f.key].aggRef.model, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap))
+        ctx.shapes[f.model].fromFields[f.key].aggRef.model, 'read', ctx))
       if (live.length) throw policiedAggregateError(live, modelName, method, ctx)
     }
     checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames, ctx)
@@ -1191,7 +1258,11 @@ export function withArgValidation(table, model, ctx) {
   // underlying methods fail — a sync throw from a promise-returning API is a
   // third failure mode nobody handles.
   const out = { ...table }
-  const wrap = (method, isWrite) => {
+  // A symbol-keyed seam (`PLAN`) is non-enumerable, so the spread above lost
+  // it; it takes no caller arguments to validate and passes through as is.
+  for (const sym of Object.getOwnPropertySymbols(table))
+    Object.defineProperty(out, sym, { value: /** @type {any} */ (table)[sym], enumerable: false })
+  const wrap = (/** @type {string} */ method, /** @type {boolean} */ isWrite) => {
     const fn = table[method]
     if (typeof fn !== 'function') return
     out[method] = async (args = {}) => fn.call(table, guardArgs(args, method, isWrite))
@@ -1219,11 +1290,12 @@ export function withArgValidation(table, model, ctx) {
   // remembering to.
   if (typeof table.search === 'function') {
     const fn = table.search
-    out.search = async (q, opts = {}) => fn.call(table, q, guardArgs(opts, 'search', false))
+    out.search = async (/** @type {string} */ q, opts = {}) => fn.call(table, q, guardArgs(opts, 'search', false))
   }
   return out
 }
 
+/** @param {string} a @param {string} b */
 function editDistance(a, b) {
   if (a === b) return 0
   if (!a.length) return b.length

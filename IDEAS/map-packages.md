@@ -73,7 +73,7 @@ Each row was probed against the tree on the date above.
 
 | Name | Fate | Where it lives now |
 | --- | --- | --- |
-| ~~**`foundry`**~~ | **absorbed into `@frontierjs/ui` + sierra.** Not severable — a derived form is the paved road | `<Form>`, `<Table>`, `<FilterBar>`, `<FormField>`; `resource.columns()` at `packages/sierra/src/junction/resource.js`; `controlFor` / `formFieldList` in the bridge index; `fli admin:generate` |
+| ~~**`foundry`**~~ | **absorbed into `@frontierjs/ui` + sierra.** Not severable — a derived form is the paved road | `<Form>`, `<Table>`, `<FilterBar>`, `<FormField>`; `resource.columns()` at `packages/sierra/src/resource/resource.js`; `controlFor` / `formFieldList` in the bridge index; `fli admin:generate` |
 | ~~**`assay`**~~ | **shipped, decomposed by owner** — the Suite noun has three homes and no package would have had a seat between them | `@frontierjs/testing` (the API tier), `createTestEnv` + `autoFactories` + the five executed checks in litestone, the CDP harness in mesa |
 | ~~**`depot`**~~ | **absorbed into `fli`.** A workflow somebody types is a command | `fli deploy` — `plan`, `journal`, `revert`, `rollback`, `pause`, `setup`, `doctor` — plus `release:mint` / `release:check` |
 | ~~**`atlas`**~~ | **shipped as two commands** | `fli ws:atlas` (the workspace), `fli app:atlas` (one app's answerable surface), `fli ws:invariants` |

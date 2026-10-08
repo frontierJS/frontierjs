@@ -185,7 +185,6 @@ async function appSeeing(trustProxy: unknown) {
     config: {
       port:     0,
       http:     { trustProxy } as never,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
     },
     logLevel: 'silent',

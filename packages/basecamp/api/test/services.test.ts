@@ -1096,7 +1096,7 @@ describe('a handler declares who it runs as', () => {
 describe('the proxy path list is what the app mounts', () => {
   test('every mounted service and raw route is proxied, and the shell is not', async () => {
     const { API_PATHS, WS_PATH } = await import('../../web/config/api-paths.js')
-    const { buildRoutes }        = await import('@frontierjs/junction/manifest')
+    const { buildRoutes }        = await import('@frontierjs/junction')
 
     const derived = new Set(API_PATHS)
 

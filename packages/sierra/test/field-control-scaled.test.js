@@ -25,7 +25,7 @@ import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 
 import {
   buildFieldRules, controlFor, defaultControlFor, registerControl, unregisterControl,
-} from '../src/junction/field-rules.js'
+} from '../src/resource/field-rules.js'
 
 const SOURCE = `
 model Order {

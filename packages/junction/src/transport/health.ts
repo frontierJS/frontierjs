@@ -163,8 +163,9 @@ function timedCheck(fn: () => boolean | Promise<boolean>, timeoutMs: number): Pr
 }
 
 /**
- * Every readiness check that applies to this app: the built-in database probe,
- * the ones plugins registered, then the ones the app author declared.
+ * Every readiness check that applies to this app: the ones plugins registered,
+ * then the ones the app author declared. There is no built-in database probe —
+ * junction opens no database (`FJS-D641`), so the app names its client's check.
  *
  * App-declared last so a name it states wins — the plugin registered its check
  * without knowing what the app knows about the same resource.
@@ -207,26 +208,11 @@ export async function collectHealth(
   // destroying the in-flight requests the drain exists to finish.
   if (mode === 'live') return { status: 'ok', ...meta, checks: {}, ts: ts() }
 
-  // Built-in: database check — only for a raw bun:sqlite handle (db.db.query).
-  // Other clients don't expose that shape; probing them here reported a
-  // healthy app as degraded. They skip the built-in and declare their own
-  // check instead. The shape probe itself must sit inside the try — a
-  // Litestone proxy throws on unknown property access rather than returning
-  // undefined.
-  const dbCheck = (() => {
-    try {
-      const rawDb = app.db as { db?: { query?: (s: string) => { get: () => unknown } } } | undefined
-      const query = rawDb?.db?.query
-      return typeof query === 'function' ? { query: query.bind(rawDb!.db) } : null
-    } catch { return null }
-  })()
-
   // Collected into a Map before any of them runs, because the ORDER and the
   // last-wins rule are properties of the list rather than of the running: a
   // Map keeps a re-set key in its original position, so an app-declared name
   // still replaces the plugin's without moving in the answer.
   const entries = new Map<string, () => boolean | Promise<boolean>>()
-  if (dbCheck) entries.set('database', () => { dbCheck.query('SELECT 1').get(); return true })
   for (const [name, fn] of app._healthChecks    ?? new Map()) entries.set(name, fn)
   for (const [name, fn] of app._healthChecksApp ?? new Map()) entries.set(name, fn)
 

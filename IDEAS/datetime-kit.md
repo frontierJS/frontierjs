@@ -268,7 +268,7 @@ need it or row policies compare against `undefined` and match nothing, silently.
 ### Reaching the client
 
 `generateJsonSchema` emits `x-time: { kind, zoneField }` beside the existing `x-gate`
-and `x-relations`, so `sierra/src/junction/field-rules.js` coerces correctly and
+and `x-relations`, so `sierra/src/resource/field-rules.js` coerces correctly and
 `@frontierjs/ui`'s `DatePicker` stops guessing. The display half comes free once the
 column states its kind.
 

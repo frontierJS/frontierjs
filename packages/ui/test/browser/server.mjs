@@ -43,7 +43,7 @@ import { compileSource } from '../../../mesa/src/compiler.js'
 const PKG   = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const MESA  = resolve(fileURLToPath(new URL('../../../mesa', import.meta.url)))
 const CSS   = resolve(fileURLToPath(new URL('../../../css', import.meta.url)))
-// Sierra is served for ONE module: `src/junction/field-rules.js`, the real
+// Sierra is served for ONE module: `@frontierjs/sierra/field-rules`, the real
 // control table. A fixture that decided for itself which control a `Float`
 // gets would pass while the two disagreed, which is the failure the shared
 // table exists to prevent — `test/form.mjs` imports the same file by relative
@@ -55,6 +55,11 @@ const SIERRA = resolve(fileURLToPath(new URL('../../../sierra', import.meta.url)
 // from the substrate package rather than restating them. It depends on
 // nothing, so the chain stops here.
 const TOOLBELT = resolve(fileURLToPath(new URL('../../../toolbelt', import.meta.url)))
+
+// Read off sierra's `exports` for the reason the toolbelt half below is: a
+// hand-written file path stays green until that file moves, and then every form
+// spec dies on an unresolved import reported as "spec threw".
+const FIELD_RULES = JSON.parse(readFileSync(join(SIERRA, 'package.json'), 'utf8')).exports['./field-rules']
 
 // Every toolbelt subpath, read off that package's OWN `exports` rather than
 // listed by hand. The hand list held two kits and `field-rules` grew a third
@@ -106,7 +111,7 @@ const IMPORT_MAP = {
     // behind it every toolbelt kit. Each is spelled out — a bare specifier
     // with no extension gets no guessing from the browser — but the toolbelt
     // half is generated, so it cannot fall behind what that package exports.
-    '@frontierjs/sierra/field-rules':   '/@sierra/src/junction/field-rules.js',
+    '@frontierjs/sierra/field-rules':   `/@sierra/${FIELD_RULES.replace(/^\.\//, '')}`,
     ...TOOLBELT_IMPORTS,
   },
 }

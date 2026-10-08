@@ -239,7 +239,7 @@ describe('the moves a row may make', () => {
   test('a page with no session of its own grades against sierra\'s, and watches it once', () => {
     for (const [what, source] of pages) {
       const own = source.includes("from '../../session.js'")
-      expect(source.includes("import { session } from '@frontierjs/sierra/junction'"), what).toBe(!own)
+      expect(source.includes("import { session } from '@frontierjs/sierra/resource'"), what).toBe(!own)
       expect(source.match(/^\s*\$: session\.level$/gm)?.length, `${what} watches the level ${source.match(/^\s*\$: session\.level$/gm)?.length} times`).toBe(1)
     }
   })

@@ -140,7 +140,7 @@ before you meet it.
 | Home | open | | | | |
 | Lead | open | | | | |
 | Rule | open | Developer | | | |
-| Suite | open | Testing | | | |
+| Suite | blessed | Testing | | a package's `test/`, run by that package's own script — `*.test.*` collected, `*.spec.*` driven | [`FJS-D638`](DECISIONS.md#fjs-d638). A suite proves one package; a Drive proves a change end to end |
 | Float | open | Data | Field | | |
 | Modal | open | UI | Overlay tier | | |
 | Sidebar | open | UI | | | |
@@ -219,3 +219,13 @@ before you meet it.
 | Origin | open | | | | |
 | Start | open | | | | |
 | Ring | open | Framework | | one band of the order a newcomer reads the workspace in, center out — a package's is the `Ring` column of the root `CLAUDE.md` table | `fli ws:atlas --as=rings`. Not a dependency layer: the spine imports the substrate one ring out, and is read first anyway |
+| Environment | blessed | Deployment | | a named place a Release serves from — it supplies configuration only, and is mutable but generational: serving state is (Release, generation). Qualified at every use: a *deploy environment*, a *test environment* | [`FJS-D636`](DECISIONS.md#fjs-d636). `createTestEnv` stands up the test sense. The port schema's ENV digit and environment variables are ordinary English; basecamp's `model Environment` is an app's |
+| Promote | blessed | Deployment | Release | deploy a digest that already served in another deploy environment — a deploy the journal recognizes, never a kind of its own | [`FJS-D636`](DECISIONS.md#fjs-d636). The digest moves and a new Release is minted, since a Release's id hashes its configuration. A *promoted key* (tenant-declared fields) is the Data realm's; widening an Audience is not a promotion |
+| Promotion | refused | Deployment | | Promote — a deploy, not a noun | [`FJS-D636`](DECISIONS.md#fjs-d636) |
+| Audience | open | | | | [`FJS-D636`](DECISIONS.md#fjs-d636). Four senses live: litestone's `audience: 'client' \| 'system'` (`FJS-D454`), a credential's audience (sierra fetch, the JWT `aud`), an app's own column (`example`'s `Discount.audience`), and Deployment's proposed set of principals a Release is served to (`IDEAS/release-transitions.md`, unbuilt). A webhook's is a *subscriber*. Ruled when Phase 4 builds the routing |
+| Entitlement | refused | Data | Warden | Capability, or a claim (`FJS-D514`) | [`FJS-D637`](DECISIONS.md#fjs-d637). Nothing is a tenant-held grant yet; what a tenant has paid for is ruled when an app first gates a feature on its plan |
+| Drive | blessed | Testing | | a script that runs an app or a package end to end — a real server and database, usually a real browser — and asserts on what a person or a caller would see | [`FJS-D638`](DECISIONS.md#fjs-d638). Listed in `DRIVES.md`; `fli proves` names the ones a diff needs. `@frontierjs/mesa/drive` is the CDP harness one steers Chrome with |
+| Stressor | open | Testing | | | [`FJS-D638`](DECISIONS.md#fjs-d638) left it open: a product built to find seams, listed in `IDEAS/stressors.md` — an exercise, not something the framework runs |
+| Snapshot | blessed | Testing | | a committed `*.snapshot.*` file that names the command that generated it — the `snapshots` CI phase reruns it with `--check` | [`FJS-D638`](DECISIONS.md#fjs-d638). The audit trail's before/after copies are an *audit snapshot* |
+| Vector | blessed | Testing | | conformance data — an input and its expected output, runnable against any implementation, each set pairing a positive case with its negative control | [`FJS-D638`](DECISIONS.md#fjs-d638), `FJS-D631`. `IDEAS/specifications.md` |
+| Fixture | blessed | Testing | | a file a test reads | [`FJS-D638`](DECISIONS.md#fjs-d638). Not a Seed, which is rows written (`FJS-D632`) |

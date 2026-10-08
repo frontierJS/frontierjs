@@ -24,7 +24,7 @@ import { describe, test, expect } from 'vitest'
 // `workspace:*` to a COPY, so the entry point would be yesterday's bytes.
 // `field-errors.ts` imports `errors.ts` and nothing else.
 import { fieldErrors, validateFields } from '../../junction/src/core/field-errors.ts'
-import { toFieldErrors } from '../src/junction/field-rules.js'
+import { toFieldErrors } from '../src/resource/field-rules.js'
 
 /** What a thrown value looks like after Junction's HTTP boundary and the
  *  browser client have each wrapped it once — the `err.data.data` shape. */

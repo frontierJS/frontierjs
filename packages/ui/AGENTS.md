@@ -183,7 +183,7 @@ warning. `bind:autosaveState` reads `idle`, `pending`, `saving`, `saved` or
 answers *which columns get it*, the kit's *what it renders as*.
 
 ```js
-import { registerControl }     from '@frontierjs/sierra/junction'
+import { registerControl }     from '@frontierjs/sierra/resource'
 import { registerFormControl } from '@frontierjs/ui/controls'
 import Duration from './Duration.mesa'
 

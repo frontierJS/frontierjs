@@ -21,7 +21,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { buildFieldRules, requiredFor } from '../src/junction/field-rules.js'
+import { buildFieldRules, requiredFor } from '../src/resource/field-rules.js'
 
 // The shape litestone emits for
 //   trackingCode String? @required(where: status == 'shipped', "…")

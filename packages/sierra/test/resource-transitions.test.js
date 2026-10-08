@@ -17,7 +17,7 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
     resource: () => ({
@@ -28,8 +28,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { createResource, buildTransitions, transitionsAt } =
-  await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+  await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // Litestone is imported by relative path, not by package name: `bun install`
 // resolves workspace:* to a copy under node_modules/.bun, so a package-name

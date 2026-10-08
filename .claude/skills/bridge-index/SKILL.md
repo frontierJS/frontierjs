@@ -40,19 +40,19 @@ Detail: `references/schema.md`
 - `ctx.transients` — the `@transient` half of a payload, lifted off `ctx.data` — `junction/src/core/litestone.ts`
 - `ServiceTypes` — the schema's types on the far side of the wire, audience-split — `litestone/src/tools/typegen.js`
 - `@label` → `title`, validator messages → `x-messages` — the keyword table both validators look up — `litestone/src/jsonschema.js`
-- `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` — client-side coerce → blankToNull → validate — `sierra/src/junction/field-rules.js`
-- `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` — the one place a field becomes a control; `registerControl` is the way in — `sierra/src/junction/field-rules.js`
-- `labelFieldInfo(fields, fallback, declared)` — which column identifies a row to a person — `sierra/src/junction/field-rules.js`
+- `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` — client-side coerce → blankToNull → validate — `sierra/src/resource/field-rules.js`
+- `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` — the one place a field becomes a control; `registerControl` is the way in — `sierra/src/resource/field-rules.js`
+- `labelFieldInfo(fields, fallback, declared)` — which column identifies a row to a person — `sierra/src/resource/field-rules.js`
 - `x-values` — a declared value set, from the schema to the request a picker sends — `litestone/src/jsonschema.js`
-- `resource.options(field)` — what a picker offers; `error` separates *none* from *could not ask* — `sierra/src/junction/resource.js`
-- `toFieldErrors(err)` — a thrown value → per-field messages — `sierra/src/junction/field-rules.js`
+- `resource.options(field)` — what a picker offers; `error` separates *none* from *could not ask* — `sierra/src/resource/resource.js`
+- `toFieldErrors(err)` — a thrown value → per-field messages — `sierra/src/resource/field-rules.js`
 - `$context.form` — the form context every control resolves from; `reportInvalid` goes the other way — `ui/components/forms/Form.mesa`
-- `buildRelations()` / `buildGate()` / `canAtLevel()` — `x-relations` and `x-gate` on the client; the gate is an affordance only — `sierra/src/junction/field-rules.js`
+- `buildRelations()` / `buildGate()` / `canAtLevel()` — `x-relations` and `x-gate` on the client; the gate is an affordance only — `sierra/src/resource/field-rules.js`
 - `x-version` — the `@version` column an update carries back — `litestone/src/jsonschema.js`
 - `retryable` — race or refusal on a 409, the one thing a status cannot carry — `junction/src/core/errors.ts`
-- `buildTransitions()` / `transitionsAt()` — `x-transitions`, the gate half of a move; `refusedBy` — `sierra/src/junction/field-rules.js`
-- `buildCommitments()` / `commitmentsAt()` — `x-commitments`, the date a `@system` move falls due — `sierra/src/junction/field-rules.js`
-- `modelNameFor()` / `schemaFor()` — service name → model, over `toolbelt/inflect` — `sierra/src/junction/schema-registry.js`
+- `buildTransitions()` / `transitionsAt()` — `x-transitions`, the gate half of a move; `refusedBy` — `sierra/src/resource/field-rules.js`
+- `buildCommitments()` / `commitmentsAt()` — `x-commitments`, the date a `@system` move falls due — `sierra/src/resource/field-rules.js`
+- `modelNameFor()` / `schemaFor()` — service name → model, over `toolbelt/inflect` — `sierra/src/resource/schema-registry.js`
 - `authUserModel(db)` / `authMachineryModels(db)` — auth's two `.lite` files, split by owner — `auth/schema.ts`
 - `extend model X { … }` — what an app says about a model it did not write; adds only — `litestone/src/core/parser.js`
 - `attachments` — what the app needs and does not own, checked at startup against the environment — `junction/src/core/attachments.ts`
@@ -79,7 +79,7 @@ Detail: `references/api-internals.md`
 - `svc.describe()` — what this service is, for `/manifest`, OpenAPI and `/metrics` — `junction/src/core/service.ts`
 - `isBuiltService(v)` / `Symbol.for('junction.service')` — has `createService` built this — `junction/src/core/service.ts`
 - `normalizePrefix()` — the one owner of `apiPrefix` — `junction/src/core/app.ts`
-- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — the durable effect, inside the call's transaction — `junction/src/core/outbox.ts`
+- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — the durable effect, inside the call's transaction — `junction/src/plugins/outbox/engine.ts`
 - `claimIdempotency(ctx, key, config)` — claimed once in `callService`, for both transports — `junction/src/core/idempotency.ts`
 - Plugin protocol `{ name, register, boot, work, ready, shutdown, requires }` — `register` is sync, async setup goes in `boot()`, and anything on a clock (a worker, a poller, a timer) goes in `work()`, which `_startOnce()` skips so `junction call` and the snapshot tools start nothing (`FJS-D551`) — `junction/src/core/app.ts`
 - `runStartPhases(bindHost)` — the one startup list — `junction/src/core/app.ts`
@@ -101,8 +101,8 @@ Detail: `references/api-ui.md`
 - `announce()` hook + `app.channel(name)` — real-time; `callService` is the one announcement point — `junction/src/transport/channels.ts`
 - **Transport: WebSocket when one is connected, HTTP as the fallback.** — `verifyTransportParity()` asks whether they agree
 - `createJunctionClient()` / `client.resource(name)` — the browser client — `junction/src/client/index.ts`
-- `connectApp()` / `createResource(name, { app })` — a Resource over ANOTHER app: its client, its schema table — `sierra/src/junction/index.js`
-- `resource.save(data, { mode })` — the one owner of *write this record* — `sierra/src/junction/resource.js`
+- `connectApp()` / `createResource(name, { app })` — a Resource over ANOTHER app: its client, its schema table — `sierra/src/resource/index.js`
+- `resource.save(data, { mode })` — the one owner of *write this record* — `sierra/src/resource/resource.js`
 - `client.auth.*` — the browser half of `@frontierjs/auth` — `junction/src/client/index.ts`
 - `signIn` → `completeSignIn(code)` — a session or a challenge; the client holds the ticket — `junction/src/client/index.ts`
 - `client.auth.providers()` + `OAUTH_ERRORS` / `session.oauthMessage` — which providers exist, and what an OAuth error means — `junction/src/client/index.ts`

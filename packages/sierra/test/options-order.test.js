@@ -23,7 +23,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 
 let LAST = null   // what the picker asked the service for
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: (name) => ({
       on: () => {},
@@ -41,8 +41,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const str = { type: 'string' }
 

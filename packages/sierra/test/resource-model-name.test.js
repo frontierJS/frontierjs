@@ -14,7 +14,7 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
     resource: () => ({
@@ -24,8 +24,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas, schemaFor, suggestModel } = await import('../src/junction/schema-registry.js')
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas, schemaFor, suggestModel } = await import('../src/resource/schema-registry.js')
 
 const model = (name) => ({
   type: 'object', title: name, properties: { name: { type: 'string' } }, required: ['name'],

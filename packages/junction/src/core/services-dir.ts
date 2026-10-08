@@ -1,11 +1,7 @@
 // core/services-dir.ts
-// Where an app's services are — one answer, four callers: the `autoload-services`
-// start phase, the snapshot tools, `build:app`'s bundling guard, and the boot
-// banner's word for what happened.
-//
-// Node builtins only. `build:app` is a build script that imports nothing of
-// junction's runtime, and a second copy of this rule living there is how the
-// guard ends up checking a directory the app no longer looks in.
+// Where an app's services are — one answer, three callers: the
+// `autoload-services` start phase, the snapshot tools, and the boot banner's
+// word for what happened.
 
 import { resolve, dirname, relative } from 'node:path'
 import { existsSync, statSync }       from 'node:fs'

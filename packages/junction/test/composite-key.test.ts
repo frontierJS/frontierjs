@@ -41,7 +41,7 @@ model Post {
 async function app() {
   const db: any = await createClient({ resolveFrom: '/tmp', db: ':memory:', schema: SCHEMA })
   const a: any = createApp({
-    db, config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    db, config: { port: 0, services: { dir: '/nonexistent' } },
   })
   const all = ['find', 'get', 'create', 'update', 'patch', 'remove']
   a.services.register(createService({ name: 'memberships', model: 'Membership', methods: all, allowBulk: true }))

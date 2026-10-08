@@ -26,7 +26,7 @@ async function freshSession() {
   // its own instance. A cache-busting query string is not an option — Vite
   // refuses a dynamic import it cannot resolve statically.
   vi.resetModules()
-  return import('../src/junction/session.js')
+  return import('../src/resource/session.js')
 }
 
 /** The smallest thing initSession() can drive: a client with an auth surface. */

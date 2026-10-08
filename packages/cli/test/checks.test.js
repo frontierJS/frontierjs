@@ -94,7 +94,7 @@ model Note {
 `
 
 const resource = (service, opts = '') => `<script module>
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
   export const ${service} = createResource('${service}'${opts ? `, { ${opts} }` : ''})
 </script>
 `
@@ -962,7 +962,7 @@ describe('resources', () => {
     const root = tree('r-form', {
       ...CLEAN,
       'web/src/resources/Account.mesa':
-        "<script module>\n  import { createResource } from '@frontierjs/sierra/junction'\n" +
+        "<script module>\n  import { createResource } from '@frontierjs/sierra/resource'\n" +
         "  export const accounts = createResource('accounts')\n</script>\n" +
         '<script>\n  let record = {}\n</script>\n<Form resource={accounts} {record} />\n',
     })
@@ -1068,7 +1068,7 @@ view revenueByStatus {
       'web/src/resources/Lead.mesa':
         `<script module>\n  // The escape a service that does not pluralize takes:\n` +
         `  //   createResource('lenses', { model: 'Lens' })\n` +
-        `  import { createResource } from '@frontierjs/sierra/junction'\n` +
+        `  import { createResource } from '@frontierjs/sierra/resource'\n` +
         `  export const leads = createResource('leads')\n</script>\n`,
     })
     expect(only(root, 'resource-file-name').findings).toEqual([])
@@ -1080,7 +1080,7 @@ view revenueByStatus {
       ...CLEAN,
       'web/src/resources/Alert.mesa':
         `<script module>\n  // Named for the model, which is not the service noun.\n` +
-        `  import { createResource } from '@frontierjs/sierra/junction'\n` +
+        `  import { createResource } from '@frontierjs/sierra/resource'\n` +
         `  export const alerts = createResource('alerts', { model: 'AlertRule' })\n</script>\n`,
     })
     const { findings } = only(root, 'resource-file-name')
@@ -1092,7 +1092,7 @@ view revenueByStatus {
     const root = tree('r-two', {
       ...CLEAN,
       'web/src/resources/Lead.mesa':
-        `<script module>\n  import { createResource } from '@frontierjs/sierra/junction'\n` +
+        `<script module>\n  import { createResource } from '@frontierjs/sierra/resource'\n` +
         `  export const leads = createResource('leads')\n` +
         `  export const tags  = createResource('tags')\n</script>\n`,
     })
@@ -3742,8 +3742,8 @@ describe('seam-owner', () => {
     // The shape that rots invisibly: the name IS in that module's surface, so
     // every import of it works and the declaration is somewhere else entirely.
     const root = tree('seam-reexport', {
-      ...SEAMS('- `matchesQuery(fields, record, query)` — the decision — `sierra/src/junction/field-rules.js`'),
-      'packages/sierra/src/junction/field-rules.js': "export { matchesQuery } from '@frontierjs/toolbelt/match'\n",
+      ...SEAMS('- `matchesQuery(fields, record, query)` — the decision — `sierra/src/resource/field-rules.js`'),
+      'packages/sierra/src/resource/field-rules.js': "export { matchesQuery } from '@frontierjs/toolbelt/match'\n",
     })
     const { findings } = only(root, 'seam-owner', { scope: 'repo' })
     expect(findings).toHaveLength(1)
@@ -3752,17 +3752,17 @@ describe('seam-owner', () => {
 
   test('the owner is the FIRST path — a second one is where the seam is consumed', () => {
     const root = tree('seam-consumed', {
-      ...SEAMS('- `createJunctionClient()` — `junction/src/client/index.ts`, consumed at `sierra/src/junction/index.js`'),
+      ...SEAMS('- `createJunctionClient()` — `junction/src/client/index.ts`, consumed at `sierra/src/resource/index.js`'),
       'packages/junction/src/client/index.ts': 'export function createJunctionClient() {}\n',
-      'packages/sierra/src/junction/index.js': "export { createJunctionClient } from '@frontierjs/junction/client'\n",
+      'packages/sierra/src/resource/index.js': "export { createJunctionClient } from '@frontierjs/junction/client'\n",
     })
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
   })
 
   test('a bullet carries every verb the seam answers to, and one of them is enough', () => {
     const root = tree('seam-pair', {
-      ...SEAMS('- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — `junction/src/core/outbox.ts`'),
-      'packages/junction/src/core/outbox.ts': 'export function deliverOutbox(app) {}\n',
+      ...SEAMS('- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — `junction/src/plugins/outbox/engine.ts`'),
+      'packages/junction/src/plugins/outbox/engine.ts': 'export function deliverOutbox(app) {}\n',
     })
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
   })

@@ -471,3 +471,57 @@ export function positionless(message) {
   delete err.column
   return err
 }
+
+// ─── Reactivity hints a static build holds back ───────────────────────────────
+
+/**
+ * A reactivity hint says a read will not update when its import mutates, which
+ * is true only of code that re-renders in a browser. A static build compiles
+ * every component and then publishes only the scripts its pages load, so at
+ * transform time nobody knows yet whether a hint can be true. These hold each
+ * hint against its module, note which modules each emitted chunk carries, and
+ * after the prune step give back the hints for modules a published script
+ * contains (`FJS-D629`). ksite's build printed 21 hints and published no
+ * script, so every one of them was about code no browser runs.
+ *
+ * The state lives on the shared Sierra context because the island build is a
+ * second Vite build with its own plugin instances, and its chunks are as
+ * published as the main build's.
+ */
+export function holdHints(context, id, hints) {
+  if (!hints.length) return
+  const held = (context.heldHints ??= new Map())
+  const set = held.get(id) ?? new Set()
+  for (const h of hints) set.add(h)
+  held.set(id, set)
+}
+
+/** Which modules each emitted chunk carries, keyed by the file's own name. */
+export function recordChunks(context, bundle) {
+  const map = (context.chunkModules ??= new Map())
+  for (const c of Object.values(bundle)) {
+    if (c.type !== 'chunk') continue
+    map.set(c.fileName.split('/').pop(), c.moduleIds ?? Object.keys(c.modules ?? {}))
+  }
+}
+
+/**
+ * The held hints whose module a kept script contains, and how many were held
+ * for modules none does.
+ *
+ * @param {object} context
+ * @param {string[]} kept — the published script names, as the prune step returns them
+ * @returns {{ shipped: {id: string, hints: string[]}[], withheld: number }}
+ */
+export function shippedHints(context, kept) {
+  const held = context.heldHints ?? new Map()
+  const live = new Set()
+  for (const f of kept) for (const id of context.chunkModules?.get(f) ?? []) live.add(id)
+  const shipped = []
+  let withheld = 0
+  for (const [id, hints] of held) {
+    if (live.has(id)) shipped.push({ id, hints: [...hints] })
+    else withheld += hints.size
+  }
+  return { shipped, withheld }
+}

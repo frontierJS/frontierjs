@@ -6,7 +6,7 @@
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
 import { requestMeta, reenterAs, enterCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope } from './context.ts'
-import type { CommitScope, CallCoverage } from './context.ts'
+import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
@@ -946,7 +946,7 @@ async function _callService(
     // client, so under `strategy database` the kick is one query against one
     // tenant — where an unnamed pass resolves the whole registry to find the
     // file it already had in hand (`FJS-778`).
-    void ctx.app?.outbox?.deliver({
+    void (ctx.app?.outbox as OutboxRelay | undefined)?.deliver({
       db:     ctx.locals?.db,
       tenant: ctx.locals?.tenantId ?? null,
     }).catch((err: unknown) => {

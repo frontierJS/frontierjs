@@ -33,7 +33,7 @@ async function portal() {
       const v = pass(ctx)
       return v ? { passId: v } : {}
     },
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+    config: { port: 0, services: { dir: '/nonexistent' },
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
   let ran = 0

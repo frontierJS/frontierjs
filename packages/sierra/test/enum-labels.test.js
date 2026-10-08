@@ -21,7 +21,7 @@
 
 import { describe, test, expect } from 'vitest'
 
-const { buildFieldRules, controlFor } = await import('../src/junction/field-rules.js')
+const { buildFieldRules, controlFor } = await import('../src/resource/field-rules.js')
 
 const LABELED = {
   type: 'object', title: 'Account',

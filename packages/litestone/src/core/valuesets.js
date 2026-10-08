@@ -133,12 +133,12 @@ function setFilter(bind, values) {
  * first line runs (`FJS-1108`).
  */
 export function enforceValueSets(modelName, rows, ctx, opts) {
-  if (!ctx.valueSetMap?.[modelName]?.length) return
+  if (!ctx.shapes[modelName].valueSets.length) return
   return enforceBoundValueSets(modelName, rows, ctx, opts)
 }
 
 async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}) {
-  const binds = ctx.valueSetMap[modelName]
+  const binds = ctx.shapes[modelName].valueSets
 
   const list   = Array.isArray(rows) ? rows : [rows]
   const errors = []

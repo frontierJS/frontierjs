@@ -57,7 +57,7 @@ describe('the body a signature is computed over', () => {
     // port 0 and no services directory: this is about one hook reading one
     // field, and a test that binds a fixed port collides with every other suite.
     const app = createApp({
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     } as any)
     app.services.register(createService({
       name:    'things',
@@ -89,7 +89,7 @@ describe('the test request builder', () => {
     let seen: unknown = 'never ran'
 
     const app = createApp({
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     } as never)
     app.services.register(createService({
       name: 'things', methods: ['create'],
@@ -109,12 +109,12 @@ describe('the test request builder', () => {
 describe('the Request a route handler is handed', () => {
   // The transport reads the body before any route runs, and a Web Request's
   // body is single-use — so a mounted fetch-style handler given the original
-  // read nothing. Better Auth's sign-in, sign-up and every callback arrived
+  // read nothing. A vendor auth library's sign-in, sign-up and every callback arrived
   // with `{}` and answered 400 about a field the caller plainly sent
   // (`FJS-1180`).
   async function appWith(mount: (app: any) => void) {
     const app = createApp({
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     } as never)
     mount(app)
     await app.start()
@@ -154,10 +154,10 @@ describe('the Request a route handler is handed', () => {
     await app.stop()
   })
 
-  it('reaches Better Auth with the payload the caller sent', async () => {
-    const { createBetterAuthPlugin } = await import('../src/auth/providers/better-auth.ts')
-    const auth = { handler: async (req: Request) => Response.json(await req.json()) }
-    const app  = await appWith(app => app.configure(createBetterAuthPlugin(auth as never)))
+  it('reaches a mounted fetch-style handler with the payload the caller sent', async () => {
+    // The shape a vendor auth library mounts in: one handler, handed the Request.
+    const handler = async (req: Request) => Response.json(await req.json())
+    const app = await appWith(app => app.post('/auth/{path}', (ctx: any) => handler(ctx.$raw.$req)))
 
     const res = await app.http.fetch(new Request('http://localhost/auth/sign-in', {
       method: 'POST', headers: { 'content-type': 'application/json' },

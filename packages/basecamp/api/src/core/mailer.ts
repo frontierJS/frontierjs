@@ -21,7 +21,8 @@
 
 import { envRef } from './credentials.ts'
 import { env }    from './env.ts'
-import type { App, IMail, MailMessage, SendResult } from '@frontierjs/junction'
+import type { App } from '@frontierjs/junction'
+import type { IMail, MailMessage, SendResult } from '@frontierjs/junction/mail'
 
 export const MAIL_TARGET = 'provider:mail'
 

@@ -18,7 +18,7 @@
   // and the boundary is the boundary either way (Invariant 6); what a flat
   // ladder removes is the reason to ASK, not the enforcement.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const employees = createResource('employees')
 </script>

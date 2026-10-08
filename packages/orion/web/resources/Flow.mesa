@@ -3,7 +3,7 @@
   //
   // The verbs a row write cannot say — save a version, activate, run — are
   // custom methods, called as `flows.service.invoke(name, id, data)`.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const flows = createResource('flows')
 </script>

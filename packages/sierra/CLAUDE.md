@@ -14,7 +14,7 @@ runs against a real Litestone client.
 
 ```
 src/
-  index.js               — public entry
+  index.js               — public entry: the router and the theme, nothing else
 
   scanner/               — routes dir → route tree
     walk.js              recursive directory walk; follows a symlink, and a
@@ -94,9 +94,9 @@ src/
     static-safety.js     proves a prerendered page is publishable
     refusal.js           an error that prints as its message alone — for a
                          build verdict about the APP, where a stack is noise
-    warnings.js, dev-overlay.js, devtools-plugin.js
+    warnings.js, dev-overlay.js
 
-  junction/              — the API seam
+  resource/              — the Resource: a screen bound to a service
     index.js             WebSocket client integration; `connectApp()`, the
                          handle a Resource over ANOTHER app is built from
     session.js           who the browser thinks you are — the reactive object,
@@ -167,7 +167,8 @@ src/
                            Sierra writes that one because only the build knows
                            its own hashes; the app writes its manifest because
                            a manifest is a declaration
-  devtools/  presence/  theme/  analytics/  fetch/  virtual/
+  devtools/              — the dev toolbar; plugin.js is what `devtools:` installs
+  presence/  theme/  analytics/  fetch/  virtual/
   components/            — RouterView.mesa, ChainRenderer.mesa
 ```
 
@@ -175,6 +176,15 @@ src/
 
 ## What bites here
 
+- **Sierra's edge is three axes and a host** (`FJS-D649`): Navigation (scanner,
+  router, fetch, components), Build (build, postbuild, islands, widget's
+  runtime), Resource (`resource/`), and `virtual:sierra` with the theme switch.
+  Analytics, presence, devtools and the two static origins are batteries behind a
+  subpath — no axis imports one outside the allow-list in `test/edge.test.js`,
+  and the main entry is the router and the theme only. **Resource may import
+  Navigation and never the reverse** (`FJS-D651`). A new `src/` directory, or a
+  new `postbuild/` step, fails that test until it is classified; a site's
+  postbuild step starts as site-kit code (`FJS-D608`).
 - **A sign-in can answer a CHALLENGE, and it must not be refreshed.** `signIn`
   loads the session after the call; an account with a second factor has no
   session to load, so the branch that skips `refresh()` is load-bearing — without
@@ -656,7 +666,11 @@ src/
   the file already watches some other path on the same import, which says nothing
   about the component that watches nothing, and that is the component that
   shipped the bug. Measured free: 0 warnings over all 218 `.mesa` in this repo.
-  A deliberate one-time read says `var`.
+  A deliberate one-time read says `var`. **A `static` build holds every hint
+  until the prune step** and prints the ones whose module a kept chunk carries
+  (`FJS-D629`). The record is on the shared context because the island build is
+  a second Vite build. A hint that vanishes from a static build is NOT a fixed
+  read: check whether its component ships.
 - **The HMR boundary and its browser client are MESA'S.** This package
   reimplements the plugin — frontmatter, the fence preprocessor, slot rewriting,
   auto-imports — and used to reimplement the boundary with it; `FJS-D16` ended
@@ -709,7 +723,7 @@ table the API bridge uses, so `resource.load(page.query, page.directives)` is a
 filtered, sorted, paged list that lives in its URL (Invariant 10).
 
 **The resource hook context** — `createResource`'s pipeline, in
-`junction/resource.js`. Per **operation**, and it deliberately mirrors the API
+`resource/resource.js`. Per **operation**, and it deliberately mirrors the API
 realm's phases (`before` / `after` / `around` / `error`). It carries `service`,
 `model`, `method`, `id` and the call's own data — it is a *different object* from
 a `ServiceContext` that answers the same shape, because it runs in a browser with

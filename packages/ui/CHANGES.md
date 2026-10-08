@@ -1,6 +1,10 @@
 # Changes
 
 
+## 2026-10-08 — the drive reads `@frontierjs/sierra/field-rules` from sierra's `exports` (`FJS-D652`)
+
+`test/browser/server.mjs` mapped the specifier to `src/junction/field-rules.js` by hand. Sierra now exports the path, and the import map reads the file from there, the way it already reads toolbelt's. Sierra's coming `junction/` → `resource/` rename cannot leave the form specs pointing at a missing file.
+
 ## 2026-10-07 — the ELA port's kit gaps
 
 Measured on the ELA port's generated screens, each with a drive or a `form.mjs` case that fails without it.

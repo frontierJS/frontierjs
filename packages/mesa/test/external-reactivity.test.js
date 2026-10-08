@@ -15,7 +15,7 @@
 import { describe, test, expect } from 'vitest'
 import { compileSource } from '../src/compiler.js'
 
-const MOD = '@frontierjs/sierra/junction'
+const MOD = '@frontierjs/sierra/resource'
 const ES = { [MOD]: ['connected', 'reconnecting'] }
 
 const NONE = Symbol('no externalSignals')

@@ -28,7 +28,6 @@ const app = createApp({
   config: {
     port,
     build:    'server-2',
-    database: { url: '', log: false },
     services: { dir: '/nonexistent' },
   },
   logLevel: 'silent',

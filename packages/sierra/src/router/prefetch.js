@@ -21,7 +21,7 @@
  * was CACHED and then served: hovering a link could make the page you navigated
  * to render as if you were signed out (`FJS-041`). What the payload means
  * depends on who asked for it, so the cache is dropped whenever the identity
- * changes — see invalidatePrefetch(), called from sierra/junction whenever the
+ * changes — see invalidatePrefetch(), called from sierra/resource whenever the
  * client's token changes and on mid-session expiry.
  */
 

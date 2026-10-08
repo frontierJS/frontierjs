@@ -23,7 +23,7 @@ const _calls = []
 let _proxy
 let _headers = {}
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     callHeaders: () => _headers,
@@ -37,10 +37,10 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas }   = await import('../src/build/schema-plugin.js')
-const { registerSchemas }   = await import('../src/junction/schema-registry.js')
-const { createResource }    = await import('../src/junction/resource.js')
-const { pendingQueue, _resetPendingQueue }       = await import('../src/junction/pending.js')
-const { attachmentQueue, drainAttachments, _resetAttachmentQueue } = await import('../src/junction/attachments.js')
+const { registerSchemas }   = await import('../src/resource/schema-registry.js')
+const { createResource }    = await import('../src/resource/resource.js')
+const { pendingQueue, _resetPendingQueue }       = await import('../src/resource/pending.js')
+const { attachmentQueue, drainAttachments, _resetAttachmentQueue } = await import('../src/resource/attachments.js')
 
 const SOURCE = `
 model Shot   { id String @id @default(uuid())  name String  damage File?  @@gate("0.0.0.0")  @@sync(server) }

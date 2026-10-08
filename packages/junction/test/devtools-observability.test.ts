@@ -15,7 +15,8 @@
 // the resource that fails had no way to say so.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, devtools, defaultConfig } from '../index.ts'
+import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { devtools } from '../src/plugins/devtools/index.ts'
 
 const PORT   = 3387
 const DVPORT = 3388
@@ -31,7 +32,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },
@@ -107,7 +107,6 @@ describe('readiness takes checks from plugins', () => {
     const solo = createApp({
       config: {
         port: PORT + 40,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
@@ -147,7 +146,6 @@ describe('the banner says where the console is', () => {
     const bare = createApp({
       config: {
         port: PORT + 41,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
@@ -162,7 +160,6 @@ describe('the banner says where the console is', () => {
     const locked = createApp({
       config: {
         port: PORT + 42,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },
@@ -184,7 +181,6 @@ describe('the banner says where the console is', () => {
     const dyn = createApp({
       config: {
         port: PORT + 44,
-        database: { url: '', log: false },
         services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 200 },
       },

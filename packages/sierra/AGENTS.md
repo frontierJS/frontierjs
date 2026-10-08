@@ -27,7 +27,7 @@ that drifts, and the form, the table and the validator stop agreeing with the se
 ```html
 <!-- web/src/resources/Order.mesa — named for the MODEL, exports the accessor -->
 <script module>
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
   export const orders = createResource('orders')
 </script>
 
@@ -78,7 +78,7 @@ What a habit from another framework produces, and what this package wants.
 | `await orders.service.get(id)` kept in a variable | `orders.record(id)` — a live view |
 | `resources/orders.js`, two resources in one file | `resources/Order.mesa` exporting `orders`, one per file |
 | hand-written inputs plus a submit handler | `<Order />`, or `<Form resource={orders}>` |
-| `localStorage.setItem('token', …)` after a `fetch('/login')` | `signIn(email, password)` and `session` from `@frontierjs/sierra/junction` |
+| `localStorage.setItem('token', …)` after a `fetch('/login')` | `signIn(email, password)` and `session` from `@frontierjs/sierra/resource` |
 | `row.ownerId === session.user.id` | `session.user.userId` — `session.user` is the server's SessionContext, `{ userId, userType, email, name, role, … }`, and has no `id`, so the owner is shown nothing of their own |
 
 ---
@@ -231,7 +231,7 @@ has no id for a child to name, and a create carrying a file is not held at all.
 first, stopping at the first entry that still cannot arrive. An entry clears only
 when the server ACKNOWLEDGES it, and a replay carries the entry's key as its
 idempotency key, so a write that did arrive is answered, not applied twice.
-`pendingQueue()` from `@frontierjs/sierra/junction` is the screen's view of it:
+`pendingQueue()` from `@frontierjs/sierra/resource` is the screen's view of it:
 
 ```js
 const q = pendingQueue()
@@ -261,7 +261,7 @@ export const sheets = createResource('stocktakeSheets', {
 are code-split — the screen nobody opened declares nothing. Import every
 resource that must work offline from `main.js`, after `virtual:sierra`.
 
-**`offlineStatus()` from `@frontierjs/sierra/junction` is what the last warm found**
+**`offlineStatus()` from `@frontierjs/sierra/resource` is what the last warm found**
 (`FJS-D484`), beside `pendingQueue()`:
 
 ```js

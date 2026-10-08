@@ -14,7 +14,7 @@
   // `asSystem()` does not pass either. This is the provider's own account of
   // what it told the shop, and the only thing a person does with it is read it.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const paymentEvents = createResource('payment-events', { model: 'PaymentEvent' })
 </script>

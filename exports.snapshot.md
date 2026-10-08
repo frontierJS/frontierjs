@@ -161,8 +161,6 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./events` | `src/events/index.ts` | yes |
 | exports | `./cache` | `src/cache/index.ts` | yes |
 | exports | `./scheduler` | `src/scheduler/index.ts` | yes |
-| exports | `./workers` | `src/workers/index.ts` | yes |
-| exports | `./database` | `src/storage/database/index.ts` | yes |
 | exports | `./mail` | `src/mail/index.ts` | yes |
 | exports | `./ai` | `src/ai/index.ts` | yes |
 | exports | `./testing` | `src/testing/index.ts` | yes |
@@ -174,6 +172,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./backfill` | `src/plugins/backfill/index.ts` | yes |
 | exports | `./commitments` | `src/plugins/commitments/index.ts` | yes |
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
+| exports | `./export` | `src/plugins/export/index.ts` | yes |
+| exports | `./metrics` | `src/plugins/metrics/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./email` | `src/plugins/email/index.ts` | yes |
 | exports | `./channels` | `src/transport/channels.ts` | yes |
@@ -309,7 +309,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./router` | `src/router/entry.js` | yes |
 | exports | `./router/internals` | `src/router/internals.js` | yes |
 | exports | `./analytics` | `src/analytics/index.js` | yes |
-| exports | `./junction` | `src/junction/index.js` | yes |
+| exports | `./resource` | `src/resource/index.js` | yes |
+| exports | `./field-rules` | `src/resource/field-rules.js` | yes |
 | exports | `./islands` | `src/islands/loader.js` | yes |
 | exports | `./fetch` | `src/fetch/index.js` | yes |
 | exports | `./theme` | `src/theme/index.js` | yes |

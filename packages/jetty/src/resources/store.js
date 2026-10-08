@@ -1,6 +1,6 @@
 // store.js — backend-agnostic in-memory store for resource records.
 //
-// Ported from @frontierjs/sierra/junction/resource.js's createStore (Sierra v0.1.0).
+// Ported from @frontierjs/sierra/resource/resource.js's createStore (Sierra v0.1.0).
 // Pure logic. Apps consume this through Mesa via useStore() (see ./mesa-bridge.js).
 //
 // Differences from Sierra:

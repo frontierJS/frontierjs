@@ -767,16 +767,16 @@ be worse.
   way to do that. `targets: { allowHttp, allowPrivate }` is the opt-out and the
   only thing in this repo that turns it off is the delivery suite, whose
   receiver is a real server on localhost.
-- **A webhook subscriber is an AUDIENCE, and it is read rather than stated**
+- **A webhook subscriber is a principal, and it is read rather than stated**
   (`FJS-D193`). A delivery carried whatever the bus emitted — measured,
   `deliver('users:created', { …, password: 'hunter2' })` arrived in full
   (`FJS-724`). `FJS-631` one layer over, and `$readAs` does not carry across
   unchanged because a URL is not a principal. What makes it carry is that a
-  REGISTRATION had one: the audience is READ from the principal in scope at
+  REGISTRATION had one: the subscriber is READ from the principal in scope at
   registration, stored as an ID and re-resolved at every delivery — caravan's
   answer for a job, on a longer fuse. **Read and not stated is the security
   property**: `sessionFor` must never be wired to anything a request can name,
-  and `manage` (5) is the bar for creating a registration, so an audience the
+  and `manage` (5) is the bar for creating a registration, so a subscriber the
   registrant chose would make 5 the bar for receiving anything.
   **Three answers, and the line between the last two is the design**: *graded*;
   *ungraded* where grading was never APPLICABLE (no Data boundary, an event
@@ -786,7 +786,7 @@ be worse.
   retry table for a day. `$protectedFields` is the floor on the ungraded path
   alone, by name at any depth; under grading it would be a second reading of a
   rule the boundary already applied. **ABSENT is not `null`** — a custom store
-  that cannot record an audience answers `undefined`, which is *cannot say* and
+  that cannot record a subscriber answers `undefined`, which is *cannot say* and
   not *nobody*, and its deliveries go out ungraded saying so.
 - **Every address and every header value on a mail message is refused at BOTH
   ends** (`FJS-677`). SMTP is line-oriented, so a CRLF in a `to` is not a bad
@@ -810,18 +810,6 @@ be worse.
   the shared word made the two indistinguishable from a package header. What
   grows next belongs below: a PUT presign is `presignUrl` in litestone, and the
   junction-shaped half of it is a route that grades the caller and redirects.
-
-## `src/workers/`
-
-- **A worker's SETUP arrives by `workerData`, its WORK by `postMessage`, and the
-  first one is invisible to three of the four places you would look for it.** On
-  Bun 1.3.11 `new Worker(path, { workerData })` delivers — but only to
-  `node:worker_threads`; inside the worker `globalThis.workerData`,
-  `self.workerData` and `Bun.workerData` are all `undefined`, which is what made
-  a delivered value read as a dropped parameter (`FJS-271`). `workerData()` is
-  the read half and lives beside `spawn()`, the one place a `Worker` is
-  constructed — a pool RESPAWNS after an error, and a respawned worker built
-  without the setup data serves a different configuration than its siblings.
 
 ## `test/` and the typecheck
 

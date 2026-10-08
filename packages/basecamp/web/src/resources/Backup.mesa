@@ -5,7 +5,7 @@
   //
   // Hub tier, like Hub.mesa: `Backup` is `@@tenant(none)` because an archive is
   // of the whole installation, and the service is behind `requireSystemAdmin`.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const backups = createResource('backups')
 </script>

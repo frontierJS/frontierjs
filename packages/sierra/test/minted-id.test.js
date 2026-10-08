@@ -32,7 +32,7 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const _calls = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     callHeaders: () => ({}),
@@ -46,8 +46,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { createResource }  = await import('../src/junction/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { createResource }  = await import('../src/resource/resource.js')
 
 const SOURCE = `
 model Sheet  { id String @id @default(uuid())   name String  @@gate("0.0.0.0")  @@sync(server) }

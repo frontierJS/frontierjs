@@ -37,7 +37,7 @@ The seam this needs is already there, one attribute wide:
   (`packages/litestone/src/jsonschema.js`, the enum loop). The partial map is how a
   reader tells "the schema says" from "nobody said".
 - `buildFieldRules()` folds `x-labels` into `rule.options`
-  (`packages/sierra/src/junction/field-rules.js:215`).
+  (`packages/sierra/src/resource/field-rules.js:215`).
 - The tone vocabulary is closed and has one owner: the `tone` list in
   `packages/css/vocabulary.js`.
 

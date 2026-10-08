@@ -31,15 +31,15 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 let _proxy
 let _client
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => _client,
 }))
 
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
-const { registerSchemas }  = await import('../src/junction/schema-registry.js')
-const { createResource }   = await import('../src/junction/resource.js')
-const { warmOffline, offlineServices, offlineStatus, declareOffline, _resetOffline } = await import('../src/junction/offline.js')
-const { listCache, listKey, _resetListCache } = await import('../src/junction/list-cache.js')
+const { registerSchemas }  = await import('../src/resource/schema-registry.js')
+const { createResource }   = await import('../src/resource/resource.js')
+const { warmOffline, offlineServices, offlineStatus, declareOffline, _resetOffline } = await import('../src/resource/offline.js')
+const { listCache, listKey, _resetListCache } = await import('../src/resource/list-cache.js')
 
 // `Sheet` declares `@@sync`, `Plain` does not — which is the whole permission
 // story: rows are only ever written to a device for a model whose schema said

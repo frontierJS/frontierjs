@@ -35,12 +35,12 @@
 
 import type { App, Plugin }    from '../../core/app.ts'
 import type { IEventBus }      from '../../events/index.ts'
-import type { DatabaseClient } from '../../storage/database/index.ts'
+import type { Database } from 'bun:sqlite'
 import { signRequest }         from '@frontierjs/toolbelt/signature'
 import { sessionGateLevel }    from '../../core/litestone.ts'
 import { assertPublicUrl, PublicUrlError }   from '../../core/public-url.ts'
 import type { PublicUrlPolicy } from '../../core/public-url.ts'
-import { shapeForAudience, sayUnowned } from './payload.ts'
+import { shapeForSubscriber, sayUnowned } from './payload.ts'
 import type { ShapeResult }    from './payload.ts'
 
 // ─── Retry schedule ────────────────────────────────────────────────────────
@@ -71,13 +71,13 @@ export interface WebhookRegistration {
   /**
    * Who this registration speaks for — the principal that created it.
    *
-   * Every delivery is graded as this audience (`FJS-D193`). An ID and never a
+   * Every delivery is graded as this subscriber (`FJS-D193`). An ID and never a
    * session, so a registrant demoted since is graded at the standing they hold
    * now, which is what caravan already does with the principal at `dispatch()`.
    *
    * `null` is *nobody* — registered by app code outside a request, which is the
    * app acting on its own behalf and resolves through `createApp({ system })`.
-   * ABSENT is a different fact: a custom store that does not record an audience
+   * ABSENT is a different fact: a custom store that does not record a subscriber
    * cannot answer, and its deliveries go out ungraded and say so.
    */
   subscriber?: string | number | null
@@ -124,9 +124,7 @@ export interface IWebhookStore {
 
 // ─── SQLite store ──────────────────────────────────────────────────────────
 
-export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStore {
-
-  const db = dbClient.db
+export function createSqliteWebhookStore(db: Database): IWebhookStore {
 
   // Schema — idempotent
   db.run(`
@@ -497,10 +495,9 @@ export interface WebhookOptions {
   // Which events to fan out. Use ['*'] for everything.
   events: string[]
 
-  // Provide your own store implementation (e.g. Postgres-backed).
-  // If omitted, a SQLite store is created from app.db automatically.
-  // app.db must be configured if no store is provided.
-  store?: IWebhookStore
+  // Where registrations and deliveries live — `createSqliteWebhookStore(db)`
+  // over a bun:sqlite Database, or any IWebhookStore (e.g. Postgres-backed).
+  store: IWebhookStore
 
   // How often to poll for overdue retries (ms). Default 60 000.
   retryInterval?: number
@@ -513,7 +510,7 @@ export interface WebhookOptions {
   // The gate level a caller needs to manage registrations over HTTP. Default
   // ADMINISTRATOR(5): a registration is a standing grant to receive this app's
   // events, and it hands back an HMAC secret, so *any signed-in caller* is the
-  // wrong audience (`FJS-681`).
+  // wrong subscriber (`FJS-681`).
   manage?: number
 
   // Stop delivering to a registration after this many consecutive deliveries
@@ -523,11 +520,11 @@ export interface WebhookOptions {
   deactivateAfterDead?: number
 }
 
-// A registration whose audience is `undefined` — a custom store that does not
+// A registration whose subscriber is `undefined` — a custom store that does not
 // record one — cannot be keyed by that value beside a real `null`, and Map
 // treats the two as distinct keys already. The sentinel is for READING: it makes
 // the two cases visible at the call site rather than resting on a Map subtlety.
-const UNRECORDED = Symbol('audience not recorded')
+const UNRECORDED = Symbol('subscriber not recorded')
 
 // ─── webhooks() plugin ─────────────────────────────────────────────────────
 
@@ -544,19 +541,16 @@ export function webhooks(opts: WebhookOptions): Plugin {
       const deactivateAfterDead = opts.deactivateAfterDead ?? 3
 
       // ── Resolve store ──────────────────────────────────────────────
-      let store: IWebhookStore
-
-      if (opts.store) {
-        store = opts.store
-      } else {
-        if (!app.db) {
-          throw new Error(
-            '[webhooks] No database configured. ' +
-            'Either pass a custom store option via webhooks({ store: ... }).'
-          )
-        }
-        store = createSqliteWebhookStore(app.db as DatabaseClient)
+      // Stated, never derived from app.db: the client there is the app's
+      // schema, and these two tables are in none (`FJS-D641`).
+      if (!opts.store) {
+        throw new Error(
+          '[webhooks] No store. Pass one: ' +
+          "webhooks({ store: createSqliteWebhookStore(new Database('webhooks.db')) }), " +
+          'or any IWebhookStore.'
+        )
       }
+      const store: IWebhookStore = opts.store
 
       // ── Delivery helper ────────────────────────────────────────────
 
@@ -650,12 +644,12 @@ export function webhooks(opts: WebhookOptions): Plugin {
         const registrations = await store.findForEvent(eventName)
         const inFlight: Promise<void>[] = []
 
-        // One shaping per AUDIENCE rather than per registration — two
+        // One shaping per SUBSCRIBER rather than per registration — two
         // destinations registered by one person read the same rows, and
         // `$readAs` is the expensive half. `channels.ts` groups a broadcast the
         // same way and for the same reason.
         //
-        // A store that does not record an audience answers `undefined`, which
+        // A store that does not record a subscriber answers `undefined`, which
         // is a different key from `null`: *cannot say* against *nobody*.
         const shaped = new Map<unknown, ShapeResult>()
 
@@ -663,18 +657,18 @@ export function webhooks(opts: WebhookOptions): Plugin {
           const key = reg.subscriber === undefined ? UNRECORDED : reg.subscriber
           let answer = shaped.get(key)
           if (!answer) {
-            answer = await shapeForAudience({
-              db:       app.db,
+            answer = await shapeForSubscriber({
+              db:         app.db,
               app,
-              event:    eventName,
+              event:      eventName,
               payload,
-              audience: reg.subscriber,
+              subscriber: reg.subscriber,
             })
             shaped.set(key, answer)
           }
 
           if (!answer.deliver) {
-            // Not recorded as pending either: a payload this audience may not
+            // Not recorded as pending either: a payload this subscriber may not
             // read must not sit in a retry table for a day waiting to be sent.
             app.events.emit('webhook:refused', {
               event: eventName, webhookId: reg.id, reason: answer.reason,
@@ -747,9 +741,9 @@ export function webhooks(opts: WebhookOptions): Plugin {
           // what a name resolves to is not fixed at registration.
           await assertPublicUrl(url, targets)
 
-          // The audience is READ from the principal in scope and never taken
+          // The subscriber is READ from the principal in scope and never taken
           // from a caller's payload. `IAuth.sessionFor` must not be wired to
-          // anything a request can name, and a registration whose audience the
+          // anything a request can name, and a registration whose subscriber the
           // registrant chose is exactly that: level 5 is the bar for making
           // one, and it would then be the bar for receiving anything.
           const who = subscriber === undefined
@@ -850,9 +844,9 @@ export function webhooks(opts: WebhookOptions): Plugin {
         if (!body?.url)           return ctx.json({ error: 'url required' }, 400)
         if (!body?.events?.length) return ctx.json({ error: 'events required' }, 400)
         // Through the manager, which owns the target check AND reads the
-        // audience off the principal in scope. Registering through the store
+        // subscriber off the principal in scope. Registering through the store
         // here instead is how the route came to be the one registration path
-        // with no audience on it.
+        // with no subscriber on it.
         let hook: WebhookRegistration
         try { hook = await manager.register(body.url, body.events, body.secret) }
         catch (err) {
@@ -943,3 +937,8 @@ export function webhooks(opts: WebhookOptions): Plugin {
 // silently — exactly what used to happen to `app.conduit`. Out-of-tree plugins
 // should augment an empty interface Junction exports (AppConduit / AppJobs /
 // AppNotify), never redeclare the property.
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.webhooks`.
+declare module '../../core/app.ts' {
+  interface AppWebhooks extends WebhookManager {}
+}

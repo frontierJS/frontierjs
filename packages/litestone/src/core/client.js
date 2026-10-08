@@ -21,6 +21,7 @@ import {
   serializeBooleans, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
   aggregatableKeysFor, LIKE_SQL, likePattern,
+  sqlFragment, ident, and, join as sqlJoin,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -294,6 +295,12 @@ function buildAggHaving(expr, cond, params) {
 }
 
 
+// The seam a test reads a bulk write's plan through: `db.item[PLAN](verb, args)`.
+// A symbol, so it is on no completion list and no `Object.keys`; off
+// `src/index.js`, so it is on no published surface (`IDEAS/litestone-by-
+// construction.md` § 7.2 — a plan stays internal).
+export const PLAN = Symbol.for('litestone.plan')
+
 // ─── rows changed ─────────────────────────────────────────────────────────────
 // bun:sqlite's `.changes` is a total-changes delta, so it counts what TRIGGERS
 // and FOREIGN KEY actions wrote as well as the rows the statement named: one
@@ -312,7 +319,8 @@ function rowsChanged(db) {
 // create omitting the column (FJS-1402); a stamp fills only an absent key, so
 // what the caller sent is still graded as sent.
 function authStamped(row, modelName, ctx) {
-  return stampFromAuth(applyAuthDefaults(row, ctx.authDefaultMap?.[modelName], ctx.auth), ctx.createdByMap?.[modelName], ctx.auth)
+  const shape = ctx.shapes[modelName]
+  return stampFromAuth(applyAuthDefaults(row, shape.authDefaults, ctx.auth), shape.createdBy, ctx.auth)
 }
 
 // The three arguments are three different lifetimes, and that is the whole of
@@ -326,23 +334,85 @@ function authStamped(row, modelName, ctx) {
 // blanks for the ones it has no answer to (`new Set(), new Set(), false, null,
 // …`), so inserting a parameter in the middle shifted every argument after it
 // past that call with nothing to say so.
+/**
+ * What the schema says about one model or view — every facet present, an
+ * undeclared one its explicit empty value, the record frozen.
+ * @typedef {object} Shape
+ * @property {string}  modelName              as declared (`User`)
+ * @property {string}  tableName              what SQL names it; a view's is the view's own name
+ * @property {boolean} isView
+ * @property {import('../index.d.ts').ModelDef} model   the declaration (a view's model stub)
+ * @property {string}  db                     the database the rows live in (`main`)
+ * @property {Record<string, string>} columnMap   field → column, for the names that differ
+ * @property {Set<string>} jsonFields
+ * @property {Set<string>} generatedFields
+ * @property {Set<string>} computedFields
+ * @property {Set<string>} boolFields
+ * @property {Set<string>} bigFields
+ * @property {Record<string, { values: Set<string>, enumName: string, optional: boolean, array: boolean }>} enumFields
+ * @property {Map<string, 'array' | 'json' | 'file' | 'boolean'>} fieldKinds
+ * @property {Record<string, 'NUMERIC' | 'TEXT' | 'BLOB'>} affinity
+ * @property {boolean} softDelete
+ * @property {boolean} softDeleteCascade
+ * @property {string | null} hasTemplates      the `@@hasTemplates` marker column
+ * @property {{ from: string | null, to: string | null, kind: 'day' | 'instant', imposed: boolean } | null} effective
+ * @property {string[] | null} ftsFields
+ * @property {Record<string, import('./field-policy.js').FieldPolicy>} fieldPolicy
+ * @property {Record<string, { rotate: boolean }>} secrets
+ * @property {Record<string, any>} fromFields   `@from` and `@derived`, by field
+ * @property {Record<string, any>} relations    by relation field
+ * @property {Record<string, any>} edges        `@edge` storage, by field
+ * @property {Record<string, string[]>} coFk    child model → the FK columns a nested write propagates
+ * @property {{ field: string, generate: () => string } | null} autoId
+ * @property {{ field: string, generate: () => unknown }[]} generatedDefaults
+ * @property {{ field: string, authField: string }[]} authDefaults
+ * @property {{ field: string, value: unknown }[]} literalDefaults
+ * @property {{ field: string, sourceField: string }[]} fieldRefDefaults
+ * @property {{ field: string, authField: string }[]} createdBy
+ * @property {{ field: string, authField: string }[]} updatedBy
+ * @property {string | null} version           the `@version` column
+ * @property {string | null} sync              `@@sync`'s policy
+ * @property {{ relationField: string, fkField: string, referencedField: string }[]} selfRelations
+ * @property {{ field: string, scope: string }[]} sequences
+ * @property {Record<string, any> | null} transitions   by field, where the model declares `@@transitions`
+ * @property {{ self: any | null, parents: any[] }} seal
+ * @property {{ read: boolean, moves: Set<string>, columns: Set<string>, moveFields: Set<string> } | null} capabilities
+ * @property {any[] | null} commitments
+ * @property {Record<string, { allows: any[], denies: any[] }>} policy   by operation
+ * @property {Record<string, any>} scopes       `@@scope` predicates by name
+ * @property {boolean} hasValidation
+ * @property {{ byParent: any[], byChild: any[], requiresChildren: any[] | null }} cardinality
+ * @property {any[]} exclusions                 this model's `@@exclude` memberships, each with its `scope` name
+ * @property {any[]} valueSets                  the `@values` bindings its columns carry
+ * @property {Map<string, any[]>} fieldLogs    `@log` targets by field
+ * @property {any[] | null} modelLogs           `@@log` targets
+ * @property {Set<string>} guardedKeys          columns a non-system caller may not name
+ * @property {boolean} reachesGuarded           can any argument walk to one, through any relation
+ * @property {Set<string>} fieldReadKeys        columns carrying a read predicate
+ * @property {boolean} reachesFieldRead
+ * @property {Set<string>} policiedAggregates   `@from` aggregates over a target with a read policy
+ */
+
+// `shape` is a `Shape` (see `shapeFor` in `createClient`): every facet is
+// present, so nothing here defaults one. A facet this destructure does not
+// name is read as `shape.x` below.
 function makeTable(readDb, writeDb, shape, ctx) {
   const {
     tableName,                       // SQL table name ("user" — used in FROM/INTO clauses)
-    modelName,                       // Model name as declared ("User" — used to look up per-model maps)
-    jsonFields        = new Set(),
-    generatedFields   = new Set(),
-    computedFields    = new Set(),
-    softDelete        = false,
-    ftsFields         = null,
-    boolFields        = new Set(),
-    enumFields        = {},
-    fieldKinds        = new Map(),
-    softDeleteCascade = false,
-    fieldPolicy       = {},
-    fromFields        = {},
-    bigFields         = new Set(),
-    columnMap         = {},
+    modelName,                       // Model name as declared ("User")
+    jsonFields,
+    generatedFields,
+    computedFields,
+    softDelete,
+    ftsFields,
+    boolFields,
+    enumFields,
+    fieldKinds,
+    softDeleteCascade,
+    fieldPolicy,
+    fromFields,
+    bigFields,
+    columnMap,
   } = shape
 
   // Both halves of `@big`, decided once. The statement wrapper is what makes
@@ -367,6 +437,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _mapped = Object.keys(columnMap).length > 0
   const col = _mapped ? (name) => columnMap[name] ?? name : (name) => name
   if (_mapped) { readDb = mappedDb(readDb, columnMap); writeDb = mappedDb(writeDb, columnMap) }
+  // The table's name as a fragment, quoted once here rather than at each of the
+  // statements below that splice it.
+  const T = ident(tableName)
 
   // The other direction, for the two answers that arrive from SQLITE naming a
   // column: a unique conflict and a CHECK violation. Both become a sentence a
@@ -378,7 +451,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     for (const f in columnMap) back[columnMap[f]] = f
     return (c) => back[c] ?? c
   })()
-  const { relationMap, computedSets, computedFns, tx, emitter, globalFilters } = ctx
+  const { computedFns, tx, emitter, globalFilters } = ctx
   const plugins = ctx.plugins   // PluginRunner
   const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
   const _hasEnumFields = Object.keys(enumFields).length > 0
@@ -425,7 +498,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           `SELECT * FROM "${tableName}" WHERE ${cols.map(c => `"${col(c)}" = ?`).join(' AND ')} AND "${col('deletedAt')}" IS NOT NULL LIMIT 1`
         ).get(...cols.map(c => row[c] ?? null)) } catch { return err }
         if (!hit) continue
-        const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+        const idField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
         return new SoftDeletedUniqueError(modelName, cols, cols.map(c => redactValue(c, row[c])), hit[idField], idField)
       }
     }
@@ -460,7 +533,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const expr = checkViolationExpr(err)
     if (!expr) return err
 
-    const model = ctx.models[modelName]
+    const model = shape.model
     const norm  = (e) => String(e ?? '').replace(/\s+/g, ' ').trim()
     const want  = norm(expr)
     // SQLite reports the text the EMITTER wrote, which is in column space on a
@@ -583,7 +656,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           `SELECT 1 FROM "${cols[0].table}" WHERE ${cols.map(c => `"${c.to}" = ?`).join(' AND ')} LIMIT 1`
         ).get(...values)
         if (hit) continue
-        const [relation, rel] = Object.entries(ctx.relationMap?.[modelName] ?? {})
+        const [relation, rel] = Object.entries(shape.relations)
           .find(([, r]) => r.kind === 'belongsTo' && r.foreignKey === fields[0]) ?? []
         return parentRefusal(relation, fields, values, rel?.targetModel ?? cols[0].table)
       }
@@ -627,7 +700,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // caller, so the gate, the read filters, soft delete and the read policy are
   // the definition every read already uses. asSystem() is the blind reference,
   // and a key the engine stamped is its statement rather than the caller's.
-  const _parentKeys = (ctx.models[modelName]?.fields ?? []).flatMap(f => {
+  const _parentKeys = shape.model.fields.flatMap(f => {
     if (f.type?.kind !== 'relation') return []
     const a = f.attributes.find(x => x.kind === 'relation' && x.fields)
     return a ? [{ relation: f.name, target: f.type.name, fields: [a.fields].flat(), references: [a.references].flat() }] : []
@@ -687,7 +760,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // validation told a missing parent from a hidden one (FJS-1704). `hidden` is
   // hiddenParents' refusal for the row, whose parents the policy reads as missing.
   function checkCreate(row, hidden) {
-    const v = checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap, hidden?.hidden)
+    const v = checkCreatePolicy(modelName, row, ctx, hidden?.hidden)
     if (!v) return
     const p = _parentKeys.find(k => k.relation === v.parent)
     if (!p) throw new AccessDeniedError(v.message, { model: modelName, operation: 'create' })
@@ -719,7 +792,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       while (frontier.length) {
         const next = []
         for (const [parent, parentRows] of frontier) {
-          for (const rel of Object.values(ctx.relationMap?.[parent] ?? {})) {
+          for (const rel of Object.values(ctx.shapes[parent].relations)) {
             if (rel.kind !== 'hasMany' || rel.onDelete === 'SetNull' || rel.onDelete === 'SetDefault') continue
             const sink = ctx.cascadeSinkFor?.(rel.targetModel)
             if (!sink) continue
@@ -839,7 +912,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // The ladder mirrors applyFieldPolicyTo's, with one addition it cannot have:
   // a field-level @allow('read') is a predicate over a row, and an aggregate has
   // no row to evaluate it against, so it is refused rather than guessed at.
-  const _aggKeySets = ctx.models?.[modelName] ? aggregatableKeysFor(ctx.models[modelName]) : null
+  const _aggKeySets = aggregatableKeysFor(shape.model)
 
   function fieldReadRefusal(name) {
     const p = fieldPolicy[name]
@@ -899,7 +972,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `onlyTemplates` query args opt out / invert the filter.
   // Whether this model declares any @@scope. Checked before walking a where for
   // `$scope`, so a schema with none pays one boolean per read.
-  const _hasScopes = Object.keys(ctx.scopeMap?.[modelName] ?? {}).length > 0
+  const _hasScopes = Object.keys(shape.scopes).length > 0
 
   // Fields declaring @trim/@lower/@upper/@slug, or null when none do — the
   // same one-boolean cost for a where on a model without them.
@@ -909,14 +982,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
   const _transformed = transformedOf(modelName)
 
-  const hasTemplatesField = ctx.hasTemplatesMap?.[modelName] ?? null
+  const hasTemplatesField = shape.hasTemplates
   const hasTemplates      = hasTemplatesField !== null
 
   // The window, or null if this model declares none. `{ from, to, kind, imposed }`
   // — `from` is null on an `@@expires` model, `kind` is 'instant' or 'day'
   // depending on whether the columns are `DateTime` or `String @date`, and
   // `imposed` is which of the two words declared it.
-  const effective = ctx.effectiveMap?.[modelName] ?? null
+  const effective = shape.effective
 
   // Pre-build allowed write keys for this model. Used by writeData to detect
   // typos before SQL — a typo would otherwise surface as the cryptic SQLite
@@ -932,7 +1005,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //
   // Computed and generated fields are NOT writable, so they're omitted; if a
   // user passes one we want to surface the typo with a helpful hint.
-  const _modelForKeys = ctx.models?.[modelName]
+  const _modelForKeys = shape.model
   const _allowedWriteKeys = new Set()
   // name → why it cannot be written. Kept separately because these names are
   // absent from _allowedWriteKeys and would otherwise be dropped by the
@@ -978,16 +1051,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
   )
   // @capability — the column tier of the grid. Precomputed for the same reason:
   // empty on almost every model, so the per-write cost is a size test.
-  const _capabilityWriteKeys = ctx.capabilityMap?.[modelName]?.columns ?? new Set()
+  const _capabilityWriteKeys = shape.capabilities?.columns ?? new Set()
   // The columns that HOLD capabilities, as opposed to the ones a capability grades.
   // Typed `Capability[]` — litestone synthesizes that enum from the schema's own
   // surface, so the type carries both the typo refusal and the escalation guard.
   const _grantColumns = new Set(
     (_modelForKeys?.fields ?? []).filter(f => f.type?.name === 'Capability').map(f => f.name))
-  const _modelRels = ctx.relationMap?.[modelName] ?? {}
+  const _modelRels = shape.relations
 
   // ── @edge / @scoped write helpers ─────────────────────────────────────────────
-  const _edges = ctx.edgeMap?.[modelName] ?? {}
+  const _edges = shape.edges
   const _edgeNamespaces = new Set(Object.values(_edges).map(d => d.as))
 
   // Peel edge namespaces out of a write's data. `data.projectEdge = { isImportant }`
@@ -1191,7 +1264,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   let _cascadeParents      = null
   function _cascadeTargets() {
     if (!_cascadeTargetsCache) {
-      _cascadeTargetsCache = getCascadeTargets(modelName, ctx.relationMap, ctx.softDeleteMap, _modelToTable)
+      _cascadeTargetsCache = getCascadeTargets(modelName, ctx.shapes, _modelToTable)
       _cascadeParents      = new Set(_cascadeTargetsCache.map(t => t.parentModel))
     }
     return _cascadeTargetsCache
@@ -1265,8 +1338,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // authority, and a system principal lifts only authority (`FJS-D502`). A row
   // put where no move leads goes through `sys.sql`, the bypass that says so.
   //
-  const _tableTransitions = ctx.transitionMap?.[modelName] ?? null
-  const _tableCapabilities = ctx.capabilityMap?.[modelName] ?? null
+  const _tableTransitions = shape.transitions
+  const _tableCapabilities = shape.capabilities
 
   // Which transitions-typed column a bulk payload names, or null. `verb` is
   // carried into the message so the refusal names the call that was made.
@@ -1291,7 +1364,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const norm = spec.isBoolean ? (v) => (v == null ? v : !!v) : (v) => v
       // A value the enum does not name is writeData's refusal, which lists the
       // members; answering it here would say where the row starts instead.
-      const members = ctx.enumMap?.[modelName]?.[field]?.values
+      const members = enumFields[field]?.values
       for (const row of rows) {
         if (row == null || !(field in row) || row[field] == null) continue
         if (members && !members.has(row[field])) continue
@@ -1321,7 +1394,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const filterSql = filters.length
       ? buildWhereWithEncryption(filters.length === 1 ? filters[0] : { AND: filters }, params)
       : ''
-    const policy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
+    const policy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx) : null
     if (policy) params.push(...policy.params)
     const parts = [filterSql, policy?.sql].filter(Boolean)
     return parts.length ? { sql: parts.map(p => `(${p})`).join(' AND '), params } : null
@@ -1480,14 +1553,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // It is deliberately NOT lifted by asSystem(). A seal is the @immutable tier —
   // a statement about what the row IS — where the gate, the row policies and
   // @guarded are all statements about who is asking.
-  const _sealSelf    = ctx.sealMap?.[modelName]?.self    ?? null
-  const _sealParents = ctx.sealMap?.[modelName]?.parents ?? []
+  const _sealSelf    = shape.seal.self
+  const _sealParents = shape.seal.parents
 
   // Correlated: every sealed parent of the row being written is still unsealed.
   // Goes in a WHERE, so it works for update and for delete, where the child row
   // is what supplies the foreign key.
   function sealWhereClause(whereSql, whereParams) {
-    if (!_sealParents.length) return { sql: whereSql, params: whereParams }
+    if (!_sealParents.length) return sqlFragment(whereSql, whereParams)
     const parts  = []
     const params = [...whereParams]
     _sealParents.forEach((p, i) => {
@@ -1498,7 +1571,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       params.push(...p.states.map(_ecp))
     })
     const guard = parts.join(' AND ')
-    return { sql: whereSql ? `(${whereSql}) AND ${guard}` : guard, params }
+    return sqlFragment(whereSql ? `(${whereSql}) AND ${guard}` : guard, params)
   }
 
   // The create half. There is no child row yet, so the parent is named by the
@@ -1578,12 +1651,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // the machine declares out of a state the seal put the row in.
   function sealSelfClause(data, whereSql, whereParams) {
     if (!_sealSelf || !_immutableWriteKeys.size || !data || typeof data !== 'object' || Array.isArray(data))
-      return { sql: whereSql, params: whereParams, frozen: [] }
+      return { ...sqlFragment(whereSql, whereParams), frozen: [] }
     const frozen = Object.keys(data).filter(k => _immutableWriteKeys.has(k))
-    if (!frozen.length) return { sql: whereSql, params: whereParams, frozen: [] }
+    if (!frozen.length) return { ...sqlFragment(whereSql, whereParams), frozen: [] }
     return {
-      sql:    `(${whereSql}) AND "${_sealSelf.column}" NOT IN (${_sealSelf.states.map(() => '?').join(', ')})`,
-      params: [...whereParams, ..._sealSelf.states.map(_ecp)],
+      ...sqlFragment(
+        `(${whereSql}) AND "${_sealSelf.column}" NOT IN (${_sealSelf.states.map(() => '?').join(', ')})`,
+        [...whereParams, ..._sealSelf.states.map(_ecp)]),
       frozen,
     }
   }
@@ -1646,7 +1720,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // and travels as its count, which is the shape `changed` already has
   // (`FJS-D34`).
   function recordCrossProcess(event, eventCtx) {
-    const record = ctx._crossProcess?.recorders?.[ctx.modelDbMap?.[modelName] ?? 'main']
+    const record = ctx._crossProcess?.recorders?.[shape.db]
     if (!record) return
     const row = eventCtx.result ?? eventCtx.record ?? null
     record({
@@ -1729,8 +1803,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // with no children, and writing a CHILD moves the parent it names. The grade
   // itself is at the outermost commit (`cardinality.js`).
   const _cardNotes = tx.ledger
-    && ((ctx.cardinalityMap?.byParent?.[modelName]?.length ?? 0)
-      + (ctx.cardinalityMap?.byChild?.[modelName]?.length ?? 0)) > 0
+    && (shape.cardinality.byParent.length
+      + shape.cardinality.byChild.length) > 0
   function noteCardinality(row, before = null) {
     if (!_cardNotes || !row) return
     tx.ledger.noteParent(modelName, row)
@@ -1746,7 +1820,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `undefined` for every parent, which is silently no parents at all.
   function noteCardinalityBySql(whereSql, params) {
     if (!_cardNotes) return
-    const rules = ctx.cardinalityMap?.byChild?.[modelName] ?? []
+    const rules = shape.cardinality.byChild
     if (!rules.length) return
     const pairs = [...new Map(rules.flatMap(r =>
       r.fkColumns.map((c, i) => [c, r.fkFields[i]]))).entries()]
@@ -1762,11 +1836,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // (`exclusion.js`). A delete is never noted: removing a row cannot make two
   // overlap, and grading the key would refuse a delete for an overlap it did
   // not cause.
-  const _exclScopes = tx.exclusions ? (ctx.exclusionMap?.byModel?.[modelName] ?? []) : []
-  const _exclNotes  = _exclScopes.length > 0
-  const _exclFields = new Set(_exclScopes.flatMap(name =>
-    ctx.exclusionMap.scopes[name].members.filter(m => m.model === modelName)
-      .flatMap(m => [m.keyField, ...m.range, ...m.whereFields])))
+  const _exclMembers = tx.exclusions ? shape.exclusions : []
+  const _exclNotes   = _exclMembers.length > 0
+  const _exclFields  = new Set(_exclMembers.flatMap(m => [m.keyField, ...m.range, ...m.whereFields]))
   // Only a write naming the key, an end of the range or a field of `where:`
   // can move a row into another's range; every other update keeps its fast path.
   const exclTouched = (data) => _exclNotes && data != null && Object.keys(data).some(k => _exclFields.has(k))
@@ -1777,9 +1849,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // still moves the range under it, and the payload does not name it.
   function noteExclusionBySql(whereSql, params) {
     if (!_exclNotes) return
-    const keys = [...new Set(_exclScopes.map(name =>
-      ctx.exclusionMap.scopes[name].members.find(m => m.model === modelName)))]
-    const sel = [...new Map(keys.map(m => [m.keyColumn, m.keyField])).entries()]
+    const sel = [...new Map(_exclMembers.map(m => [m.keyColumn, m.keyField])).entries()]
       .map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
     const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
     for (const row of writeDb.query(sql).all(...params)) tx.exclusions.note(modelName, row)
@@ -1790,7 +1860,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     fireEvent(event, {
       model: modelName, operation, result, scope: 'row', count: 1,
       ...(transition ? { transition } : {}),
-      schema: ctx.models[modelName],
+      schema: shape.model,
     })
   }
 
@@ -1799,7 +1869,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // send every open tab back to the server.
     if (!count) return
     if (!hasAudience()) return
-    fireEvent(event, { model: modelName, operation, result: null, scope: 'collection', count, where, schema: ctx.models[modelName] })
+    fireEvent(event, { model: modelName, operation, result: null, scope: 'collection', count, where, schema: shape.model })
   }
 
   /**
@@ -1836,7 +1906,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Zero-cost when no onQuery configured and no $tapQuery listeners active.
   // Fires both the config-time onQuery hook (production logging) and any
   // runtime $tapQuery taps (Studio REPL, testing). Never throws, never blocks.
-  const _dbName = ctx.modelDbMap?.[modelName] ?? 'main'
+  const _dbName = shape.db
   function fireQuery(event) {
     emitQuery(ctx, tableName, _dbName, event)
   }
@@ -1851,7 +1921,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   // Derive the primary key field name for this table (used by upsertMany default conflict target)
-  const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+  const idField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
 
   // ── Logging helpers ───────────────────────────────────────────────────────
   //
@@ -1867,31 +1937,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //   tableNeedsModel — pre-computed: does any @@log declaration exist for this table
   //   tableNeedsField — pre-computed: does any @log declaration exist for this table
 
-  const _rawFieldLogs = ctx.logMap?.fields ?? {}
-  const _rawModelLogs = ctx.logMap?.models ?? {}
-
-  // Build per-table field log map (only entries for this table, key = fieldName only)
-  const tableFieldLogs = new Map()
-  for (const [key, configs] of Object.entries(_rawFieldLogs)) {
-    const dot = key.indexOf('.')
-    if (dot === -1) continue
-    const model = key.slice(0, dot)
-    // buildLogMap keys these `ModelName.fieldName` (see its header), and the
-    // model-level map below is looked up by `modelName` too. Comparing against
-    // tableName only matched while model name == table name — i.e. lowercase
-    // model names. Under the mandatory PascalCase convention `Post` !== `post`,
-    // so every field-level @log was silently dropped and @log(audit) on a field
-    // recorded nothing at all.
-    if (model !== modelName) continue
-    const field = key.slice(dot + 1)
-    tableFieldLogs.set(field, configs)
-  }
-
-  const tableModelLogs   = _rawModelLogs[modelName] ?? null
+  // Both keyed by THIS model in `shapeFor`, by model name: keyed by table name
+  // they matched only while the two spellings agreed, and under PascalCase
+  // every field-level @log recorded nothing and said nothing.
+  const tableFieldLogs   = shape.fieldLogs
+  const tableModelLogs   = shape.modelLogs
   // An @@anonymous table has no log (the parser refuses one) and still takes
   // this path, because its writes are what a logged write in the same
   // transaction is refused against (`FJS-D349`).
-  const tableAnonymous   = ctx.models[modelName]?.attributes?.some(a => a.kind === 'anonymous') ?? false
+  const tableAnonymous   = shape.model.attributes.some(a => a.kind === 'anonymous')
   const tableLogsWrites  = !!tableModelLogs?.some(l => l.writes) || [...tableFieldLogs.values()].some(cs => cs.some(c => c.writes))
   const tableHasLogWork  = tableFieldLogs.size > 0 || (tableModelLogs?.length > 0) || tableAnonymous
   const tableNeedsField  = tableFieldLogs.size > 0
@@ -2092,7 +2146,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const seen = new Set([from])
     const queue = [from]
     while (queue.length) {
-      for (const rel of Object.values(ctx.relationMap?.[queue.shift()] ?? {})) {
+      for (const rel of Object.values(ctx.shapes[queue.shift()].relations)) {
         if (rel.kind !== 'hasMany' || (rel.onDelete !== 'Cascade' && rel.onDelete !== 'SetNull') || seen.has(rel.targetModel)) continue
         seen.add(rel.targetModel)
         // A SetNull child stays, so nothing under it is reached through it.
@@ -2115,7 +2169,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     while (frontier.length) {
       const next = []
       for (const [parent, parentRows] of frontier) {
-        for (const rel of Object.values(ctx.relationMap?.[parent] ?? {})) {
+        for (const rel of Object.values(ctx.shapes[parent].relations)) {
           const clears = rel.onDelete === 'SetNull'
           if (rel.kind !== 'hasMany' || (rel.onDelete !== 'Cascade' && !clears)) continue
           const sink = ctx.cascadeSinkFor(rel.targetModel)
@@ -2183,7 +2237,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Schema never declared, which a browser then takes for composed data
   // (`FJS-1426`). So no read answers it.
   const _extMirror = (() => {
-    const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+    const ext = shape.model.attributes?.find(a => a.kind === 'extensible')
     return ext?.max ? `${ext.column}Slots` : null
   })()
   const _dropMirror = (r) => {
@@ -2193,7 +2247,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
   const _hasJson     = jsonFields.size > 0
   const _hasBool     = boolFields.size > 0
-  const _hasComputed = (computedSets[modelName]?.size ?? 0) > 0
+  const _hasComputed = computedFields.size > 0
 
   // ── @from deserialization ─────────────────────────────────────────────────
   // last/first return JSON strings from json_object() → parse to object
@@ -2391,7 +2445,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return terms.length ? `@check("${terms.join(' AND ')}")` : null
   }
 
-  const _fieldsByName = new Map((ctx.models?.[modelName]?.fields ?? []).map(f => [f.name, f]))
+  const _fieldsByName = new Map(shape.model.fields.map(f => [f.name, f]))
   const NUMERIC_TYPES = new Set(['Int', 'Float', 'BigInt', 'Decimal'])
 
   function refuseOp(key, msg) { throw new ValidationError([{ path: [key], message: msg }]) }
@@ -2581,7 +2635,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function setFragmentExpr(field, expr, params, setParams) {
     const exprs = _hasFieldWrite ? _fieldWriteExprs[field] : null
     const pred  = exprs && compileFieldPredicate(
-      modelName, exprs, 'update', ctx, ctx.policyMap ?? {}, ctx.schema, ctx.relationMap)
+      modelName, exprs, 'update', ctx)
     // The policy is keyed by the FIELD and the assignment names the COLUMN.
     const c = col(field)
     if (!pred) { setParams.push(...params); return `"${c}" = ${expr}` }
@@ -2606,7 +2660,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // The pool's shape is a fact about the SCHEMA, so it is read here; which key
   // holds which slot is a fact about the DATA, so that is read below.
   const _extensible = (() => {
-    const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+    const ext = shape.model.attributes?.find(a => a.kind === 'extensible')
     if (!ext?.max) return null   // no pool means no mirror to keep
     const decl = ctx.models[ext.declaredBy]
     // Which enum member means a numeric slot is decided by the SEED's own
@@ -2616,7 +2670,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // of how the pool was named, and a member renamed from `number` to
     // `numeric` would have moved every value into a text slot with nothing
     // failing.
-    const numeric = new Set(ctx.models[modelName].fields
+    const numeric = new Set(shape.model.fields
       .filter(f => f.extKind && f.type.name === 'Float').map(f => f.extKind))
     return {
       column:      ext.column,
@@ -2993,7 +3047,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (!policy.allow?.write?.length) continue
       if (!(fieldName in transformed)) continue
       const permitted = policy.allow.write.some(expr =>
-        evalJs(expr, ctx, transformed, modelName, ctx.policyMap ?? {}, ctx.relationMap, 'create')
+        evalJs(expr, ctx, transformed, modelName, 'create')
       )
       if (!permitted) delete transformed[fieldName]
     }
@@ -3004,7 +3058,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // single File reached `refuseUnbindable` and was refused about atomic
   // operators, naming neither the type nor the plugin; a `File[]` was worse —
   // it went through the Json path and stored `[{}]` (`FJS-1898`).
-  const _fileFields = (ctx.models?.[modelName]?.fields ?? []).filter(f => f.type?.name === 'File').map(f => f.name)
+  const _fileFields = shape.model.fields.filter(f => f.type?.name === 'File').map(f => f.name)
   const _needsStorage = (v) => v !== null && typeof v === 'object' && !(v instanceof Date)
   function refuseFileWithoutStorage(data) {
     if (!_fileFields.length || plugins?.handles('File')) return
@@ -3033,7 +3087,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null, creating = false } = {}) {
-    const model = ctx.models[modelName]
+    const model = shape.model
 
     // Unknown keys in the data payload are silently stripped — mass-assignment
     // protection, so a form/request body can be passed straight in without
@@ -3272,7 +3326,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // here once, with their wording built at the throw site, so an authored
     // `@minItems(2, "Pick at least two tags")` reached the browser through
     // `x-messages` and was ignored by the server (FJS-194).
-    if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
+    if (model && shape.hasValidation) validate(transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
 
     // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.enc.key && hasFieldPolicy) protectEncryptedFields(transformed)
@@ -3358,21 +3412,21 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // (FJS-1314), and a second `t` would shadow the first, so the inner
   // correlation would compare the target to itself.
   function relationFilterOn(owner, depth, relName, cond, params, tableAlias) {
-    const rel = ctx.relationMap?.[owner]?.[relName]
+    const rel = ctx.shapes[owner].relations[relName]
     if (!rel) return undefined   // not a relation → normal column
 
     const parentRefKey = rel.referencedKey ?? (rel.kind === 'manyToMany' ? rel.selfPk : null) ?? 'id'
     // The parent side is the OWNER's column; everything aliased `t` is the
     // target's, so the two take different maps.
-    const omap = ctx.columnMaps?.[owner]
+    const omap = ctx.shapes[owner].columnMap
     const oc   = owner === modelName ? col : (nm) => omap?.[nm] ?? nm
-    const tmap = ctx.columnMaps?.[rel.targetModel]
+    const tmap = ctx.shapes[rel.targetModel].columnMap
     const tc   = tmap && Object.keys(tmap).length ? (nm) => tmap[nm] ?? nm : (nm) => nm
     const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${oc(rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey)}"`
     const t = depth ? `t${depth}` : 't'
     const j = depth ? `j${depth}` : 'j'
     const targetTable = _modelToTable(rel.targetModel)
-    const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND ${t}."${tc('deletedAt')}" IS NULL` : ''
+    const targetSoft  = ctx.shapes[rel.targetModel].softDelete ? ` AND ${t}."${tc('deletedAt')}" IS NULL` : ''
 
     // Build the inner WHERE against the target table (aliased `t`, `t1`, … by depth).
     // The target's own write transforms apply here; the outer rewrite only
@@ -3381,8 +3435,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const targetTransformed = transformedOf(rel.targetModel)
     // A target's @from and @derived fields are subqueries, not columns, so the
     // alias this level gave the target is what they correlate on.
-    const targetFrom = ctx.fromMap?.[rel.targetModel]
-    const targetExprs = targetFrom
+    const targetFrom = ctx.shapes[rel.targetModel].fromFields
+    const targetExprs = Object.keys(targetFrom).length
       ? Object.fromEntries(Object.entries(targetFrom).map(([n, d]) => [n, d.subquerySqlFor(t)]))
       : null
     const innerOf = (w) => {
@@ -3390,7 +3444,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (targetTransformed) w = rewriteTransformedWhere(w, targetTransformed)
       const p = []
       const sql = buildWhere(w, p, targetExprs, t, null,
-        (k, v, pp, al) => relationFilterOn(rel.targetModel, depth + 1, k, v, pp, al), ctx.filterKindMap?.[rel.targetModel], tmap)
+        (k, v, pp, al) => relationFilterOn(rel.targetModel, depth + 1, k, v, pp, al), ctx.shapes[rel.targetModel].fieldKinds, tmap)
       return { sql, p }
     }
 
@@ -3457,7 +3511,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         throw new ValidationError([{ path: ['where', '$scope'], message:
           `$scope names a declared @@scope, so it is a string — got ${n === null ? 'null' : typeof n}` }])
     const clauses = names.map(n =>
-      compileScope(modelName, n, ctx, ctx.scopeMap, ctx.policyMap, ctx.schema, relationMap))
+      compileScope(modelName, n, ctx))
     // Several scopes AND, and they AND with the rest of the where. A disjunction
     // is written as its own scope, where the OR is in the expression language
     // and both compilers can see it.
@@ -3486,6 +3540,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
     return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
+  }
+
+  // The same where as a fragment: its text and its binds leave together, so a
+  // verb assembling it beside the policy and the seal cannot push one half
+  // before the other (`FJS-262`). `null` when the where said nothing.
+  function whereFragment(where, tableAlias = null, outerIsAliased = tableAlias === 't') {
+    const params = []
+    const text   = buildWhereWithEncryption(where, params, tableAlias, outerIsAliased)
+    return text ? sqlFragment(text, params) : null
   }
 
   /**
@@ -3691,8 +3754,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //
   // The check is skipped outright on a model with nothing that can produce the
   // problem, so the ordinary read pays for it once, at construction.
-  const _filterCheckKeys = _dynamicGlobalFilter && ctx.models[modelName]
-    ? globalFilterKeysFor(ctx.models[modelName], ctx.edgeMap)
+  const _filterCheckKeys = _dynamicGlobalFilter && shape.model
+    ? globalFilterKeysFor(shape.model, shape.edges)
     : null
 
   function resolveGlobalFilter() {
@@ -3727,7 +3790,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function _isNullable(col) {
     if (!_nullableCache) {
       _nullableCache = new Set()
-      for (const f of ctx.models[modelName]?.fields ?? [])
+      for (const f of shape.model.fields)
         if (f.type?.optional) _nullableCache.add(f.name)
     }
     return _nullableCache.has(col)
@@ -3735,7 +3798,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function _keyCols() {
     if (_keyColsCache) return _keyColsCache
-    const model = ctx.models[modelName]
+    const model = shape.model
     const composite = model?.attributes?.find(a => a.kind === 'id')
     if (composite?.fields?.length) return (_keyColsCache = [...composite.fields])
     const single = model?.fields?.find(f => f.attributes.some(a => a.kind === 'id'))
@@ -3755,7 +3818,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (_upsertUniqueColsCache) return _upsertUniqueColsCache
     const s = new Set()
     const keyIsSingle = _keyCols().length === 1
-    for (const f of ctx.models[modelName]?.fields ?? []) {
+    for (const f of shape.model.fields) {
       const isId = f.attributes.some(a => a.kind === 'id')
       if (f.attributes.some(a => a.kind === 'unique') || (isId && keyIsSingle)) s.add(f.name)
     }
@@ -3859,7 +3922,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // differed — and they are equal whenever the clock has not moved between two
   // writes to one row, which under an injected clock is every write after the
   // first (FJS-531). One writer, no trigger, no window.
-  const _stampCols = updatedAtFields(ctx.models[modelName] ?? {}).map(f => f.name)
+  const _stampCols = updatedAtFields(shape.model).map(f => f.name)
 
   // `named` is the list of columns this statement already sets, which is what the
   // trigger's `WHEN NEW.c IS OLD.c` guard means: a write naming the stamp keeps
@@ -3903,7 +3966,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // can compile { addr: { city: 'NYC' } } to json_extract("addr", '$.city') = ?.
   // Also expose the schema's full type registry as $nestedTypes so the where
   // builder can recurse into nested @type fields.
-  const _modelDecl = ctx.models[modelName]
+  const _modelDecl = shape.model
   let _typedJsonMap = null
   if (_modelDecl && ctx.typeMap && ctx.typeMap.size > 0) {
     const localMap = {}
@@ -4004,6 +4067,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _baseSqlWithFrom = _hasFrom
     ? `SELECT ${_starCols(`"${tableName}".`)}, ${_fromEntries.map(([n, {subquerySql}]) => `${subquerySql} AS "${n}"`).join(', ')} FROM "${tableName}"`
     : (_defaultCols ? `SELECT ${_starCols()} FROM "${tableName}"` : _baseSql)
+  const _baseFrag = sqlFragment(_baseSqlWithFrom)
   // Set of @from field names that return JSON objects (need deserialization)
   const _fromObjectFields = _hasFrom
     ? new Set(_fromEntries.filter(([,{isObject}]) => isObject).map(([n]) => n))
@@ -4041,7 +4105,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //             (we add the deletedAt clause in the precomputed SQL).
   // The PK field name is derived from `idField` already computed below; we need
   // to compute it earlier here. Find it inline.
-  const _pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
+  const _pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? null
   const _canFastFindUnique = (
     _pkField &&
     !ctx.hasPolicies &&
@@ -4066,33 +4130,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
     catch { _fastFindUniqueStmt = null }
   }
 
-  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', effMode = 'inForce', asOf = null, distinct = false, windowSpec = null, withVectors = false } = {}) {
-    const params   = []
-
+  // `verb` is the fold's name for the caller and `args` its own flags; the
+  // rules are folded here, after the fast path, because that path is the one
+  // statement whose precondition is the RAW where being empty.
+  function buildSQL({ verb = 'findMany', where, args, orderBy, limit, offset, parsedSelect, distinct = false, windowSpec = null, withVectors = false } = {}) {
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
-    if (_fastFindManySql && !withVectors && !where && !orderBy && limit == null && offset == null && sdMode === 'live' && !parsedSelect && !windowSpec && !distinct) {
-      return { sql: _fastFindManySql, params }
+    if (_fastFindManySql && !withVectors && !where && !orderBy && limit == null && offset == null && !parsedSelect && !windowSpec && !distinct && sdMode(args) === 'live') {
+      return { sql: _fastFindManySql, params: [] }
     }
 
-    // Merge global filter + plugin read filters + query where
-    const globalFilter = resolveGlobalFilter()
-    const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-    const allFilters = globalFilter
-      ? (pluginFilters.length ? [globalFilter, ...pluginFilters] : [globalFilter])
-      : pluginFilters
-    const mergedWhere = allFilters.length
-      ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-      : where
-    // Row-level policy filter — injected as raw SQL after mergedWhere
-    const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-    // Inject soft delete and @@hasTemplates filters before building WHERE.
-    // Both are AND-composed onto whatever the caller passed; both fall back to
-    // pass-through if the model doesn't opt in.
-    const sdWhere = softDelete
-      ? injectSoftDeleteFilter(mergedWhere, sdMode)
-      : mergedWhere
-    let exclWhere = applyHtFilter(sdWhere, htMode)
-    if (effective) exclWhere = injectEffectiveFilter(exclWhere, effMode, effective, asOf)
+    // Row-level policy filter — a fragment ANDed after the where below
+    const { where: visWhere, policy: policyFrag } = visibleWhere(verb, where, args)
+    let exclWhere = visWhere
 
     // A similarity ordering carries its own guard. The extension throws on a
     // null operand rather than ranking the row last, so an un-embedded row
@@ -4119,7 +4168,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // nothing. Sharing one array would push a `$raw`'s params twice.
     const _relOrderParams  = []
     const _flatOrderParams = []
-    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams, _pointMap, _vectorMap, _vectorFn(readDb), columnMap)
+    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, ctx.shapes, _modelToTable, _relOrderParams, _pointMap, _vectorMap, _vectorFn(readDb), columnMap)
     const hasJoins  = joinClauses.length > 0
     // The table is aliased for a relation AGGREGATE orderBy too, which adds an
     // order part and no join — so the alias question and the join question are
@@ -4140,21 +4189,25 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // ordering by the alias instead would compile to a column that read's SELECT
     // does not have. Six kB bound twice is nothing beside the scan it orders.
     //
-    // Pushed into `params` BEFORE the where, because a SELECT expression's
-    // placeholder comes first in the statement and these are positional.
+    // A fragment in the SELECT list, so its bind sits where its placeholder is:
+    // before the where's, because the statement is assembled in text order and
+    // nothing else decides the positional order.
     const _vecSqlFn = _vecPlan ? _vectorFn(readDb) : null
-    let _distTail = ''
-    if (_vecSqlFn) {
-      params.push(vectorQueryBytes(_vecPlan.near, _vecPlan.dim, _vecPlan.field))
-      _distTail = `, ${_vecSqlFn}(${needsAlias ? 't.' : ''}"${col(_vecPlan.field)}", ?) AS "${DISTANCE_FIELD}"`
-    }
+    const distFrag = _vecSqlFn
+      ? sqlJoin([
+          sqlFragment(`, ${_vecSqlFn}(${needsAlias ? 't.' : ''}`),
+          ident(col(_vecPlan.field)),
+          sqlFragment(', ?) AS ', [vectorQueryBytes(_vecPlan.near, _vecPlan.dim, _vecPlan.field)]),
+          ident(DISTANCE_FIELD),
+        ], '')
+      : null
 
-    const whereSql  = buildWhereWithEncryption(exclWhere, params, whereAlias, needsAlias)
+    const whereFrag = whereFragment(exclWhere, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
     const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
-    const orderParams = hasJoins ? _relOrderParams : _flatOrderParams
+    const orderFrag = orderSql ? sqlFragment(` ORDER BY ${orderSql}`, hasJoins ? _relOrderParams : _flatOrderParams) : null
     const sqlCols   = parsedSelect?.sqlCols ?? '*'
     const distinctKw = distinct ? 'DISTINCT ' : ''
     // A @from subquery correlates to the outer table by name, so an aliased
@@ -4163,77 +4216,67 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // `SELECT t.*` did — dropped every @from field to undefined, and any
     // @computed field reading one then computed from undefined in silence.
     const fromExpr = n => needsAlias ? fromFields[n].subquerySqlAliased : fromFields[n].subquerySql
-    let basePart
+    // The SELECT list's text; `null` means the precomputed base statement.
+    let selectCols
     if (sqlCols === '*') {
       const allFromCols = needsAlias && _hasFrom
         ? _fromEntries.map(([n]) => `${fromExpr(n)} AS "${n}"`).join(', ')
         : null
-      basePart = needsAlias
-        ? `SELECT ${distinctKw}${_starCols('t.', withVectors)}${allFromCols ? `, ${allFromCols}` : ''}${_distTail} FROM "${tableName}" t`
-        : (distinct || _distTail || withVectors
-            ? `SELECT ${distinctKw}${_starCols('', withVectors)}${_hasFrom ? `, ${_fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')}` : ''}${_distTail} FROM "${tableName}"`
-            : _baseSqlWithFrom)
+      selectCols = needsAlias
+        ? `${_starCols('t.', withVectors)}${allFromCols ? `, ${allFromCols}` : ''}`
+        : (distinct || distFrag || withVectors
+            ? `${_starCols('', withVectors)}${_hasFrom ? `, ${_fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')}` : ''}`
+            : null)
     } else {
       const fromCols = parsedSelect?.requestedFrom?.size
         ? [...parsedSelect.requestedFrom].map(n => `${fromExpr(n)} AS "${n}"`).join(', ')
         : null
-      const selectExpr = fromCols ? `${sqlCols}, ${fromCols}` : sqlCols
-      basePart = needsAlias
-        ? `SELECT ${distinctKw}${selectExpr}${_distTail} FROM "${tableName}" t`
-        : `SELECT ${distinctKw}${fromCols ? selectExpr : sqlCols}${_distTail} FROM "${tableName}"`
+      selectCols = fromCols ? `${sqlCols}, ${fromCols}` : sqlCols
     }
-    // Splice relation JOINs between FROM and WHERE
-    let sql = joinClauses.length
-      ? `${basePart} ${joinClauses.join(' ')}`
-      : basePart
-    // Combine query WHERE with policy filter
-    if (whereSql && policyResult)      sql += ` WHERE (${whereSql}) AND (${policyResult.sql})`
-    else if (whereSql)                 sql += ` WHERE ${whereSql}`
-    else if (policyResult)             sql += ` WHERE ${policyResult.sql}`
-    if (policyResult) params.push(...policyResult.params)
-    // After the policy's params, because the policy is ANDed into the WHERE and
-    // ORDER BY comes after it in the statement.
-    if (orderSql)       { sql += ` ORDER BY ${orderSql}`; params.push(...orderParams) }
-    if (limit  != null) sql += ` LIMIT ${Number(limit)}`
-    if (offset != null) sql += ` OFFSET ${Number(offset)}`
+    const head = selectCols === null
+      ? _baseFrag
+      : sqlJoin([sqlFragment(`SELECT ${distinctKw}${selectCols}`), distFrag, sqlFragment(' FROM '), T, needsAlias ? sqlFragment(' t') : null], '')
+    // Relation JOINs sit between FROM and WHERE
+    const joinsFrag = hasJoins ? sqlFragment(` ${joinClauses.join(' ')}`) : null
+    // The caller's where and the policy, one WHERE — and() parenthesizes each
+    // when both are present and emits the one alone otherwise.
+    const whereAll    = and(whereFrag, policyFrag)
+    const whereClause = whereAll ? sqlFragment(` WHERE ${whereAll.sql}`, whereAll.params) : null
+    const limitFrag   = limit  != null ? sqlFragment(` LIMIT ${Number(limit)}`)   : null
+    const offsetFrag  = offset != null ? sqlFragment(` OFFSET ${Number(offset)}`) : null
 
     // ── Window functions ──────────────────────────────────────────────────
     // Inject as a wrapping subquery so LIMIT/OFFSET applies after window computation.
     // Without the wrap, LIMIT would reduce rows before RANK() etc. are evaluated.
     if (windowSpec) {
-      const windowCols = buildWindowCols(windowSpec, params)
+      const winParams  = []
+      const windowCols = buildWindowCols(windowSpec, winParams)
       if (windowCols.length) {
+        const windowExpr = windowCols.join(', ')
         if (limit == null && offset == null) {
           // No pagination — inline window functions directly in SELECT, no subquery needed.
           // This avoids materializing a full subquery when scanning the whole table.
-          const windowExpr = windowCols.join(', ')
-          const inlineSql = sql.replace(/^SELECT /, `SELECT ${windowExpr}, `)
-          return { sql: inlineSql, params }
+          const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag], '')
+          return { sql: stmt.sql.replace(/^SELECT /, `SELECT ${windowExpr}, `), params: [...stmt.params, ...winParams] }
         }
         // With LIMIT/OFFSET: wrap in subquery so pagination applies AFTER window computation.
         // Without the wrap, LIMIT would reduce rows before RANK() etc. are evaluated.
-        const innerSql = sql
-          .replace(/ LIMIT \d+$/, '')
-          .replace(/ LIMIT \d+ OFFSET \d+$/, '')
-          .replace(/ OFFSET \d+$/, '')
-        const outerSelect = `*, ${windowCols.join(', ')}`
-        let outerSql = `SELECT ${outerSelect} FROM (${innerSql}) _w`
-        if (orderSql)       outerSql += ` ORDER BY ${orderSql}`
-        if (limit  != null) outerSql += ` LIMIT ${Number(limit)}`
-        if (offset != null) outerSql += ` OFFSET ${Number(offset)}`
-        return { sql: outerSql, params }
+        const inner = sqlJoin([head, joinsFrag, whereClause, orderFrag], '')
+        const outer = sqlJoin([
+          sqlFragment(`SELECT *, ${windowExpr} FROM (`), inner, sqlFragment(') _w', winParams),
+          orderSql ? sqlFragment(` ORDER BY ${orderSql}`) : null,
+          limitFrag, offsetFrag,
+        ], '')
+        return { sql: outer.sql, params: outer.params }
       }
     }
 
-    return { sql, params }
+    const stmt = sqlJoin([head, joinsFrag, whereClause, orderFrag, limitFrag, offsetFrag], '')
+    return { sql: stmt.sql, params: stmt.params }
   }
 
-  // Pre-build the @from map for this table — passed to parseSelectArg, which
-  // reads the defs and not only the names.
-  const _fromSets = _hasFrom ? { [modelName]: new Map(Object.entries(fromFields)) } : null
-
   function parseArgs(select, include) {
-    return parseSelectArg(select, modelName, relationMap, computedSets, include, _fromSets, computedFns, columnMap)
+    return parseSelectArg(select, modelName, ctx.shapes, include, computedFns)
   }
 
   function withIncludes(rows, ps, rawInclude) {
@@ -4359,15 +4402,6 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return injectEffectiveFilter(where, mode, effective, effAsOf(args))
   }
 
-  // The same step where the modes were resolved earlier and `args` is no longer
-  // the thing in hand. Both exist for `applySdFilter`'s reason — the call is
-  // made on every read, including on models that declare no window, so a flag
-  // this model cannot honor is refused rather than passing through in silence.
-  function applyEff(where, mode, asOf) {
-    if (!effective) return where
-    return injectEffectiveFilter(where, mode, effective, asOf)
-  }
-
   // Compose: apply hasTemplates filter on top of soft-delete-filtered where.
   // Both filters AND together at the WHERE level — orthogonal concerns.
   // `recursive` is a findMany shape. A method that cannot walk a tree has to
@@ -4384,7 +4418,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // write that closes the loop is both cheaper than carrying it on every read
   // and the only place that can name the field that was wrong.
   function assertNoParentCycle(rowIds, data) {
-    const rels = ctx.selfRelationMap?.[modelName]
+    const rels = shape.selfRelations
     if (!rels?.length || !data) return
     for (const rel of rels) {
       if (!(rel.fkField in data)) continue
@@ -4433,7 +4467,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // filter by design — that is its stated contract, and the reason it exists
   // beside `remove`. A FLAG still narrows it, so `deleteMany({ onlyDeleted:
   // true })` purges exactly the rows already soft-deleted, which is the thing
-  // people were writing raw SQL for.
+  // people were writing raw SQL for. Stated as the verb's own args rather than
+  // as a case inside the rule: a hard delete's default IS `withDeleted`.
   //
   // Templates: the filter applies, like every other statement. A template is a
   // live row in a parallel category, not an end state — so `deleteMany({ where:
@@ -4447,15 +4482,104 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // verb, so a bypass here would mean nothing in particular. A sweep that wants
   // the dead rows says `onlyExpired`, which is the intent it was spelling by
   // hand with a cutoff anyway. An `@@effective` window reaches a delete the way
-  // it reaches a read: only when `asOf` is stated.
-  function _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }) {
-    const sdFlagMode = sdMode({ withDeleted, onlyDeleted })
-    const sdW = sdFlagMode === 'live' ? where : injectSoftDeleteFilter(where, sdFlagMode)
-    const htW = applyHtFilter(sdW, htMode({ withTemplates, onlyTemplates }))
-    // `asOf` rides with the flags, or a sweep that states an instant deletes at
-    // `now` instead and matches nothing — which is silent, because a delete
-    // that removed no rows answers a count rather than an error.
-    return applyEffFilter(htW, { withExpired, onlyExpired, asOf })
+  // it reaches a read: only when `asOf` is stated. `asOf` rides with the flags,
+  // or a sweep that states an instant deletes at `now` instead and matches
+  // nothing — silently, because a delete that removed no rows answers a count.
+  function hardDeleteFlags({ withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }) {
+    return { withDeleted: withDeleted || !onlyDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
+  }
+
+  // ── The read rules, declared once ──────────────────────────────────────────
+  //
+  // Every verb that reaches a row applies every rule that guards it, in this
+  // order, because positional binds make the order the correctness (`FJS-262`,
+  // `FJS-216`). `test/verbs-rules.test.ts` is the oracle and is not derived from
+  // this table (`FJS-597`).
+  //
+  // `gate` is the grid's first row and is not here: GatePlugin refuses the CALL
+  // in beforeRead/beforeUpdate/beforeDelete, and a where cannot say no.
+  //
+  // A rule is one of three shapes. `scope` states a where of its own, the app's
+  // (`filters:`) or a plugin's (tenancy), and every scope is ANDed beside the
+  // caller's where as ONE node, scopes first. `where` rewrites the where in
+  // hand with the mode the verb's own args state; each one delegates to the
+  // owner of its rule's meaning, which is where a flag the model cannot honor
+  // is refused by name. `policy` is a fragment ANDed after everything else,
+  // compiled for the op the verb is.
+  //
+  // `verbs` names the verbs a rule applies to, or '*'. A set here is the grid
+  // made data, and a verb a set leaves out is a hole this file can see:
+  //   - the app's and the plugins' scopes narrow a READ and never a write,
+  //     which is what the grid asserts today;
+  //   - `recursive` is findMany's tree walk, and neither scope reaches it — an
+  //     anchor the global filter hides is still walked (the family of
+  //     `FJS-216`); the row is here so the omission is named rather than silent;
+  //   - `restore` takes no widening flag, so folding the template and window
+  //     rules into it would make a removed template or an expired row
+  //     unrestorable with no spelling to ask for it.
+  const READ_VERBS = Object.freeze(['findMany', 'findFirst', 'findUnique', 'findManyAndCount', 'count', 'exists', 'aggregate', 'groupBy', 'findManyCursor', 'search'])
+  const NOT_RESTORE = Object.freeze([...READ_VERBS, 'recursive', 'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany'])
+  const READ_RULES = Object.freeze([
+    { name: 'globalFilter',  verbs: READ_VERBS,  scope: () => resolveGlobalFilter() },
+    { name: 'pluginFilters', verbs: READ_VERBS,  scope: () => plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : null },
+    { name: 'softDelete',    verbs: '*',         where: (where, args) => applySdFilter(where, args) },
+    { name: 'templates',     verbs: NOT_RESTORE, where: (where, args) => applyHtFilter(where, htMode(args)) },
+    { name: 'effective',     verbs: NOT_RESTORE, where: (where, args) => applyEffFilter(where, args) },
+    { name: 'policy',        verbs: '*',         policy: (op) => ctx.hasPolicies ? buildPolicyFilter(modelName, op, ctx) : null },
+  ])
+
+  // Every verb the fold may be asked for, and the policy op each one is graded
+  // as. `upsert` and `upsertMany` are not here: they build no WHERE to fold
+  // into, so they refuse by name where a bulk sibling narrows (the grid's `ref`
+  // cells) and `upsertMany` carries the update policy into its DO UPDATE on its
+  // own. A verb named by no rule's set and by no '*' rule is refused at load;
+  // a fold asked for a verb this table does not name is refused by name.
+  const VERBS = Object.freeze({
+    findMany: 'read', findFirst: 'read', findUnique: 'read', findManyAndCount: 'read', count: 'read', exists: 'read',
+    aggregate: 'read', groupBy: 'read', findManyCursor: 'read', search: 'read', recursive: 'read',
+    update: 'update', updateMany: 'update', restore: 'update',
+    remove: 'delete', removeMany: 'delete', delete: 'delete', deleteMany: 'delete',
+  })
+  const RULES_FOR = new Map()
+  for (const rule of READ_RULES) {
+    if (rule.verbs === '*') continue
+    for (const v of rule.verbs) if (!(v in VERBS))
+      throw new Error(`READ_RULES.${rule.name} names '${v}', which is not a verb VERBS places`)
+  }
+  for (const verb of Object.keys(VERBS)) {
+    const rules = READ_RULES.filter(r => r.verbs === '*' || r.verbs.includes(verb))
+    if (!rules.length) throw new Error(`'${verb}' on ${modelName} is folded by no rule in READ_RULES — place it`)
+    RULES_FOR.set(verb, rules)
+  }
+
+  // The fold: what `verb` may reach, as the rewritten where and the policy
+  // fragment that is ANDed after it. The two leave separately because
+  // `buildSQL` puts a guard of its own between them.
+  function visibleWhere(verb, where, args) {
+    const rules = RULES_FOR.get(verb)
+    if (!rules) throw new Error(`'${verb}' on ${modelName} is not a verb READ_RULES places — add it to VERBS and to each rule that guards it`)
+    let scopes = null
+    let policy = null
+    for (const rule of rules) {
+      if (rule.scope) {
+        const s = rule.scope()
+        if (s == null) continue
+        if (Array.isArray(s)) { if (s.length) scopes = scopes ? scopes.concat(s) : s }
+        else scopes = scopes ? [...scopes, s] : [s]
+        continue
+      }
+      if (scopes) { where = scopedWhere(scopes, where); scopes = null }
+      if (rule.where) where = rule.where(where, args)
+      else policy = rule.policy(VERBS[verb])
+    }
+    if (scopes) where = scopedWhere(scopes, where)
+    return { where, policy }
+  }
+
+  // One AND node, scopes first, then the caller's where.
+  function scopedWhere(scopes, where) {
+    if (where) return { AND: [...scopes, where] }
+    return scopes.length === 1 ? scopes[0] : { AND: scopes }
   }
 
   // ── Nested writes ──────────────────────────────────────────────────────────
@@ -4482,7 +4606,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // every one of its children, silently (`FJS-615`).
   function extractNestedWrites(data) {
     if (!data) return { scalar: {}, nested: {}, hasNested: false }
-    const rels = relationMap[modelName] ?? {}
+    const rels = shape.relations
     const scalar = {}, nested = {}
     const OP_KEYS = new Set(['create','connect','connectOrCreate','disconnect','delete','update','set'])
     for (const [k, v] of Object.entries(data)) {
@@ -4500,7 +4624,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // belongsTo ops — run BEFORE parent insert/update, return FK fields to inject
   async function processBelongsToNested(nested) {
     const extra = {}
-    const rels = relationMap[modelName] ?? {}
+    const rels = shape.relations
     for (const [fieldName, ops] of Object.entries(nested)) {
       const rel = rels[fieldName]
       if (!rel || rel.kind !== 'belongsTo') continue
@@ -4531,10 +4655,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // hasMany ops — run AFTER parent insert/update
   async function processHasManyNested(nested, parentPk, parentRow) {
-    const rels = relationMap[modelName] ?? {}
+    const rels = shape.relations
     // Pre-resolve co-FK fields keyed by child model — used below to copy
     // parent's tenantId/accountId/etc into child rows during nested writes.
-    const coFkForParent = ctx.coFkMap?.[modelName] ?? {}
+    const coFkForParent = shape.coFk
 
     // Helper: merge parent's co-FK values into a child create payload.
     // Strict by default (parent wins), opt-out via allowChildFkOverride.
@@ -4656,10 +4780,1210 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
+  // ── Write plans ────────────────────────────────────────────────────────────
+  //
+  // A bulk verb PLANS and `executeWrite` RUNS the plan (IDEAS/litestone-by-
+  // construction.md § Step 5). The verb keeps what is its own meaning — the
+  // hooks, the stamps, the value sets, the SQL it assembles — and leaves as a
+  // value: every field is a fragment, a flag or a plain object, never a
+  // closure, so a plan can be read in a test with no SQLite behind it
+  // (`[PLAN]`, `test/write-plans.test.ts`). The executor owns, in this order
+  // and nowhere else: the lock, the prefetch, the cardinality and exclusion
+  // notes, the statement, the error translation, the count, the post-update
+  // policy, the hidden-parent move, the soft cascade, the query event, the
+  // plugin `afterDelete`, the trail, the cascade sinks and the announcement.
+  //
+  //   verb        the method's name — the query event and the announcement
+  //   op          what the statement does to a row: 'create' | 'update' |
+  //               'delete' (DELETE FROM) | 'remove' (a soft-delete stamp)
+  //   statements  [{ sql, params, data, one?, seal?, refusal? }] — one for a
+  //               where-shaped verb, one per ROW for a batch; `data` is what
+  //               the statement wrote, for naming a refused value
+  //   count       the COUNT fragment a write with nothing to set answers with,
+  //               and no statements
+  //   returning   the statement carries RETURNING *
+  //   where       the final WHERE (policy and seal folded in), null for a batch
+  //   args        what the query event reports
+  //   query       the SQL the query event reports — a batch joins its shapes
+  //   prefetch    read the affected rows first, for `afterDelete` and the sinks
+  //   moves       a hidden-parent refusal thrown only when a matched row MOVES
+  //   exclusion   the payload whose exclusion key is noted, or null
+  //   post        grade the post-update policy over the returned rows
+  //   softCascade { ts } — stamp the cascade's children with the same clock
+  //   batch       errors name the row by index (`asBatchRowError`)
+  //   logs/system the trail, and the lift it records
+  //   announce    { mode, event, operation, where } for `announceBulk`; for a
+  //               row result { event, operation } for `fireRowEvent`; null
+  //               for a write with nothing to say (`FJS-368`)
+  //   result      null for `{ count }`; `{ select, include }` for the one row
+  //               the statement reached, read, hydrated, shaped and handed back
+  //   bare        run the unit with no lock: one statement with no transaction
+  //               open is its own unit (`FJS-1106`), and a transaction found
+  //               open at the statement is the defect `FJS-1107` names
+  //   refuse      why a single statement reached no row, asked in order — the
+  //               move's conflict, the version, the model's own seal, a parent's
+  //               seal — each a value the planner decided applies; null for a
+  //               write that answers zero rows with zero
+  //   before      an update's row as it was, for the trail's snapshot
+  //   transition  the move this write is, carried to the row event, the
+  //               transition event and the trail
+  //
+  // Each verb's own order inside the lock is kept — every step there is a read
+  // until the statement runs — and three things the verbs did differently are
+  // now the same: a hard `removeMany` notes the parents its rows leave before
+  // the DELETE, as `deleteMany` always did; a soft `removeMany` reports a
+  // query event and translates a constraint, as every other write does; and
+  // the prefetch is read under the lock rather than ahead of it.
+
+  // The words every statement shares, allocated once: a fragment is read, never
+  // written, so one `' WHERE '` serves every join. `join` reads `sql` and
+  // `params` off whatever it is handed, so a plan's plain `where` joins as is.
+  const KW = {
+    update: sqlFragment('UPDATE '), del: sqlFragment('DELETE FROM '), select: sqlFragment('SELECT * FROM '),
+    count: sqlFragment('SELECT COUNT(*) AS n FROM '), set: sqlFragment(' SET '), where: sqlFragment(' WHERE '),
+    returning: sqlFragment(' RETURNING *'),
+  }
+  // The prefetch SELECT carries every @from: a row result read ahead of a
+  // DELETE has no outer row left to correlate to afterwards (`FJS-223`).
+  const _selectRow = _hasFrom ? sqlFragment(`SELECT *, ${fromSelectExpr(fromFields)} FROM `) : KW.select
+  const _deletedAtSet = softDelete ? `${ident(col('deletedAt')).sql} = ?` : null
+  // The INSERT text per column shape, kept across calls: a batch of one shape
+  // is the ordinary case and re-quoting its column list per call was a fifth
+  // of what createMany cost. Bounded, because a caller's key set is its own.
+  const _insertSqlByShape = new Map()
+
+  // What each op does to the parents its rows name: a delete leaves them, an
+  // update leaves one and joins another, a create only joins.
+  const WRITE_NOTES = {
+    create: { before: false, after: 'row'  },
+    update: { before: true,  after: 'rows' },
+    delete: { before: true,  after: null   },
+    remove: { before: true,  after: null   },
+    // One statement that creates or updates, and cannot say which: the row it
+    // lands names its parents, the row it replaces named the same key.
+    upsert: { before: false, after: 'row'  },
+  }
+  // An upsert is announced and filed as `update`, the collection form's choice
+  // (see upsertMany): to a list every row named now exists with new values.
+  const LOG_OP = { create: 'create', update: 'update', delete: 'delete', remove: 'delete', upsert: 'update' }
+  // The trail's snapshots for a row result, by op: a delete's `before` is the
+  // row, a soft remove's is the row with its stamp cleared, an update's is the
+  // row the planner read first; a create has none. A bulk write records which
+  // rows and what operation, never their contents.
+  const LOG_BEFORE = { create: null, update: 'prefetch', delete: 'row', remove: 'undeleted', upsert: null }
+  const LOG_AFTER  = { create: true, update: true, delete: false, remove: false, upsert: true }
+
+  // The refusal a statement's op produces, by op rather than by verb: a DELETE
+  // refused by a child is read back by its WHERE, every other refusal names
+  // the value it carried.
+  function writeRefusal(plan, err, st) {
+    return plan.op === 'delete'
+      ? refusedDelete(err, plan.where?.sql ?? null, plan.where?.params ?? [])
+      : asConstraintError(err, st.data)
+  }
+
+  function selectWhere(where) {
+    return sqlJoin([_selectRow, T, where && KW.where, where], '')
+  }
+
+  // Why a single statement reached no row, in the order the WHERE narrowed:
+  // the caller's where, the policy, the move's from-state, the version, the
+  // seals. Each conjunct only narrows, so the diagnosis is these reads. Every
+  // one reads the row UNSCOPED to name why; a row outside the caller's read
+  // scope left before the statement (`NOT_VISIBLE`).
+  function refuseNoRow(r) {
+    if (!r) return
+    const readState = (field) => readDb.query(
+      sqlJoin([sqlFragment('SELECT '), ident(col(field)), sqlFragment(' AS v FROM '), T, KW.where, r.where], '').sql,
+    ).get(...r.where.params)
+    const versionMoved = () => {
+      if (!r.version) return
+      const cur = readState(r.version.field)
+      if (cur && cur.v !== r.version.expect)
+        throw new VersionConflictError(modelName, r.version.field, r.version.expect, cur.v)
+    }
+    const sealed = () => {
+      if (r.sealSelf?.length) throwIfSealedSelf(r.sealSelf, r.seal.sql, r.seal.params)
+      if (r.seal) throwIfSealed(r.seal.sql, r.seal.params, r.seal.op)
+    }
+    // A transition that changed no rows is one of two opposite things, and
+    // they take opposite answers: a racing writer moved the row, which is
+    // worth retrying, or the update POLICY excluded it, which never is.
+    // checkTransitions already proved the row existed at `from` before the
+    // statement ran, so re-reading that one column separates them — still at
+    // `from` means nothing moved and the policy is what refused.
+    //
+    // Both used to report a conflict, so a policy refusal reached a caller as
+    // a 409 with retryable: true and isStaleWrite() re-applied it forever,
+    // against a rule that would refuse every attempt — while telling the
+    // person the row had changed when it had not.
+    if (r.transition) {
+      const t = r.transition
+      const cur = readState(t.field)
+      if (t.policy && cur && cur.v === t.from) throw new AccessDeniedError(
+        `"${modelName}.${t.transitionName}" was refused by an @@allow/@@deny policy on update`,
+        { model: modelName, operation: 'update' },
+      )
+      // Still at `from` means no writer moved it, so the refusal is one of
+      // the other conjuncts — and a conflict reading "expected 'sent', the
+      // row is at 'sent'" would contradict itself. The seal and the version
+      // ride the same WHERE and have their own answers.
+      if (cur && cur.v === t.from) { versionMoved(); sealed() }
+      throw new TransitionConflictError(tableName, t.field, t.from, t.to,
+        { actual: cur ? cur.v : undefined, move: t.transitionName })
+    }
+    versionMoved()
+    sealed()
+  }
+
+  // The statement and everything that must sit in the same unit with it,
+  // synchronous: this is the body `wrapExclusive` runs. The prefetch is read
+  // here rather than ahead of the lock, so the rows `afterDelete` is told
+  // about are the rows the statement reached.
+  function writeUnit(plan) {
+    const { statements, returning, where, batch } = plan
+    const total  = statements.length
+    // A plan that chose to run without a transaction and finds one open now
+    // would join it and go with its rollback, which is the defect `FJS-638`
+    // closed — so it says so rather than writing.
+    if (plan.bare && total && tx.state.depth !== 0) throw new Error(
+      `[litestone] ${plan.verb} on "${modelName}" decided to run as its own statement and a transaction opened ` +
+      `before it wrote — something in ${plan.verb}() now yields ahead of the write. This is a defect in litestone (FJS-1107).`)
+    // Nothing to run. The precondition a plan states is still asked — a
+    // caller naming a stale version is told so whether or not they were
+    // writing — and then the rows the where names are answered: a count, or
+    // the one row read back through the write's own policy.
+    if (!total) {
+      refuseNoRow(plan.refuse)
+      const got = readDb.query(plan.count.sql).get(...plan.count.params)
+      const row = plan.result ? read(got, { mode: 'single', hydrateFrom: true }) : null
+      return { rows: [], count: plan.result ? (row ? 1 : 0) : got?.n ?? 0, row, doomed: null, affected: [], duration: 0 }
+    }
+    const notes  = WRITE_NOTES[plan.op]
+    const wSql   = where?.sql ?? null
+    const wBinds = where?.params ?? []
+    const _nt = needsTiming()
+    const t0 = _nt ? performance.now() : 0
+    // Prefetch affected rows before SQL so afterDelete and the cascade sinks
+    // get them. Only done when something is listening — avoids the SELECT
+    // cost otherwise — or when the prefetch IS the row result, because the
+    // statement carries no RETURNING.
+    const wantRow = !!plan.result && !returning && plan.prefetch
+    const hears = plan.prefetch && (plugins?.hasPlugins || cascadeHeard())
+    const sel = hears || wantRow ? selectWhere(where) : null
+    const affected = sel && (plugins?.hasPlugins || wantRow) ? readAll(readDb.query(sel.sql).all(...sel.params)) : []
+    let rows = returning ? [] : null
+    let count = 0
+    let doomed = null
+    // The roots of a soft cascade are read before anything is stamped, and
+    // stamped before the cascade: under a self-relation a root can be another
+    // root's child, and stamped by the cascade first it would fall out of the
+    // count and the trail. They are read through the stamp's own filter,
+    // policy included: a row the policy refused keeps its children
+    // (`FJS-1728`).
+    let rootPKs = null
+    if (plan.softCascade && softDeleteCascade && _cascadeTargets().length > 0) {
+      const live = sqlFragment(`${ident(col('deletedAt')).sql} IS NULL`)
+      const w    = where ? sqlJoin([sqlFragment('('), where, sqlFragment(') AND '), live], '') : live
+      const q    = sqlJoin([KW.select, T, KW.where, w], '')
+      const rootPKCol = _cascadeTargets()[0].referencedKey
+      rootPKs = readDb.query(q.sql).all(...q.params).map(r => r[rootPKCol])
+    }
+    // The parents these rows name now — a where names rows only the database
+    // knows, and only before the statement runs.
+    if (notes.before) noteCardinalityBySql(wSql, wBinds)
+    if (plan.exclusion) { noteExclusionBySql(wSql, wBinds); noteExclusion(plan.exclusion) }
+    const moves = plan.moves ? movesOnto(plan.moves, wSql, wBinds) : false
+    if (sel && cascadeHeard()) doomed = cascadeDoomed(plugins?.hasPlugins ? affected : readAll(readDb.query(sel.sql).all(...sel.params)))
+
+    // The prefetch that is the row result was read under this same lock by
+    // the statement's own WHERE, so it is also the statement's count: no row
+    // means the statement reaches none and does not run, one row means one.
+    // A bulk statement's count is read back, because the count is its answer.
+    const settled = wantRow ? affected.length : null
+    // A batch of one shape is one prepared statement, looked up once: the
+    // cache under `query()` is an LRU and every hit re-links its entry.
+    let lastSql = null, stmt = null
+    for (let i = 0; i < (settled === 0 ? 0 : total); i++) {
+      const st = statements[i]
+      // A batch is all-or-nothing: a row refused before its statement is
+      // named the same way a row a constraint refused is.
+      if (st.refusal) throw batch ? asBatchRowError(st.refusal, i, total, st.data) : st.refusal
+      if (st.sql !== lastSql) { stmt = writeDb.query(st.sql); lastSql = st.sql }
+      let got = null
+      try {
+        if (returning) got = stmt.all(...st.params)
+        else stmt.run(...st.params)
+      } catch (e) {
+        const err = writeRefusal(plan, e, st)
+        throw batch ? asBatchRowError(err, i, total, st.data) : err
+      }
+      // A statement that lands one row by construction is not asked; a seal
+      // guard turns VALUES into SELECT … WHERE, which may land none.
+      const n = got ? got.length : settled ?? (st.one && !st.seal ? 1 : rowsChanged(writeDb))
+      if (st.seal && !n) {
+        const refusal = sealRefusal(st.seal.parents, 'create')
+        if (refusal) throw batch ? asBatchRowError(refusal, i, total, st.data) : refusal
+      }
+      if (got) for (const r of got) rows.push(r)
+      count += n
+      if (notes.after === 'row') { noteCardinality(st.data); noteExclusion(st.data) }
+    }
+    // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
+    if (count && moves) throw plan.moves
+    // A row result is read once here — the post-update rule, the notes, the
+    // trail and the caller all take the same row. A statement with no
+    // RETURNING answers the prefetch, or nothing.
+    let row = null
+    if (plan.result) {
+      row = rows?.length ? read(rows[0], { mode: 'single', hydrateFrom: true }) : wantRow ? affected[0] ?? null : null
+      // The throw is the rollback: the refused write is never visible.
+      if (plan.post && row) checkPostUpdatePolicy(modelName, row, ctx)
+    }
+    // One refused row refuses the batch: the throw rolls the unit back.
+    else if (plan.post) for (const r of rows) checkPostUpdatePolicy(modelName, read(r, { mode: 'single', hydrateFrom: true }), ctx)
+    if (notes.after === 'rows') {
+      if (row) noteCardinality(row)
+      else if (rows) for (const r of rows) noteCardinality(read(r))
+      else noteCardinalityBySql(wSql, wBinds)
+    }
+    if (rootPKs?.length) { doomed = []; cascadeSoftRemove(rootPKs, plan.softCascade.ts, doomed) }
+    return { rows, count, row, doomed, affected, duration: _nt ? performance.now() - t0 : 0 }
+  }
+
+  // The lock (`FJS-638`): a bulk write run bare joins whatever transaction is
+  // open and is lost on its rollback. A child that refused the delete is
+  // named for the caller once the unit has let go.
+  function runWrite(plan) {
+    return tx.wrapExclusive(() => writeUnit(plan)).catch(async e => { throw await nameBlockerForCaller(e) })
+  }
+
+  // What the write tells the world, after its unit has committed. A row
+  // result is shaped here — includes, then the caller's select — and the
+  // shaped row is what the event and the plugins get; the trail gets the row.
+  // `select: false` still means *do not hand me the row*, and the announcement
+  // keeps the row because it HAS one: `null` there means the RETURNING was
+  // skipped, which is a different fact.
+  async function finishWrite(plan, { rows, count, row, doomed, affected, duration }) {
+    fireQuery({ operation: plan.verb, args: plan.args, sql: plan.query.sql, params: plan.query.params, duration, rowCount: count })
+    if (plan.result) {
+      // No row reached is three different things, and the plan says which are
+      // worth telling apart; the rest answer null, the documented contract.
+      // Asked after the unit has let go: every read in the ladder is a
+      // diagnosis of a statement that changed nothing.
+      if (!count) { refuseNoRow(plan.refuse); return null }
+      const { select, include } = plan.result
+      const ps = parseArgs(select === false ? null : select, include)
+      if (row && (ps || include)) withIncludes([row], ps, include)
+      const final = row ? finalizeOne(row, ps) : null
+      if (plan.announce) {
+        const name = plan.transition?.transitionName ?? null
+        fireRowEvent(plan.announce.event, plan.announce.operation, final, name)
+        emitTransitionEvent(plan.transition, row)
+        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, LOG_OP[plan.op], final, ctx)
+        if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
+        // The move by name, and not only for an announced one: an abandon and a
+        // cancel write the same before and after, so a SYSTEM-scoped move that
+        // is not announced is exactly the one the trail must still tell apart.
+        if (plan.logs && row) {
+          const b = LOG_BEFORE[plan.op]
+          emitLogs(LOG_OP[plan.op], [row], {
+            before: b === 'prefetch' ? plan.before : b === 'row' ? row : b === 'undeleted' ? { ...row, deletedAt: null } : null,
+            after: LOG_AFTER[plan.op] ? row : null, transition: name, system: plan.system,
+          })
+        }
+      }
+      if (doomed) await cascadeRemoved(doomed)
+      return select === false ? null : final
+    }
+    if (affected.length) await plugins.afterDelete(modelName, affected, ctx)
+    if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system })
+    if (doomed) await cascadeRemoved(doomed)
+    if (plan.announce) announceBulk({ ...plan.announce, count, rows })
+    return { count }
+  }
+
+  function executeWrite(plan) {
+    if (plan.bare) return finishWrite(plan, writeUnit(plan))
+    return runWrite(plan).then(outcome => finishWrite(plan, outcome))
+  }
+
+  const frag = f => f ? { sql: f.sql, params: f.params } : null
+
+  // The INSERT for one column shape, from the cache. The seal guard turns
+  // VALUES into SELECT … WHERE, and the predicate is the same for every row of
+  // the model, so it belongs in the shared statement. No column at all —
+  // every field optional and none supplied, or all stripped by @allow write
+  // policies — is DEFAULT VALUES, which takes no guard.
+  function insertSql(cols, needRows) {
+    // '\x00' as an ESCAPE, never a raw NUL byte in the source: a literal NUL
+    // makes grep classify this file as binary and skip it silently, which
+    // hides every match in the largest file in the package.
+    const key = (needRows ? '\x01' : '') + cols.join('\x00')
+    let sql = _insertSqlByShape.get(key)
+    if (sql) return sql
+    const ph = cols.map(() => '?').join(', ')
+    sql = sqlJoin([
+      sqlFragment('INSERT INTO '), T,
+      cols.length
+        ? sqlJoin([
+            sqlFragment(' ('), sqlJoin(cols.map(c => ident(col(c))), ', '), sqlFragment(') '),
+            _sealInsertSql ? sqlFragment(`SELECT ${ph} WHERE ${_sealInsertSql}`) : sqlFragment(`VALUES (${ph})`),
+          ], '')
+        : sqlFragment(' DEFAULT VALUES'),
+      needRows && KW.returning,
+    ], '').sql
+    if (_insertSqlByShape.size >= 64) _insertSqlByShape.clear()
+    _insertSqlByShape.set(key, sql)
+    return sql
+  }
+
+  // The one INSERT a create is. `data` is the row as the verb has it once the
+  // stamps and the nested split have had their say; the statement's seal
+  // guard may land no row, and the hidden-parent refusal is thrown by the
+  // executor ahead of the statement, after `writeData` has named any field.
+  function createPlan(data, { hasNested, edgeWrites, select, include, system, stamped, refusal, bare }) {
+    if (shape.selfRelations.length)
+      assertNoParentCycle([data?.[shape.selfRelations[0].referencedField]], data)
+    const row  = writeData(data, { requireAll: true, system, stamped, creating: true })
+    const cols = Object.keys(row)
+    // A hasMany create needs the parent's id, which only RETURNING answers —
+    // so skipping it here is not a saving, it is the children going missing.
+    // A logged model takes it on every verb: the trail names the row by id.
+    const returning = tableHasLogWork || !(select === false && !hasNested && !edgeWrites.length)
+    const seal   = cols.length ? sealInsertGuard(row) : null
+    const params = new Array(cols.length)
+    for (let c = 0; c < cols.length; c++) params[c] = row[cols[c]] ?? null
+    if (seal) params.push(...seal.params)
+    const sql = insertSql(cols, returning)
+    return {
+      verb: 'create', op: 'create', statements: [{ sql, params, data: row, one: true, seal, refusal: refusal ?? null }], count: null,
+      returning, where: null, args: { data, include, select }, query: { sql, params }, prefetch: false,
+      moves: null, exclusion: null, post: false, softCascade: null, batch: false, logs: tableHasLogWork, system,
+      announce: { event: 'create', operation: 'create' }, result: { select, include }, bare,
+      refuse: null, before: null, transition: null,
+    }
+  }
+
+  async function planUpdateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    const _umMove = _bulkTransitionField(data, 'updateMany')
+    if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
+    const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
+    refuseSystemEntries(system, ['update'])
+    await enforceValueSets(modelName, [data], ctx, { where })
+    if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, system }, ctx)
+    // Same stamp update() runs. Missing it here was worse than missing it
+    // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
+    // the identity beside it stayed at whoever wrote last through update() —
+    // a row reading "just edited by Bob" when Ann edited it.
+    const stamped = new Set()
+    data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
+    const [_umHidden] = await hiddenParents([data], [stamped])
+    // @version bumps here but is never required: a where clause matching many
+    // rows matches many versions, so there is no single value to compare
+    // against. Bumping is the part that matters — without it a bulk write
+    // would leave every open editor's version looking current.
+    const _umVersion = shape.version
+    if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
+    const { data: _umValues, ops: _umOps } = extractWriteOps(data)
+    const row       = writeData(_umValues, { system, fieldWrite: 'sql', stamped })
+    // The SET list is one fragment and the WHERE another; the statement is
+    // their text in order and so are its binds, which is what lets the
+    // empty-SET case below be handled where it belongs.
+    const _umSetP = []
+    const _umSetTexts = [
+      ...Object.keys(row).map(c => setFragment(c, row[c], _umSetP)),
+      ..._umOps.map(o => setFragmentExpr(o.col, o.expr, o.params, _umSetP)),
+    ]
+    const _umV    = _umVersion ? ident(col(_umVersion)) : null
+    const setFrag = sqlJoin([
+      sqlFragment(_umSetTexts.join(', '), _umSetP),
+      _umV ? sqlJoin([_umV, sqlFragment(' = '), _umV, sqlFragment(' + 1')], '') : null,
+    ], ', ')
+    const _umVis      = visibleWhere('updateMany', where, { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
+    const _umWhere0   = and(whereFragment(_umVis.where), _umVis.policy)
+    const _umSeal     = sealWhereClause(_umWhere0?.sql ?? null, _umWhere0?.params ?? [])
+    const _umSelf     = sealSelfClause(data, _umSeal.sql, _umSeal.params)
+    const finalWhere  = _umSelf.sql ? { sql: _umSelf.sql, params: _umSelf.params } : null
+    const _umWhereClause = finalWhere ? sqlJoin([KW.where, _umSelf], '') : null
+    const announceAs = { mode: _umMode, event: 'update', operation: 'updateMany', where }
+
+    // No columns left to set. `UPDATE "t" SET  WHERE …` is a SQL syntax error,
+    // and the payload that lands here is an ordinary form post whose fields no
+    // longer match the model — stripping unknown keys is the mass-assignment
+    // protection doing its job, so this is reachable without any mistake at the
+    // call site. `update` answers the unchanged row; the bulk analogue is the
+    // count of rows the where matched, having written nothing to them.
+    if (!setFrag.sql) {
+      const _c = frag(sqlJoin([KW.count, T, _umWhereClause], ''))
+      return {
+        verb: 'updateMany', op: 'update', statements: [], count: _c, returning: false, where: finalWhere,
+        args: { where, data }, query: _c, prefetch: false, moves: null, exclusion: null, post: false,
+        softCascade: null, batch: false, logs: tableHasLogWork, system, announce: null,
+        result: null, bare: true, refuse: null, before: null, transition: null,
+      }
+    }
+    // Stamped after the empty-payload return above, for the same reason
+    // update() stamps only a statement that had something else to say.
+    const _umSetAll = sqlJoin([setFrag, ...stampSets(Object.keys(row)).map(t => sqlFragment(t))], ', ')
+    // A logged model takes RETURNING so the trail can name the rows it changed.
+    // Still one statement — bulk ops record WHICH rows and WHAT operation, never
+    // their contents (same shape as createMany; see emitLogs).
+    // The WHERE grades each row as it was; the post-update rule reads the row
+    // as it is now, which only RETURNING carries (FJS-1713).
+    const _umPost = ctx.hasPolicies && !!shape.policy['post-update']
+    const _umNeedRows = tableHasLogWork || _umWantRows || _umPost
+    const _umStmt = frag(sqlJoin([KW.update, T, KW.set, _umSetAll, _umWhereClause, _umNeedRows && KW.returning], ''))
+    return {
+      verb: 'updateMany', op: 'update', statements: [{ ..._umStmt, data: row }], count: null,
+      returning: _umNeedRows, where: finalWhere, args: { where, data }, query: _umStmt, prefetch: false,
+      moves: _umHidden ?? null, exclusion: exclTouched(data) ? data : null, post: _umPost,
+      softCascade: null, batch: false, logs: tableHasLogWork, system, announce: announceAs,
+      result: null, bare: false, refuse: null, before: null, transition: null,
+    }
+  }
+
+  // One plan for a delete by WHERE, whichever verb asked: the prefetch, the
+  // sinks and the child-refusal are the statement's, not the verb's. A single
+  // verb hands back the row and asks the seal why there was none; a bulk verb
+  // answers a count and asks nothing.
+  function deletePlan(verb, where, vis, mode, needRows, result = null) {
+    const where0 = and(whereFragment(vis.where), vis.policy)
+    const sealed = sealWhereClause(where0?.sql ?? null, where0?.params ?? [])
+    const final  = sealed.sql ? { sql: sealed.sql, params: sealed.params } : null
+    const stmt   = frag(sqlJoin([KW.del, T, final && KW.where, final, needRows && KW.returning], ''))
+    return {
+      verb, op: 'delete', statements: [{ ...stmt, data: null }], count: null, returning: needRows,
+      where: final, args: { where }, query: stmt, prefetch: true, moves: null, exclusion: null, post: false,
+      softCascade: null, batch: false, logs: tableHasLogWork, system: null,
+      announce: result ? { event: 'remove', operation: verb } : { mode, event: 'remove', operation: verb, where },
+      result, bare: false, before: null, transition: null,
+      refuse: result ? { where: null, transition: null, version: null, sealSelf: null, seal: { ...frag(where0), op: verb } } : null,
+    }
+  }
+
+  // Real DELETE FROM — bypasses soft delete. where is optional (deletes all if omitted).
+  async function planDeleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    const { mode, wantRows } = announceFor(announce)
+    if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
+    const vis = visibleWhere('deleteMany', where, hardDeleteFlags({ withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }))
+    return deletePlan('deleteMany', where, vis, mode, tableHasLogWork || wantRows)
+  }
+
+  // Bulk version of remove() — same semantics: soft delete on soft-delete tables,
+  // real DELETE FROM on hard-delete tables.
+  async function planRemoveMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    const { mode, wantRows } = announceFor(announce)
+    const needRows = tableHasLogWork || wantRows
+    if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
+    const vis = visibleWhere('removeMany', where, { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
+    if (!softDelete) return deletePlan('removeMany', where, vis, mode, needRows)
+
+    const where0 = and(whereFragment(vis.where), vis.policy)
+    // The where's binds then the policy's, in the order the SQL reads them; the
+    // guard is appended last, so its binds go last.
+    const sealed = sealWhereClause(where0?.sql ?? null, where0?.params ?? [])
+    const final  = sealed.sql ? { sql: sealed.sql, params: sealed.params } : null
+    const ts     = nowISO(ctx.now)
+    const sets   = sqlJoin([sqlFragment(_deletedAtSet, [ts]), ...stampSets(['deletedAt']).map(t => sqlFragment(t))], ', ')
+    const stmt   = frag(sqlJoin([KW.update, T, KW.set, sets, final && KW.where, final, needRows && KW.returning], ''))
+    return {
+      verb: 'removeMany', op: 'remove', statements: [{ ...stmt, data: null }], count: null, returning: needRows,
+      where: final, args: { where }, query: stmt, prefetch: false, moves: null, exclusion: null, post: false,
+      softCascade: { ts }, batch: false, logs: tableHasLogWork, system: null,
+      announce: { mode, event: 'remove', operation: 'removeMany', where },
+      result: null, bare: false, refuse: null, before: null, transition: null,
+    }
+  }
+
+  // The single-row pair. A hard-delete model's `remove` is `delete` under its
+  // own name and event; a soft-delete model's is a stamp whose cascade runs in
+  // the same unit. Both hand the row back off RETURNING. `delete` reads its row
+  // AHEAD of the statement instead, so a @from can still correlate to it.
+  async function planRemove({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
+    const vis = visibleWhere('remove', where, { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
+    const w = whereFragment(vis.where)
+    if (!w) throw new Error(`remove on "${tableName}" requires a where clause`)
+    const where0 = and(w, vis.policy)
+    const result = { select: undefined, include: undefined }
+    if (!softDelete) return deletePlan('remove', where, vis, null, true, result)
+    // A soft remove is still a removal FROM the document — the row leaves every
+    // read of it — so both halves of remove() carry the guard.
+    const sealed = sealWhereClause(where0.sql, where0.params)
+    const final  = { sql: sealed.sql, params: sealed.params }
+    const ts     = nowISO(ctx.now)
+    const sets   = sqlJoin([sqlFragment(_deletedAtSet, [ts]), ...stampSets(['deletedAt']).map(t => sqlFragment(t))], ', ')
+    const stmt   = frag(sqlJoin([KW.update, T, KW.set, sets, KW.where, final, KW.returning], ''))
+    return {
+      verb: 'remove', op: 'remove', statements: [{ ...stmt, data: null }], count: null, returning: true,
+      where: final, args: { where }, query: stmt, prefetch: false, moves: null, exclusion: null, post: false,
+      softCascade: { ts }, batch: false, logs: tableHasLogWork, system: null,
+      announce: { event: 'remove', operation: 'remove' }, result, bare: false, before: null, transition: null,
+      refuse: { where: null, transition: null, version: null, sealSelf: null, seal: { ...frag(where0), op: 'remove' } },
+    }
+  }
+
+  // Always a real DELETE FROM — bypasses soft delete on all tables. Requires a
+  // where clause to prevent accidental mass deletion.
+  async function planDelete({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
+    // The guard reads the CALLER's where. The filters below add clauses of
+    // their own, and a `delete({})` whose emptiness they papered over would
+    // stop being refused.
+    if (!buildWhere(where, [], null, null, null, null, fieldKinds, columnMap))
+      throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
+    // Through `whereFragment` like every other where in the client: a
+    // `@encrypted(deterministic: true)` or `@hashed` column stores bytes the
+    // caller never sends, so a raw comparison against the plaintext matches
+    // nothing — and a DELETE that matches nothing reports a plausible zero
+    // (FJS-600). Scope expansion, `@from` and typed JSON ride the same call.
+    const vis = visibleWhere('delete', where, hardDeleteFlags({ withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }))
+    return deletePlan('delete', where, vis, null, false, { select: undefined, include: undefined })
+  }
+
+  // Everything a batch create decides before its unit opens: the refusals, the
+  // hooks, the policy's own parent check. Null for an empty batch.
+  async function prepareCreateMany({ data, system, announce } = {}) {
+    if (!data?.length) return null
+    // Resolved before any work: an unknown value is a caller that meant
+    // something, and refusing it after the write has landed helps nobody.
+    const { mode, wantRows } = announceFor(announce)
+    // Operators are refused on a create-shaped write, and this is where that
+    // refusal is made for a bulk one. It used to be reached only by the
+    // object-where-a-value-belongs guard in writeData, which cannot see
+    // `$merge`: a Json column legitimately takes an object, so the operator
+    // was stored as the document — `{"$merge":{"a":1}}`.
+    for (const row of data) extractWriteOps(row, { where: 'createMany' })
+    refuseSystemEntries(system, ['create'])
+    await enforceValueSets(modelName, data, ctx)
+    if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
+    refuseOffEntry(data)
+    // The rows as the caller wrote them: every stamp lands later, inside the unit.
+    const hidden = await hiddenParents(data)
+    const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
+    for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
+    // A logged model already takes RETURNING, so opting in costs it nothing.
+    return { data, system, hidden, mode, needRows: tableHasLogWork || wantRows }
+  }
+
+  // The rows as they will be written, and one statement per row. Runs INSIDE
+  // the batch's unit, because a @sequence stamp bumps its counter in the
+  // database: run before the unit it was 2 auto-commit statements per row
+  // (~16x slower) and a counter stayed bumped when the batch failed.
+  function createManyPlan({ data, system, hidden, mode, needRows }) {
+    const autoId          = shape.autoId
+    const genDefaults     = shape.generatedDefaults
+    const authDefaults    = shape.authDefaults
+    const createdByStamps = shape.createdBy
+    const versionField    = shape.version
+    const rows = data.map((item, i) => {
+      let d = item
+      // Per ROW — rows are not required to be uniform, so one shared set
+      // would let row 0's stamp excuse row 1's caller-supplied column.
+      const stamped = new Set()
+      if (autoId && (d == null || d[autoId.field] == null)) {
+        noteStamp(stamped, d, autoId.field)
+        d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
+      }
+      d = applyGeneratedDefaults(d, genDefaults, stamped)
+      d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
+      d = stampFromAuth(d, createdByStamps, ctx.auth, stamped)
+      if (versionField) { noteStamp(stamped, d, versionField); d = { ...(d ?? {}), [versionField]: 1 } }
+      // Apply @sequence per row — each row gets its own counter increment
+      d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
+      // A validation failure here names the field and, without this, no row.
+      // The row itself is NOT passed on: it is the caller's payload before
+      // writeData ran, so a @encrypted value in it is still plaintext.
+      try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
+      catch (e) { throw asBatchRowError(e, i, data.length, null) }
+    })
+    // One statement PER ROW SHAPE, not one for the batch. Rows are not
+    // required to be uniform: deriving the column list from row 0 made row 0
+    // decide what every other row may write, so a wider row silently lost its
+    // extra columns and a narrower one bound NULL over a column the caller
+    // never mentioned — defeating its DDL DEFAULT. Rows are still inserted in
+    // caller order, because an autoincrement id is assigned in insert order
+    // and grouping would renumber them.
+    const shapes = new Set()
+    const sqlFor = (cols) => {
+      const sql = insertSql(cols, needRows)
+      shapes.add(sql)
+      return sql
+    }
+    const statements = new Array(rows.length)
+    for (let i = 0; i < rows.length; i++) {
+      const row  = rows[i]
+      const cols = Object.keys(row)
+      const seal = sealInsertGuard(row)
+      const params = new Array(cols.length)
+      for (let c = 0; c < cols.length; c++) params[c] = row[cols[c]] ?? null
+      if (seal) params.push(...seal.params)
+      statements[i] = { sql: sqlFor(cols), params, data: row, one: true, seal, refusal: hidden[i] ?? null }
+    }
+    return {
+      verb: 'createMany', op: 'create', statements, count: null, returning: needRows, where: null,
+      args: { data },
+      // A mixed batch has no single SQL to report. Uniform — the ordinary
+      // case — reports exactly what it did before.
+      query: { sql: [...shapes].join('\n'), params: null },
+      prefetch: false, moves: null, exclusion: null, post: false, softCascade: null, batch: true,
+      logs: tableHasLogWork, system,
+      // No `where` on the collection form — a batch names its rows by supplying
+      // them, and their ids exist only after SQLite assigns them.
+      announce: { mode, event: 'create', operation: 'createMany', where: undefined },
+      result: null, bare: false, refuse: null, before: null, transition: null,
+    }
+  }
+
+  // The seam's view of createMany: planned outside any unit, so on a @sequence
+  // model the counters it stamps stay bumped (see `[PLAN]` on the table).
+  async function planCreateMany(args) {
+    const prepared = await prepareCreateMany(args)
+    return prepared && createManyPlan(prepared)
+  }
+
+  // Everything a create decides before its unit opens: the refusals, the
+  // hooks, the stamps, the policy's own parent check. The row it returns is
+  // the caller's payload as stamped; every stamp that WRITES (a @sequence)
+  // lands inside the unit.
+  async function prepareCreate({ data, include, select, scopedBy, system } = {}) {
+    // Before the INSERT and before the transaction: a create of a model whose
+    // relation declares a minimum, naming no children, can never satisfy it,
+    // and answering that with a COUNT would cost the single-row fast path
+    // (`FJS-1106`) for a row that is refused either way.
+    const _cardRequires = shape.cardinality.requiresChildren
+    if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
+    refuseSystemEntries(system, ['create'])
+    await enforceValueSets(modelName, [data], ctx)
+    // The plugins first: a value one writes into the payload is a value the
+    // row lands with, and grading before it would pass it ungraded (FJS-1307).
+    if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select, system }, ctx)
+    refuseOffEntry([data])
+    // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
+    // What the ENGINE puts in this payload, so the @guarded/@system refusals
+    // in writeData can grade the caller's keys alone (FJS-565).
+    const stamped = new Set()
+    const autoId = shape.autoId
+    if (autoId && (data == null || data[autoId.field] == null)) {
+      noteStamp(stamped, data, autoId.field)
+      data = { ...(data ?? {}), [autoId.field]: autoId.generate() }
+    }
+    data = applyGeneratedDefaults(data, shape.generatedDefaults, stamped)
+    data = applyAuthDefaults(data, shape.authDefaults, ctx.auth, stamped)
+    data = stampFromAuth(data, shape.createdBy, ctx.auth, stamped)
+    const [_crHid] = await hiddenParents([data], [stamped])
+    // After the auth stamps, never before — see authStamped (FJS-1402).
+    const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
+    // A new row is version 1, whatever the payload says. Honouring a supplied
+    // version would let a client start a row at 500 and make the first real
+    // editor's read look stale.
+    if (shape.version) {
+      noteStamp(stamped, data, shape.version)
+      data = { ...(data ?? {}), [shape.version]: 1 }
+    }
+    // Apply @default(fieldName) — copy value from sibling field if not already provided
+    // Must run BEFORE writeData/applyTransforms so @slug and other transforms see the value
+    const fieldRefDefaults = shape.fieldRefDefaults
+    if (fieldRefDefaults?.length) {
+      const stamps = {}
+      for (const { field, sourceField } of fieldRefDefaults) {
+        if ((data == null || data[field] == null) && data?.[sourceField] != null) {
+          noteStamp(stamped, data, field)
+          stamps[field] = data[sourceField]
+        }
+      }
+      if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
+    }
+    extractWriteOps(data, { where: 'create' })
+    const refusal = firstRefusal(_crParent, _crHid)
+    return { data, stamped, refusal, select, include, system, scopedBy }
+  }
+
+  // The seam's view of create: the decomposition the unit does, with no unit
+  // around it — a @sequence bumps its counter and a belongsTo nested write
+  // lands (see `[PLAN]` on the table).
+  async function planCreate(args) {
+    const c = await prepareCreate(args)
+    const data = applySequences(c.data, modelName, shape.sequences, writeDb, c.stamped)
+    const { scalar, nested, hasNested } = extractNestedWrites(data)
+    const { data: scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
+    return createPlan({ ...scalarNoEdge, ...(await processBelongsToNested(nested)) }, { ...c, hasNested, edgeWrites, bare: false })
+  }
+
+  // Everything an update decides before its unit opens, and the planner its
+  // unit runs: `plan(extraFKs)` takes the foreign keys a belongsTo nested
+  // write made and answers the plan, or null for a row outside the caller's
+  // read scope. Returns the updated row, or null in these cases:
+  //   • No row matched the where clause
+  //   • A @@allow/@@deny policy blocked the update
+  //   • A post-update policy rollback was triggered
+  // Callers that need to distinguish can check count() before/after,
+  // or enable policyDebug to see which policy blocked.
+  async function prepareUpdate({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
+                                 withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    refuseSystemEntries(system, ['update'])
+    await enforceValueSets(modelName, [data], ctx, { where })
+    if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
+    const stamped = new Set()
+    data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
+    const [_upHidden] = await hiddenParents([data], [stamped])
+
+    // ── @version — take the caller's expected version off the payload ───────
+    // It is a precondition, not a value to write: the column is bumped by SQL
+    // below, never SET to what arrived. asSystem() skips the check for the
+    // same reason it skips gates — a migration or a job is not a second editor.
+    const _versionField = shape.version
+    let   _expectVersion = null
+    if (_versionField) {
+      const supplied = data?.[_versionField]
+      if (!ctx.isSystem && !_bypassVersion) {
+        if (!Number.isInteger(supplied))
+          throw new VersionRequiredError(modelName, _versionField)
+        _expectVersion = supplied
+      }
+      if (data && _versionField in data) { data = { ...data }; delete data[_versionField] }
+    }
+
+    // ── @@sync(field) — the base row a per-column merge compares against ────
+    // Refused by name where nothing would read it, rather than dropped. A
+    // base that is silently ignored looks exactly like a merge that found no
+    // conflict, which is the one failure this mechanism cannot afford to make
+    // quietly: the caller believes two writers were reconciled and one of
+    // them was overwritten.
+    const _syncPolicy = shape.sync
+    if (base !== undefined && _syncPolicy !== 'field') throw new Error(
+      `[litestone] update on "${modelName}" was given a base row, and only @@sync(field) reads one. ` +
+      `This model declares ${_syncPolicy ? `@@sync(${_syncPolicy})` : 'no @@sync policy'}. ` +
+      `A base is the row as the writer read it, and it is what lets two people who edited different ` +
+      `columns both win — without @@sync(field) there is nothing to compare it against.`)
+
+    // A merge compares the patch against the STORED row, so a column whose
+    // stored form is not its value form cannot be compared: `@encrypted` is
+    // ciphertext and re-encrypts to different bytes each time, `@hashed` is
+    // one-way. Comparing either reports a conflict on every write that names
+    // it, including one nobody else touched — a false conflict, which is
+    // worse than a refusal because it looks like the feature working.
+    // Refused by name rather than merged or skipped; a device cannot reach
+    // this anyway, since `host/browser.js` refuses `@encrypted` outright.
+    if (base !== undefined) {
+      const _opaque = Object.keys(data ?? {}).filter(f => fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed)
+      if (_opaque.length) throw new Error(
+        `[litestone] update on "${modelName}" carries a base and writes ${_opaque.join(', ')}, ` +
+        `which @@sync(field) cannot compare: the stored value is an encoding, not the value. ` +
+        `Write those columns in a call of their own, without a base.`)
+    }
+
+    // ── Everything that touches the database, as one unit ────────────────
+    //
+    // An update is not one statement either: the parent rows a belongsTo
+    // write makes, the UPDATE, the children, the join rows — and the
+    // post-update policy check, whose refusal used to be undone by a
+    // COMPENSATING UPDATE of the before-snapshot rather than by a rollback.
+    // That is visible to concurrent readers in the window, is lost outright
+    // if the process dies between the two, and clobbers anything that landed
+    // in between. Inside a real transaction the throw IS the rollback
+    // (`FJS-638`).
+    //
+    // Pure — the split reads the payload and nothing else, so it can decide
+    // below whether this update needs a transaction at all.
+    const { scalar, nested, hasNested } = extractNestedWrites(data)
+    const { data: scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
+    const _postUpdatePolicy = Boolean(ctx.hasPolicies && shape.policy['post-update'])
+    // One UPDATE with no transaction open is its own unit, as a one-statement
+    // create is (`FJS-1106`). What keeps the transaction: a nested or edge
+    // write (more statements), a post-update policy (its refusal IS the
+    // rollback), and @@transitions (the move is graded across an await, and a
+    // transaction could open in that gap). On this path the plan reaches its
+    // statement without yielding — the executor's `bare` tripwire is what
+    // says so if an edit ever adds an await ahead of it (`FJS-1107`).
+    // A hidden parent is thrown only once the UPDATE has reached a row, as
+    // SQLite's own refusal is — so it needs a rollback to throw into.
+    const ownUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
+      && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
+
+    // The plan: the WHERE and the SET, the before snapshot, the move's grade
+    // and compare-and-swap, the version's, the seals — every conjunct that
+    // narrows the statement, and the ladder that explains a row it did not
+    // reach. Null when the row is outside the caller's read scope.
+    const updatePlan = async (extraFKs) => {
+      data = { ...scalarNoEdge, ...extraFKs }
+      const { where: exclWhere, policy: updatePolicy } =
+        visibleWhere('update', where, { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
+      const callerWhere = whereFragment(exclWhere)
+      if (!callerWhere) throw new Error(`update on "${tableName}" requires a where clause`)
+      const { sql: whereSql, params: whereParams } = callerWhere
+      const selAll = sqlJoin([KW.select, T, KW.where, callerWhere], '').sql
+
+      // ── @@sync(field) — merge, or name the columns two people contend over ─
+      // The WHERE is built above this and the SET below it, because the merge
+      // decides what the SET says: a column the writer did not actually move
+      // is dropped, and one only they moved is applied against the row as it
+      // stands now rather than the one they read.
+      //
+      // Costs one read and only on the losing side of a race — a version that
+      // still matches never reaches here, so a model declaring `field` pays
+      // nothing for it on an uncontested write.
+      if (base !== undefined && _expectVersion != null) {
+        const _cur = readDb.query(selAll).get(...whereParams)
+        if (_cur && _cur[col(_versionField)] !== _expectVersion) {
+          const _remote = {}
+          for (const f of Object.keys(data ?? {})) _remote[f] = _cur[col(f)]
+          const { apply, conflicts } = threeWay({ base, local: data, remote: _remote })
+          // Invariant 7 through a new door: a protected column says THAT it
+          // diverged and never what either side holds, so take-local or
+          // take-remote stays answerable without rendering the value
+          // (`FJS-D336`).
+          if (conflicts.length) throw new SyncConflictError(modelName, conflicts.map(c => ({
+            column: c.column,
+            base:   redactValue(c.column, c.base),
+            local:  redactValue(c.column, c.local),
+            remote: redactValue(c.column, c.remote),
+          })))
+          data = apply
+          // The row moved and the merge says nobody contested it, so the
+          // precondition becomes where the row actually is — otherwise the
+          // statement below matches nothing and reports the conflict this
+          // just resolved.
+          _expectVersion = _cur[col(_versionField)]
+        }
+      }
+
+      const { data: _upValues, ops: _upOps } = extractWriteOps(data)
+      const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped })
+      const setParams = []
+      const setCols   = [
+        ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
+        ..._upOps.map(o => setFragmentExpr(o.col, o.expr, o.params, setParams)),
+      ].join(', ')
+      if (shape.selfRelations.some(r => r.fkField in (data ?? {}))) {
+        const _idf = shape.selfRelations[0].referencedField
+        assertNoParentCycle(
+          readDb.query(sqlJoin([sqlFragment('SELECT '), ident(_idf), sqlFragment(' AS _id FROM '), T, KW.where, callerWhere], '').sql)
+            .all(...whereParams).map(r => r._id),
+          data,
+        )
+      }
+      // The caller's where, then the update policy
+      const finalWhere = and(callerWhere, updatePolicy)
+
+      // ── Logging + the post-update rule: the before snapshot ──────────────
+      // Two snapshots of one row, and the trail needs the READ one. read()
+      // parses Json to objects and coerces booleans, which is the row a
+      // reviewer compares against the after.
+      const beforeRaw = tableHasLogWork || _postUpdatePolicy
+        ? readDb.query(selAll).get(...whereParams)
+        : null
+      const beforeRow = beforeRaw ? read(beforeRaw, { mode: 'single' }) : null
+
+      // ── Transition enforcement ────────────────────────────────────────────
+      // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
+      // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
+      const _transResult = _tableTransitions ? await checkTransitions(row, whereParams, whereSql, system, _move) : null
+      // Every no-match reader in the ladder reads the row UNSCOPED to name
+      // why — the version, the seal, the move's refusal — so a row outside
+      // the caller's read scope leaves before any of them can describe it.
+      if (_transResult === NOT_VISIBLE) return null
+      // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
+      const { sql: _txWhereSql, params: _txWhereParams } = _transResult
+        ? applyTransitionWhereClause(_transResult, finalWhere.sql, finalWhere.params)
+        : finalWhere
+
+      // ── @version — the compare half of the swap ─────────────────────────────
+      // Same shape as applyTransitionWhereClause above: narrow the WHERE by the
+      // value the caller read, so a row that moved simply does not match. The
+      // bump rides the SET clause, which also means a versioned update always
+      // has a column to write even when `data` was otherwise empty.
+      const _vWhereSql0    = _expectVersion == null ? _txWhereSql : `(${_txWhereSql}) AND ${ident(col(_versionField)).sql} = ?`
+      const _vWhereParams0 = _expectVersion == null ? _txWhereParams : [..._txWhereParams, _expectVersion]
+      // The third link in the same chain: the caller's where, then the policy,
+      // then the move's from-state, then the version, then the seal. Each one
+      // narrows and none of them reports — the row simply does not match, which
+      // is what makes the refusal ladder the whole of the diagnosis.
+      const _vSealed = sealWhereClause(_vWhereSql0, _vWhereParams0)
+      // …and the model's own columns, where it is one that seals.
+      const _vSelf = sealSelfClause(data, _vSealed.sql, _vSealed.params)
+      // The bump rides the SET clause — but only where the caller actually
+      // wrote something. It used to be appended unconditionally, which meant a
+      // versioned update MANUFACTURED a column to write when `data` was
+      // otherwise empty, so a patch whose only key was `version` was a real
+      // write: the column went up, `@updatedAt` moved with it, and every other
+      // open editor of that row was told it was stale for a change nobody made
+      // (`FJS-368`). The value is a precondition the client sends back, not a
+      // value to write, so a form submitted with nothing edited became a write.
+      //
+      // A model with no `@version` already answered this correctly — the
+      // no-statement plan below reads the row back and issues no statement —
+      // so the two spellings disagreed about the same patch, which is the
+      // whole finding. Nested and edge writes are a real change to this row's
+      // meaning and still earn the bump; only a patch that names nothing at
+      // all does not.
+      const _touchesRow   = Boolean(setCols) || hasNested || edgeWrites.length > 0
+      const _v            = _versionField ? ident(col(_versionField)).sql : null
+      const _setColsBase  = !_versionField || !_touchesRow ? setCols
+        : [setCols, `${_v} = ${_v} + 1`].filter(Boolean).join(', ')
+      // Only a write that had something to say moves the stamp: an update
+      // naming no column issues no statement at all below, and the trigger it
+      // used to lean on never fired for one either.
+      const _setColsV     = _setColsBase
+        ? [_setColsBase, ...stampSets(Object.keys(row))].join(', ')
+        : _setColsBase
+
+      const version = _expectVersion == null ? null : { field: _versionField, expect: _expectVersion }
+      const args    = { where, data, include, select }
+      const result  = { select, include }
+
+      if (!_setColsV) {
+        // No columns to set — read back to return current row.
+        //
+        // The precondition is still a question, and it is asked for the
+        // same reason it is asked on the writing path: the caller is telling
+        // this boundary which version they read, and a stale one means their
+        // view is wrong whether or not they were writing. Answering a no-op
+        // success would confirm a stale screen.
+        //
+        // Read through the update policy, the WHERE a write would have used.
+        // The bare where answered any row the id named, so `data: {}` handed
+        // a caller the whole of a row their policy hides, read policy included.
+        //
+        // A patch that named no column wrote nothing, so there is nothing to
+        // announce, nothing for a plugin to observe and nothing to file
+        // (`FJS-368`): `announce` is null. A nested or edge write on this
+        // path is still a change to the row's meaning, and announces.
+        const sel = frag(sqlJoin([KW.select, T, KW.where, finalWhere], ''))
+        return {
+          verb: 'update', op: 'update', statements: [], count: sel, returning: false, where: frag(finalWhere),
+          args, query: sel, prefetch: false, moves: null, exclusion: null, post: false, softCascade: null,
+          batch: false, logs: tableHasLogWork, system,
+          announce: _touchesRow ? { event: 'update', operation: 'update' } : null, result, bare: ownUnit,
+          refuse: { where: callerWhere, transition: null, version, sealSelf: null, seal: null },
+          before: beforeRow, transition: _transResult,
+        }
+      }
+
+      // select: false with no reader of the row skips RETURNING. A logged
+      // model keeps it — the trail needs the after snapshot — as do the
+      // post-update rule and a nested write, which need the row itself.
+      const returning = !(select === false && !tableHasLogWork && !_postUpdatePolicy && !hasNested && !edgeWrites.length)
+      const stmt = frag(sqlJoin([
+        KW.update, T, KW.set, sqlFragment(_setColsV, setParams), KW.where, _vSelf, returning && KW.returning,
+      ], ''))
+      return {
+        verb: 'update', op: 'update', statements: [{ ...stmt, data: row }], count: null, returning,
+        where: frag(_vSelf), args, query: stmt, prefetch: false, moves: _upHidden ?? null,
+        exclusion: exclTouched(data) ? data : null, post: _postUpdatePolicy, softCascade: null, batch: false,
+        logs: tableHasLogWork, system, announce: { event: 'update', operation: 'update' }, result, bare: ownUnit,
+        refuse: {
+          where: callerWhere,
+          transition: _transResult ? { ..._transResult, policy: !!updatePolicy } : null,
+          version, sealSelf: _vSelf.frozen,
+          seal: { sql: _vWhereSql0, params: _vWhereParams0, op: 'update' },
+        },
+        before: beforeRow, transition: _transResult,
+      }
+    }
+
+    return { plan: updatePlan, nested, hasNested, edgeWrites, ownUnit, scopedBy }
+  }
+
+  // The seam's view of update: a belongsTo nested write lands, with no unit
+  // around it (see `[PLAN]` on the table).
+  async function planUpdate(args) {
+    const u = await prepareUpdate(args)
+    return u.plan(u.hasNested ? await processBelongsToNested(u.nested) : {})
+  }
+
+  // The single-statement upsert: `INSERT … ON CONFLICT(key) DO UPDATE …
+  // RETURNING *`, reached only when nothing listens, polices, logs, seals or
+  // stamps (see `upsert`'s fast path). Only the DO UPDATE branch needs the
+  // stamp — an INSERT takes the column DEFAULT, which is the same expression.
+  // No audience by construction, so it announces nothing; the choice between
+  // this statement and the read-then-write path is the verb's.
+  function upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols }) {
+    const sets = sqlJoin([
+      sqlJoin(updCols.map(c => sqlJoin([ident(col(c)), sqlFragment(' = ?', [updRow[c] ?? null])], '')), ', '),
+      ...stampSets(updCols).map(t => sqlFragment(t)),
+    ], ', ')
+    const stmt = frag(sqlJoin([
+      sqlFragment('INSERT INTO '), T, sqlFragment(' ('), sqlJoin(insCols.map(c => ident(col(c))), ', '),
+      sqlFragment(`) VALUES (${insCols.map(() => '?').join(', ')}) ON CONFLICT(`, insCols.map(c => insRow[c] ?? null)),
+      ident(wKey), sqlFragment(') DO UPDATE SET '), sets, KW.returning,
+    ], ''))
+    return {
+      verb: 'upsert', op: 'upsert', statements: [{ ...stmt, data: insRow, one: true }], count: null, returning: true,
+      where: null, args: { where, create: createData, update: updateData }, query: stmt, prefetch: false,
+      moves: null, exclusion: null, post: false, softCascade: null, batch: false, logs: false, system: null,
+      announce: null, result: { select: undefined, include: undefined }, bare: tx.state.depth === 0,
+      refuse: null, before: null, transition: null,
+    }
+  }
+
+  // Everything an upsert decides before either path, then the one-statement
+  // plan when the fast path applies: no hooks, plugins, policies, events,
+  // logs, transitions, soft delete, window, global filters, field policies,
+  // sequences or nested writes, and a `where` naming exactly one unique
+  // column. Null otherwise — the verb then reads, and updates or creates.
+  async function planUpsert({ where, create: createData, update: updateData, include, select, system,
+                              withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
+    // An operator is refused here rather than passed to the update half. This
+    // method has a single-statement fast path whose SET clause reads from
+    // `excluded`, and a slow path that calls update() — one would apply the
+    // operator and the other could not, which is the drift the refusal exists
+    // to prevent.
+    extractWriteOps(createData, { where: 'upsert' })
+    extractWriteOps(updateData, { where: 'upsert' })
+    refuseSystemEntries(system, ['create', 'update'])
+    // The fast path's two halves; the slow path is create() and update(),
+    // which grade their own.
+    const _upsHidden = await hiddenParents([createData, updateData])
+    // ── an upsert addressed by a relator's relata ──────────────────────
+    //
+    // Refused rather than answered, because the answer would be a wrong one
+    // that compiles. The fast path below needs ONE unique column, so a pair
+    // never reaches it and every relator upsert falls to the slow path —
+    // findFirst, then update what it found. On a repeatable relationship
+    // `{recipeId, serverId}` matches every run there has ever been, so the
+    // call silently overwrites the oldest instead of recording a new one.
+    //
+    // The declaration is what gives this the authority to be sure. A relator
+    // states how its rows are identified, so an upsert addressing them any
+    // other way is provably not the write the caller meant — which is not
+    // something litestone can say about an ordinary non-unique `where`.
+    const _relator = shape.model.attributes?.find(a => a.kind === 'relator')
+    if (_relator && where) {
+      const given = new Set(Object.keys(where))
+      if (_relator.fields.some(f => given.has(f))) {
+        const keyed = _relator.repeat === 'once' ? _relator.fields
+                    : _relator.discriminator     ? [..._relator.fields, _relator.discriminator]
+                    : null
+        const missing = keyed?.filter(c => !given.has(c)) ?? null
+        if (!keyed) throw new ValidationError([{
+          path: ['where'],
+          message:
+            `${modelName} declares @@relator([${_relator.fields.join(', ')}], many), so the same pair may ` +
+            `happen any number of times and there is no row for these columns to name. An upsert here would ` +
+            `overwrite an earlier one. Use create(), or address the row by its id.`,
+        }])
+        if (missing.length) throw new ValidationError([{
+          path: ['where'],
+          message:
+            `${modelName} declares @@relator([${_relator.fields.join(', ')}], many: ${_relator.discriminator}), ` +
+            `so what identifies a row is ${keyed.join(' + ')} — and this where names ` +
+            `${missing.join(', ')} nowhere. Without it these columns match every occurrence, and the upsert ` +
+            `would overwrite one of them. Name ${missing.join(' and ')}, or address the row by its id.`,
+        }])
+      }
+    }
+    // Both halves, because either may be the one that lands — and they are two
+    // calls rather than one array: a create-shaped payload IS the row, while
+    // the update half is about a row that already exists, so a dependent
+    // binding grades it against `where` (`FJS-D122`).
+    await enforceValueSets(modelName, [createData], ctx)
+    await enforceValueSets(modelName, [updateData], ctx, { where })
+    refuseOffEntry([createData])
+    // Threaded through to both halves: the lookup has to SEE the row the
+    // update would write, or an upsert against an excluded row reads as
+    // absent and tries to INSERT one that is already there.
+    const _upFlags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
+    // ── Single-statement fast path ─────────────────────────────────────────
+    // When no hooks / plugins / policies / events / logs / transitions /
+    // soft-delete / window / global filters / field policies / sequences /
+    // nested writes are in play and `where` targets exactly one unique column,
+    // compile to one cached `INSERT ... ON CONFLICT(col) DO UPDATE ...
+    // RETURNING *` — one round trip instead of findFirst + update/create
+    // (measured ~6x). Any feature that needs the split path falls through
+    // to the original read-then-write implementation below.
+    if (
+      !plugins?.hasPlugins && !emitter && !ctx._eventListeners.size &&
+      !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions && !_exclNotes &&
+      !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
+      !shape.sequences.length &&
+      !shape.updatedBy.length &&
+      !shape.version &&
+      include === undefined && select === undefined &&
+      where && createData && updateData && Object.keys(updateData).length
+    ) {
+      const wKeys = Object.keys(where)
+      if (wKeys.length !== 1) return null
+      const wKey = wKeys[0]
+      const wVal = where[wKey]
+      const wt = typeof wVal
+      if (wVal == null || (wt !== 'string' && wt !== 'number' && wt !== 'bigint' && wt !== 'boolean')) return null
+      if (!_upsertUniqueCols().has(wKey)) return null
+      // The fast path compiles one INSERT … ON CONFLICT and has nowhere to put
+      // a nested write, so it must decline the call rather than take it: read
+      // as *no nested writes*, this handed `{ create: [...] }` to the column
+      // validator, which refused a legitimate write with `lines: must be an
+      // array`.
+      if (extractNestedWrites(createData).hasNested) return null
+      if (extractNestedWrites(updateData).hasNested) return null
+
+      // Same data massage as create(): auto-@id, auth()/field-ref defaults
+      let cData = createData
+      const _fpStamped = new Set()
+      const _fpAutoId = shape.autoId
+      if (_fpAutoId && cData[_fpAutoId.field] == null) {
+        noteStamp(_fpStamped, cData, _fpAutoId.field)
+        cData = { ...cData, [_fpAutoId.field]: _fpAutoId.generate() }
+      }
+      cData = applyGeneratedDefaults(cData, shape.generatedDefaults, _fpStamped)
+      cData = applyAuthDefaults(cData, shape.authDefaults, ctx.auth, _fpStamped)
+      cData = stampFromAuth(cData, shape.createdBy, ctx.auth, _fpStamped)
+      const _fpFieldRefs = shape.fieldRefDefaults
+      if (_fpFieldRefs?.length) {
+        const stamps = {}
+        for (const { field, sourceField } of _fpFieldRefs) {
+          if (cData[field] == null && cData[sourceField] != null) {
+            noteStamp(_fpStamped, cData, field)
+            stamps[field] = cData[sourceField]
+          }
+        }
+        if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
+      }
+
+      // A field write predicate has to read the STORED row, and this branch is
+      // one statement with no row in hand — its DO UPDATE would grade the
+      // payload, which is exactly the fail-open `FJS-433` describes. The slow
+      // path reads then updates, where the CASE in the SET applies.
+      if (_hasFieldWrite) return null
+
+      // writeData runs transforms + validation on both branches' data
+      const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
+      const updRow = writeData(updateData, { system })
+      if (_upsHidden[0]) throw _upsHidden[0]
+      // update() asks whether the key MOVES, which one statement cannot.
+      if (_upsHidden[1]) return null
+      const insCols = Object.keys(insRow)
+      const updCols = Object.keys(updRow).filter(c => c !== wKey)
+      if (!insCols.length || !updCols.length) return null
+      if (_sealInsertSql) return null
+      if (_sealSelf && _immutableWriteKeys.size) return null
+
+      return upsertPlan({ where, createData, updateData, insRow, updRow, wKey, insCols, updCols })
+    }
+    return null
+  }
+
+  const PLANNERS = {
+    createMany: planCreateMany, updateMany: planUpdateMany, deleteMany: planDeleteMany, removeMany: planRemoveMany,
+    remove: planRemove, delete: planDelete, create: planCreate, update: planUpdate, upsert: planUpsert,
+  }
+
   // installHooks wraps this object — see its header. Hooks are the OUTERMOST
   // layer: a before hook sees the arguments as the caller wrote them, ahead of
   // the plugin door and of any stamping this file does.
   return installHooks({
+
+    // The plan a bulk write would run, without running it — the way `$checkWhere`
+    // answers a where without querying. A test's view of a verb, keyed by the
+    // `PLAN` symbol so it is no method of the table. It plans through the
+    // verb's own door (hooks, value sets, stamps), so on a @sequence model it
+    // bumps the counters outside any unit: it reads a verb, it is not a dry run.
+    async [PLAN](verb, args = {}) {
+      const planner = PLANNERS[verb]
+      if (!planner) throw new Error(`${modelName}[PLAN](${verb}): not a planned write — one of ${Object.keys(PLANNERS).join(', ')}`)
+      return planner(args)
+    },
 
     // ── findMany ────────────────────────────────────────────────────────────
     async findMany(args = {}) {
@@ -4678,14 +6002,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
           ? { direction: 'descendants' }
           : { direction: 'descendants', ...args.recursive }
 
-        const selfRels = ctx.selfRelationMap?.[modelName]
+        const selfRels = shape.selfRelations
         if (!selfRels?.length)
           throw new Error(`findMany({ recursive }) — model '${tableName}' has no self-referential relation`)
 
         // The CTE names four columns of its own; a model column of the same
         // name would resolve to the CTE inside the walk and answer nonsense.
         const reserved = ['_id', '_pid', '_depth', '_path']
-        for (const f of ctx.models[modelName]?.fields ?? [])
+        for (const f of shape.model.fields)
           if (reserved.includes(f.name))
             throw new Error(`findMany({ recursive }) — '${tableName}' declares a field named '${f.name}', which the tree query uses for itself`)
 
@@ -4700,18 +6024,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
             `recursive: { nested: true } cannot take limit or offset — they would cut branches out of the tree. Use maxDepth, or take the flat result and page that` }])
 
         const multiRel = relsToUse.length > 1
-        const mode     = sdMode(args)
-        const htm      = htMode(args)
-        const em       = effMode(args)
-        const asOf     = effective ? effAsOf(args) : null
         const maxDepth = rec.maxDepth ?? 1000
 
         // Built once, bound at every level it appears in: the anchor SELECT and
-        // each step of the walk.
+        // each step of the walk. Folded as `recursive`: its row in READ_RULES
+        // says which rules the walk applies, and which it does not.
         const visParams = []
-        const visWhere  = applyEff(applyHtFilter(softDelete ? injectSoftDeleteFilter(null, mode) : null, htm), em, asOf)
+        const { where: visWhere, policy: readPolicy } = visibleWhere('recursive', null, args)
         let   visSql    = visWhere ? buildWhereWithEncryption(visWhere, visParams) : null
-        const readPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
         if (readPolicy) {
           visSql = visSql ? `(${visSql}) AND (${readPolicy.sql})` : readPolicy.sql
           visParams.push(...readPolicy.params)
@@ -4841,10 +6161,6 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { where, include, orderBy, limit, offset, select, distinct, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
       const windowSpec      = args.window ?? null
-      const mode            = sdMode(args)
-      const htm             = htMode(args)
-      const em              = effMode(args)
-      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
       const psLog           = logReadParse(select, include, ps, distinct)
 
@@ -4886,7 +6202,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
         ;({ sql, params } = buildSQL({
           where: scanWhere, orderBy: orderByAfterVector(orderBy, _jsVec.field),
-          parsedSelect: psScan, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec,
+          parsedSelect: psScan, args, distinct: distinct === true, windowSpec,
           withVectors: true,
         }))
         rawRows = scoreByDistance(readDb.query(sql).all(...params), _jsVec.near, {
@@ -4895,7 +6211,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           skip: offset == null ? 0        : Number(offset),
         })
       } else {
-        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec }))
+        ;({ sql, params } = buildSQL({ where, args, orderBy, limit, offset, parsedSelect: psLog, distinct: distinct === true, windowSpec }))
         rawRows = readDb.query(sql).all(...params)
       }
 
@@ -4931,13 +6247,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, select, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
-      const mode            = sdMode(args)
-      const htm             = htMode(args)
-      const em              = effMode(args)
-      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
       const psLog           = logReadParse(select, include, ps)
-      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf })
+      const { sql, params } = buildSQL({ verb: 'findFirst', where, args, orderBy, limit: 1, parsedSelect: psLog })
       const _nt = needsTiming()
       const _ffT0 = _nt ? performance.now() : 0
       const _raw            = readDb.query(sql).get(...params)
@@ -4991,13 +6303,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, select, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
-      const mode            = sdMode(args)
-      const htm             = htMode(args)
-      const em              = effMode(args)
-      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
       const psLog           = logReadParse(select, include, ps)
-      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf })
+      const { sql, params } = buildSQL({ verb: 'findUnique', where, args, limit: 2, parsedSelect: psLog })
       const _nt = needsTiming()
       const _fuT0 = _nt ? performance.now() : 0
       const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: psLog?.requestedFields })
@@ -5054,28 +6362,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
-      const mode      = sdMode(args)
-      const htm       = htMode(args)
-      const em        = effMode(args)
-      const asOf      = effective ? effAsOf(args) : null
-      const params    = []
-      // Merge global filter + plugin read filters + policy filter (same as buildSQL does)
-      const globalFilter = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters   = [globalFilter, ...pluginFilters].filter(Boolean)
-      const mergedWhere  = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const exclWhere = applyEff(applyHtFilter(sdWhere, htm), em, asOf)
-      const whereSql  = buildWhereWithEncryption(exclWhere, params)
-      // Policy filter for count
-      const countPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      let   sql       = `SELECT COUNT(*) as n FROM "${tableName}"`
-      if (whereSql && countPolicy) sql += ` WHERE (${whereSql}) AND (${countPolicy.sql})`
-      else if (whereSql)           sql += ` WHERE ${whereSql}`
-      else if (countPolicy)        sql += ` WHERE ${countPolicy.sql}`
-      if (countPolicy) params.push(...countPolicy.params)
+      const vis       = visibleWhere('count', where, args)
+      const whereAll  = and(whereFragment(vis.where), vis.policy)
+      const sql       = `SELECT COUNT(*) as n FROM "${tableName}"` + (whereAll ? ` WHERE ${whereAll.sql}` : '')
+      const params    = whereAll?.params ?? []
       const _nt = needsTiming()
       const _cT0 = _nt ? performance.now() : 0
       let result = readDb.query(sql).get(...params).n
@@ -5094,27 +6384,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       refuseRecursive('exists', args)
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where } = args
-      const mode      = sdMode(args)
-      const htm       = htMode(args)
-      const em        = effMode(args)
-      const asOf      = effective ? effAsOf(args) : null
-      const params    = []
-      const globalFilter = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters   = [globalFilter, ...pluginFilters].filter(Boolean)
-      const mergedWhere  = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const exclWhere = applyEff(applyHtFilter(sdWhere, htm), em, asOf)
-      const whereSql  = buildWhereWithEncryption(exclWhere, params)
-      const existsPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      let   sql       = `SELECT 1 as _e FROM "${tableName}"`
-      if (whereSql && existsPolicy) sql += ` WHERE (${whereSql}) AND (${existsPolicy.sql})`
-      else if (whereSql)            sql += ` WHERE ${whereSql}`
-      else if (existsPolicy)        sql += ` WHERE ${existsPolicy.sql}`
-      if (existsPolicy) params.push(...existsPolicy.params)
-      sql += ` LIMIT 1`
+      const vis       = visibleWhere('exists', where, args)
+      const whereAll  = and(whereFragment(vis.where), vis.policy)
+      const sql       = `SELECT 1 as _e FROM "${tableName}"` + (whereAll ? ` WHERE ${whereAll.sql}` : '') + ` LIMIT 1`
+      const params    = whereAll?.params ?? []
       const _nt = needsTiming()
       const _eT0 = _nt ? performance.now() : 0
       let result = readDb.query(sql).get(...params) !== null
@@ -5141,15 +6414,11 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       }
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, limit, offset, select, distinct } = args
-      const mode = sdMode(args)
-      const htm  = htMode(args)
-      const em   = effMode(args)
-      const asOf = effective ? effAsOf(args) : null
       const ps   = parseArgs(select, include)
       const psLog = logReadParse(select, include, ps, distinct)
 
       // ── rows query (with limit/offset) ──────────────────────────────────
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true })
+      const { sql, params } = buildSQL({ verb: 'findManyAndCount', where, args, orderBy, limit, offset, parsedSelect: psLog, distinct: distinct === true })
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
       const rawRows = readDb.query(sql).all(...params)
@@ -5162,23 +6431,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
 
       // ── count query (same WHERE, no limit/offset) ─────────────────────
-      const countParams = []
-      const globalFilter = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters = globalFilter ? [globalFilter, ...pluginFilters] : pluginFilters
-      const mergedWhere = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      const sdMergedWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const exclWhere = applyEff(applyHtFilter(sdMergedWhere, htm), em, asOf)
-      const whereSql = buildWhereWithEncryption(exclWhere, countParams)
-      const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      let countSql = `SELECT COUNT(*) as n FROM "${tableName}"`
-      if (whereSql && policyResult) countSql += ` WHERE (${whereSql}) AND (${policyResult.sql})`
-      else if (whereSql)            countSql += ` WHERE ${whereSql}`
-      else if (policyResult)        countSql += ` WHERE ${policyResult.sql}`
-      if (policyResult) countParams.push(...policyResult.params)
-      const total = readDb.query(countSql).get(...countParams).n
+      const vis      = visibleWhere('findManyAndCount', where, args)
+      const whereAll = and(whereFragment(vis.where), vis.policy)
+      const countSql = `SELECT COUNT(*) as n FROM "${tableName}"` + (whereAll ? ` WHERE ${whereAll.sql}` : '')
+      const total    = readDb.query(countSql).get(...(whereAll?.params ?? [])).n
 
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
       if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
@@ -5246,22 +6502,13 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // joined the strings, so _stringAgg beside any where answered [].
       const selectParams = []
 
-      // Build WHERE (reuses count() pattern)
-      const rawFilter    = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters   = rawFilter ? [rawFilter, ...pluginFilters] : pluginFilters
-      const mergedWhere  = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      // The flags, not a hardcoded 'live'/'instances'. Both were pinned here, so
-      // `aggregate({ _count: true, onlyDeleted: true })` counted the LIVE rows
-      // and `onlyTemplates` counted the instances — the opposite answer to the
-      // question asked, from the method whose whole output is one number
-      // nothing can cross-check (FJS-263).
-      const sdWhereR = applySdFilter(mergedWhere, args)
-      const exclWhere = applyEffFilter(applyHtFilter(sdWhereR, htMode(args)), args)
+      // The flags ride in `args`, not a hardcoded 'live'/'instances'. Both were
+      // pinned here, so `aggregate({ _count: true, onlyDeleted: true })` counted
+      // the LIVE rows and `onlyTemplates` counted the instances — the opposite
+      // answer to the question asked, from the method whose whole output is one
+      // number nothing can cross-check (FJS-263).
+      const { where: exclWhere, policy: policyResult } = visibleWhere('aggregate', where, args)
       const whereSql = buildWhereWithEncryption(exclWhere, params)
-      const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
       // Build SELECT columns
       const selects = []
@@ -5395,7 +6642,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         refuseAggregateKeys('groupBy interval', [intervalField], false)
 
         // Validate field is DateTime on the model
-        const modelDef = ctx.models[modelName]
+        const modelDef = shape.model
         const intervalFieldDef = modelDef?.fields.find(f => f.name === intervalField)
         if (intervalFieldDef && intervalFieldDef.type.name !== 'DateTime' && intervalFieldDef.type.name !== 'String')
           throw new Error(`groupBy() interval field '${intervalField}' must be a DateTime field, got '${intervalFieldDef.type.name}'`)
@@ -5506,18 +6753,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // joined the strings, so _stringAgg beside any where answered [].
       const selectParams = []
 
-      // WHERE clause
-      const rawFilter    = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters   = rawFilter ? [rawFilter, ...pluginFilters] : pluginFilters
-      const mergedWhere  = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      // Same as aggregate: the flags, not a hardcoded mode (FJS-263).
-      const sdWhereR = applySdFilter(mergedWhere, args)
-      const exclWhere = applyEffFilter(applyHtFilter(sdWhereR, htMode(args)), args)
+      // WHERE clause — the flags ride in `args`, as aggregate (FJS-263).
+      const { where: exclWhere, policy: policyResult } = visibleWhere('groupBy', where, args)
       const whereSql = buildWhereWithEncryption(exclWhere, params)
-      const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
       // ── The zone, as SQL ─────────────────────────────────────────────────
       // SQLite has no zone database and bun:sqlite can register no function,
@@ -5839,56 +7077,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── create ──────────────────────────────────────────────────────────────
-    async create({ data, include, select, scopedBy, system } = {}) {
-      // Before the INSERT and before the transaction: a create of a model whose
-      // relation declares a minimum, naming no children, can never satisfy it,
-      // and answering that with a COUNT would cost the single-row fast path
-      // (`FJS-1106`) for a row that is refused either way.
-      const _cardRequires = ctx.cardinalityMap?.requiresChildren?.[modelName]
-      if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
-      refuseSystemEntries(system, ['create'])
-      await enforceValueSets(modelName, [data], ctx)
-      // The plugins first: a value one writes into the payload is a value the
-      // row lands with, and grading before it would pass it ungraded (FJS-1307).
-      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select, system }, ctx)
-      refuseOffEntry([data])
-      // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
-      // What the ENGINE puts in this payload, so the @guarded/@system refusals
-      // in writeData can grade the caller's keys alone (FJS-565).
-      const stamped = new Set()
-      const autoId = ctx.autoIdMap?.[modelName]
-      if (autoId && (data == null || data[autoId.field] == null)) {
-        noteStamp(stamped, data, autoId.field)
-        data = { ...(data ?? {}), [autoId.field]: autoId.generate() }
-      }
-      data = applyGeneratedDefaults(data, ctx.generatedDefaultMap?.[modelName], stamped)
-      data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth, stamped)
-      data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth, stamped)
-      const [_crHid] = await hiddenParents([data], [stamped])
-      // After the auth stamps, never before — see authStamped (FJS-1402).
-      const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
-      // A new row is version 1, whatever the payload says. Honouring a supplied
-      // version would let a client start a row at 500 and make the first real
-      // editor's read look stale.
-      if (ctx.versionMap?.[modelName]) {
-        noteStamp(stamped, data, ctx.versionMap[modelName])
-        data = { ...(data ?? {}), [ctx.versionMap[modelName]]: 1 }
-      }
-      // Apply @default(fieldName) — copy value from sibling field if not already provided
-      // Must run BEFORE writeData/applyTransforms so @slug and other transforms see the value
-      const fieldRefDefaults = ctx.fieldRefDefaultMap?.[modelName]
-      if (fieldRefDefaults?.length) {
-        const stamps = {}
-        for (const { field, sourceField } of fieldRefDefaults) {
-          if ((data == null || data[field] == null) && data?.[sourceField] != null) {
-            noteStamp(stamped, data, field)
-            stamps[field] = data[sourceField]
-          }
-        }
-        if (Object.keys(stamps).length) data = { ...(data ?? {}), ...stamps }
-      }
-      extractWriteOps(data, { where: 'create' })
-      const _crHidden = firstRefusal(_crParent, _crHid)
+    async create(args = {}) {
+      const _cr = await prepareCreate(args)
+      let { data } = _cr
+      const { stamped, select, include, system, scopedBy } = _cr
 
       // ── Everything that touches the database, as one unit ────────────────
       //
@@ -5903,66 +7095,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the nested writes are themselves table calls and therefore async; a
       // genuine nesting takes a SAVEPOINT and never waits on its own caller.
       //
-      // The INSERT and what it reads back, synchronously: no await may sit
-      // between the decision below and the statement, or a transaction can open
-      // in the gap and the insert joins it.
-      function insertRow(hasNested, edgeWrites) {
-        if (ctx.selfRelationMap?.[modelName])
-          assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
-        const row   = writeData(data, { requireAll: true, system, stamped, creating: true })
-        if (_crHidden) throw _crHidden
-        const cols  = Object.keys(row)
-        // cols can be empty when all fields are optional and none were supplied,
-        // or when all fields were stripped by @allow write policies.
-        // SQLite requires DEFAULT VALUES syntax when no columns are specified.
-        // A hasMany create needs the parent's id, which only RETURNING answers —
-        // so skipping it here is not a saving, it is the children going missing.
-        const _noReturn = select === false && !hasNested && !edgeWrites.length
-        // A guarded insert is `INSERT … SELECT … WHERE`, because an INSERT has no
-        // WHERE of its own. Zero rows changed is the refusal, and sealRefusal is
-        // what turns that into a sentence.
-        const _crSeal = cols.length ? sealInsertGuard(row) : null
-        const _crSql = cols.length
-          ? _crSeal
-            ? `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) SELECT ${cols.map(() => '?').join(', ')} WHERE ${_crSeal.sql}${_noReturn ? '' : ' RETURNING *'}`
-            : `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})${_noReturn ? '' : ' RETURNING *'}`
-          : `INSERT INTO "${tableName}" DEFAULT VALUES${_noReturn ? '' : ' RETURNING *'}`
-        const _crParams = cols.length
-          ? [...cols.map(c => row[c] ?? null), ...(_crSeal?.params ?? [])]
-          : []
-        const _nt = needsTiming()
-        const _crT0 = _nt ? performance.now() : 0
-
-        // select: false — skip RETURNING, use run() for zero overhead
-        if (_noReturn) {
-          let result
-          try { result = writeDb.run(_crSql, ..._crParams) }
-          catch (e) { throw asConstraintError(e, row) }
-          const _crChanges = rowsChanged(writeDb)
-          fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: _crChanges })
-          if (!_crChanges) {
-            const refusal = sealRefusal(_crSeal?.parents, 'create')
-            if (refusal) throw refusal
-            return { done: true, row: null }
-          }
-          // A row write with no row: `select: false` skipped the RETURNING. Still
-          // a row event — one row changed and this cannot say which.
-          fireRowEvent('create', 'create', null)
-          return { done: true, row: null }
-        }
-
-        // RETURNING * gives the inserted row directly — no follow-up SELECT needed.
-        // Uses writeDb so it works inside open transactions.
-        let created
-        try { created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single', hydrateFrom: true }) }
-        catch (e) { throw asConstraintError(e, row) }
-        fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: created ? 1 : 0 })
-        if (!created) {
-          const refusal = sealRefusal(_crSeal?.parents, 'create')
-          if (refusal) throw refusal
-          return { done: true, row: null }
-        }
-        return { done: false, row: created }
+      // The plan and its unit, synchronously: no await may sit between the
+      // decision below and the statement, or a transaction can open in the gap
+      // and the insert joins it.
+      let plan
+      const insertRow = (hasNested, edgeWrites, bare) => {
+        plan = createPlan(data, { hasNested, edgeWrites, select, include, system, stamped, refusal: _cr.refusal, bare })
+        return writeUnit(plan)
       }
 
       // One INSERT with no transaction open on this connection is already its
@@ -5972,7 +7111,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // 82% (`FJS-1106`). A @sequence bump, a nested write and an edge write are
       // further statements, so they keep the transaction.
       let _crOut
-      const _crSplit = ctx.sequenceMap?.[modelName]?.length ? null : extractNestedWrites(data)
+      const _crSplit = shape.sequences.length ? null : extractNestedWrites(data)
       const _crEdges = _crSplit && !_crSplit.hasNested ? extractEdgeWrites(_crSplit.scalar) : null
       // A write that moves a count has to reach `commit`, which is where the
       // count is graded — the autocommit path never opens a transaction, so a
@@ -5981,14 +7120,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // MODEL, so a schema declaring no bound keeps the path (`FJS-1106`).
       if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes) {
         data   = _crEdges.data
-        _crOut = insertRow(false, _crEdges.edgeWrites)
+        _crOut = insertRow(false, _crEdges.edgeWrites, true)
       } else {
         _crOut = await tx.exclusive(async () => {
           // Apply @sequence fields — inject per-scope auto-incremented values.
           // Ahead of the split, because the split is what the INSERT is built
           // from: injecting a sequence into `data` after it has been taken apart
           // writes the row without the column.
-          data = applySequences(data, modelName, ctx.sequenceMap, writeDb, stamped)
+          data = applySequences(data, modelName, shape.sequences, writeDb, stamped)
           // Split nested write ops from scalar fields
           const { scalar, nested, hasNested } = extractNestedWrites(data)
           const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
@@ -5996,850 +7135,83 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           const extraFKs = await processBelongsToNested(nested)
           data = { ..._scalarNoEdge, ...extraFKs }
 
-          const inserted = insertRow(hasNested, edgeWrites)
-          // Inside the transaction, because the grade runs at ITS commit. Noted
-          // after it returns and the ledger is graded by the NEXT write's
-          // commit instead — which still reads the right COUNT, so it looks
-          // correct for as long as consecutive writes share a parent.
-          //
+          const inserted = insertRow(hasNested, edgeWrites, false)
           // `select: false` with nothing nested skips the RETURNING, so there is
-          // no row — and a child's foreign key is in the payload either way. The
-          // parent side needs no fallback: a childless create is refused before
-          // this point, and one carrying children has nested writes and a row.
-          noteCardinality(inserted.row ?? data)
-          noteExclusion(inserted.row ?? data)
-          if (inserted.done) return inserted
+          // no row to hang children on — and none were asked for.
+          if (!inserted.row) return inserted
           const created = inserted.row
           // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
-          const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+          const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
           await processHasManyNested(nested, created[pkField], created)
           applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
           return inserted
         })
       }
       // ── Committed from here ──────────────────────────────────────────────
-      if (_crOut.done) {
-        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', _crOut.row, ctx)
-        return null
-      }
-      let created = _crOut.row
-      const ps = parseArgs(select, include)
-      if (ps || include) withIncludes([created], ps, include)
-      created = finalizeOne(created, ps)
-      fireRowEvent('create', 'create', created)
-      if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', created, ctx)
-      // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasLogWork && created) emitLogs('create', [created], { after: created, system })
-      // `select: false` still means *do not hand me the row*. A nested write
-      // needs the parent's id, so RETURNING could not be skipped — but that is
-      // this method's need and it does not change what the caller asked for.
-      // The announcement keeps the row, because it HAS one: `null` there means
-      // the RETURNING was skipped, which is now a different fact.
-      return select === false ? null : created
+      return finishWrite(plan, _crOut)
     },
 
     // ── createMany ──────────────────────────────────────────────────────────
-    async createMany({ data, system, announce } = {}) {
-      if (!data?.length) return { count: 0 }
-      // Resolved before any work: an unknown value is a caller that meant
-      // something, and refusing it after the write has landed helps nobody.
-      const { mode: _cmMode, wantRows: _cmWantRows } = announceFor(announce)
-      // A logged model already takes RETURNING, so opting in costs it nothing.
-      const _cmNeedRows = tableHasLogWork || _cmWantRows
-      // Operators are refused on a create-shaped write, and this is where that
-      // refusal is made for a bulk one. It used to be reached only by the
-      // object-where-a-value-belongs guard in writeData, which cannot see
-      // `$merge`: a Json column legitimately takes an object, so the operator
-      // was stored as the document — `{"$merge":{"a":1}}`.
-      for (const row of data) extractWriteOps(row, { where: 'createMany' })
-      refuseSystemEntries(system, ['create'])
-      await enforceValueSets(modelName, data, ctx)
-      if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
-      refuseOffEntry(data)
-      // The rows as the caller wrote them: every stamp lands later, inside the unit.
-      const _cmHidden = await hiddenParents(data)
-      const _cmParent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), _cmHidden[i])) : []
-      for (const [i, r] of _cmParent.entries()) _cmHidden[i] = firstRefusal(r, _cmHidden[i])
-
-      // Auto-generate @id and run writeData (transforms + validation) on every row
-      // before touching the DB — so @email, @lower, @trim, @encrypted, enum checks
-      // all fire consistently, same as single create().
-      const autoId      = ctx.autoIdMap?.[modelName]
-      const genDefaults = ctx.generatedDefaultMap?.[modelName]
-      const authDefaults = ctx.authDefaultMap?.[modelName]
-      const createdByStamps = ctx.createdByMap?.[modelName]
-      const versionField    = ctx.versionMap?.[modelName]
-      let rows, _cmSql, _cmInserted = null
-      let count = 0
-      const _nt = needsTiming()
-      const _cmT0 = _nt ? performance.now() : 0
-      // The whole batch — including @sequence counter bumps — runs inside one
-      // transaction. Previously applySequences ran per row BEFORE the tx, so a
-      // @sequence model paid 2 auto-commit statements per row (~16x slower) and
-      // counter bumps stayed committed even if the batch insert failed.
-      await tx.wrapExclusive(() => {
-        rows = data.map((item, i) => {
-          let d = item
-          // Per ROW — rows are not required to be uniform, so one shared set
-          // would let row 0's stamp excuse row 1's caller-supplied column.
-          const stamped = new Set()
-          if (autoId && (d == null || d[autoId.field] == null)) {
-            noteStamp(stamped, d, autoId.field)
-            d = { ...(d ?? {}), [autoId.field]: autoId.generate() }
-          }
-          d = applyGeneratedDefaults(d, genDefaults, stamped)
-          d = applyAuthDefaults(d, authDefaults, ctx.auth, stamped)
-          d = stampFromAuth(d, createdByStamps, ctx.auth, stamped)
-          if (versionField) { noteStamp(stamped, d, versionField); d = { ...(d ?? {}), [versionField]: 1 } }
-          // Apply @sequence per row — each row gets its own counter increment
-          d = applySequences(d, modelName, ctx.sequenceMap, writeDb, stamped)
-          // A validation failure here names the field and, without this, no row.
-          // The row itself is NOT passed on: it is the caller's payload before
-          // writeData ran, so a @encrypted value in it is still plaintext.
-          try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
-          catch (e) { throw asBatchRowError(e, i, data.length, null) }
-        })
-
-        // One prepared statement PER ROW SHAPE, not one for the batch. Rows are
-        // not required to be uniform: deriving the column list from row 0 made
-        // row 0 decide what every other row may write, so a wider row silently
-        // lost its extra columns and a narrower one bound NULL over a column
-        // the caller never mentioned — defeating its DDL DEFAULT.
-        // Rows are still inserted in caller order, because an autoincrement id
-        // is assigned in insert order and grouping would renumber them.
-        const stmts = new Map()
-        const stmtFor = (cols) => {
-          // '\x00' as an ESCAPE, never a raw NUL byte in the source: a literal NUL
-          // makes grep classify this file as binary and skip it silently, which
-          // hides every match in the largest file in the package.
-          const key = cols.join('\x00')
-          let entry = stmts.get(key)
-          if (!entry) {
-            // The seal guard turns VALUES into SELECT … WHERE, exactly as it
-            // does on the single create. The predicate is the same for every
-            // row of the model, so it belongs in the cached statement.
-            const sql = _sealInsertSql
-              ? `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) SELECT ${cols.map(() => '?').join(', ')} WHERE ${_sealInsertSql}`
-              : `INSERT INTO "${tableName}" (${cols.map(c => `"${col(c)}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-            entry = { cols, sql: sql + (_cmNeedRows ? ` RETURNING *` : ''), stmt: null }
-            entry.stmt = writeDb.prepare(entry.sql)
-            stmts.set(key, entry)
-          }
-          return entry
-        }
-        // RETURNING on a logged model: an @id @default(autoincrement()) row has no
-        // id until SQLite assigns one, and a log entry naming no rows is not a trail.
-        if (_cmNeedRows) _cmInserted = []
-        for (const [_i, row] of rows.entries()) {
-          if (_cmHidden[_i]) throw asBatchRowError(_cmHidden[_i], count, rows.length, row)
-          const { cols, stmt } = stmtFor(Object.keys(row))
-          const _cmSeal = sealInsertGuard(row)
-          const args = [...cols.map(c => row[c] ?? null), ...(_cmSeal?.params ?? [])]
-          let _cmWrote = true
-          try {
-            if (_cmNeedRows) { const r = stmt.get(...args); if (r) _cmInserted.push(r); else if (_cmSeal) _cmWrote = false }
-            else if (_cmSeal) { stmt.run(...args); _cmWrote = rowsChanged(writeDb) > 0 }
-            else stmt.run(...args)
-          } catch (e) { throw asBatchRowError(asConstraintError(e, row), count, rows.length, row) }
-          // A batch is all-or-nothing here: a row the seal refused is named the
-          // same way a row a constraint refused is, because silently writing
-          // nine of ten rows is the failure this method's own error shape exists
-          // to prevent.
-          if (!_cmWrote) {
-            const refusal = sealRefusal(_cmSeal?.parents, 'create')
-            if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
-          }
-          noteCardinality(row)
-          noteExclusion(row)
-          count++
-        }
-        // A mixed batch has no single SQL to report. Uniform — the ordinary
-        // case — reports exactly what it did before.
-        _cmSql = [...stmts.values()].map(e => e.sql).join('\n')
-      })
-      fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
-      if (tableHasLogWork && _cmInserted?.length) emitLogs('create', _cmInserted, { system })
-      // No `where` on the collection form — a batch names its rows by supplying
-      // them, and their ids exist only after SQLite assigns them.
-      announceBulk({ mode: _cmMode, event: 'create', operation: 'createMany', count, rows: _cmInserted })
-      return { count }
+    async createMany(args = {}) {
+      const prepared = await prepareCreateMany(args)
+      if (!prepared) return { count: 0 }
+      // The plan is built under the executor's own lock, because a @sequence
+      // stamp is a write (see createManyPlan): the one verb that takes the
+      // lock itself, and it runs the same unit the executor would.
+      let plan
+      const outcome = await tx.wrapExclusive(() => { plan = createManyPlan(prepared); return writeUnit(plan) })
+      return finishWrite(plan, outcome)
     },
 
     // ── update ──────────────────────────────────────────────────────────────
-    // Returns the updated row, or null in these cases:
-    //   • No row matched the where clause
-    //   • A @@allow/@@deny policy blocked the update
-    //   • A post-update policy rollback was triggered
-    // Callers that need to distinguish can check count() before/after,
-    // or enable policyDebug to see which policy blocked.
-    async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
-                   withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      refuseSystemEntries(system, ['update'])
-      await enforceValueSets(modelName, [data], ctx, { where })
-      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
-      const stamped = new Set()
-      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
-      const [_upHidden] = await hiddenParents([data], [stamped])
-
-      // ── @version — take the caller's expected version off the payload ───────
-      // It is a precondition, not a value to write: the column is bumped by SQL
-      // below, never SET to what arrived. asSystem() skips the check for the
-      // same reason it skips gates — a migration or a job is not a second editor.
-      const _versionField = ctx.versionMap?.[modelName]
-      let   _expectVersion = null
-      if (_versionField) {
-        const supplied = data?.[_versionField]
-        if (!ctx.isSystem && !_bypassVersion) {
-          if (!Number.isInteger(supplied))
-            throw new VersionRequiredError(modelName, _versionField)
-          _expectVersion = supplied
-        }
-        if (data && _versionField in data) { data = { ...data }; delete data[_versionField] }
+    async update(args = {}) {
+      const u = await prepareUpdate(args)
+      let plan = null
+      // The plan is built inside the unit — the before snapshot, the move's
+      // grade and the sync merge are reads the statement must agree with —
+      // and the hasMany and edge writes follow the row it reached.
+      const body = async () => {
+        plan = await u.plan(u.hasNested ? await processBelongsToNested(u.nested) : {})
+        if (!plan) return null
+        const outcome = writeUnit(plan)
+        if (!outcome.row) return outcome
+        const pkField = shape.model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+        await processHasManyNested(u.nested, outcome.row[pkField], outcome.row)
+        applyEdgeWrites(u.edgeWrites, outcome.row[pkField], u.scopedBy)
+        return outcome
       }
-
-      // ── @@sync(field) — the base row a per-column merge compares against ────
-      // Refused by name where nothing would read it, rather than dropped. A
-      // base that is silently ignored looks exactly like a merge that found no
-      // conflict, which is the one failure this mechanism cannot afford to make
-      // quietly: the caller believes two writers were reconciled and one of
-      // them was overwritten.
-      const _syncPolicy = ctx.syncMap?.[modelName]
-      if (base !== undefined && _syncPolicy !== 'field') throw new Error(
-        `[litestone] update on "${modelName}" was given a base row, and only @@sync(field) reads one. ` +
-        `This model declares ${_syncPolicy ? `@@sync(${_syncPolicy})` : 'no @@sync policy'}. ` +
-        `A base is the row as the writer read it, and it is what lets two people who edited different ` +
-        `columns both win — without @@sync(field) there is nothing to compare it against.`)
-
-      // A merge compares the patch against the STORED row, so a column whose
-      // stored form is not its value form cannot be compared: `@encrypted` is
-      // ciphertext and re-encrypts to different bytes each time, `@hashed` is
-      // one-way. Comparing either reports a conflict on every write that names
-      // it, including one nobody else touched — a false conflict, which is
-      // worse than a refusal because it looks like the feature working.
-      // Refused by name rather than merged or skipped; a device cannot reach
-      // this anyway, since `host/browser.js` refuses `@encrypted` outright.
-      if (base !== undefined) {
-        const _opaque = Object.keys(data ?? {}).filter(f => fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed)
-        if (_opaque.length) throw new Error(
-          `[litestone] update on "${modelName}" carries a base and writes ${_opaque.join(', ')}, ` +
-          `which @@sync(field) cannot compare: the stored value is an encoding, not the value. ` +
-          `Write those columns in a call of their own, without a base.`)
-      }
-
-      // ── Everything that touches the database, as one unit ────────────────
-      //
-      // An update is not one statement either: the parent rows a belongsTo
-      // write makes, the UPDATE, the children, the join rows — and the
-      // post-update policy check, whose refusal used to be undone by a
-      // COMPENSATING UPDATE of the before-snapshot rather than by a rollback.
-      // That is visible to concurrent readers in the window, is lost outright
-      // if the process dies between the two, and clobbers anything that landed
-      // in between. Inside a real transaction the throw IS the rollback
-      // (`FJS-638`).
-      let updated, beforeRaw, beforeRow, _transResult
-      // Did this patch name anything at all? Set inside the transaction and read
-      // after it, because what a write with nothing to say must NOT do is decided
-      // out here: announce, and file an audit entry (`FJS-368`).
-      let _wroteNothing = false
-      // Pure — the split reads the payload and nothing else, so it can decide
-      // below whether this update needs a transaction at all.
-      const { scalar, nested, hasNested } = extractNestedWrites(data)
-      const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
-      const _postUpdatePolicy = Boolean(ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
-      // One UPDATE with no transaction open is its own unit, as a one-statement
-      // create is (`FJS-1106`). What keeps the transaction: a nested or edge
-      // write (more statements), a post-update policy (its refusal IS the
-      // rollback), and @@transitions (the move is graded across an await, and a
-      // transaction could open in that gap). On this path the body reaches its
-      // statement without yielding — `_upJoined` below is what says so if an
-      // edit ever adds an await ahead of it (`FJS-1107`).
-      // A hidden parent is thrown only once the UPDATE has reached a row, as
-      // SQLite's own refusal is — so it needs a rollback to throw into.
-      const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
-        && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
-      const _upBody = async () => {
-        const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
-        data = { ..._scalarNoEdge, ...extraFKs }
-
-        const whereParams = []
-        const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
-        const sdWhereW = applySdFilter(where, _flags)
-        const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
-        const whereSql = buildWhereWithEncryption(exclWhere, whereParams)
-        if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
-
-        // ── @@sync(field) — merge, or name the columns two people contend over ─
-        // The WHERE is built above this and the SET below it, because the merge
-        // decides what the SET says: a column the writer did not actually move
-        // is dropped, and one only they moved is applied against the row as it
-        // stands now rather than the one they read.
-        //
-        // Costs one read and only on the losing side of a race — a version that
-        // still matches never reaches here, so a model declaring `field` pays
-        // nothing for it on an uncontested write.
-        if (base !== undefined && _expectVersion != null) {
-          const _cur = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-          if (_cur && _cur[col(_versionField)] !== _expectVersion) {
-            const _remote = {}
-            for (const f of Object.keys(data ?? {})) _remote[f] = _cur[col(f)]
-            const { apply, conflicts } = threeWay({ base, local: data, remote: _remote })
-            // Invariant 7 through a new door: a protected column says THAT it
-            // diverged and never what either side holds, so take-local or
-            // take-remote stays answerable without rendering the value
-            // (`FJS-D336`).
-            if (conflicts.length) throw new SyncConflictError(modelName, conflicts.map(c => ({
-              column: c.column,
-              base:   redactValue(c.column, c.base),
-              local:  redactValue(c.column, c.local),
-              remote: redactValue(c.column, c.remote),
-            })))
-            data = apply
-            // The row moved and the merge says nobody contested it, so the
-            // precondition becomes where the row actually is — otherwise the
-            // statement below matches nothing and reports the conflict this
-            // just resolved.
-            _expectVersion = _cur[col(_versionField)]
-          }
-        }
-
-        const { data: _upValues, ops: _upOps } = extractWriteOps(data)
-        const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped })
-        const setParams = []
-        const setCols   = [
-          ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
-          ..._upOps.map(o => setFragmentExpr(o.col, o.expr, o.params, setParams)),
-        ].join(', ')
-        if (ctx.selfRelationMap?.[modelName] && ctx.selfRelationMap[modelName].some(r => r.fkField in (data ?? {}))) {
-          const _idf = ctx.selfRelationMap[modelName][0].referencedField
-          assertNoParentCycle(
-            readDb.query(`SELECT "${_idf}" AS _id FROM "${tableName}" WHERE ${whereSql}`).all(...whereParams).map(r => r._id),
-            data,
-          )
-        }
-        // Append update policy filter to WHERE
-        const updatePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-        const finalWhereSql = updatePolicy ? `(${whereSql}) AND (${updatePolicy.sql})` : whereSql
-        const finalWhereParams = updatePolicy ? [...whereParams, ...updatePolicy.params] : whereParams
-
-        // ── Logging + post-update rollback: capture before snapshot ────────────
-        // Also needed when post-update policy exists so rollback has data to revert with.
-        const needsBeforeRow = tableHasLogWork || (ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
-        // Two snapshots of one row, and the rollback needs the RAW one. read()
-        // parses Json to objects and coerces booleans, and a SQLite parameter
-        // cannot be an object — reverting from it threw "Binding expected string,
-        // TypedArray, boolean, number, bigint or null" out of the revert, so the
-        // denial never surfaced AND the denied write stayed applied. Its keys are
-        // also the table's columns exactly: read() adds computed and @from fields
-        // that no UPDATE can name, and strips @guarded ones.
-        beforeRaw = needsBeforeRow
-          ? readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-          : null
-        beforeRow = beforeRaw ? read(beforeRaw, { mode: 'single' }) : null
-
-        // ── Transition enforcement ────────────────────────────────────────────
-        // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
-        // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
-        _transResult = _tableTransitions ? await checkTransitions(row, whereParams, whereSql, system, _move) : null
-        // Every no-match reader below reads the row UNSCOPED to name why — the
-        // version, the seal, the move's refusal — so a row outside the caller's
-        // read scope leaves before any of them can describe it.
-        if (_transResult === NOT_VISIBLE) return true
-        // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
-        const { sql: _txWhereSql, params: _txWhereParams } = _transResult
-          ? applyTransitionWhereClause(_transResult, finalWhereSql, finalWhereParams)
-          : { sql: finalWhereSql, params: finalWhereParams }
-
-        // ── @version — the compare half of the swap ─────────────────────────────
-        // Same shape as applyTransitionWhereClause above: narrow the WHERE by the
-        // value the caller read, so a row that moved simply does not match. The
-        // bump rides the SET clause, which also means a versioned update always
-        // has a column to write even when `data` was otherwise empty.
-        const _vWhereSql0    = _expectVersion == null ? _txWhereSql : `(${_txWhereSql}) AND "${col(_versionField)}" = ?`
-        const _vWhereParams0 = _expectVersion == null ? _txWhereParams : [..._txWhereParams, _expectVersion]
-        // The third link in the same chain: the caller's where, then the policy,
-        // then the move's from-state, then the version, then the seal. Each one
-        // narrows and none of them reports — the row simply does not match, which
-        // is what makes the refusal helpers below the whole of the diagnosis.
-        const _vSealed = sealWhereClause(_vWhereSql0, _vWhereParams0)
-        // …and the model's own columns, where it is one that seals.
-        const _vSelf = sealSelfClause(data, _vSealed.sql, _vSealed.params)
-        const _vWhereSql    = _vSelf.sql
-        const _vWhereParams = _vSelf.params
-        // The bump rides the SET clause — but only where the caller actually
-        // wrote something. It used to be appended unconditionally, which meant a
-        // versioned update MANUFACTURED a column to write when `data` was
-        // otherwise empty, so a patch whose only key was `version` was a real
-        // write: the column went up, `@updatedAt` moved with it, and every other
-        // open editor of that row was told it was stale for a change nobody made
-        // (`FJS-368`). The value is a precondition the client sends back, not a
-        // value to write, so a form submitted with nothing edited became a write.
-        //
-        // A model with no `@version` already answered this correctly — the else
-        // branch below reads the row back and issues no statement — so the two
-        // spellings disagreed about the same patch, which is the whole finding.
-        // Nested and edge writes are a real change to this row's meaning and
-        // still earn the bump; only a patch that names nothing at all does not.
-        const _touchesRow   = Boolean(setCols) || hasNested || edgeWrites.length > 0
-        _wroteNothing       = !_touchesRow
-        const _setColsBase  = !_versionField || !_touchesRow ? setCols
-          : [setCols, `"${col(_versionField)}" = "${col(_versionField)}" + 1`].filter(Boolean).join(', ')
-        // Only a write that had something to say moves the stamp: an update
-        // naming no column issues no statement at all below, and the trigger it
-        // used to lean on never fired for one either.
-        const _setColsV     = _setColsBase
-          ? [_setColsBase, ...stampSets(Object.keys(row))].join(', ')
-          : _setColsBase
-
-        // No rows changed can mean three different things. Not-found and
-        // policy-blocked both return null (the documented contract); a row that is
-        // still there at a different version is the one worth raising, because the
-        // caller can re-read and re-apply.
-        const throwIfVersionMoved = () => {
-          if (_expectVersion == null) return
-          const cur = readDb.query(`SELECT "${col(_versionField)}" AS v FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-          if (cur && cur.v !== _expectVersion)
-            throw new VersionConflictError(modelName, _versionField, _expectVersion, cur.v)
-        }
-
-        // A transition that changed no rows is one of two opposite things, and
-        // they take opposite answers: a racing writer moved the row, which is
-        // worth retrying, or the update POLICY excluded it, which never is.
-        // checkTransitions already proved the row existed at `from` before the
-        // statement ran, so re-reading that one column separates them — still at
-        // `from` means nothing moved and the policy is what refused.
-        //
-        // Both used to report a conflict, so a policy refusal reached a caller as
-        // a 409 with retryable: true and isStaleWrite() re-applied it forever,
-        // against a rule that would refuse every attempt — while telling the
-        // person the row had changed when it had not.
-        const throwTransitionRefusal = () => {
-          if (updatePolicy) {
-            const cur = readDb.query(`SELECT "${_transResult.field}" AS v FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-            if (cur && cur.v === _transResult.from) throw new AccessDeniedError(
-              `"${modelName}.${_transResult.transitionName}" was refused by an @@allow/@@deny policy on update`,
-              { model: modelName, operation: 'update' },
-            )
-          }
-          // Where the row actually ended up is what makes the answer usable, and
-          // it is what decides whether a retry can ever work — so it is read
-          // rather than left unknown. The policy branch above has already read
-          // this column when there is an update policy; one more read on the
-          // losing side of a race is not a cost worth carrying a flag for.
-          const cur = readDb.query(`SELECT "${_transResult.field}" AS v FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-          // Still at `from` means no writer moved it, so the refusal is one of
-          // the other conjuncts — and a conflict reading "expected 'sent', the
-          // row is at 'sent'" would contradict itself. The seal and the version
-          // ride the same WHERE and have their own answers.
-          if (cur && cur.v === _transResult.from) {
-            throwIfVersionMoved()
-            throwIfSealedSelf(_vSelf.frozen, _vWhereSql0, _vWhereParams0)
-            throwIfSealed(_vWhereSql0, _vWhereParams0, 'update')
-          }
-          throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to,
-            { actual: cur ? cur.v : undefined, move: _transResult.transitionName })
-        }
-
-        // Nothing below yields before the statement. An update that chose to run
-        // without a transaction and finds one open now would join it and go
-        // with its rollback, which is the defect `FJS-638` closed — so it says
-        // so rather than writing.
-        if (_upOwnUnit && tx.state.depth !== 0) throw new Error(
-          `[litestone] update on "${modelName}" decided to run as its own statement and a transaction opened ` +
-          `before it wrote — something in update() now yields ahead of the write. This is a defect in litestone (FJS-1107).`)
-
-        updated = null
-        if (_setColsV && exclTouched(data)) {
-          noteExclusionBySql(_vWhereSql, _vWhereParams)
-          noteExclusion(data)
-        }
-        if (_setColsV) {
-          // select: false + no post-update side-effects → use run(), skip RETURNING entirely
-          // Note: tableHasLogWork forces RETURNING even with select: false — the log needs
-          // before/after snapshots. select: false has no perf benefit on @@log models.
-          const _canSkipReturn = select === false
-            && !tableHasLogWork
-            && !(ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
-            && !hasNested
-            && !edgeWrites.length
-          if (_canSkipReturn) {
-            const _upSql = `UPDATE "${tableName}" SET ${_setColsV} WHERE ${_vWhereSql}`
-            const _upParams = [...setParams, ..._vWhereParams]
-            const _nt = needsTiming()
-            const _upT0 = _nt ? performance.now() : 0
-            // An update moving a column ONTO a value another row holds raises the
-            // same constraint a create does, and had none of the same answers.
-            try { writeDb.run(_upSql, ..._upParams) }
-            catch (e) { throw asConstraintError(e, row) }
-            const _upChanges = rowsChanged(writeDb)
-            fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: _upChanges })
-            if (!_upChanges) {
-              if (_transResult) throwTransitionRefusal()
-              throwIfVersionMoved()
-              throwIfSealedSelf(_vSelf.frozen, _vWhereSql0, _vWhereParams0)
-              throwIfSealed(_vWhereSql0, _vWhereParams0, 'update')
-              return true
-            }
-            fireRowEvent('update', 'update', null)
-            if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', null, ctx)
-            return true
-          }
-          const _upSql = `UPDATE "${tableName}" SET ${_setColsV} WHERE ${_vWhereSql} RETURNING *`
-          const _upParams = [...setParams, ..._vWhereParams]
-          const _nt = needsTiming()
-          const _upT0 = _nt ? performance.now() : 0
-          // RETURNING * gives the updated row directly — no follow-up SELECT needed.
-          // Uses writeDb so it works inside open transactions.
-          // The parent this row names BEFORE the statement: an update that moves
-          // a foreign key leaves one parent as surely as it joins another, and
-          // afterwards no row points at the old one.
-          noteCardinalityBySql(_vWhereSql, _vWhereParams)
-          const _upMoves = _upHidden && movesOnto(_upHidden, _vWhereSql, _vWhereParams)
-          try { updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true }) }
-          catch (e) { throw asConstraintError(e, row) }
-          if (updated && _upMoves) throw _upHidden
-          noteCardinality(updated)
-          fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
-          if (!updated) {
-            if (_transResult) throwTransitionRefusal()
-            throwIfVersionMoved()
-            throwIfSealedSelf(_vSelf.frozen, _vWhereSql0, _vWhereParams0)
-            throwIfSealed(_vWhereSql0, _vWhereParams0, 'update')
-            return true
-          }
-        } else {
-          // No columns to set — read back to return current row.
-          //
-          // The precondition is still a question, and it is asked here for the
-          // same reason it is asked on the writing path: the caller is telling
-          // this boundary which version they read, and a stale one means their
-          // view is wrong whether or not they were writing. Answering a no-op
-          // success would confirm a stale screen.
-          //
-          // Read through the update policy, the WHERE a write would have used.
-          // The bare where answered any row the id named, so `data: {}` handed
-          // a caller the whole of a row their policy hides, read policy included.
-          throwIfVersionMoved()
-          updated = read(readDb.query(`SELECT * FROM "${tableName}" WHERE ${finalWhereSql}`).get(...finalWhereParams), { mode: 'single', hydrateFrom: true })
-        }
-        if (!updated) return null
-
-        // ── post-update policy ───────────────────────────────────────────────
-        // Evaluate post-update conditions against the new row state. The throw
-        // is the rollback: this runs inside the transaction opened above, so
-        // the refused write is never visible and never has to be undone. It
-        // used to be undone by writing the before-snapshot back, which is a
-        // different thing wearing the same word — the denied state was readable
-        // by anything looking in the window, a crash between the two left it
-        // permanently, and a concurrent write landing in between was clobbered
-        // by the revert.
-        if (ctx.hasPolicies && ctx.policyMap[modelName]?.['post-update'])
-          checkPostUpdatePolicy(modelName, updated, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
-
-        const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-        await processHasManyNested(nested, updated[pkField], updated)
-        applyEdgeWrites(edgeWrites, updated[pkField], scopedBy)
-        return false
-      }
-      const _upDone = _upOwnUnit ? await _upBody() : await tx.exclusive(_upBody)
+      const out = u.ownUnit ? await body() : await tx.exclusive(body)
       // ── Committed from here ──────────────────────────────────────────────
-      if (_upDone) return null
-      const ps = parseArgs(select === false ? null : select, include)
-      if (ps || include) withIncludes([updated], ps, include)
-      const finalRow = select === false ? null : finalizeOne(updated, ps)
-      // The same suppression `emitTransitionEvent` applies, asked here so the
-      // update can say whether the move is going to be announced separately.
-      // A patch that named no column wrote nothing, so there is nothing to
-      // announce, nothing for a plugin to observe and nothing to file. It used
-      // to do all three: every open tab was sent back to the server and the
-      // trail gained an `update` entry whose before and after are the same row
-      // (`FJS-368`). `fireCollectionEvent` has said the same thing one scope
-      // along for as long as it has existed — *nothing matched, so nothing
-      // changed* — and this is that rule for a single row.
-      //
-      // The row is still READ BACK and returned, which is what separates a no-op
-      // from a refusal: the caller asked what the row is and gets an answer.
-      if (!_wroteNothing) {
-        fireRowEvent('update', 'update', finalRow,
-          _transResult ? _transResult.transitionName : null)
-        emitTransitionEvent(_transResult, updated)
-        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
-        // ── Logging: emit after ─────────────────────────────────────────────
-        // The move by name, and not only for an announced one: an abandon and a
-        // cancel write the same before and after, so a SYSTEM-scoped move that
-        // is not announced is exactly the one the trail must still tell apart.
-        if (tableHasLogWork && updated) emitLogs('update', [updated], {
-          before: beforeRow, after: updated, transition: _transResult?.transitionName ?? null, system,
-        })
-      }
-      return finalRow
+      if (!out) return null
+      return finishWrite(plan, out)
     },
 
     // ── updateMany ──────────────────────────────────────────────────────────
-    async updateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      const _umMove = _bulkTransitionField(data, 'updateMany')
-      if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
-      const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
-      refuseSystemEntries(system, ['update'])
-      await enforceValueSets(modelName, [data], ctx, { where })
-      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, system }, ctx)
-      // Same stamp update() runs. Missing it here was worse than missing it
-      // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
-      // the identity beside it stayed at whoever wrote last through update() —
-      // a row reading "just edited by Bob" when Ann edited it.
-      const stamped = new Set()
-      data = stampFromAuth(data, ctx.updatedByMap?.[modelName], ctx.auth, stamped)
-      const [_umHidden] = await hiddenParents([data], [stamped])
-      // @version bumps here but is never required: a where clause matching many
-      // rows matches many versions, so there is no single value to compare
-      // against. Bumping is the part that matters — without it a bulk write
-      // would leave every open editor's version looking current.
-      const _umVersion = ctx.versionMap?.[modelName]
-      if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
-      const { data: _umValues, ops: _umOps } = extractWriteOps(data)
-      const row       = writeData(_umValues, { system, fieldWrite: 'sql', stamped })
-      // SET params and WHERE params are collected apart and joined at the end.
-      // Sharing one array made the statement depend on the order the two halves
-      // happened to be built in, which is why the empty-SET case below could not
-      // be handled where it belongs.
-      const setParams = []
-      const setCols  = [
-        ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
-        ..._umOps.map(o => setFragmentExpr(o.col, o.expr, o.params, setParams)),
-        ...(_umVersion ? [`"${col(_umVersion)}" = "${col(_umVersion)}" + 1`] : []),
-      ].join(', ')
-      const whereParams = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
-      const sdWhereW = applySdFilter(where, _flags)
-      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
-      const whereSql = buildWhereWithEncryption(exclWhere, whereParams)
-      const updateManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      if (updateManyPolicy) whereParams.push(...updateManyPolicy.params)
-      const finalWhere0 = whereSql && updateManyPolicy ? `(${whereSql}) AND (${updateManyPolicy.sql})`
-                        : whereSql || updateManyPolicy?.sql || null
-      const _umSeal     = sealWhereClause(finalWhere0, whereParams)
-      const _umSelf     = sealSelfClause(data, _umSeal.sql, _umSeal.params)
-      const finalWhere  = _umSelf.sql || null
-      const _umWhereP   = _umSelf.params
-
-      // No columns left to set. `UPDATE "t" SET  WHERE …` is a SQL syntax error,
-      // and the payload that lands here is an ordinary form post whose fields no
-      // longer match the model — stripping unknown keys is the mass-assignment
-      // protection doing its job, so this is reachable without any mistake at the
-      // call site. `update` answers the unchanged row; the bulk analogue is the
-      // count of rows the where matched, having written nothing to them.
-      if (!setCols) {
-        const _cSql = `SELECT COUNT(*) AS n FROM "${tableName}"${finalWhere ? ` WHERE ${finalWhere}` : ''}`
-        const count = readDb.query(_cSql).get(..._umWhereP)?.n ?? 0
-        fireQuery({ operation: 'updateMany', args: { where, data }, sql: _cSql, params: _umWhereP, duration: 0, rowCount: count })
-        return { count }
-      }
-      const params = [...setParams, ..._umWhereP]
-      // Stamped after the empty-payload return above, for the same reason
-      // update() stamps only a statement that had something else to say.
-      const _umSetCols = [setCols, ...stampSets(Object.keys(row))].join(', ')
-      // A logged model takes RETURNING so the trail can name the rows it changed.
-      // Still one statement — bulk ops record WHICH rows and WHAT operation, never
-      // their contents (same shape as createMany; see emitLogs).
-      // The WHERE grades each row as it was; the post-update rule reads the row
-      // as it is now, which only RETURNING carries (FJS-1713).
-      const _umPost = ctx.hasPolicies && !!ctx.policyMap[modelName]?.['post-update']
-      const _umNeedRows = tableHasLogWork || _umWantRows || _umPost
-      const _umSql = `UPDATE "${tableName}" SET ${_umSetCols}${finalWhere ? ` WHERE ${finalWhere}` : ''}`
-                   + (_umNeedRows ? ` RETURNING *` : '')
-      const _nt = needsTiming()
-      const _umT0 = _nt ? performance.now() : 0
-      // The lock, so a bulk write cannot be swallowed by another context's
-      // open transaction and lost on its rollback (`FJS-638`).
-      let _umRows = null
-      let count
-      await tx.wrapExclusive(() => {
-        // The parents these rows name now — an update that moves a foreign key
-        // leaves one parent as surely as it joins another, and after the
-        // statement the old one is unreachable from any row.
-        noteCardinalityBySql(finalWhere, _umWhereP)
-        if (exclTouched(data)) { noteExclusionBySql(finalWhere, _umWhereP); noteExclusion(data) }
-        const _umMoves = _umHidden && movesOnto(_umHidden, finalWhere, _umWhereP)
-        try {
-          _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
-          if (!_umRows) writeDb.run(_umSql, ...params)
-        } catch (e) { throw asConstraintError(e, row) }
-        count = _umRows ? _umRows.length : rowsChanged(writeDb)
-        // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
-        if (count && _umMoves) throw _umHidden
-        // One refused row refuses the batch: the throw rolls the unit back.
-        if (_umPost) for (const r of _umRows)
-          checkPostUpdatePolicy(modelName, read(r, { mode: 'single', hydrateFrom: true }), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
-        if (_umRows) for (const r of _umRows) noteCardinality(read(r))
-        else noteCardinalityBySql(finalWhere, _umWhereP)
-      })
-      fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
-      if (tableHasLogWork && _umRows?.length) emitLogs('update', _umRows, { system })
-      announceBulk({ mode: _umMode, event: 'update', operation: 'updateMany', where, count, rows: _umRows })
-      return { count }
+    async updateMany(args = {}) {
+      return executeWrite(await planUpdateMany(args))
     },
 
     // ── upsert ──────────────────────────────────────────────────────────────
-    async upsert({ where, create: createData, update: updateData, include, select, system,
-                   withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      // An operator is refused here rather than passed to the update half. This
-      // method has a single-statement fast path whose SET clause reads from
-      // `excluded`, and a slow path that calls update() — one would apply the
-      // operator and the other could not, which is the drift the refusal exists
-      // to prevent.
-      extractWriteOps(createData, { where: 'upsert' })
-      extractWriteOps(updateData, { where: 'upsert' })
-      refuseSystemEntries(system, ['create', 'update'])
-      // The fast path's two halves; the slow path is create() and update(),
-      // which grade their own.
-      const _upsHidden = await hiddenParents([createData, updateData])
-      // ── an upsert addressed by a relator's relata ──────────────────────
-      //
-      // Refused rather than answered, because the answer would be a wrong one
-      // that compiles. The fast path below needs ONE unique column, so a pair
-      // never reaches it and every relator upsert falls to the slow path —
-      // findFirst, then update what it found. On a repeatable relationship
-      // `{recipeId, serverId}` matches every run there has ever been, so the
-      // call silently overwrites the oldest instead of recording a new one.
-      //
-      // The declaration is what gives this the authority to be sure. A relator
-      // states how its rows are identified, so an upsert addressing them any
-      // other way is provably not the write the caller meant — which is not
-      // something litestone can say about an ordinary non-unique `where`.
-      const _relator = ctx.models[modelName]?.attributes?.find(a => a.kind === 'relator')
-      if (_relator && where) {
-        const given = new Set(Object.keys(where))
-        if (_relator.fields.some(f => given.has(f))) {
-          const keyed = _relator.repeat === 'once' ? _relator.fields
-                      : _relator.discriminator     ? [..._relator.fields, _relator.discriminator]
-                      : null
-          const missing = keyed?.filter(c => !given.has(c)) ?? null
-          if (!keyed) throw new ValidationError([{
-            path: ['where'],
-            message:
-              `${modelName} declares @@relator([${_relator.fields.join(', ')}], many), so the same pair may ` +
-              `happen any number of times and there is no row for these columns to name. An upsert here would ` +
-              `overwrite an earlier one. Use create(), or address the row by its id.`,
-          }])
-          if (missing.length) throw new ValidationError([{
-            path: ['where'],
-            message:
-              `${modelName} declares @@relator([${_relator.fields.join(', ')}], many: ${_relator.discriminator}), ` +
-              `so what identifies a row is ${keyed.join(' + ')} — and this where names ` +
-              `${missing.join(', ')} nowhere. Without it these columns match every occurrence, and the upsert ` +
-              `would overwrite one of them. Name ${missing.join(' and ')}, or address the row by its id.`,
-          }])
+    async upsert(args = {}) {
+      const { where, create: createData, update: updateData, include, select, system,
+              withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = args
+      const plan = await planUpsert(args)
+      if (plan) {
+        try {
+          return await executeWrite(plan)
+        } catch (e) {
+          // A unique conflict on a DIFFERENT column than the ON CONFLICT target
+          // can't be handled by this statement — fall through to the
+          // read-then-write path, which preserves the original semantics. The
+          // executor has already translated it, and `isUniqueConflict` answers
+          // for the translated error too.
+          if (!isUniqueConflict(e)) throw e
         }
       }
-      // Both halves, because either may be the one that lands — and they are two
-      // calls rather than one array: a create-shaped payload IS the row, while
-      // the update half is about a row that already exists, so a dependent
-      // binding grades it against `where` (`FJS-D122`).
-      await enforceValueSets(modelName, [createData], ctx)
-      await enforceValueSets(modelName, [updateData], ctx, { where })
-      refuseOffEntry([createData])
       // Threaded through to both halves: the lookup has to SEE the row the
       // update would write, or an upsert against an excluded row reads as
       // absent and tries to INSERT one that is already there.
       const _upFlags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
-      // ── Single-statement fast path ─────────────────────────────────────────
-      // When no hooks / plugins / policies / events / logs / transitions /
-      // soft-delete / window / global filters / field policies / sequences /
-      // nested writes are in play and `where` targets exactly one unique column,
-      // compile to one cached `INSERT ... ON CONFLICT(col) DO UPDATE ...
-      // RETURNING *` — one round trip instead of findFirst + update/create
-      // (measured ~6x). Any feature that needs the split path falls through
-      // to the original read-then-write implementation below.
-      fastPath: if (
-        !plugins?.hasPlugins && !emitter && !ctx._eventListeners.size &&
-        !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions && !_exclNotes &&
-        !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
-        !ctx.sequenceMap?.[modelName]?.length &&
-        !ctx.updatedByMap?.[modelName]?.length &&
-        !ctx.versionMap?.[modelName] &&
-        include === undefined && select === undefined &&
-        where && createData && updateData && Object.keys(updateData).length
-      ) {
-        const wKeys = Object.keys(where)
-        if (wKeys.length !== 1) break fastPath
-        const wKey = wKeys[0]
-        const wVal = where[wKey]
-        const wt = typeof wVal
-        if (wVal == null || (wt !== 'string' && wt !== 'number' && wt !== 'bigint' && wt !== 'boolean')) break fastPath
-        if (!_upsertUniqueCols().has(wKey)) break fastPath
-        // The fast path compiles one INSERT … ON CONFLICT and has nowhere to put
-        // a nested write, so it must decline the call rather than take it: read
-        // as *no nested writes*, this handed `{ create: [...] }` to the column
-        // validator, which refused a legitimate write with `lines: must be an
-        // array`.
-        if (extractNestedWrites(createData).hasNested) break fastPath
-        if (extractNestedWrites(updateData).hasNested) break fastPath
-
-        // Same data massage as create(): auto-@id, auth()/field-ref defaults
-        let cData = createData
-        const _fpStamped = new Set()
-        const _fpAutoId = ctx.autoIdMap?.[modelName]
-        if (_fpAutoId && cData[_fpAutoId.field] == null) {
-          noteStamp(_fpStamped, cData, _fpAutoId.field)
-          cData = { ...cData, [_fpAutoId.field]: _fpAutoId.generate() }
-        }
-        cData = applyGeneratedDefaults(cData, ctx.generatedDefaultMap?.[modelName], _fpStamped)
-        cData = applyAuthDefaults(cData, ctx.authDefaultMap?.[modelName], ctx.auth, _fpStamped)
-        cData = stampFromAuth(cData, ctx.createdByMap?.[modelName], ctx.auth, _fpStamped)
-        const _fpFieldRefs = ctx.fieldRefDefaultMap?.[modelName]
-        if (_fpFieldRefs?.length) {
-          const stamps = {}
-          for (const { field, sourceField } of _fpFieldRefs) {
-            if (cData[field] == null && cData[sourceField] != null) {
-              noteStamp(_fpStamped, cData, field)
-              stamps[field] = cData[sourceField]
-            }
-          }
-          if (Object.keys(stamps).length) cData = { ...cData, ...stamps }
-        }
-
-        // A field write predicate has to read the STORED row, and this branch is
-        // one statement with no row in hand — its DO UPDATE would grade the
-        // payload, which is exactly the fail-open `FJS-433` describes. The slow
-        // path reads then updates, where the CASE in the SET applies.
-        if (_hasFieldWrite) break fastPath
-
-        // writeData runs transforms + validation on both branches' data
-        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system, stamped: _fpStamped, creating: true })
-        const updRow = writeData(updateData, { system })
-        if (_upsHidden[0]) throw _upsHidden[0]
-        // update() asks whether the key MOVES, which one statement cannot.
-        if (_upsHidden[1]) break fastPath
-        const insCols = Object.keys(insRow)
-        const updCols = Object.keys(updRow).filter(c => c !== wKey)
-        if (!insCols.length || !updCols.length) break fastPath
-        if (_sealInsertSql) break fastPath
-        if (_sealSelf && _immutableWriteKeys.size) break fastPath
-
-        // Only the DO UPDATE branch needs the stamp — an INSERT takes the
-        // column DEFAULT, which is the same expression.
-        const _fpSets = [...updCols.map(c => `"${col(c)}" = ?`), ...stampSets(updCols)]
-        const _fpSql =
-          `INSERT INTO "${tableName}" (${insCols.map(c => `"${col(c)}"`).join(', ')}) ` +
-          `VALUES (${insCols.map(() => '?').join(', ')}) ` +
-          `ON CONFLICT("${wKey}") DO UPDATE SET ${_fpSets.join(', ')} ` +
-          `RETURNING *`
-        const _fpParams = [...insCols.map(c => insRow[c] ?? null), ...updCols.map(c => updRow[c] ?? null)]
-        const _nt = needsTiming()
-        const _fpT0 = _nt ? performance.now() : 0
-        try {
-          const result = read(writeDb.query(_fpSql).get(..._fpParams), { mode: 'single', hydrateFrom: true })
-          fireQuery({ operation: 'upsert', args: { where, create: createData, update: updateData }, sql: _fpSql, params: _fpParams, duration: _nt ? performance.now() - _fpT0 : 0, rowCount: result ? 1 : 0 })
-          return result
-        } catch (e) {
-          // A unique conflict on a DIFFERENT column than the ON CONFLICT target
-          // can't be handled by this statement — fall through to the
-          // read-then-write path, which preserves the original semantics.
-          if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' || e?.errno === 2067 ||
-              (e?.message && e.message.includes('UNIQUE constraint failed'))) break fastPath
-          throw e
-        }
-      }
-
       // Use findFirst to determine path, but wrap the create in a savepoint so
       // a concurrent insert between our check and our insert doesn't cause a
       // unique constraint error — instead we retry as an update.
@@ -6915,7 +7287,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // — the compromise the collection form has to make and this one does not.
       // The conflict half's post-update rule reads the row as it is now, which
       // only RETURNING carries — updateMany's reason (FJS-1730).
-      const _usPost = ctx.hasPolicies && !!ctx.policyMap[modelName]?.['post-update']
+      const _usPost = ctx.hasPolicies && !!shape.policy['post-update']
       const _usNeedRows = tableHasLogWork || _usWantRows || _usPost
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
       // The conflict half is an update and is graded as one — without this a
@@ -6934,12 +7306,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       refuseOffEntry(data)
       const _usHidden = await hiddenParents(data)
 
-      const autoId       = ctx.autoIdMap?.[modelName]
-      const genDefaults  = ctx.generatedDefaultMap?.[modelName]
-      const authDefaults = ctx.authDefaultMap?.[modelName]
-      const createdBys   = ctx.createdByMap?.[modelName]
-      const updatedBys   = ctx.updatedByMap?.[modelName]
-      const usVersion    = ctx.versionMap?.[modelName]
+      const autoId       = shape.autoId
+      const genDefaults  = shape.generatedDefaults
+      const authDefaults = shape.authDefaults
+      const createdBys   = shape.createdBy
+      const updatedBys   = shape.updatedBy
+      const usVersion    = shape.version
 
       // Which author columns WE are about to fill. An upsert is an insert for
       // some rows and an update for others, and a create-time column must not
@@ -6975,7 +7347,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           d = stampFromAuth(d, createdBys, ctx.auth, stamped)
           d = stampFromAuth(d, updatedBys, ctx.auth, stamped)
           if (usVersion) { noteStamp(stamped, d, usVersion); d = { ...(d ?? {}), [usVersion]: 1 } }
-          d = applySequences(d, modelName, ctx.sequenceMap, writeDb, stamped)
+          d = applySequences(d, modelName, shape.sequences, writeDb, stamped)
           try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
           catch (e) { throw asBatchRowError(e, i, data.length, null) }
         })
@@ -7045,7 +7417,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // its WHERE. A row the policy excludes is skipped rather than refused,
         // for `updateMany`'s reason: a bulk write narrows, it does not throw.
         const _usUpdPolicy = ctx.hasPolicies
-          ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+          ? buildPolicyFilter(modelName, 'update', ctx)
           : null
         // A template is a live row in a parallel category, so a bulk write must
         // not reach one it did not ask for — the rule `updateMany` applies
@@ -7126,7 +7498,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
               if (written) present.add(keyOf(row))
               // One refused row refuses the batch: the throw rolls the unit back.
               if (_usUpd && _usPost)
-                checkPostUpdatePolicy(modelName, read(written, { mode: 'single', hydrateFrom: true }), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+                checkPostUpdatePolicy(modelName, read(written, { mode: 'single', hydrateFrom: true }), ctx)
             } else {
               stmt.run(...args)
               if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
@@ -7172,176 +7544,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   soft-delete tables  → sets deletedAt = now() (+ cascades under @@softDelete(cascade))
     //   hard-delete tables  → real DELETE FROM
     // Use delete() only when you explicitly need to bypass soft delete.
-    async remove({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
-      const params   = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
-      const sdWhereW = applySdFilter(where, _flags)
-      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
-      const whereSql = buildWhereWithEncryption(exclWhere, params)
-      if (!whereSql) throw new Error(`remove on "${tableName}" requires a where clause`)
-      const removePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      const removeFinalSql0    = removePolicy ? `(${whereSql}) AND (${removePolicy.sql})` : whereSql
-      const removeFinalParams0 = removePolicy ? [...params, ...removePolicy.params] : params
-      // A soft remove is still a removal FROM the document — the row leaves every
-      // read of it — so both halves of remove() carry the guard.
-      const { sql: removeFinalSql, params: removeFinalParams } =
-        sealWhereClause(removeFinalSql0, removeFinalParams0)
-
-      // No unconditional pre-SELECT: the soft path gets the row back from
-      // UPDATE ... RETURNING and the hard path from DELETE ... RETURNING, so
-      // remove() is one statement on the common path instead of two. The
-      // pre-delete "before" snapshot for logging is reconstructed from the
-      // RETURNING row (soft delete only changes deletedAt, which was NULL).
-
-      if (softDelete) {
-        const ts = nowISO(ctx.now)
-        const _rmSets = [`"${col('deletedAt')}" = ?`, ...stampSets(['deletedAt'])].join(', ')
-        const _rmSql = `UPDATE "${tableName}" SET ${_rmSets} WHERE ${removeFinalSql} RETURNING *`
-        const _nt = needsTiming()
-        const _rmT0 = _nt ? performance.now() : 0
-        // The stamp and every row the cascade reaches are one unit. Run bare
-        // they were N auto-commits, so a cascade that failed part way left a
-        // parent removed and half its children live — and the whole walk could
-        // be swallowed by another context's open transaction (`FJS-638`). No
-        // await inside, so the cheaper sync-body entry point applies.
-        let softResult
-        const _rmSoftDoomed = []
-        await tx.wrapExclusive(() => {
-        softResult = read(writeDb.query(_rmSql).get(ts, ...removeFinalParams), { mode: 'single', hydrateFrom: true })
-        // A soft delete is a write that moves a COUNT: the row is still there
-        // and is no longer one of its parent's children.
-        noteCardinality(softResult)
-        fireQuery({ operation: 'remove', args: { where }, sql: _rmSql, params: [ts, ...removeFinalParams], duration: _nt ? performance.now() - _rmT0 : 0, rowCount: softResult ? 1 : 0 })
-        if (!softResult) return
-
-        // Cascade soft delete to child tables under @@softDelete(cascade)
-        if (softDeleteCascade && _cascadeTargets().length > 0) cascadeSoftRemove([softResult.id], ts, _rmSoftDoomed)
-        }).catch(async e => { throw await nameBlockerForCaller(e) })
-        if (!softResult) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
-
-        fireRowEvent('remove', 'remove', softResult)
-        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', softResult, ctx)
-        // ── Logging ──────────────────────────────────────────────────────────
-        if (tableHasLogWork) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
-        await cascadeRemoved(_rmSoftDoomed)
-        return softResult
-      }
-
-      const _rmHSql = `DELETE FROM "${tableName}" WHERE ${removeFinalSql} RETURNING *`
-      const _nt = needsTiming()
-      const _rmHT0 = _nt ? performance.now() : 0
-      // The one-statement path stays one statement unless a cascade below has
-      // someone to tell, which needs the row before it is gone.
-      let _rmHDoomed = null
-      const row = await tx.wrapExclusive(() => {
-        if (cascadeHeard()) _rmHDoomed = cascadeDoomed(
-          readAll(readDb.query(`SELECT * FROM "${tableName}" WHERE ${removeFinalSql}`).all(...removeFinalParams)))
-        try { return read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true }) }
-        catch (e) { throw refusedDelete(e, removeFinalSql, removeFinalParams) }
-      }).catch(async e => { throw await nameBlockerForCaller(e) })
-      fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
-      if (!row) { throwIfSealed(removeFinalSql0, removeFinalParams0, 'remove'); return null }
-      fireRowEvent('remove', 'remove', row)
-      if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
-      if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row], ctx)
-      // ── Logging ───────────────────────────────────────────────────────────
-      if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
-      await cascadeRemoved(_rmHDoomed)
-      return row
+    async remove(args = {}) {
+      return executeWrite(await planRemove(args))
     },
 
     // ── removeMany ─────────────────────────────────────────────────────────
-    // Bulk version of remove() — same semantics: soft delete on soft-delete tables,
-    // real DELETE FROM on hard-delete tables.
-    async removeMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      const { mode: _rmMode, wantRows: _rmWantRows } = announceFor(announce)
-      const _rmNeedRows = tableHasLogWork || _rmWantRows
-      if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
-      const params   = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
-      const sdWhereW = applySdFilter(where, _flags)
-      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
-      const whereSql = buildWhereWithEncryption(exclWhere, params)
-      const removeManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      if (removeManyPolicy) params.push(...removeManyPolicy.params)
-      const rmFinalSql0 = whereSql && removeManyPolicy ? `(${whereSql}) AND (${removeManyPolicy.sql})`
-                        : whereSql || removeManyPolicy?.sql || null
-      // `params` already holds the where's binds then the policy's, in the order
-      // the SQL reads them; the guard is appended last, so its binds go last.
-      const _rmSeal    = sealWhereClause(rmFinalSql0, [])
-      const rmFinalSql = _rmSeal.sql || null
-      params.push(..._rmSeal.params)
-
-      // Prefetch affected rows before SQL so afterDelete gets them.
-      // Only done when plugins are listening — avoids the SELECT cost otherwise.
-      const affectedRows = plugins?.hasPlugins
-        ? readAll(readDb.query(`SELECT * FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`).all(...params))
-        : []
-
-      if (softDelete) {
-        const ts = nowISO(ctx.now)
-
-        // RETURNING only on a logged model — see updateMany.
-        const _rmsSets = [`"${col('deletedAt')}" = ?`, ...stampSets(['deletedAt'])].join(', ')
-        const _rmsSql = `UPDATE "${tableName}" SET ${_rmsSets}${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
-                      + (_rmNeedRows ? ` RETURNING *` : '')
-        let _rmsRows, softCount
-        const _rmsDoomed = []
-        // The cascade and the stamp are one unit, as in remove(): a child
-        // refused part way would otherwise leave the earlier children stamped
-        // under a parent that is still live (`FJS-1714`).
-        await tx.wrapExclusive(() => {
-          // The roots are read before anything is stamped, and stamped before
-          // the cascade: under a self-relation a root can be another root's
-          // child, and stamped by the cascade first it would fall out of the
-          // count and the trail. They are read through the stamp's own filter,
-          // policy included: a row the policy refused keeps its children
-          // (`FJS-1728`).
-          let rootPKs = null
-          if (softDeleteCascade && _cascadeTargets().length > 0) {
-            const live = `"${col('deletedAt')}" IS NULL`
-            const liveRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${rmFinalSql ? `(${rmFinalSql}) AND ${live}` : live}`).all(...params)
-            const rootPKCol = _cascadeTargets()[0].referencedKey
-            rootPKs = liveRows.map(r => r[rootPKCol])
-          }
-
-          noteCardinalityBySql(rmFinalSql, params)
-          _rmsRows = _rmNeedRows ? writeDb.query(_rmsSql).all(ts, ...params) : null
-          if (!_rmsRows) writeDb.run(_rmsSql, ts, ...params)
-          softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
-
-          if (rootPKs?.length) cascadeSoftRemove(rootPKs, ts, _rmsDoomed)
-        }).catch(async e => { throw await nameBlockerForCaller(e) })
-        if (tableHasLogWork && _rmsRows?.length) emitLogs('delete', _rmsRows)
-        await cascadeRemoved(_rmsDoomed)
-        announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count: softCount, rows: _rmsRows })
-        return { count: softCount }
-      }
-
-      const _rmnSql = `DELETE FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
-                    + (_rmNeedRows ? ` RETURNING *` : '')
-      const _nt = needsTiming()
-      const _rmnT0 = _nt ? performance.now() : 0
-      // The lock, so a bulk write cannot be swallowed by another context's
-      // open transaction and lost on its rollback (`FJS-638`).
-      let _rmnRows, count, _rmDoomed = null
-      await tx.wrapExclusive(() => {
-        if (cascadeHeard()) _rmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
-          : readAll(readDb.query(`SELECT * FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`).all(...params)))
-        try {
-          _rmnRows = _rmNeedRows ? writeDb.query(_rmnSql).all(...params) : null
-          if (!_rmnRows) writeDb.run(_rmnSql, ...params)
-        } catch (e) { throw refusedDelete(e, rmFinalSql, params) }
-        count = _rmnRows ? _rmnRows.length : rowsChanged(writeDb)
-      }).catch(async e => { throw await nameBlockerForCaller(e) })
-      fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: count })
-      if (plugins?.hasPlugins && affectedRows.length)
-        await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (tableHasLogWork && _rmnRows?.length) emitLogs('delete', _rmnRows)
-      await cascadeRemoved(_rmDoomed)
-      announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count, rows: _rmnRows })
-      return { count }
+    async removeMany(args = {}) {
+      return executeWrite(await planRemoveMany(args))
     },
 
     // ── $declaredFields ─────────────────────────────────────────────────────
@@ -7359,7 +7568,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // The caller's own client is used, so the declaring model's `@@gate` and
     // every row policy on it apply exactly as they would to a direct read.
     async $declaredFields(opts = {}) {
-      const ext = ctx.models[modelName]?.attributes?.find(a => a.kind === 'extensible')
+      const ext = shape.model.attributes?.find(a => a.kind === 'extensible')
       if (!ext) throw new CapabilityNotDeclaredError(modelName, '$declaredFields()', '@@extensible',
         'Nothing declares keys for this model, so there is no list to answer with.')
       // ctx.tables is keyed by accessor (camelCase singular), not model name.
@@ -7385,11 +7594,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         'A row here is either present or gone — delete() is the only removal, and it has no way back.')
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data: { deletedAt: null } }, ctx)
       const params   = []
-      // Restore targets deleted rows
-      const exclWhere = injectSoftDeleteFilter(where, 'onlyDeleted')
+      // Restore targets deleted rows: `onlyDeleted` is the verb's own mode,
+      // not a caller flag.
+      const { where: exclWhere, policy: restorePolicy } = visibleWhere('restore', where, { onlyDeleted: true })
       const baseWhereSql = buildWhereWithEncryption(exclWhere, params)
       if (!baseWhereSql) throw new Error(`restore on "${tableName}" requires a where clause`)
-      const restorePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const whereSql = restorePolicy ? `(${baseWhereSql}) AND (${restorePolicy.sql})` : baseWhereSql
       if (restorePolicy) params.push(...restorePolicy.params)
       // The children and the parent come back together, or neither does — the
@@ -7550,11 +7759,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         select,
         include,
         orderBy,
-        withDeleted = false,
-        onlyDeleted = false,
       } = args
-
-      const mode   = sdMode({ withDeleted, onlyDeleted })
 
       const fields = cursorFields(orderBy)
 
@@ -7575,18 +7780,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // cursor's — positional binds, so the order is the correctness (FJS-262).
       const params = []
 
-      const globalFilter  = resolveGlobalFilter()
-      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const allFilters    = globalFilter ? [globalFilter, ...pluginFilters] : pluginFilters
-      const mergedWhere   = allFilters.length
-        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
-        : where
-      const policyResult = ctx.hasPolicies
-        ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
-        : null
-
-      const sdWhere   = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const htWhere   = applyEffFilter(applyHtFilter(sdWhere, htMode(args)), args)
+      const { where: htWhere, policy: policyResult } = visibleWhere('findManyCursor', where, args)
       const baseWhere = buildWhereWithEncryption(htWhere, params)
 
       const cursorClause = cursorValues
@@ -7749,10 +7943,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { where, limit, offset }, ctx)
 
       const ftsTable = `${tableName}_fts`
-      const mode     = sdMode({ withDeleted, onlyDeleted })
-      const htm      = htMode({ withTemplates, onlyTemplates })
-      const em       = effMode({ withExpired, onlyExpired, asOf })
-      const asOfAt   = effective ? effAsOf({ asOf }) : null
 
       // ── Step 1: query FTS table for matching rowids + rank ─────────────────
       // FTS5 rank column is BM25 — lower (more negative) = better match.
@@ -7799,24 +7989,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The global filter, the plugin read filters and the row policy are part
       // of that narrowing, and were part of neither step: `findMany` answered
       // one row where `search` answered every row in the table, another owner's
-      // and another tenant's included (FJS-262). Merged ONCE here and used by
+      // and another tenant's included (FJS-262). Folded ONCE here and used by
       // both steps, so the two cannot drift.
-      const searchGlobal  = resolveGlobalFilter()
-      const searchPlugins = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
-      const searchFilters = searchGlobal ? [searchGlobal, ...searchPlugins] : searchPlugins
-      const withFilters   = (w) => searchFilters.length
-        ? (w ? { AND: [...searchFilters, w] } : searchFilters.length === 1 ? searchFilters[0] : { AND: searchFilters })
-        : w
-      const searchPolicy = ctx.hasPolicies
-        ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
-        : null
+      const { where: searchWhere, policy: searchPolicy } = visibleWhere('search', where,
+        { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf })
 
       const filterParams = []
-      const preFilter    = withFilters(where) ?? {}
-      let   filterSql    = buildWhereWithEncryption(
-        applyEff(applyHtFilter(softDelete ? injectSoftDeleteFilter(preFilter, mode) : preFilter, htm), em, asOfAt),
-        filterParams
-      )
+      let   filterSql    = buildWhereWithEncryption(searchWhere, filterParams)
       if (searchPolicy) {
         filterSql = filterSql && filterSql !== '1=1'
           ? `(${filterSql}) AND (${searchPolicy.sql})`
@@ -7859,15 +8038,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const hlByRowid   = highlight ? new Map(ftsRows.map(r => [r.rowid, r._highlight])) : null
       const snipByRowid = snippet   ? new Map(ftsRows.map(r => [r.rowid, r._snippet]))   : null
 
-      // Build base query — apply soft delete filter + any extra where
+      // Build base query — the same fold as step 1, bound again
       const baseParams   = []
-      const merged       = withFilters(where) ?? {}
-      const exclWhere = applyEff(
-        applyHtFilter(softDelete ? injectSoftDeleteFilter(merged, mode) : merged, htm),
-        em, asOfAt
-      )
-
-      let whereSql = buildWhereWithEncryption(exclWhere, baseParams)
+      let whereSql = buildWhereWithEncryption(searchWhere, baseParams)
       // The index is keyed on the source rowid, not `id` (a String id cannot be
       // an FTS5 rowid), so the hits are rejoined on rowid.
       const rowidSql = `rowid IN (${rowids.map(() => '?').join(', ')})`
@@ -7952,111 +8125,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── delete ──────────────────────────────────────────────────────────────
-    // Always a real DELETE FROM — bypasses soft delete on all tables.
-    // Requires a where clause to prevent accidental mass deletion.
-    async delete({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
-      const params   = []
-      // The guard reads the CALLER's where. The filters below add clauses of
-      // their own, and a `delete({})` whose emptiness they papered over would
-      // stop being refused.
-      if (!buildWhere(where, [], null, null, null, null, fieldKinds, columnMap))
-        throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
-      // Through `buildWhereWithEncryption` like every other where in the client:
-      // a `@encrypted(deterministic: true)` or `@hashed` column stores bytes the
-      // caller never sends, so a raw comparison against the plaintext matches
-      // nothing — and a DELETE that matches nothing reports a plausible zero
-      // (FJS-600). Scope expansion, `@from` and typed JSON ride the same call.
-      const whereSql = buildWhereWithEncryption(
-        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }), params)
-      const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      const delFinalSql0    = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
-      const delFinalParams0 = delPolicy ? [...params, ...delPolicy.params] : params
-      const { sql: delFinalSql, params: delFinalParams } =
-        sealWhereClause(delFinalSql0, delFinalParams0)
-      // The row is still present here, so the @from subqueries can ride on the
-      // pre-delete SELECT rather than costing a second query — after the DELETE
-      // there is no outer row for them to correlate to.
-      const _delCols = _hasFrom ? `*, ${fromSelectExpr(fromFields)}` : '*'
-      const _delSql = `DELETE FROM "${tableName}" WHERE ${delFinalSql}`
-      const _nt = needsTiming()
-      const _delT0 = _nt ? performance.now() : 0
-      // The read and the DELETE are one unit: the row is what the caller is
-      // handed back and what the audit trail records, so a write landing
-      // between them reports a row that is not the one that was removed.
-      let _delDoomed = null
-      const row = await tx.wrapExclusive(() => {
-        const r = read(readDb.query(`SELECT ${_delCols} FROM "${tableName}" WHERE ${delFinalSql}`).get(...delFinalParams))
-        if (!r) return null
-        noteCardinality(r)
-        _delDoomed = cascadeDoomed([r])
-        try { writeDb.run(_delSql, ...delFinalParams) }
-        catch (e) { throw asRestrictedDelete(e, [r]) }
-        return r
-      }).catch(async e => { throw await nameBlockerForCaller(e) })
-      if (!row) throwIfSealed(delFinalSql0, delFinalParams0, 'delete')
-      fireQuery({ operation: 'delete', args: { where }, sql: _delSql, params: delFinalParams, duration: _nt ? performance.now() - _delT0 : 0, rowCount: 1 })
-      if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
-      if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row].filter(Boolean), ctx)
-      // Announced as `remove`: the event names what happened to the row from a
-      // reader's side, and a hard delete and a soft one are the same thing to
-      // anything holding a list. This had the row all along — the pre-DELETE
-      // SELECT above — and announced nothing, while its sibling `remove` fired
-      // from the same region (FJS-307).
-      if (row) fireRowEvent('remove', 'delete', row)
-      // ── Logging ───────────────────────────────────────────────────────────
-      if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
-      await cascadeRemoved(_delDoomed)
-      return row
+    async delete(args = {}) {
+      return executeWrite(await planDelete(args))
     },
 
     // ── deleteMany ──────────────────────────────────────────────────────────
-    // Real DELETE FROM — bypasses soft delete. where is optional (deletes all if omitted).
-    async deleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
-      const { mode: _dmMode, wantRows: _dmWantRows } = announceFor(announce)
-      const _dmNeedRows = tableHasLogWork || _dmWantRows
-      if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
-      const params   = []
-      const whereSql = buildWhereWithEncryption(
-        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }), params)
-      const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
-      if (delManyPolicy) params.push(...delManyPolicy.params)
-      const dmFinalSql0 = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
-                        : whereSql || delManyPolicy?.sql || null
-      const _dmSeal    = sealWhereClause(dmFinalSql0, [])
-      const dmFinalSql = _dmSeal.sql || null
-      params.push(..._dmSeal.params)
-
-      // Prefetch affected rows before SQL so afterDelete gets them.
-      // Only done when plugins are listening — avoids the SELECT cost otherwise.
-      const affectedRows = plugins?.hasPlugins
-        ? readAll(readDb.query(`SELECT * FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`).all(...params))
-        : []
-
-      const _dmnSql = `DELETE FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`
-                    + (_dmNeedRows ? ` RETURNING *` : '')
-      const _nt = needsTiming()
-      const _dmnT0 = _nt ? performance.now() : 0
-      // The lock, so a bulk write cannot be swallowed by another context's
-      // open transaction and lost on its rollback (`FJS-638`).
-      let _dmnRows, result, _dmDoomed = null
-      await tx.wrapExclusive(() => {
-        noteCardinalityBySql(dmFinalSql, params)
-        if (cascadeHeard()) _dmDoomed = cascadeDoomed(plugins?.hasPlugins ? affectedRows
-          : readAll(readDb.query(`SELECT * FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`).all(...params)))
-        try {
-          _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
-          if (!_dmnRows) writeDb.run(_dmnSql, ...params)
-        } catch (e) { throw refusedDelete(e, dmFinalSql, params) }
-        result = { changes: _dmnRows ? _dmnRows.length : rowsChanged(writeDb) }
-      }).catch(async e => { throw await nameBlockerForCaller(e) })
-      fireQuery({ operation: 'deleteMany', args: { where }, sql: _dmnSql, params, duration: _nt ? performance.now() - _dmnT0 : 0, rowCount: result.changes })
-      if (plugins?.hasPlugins && affectedRows.length)
-        await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (tableHasLogWork && _dmnRows?.length) emitLogs('delete', _dmnRows)
-      await cascadeRemoved(_dmDoomed)
-      announceBulk({ mode: _dmMode, event: 'remove', operation: 'deleteMany', where, count: result.changes, rows: _dmnRows })
-      return { count: result.changes }
+    async deleteMany(args = {}) {
+      return executeWrite(await planDeleteMany(args))
     },
 
     // ── transition ──────────────────────────────────────────────────────────
@@ -8117,7 +8192,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // row it returns may have moved by the time anybody acts, which is why the
     // fire asks again with `where` naming the row.
     async due({ by, timeZone, transition, where } = {}) {
-      const decls = ctx.commitmentMap?.[modelName]
+      const decls = shape.commitments
       if (!decls) throw new CapabilityNotDeclaredError(modelName, 'due()', '@@commitment',
         'Nothing on this model is owed at a time, so no row can be due.')
       const chosen = transition == null ? decls : decls.filter(d => d.name === transition)
@@ -8140,7 +8215,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const cond = [d.via ? { [d.via]: { is: from } } : from,
                       { $raw: rawClause(`${due.sql} <= ?`, [...due.params, limit]) }]
         if (d.while) {
-          const w = compileStatic(d.while, modelName, ctx.schema, relationMap)
+          const w = compileStatic(d.while, modelName, ctx.schema, ctx.shapes)
           cond.push({ $raw: rawClause(w.sql, w.params) })
         }
         if (where) cond.push(where)
@@ -8207,10 +8282,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the Data boundary refuses regardless, so the honest failure is to offer
       // a button that gets refused rather than to hide one that would work.
       // `policyVerdict` deliberately does not catch — see its own note.
-      const policies = ctx.hasPolicies ? ctx.policyMap?.[modelName] : null
+      const policies = ctx.hasPolicies ? shape.policy : null
       const admits   = (op, r) => {
         if (!policies?.[op]) return true
-        try { return policyVerdict(modelName, r, ctx, ctx.policyMap, ctx.relationMap, op).ok }
+        try { return policyVerdict(modelName, r, ctx, op).ok }
         catch { return true }
       }
 
@@ -8996,6 +9071,126 @@ function makeLockPrimitive(rawWriteDb) {
   const policyMap      = buildPolicyMap(schema, relationMap, claimSet)
   const scopeMap       = buildScopeMap(schema, relationMap, claimSet)
   checkFieldPolicies(schema, relationMap, claimSet)
+  const guardedMap     = buildGuardedMap(schema, relationMap)
+  const fieldReadMap   = buildFieldReadMap(schema, relationMap)
+  const valueSetMap    = buildValueSetMap(schema)
+
+  // ── Shape: a model's facts in one record ──────────────────────────────────
+  //
+  // Every map above answers one question for every model, and a reader used to
+  // ask it as `ctx.xMap?.[modelName]`: an entry the builder never wrote read as
+  // *this model declares no such rule*, which is the silent direction — a
+  // `@log` keyed under a table name recorded nothing and said nothing. Here the
+  // answers are gathered once per model into a frozen record with EVERY facet
+  // present, so a reader asks `shape.x` with nothing optional-chained and
+  // nothing defaulted at the read. A builder that answers for every model and
+  // missed one, or wrote under a name that is not a model, is refused here,
+  // before the client exists, rather than at a read nobody has made yet.
+  //
+  // `shape` is what the SCHEMA says about one model: built once, identical for
+  // every flavor. What a flavor adds (`auth`, `isSystem`, the scope stack) and
+  // what is schema-WIDE (`schema`, `typeMap`, the connections) stay on `ctx`.
+  const modelNames = new Set(schema.models.map(m => m.name))
+  const viewNames  = new Set((schema.views ?? []).map(v => v.name))
+  // A map its builder fills for EVERY model — an absent entry is the builder's
+  // defect, not an empty answer.
+  const every = (map, name, facet) => {
+    if (!Object.hasOwn(map, name)) throw new Error(`${name}: the schema pass behind '${facet}' answered nothing for this model`)
+    return map[name]
+  }
+  // A map its builder fills only where the model declares something.
+  const declared = (map, name, empty) => (Object.hasOwn(map, name) ? map[name] : empty)
+  // Every key a builder wrote names a model, or it wrote under a spelling no
+  // reader asks by and the declaration is silently inert.
+  const keyedByModel = (map, facet, keyOf = (k) => k) => {
+    for (const key of Object.keys(map)) {
+      const name = keyOf(key)
+      if (!modelNames.has(name)) throw new Error(`'${facet}' names '${name}', which is not a model of this schema`)
+    }
+  }
+  for (const [facet, map] of Object.entries({
+    jsonMap, generatedMap, computedSets, fromMap, relationMap, edgeMap, coFkMap, softDeleteMap, softDeleteCascadeMap,
+    hasTemplatesMap, effectiveMap, commitmentMap, boolMap, affinityMap, bigMap, filterKindMap, autoIdMap,
+    generatedDefaultMap, authDefaultMap, literalDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap,
+    versionMap, syncMap, selfRelationMap, sequenceMap, enumMap, transitionMap, sealMap, capabilityMap, ftsMap,
+    validationMap, fieldPolicyMap, secretMap, policyMap, scopeMap, modelDbMap, valueSetMap,
+    'cardinalityMap.byParent': cardinalityMap.byParent, 'cardinalityMap.byChild': cardinalityMap.byChild,
+    'cardinalityMap.requiresChildren': cardinalityMap.requiresChildren, 'exclusionMap.byModel': exclusionMap.byModel,
+    'logMap.models': logMap.models, 'guardedMap.own': guardedMap.own, 'fieldReadMap.own': fieldReadMap.own,
+  })) keyedByModel(map, facet)
+  keyedByModel(logMap.fields, 'logMap.fields', (k) => k.slice(0, k.indexOf('.')))
+
+  /** @returns {Shape} */
+  function shapeFor(model) {
+    const name = model.name
+    const isView = viewNames.has(name)
+    const fieldLogs = new Map()
+    for (const [key, targets] of Object.entries(logMap.fields))
+      if (key.startsWith(`${name}.`)) fieldLogs.set(key.slice(name.length + 1), targets)
+    const policiedAggregates = new Set()
+    for (const [field, def] of Object.entries(declared(fromMap, name, {})))
+      if (def?.aggRef && policyMap[def.aggRef.model]?.read) policiedAggregates.add(field)
+    return Object.freeze({
+      modelName:         name,
+      tableName:         isView ? name : modelToTableName(model, pluralizeTableNames),
+      isView,
+      model,
+      db:                every(modelDbMap, name, 'modelDbMap'),
+      columnMap:         columnMapFor(model),
+      jsonFields:        every(jsonMap, name, 'jsonMap'),
+      generatedFields:   every(generatedMap, name, 'generatedMap'),
+      computedFields:    every(computedSets, name, 'computedSets'),
+      boolFields:        every(boolMap, name, 'boolMap'),
+      bigFields:         declared(bigMap, name, new Set()),
+      enumFields:        every(enumMap, name, 'enumMap'),
+      fieldKinds:        every(filterKindMap, name, 'filterKindMap'),
+      affinity:          every(affinityMap, name, 'affinityMap'),
+      softDelete:        every(softDeleteMap, name, 'softDeleteMap'),
+      softDeleteCascade: every(softDeleteCascadeMap, name, 'softDeleteCascadeMap'),
+      hasTemplates:      every(hasTemplatesMap, name, 'hasTemplatesMap'),
+      effective:         every(effectiveMap, name, 'effectiveMap'),
+      ftsFields:         every(ftsMap, name, 'ftsMap'),
+      fieldPolicy:       every(fieldPolicyMap, name, 'fieldPolicyMap'),
+      secrets:           declared(secretMap, name, {}),
+      fromFields:        declared(fromMap, name, {}),
+      relations:         every(relationMap, name, 'relationMap'),
+      edges:             declared(edgeMap, name, {}),
+      coFk:              declared(coFkMap, name, {}),
+      autoId:            declared(autoIdMap, name, null),
+      generatedDefaults: declared(generatedDefaultMap, name, []),
+      authDefaults:      declared(authDefaultMap, name, []),
+      literalDefaults:   declared(literalDefaultMap, name, []),
+      fieldRefDefaults:  declared(fieldRefDefaultMap, name, []),
+      createdBy:         declared(createdByMap, name, []),
+      updatedBy:         declared(updatedByMap, name, []),
+      version:           declared(versionMap, name, null),
+      sync:              declared(syncMap, name, null),
+      selfRelations:     declared(selfRelationMap, name, []),
+      sequences:         declared(sequenceMap, name, []),
+      transitions:       declared(transitionMap, name, null),
+      seal:              declared(sealMap, name, { self: null, parents: [] }),
+      capabilities:      declared(capabilityMap, name, null),
+      commitments:       every(commitmentMap, name, 'commitmentMap'),
+      policy:            declared(policyMap, name, {}),
+      scopes:            declared(scopeMap, name, {}),
+      hasValidation:     every(validationMap, name, 'validationMap'),
+      cardinality:       { byParent:         declared(cardinalityMap.byParent, name, []),
+                           byChild:          declared(cardinalityMap.byChild, name, []),
+                           requiresChildren: declared(cardinalityMap.requiresChildren, name, null) },
+      exclusions:        declared(exclusionMap.byModel, name, []).flatMap(scope =>
+                           exclusionMap.scopes[scope].members.filter(m => m.model === name).map(m => ({ scope, ...m }))),
+      valueSets:         declared(valueSetMap, name, []),
+      fieldLogs,
+      modelLogs:         declared(logMap.models, name, null),
+      guardedKeys:       every(guardedMap.own, name, 'guardedMap'),
+      reachesGuarded:    guardedMap.reaches.has(name),
+      fieldReadKeys:     every(fieldReadMap.own, name, 'fieldReadMap'),
+      reachesFieldRead:  fieldReadMap.reaches.has(name),
+      policiedAggregates,
+    })
+  }
+  /** @type {Record<string, Shape>} */
+  const shapes = Object.freeze(Object.fromEntries(schema.models.map(m => [m.name, shapeFor(m)])))
 
   // A schema naming claims with nothing to grade them against says so once. The
   // alternative to a notice is a set invented here, which would refuse
@@ -9226,7 +9421,7 @@ function makeLockPrimitive(rawWriteDb) {
     const model = schema.models.find(m =>
       m.name === accessor || m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
     if (!model?.fields) continue
-    const keys = globalFilterKeysFor(model, edgeMap)
+    const keys = globalFilterKeysFor(model, shapes[model.name].edges)
     const [bad] = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted, [], null, keys.transient)
     if (bad) throw new Error(`createClient: ${globalFilterRefusal(accessor, model.name, bad)}`)
   }
@@ -9420,17 +9615,13 @@ function makeLockPrimitive(rawWriteDb) {
   const ctx = {
     now,
     stampClock, _madeAt,
-    relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, effectiveMap, commitmentMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, literalDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
-    coFkMap,
-    // model → its field → column, for the resolvers that answer for a model
-    // that is not the one they were built for: an include, a relation filter
-    // and a nested read all write an identifier belonging to the TARGET, and
-    // `makeTable`'s own `col()` is the HOST's (`FJS-761`).
-    columnMaps: Object.fromEntries(schema.models.map(m => [m.name, columnMapFor(m)])),
-    // Which columns bind to a value set, resolved once. Absent for a schema
-    // that declares none, so the check is one map lookup per write there.
-    valueSetMap: buildValueSetMap(schema),
+    // What the SCHEMA says about each model, one frozen record per model and
+    // view (`shapeFor` above). A host-model fact is `shape.x` inside
+    // `makeTable`; a resolver answering for ANOTHER model — an include, a
+    // relation filter, a nested write — reads `ctx.shapes[target].x`, because
+    // the identifier it writes belongs to the target (`FJS-761`).
+    shapes,
+    computedFns, tx,
     // Default: parent values silently overwrite any child-supplied co-FK
     // values during nested writes — this is the safe choice that prevents
     // referential drift like a child line item ending up with a different
@@ -9438,23 +9629,15 @@ function makeLockPrimitive(rawWriteDb) {
     // the policy so an explicit child value wins, but a missing one still
     // gets auto-filled.
     allowChildFkOverride: allowChildFkOverride === true,
-    transitionMap, sealMap,
-    cardinalityMap,
-    exclusionMap,
-    capabilityMap,
     models:        modelIndex,
     schema,
-    hasValidation: validationMap,
     typeMap,
     enumTypeMap,
     extDeclarers,
     // Shared by reference: a scoped client is `{ ...ctx }`, and a cache each
     // copy created for itself was one the declaring table's write never cleared.
     extDecl:       new Map(),
-    fieldPolicyMap,
-    policyMap,
     hasPolicies:   Object.keys(policyMap).length > 0,
-    scopeMap,
     policyDebug,
     // A CELL, not a value. Every derived context — asSystem(), $setAuth(),
     // $scopedBy() — is a spread of this one, and a spread copies a string by
@@ -9466,23 +9649,13 @@ function makeLockPrimitive(rawWriteDb) {
     // and nothing else may. `ring` is what a READ asks, so a value written under
     // a key this client has rotated away from is still readable (`FJS-714`).
     enc:           { key: encKey, ring: encRing },
-    // Read by the decrypt path for one question: was this column DECLARED
-    // un-rotatable? `@secret(rotate: false)` is an acknowledged loss — the
-    // caller said the value stops being readable at the next rotation — so it
-    // degrades where every other column raises (`FJS-716`).
-    secretMap,
     isSystem:      false,
-    // Which columns a caller may not NAME, per model, plus which models can reach
-    // one at all. Built once — the relation walk is a fixed point over the graph.
-    guardedMap:    buildGuardedMap(schema, relationMap),
-    fieldReadMap:  buildFieldReadMap(schema, relationMap),
     hookRunner,
     emitter,
     globalFilters,
     plugins:       pluginRunner,
     auth:          null,
     readDb,
-    logMap,
     onLog:        onLog ?? null,
     // Shared by REFERENCE, for the same reason the listener Sets below are: a
     // scoped client is `{ ...ctx }`, so a value assigned to the root after any
@@ -9505,7 +9678,6 @@ function makeLockPrimitive(rawWriteDb) {
                                    // attached to the root never sees an asSystem() write —
                                    // which is the one write nothing else announces (FJS-010)
     announce:      checkAnnounce(announceDefault, 'createClient') ?? 'collection',
-    modelDbMap,
     pluralize:     pluralizeTableNames,   // used by makeTable to derive child SQL table names during cascades
     // Where a trail is written, by database name. TWO kinds, and the entry
     // carries which — `logger` is a directory of append-only jsonl, `sql` is an
@@ -9528,7 +9700,7 @@ function makeLockPrimitive(rawWriteDb) {
   // all makeAllTables calls so compaction only runs once per createClient().
   const jsonlTableCache = {}
   for (const model of schema.models) {
-    const dbName = modelDbMap[model.name] ?? 'main'
+    const dbName = shapes[model.name].db
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
     if (conn.driver === 'jsonl' || conn.driver === 'logger') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
@@ -9561,30 +9733,12 @@ function makeLockPrimitive(rawWriteDb) {
   // Per-model database routing. One call per model for the life of the client
   // since `FJS-722` — a flavor gets a wrapper, not a build.
   function buildTableForModel(model, ctx) {
-    const dbName    = modelDbMap[model.name] ?? 'main'
-    const conn      = dbRegistry[dbName] ?? dbRegistry.main
-    const sqlTable  = modelToTableName(model, pluralizeTableNames)
+    const conn      = dbRegistry[shapes[model.name].db] ?? dbRegistry.main
 
     if (conn.driver === 'jsonl' || conn.driver === 'logger') {
       return withArgValidation(jsonlTableCache[model.name], model, ctx)
     }
-    return withArgValidation(makeTable(conn.readDb, conn.writeDb, {
-      tableName:         sqlTable,
-      modelName:         model.name,
-      jsonFields:        jsonMap[model.name],
-      generatedFields:   generatedMap[model.name],
-      computedFields:    computedSets[model.name],
-      softDelete:        softDeleteMap[model.name],
-      ftsFields:         ftsMap[model.name],
-      boolFields:        boolMap[model.name],
-      bigFields:         bigMap[model.name],
-      enumFields:        enumMap[model.name],
-      fieldKinds:        filterKindMap[model.name],
-      softDeleteCascade: softDeleteCascadeMap[model.name],
-      fieldPolicy:       fieldPolicyMap[model.name],
-      fromFields:        fromMap[model.name],
-      columnMap:         columnMapFor(model),
-    }, ctx), model, ctx)
+    return withArgValidation(makeTable(conn.readDb, conn.writeDb, shapes[model.name], ctx), model, ctx)
   }
 
   // Every accessor of the shared set, wrapped for one flavor. The eager
@@ -9606,12 +9760,10 @@ function makeLockPrimitive(rawWriteDb) {
       const conn   = dbRegistry[dbName] ?? dbRegistry.main
       if (conn.driver === 'jsonl' || conn.driver === 'logger') return null
 
-      // A view names nothing else: every other key of `shape` defaults to the
-      // empty answer, which is what it means for a read-only projection.
-      const baseTable = makeTable(conn.readDb, conn.writeDb, {
-        tableName: view.name,
-        modelName: view.name,
-      }, ctx)
+      // A view's shape comes from the same builder as a model's, through the
+      // view-as-model stub: every facet a projection cannot declare is its
+      // empty value there, and a row policy on the view is real.
+      const baseTable = makeTable(conn.readDb, conn.writeDb, shapes[view.name], ctx)
 
       const writeBlocked = () => {
         throw new Error(`"${view.name}" is a view — write operations are not supported`)
@@ -9764,6 +9916,12 @@ function makeLockPrimitive(rawWriteDb) {
       const fn = table[key]
       if (typeof fn !== 'function') { out[key] = fn; continue }
       out[key] = (...args) => _flavor.run(flavor, () => fn.apply(table, args))
+    }
+    // A symbol-keyed seam (`PLAN`) runs under the flavor too, or a `$setAuth`
+    // client would plan as nobody; it stays off the enumerable keys.
+    for (const sym of Object.getOwnPropertySymbols(table)) {
+      const fn = table[sym]
+      Object.defineProperty(out, sym, { value: typeof fn === 'function' ? (...args) => _flavor.run(flavor, () => fn.apply(table, args)) : fn, enumerable: false })
     }
     return out
   }
@@ -10199,9 +10357,9 @@ function makeLockPrimitive(rawWriteDb) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
     const keys = filterableKeysFor(model)
-    for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
+    for (const d of Object.values(shapes[model.name].edges)) keys.filterable.add(d.as)
     return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],
-                                   new Set(Object.keys(ctx.scopeMap?.[model.name] ?? {})), keys.transient,
+                                   new Set(Object.keys(shapes[model.name].scopes)), keys.transient,
                                    { ctx, model: model.name })
       // `p.model` where the key was found through a relation — naming the model
       // it was graded against rather than the one the request addressed, which
@@ -10228,7 +10386,7 @@ function makeLockPrimitive(rawWriteDb) {
     const model = modelForAccessor(accessor)
     if (!model) return {}
     const out = {}
-    for (const [name, expr] of Object.entries(ctx.scopeMap?.[model.name] ?? {}))
+    for (const [name, expr] of Object.entries(shapes[model.name].scopes))
       // A scope a `valueset` minted from its `where` is SQL and is its own
       // source text. It is listed rather than hidden: it is filterable, a
       // caller may name it, and `$checkWhere` already validates against this
@@ -10335,7 +10493,7 @@ function makeLockPrimitive(rawWriteDb) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return {}
     const out = {}
-    for (const [field, policy] of Object.entries(fieldPolicyMap?.[model.name] ?? {})) {
+    for (const [field, policy] of Object.entries(shapes[model.name].fieldPolicy)) {
       if (policy.guarded)        out[field] = 'guarded'
       else if (policy.hashed)    out[field] = 'hashed'
       else if (policy.encrypted) out[field] = 'encrypted'
@@ -10430,12 +10588,12 @@ function makeLockPrimitive(rawWriteDb) {
 
     // 2. The row policy.
     let verdict
-    try { verdict = policyVerdict(modelName, row, readCtx, readCtx.policyMap ?? {}, readCtx.relationMap, 'read') }
+    try { verdict = policyVerdict(modelName, row, readCtx, 'read') }
     catch { return null }
     if (!verdict.ok) return null
 
     // 3. The shape.
-    const fp = fieldPolicyMap?.[modelName]
+    const fp = shapes[modelName].fieldPolicy
     return fp && Object.keys(fp).length
       ? applyFieldPolicyTo(row, modelName, fp, readCtx, { mode: 'single' })
       : row
@@ -10502,7 +10660,7 @@ function makeLockPrimitive(rawWriteDb) {
   // order lexicographically the way they order in time.
   function $inWindow(accessor, row, asOf) {
     const model = modelForAccessor(accessor)
-    const win   = model?.name ? effectiveMap[model.name] : null
+    const win   = model?.name ? shapes[model.name].effective : null
     if (!win || !row) return true
     // A frame with no stated moment grades an `@@effective` row the way a read
     // with none does: every row is there, the history a store holds included.
@@ -10527,9 +10685,9 @@ function makeLockPrimitive(rawWriteDb) {
     const modelName = model.name
     const gate = ctx.gateFor?.(modelName, 'read')
     if (gate != null && gate > 0) return 'graded'
-    const rules = policyMap?.[modelName]
+    const rules = shapes[modelName].policy
     if (rules?.read?.allows?.length || rules?.read?.denies?.length) return 'graded'
-    const fp = fieldPolicyMap?.[modelName]
+    const fp = shapes[modelName].fieldPolicy
     if (fp && Object.keys(fp).length) return 'graded'
     return 'open'
   }
@@ -11522,7 +11680,7 @@ function makeLockPrimitive(rawWriteDb) {
       const name = names[0]
       if (cp.watchers[name]) continue
       const modelsHere = Object.keys(ctx.models)
-        .filter(m => names.includes(ctx.modelDbMap?.[m] ?? 'main'))
+        .filter(m => names.includes(shapes[m].db))
       cp.watchers[name] = createEventWatcher({
         db:     conn.rawWriteDb,
         file:   conn.absPath,

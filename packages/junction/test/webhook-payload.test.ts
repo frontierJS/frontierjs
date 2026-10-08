@@ -9,9 +9,10 @@
 // a principal. What makes it apply is that a REGISTRATION had one.
 //
 // Every refusal below is PAIRED with the acceptance of the same payload by an
-// audience one field apart. A grader that delivers to nobody passes any test
+// subscriber one field apart. A grader that delivers to nobody passes any test
 // that only asserts the refusal (`FJS-351`).
 
+import { Database } from 'bun:sqlite'
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
@@ -41,7 +42,7 @@ const sent = () => hits.map(h => (JSON.parse(h.body) as { data: unknown }).data)
 // The rule is litestone's and is not restated here: what these tests assert is
 // which principal it is asked ABOUT, how often, and what happens to each of the
 // three answers. `$readAs` below is the smallest rule that can tell two
-// audiences apart — the row's owner reads it and nobody else does.
+// subscribers apart — the row's owner reads it and nobody else does.
 
 function boundary(opts: { open?: string[]; throwOn?: string } = {}) {
   const asked: Array<{ accessor: string; principal: { id?: unknown } | null }> = []
@@ -76,8 +77,8 @@ async function makeApp(opts: {
       { id: 'bob',   isAdmin: true },
     ]) as never,
   })
-  // The real store, so the audience column is exercised rather than mocked.
-  const store = opts.store ?? createSqliteWebhookStore(app.db as never)
+  // The real store, so the subscriber column is exercised rather than mocked.
+  const store = opts.store ?? createSqliteWebhookStore(new Database(':memory:'))
   if ('db' in opts) (app as { db?: unknown }).db = opts.db
   app.configure(webhooks({
     events:        ['*'],
@@ -93,8 +94,8 @@ const ORDER = { id: 'o1', ownerId: 'alice', total: 100 }
 
 // ─── The defect, and its control ──────────────────────────────────────────
 
-describe('a delivery is graded as the audience that registered it', () => {
-  it('delivers the row to an audience who may read it', async () => {
+describe('a delivery is graded as the subscriber that registered it', () => {
+  it('delivers the row to a subscriber who may read it', async () => {
     const b   = boundary()
     const app = await makeApp({ db: b.db })
     await app.webhooks.register(url(), ['orders:created'], undefined, 'alice')
@@ -105,7 +106,7 @@ describe('a delivery is graded as the audience that registered it', () => {
     expect(b.asked[0]?.principal?.id).toBe('alice')
   })
 
-  it('delivers NOTHING to an audience who may not — same payload, other person', async () => {
+  it('delivers NOTHING to a subscriber who may not — same payload, other person', async () => {
     const b   = boundary()
     const app = await makeApp({ db: b.db })
     await app.webhooks.register(url(), ['orders:created'], undefined, 'bob')
@@ -144,7 +145,7 @@ describe('a delivery is graded as the audience that registered it', () => {
   })
 })
 
-// ─── The audience is read, never stated ───────────────────────────────────
+// ─── The subscriber is read, never stated ─────────────────────────────────
 
 describe('who a registration speaks for', () => {
   it('is the principal in scope, not a value the caller sent', async () => {
@@ -191,9 +192,9 @@ describe('who a registration speaks for', () => {
   })
 })
 
-// ─── One grading per audience ─────────────────────────────────────────────
+// ─── One grading per subscriber ───────────────────────────────────────────
 
-describe('the unit is the audience, not the registration', () => {
+describe('the unit is the subscriber, not the registration', () => {
   it('asks once for two destinations one person registered', async () => {
     const b   = boundary()
     const app = await makeApp({ db: b.db })
@@ -264,7 +265,7 @@ describe('the three answers, and the line between the last two', () => {
     expect(hits.length).toBe(1)
   })
 
-  it('REFUSES where the audience cannot be re-resolved', async () => {
+  it('REFUSES where the subscriber cannot be re-resolved', async () => {
     // A registrant deleted since. The principal is re-resolved at delivery and
     // never replayed from a snapshot, so this is the case that says so.
     const gone = await makeApp({ db: boundary().db })
@@ -313,7 +314,7 @@ describe('a protected column is never written down, graded or not', () => {
 
 // ─── A store that cannot answer ───────────────────────────────────────────
 
-describe('a custom store that does not record an audience', () => {
+describe('a custom store that does not record a subscriber', () => {
   // ABSENT is not `null`. A store written before this existed cannot say who a
   // registration speaks for, and treating that as *nobody* would stop every
   // delivery in an app that upgraded — while treating it as *anybody* is the
@@ -330,7 +331,7 @@ describe('a custom store that does not record an audience', () => {
 
   it('delivers ungraded rather than refusing', async () => {
     const app0  = await createTestApp({ users: [{ id: 'alice', isAdmin: true }] as never })
-    const store = forgetfulStore(createSqliteWebhookStore(app0.db as never))
+    const store = forgetfulStore(createSqliteWebhookStore(new Database(':memory:')))
     const app   = await makeApp({ db: boundary().db, store })
 
     await app.webhooks.register(url(), ['orders:created'], undefined, 'bob')

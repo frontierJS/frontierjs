@@ -1,5 +1,39 @@
 # Changes — @frontierjs/sierra
 
+## 2026-10-08 — the Resource is `src/resource/` and `@frontierjs/sierra/resource` (`FJS-D650`)
+
+**Breaking:** `@frontierjs/sierra/junction` is now `@frontierjs/sierra/resource`, and `src/junction/` is `src/resource/`. Nothing is kept for the old spelling: an import of `./junction` fails at resolve, naming the path. Every caller moved in the same change: example, basecamp, orion, jetty's comments, ui, the cli scaffolds and tutor steps, the bridge-index skill and the docs. The exported names are unchanged, `initJunction` included, because that function does start the Junction client.
+
+`virtual-sierra.js` resolved `virtual:sierra`'s own `@frontierjs/sierra/*` imports through a hand-written subpath map, written out twice, where the first copy was dead. It had already drifted from `exports` (`router` → `src/router/index.js` where `exports` names `entry.js`). It now reads sierra's `exports`, so a subpath is named in one place.
+
+Proof: sierra 1937/1937, the edge test with `resource` classified as the Resource axis, and a clean typecheck for sierra, ui, jetty and orion. ui 1269 passing, orion 598/598, jetty passing. cli 3040/3043: two `ask` tests read the snapshots and passed once they were regenerated, and the tty test that timed out passes alone. basecamp's web build. Example's drives ran in two worktrees on private ports with their own databases, both holding every session's uncommitted work, one with the rename and one without. `verify` failed the same 3 checks in both (`FJS-2028`), the offline shell was 947 kB in both (`FJS-2027`), and `verify:site` passed 45/45. `verify:widget` and `verify:offline` passed in the main tree.
+
+## 2026-10-08 — sierra's edge is a test, the main entry is the router and the theme, and `./field-rules` is a subpath (`FJS-D649`, `FJS-D651`, `FJS-D652`)
+
+`test/edge.test.js` classifies every directory under `src/` as Navigation, Build, Resource, the host, a battery or the bin, the shape of junction's `test/edge.test.ts`. A new directory fails until it is classified. No axis file may import a battery, and the allow-list has one row: `build/index.js` installs the devtools plugin, because `devtools:` is a key in the config the build reads. Navigation may not import Resource. Every battery has a subpath, and `serve/`, the static origins' shared half, is imported by batteries alone. Every `postbuild/` file is marked as the build's or the site's (`FJS-D608`), and no build step imports a site step.
+
+**Breaking:** `@frontierjs/sierra` no longer exports `createSierraViteConfig` or `VERSION`. The config is `@frontierjs/sierra/build`'s, which every vite config in the repo already used. `VERSION` was `'0.1.0'` against a package at 0.1.7, and nothing read it.
+
+`src/build/devtools-plugin.js` is now `src/devtools/plugin.js`, so the battery's code is all in its own directory. `@frontierjs/sierra/field-rules` is in `exports`. ui's browser drive imported that path through a hand-written import-map entry; it now reads the file from sierra's `exports`.
+
+Proof: the edge test fails on each rule against a mutated copy of `src/` (a battery import in `router/`, a Resource import in `fetch/`, the build re-exported from the entry, an unclassified directory and postbuild step, a build step importing `sitemap.js`, a missing subpath, a stale allow row) and passes on the tree. The full suite, run twice at a load average of 56, timed out on one test the first time and two others the second; all three pass alone, and the other 1935 passed both times. ui drive 1269 passing.
+
+## 2026-10-08 — the build keeps the app's robots.txt wherever `publicDir` is (`FJS-2025`)
+
+A site-kit site's `publicDir` is `content/public`. Vite copied its `robots.txt` into `dist/`, then the post-build step looked for `<root>/public/robots.txt`, found none, and wrote the default over the copy. ksite lost its `Disallow: /cdn-cgi/` and the build reported `robots.txt (default)`.
+
+`copyRobots(root, outDir, siteUrl)` is now `writeRobots(outDir, siteUrl)` in `src/postbuild/robots.js`. Vite has already copied the public directory by the time it runs, so a `robots.txt` in the output is the app's and stays. Only a build without one gets the default. Vite is now the only thing that copies a public file. Proof: the `writeRobots` cases in `test/postbuild.test.js`, whose keep case fails against the old code, and sierra 1929/1929.
+
+## 2026-10-08 — a static build prints a reactivity hint only for code a published script runs (`FJS-1903`, `FJS-D629`)
+
+ksite's static build prerendered four pages, published no script, and printed 21 hints that reads of its content modules would not update. A page that ships no script never re-renders, so none could be true, and every client site would have silenced them one `var` at a time.
+
+A `static` build now holds each hint against its module (Mesa names them on `analysis.reactivityHints`). Each Mesa plugin instance records which modules each chunk carries, the island build's included. After the prune step, the build prints the hints whose module a kept script contains, under its file, and one line counting the rest. Dev and `spa` builds are unchanged: their code runs in a browser, and a dev server navigates client-side, which is where the ksite shell's `$: meta = page.meta` went stale.
+
+`mesaPlugin()` takes a third argument, `{ holdHints }`, set by `createSierraViteConfig` from `target`. The helpers are `holdHints`, `recordChunks` and `shippedHints` in `src/build/warnings.js`.
+
+Proof: `test/static-hints.test.js` builds the island fixture with one content module, read by the `Counter` island and by the island-free `/plain/` page. The island's hint prints against `Counter.mesa` and the page's is counted and not printed. Both cases fail with holding off. ksite: 0 printed, 21 counted, baselines 4/4 pixel-exact.
+
 ## 2026-10-07 — presence calls `client.presence.set()` / `clear()` (`FJS-D631`)
 
 Junction renamed its presence verbs (`announce` / `release`), and `src/presence/index.js` follows. Behavior is unchanged.

@@ -1,5 +1,9 @@
 # Changes — @frontierjs/notifications
 
+## 2026-10-08 — the example `Notification.mesa` imports `@frontierjs/sierra/resource` (`FJS-D650`)
+
+It followed sierra's rename of `./junction`.
+
 ## 2026-10-03 — the mailer wiring teaches the key by reference
 
 [`FJS-659`](../../ISSUES_ARCHIVE.md#fjs-659). The README and `examples/wiring.ts` passed `createResendMailer` a literal `apiKey`. They now pass `{ credentials, apiKeyRef }`, the form junction's mailer resolves at send time. No code in this package changed.

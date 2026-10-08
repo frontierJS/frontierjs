@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
 import { gzipSync } from 'zlib'
 import { pathToFileURL } from 'url'
-import { diffSchemaModes } from '../junction/schema-registry.js'
+import { diffSchemaModes } from '../resource/schema-registry.js'
 
 /** Default locations, tried in order when `config.schema` isn't set. */
 const DEFAULT_PATHS = [

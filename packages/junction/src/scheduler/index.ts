@@ -393,3 +393,10 @@ interface ScheduledJob {
   lastMinute?: string
   execute:   () => Promise<void>
 }
+
+export type Scheduler = ReturnType<typeof createScheduler>
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.scheduler`.
+declare module '../core/app.ts' {
+  interface AppScheduler extends Scheduler {}
+}

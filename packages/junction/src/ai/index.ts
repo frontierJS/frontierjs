@@ -173,3 +173,8 @@ export class AIRegistry {
     return Array.from(this._models.keys())
   }
 }
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.ai`.
+declare module '../core/app.ts' {
+  interface AppAI extends AIRegistry {}
+}

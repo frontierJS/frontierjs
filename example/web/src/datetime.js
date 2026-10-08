@@ -19,7 +19,7 @@
 // before it is known. The locale stays the reader's: the order a day and a
 // month are written in is theirs, and which day it IS is the shop's.
 
-import { getClient } from '@frontierjs/sierra/junction'
+import { getClient } from '@frontierjs/sierra/resource'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 
 let timeZone = null

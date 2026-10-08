@@ -45,7 +45,7 @@ in-flight request, `closest form:queue` serializes against the form's, and
 **Where FJS stands.** There is one `AbortController` in the whole framework and
 it is a timeout, not a supersession —
 `packages/junction/src/client/index.ts:1750-1751`. Nothing in
-`packages/sierra/src/junction/resource.js` knows that a second `load()` has
+`packages/sierra/src/resource/resource.js` knows that a second `load()` has
 started while the first is still awaiting.
 
 **The bug class is already proven here and was fixed once, locally.** Sierra's
@@ -87,7 +87,7 @@ and the file says why — merging them made the two undecidable
 local. The resource does not expose it, so anything that is not a form submit —
 a transition button, a delete, a `load()`, a `more()` — is back to the sequence
 `resource.js` describes in its own header: an `around` hook and a signal, per
-screen (`packages/sierra/src/junction/resource.js:49`, sketched at 123).
+screen (`packages/sierra/src/resource/resource.js:49`, sketched at 123).
 
 **The shape.** Move the flag down a layer: the call knows it is open, so
 `$context.form.submitting` becomes the form's view of something the resource

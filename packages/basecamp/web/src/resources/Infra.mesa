@@ -9,7 +9,7 @@
   // checks are assembled out of several tables, not rows of one. `model: null`
   // declares that — the warning it turns off is the one that means a model
   // name did not resolve, and this service never had one.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const infra = createResource('infra', { model: null })
 </script>

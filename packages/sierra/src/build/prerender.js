@@ -197,7 +197,7 @@ const PRERENDER_TIMEOUT_MS = 30_000
 const HANG_CAUSES =
   `      Two things are known to do this, both of them about what the page's module graph reaches:\n` +
   `        · an island marker inside a LAYOUT (\`_module.mesa\`), or an island given element children\n` +
-  `        · \`@frontierjs/sierra/junction\` anywhere in a prerendered island's imports\n` +
+  `        · \`@frontierjs/sierra/resource\` anywhere in a prerendered island's imports\n` +
   `      A layout that holds no state and a client that is injected rather than imported are the\n` +
   `      shapes that work today.`
 

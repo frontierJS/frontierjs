@@ -29,7 +29,7 @@ title: Stocktake
   import { sheets }          from '../../resources/StocktakeSheet.mesa'
   import { counts }          from '../../resources/StocktakeCount.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

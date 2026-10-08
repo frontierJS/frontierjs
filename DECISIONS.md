@@ -27,6 +27,50 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d636"></a>2026-10-07 · `FJS-D636` — The Deployment realm's remaining nouns — an **Environment** is a named place a Release serves from, qualified at every use. *Promote* is the verb for a deploy the journal can recognize, and *Promotion* is not a noun. *Audience* stays open, and the webhook's sense of it becomes *subscriber*.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 4. `ARCHITECT.md` § 2 listed Environment and Audience as not yet named, and the realm had two ruled nouns, Release and Pivot. **Promote as a verb only** was picked over blessing *Promotion* as a noun. **Audience left open** was picked over blessing it for Deployment once the sweep found four live senses of it.
+
+**Environment — a named place a Release serves from, which supplies its configuration and nothing else.** It is mutable but generational: serving state is the pair (Release, generation), so a revert restores the configuration the Release ran with (`IDEAS/release-transitions.md` invariant 2). The cli journal's `environment` column, `Release.environment` in `packages/cli/db/deploy.lite` and the deploy block's configuration are this sense. **It is qualified at every use, the way Phase is** (`FJS-D395`): a *deploy environment*, or a *test environment*, which is what `createTestEnv` stands up in litestone and in `@frontierjs/testing`. The port schema's ENV digit and a process's environment variables are ordinary English. Basecamp's `model Environment` is an app's model and keeps its name. Nothing is renamed.
+
+**Promote — deploy a digest that has already served in another deploy environment.** The journal has no `promote` kind (its CHECK is `deploy | revert | pause | unpause`), and it needs none. A promotion is a deploy, recognized because its digest served elsewhere, so it is derived and never recorded twice. **What moves is the digest, not the Release.** A Release's id hashes its `configurationHash` and leaves the environment out (`packages/cli/test/release-mint.test.js`), so staging and production configured differently mint two Releases from one artefact. That is what `IDEAS/deploy-plane.md`'s *promote a digest* already says. Two other senses stay out of it. A *promoted key* in tenant-declared fields is the Data realm's: a JSON key given a generated column. Widening a Release from an Audience to everyone is not a promotion, and Phase 4 names that verb when it builds the routing.
+
+**Audience stays `open`, because four senses are live and Deployment's is the one that is not built.** litestone's `generateJsonSchema({ audience: 'client' | 'system' })` and `litestone types --audience` choose which fields a generated document carries (`FJS-D454`, `FJS-D205`). A credential's audience in sierra's fetch is the JWT `aud` sense. `example`'s `Discount.audience` is an app column. `IDEAS/release-transitions.md` proposes a named set of principals a Release is served to. Taking the word for an idea would rename a public option and a CLI flag a ruling already settled. That is *doctrine vs. discovery*: the code had it first. The Deployment sense is ruled when Phase 4 builds the routing. *Cohort* is not the fallback, because junction already grades a broadcast in cohorts.
+
+**The webhook subscriber is a Principal, and the word for it is *subscriber*.** `FJS-D193` called the principal a delivery is graded as an *audience*. Under `FJS-D633`, whose standing is graded is a Principal, so the word was wrong whatever happened to Audience. `WebhookAudience` becomes `WebhookSubscriber` and `shapeForAudience` becomes `shapeForSubscriber`. The registration's field was already `subscriber`. D193's substance stands, and its heading is amended.
+
+**Feature flag is not a framework term.** A flag routes code inside one Release, while an Audience would route between Releases, so a flag is not a kind of Audience. Basecamp's `FeatureFlag` is its own product's model.
+
+*Lives in:* `ARCHITECT.md` § 2 and § 5 · `VOCABULARY.md` (Environment, Promote, Promotion, Audience) · `packages/junction/src/plugins/webhooks/`.
+
+### <a id="fjs-d637"></a>2026-10-07 · `FJS-D637` — *Entitlement* is refused: in this tree it means a Capability or a claim, and nothing is a tenant-held grant. What a tenant has paid for is ruled when the first app gates a feature on its plan.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 4, which proposed coining Entitlement, outside the Warden, for what a tenant has paid for or turned on. **Refusing it** was picked over coining it now and over leaving it open.
+
+**The tree already uses the word three ways, and none of them is the atlas's.** litestone's catalog sends a search for *entitlement* to `@capability` (`src/core/catalog.js`). `FJS-D514` calls a `claims:` requirement on a method an entitlement check. `example`'s shop calls the claim a hosted checkout link proves an entitlement. Each one is a Capability or a claim, so *Entitlement* is refused and its Means names those two.
+
+**Nothing is a tenant-held grant, and no app gates a feature on its plan.** A Capability is a principal's reference to a declared move (`FJS-D139`). A plan's feature belongs to a tenant, and a quota is a count. Coining a noun that nothing builds is what § V's second question catches. The ruling comes when an app first gates a feature on its plan. The expected shape is a ceiling on which capabilities a tenant's roles may grant, which adds no noun. A quota is a separate question. Stripe's *Entitlements* is the ecosystem's word for it, and *familiarity vs. precision* is why that word does not come in by habit alone.
+
+*Lives in:* `VOCABULARY.md` (Entitlement).
+
+### <a id="fjs-d638"></a>2026-10-07 · `FJS-D638` — The Testing realm's working nouns are blessed: a **Suite** proves a package, a **Drive** proves a change end to end, a **Snapshot** is a committed generated file, a **Vector** is conformance data, and a **Fixture** is a file a test reads. *Stressor* stays open.
+
+Asked by the vocabulary atlas of 2026-10-07, wave 4. Each word was in daily use with no register row, and Suite was `open`. **Stressor left open** was picked over blessing it: a stressor is an exercise `IDEAS/stressors.md` lists, not something the framework runs.
+
+**Suite — a package's `test/`, run by that package's own script.** `*.test.*` is collected and `*.spec.*` is driven (root `CLAUDE.md` § Running things). `packages/cli/core/runnables.js` separates a suite from a Drive by the question each answers: a suite proves one package.
+
+**Drive — a script that runs an app or a package end to end and asserts on what a person or a caller would see.** It runs a real server and database, usually with a real browser. `DRIVES.md` lists them, and `fli proves` names the ones a diff needs. `@frontierjs/mesa/drive`, the CDP harness a browser drive steers Chrome with, uses the same sense.
+
+**Snapshot — a committed `*.snapshot.*` file that names the command that generated it.** The `snapshots` CI phase reruns that command with `--check`. The audit trail's before and after copies of a row are an *audit snapshot*, qualified (Invariant 7).
+
+**Vector — conformance data: an input and its expected output, as data any implementation can run.** A vector set pairs a positive case with its negative control and asserts its own count (`IDEAS/specifications.md`). `FJS-D631` already used the word when it renamed toolbelt's `*-oracle` fixtures, and this ruling gives it a row.
+
+**Fixture — a file a test reads.** It is not a Seed, which is rows written into a database before anyone uses it (`FJS-D632`).
+
+**This ruling does not settle *spec*.** A `*.spec.*` file and a host-neutral specification share the short word, and that is left for its own ruling.
+
+*Lives in:* `VOCABULARY.md` (Suite, Drive, Stressor, Snapshot, Vector, Fixture).
+
 ### <a id="fjs-d634"></a>2026-10-07 · `FJS-D634` — What unfolds over time — a **Flow** declares a multi-step process and a **Run** is one bounded, resumable execution. *Pivot* is the step past which a Run only goes forward, and a Release's pivot is its instance. *Saga* and *workflow* are refused. Work a person owes is a transition with a declared owed-by party, and adds no noun.
 
 Asked by the vocabulary atlas of 2026-10-07, wave 3. Model, Service and Resource each describe one moment. Anything that spans several moments (a checkout, an approval, a deploy, a backfill) had no word for the thing itself: Run was an `open` row, `IDEAS/operational-edge.md` called it the one genuinely unnamed noun, and orion's schema had already chosen `model Flow` and `model Run` without any ruling. That is *doctrine vs. discovery*: the code had the words first.
@@ -6529,6 +6573,36 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d644"></a>2026-10-08 · `FJS-D644` — What happens to the three zero-user batteries — Delete workers and the better-auth adapter; keep the email tiers behind the seam until notifications is measured against the system tier.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **B** was picked over **A** (Keep all three as batteries behind the seam), **C** (Delete all three; the system tier's job is notifications' and the campaign tier is a conduit target plus a template. - **Recommend B, then measure C's last clause** — workers and the adapter have the rulings already (`FJS-D153`, `FJS-D215`: the mechanism, never the vendor). The email tiers are the one battery with a design argument (`mail/index.ts`'s division of responsibility), so the measurement is whether `example` and basecamp's system mail runs through notifications with nothing lost. If it does, C).
+
+workers has no caller anywhere and the better-auth adapter is a vendor inside the boundary package, which FJS-D153 and FJS-D215 already refuse; the email tiers are the one battery with a design argument, so they stay behind the seam until example and basecamp system mail is proved through app.notify with nothing lost, and then C's last clause applies.
+
+### <a id="fjs-d643"></a>2026-10-08 · `FJS-D643` — Where does the Data realm's work over time run — They stay in junction, as batteries, and the rule is written: *a schema-declared thing that needs a process and a queue is a junction battery over `app.jobs`, shipped with its `.lite` fragment.* Their core halves (`core/outbox.ts`, `core/backfill.ts`) move beside their plugins, keeping `ctx.enqueue` as the one verb on the context.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **A** was picked over **B** (They move to caravan, which owns durable work), **C** (They move to litestone, which owns their axes).
+
+The paper's recommendation, taken as written: C breaks Invariant 1 the moment a sweep needs a principal (`app.runAs`), and B makes a queue read `.lite`. A is where they already are, with the sentence that makes the next one land in the same place.
+
+### <a id="fjs-d642"></a>2026-10-08 · `FJS-D642` — Who owns the scaffolder — Delete `init`, `setup`, `generators`, `ui` and `build-app`. Any step `fli new` and `fli deploy` lack is moved into them first, named in the same change. `repl` stays as a tool against a running app.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **B** was picked over **A** (Keep both; junction's is for an API-only app).
+
+The paper's recommendation, taken as written: the Packages table already states one implementation of what an app looks like, and an API-only app is `fli new` with one surface. The repl is not a scaffold and is kept on its own merits; whether it duplicates the devtools plugin is a later, smaller question.
+
+### <a id="fjs-d641"></a>2026-10-08 · `FJS-D641` — What happens to `storage/database/` — Delete it. `createApp({ db })` is the one way in, and the client is litestone's or anything table-shaped. `config.database` leaves `junction.config.js`, the seven `url: ''` guards go with it, and basecamp opens its handle through litestone.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **B** was picked over **A** (Keep it, for an app with no litestone).
+
+The paper's recommendation, taken as written: the modelless app it was kept for is served by `createApp({ db })` with any client, and a numbered-SQL migration runner is a second origin for what litestone's differ already owns. `FJS-D260` is the precedent: delete rather than delegate, because the shapes were never the same.
+
+### <a id="fjs-d640"></a>2026-10-08 · `FJS-D640` — Is the host allowed to construct a battery for you — The bus is Announcement and stays. The cache and the scheduler stay default-constructed, because two axes read the cache and `FJS-D36` already ruled the timer, but each is reached through an augmented slot rather than an imported type, so the host could be handed another. The database opener goes (next question).
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **B** was picked over **A** (As now. The four stay default-constructed and the import test allows them by name), **C** (Only the bus is constructed; cache and scheduler become `app.configure(cache())` and `app.configure(scheduler())`).
+
+The paper's recommendation, taken as written: it is A with the slot pattern made uniform, and it keeps `FJS-D36`. C reopens a ruling for no measured gain: nothing in the tree wants a second scheduler or cache implementation.
+
 ### <a id="fjs-d628"></a>2026-10-07 · `FJS-D628` — `model: null` declares a service over no model, and a delegated caller — a support operator or an agent over `/mcp` — cannot change the credentials of the person it acts for
 
 `@frontierjs/auth`'s five services declared their methods as bare names, so `/mcp` graded every one `ungraded` and offered a USER agent `api-keys_create`, which minted a durable bearer that outlives the session `FJS-D258` makes the agent's ceiling (`FJS-1795`). Declaring the `FJS-D408` levels was not enough on its own: `sessions` reaches auth's own `model Session` by name and `account` reaches a row-tenanted app's `model Account`, so a declared gate on their CRUD verbs was refused as a second number beside `@@gate` — measured, `GET /sessions` answered 500.
@@ -9970,6 +10044,30 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d652"></a>2026-10-08 · `FJS-D652` — Who owns the field rules' import path — `@frontierjs/sierra/field-rules`, the path ui's fixtures already write, added to `exports`.
+
+Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **A** was picked over **B** (Toolbelt).
+
+The paper's recommendation, taken as written: the leaf is already a leaf, and A makes the path that is already written a real one. B misreads toolbelt's license: `FJS-D26` admits *facts with many possible answers that must have one*, and the field rules are a projection of one schema, not a shared fact.
+
+### <a id="fjs-d651"></a>2026-10-08 · `FJS-D651` — Which way may Navigation and Resource import — State it. Resource may import Navigation and never the reverse, and the edge test holds the direction.
+
+Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **B** was picked over **A** (Cut it. The list's route binding and the prefetch invalidation are handed in at boot, and the two axes are independent).
+
+The paper's recommendation, taken as written: a list answering only while its route is on screen *is* a Navigation fact, and cutting it adds a seam before anything has measured a cost, the reason `FJS-D640` refused its **C**. Jetty under Q2's **B** is the measurement: if the router is weight jetty cannot carry, **A** is owed, and Q2's **C** needs it anyway.
+
+### <a id="fjs-d650"></a>2026-10-08 · `FJS-D650` — Where does the Resource live, and what is it called — A, and then jetty de-forks onto it: jetty registers a client-shaped object over its relay, the way `connectApp()` already makes a Resource over another app, and its `store.js` and `resource.js` go.
+
+Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **B** was picked over **A** (Rename in place: `src/resource/`, `@frontierjs/sierra/resource`, every caller in the same change, nothing kept for the old spelling. Jetty's fork stays), **C** (Its own package, `@frontierjs/resource`, above junction, which sierra and jetty both peer. It extracts the Resource, not offline alone, so `FJS-D297`'s objection to *a package spanning realms* does not apply. It has to cut § 2.2's import of the router first, and it adds a package), **D** (Leave it).
+
+The paper's recommendation, taken as written: the rename is a mechanical sweep, and the fork has already cost a lost-update defect, which is the drift the second copy was always going to produce. B reaches one implementation without a new package, and the cost it has to measure is the router riding into jetty's bundle. If that cost is real, C is the next move, with nothing to undo. D fails *one name* (§ II) every time a reader looks for the Resource, and *one owner* every time sierra's copy is fixed and jetty's is not.
+
+### <a id="fjs-d629"></a>2026-10-08 · `FJS-D629` — Is a reactivity hint reported for a module no published script contains — A `static` build holds its hints until the prune step and reports those for modules a published script contains. `vite dev` and an `spa` build are unchanged, since their code all runs in a browser.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (keep strict everywhere. An author silences each read with `var` or a `$:` watch, in every block of every site), **C** (skip member reads through a namespace import of `export const`s), **D** (the default tier, not strict, for `target: 'static'`).
+
+The paper's recommendation, taken as written: the hint is a claim about code in a browser, and B derives which code that is from the build's own answer, with no setting. A pays the same `var` workaround in every block of every client site, which under *paved road vs. the workaround* is a measurement of the road. C rests on a false premise (a `const` binding to an object can still be mutated), and the compiler would have to resolve another module to apply it. D turns strictness off for an island on a static page, where the hint is true, which *ergonomics vs. strictness* rules against: settle it by what a mistake destroys, not per target. Cost of B: a module-to-chunk map from the bundle, and a test where a static fixture's island read still warns and an unshipped block's does not. Dev keeps printing the 21, which is true there, because a dev server navigates client-side.
+
 ### <a id="fjs-d591"></a>2026-10-05 · `FJS-D591` — FJS-390 — Does a row action's busy state come from keying `$async` per call, or from a `busy(el)` handle beside it — Key `$async` per call: `$async.remove.pendingFor(row.id)` is true while a call whose first argument is `row.id` is in flight, with the error keyed the same way. A function that has to lock only part of its body is split in two. (`pendingFor` is a placeholder name.).
 
 Asked in [`IDEAS/app-conventions-audit.md`](IDEAS/app-conventions-audit.md) § Open questions. **A** was picked over **B** (`busy(el)` in `@frontierjs/ui`, as `FJS-D590` ruled: answers `release(error?)`, and `busy(el, promise)` releases itself when the promise settles), **C** (both: keyed `$async` inside a `.mesa` component, `busy(el)` for plain JS that RULE 16 cannot reach).
@@ -11955,6 +12053,30 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d653"></a>2026-10-08 · `FJS-D653` — What owns *is this file inside the root* — Keep both copies, with one vector set of URLs and verdicts that both packages' tests read (`FJS-D631`'s *vectors*).
+
+Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **C** was picked over **A** (A toolbelt subpath for the string half (decode, refuse `..` and NUL, the prefix test), with `realpath` left to each caller), **B** (Sierra's static origins move to outpost or cli, the Release side, and the copy count stays two).
+
+The paper's recommendation, taken as written: the two copies drifted on cases, not on code, and a vector set is the one origin for the cases without an import that Invariant 1 or toolbelt's no-`node:` rule would refuse. A is worth it only if a third server appears. B relocates the copy without removing it.
+
+### <a id="fjs-d649"></a>2026-10-08 · `FJS-D649` — What is sierra's edge — The batteries stay in sierra behind a seam, as `FJS-D635` and `FJS-D639` ruled. Nothing in an axis directory imports one, a test fails if anything does, and every battery is reached by its subpath. A new `sierra.config.js` key, `page.` field, subpath or `src/` directory names its axis, or it is a battery.
+
+Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **A** was picked over **B** (Each battery moves to its own package), **C** (Admit them and widen the edge to name them).
+
+The paper's recommendation, taken as written: § 1 measured every battery as already outside the axes. A costs one test and one entry trim, and B stays open with nothing to untangle first. C is what makes "done" unreachable.
+
+### <a id="fjs-d648"></a>2026-10-08 · `FJS-D648` — What is the `content/settings/site.js` key that names `@kobami/ksite`, and what is the noun for what it names — `preset: '@kobami/ksite'`, and the noun is *Preset*: a package that contributes blocks, layouts, stylesheets and build plugins to a site-kit site.
+
+Asked in [`IDEAS/site-kit-plan.md`](IDEAS/site-kit-plan.md) § Open questions. **A** was picked over **B** (`engine: '@kobami/ksite'`, `FJS-D605`'s own word), **C** (`theme: '@kobami/ksite'`, as Jekyll and Hugo spell it).
+
+The paper's recommendation, taken as written: *familiarity vs. precision*: UnoCSS, Docusaurus and Babel all use preset for a package the consumer names that adds a bundle of contributions to a host tool, and the word fits whole. B gives every site two engines: `FJS-D604` made site-kit the engine and shrank ksite to the template it carries, and `ARCHITECT.md` already refuses *engine* for a Rig. C is the closest ecosystem match, but `theme:` is already the switcher's key in this same file and `@frontierjs/css`'s word for a class on `<html>`. `extends` is not an option: it is tsconfig's word for merging two configs of the same shape, which this is not.
+
+### <a id="fjs-d639"></a>2026-10-08 · `FJS-D639` — What is junction's edge — The batteries stay in junction behind a seam, as `FJS-D635` ruled for litestone. Nothing under `src/core/` or `src/transport/` imports one, a test fails if anything does, and the test's allow-list names the two ruled exceptions. Every battery is reached by its subpath and leaves the main entry, which re-exports all of them today: the subpath exists for every one but the export and metrics plugins and the better-auth adapter. A new `ctx` field, `app.` claim, config key or `src/` directory names its axis, or it is a battery.
+
+Asked in [`IDEAS/junction-scope.md`](IDEAS/junction-scope.md) § Open questions. **A** was picked over **B** (Each battery moves to its own package. The core exports the four axes and the host), **C** (Admit them into the core and widen the edge to name them).
+
+The paper's recommendation, taken as written: § 1 measured every battery but five as already outside the core, and three of the five are the host constructing a default. A costs the allow-list and one moved import. B stays open as a later move with nothing to untangle first; `FJS-D630` already says caravan and conduit are batteries and not rigs, so an extracted mail package has a ring to land in. C is what makes "done" unreachable.
+
 ### <a id="fjs-d627"></a>2026-10-07 · `FJS-D627` — Which surface owns a file two surfaces run — The side that runs it. The other surface gets its output through a service and never imports it by relative path.
 
 Asked in the app layout audit ([Where Code Lives](https://claude.ai/artifact/3dvt1QFJo4LCqXpfyYRsjP), row 6); the owner accepted the recommendation. Transit's `api/src/reports/index.ts` imports `../../../web/src/reports/RevenueReport.query.js`, so `web/` cannot be built, moved or dropped alone, and surfaces are peers (Invariant 3). The query runs on the server, so it moves to `api/src/domain/reports/`. The template renders on screen and in email, and it follows `example/`'s precedent: a `.mesa` file the server renders lives in `api/src/emails/`, and the screen gets the rendered report through the service.
@@ -13089,7 +13211,9 @@ reads exactly like a decided one. The suite walks it.
 `packages/conduit/src/types.ts` (`CONDUIT_ERROR_KINDS`) ·
 `packages/conduit/conduit.test.ts` § *retryable (FJS-739)*.
 
-### <a id="fjs-d193"></a>2026-09-04 · `FJS-D193` — a webhook subscriber is an audience, and the audience is whoever registered it
+### <a id="fjs-d193"></a>2026-09-04 · `FJS-D193` — a webhook subscriber is ~~an audience~~ a principal, and ~~the audience~~ it is whoever registered it
+
+*Amended 2026-10-07:* the word, not the substance, by [`FJS-D636`](#fjs-d636). The principal a delivery is graded as is the *subscriber*, a Principal under [`FJS-D633`](#fjs-d633), and *audience* below reads as subscriber.
 
 `FJS-631` closed the broadcast half: `@@allow` compiles into a SELECT's WHERE, a
 frame is not a SELECT, so a row reaching somebody over a socket had been filtered
@@ -14156,6 +14280,16 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d635"></a>2026-10-08 · `FJS-D635` — What is litestone's edge — The batteries stay in litestone behind a seam. Nothing under `src/core/` imports them, a test fails if anything does, and each one leaves the main entry for its own subpath (`./storage`, `./replicate`, `./transform`). Studio's server leaves `cli.js` for its own file, and its saved queries leave the app's database. A new `.lite` word, `$` method or `src/` directory names the axis it serves, or it is a battery.
+
+Asked in [`IDEAS/litestone-scope.md`](IDEAS/litestone-scope.md) § Open questions. **B** was picked over **A** (Each battery moves to its own package. The core's package exports only the four axes), **C** (Admit them into the core and widen the edge to name them).
+
+The paper's recommendation, taken as written: § 1 measured all four as already outside the core, so B costs about a day and no core surgery. It writes the edge down and gives it a failing test (§ V's ninth question), and A stays open as a later move with nothing to untangle first. C makes "done" unreachable, which is the question this paper set out to answer.
+
+**The edge: litestone owns what is true about a row in a database** — its shape, who may read and write it, what moves it may make, and how its shape changes. Object storage, moving data between machines, ETL, and showing data to a person are batteries. Work over time is caravan's, and invariants spanning rows stay in application code (`FJS-D168`). A new `.lite` word, `$` method or `src/` directory names the axis it serves, or it is a battery. `driver jsonl` is the one area this does not settle; it is its own question in the same paper.
+
+*Lives in:* `IDEAS/litestone-scope.md` § 1 · `packages/litestone/src/index.js` (the subpaths) · the import test, not yet written; until it lands nothing enforces this.
 
 ### <a id="fjs-d549"></a>2026-10-05 · `FJS-D549` — Does FJS-D533 stand now that an app relies on nesting — A declared subset that includes nesting: block maps and sequences at any depth, `|` and `>` scalars, and flow collections, with anchors, aliases, merge keys and tags refused by name. It's one toolbelt kit with no dependency, as A intended, and it holds everything ksite writes. - **Recommend C.** D533's reason was the part of YAML that caused `FJS-821`, and C still refuses that part. The nesting D533 gave up is something a real client site depends on. A leaves ksite's content split across two formats, which is a cost every client site cut from the template would pay.
 

@@ -12,13 +12,13 @@ export { tempDir, reapTempDirs } from './tmp-dirs.js'
 
 import { parse, inlineImportsFromDisk } from './core/parser.js'
 import { modelToAccessor }          from './core/ddl.js'
-import { createClient, buildRelationMap } from './core/client.js'
+import { createClient } from './core/client.js'
 import { cloneInto }                from './testdb.js'
 import { parseGateString, GatePlugin }  from './plugins/gate.js'
 import { AccessDeniedError }        from './core/plugin.js'
 import { levelLabel, REACHABLE_LEVELS, deriveAccess, gateLadder, expectedVerdict } from './access.js'
 import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
-import { buildPolicyMap, evalJs, allowHolds, denyFires } from './core/policy.js'
+import { evalJs, allowHolds, denyFires } from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
 import { capabilityNames }          from './core/capabilities.js'
 import { isServerAssignedId }       from './core/ids.js'
@@ -690,13 +690,14 @@ export async function createTestEnv(opts = {}) {
                                 ops = ['read', 'update', 'delete', 'create'] } = {}) => {
       const schema     = against ?? built.parsed.schema
       const who        = withDeclaredCapabilities(principal ?? withPolicyClaims(DEFAULT_POLICY_PRINCIPAL, schema), schema)
-      const policyMap  = buildPolicyMap(schema, buildRelationMap(schema))
       const access     = deriveAccess(schema)
       const sys        = built.db.asSystem()
       const mismatches = []
       const before     = snapshot(built.db)
       const { chain }  = _chains(schema, sys)
-      const ctx        = { auth: who }
+      // `shapes: null` is the stated no-client evaluation (policy.js `shapeOf`):
+      // a `check()` or a path across a relation is reported, never walked.
+      const ctx        = { auth: who, shapes: null }
 
       try {
         for (const model of schema.models) {
@@ -726,7 +727,7 @@ export async function createTestEnv(opts = {}) {
               ctx.levelFor = () => level
               try {
                 mismatches.push(...await _gradeCreateDenies({
-                  schema, model, rules, who, ctx, policyMap, chain,
+                  schema, model, rules, who, ctx, chain,
                   client: await env.atLevel(level, who),
                 }))
               } finally { restore(built.db, before) }
@@ -832,7 +833,7 @@ export async function createTestEnv(opts = {}) {
 
             const sides = new Set()
             for (const [id, row] of stored) {
-              const expected = _policyAdmits(rules, ctx, row, model.name, policyMap)
+              const expected = _policyAdmits(rules, ctx, row, model.name)
               const got      = admitted.has(id)
               sides.add(expected)
               if (expected === got) continue
@@ -2757,7 +2758,7 @@ function withPolicyClaims(who, schema) {
 // says nothing about the deny. A path allow (`flow.ownerId == auth().id`) is
 // made to hold by building the parent to match; without that every payload is
 // refused by the allow and a dropped deny is invisible.
-async function _gradeCreateDenies({ schema, model, rules, who, ctx, policyMap, chain, client }) {
+async function _gradeCreateDenies({ schema, model, rules, who, ctx, chain, client }) {
   const denies = rules.filter(r => r.kind === 'deny' && !_hasCheckNode(r.expr))
   if (!denies.length) return []
 
@@ -2813,7 +2814,7 @@ async function _gradeCreateDenies({ schema, model, rules, who, ctx, policyMap, c
       }
     } catch (err) { lastRefusal = err.message; continue }
 
-    const expected = _policyAdmits(denies, ctx, data, model.name, policyMap)
+    const expected = _policyAdmits(denies, ctx, data, model.name)
     let got = true
     try { await client[acc].create({ data }) }
     catch (err) { got = false; lastRefusal = err.message }
@@ -3057,14 +3058,14 @@ function _fitsFieldRules(def, value) {
 // Does the declared rule set admit this row? `@@deny` overrides, an operation
 // with no `@@allow` is unrestricted — the same precedence buildPolicyFilter
 // compiles into SQL, stated here over the JS evaluator instead.
-function _policyAdmits(rules, ctx, row, modelName, policyMap) {
+function _policyAdmits(rules, ctx, row, modelName) {
   const denies = rules.filter(r => r.kind === 'deny')
   const allows = rules.filter(r => r.kind === 'allow')
   // The two rule kinds read an UNKNOWN oppositely and it is the same asymmetry
   // the compiled WHERE has: `AND NOT (NULL)` keeps no row, `(NULL)` admits none
   // (`FJS-668`). Asking `Boolean()` for both makes this verifier disagree with
   // the SQL it exists to grade.
-  const val = (r) => evalJs(r.expr, ctx, row, modelName, policyMap, {})
+  const val = (r) => evalJs(r.expr, ctx, row, modelName)
 
   if (denies.some(r => denyFires(val(r)))) return false
   if (!allows.length)  return true

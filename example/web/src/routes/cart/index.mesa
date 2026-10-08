@@ -20,7 +20,7 @@ title: Basket
            applyDiscount, removeDiscount, setShipping, loadShippingOptions } from '@/stores/cart.js'
   import { money } from '@/lib/money.js'
   import { prefs } from '@/stores/prefs.js'
-  import { toFieldErrors } from '@frontierjs/sierra/junction'
+  import { toFieldErrors } from '@frontierjs/sierra/resource'
   import { goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

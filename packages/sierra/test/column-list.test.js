@@ -26,7 +26,7 @@ import { describe, test, expect } from 'vitest'
 import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 
-import { buildFieldRules, columnList } from '../src/junction/field-rules.js'
+import { buildFieldRules, columnList } from '../src/resource/field-rules.js'
 
 const SOURCE = `
 database main { path ":memory:" }

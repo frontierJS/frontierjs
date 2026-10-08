@@ -11,7 +11,7 @@
   // (`@@allow('read', userId == auth().id)`), and the server is what enforces
   // it — which is why signing out and back in as somebody else needs no code on
   // this side at all.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const notifications = createResource('notifications', {
     model: 'Notification',

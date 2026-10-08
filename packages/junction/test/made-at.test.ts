@@ -36,7 +36,7 @@ async function boot() {
   const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
   const app: any = createApp({
     db,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+    config: { port: 0, services: { dir: '/nonexistent' },
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
   app.services.register(createService({ name: 'clock-entries', model: 'ClockEntry' }))
@@ -166,7 +166,7 @@ describe('over the socket', () => {
     const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
     const app: any = createApp({
       db,
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+      config: { port: 0, services: { dir: '/nonexistent' },
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
     app.services.register(createService({ name: 'clock-entries', model: 'ClockEntry' }))

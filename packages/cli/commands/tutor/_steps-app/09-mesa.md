@@ -99,7 +99,7 @@ writeFileSync(comp, [
 // Both edits refuse rather than writing the file back unchanged. A rewrite that
 // silently missed its anchor leaves the probe below asserting the scaffold's
 // own page and reporting the lesson green.
-const IMPORT = "  import { status } from '@frontierjs/sierra/junction'"
+const IMPORT = "  import { status } from '@frontierjs/sierra/resource'"
 const MOUNT  = '<section class="tour stack gap-md">'
 const TAG    = '<Tally label="notes read" />'
 

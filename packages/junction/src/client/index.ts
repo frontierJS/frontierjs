@@ -146,6 +146,28 @@ export interface JunctionClientOptions {
   // Relay both ship retain/release and it is the most-complained-about part of
   // either. It is also what makes list -> detail -> back warm (`FJS-D138`).
   nodeTtlMs?: number
+  // Hand every service call to whoever holds the connection instead of
+  // opening one — for a context that cannot keep a socket, like an extension
+  // page whose connection lives in its service worker. The holder makes each
+  // call with `forward()` and hands pushes back through `receive()`. A call
+  // only HTTP can carry (a file, a filtered bulk write, a findFirst) is
+  // refused by name: there is no origin here to send it to.
+  relay?: (call: RelayedCall) => Promise<unknown>
+}
+
+/**
+ * One service call as the socket would have framed it — what a relayed client
+ * hands over, and what the holding client makes with `forward()`. `query` is
+ * already in wire spelling, filters and `$`-directives in one bag, exactly as
+ * the frame carries it.
+ */
+export interface RelayedCall {
+  service: string
+  method:  string
+  id:      string | number | null
+  data:    Record<string, unknown> | null
+  query:   Record<string, unknown> | null
+  opts?:   CallOptions
 }
 
 /**
@@ -1275,6 +1297,7 @@ export class JunctionClient extends EventEmitter {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private _reconnectAttempts: number = 0
   private _intentionalClose: boolean = false
+  private _relay: ((call: RelayedCall) => Promise<unknown>) | null = null
 
   constructor(opts: JunctionClientOptions = {}) {
     super()
@@ -1309,6 +1332,12 @@ export class JunctionClient extends EventEmitter {
     this.workspaceId = opts.workspaceId ?? null
     for (const [k, v] of Object.entries(opts.callHeaders ?? {})) this.setCallHeader(k, v)
     this._build = opts.build?.trim() || null
+    // Every proxy method picks the frame path on `_wsReady`, and a relayed
+    // client has no other path, so it is ready for its whole life.
+    if (opts.relay) {
+      this._relay   = opts.relay
+      this._wsReady = true
+    }
   }
 
   // ── Auth ────────────────────────────────────────────────────────────
@@ -2020,6 +2049,12 @@ export class JunctionClient extends EventEmitter {
     body?: unknown,
     opts: { skipAuth?: boolean; header?: Record<string, string>; callHeaders?: Record<string, string> } = {}
   ): Promise<unknown> {
+    if (this._relay) {
+      throw new Error(
+        `${method} ${path} cannot be relayed — this client hands its calls to the context holding the connection, ` +
+        `and only a call the socket can frame crosses it. A file, a filtered bulk write, a findFirst and an /auth route ` +
+        `travel as HTTP: make them where the connection is.`)
+    }
     const url = this._url + path
     const fileUpload = body !== undefined && _hasFiles(body)
 
@@ -2140,8 +2175,44 @@ export class JunctionClient extends EventEmitter {
   // ── WebSocket ────────────────────────────────────────────────────────
 
   connect(): void {
+    if (this._relay) return // the holder owns the socket
     if (this._ws && this._ws.readyState < 2) return // already open or connecting
     this._openWs()
+  }
+
+  /**
+   * A frame the connection delivered — `connected`, or a push `event`.
+   *
+   * The socket's own handler calls this for both, and a relayed client is fed
+   * through it by whoever holds the connection, so the two cannot answer one
+   * frame differently. A `connected` after the first is a reconnect and emits
+   * `resync`, which is what reloads a live list across the gap.
+   */
+  receive(msg: Record<string, unknown>): void {
+    if (msg.type === 'connected') {
+      this._noteConnected(msg)
+      return
+    }
+    if (msg.type !== 'event') return
+
+    // Format: { type: 'event', event: 'servers patched', data: {...} }
+    const eventName = msg.event as string
+    const data = msg.data
+    this.emit('event', eventName, data)
+
+    const parts = typeof eventName === 'string' ? eventName.split(' ') : []
+    if (parts.length === 2) {
+      const [serviceName, method] = parts
+      this._services.get(serviceName)?._receive(method, data)
+    }
+  }
+
+  /**
+   * Make a call another client relayed here, on whichever transport this one
+   * has — the socket when it is up, HTTP when it is not.
+   */
+  forward(call: RelayedCall): Promise<unknown> {
+    return this._wsCall(call.service, call.method, call.id ?? null, call.data ?? null, call.query ?? null, call.opts)
   }
 
   disconnect(): void {
@@ -2217,12 +2288,12 @@ export class JunctionClient extends EventEmitter {
 
       const type = msg.type as string
 
-      // ── Server ready ──────────────────────────────────────────────
-      // Sent by the server at the end of _wsOpen, after verifySession and
-      // connMap registration are complete. Only now is it safe to send
+      // ── Server ready, and push events ─────────────────────────────
+      // `connected` is sent at the end of _wsOpen, after verifySession and
+      // connMap registration are complete. Only then is it safe to send
       // service calls — the server has the auth context for this socket.
-      if (type === 'connected') {
-        this._noteConnected(msg)
+      if (type === 'connected' || type === 'event') {
+        this.receive(msg)
         return
       }
 
@@ -2275,24 +2346,6 @@ export class JunctionClient extends EventEmitter {
         }
         return
       }
-
-      // ── Push event from server ────────────────────────────────────
-      // Format: { type: 'event', event: 'servers patched', data: {...} }
-      if (type === 'event') {
-        const eventName = msg.event as string // e.g. 'servers patched'
-        const data = msg.data
-
-        // Emit on the client globally
-        this.emit('event', eventName, data)
-
-        // Also emit on the specific service proxy
-        const parts = eventName.split(' ')
-        if (parts.length === 2) {
-          const [serviceName, method] = parts
-          this._services.get(serviceName)?._receive(method, data)
-        }
-        return
-      }
     }
   }
 
@@ -2317,6 +2370,9 @@ export class JunctionClient extends EventEmitter {
     query?: Record<string, unknown> | null,
     opts?: CallOptions
   ): Promise<unknown> {
+    if (this._relay) {
+      return this._relay({ service, method, id, data, query: query ?? null, ...(opts ? { opts } : {}) })
+    }
     // Fall back to HTTP if WS is not ready
     if (!this._wsReady || !this._ws) {
       return this._httpFallback(service, method, id, data, query ?? null, opts)

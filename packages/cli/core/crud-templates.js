@@ -53,7 +53,7 @@ const idFieldLine = (res) => `  const idField = ${res}.context.idField`
 // its own session module; a scaffold has none, and sierra's session is what a
 // sign-in fills -- 0 for a stranger, null where the server publishes no level,
 // which `transitions()` reads as permissive.
-const SIERRA_SESSION = `import { session } from '@frontierjs/sierra/junction'`
+const SIERRA_SESSION = `import { session } from '@frontierjs/sierra/resource'`
 const sessionLine = (o) => `  ${o.sessionImport ?? SIERRA_SESSION}\n`
 
 // The moves a row may make, one button each, read off `@@transitions` when the

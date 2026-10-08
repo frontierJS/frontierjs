@@ -5,7 +5,8 @@
 // same file is loaded under the root's index.html id, so it is emitted as
 // `dist/index.html`, the file Sierra's prerender reads asset URLs from.
 //
-// The entry is `/@site-kit/main.js`, resolved here to the kit's src/main.js. A
+// The entry is `/@site-kit/main.js`, resolved here to the kit's src/main.js,
+// or to a preset's own entry when it names one with its own document. A
 // package name in a script `src` 404s in dev, and an inline module script
 // needs Vite's html-proxy, which keys on an index.html that is not on disk.
 //
@@ -15,17 +16,18 @@
 // a site without one gets an empty module.
 
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, extname, resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 
 const ENTRY  = '/@site-kit/main.js'
 const STYLES = 'virtual:site-kit/styles'
 
 /**
- * @param {string} file — the kit's index.html
+ * @param {object} shell
+ * @param {string} shell.html — the dev document; its script names `/@site-kit/main.js`
+ * @param {string} shell.entry — the file `/@site-kit/main.js` resolves to
  * @returns {import('vite').Plugin}
  */
-export function siteShell(file) {
-  const main = resolve(dirname(file), 'src/main.js')
+export function siteShell({ html: file, entry: main }) {
   let html = ''
   let styles = ''
 

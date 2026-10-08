@@ -65,9 +65,9 @@ function json(body) {
 }
 
 let client
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => client }))
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => client }))
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { generateSchemas }  = await import('../src/build/schema-plugin.js')
 
 // ─── The router ─────────────────────────────────────────────────────────────

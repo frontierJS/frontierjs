@@ -21,7 +21,7 @@
   // form can call the service directly and still be seeded. It calls the service
   // directly because the reply carries the token and the accept link, which are
   // not columns and are on no later read.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const invitations = createResource('invitations', {
     hooks: { before: { create: [stampExpiry] } },

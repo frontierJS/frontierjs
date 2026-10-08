@@ -11,9 +11,9 @@
 
 const OP_KEYS = new Set(['create', 'connect', 'connectOrCreate', 'disconnect', 'delete', 'update'])
 
-export function collectNestedOps(data, tableName, relationMap, ops = []) {
+export function collectNestedOps(data, tableName, shapes, ops = []) {
   if (!data || typeof data !== 'object') return ops
-  const rels = relationMap[tableName] ?? {}
+  const rels = shapes[tableName].relations
 
   for (const [key, val] of Object.entries(data)) {
     if (!(key in rels) || !val || typeof val !== 'object') continue
@@ -33,7 +33,7 @@ export function collectNestedOps(data, tableName, relationMap, ops = []) {
 
     if (val.create) {
       const rows = Array.isArray(val.create) ? val.create : [val.create]
-      for (const row of rows) collectNestedOps(row, target, relationMap, ops)
+      for (const row of rows) collectNestedOps(row, target, shapes, ops)
     }
   }
   return ops
@@ -53,10 +53,10 @@ export function collectNestedOps(data, tableName, relationMap, ops = []) {
 // which is a read of it too. Deduped by model: the answer is per model, so a
 // tree that mentions the same one ten times asks once.
 
-function pushRelationTargets(spec, model, relationMap, out, seenPaths) {
+function pushRelationTargets(spec, model, shapes, out, seenPaths) {
   if (!spec || typeof spec !== 'object') return out
 
-  const rels = relationMap[model] ?? {}
+  const rels = shapes[model].relations
 
   for (const [key, val] of Object.entries(spec)) {
     if (!val) continue
@@ -90,19 +90,19 @@ function pushRelationTargets(spec, model, relationMap, out, seenPaths) {
     if (seenPaths.has(path)) continue
     seenPaths.add(path)
 
-    pushRelationTargets(val.include, rel.targetModel, relationMap, out, seenPaths)
-    pushRelationTargets(val.select,  rel.targetModel, relationMap, out, seenPaths)
+    pushRelationTargets(val.include, rel.targetModel, shapes, out, seenPaths)
+    pushRelationTargets(val.select,  rel.targetModel, shapes, out, seenPaths)
   }
 
   return out
 }
 
-export function collectIncludedModels(args, model, relationMap) {
+export function collectIncludedModels(args, model, shapes) {
   if (!args) return []
   const out   = new Set()
   const paths = new Set()
-  pushRelationTargets(args.include, model, relationMap, out, paths)
-  pushRelationTargets(args.select,  model, relationMap, out, paths)
+  pushRelationTargets(args.include, model, shapes, out, paths)
+  pushRelationTargets(args.select,  model, shapes, out, paths)
   out.delete(model)
   return [...out]
 }

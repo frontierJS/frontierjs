@@ -65,7 +65,7 @@ unwritten — but the floor under it has a referee rather than silence.
 nothing.** No OPFS and no wa-sqlite; no sync or conflict attribute in
 `packages/litestone/src/core/parser.js`; no `bun build --compile` path in `fli`.
 `navigator.onLine` appears nowhere in `packages/junction/src/client/` or
-`packages/sierra/src/junction/`, and `localStorage` still holds the auth token and
+`packages/sierra/src/resource/`, and `localStorage` still holds the auth token and
 nothing else.
 
 So: **less greenfield than it was, and greenfield where the work is.** What

@@ -52,7 +52,7 @@ const EMPTY = new Set()
 export class CapabilityPlugin extends Plugin {
   onInit(schema, ctx) {
     this._decls       = capabilityDeclarations(schema)
-    this._relationMap = ctx.relationMap ?? {}
+    this._shapes      = ctx.shapes
   }
 
   /** Does this model declare a grid at all, and does the grid cover reads? */
@@ -106,19 +106,19 @@ export class CapabilityPlugin extends Plugin {
 
   async onBeforeRead(model, args, ctx) {
     this._check(model, 'read', ctx)
-    for (const target of collectIncludedModels(args, model, this._relationMap))
+    for (const target of collectIncludedModels(args, model, this._shapes))
       this._check(target, 'read', ctx)
   }
 
   async onBeforeCreate(model, args, ctx) {
     this._check(model, 'create', ctx)
-    for (const { model: m, op } of collectNestedOps(args?.data, model, this._relationMap))
+    for (const { model: m, op } of collectNestedOps(args?.data, model, this._shapes))
       this._check(m, op, ctx)
   }
 
   async onBeforeUpdate(model, args, ctx) {
     this._checkUpdate(model, args, ctx)
-    for (const { model: m, op } of collectNestedOps(args?.data, model, this._relationMap))
+    for (const { model: m, op } of collectNestedOps(args?.data, model, this._shapes))
       this._check(m, op, ctx)
   }
 

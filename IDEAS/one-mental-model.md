@@ -188,7 +188,7 @@ app.services.register(createService({
 
 ### UI realm — three ways
 
-**5h. Resource + hooks** (`packages/sierra/src/junction/resource.js`):
+**5h. Resource + hooks** (`packages/sierra/src/resource/resource.js`):
 
 ```js
 const leads = createResource('leads', schema, {
@@ -244,7 +244,7 @@ class PaymentReceived extends Notification {
 | File in a location        | Mesa component, fli command, Sierra route, Caravan job   | Yes                                |
 
 **The win.** API hooks and UI hooks are the same concept with the same four phase
-names and a mirrored Context — `packages/sierra/src/junction/resource.js:9`
+names and a mirrored Context — `packages/sierra/src/resource/resource.js:9`
 documents it as *"Hook phases — match the API realm exactly."* Learn one, you know
 the other. This is the mental model actually working, and it is the template for
 everything else on this list.

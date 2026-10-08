@@ -1,5 +1,9 @@
 # Changes — @frontierjs/auth
 
+## 2026-10-08 — the README imports `createResource` from `@frontierjs/sierra/resource` (`FJS-D650`)
+
+It followed sierra's rename of `./junction`.
+
 ## 2026-10-07 — an operator can see and end other people's access, and invite one (`FJS-1935`)
 
 `sessions` and `api-keys` are the caller's own by design, so an app's administrator had no way to list who else was signed in, end a stolen session, revoke a key or invite somebody. New service `people` (rename or drop it with `services: { people }`): `GET /people/{userId}` answers their sessions and keys; `revokeSession`, `revokeApiKey` and `signOut` end them; `remove` deletes the account with its credentials and sessions, which `users.remove` does not (it leaves the password hash); `invite` makes an account with no way in and returns the token that sets its first password, which the operator hands over because nothing is mailed. Each method is declared ADMINISTRATOR(5) and graded by the app's own gate. Where `services.standingLevel` or `level` is given the person must grade below the operator, as for `account-recovery`; where it is absent the floor is all there is. Reading is open to an agent over `/mcp`. Every write is refused there and inside a support episode, so the credential writes refused are sixteen, not eleven. The provider gains `createInvitation`, and `revokeSession`, `revokeSessions` and `revokeApiKey` take `actorId`, as does `deleteUser`, so the audit trail names the operator and not the person. Proved in `test/people.test.ts`: each refusal is paired with the call succeeding and the state read again.

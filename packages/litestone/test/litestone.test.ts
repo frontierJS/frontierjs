@@ -11174,10 +11174,15 @@ describe('enum transitions — conflict and upsert', () => {
       const stmt = origPrepare(sql)
       if (!hooked && /UPDATE.*order.*RETURNING/i.test(sql)) {
         hooked = true
-        const origGet = stmt.get.bind(stmt)
-        ;(stmt as any).get = (...args: any[]) => {
+        // The executor reads a RETURNING statement with `all`; a single row
+        // used to be read with `get`. Both answer *no row*.
+        ;(stmt as any).get = (..._args: any[]) => {
           ;(rawDb as any).prepare = origPrepare
           return null  // simulate race: 0 rows updated
+        }
+        ;(stmt as any).all = (..._args: any[]) => {
+          ;(rawDb as any).prepare = origPrepare
+          return []
         }
       }
       return stmt

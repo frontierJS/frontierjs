@@ -17,7 +17,7 @@
   // who could state the transition directly would mark a run calculated with no
   // payslips under it.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const payRuns = createResource('pay-runs', { model: 'PayRun' })
 </script>

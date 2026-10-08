@@ -1404,7 +1404,7 @@ drive's console check could not pass, and the app that has three of them was
 teaching everyone to read past the one warning that means something.
 `createResource(name, { model: null })` is the declaration that turns it off:
 *this service has no model*, as opposed to *this model was not found*. Shipped
-in `packages/sierra/src/junction/resource.js`.
+in `packages/sierra/src/resource/resource.js`.
 
 **A `@@gate("5")` on a count is still a refusal.** The onboarding read was
 written against the caller's own client and threw for anybody below admin — on

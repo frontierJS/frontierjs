@@ -58,7 +58,7 @@ const retargetDb = (source, db) =>
 const MARK = '// ─── Notifications — installed by fli notifications:install ─'
 
 const wiringHint = `
-  import { mailerPlugin }        from '@frontierjs/junction'
+  import { mailerPlugin }        from '@frontierjs/junction/mail'
   import { notificationsPlugin } from '@frontierjs/notifications'
 
   // The mailer FIRST — the plugin declares requires: ['mailer'] when its email

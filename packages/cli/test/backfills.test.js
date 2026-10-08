@@ -27,7 +27,7 @@ afterEach(()  => rmSync(root, { recursive: true, force: true }))
 describe('declaredBackfills', () => {
   test('finds one, with where it was found', () => {
     write('api/src/backfills/ship.ts', `
-import { defineBackfill } from '@frontierjs/junction'
+import { defineBackfill } from '@frontierjs/junction/backfill'
 
 export default defineBackfill({
   name:  'order-shipped-at',
@@ -171,7 +171,7 @@ describe('stubFor', () => {
   test('the name is kebab and the import is the one that exports it', () => {
     const text = stubFor({ model: 'Order', field: 'shippedAt' }).join('\n')
     expect(text).toContain("name:  'order-shipped-at'")
-    expect(text).toContain("from '@frontierjs/junction'")
+    expect(text).toContain("from '@frontierjs/junction/backfill'")
     expect(text).toContain('backfills([orderShippedAt])')
   })
 })

@@ -33,7 +33,7 @@ beforeAll(async () => {
   h = await makeAuth({ encryptionKey: TEST_KEY, sessionFields: (u: any) => ({ role: u.role, isAdmin: u.role === 'admin' || u.role === 'sysadmin' }) })
   app = createApp({
     db: h.db, auth: h.auth as any,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
     logLevel: 'silent',
   } as never)
   app.configure(createAuthPlugin(h.auth, { ...rateLimits, services: { level: levelOf } }))

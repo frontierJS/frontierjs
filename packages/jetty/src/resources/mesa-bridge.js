@@ -4,7 +4,7 @@
 // components can consume them with normal `$:` path watching or expression
 // reading.
 //
-// Sierra has equivalent helpers in @frontierjs/sierra/junction:
+// Sierra has equivalent helpers in @frontierjs/sierra/resource:
 //   connected, reconnecting (Mesa signals)
 //   useStore(store) — bridges a Junction store into a component
 //

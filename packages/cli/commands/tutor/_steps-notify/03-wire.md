@@ -104,7 +104,7 @@ if (!src.includes('notificationsPlugin')) {
   const last = imports[imports.length - 1]
   src = src.slice(0, last.index + last[0].length)
     + "\nimport { join }                from 'node:path'"
-    + "\nimport { mailerPlugin }        from '@frontierjs/junction'"
+    + "\nimport { mailerPlugin }        from '@frontierjs/junction/mail'"
     + "\nimport { notificationsPlugin } from '@frontierjs/notifications'"
     + "\nimport { db }                  from './core/db.ts'"
     + "\nimport { createOutboxMailer }  from './core/outbox-mailer.ts'"

@@ -32,7 +32,7 @@ const ROWS = [{ id: '1', name: 'Ada' }, { id: '2', name: 'Grace' }]
 
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => ({
@@ -45,7 +45,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource, createStore } = await import('../src/junction/resource.js')
+const { createResource, createStore } = await import('../src/resource/resource.js')
 
 beforeEach(() => {
   _proxy = {

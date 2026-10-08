@@ -56,7 +56,7 @@ async function appWith() {
   const db  = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({
     db: db as never,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
   })
 
   // Names the column. What an app that derives a system value writes.
@@ -200,7 +200,7 @@ describe('the set itself', () => {
     const { db } = await appWith()
     const app = createApp({
       db: db as never,
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     })
     app.services.register(createService({ name: 'inner', model: 'Doc',
       hooks: { validated: { create: [(ctx: ServiceContext) => { (ctx.data as Record<string, unknown>).slug = 'inner' }] } },
@@ -263,7 +263,7 @@ describe("ctx.system — a hook naming '@@gate'", () => {
     const app = createApp({
       db: db as never,
       auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }] }),
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     } as never)
     app.services.register(createService({
       name: 'issued', model: 'Receipt',

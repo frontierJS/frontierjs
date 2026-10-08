@@ -22,7 +22,7 @@ export * from '../../web/src/stores/cart.js'
  * The storefront's ONE Junction client, built on first mount.
  *
  * `createJunctionClient` directly, exactly as the three reading islands here
- * already do — and NOT `@frontierjs/sierra/junction`'s singleton, which would
+ * already do — and NOT `@frontierjs/sierra/resource`'s singleton, which would
  * be the tidier answer on any other surface. Importing that module puts it in
  * the module graph of every island that touches a basket, and an island's graph
  * is imported by the prerender: `vite build` renders the pages it can and then

@@ -19,7 +19,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 const _calls = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: (name, idField) => ({
@@ -33,7 +33,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource, createStore } = await import('../src/junction/resource.js')
+const { createResource, createStore } = await import('../src/resource/resource.js')
 
 beforeEach(() => {
   _calls.length = 0

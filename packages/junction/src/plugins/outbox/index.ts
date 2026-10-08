@@ -16,10 +16,10 @@
 // without one would collect rows forever with nothing to deliver them to.
 
 import type { App, Plugin }  from '../../core/app.ts'
-import { deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
+import { enqueueOutbox, deliverOutbox, sweepOutbox, outboxCounts, outboxPass, assertOutboxShape,
          hasOutboxModel, OUTBOX_MODEL, DEFAULT_MAX_ATTEMPTS,
-         DEFAULT_RETRY_BACKOFF_MS } from '../../core/outbox.ts'
-import type { OutboxApi, OutboxCounts, DeliverOptions, DeliverResult } from '../../core/outbox.ts'
+         DEFAULT_RETRY_BACKOFF_MS } from './engine.ts'
+import type { OutboxApi, OutboxCounts, DeliverOptions, DeliverResult } from './engine.ts'
 
 export interface OutboxPluginOptions {
   /**
@@ -83,7 +83,7 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
   const maxAttempts    = opts.maxAttempts    ?? DEFAULT_MAX_ATTEMPTS
   const retryBackoffMs = opts.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS
 
-  /** What every entry point into core/outbox.ts is graded by. */
+  /** What every entry point into engine.ts is graded by. */
   const policy: DeliverOptions = { batch, claimTimeoutMs, maxAttempts, retryBackoffMs }
 
   let timer:   ReturnType<typeof setInterval> | null = null
@@ -113,6 +113,8 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
 
     register(app: App): void {
       api = {
+        enqueue: enqueueOutbox,
+
         async deliver(o: DeliverOptions = {}): Promise<DeliverResult> {
           const result = await deliverOutbox(app, { ...policy, ...o })
           delivered += result.delivered
@@ -235,3 +237,8 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
     }
   }
 }
+
+// The engine's public half, so `./outbox` is the one way in.
+export { outboxSchemaFragment }                                from './engine.ts'
+export type { OutboxApi, OutboxRow, OutboxCounts, EnqueueOptions, EnqueueRef,
+              DeliverOptions, DeliverResult }                 from './engine.ts'

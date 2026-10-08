@@ -20,7 +20,7 @@
   // first time anything announced the entry, leaving a reference and a date and
   // nothing anybody could check.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const journalEntries = createResource('journal-entries', { model: 'JournalEntry' })
 </script>

@@ -30,6 +30,8 @@ import { describe, test, expect } from 'bun:test'
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import { enterRequest }  from '../src/core/context.ts'
+import { readFileSync }  from 'node:fs'
+import { join }          from 'node:path'
 
 const alice = { userId: 'alice', role: 'user' } as never
 const bob   = { userId: 'bob',   role: 'user' } as never
@@ -347,5 +349,65 @@ describe('madeAt — when the write was made, and it propagates', () => {
       sentAt: new Date(Date.now() + skew).toISOString(),
     }, () => app.service('root').find({}))
     expect(Math.abs(seen.replay.madeAt.getTime() - made)).toBeLessThan(5_000)
+  })
+})
+
+// ─── Which axis each field is on — FJS-D639 ──────────────────────────────
+// A ServiceContext field names the axis it serves, or it is a battery's and
+// belongs on the battery's slot rather than on every call. Read off the
+// interface's source in both directions, so a field added there without a row
+// here fails, and a row naming a field that is gone fails too.
+
+type Axis = 'admission' | 'call' | 'carriage' | 'announcement'
+
+const FIELD_AXIS: Record<string, Axis> = {
+  auth:         'admission',
+  service:      'call',
+  method:       'call',
+  type:         'call',
+  model:        'call',
+  id:           'call',
+  query:        'call',
+  directives:   'call',
+  data:         'call',
+  madeAt:       'call',
+  base:         'call',
+  locals:       'call',
+  transients:   'call',
+  reserved:     'call',
+  system:       'call',
+  app:          'call',
+  result:       'call',
+  error:        'call',
+  afterCommit:  'call',
+  enqueue:      'call',   // the verb is the call's; the table is the outbox battery's (FJS-D643)
+  telemetryId:  'call',
+  _cleanups:    'call',
+  _afterCommit: 'call',
+  _outbox:      'call',
+  transport:    'carriage',
+  caller:       'carriage',
+  route:        'carriage',
+  statusCode:   'carriage',
+  $raw:         'carriage',
+  dispatch:     'announcement',
+}
+
+function contextFields(): string[] {
+  const src   = readFileSync(join(import.meta.dir, '../src/core/context.ts'), 'utf8')
+  const start = src.indexOf('export interface ServiceContext {')
+  if (start === -1) throw new Error('ServiceContext is gone — this table grades a shape that no longer exists')
+  const body  = src.slice(start, src.indexOf('\n}', start))
+  return [...body.matchAll(/^\s{2}(?:readonly\s+)?([\w$]+)\??:/gm)].map(m => m[1]!)
+}
+
+describe('every ServiceContext field names its axis (FJS-D639)', () => {
+  test('a field added to the interface has a row here', () => {
+    expect(contextFields().filter(f => !(f in FIELD_AXIS))).toEqual([])
+  })
+
+  test('a row here names a field that still exists', () => {
+    const fields = new Set(contextFields())
+    expect(Object.keys(FIELD_AXIS).filter(f => !fields.has(f))).toEqual([])
   })
 })

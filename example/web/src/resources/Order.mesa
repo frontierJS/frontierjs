@@ -29,7 +29,7 @@
   // turns on is a default, so as of 2026-08-06 they are on and the reasoning
   // lives once, in createResource's own header.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const orders = createResource('orders')
 </script>

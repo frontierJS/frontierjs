@@ -163,7 +163,7 @@ own (§ *When a factor is lost*, below).
 In a browser they are `client.auth.me()`, `.changePassword()`, `.sessions()`,
 `.revokeSession(id)`, `.revokeOtherSessions()`, `.apiKeys()`, `.createApiKey()`
 and `.revokeApiKey(id)` — and a Sierra app gets a reactive `session` object over
-the top (`@frontierjs/sierra/junction`).
+the top (`@frontierjs/sierra/resource`).
 
 Rename or drop any of them with `services`, and add a `level` resolver to
 have `account.me` answer the caller's gate level:
@@ -332,14 +332,10 @@ does not gain one. Under `NODE_ENV=production` it refuses unless given `--force`
 ## Escape hatch
 
 OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).
-For anything this package does not do, magic links among them, swap to Better Auth:
-
-```typescript
-import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'
-
-const auth = createBetterAuthAdapter({ auth: betterAuthInstance })
-const app  = createApp({ auth })
-app.configure(createBetterAuthPlugin(betterAuthInstance))
-```
+For anything this package does not do, magic links among them, an app implements
+junction's `IAuth` (an exported type from `@frontierjs/junction`) over the library it
+wants and mounts that library's handler on a raw route
+(`app.post('/auth/{path}', ctx => lib.handler(ctx.$raw.$req))`). Junction ships no
+adapter for a vendor.
 
 Same `createApp({ auth })`. Same `withLitestoneDb(db)`. Same `authenticate` hook everywhere.

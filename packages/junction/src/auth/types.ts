@@ -1,7 +1,7 @@
 // auth/types.ts
-// The IAuth interface — every auth provider must implement this.
-// Better Auth lives ONLY in auth/providers/better-auth.ts
-// The rest of the framework imports from here only.
+// The IAuth interface — every auth provider must implement this. A provider is
+// the app's or another package's (`FJS-D153`, `FJS-D215`: the mechanism, never
+// the vendor); the rest of the framework imports from here only.
 
 export interface SessionContext {
   userId:       string

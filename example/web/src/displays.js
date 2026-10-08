@@ -25,7 +25,7 @@
 // answers `enum` for every bound column in the app, and claiming that name
 // would put an order's colours on a country picker. The `{ field, model }` the
 // resolver is handed is what makes the claim narrow.
-import { registerDisplay }          from '@frontierjs/sierra/junction'
+import { registerDisplay }          from '@frontierjs/sierra/resource'
 import { registerDisplayComponent } from '@frontierjs/ui/controls'
 
 import MoneyCell  from './components/MoneyCell.mesa'

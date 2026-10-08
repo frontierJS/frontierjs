@@ -9,7 +9,7 @@
 //
 // Nothing here names a control. That is the assertion.
 
-import { createResource } from '@frontierjs/sierra/junction'
+import { createResource } from '@frontierjs/sierra/resource'
 
 export const pickupPoints = createResource('pickup-points', {
   model: 'PickupPoint',

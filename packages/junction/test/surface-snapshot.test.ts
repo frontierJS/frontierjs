@@ -22,7 +22,6 @@ async function buildApp() {
       // one-port-per-file rule `FJS-900` established.
       port:     0,
       apiPrefix: '/api',
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http:     { ...defaultConfig.http, drainTimeout: 200 },
     },

@@ -17,7 +17,7 @@
   // number nobody can check. Publishing next year's table is a different act
   // from running a payroll and is out of this phase.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const payRates = createResource('pay-rates', { model: 'PayRate' })
 </script>

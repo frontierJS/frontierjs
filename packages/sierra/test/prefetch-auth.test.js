@@ -172,7 +172,7 @@ describe('a payload does not outlive the identity that asked for it', () => {
   // old pair could not see.
   test('a change of identity on the client invalidates', async () => {
     globalThis.WebSocket = class { constructor() { this.readyState = 0 } close() {} send() {} }
-    const { initJunction, getClient } = await import('../src/junction/index.js')
+    const { initJunction, getClient } = await import('../src/resource/index.js')
 
     initJunction({ url: 'http://localhost:8110' })
     const client = getClient()

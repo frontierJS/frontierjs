@@ -226,6 +226,6 @@ Two cautions, both inherited from above rather than new:
 - `IDEAS/one-mental-model.md` §6 — the target axis the classification is a property of
 - `IDEAS/map-packages.md` — where a shared gate-reader would live
 - `packages/sierra/src/build/prerender.js` — the build step this attaches to
-- `packages/sierra/src/junction/field-rules.js` — `buildGate()` / `canAtLevel()`
+- `packages/sierra/src/resource/field-rules.js` — `buildGate()` / `canAtLevel()`
 - `CLAUDE.md` § Bridge index — the island marker's "props as rendered" note, which is
   the third open question above

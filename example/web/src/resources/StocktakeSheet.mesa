@@ -18,7 +18,7 @@
   // through it would reach the server with no key and the counts behind it
   // would reference nothing.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const sheets = createResource('stocktake-sheets', { model: 'StocktakeSheet' })
 </script>

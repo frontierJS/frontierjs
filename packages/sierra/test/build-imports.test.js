@@ -217,7 +217,7 @@ describe('prerenderRoutes — a route that never finishes', () => {
 //
 // `FJS-549` / `FJS-550`, which were one failure wearing two descriptions: a
 // LAYOUT holding an island, and that island's graph reaching
-// `@frontierjs/sierra/junction` through a store. It hung with nothing written
+// `@frontierjs/sierra/resource` through a store. It hung with nothing written
 // and nothing said. Neither reproduces now — most likely closed by the route
 // table dropping a companion's loaders instead of importing them, which is what
 // used to pull the app's own server modules into the browser graph — and this

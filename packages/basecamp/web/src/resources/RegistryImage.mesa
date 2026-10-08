@@ -6,7 +6,7 @@
   // is `RegistryImage`, so `modelNameFor('registry')` resolves `Registry` and
   // finds nothing. Stated rather than guessed — a miss warns once and degrades
   // to a bare `make()`, which is a form with no fields and no explanation.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const registry = createResource('registry', { model: 'RegistryImage' })
 </script>

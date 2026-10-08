@@ -10,7 +10,7 @@
   // plurals, not kebab-case. Without it the lookup misses, warns, and degrades
   // to a bare make(): labels, required fields and validation all silently stop
   // being schema-derived.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // `validate: false` is not a shortcut, and the reason left is ONE column.
   //

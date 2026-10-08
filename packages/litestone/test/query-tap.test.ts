@@ -191,6 +191,9 @@ describe('every operation the client emits is declared', () => {
       .map(f => readFileSync(new URL(`../src/core/${f}`, import.meta.url), 'utf8')).join('\n')
     const ops = new Set<string>()
     for (const m of src.matchAll(/fireQuery\(\{ operation: '([a-zA-Z:]+)'/g))          ops.add(m[1]!)
+    // A planned write's event reports `plan.verb`, and the verbs that plan are
+    // the keys of `PLANNERS` (client.js, inside makeTable).
+    for (const m of src.matchAll(/\b([a-zA-Z]+): plan[A-Z]\w+/g))                       ops.add(m[1]!)
     for (const m of src.matchAll(/runInclude\(\w+, rel\.targetModel, '([a-zA-Z:]+)'/g)) ops.add(m[1]!)
     return ops
   }

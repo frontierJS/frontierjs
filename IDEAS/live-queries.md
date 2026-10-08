@@ -90,7 +90,7 @@ re-evaluated on every mutation. That is the expensive part and the reason it doe
 not scale casually.
 
 FJS does not need it, because the client already holds the constraint table.
-`packages/sierra/src/junction/field-rules.js` is a leaf module with the types,
+`packages/sierra/src/resource/field-rules.js` is a leaf module with the types,
 enums, formats and relations, and `validateAgainstFields(fields, data, mode)` is
 already a *does this record satisfy these rules* function. A sibling —
 
@@ -242,7 +242,7 @@ wiring directly. That was still thinking of pushes as a special path. They are n
 
 `createResource` already has a four-phase pipeline that *matches the API realm
 exactly* — `before` / `after` / `around` / `error`, keyed by method with `all`
-(`packages/sierra/src/junction/resource.js`). And **its context is already the
+(`packages/sierra/src/resource/resource.js`). And **its context is already the
 live-query descriptor**:
 
 ```
@@ -381,6 +381,6 @@ result deserves its own noun. It probably does not.
 - `IDEAS/offline-first-and-release.md` — the same seam from the offline direction
 - `website/projects.json` — the Convex entry, which records the trade this refines
 - `packages/junction/src/client/index.ts` — `resource()`, `Store`, the three defects
-- `packages/sierra/src/junction/field-rules.js` — the leaf module the matcher belongs in
+- `packages/sierra/src/resource/field-rules.js` — the leaf module the matcher belongs in
 - `packages/junction/src/core/litestone.ts` — `parseWhere` / `translateOps`, the
   semantics a client matcher must agree with

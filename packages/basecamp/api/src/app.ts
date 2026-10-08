@@ -7,18 +7,17 @@
 
 import {
   createApp,
-  createDatabase,
   createLogger,
   channels,
   healthPlugin,
-  metricsPlugin,
-  devtools,
-  mailerPlugin,
   membershipClaim,
   registerErrorMapper,
   Forbidden,
   BadRequest,
 } from '@frontierjs/junction'
+import { metricsPlugin } from '@frontierjs/junction/metrics'
+import { devtools } from '@frontierjs/junction/devtools'
+import { mailerPlugin } from '@frontierjs/junction/mail'
 
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
@@ -32,6 +31,7 @@ import { apply, LEVELS }                         from '@frontierjs/litestone'
 import type { WriteEvent }                       from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
+import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { accountMail }         from './core/account-mail.ts'
@@ -85,8 +85,8 @@ export async function buildBasecampApp(
   // ── Database ─────────────────────────────────────────────────────────
   // Two handles on ONE SQLite file, each for what it is good at:
   //
-  //   dbClient — Junction's raw client. Runs the migrations and hands the raw
-  //              bun:sqlite handle to Conduit's store, the health check and
+  //   rawDb    — the raw bun:sqlite handle (`core/sqlite.ts`). Runs the
+  //              migrations and goes to Conduit's store, the health check and
   //              `app.sqlite`, all of which want a Database, not an ORM.
   //   db       — the Litestone client. THE Data boundary: every service,
   //              job and bootstrap path reads and writes through it. It is
@@ -97,8 +97,8 @@ export async function buildBasecampApp(
   // Migrations run first, so the Litestone client opens a database whose
   // tables already exist.
   //
-  // Applied by LITESTONE's runner, not junction's `dbClient.migrate(dir)`.
-  // Two reasons, both learned the hard way (FJS-193):
+  // Applied by LITESTONE's runner, the one migration runner (`FJS-D641`).
+  // What a second one got wrong, learned the hard way (FJS-193):
   //
   //   · Migrations live per DATABASE — `db/migrations/main/` — because the
   //     schema declares `database main`. junction's runner globs one level and
@@ -115,12 +115,11 @@ export async function buildBasecampApp(
   // is derived from it, so a test that redirects the main database and leaves
   // the queue behind would write jobs into the developer's own.
   const dbPath        = opts.dbPath ?? env.DATABASE_URL
-  const dbClient      = createDatabase({ path: dbPath, log: env.DB_LOG })
-  const migrated      = await apply(dbClient.db, migrationsDir)
+  const rawDb         = openSqlite(dbPath)
+  const migrated      = await apply(rawDb, migrationsDir)
   if (migrated.unmatched)
     throw new Error(`[basecamp] ${migrated.message} — db/migrations/main`)
 
-  const rawDb = dbClient.db
   // eslint-disable-next-line -- the injected client is the env's, already typed there
   const db    = (opts.db as Awaited<ReturnType<typeof createBasecampDb>>) ?? await createBasecampDb()
 
@@ -174,7 +173,6 @@ export async function buildBasecampApp(
     // (3000) and collided with anything already there.
     host:     env.HOST,
     port:     env.PORT,
-    database: { url: '', log: false },   // prevent createApp from opening a second DB
   }
 
   // ── Framework app ─────────────────────────────────────────────────────
@@ -930,7 +928,7 @@ export async function buildBasecampApp(
   app.configure({
     name: 'basecamp-cleanup',
     shutdown: async () => {
-      dbClient.close()
+      rawDb.close()
     },
   })
 

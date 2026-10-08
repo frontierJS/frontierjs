@@ -33,9 +33,9 @@ another chance to miss one, and a missed one ships until a grid catches it.
 | soft-delete filter call sites | 19 | `FJS-262`, `FJS-216` |
 | `tx.wrapExclusive(` / `asConstraintError(` | 10 / 8 | the lock and the error mapping, once per write verb |
 | event and log emit calls | 40 | a zero-row write announcing, a bulk write logging nothing (0.7) |
-| `params.push(...` in `client.js` | 31 | SQL text and its binds built apart; the bind order is the correctness |
-| hand-quoted `"${…}"` identifiers in `client.js` | 412 | against 19 `quoteIdent(` uses repo-wide |
-| distinct `ctx.*Map` names / reads by `[modelName]` | 64 / 73 | a missing entry reads as *this model has no such rule* |
+| `params.push(` in `client.js` | 55, of which 31 spread another array | SQL text and its binds built apart; the bind order is the correctness |
+| hand-quoted `"${…}"` identifiers in `client.js` | 270 | against 19 `quoteIdent(` uses repo-wide, none in `client.js` |
+| distinct `ctx.*Map` names in `client.js` / across `src/` | 33 / 42 | a missing entry reads as *this model has no such rule* |
 | `checkJs` | off | the tsconfig comment says 3,131 errors when last tried |
 
 Two of these already have the right shape at a smaller scale. `query.js` has a
@@ -45,7 +45,7 @@ makes one. `FJS-722` already shares one table object across every flavor through
 `AsyncLocalStorage`, so the principal is no longer baked into what gets built, and
 nothing below has to revisit that.
 
-Most of the 412 quoted identifiers interpolate schema-derived names, which
+Most of the 270 quoted identifiers interpolate schema-derived names, which
 Invariant 8 permits. The problem is that nothing tells a schema name apart from a
 caller's, so the invariant holds only because someone read each site.
 
@@ -84,7 +84,7 @@ litestone builds. Add `and(...frags)`, `or(...frags)`, `join(frags, sep)` and
 
 A model's facts live in two places today. `makeTable(readDb, writeDb, shape, ctx)`
 takes a `shape` holding some of them, destructured with defaults
-(`softDelete = false`, `fieldPolicy = {}`). The rest come from 64 `ctx.*Map`s read by
+(`softDelete = false`, `fieldPolicy = {}`). The rest come from 33 `ctx.*Map`s read by
 `[modelName]`. In both places a fact nobody passed reads as *this model has no such
 rule*.
 
@@ -122,7 +122,7 @@ from a rule someone remembers into a type error.
 
 Each read rule becomes a record:
 `{ name, verbs, where(shape, flags) → fragment | null }`. The rules are kept in one
-array, in the order `buildSQL` applies them today: global filter, plugin read
+array, in the order `buildSQL` applied them before (now `READ_RULES`): global filter, plugin read
 filters, soft-delete, templates, effective-time, the caller's where, the policy.
 The order invariant then lives in exactly one place. Every read verb (`findMany`,
 `findFirst`, `findUnique`, `count`, `aggregate`, `groupBy`, the cursor, search and
@@ -208,7 +208,7 @@ changed step 2, which first proposed a new `ModelSpec` beside the `shape` that
 already exists. The tier is **Assessment**.
 
 1. **Origin.** Origins go down. Rule order moves out of about 15 verb bodies into
-   one array, and a model's facts move from `shape` plus 64 maps into `shape`.
+   one array, and a model's facts move from `shape` plus 33 maps into `shape`.
 2. **Concept.** No new nouns: *fragment* (`sqlFragment`), *shape* and *rule* are
    already the code's own words. *Plan* is internal to `client.js` and stays off
    every public surface.
@@ -222,7 +222,7 @@ already exists. The tier is **Assessment**.
    purpose, because an oracle derived from the code it grades proves nothing
    (`FJS-597`).
 6. **Owner.** Existing owners only: `quoteIdent` for identifiers, `query.js` for
-   fragments, `shape` for a model's facts, `buildSQL`'s order for the rules.
+   fragments, `shape` for a model's facts, `READ_RULES` for the rules' order.
 7. **Boundary.** The one boundary crossed is the plugin `ctx` (`FJS-D03`). It
    changes in the same commit, and step 3 types it.
 8. **Failure.** A rule and verb pair the registry does not name is refused at load.

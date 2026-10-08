@@ -89,7 +89,7 @@ export function formatBackfillReport(rows, { stub = true } = {}) {
 export function stubFor({ model, field }) {
   const name = kebab(`${model}-${field}`)
   return [
-    `import { defineBackfill } from '@frontierjs/junction'`,
+    `import { defineBackfill } from '@frontierjs/junction/backfill'`,
     ``,
     `export default defineBackfill({`,
     `  name:  '${name}',`,

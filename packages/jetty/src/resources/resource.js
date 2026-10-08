@@ -1,6 +1,6 @@
 // resource.js — createResource for jetty.
 //
-// API mirrors @frontierjs/sierra/junction/resource.js exactly:
+// API mirrors @frontierjs/sierra/resource/resource.js exactly:
 //   createResource('leads', schema, opts)
 //   createResource('leads', opts)              // opts.schema optional
 //   createResource({ service, model, schema, hooks, idField, optionsQuery })

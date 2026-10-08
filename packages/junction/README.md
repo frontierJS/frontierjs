@@ -11,7 +11,7 @@ bun add @frontierjs/junction
 ```
 
 **Bun only, and permanently so.** The transport is `Bun.serve`, static files and
-logs go through `Bun.file`, and the cache and database batteries import
+logs go through `Bun.file`, and the cache battery imports
 `bun:sqlite`. Under Node the import itself fails — Node refuses to strip types
 inside `node_modules` — and a build step would only move that failure later, so
 there is no Node path to have. `engines` says the same thing.
@@ -49,6 +49,8 @@ bun run test
 ```
 
 The example app keeps its data in a local SQLite file (`demo.db`) and needs no external services.
+
+In your own app, `fli new my-app` (or `npm create frontier@latest my-app`) scaffolds the whole layout below; junction has no scaffolder of its own.
 
 ---
 
@@ -88,7 +90,7 @@ The package itself:
 
 ```
 packages/junction/
-├── index.ts              ← single public API — one import for everything
+├── index.ts              ← the main entry: the four axes of a call and the host
 │
 ├── src/core/
 │   ├── app.ts            ← createApp() — lifecycle, plugins, service routing
@@ -123,29 +125,33 @@ packages/junction/
 │   ├── email/            ← mailer plugin, system + campaign senders
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
 │   ├── devtools/         ← devtools plugin + admin UI
-│   └── outbox/, backfill/, export/, metrics/
-│
-├── src/storage/
-│   └── database/index.ts    ← createDatabase() — WAL, foreign keys, migrations
+│   └── outbox/, backfill/, commitments/, export/, metrics/  ← each holds its engine.ts
 │
 ├── src/auth/
-│   ├── types.ts          ← IAuth, SessionContext
-│   └── providers/better-auth.ts
+│   └── types.ts          ← IAuth, SessionContext
 │
 ├── src/config/index.ts   ← loadConfig(), layered config files, deepMerge
 ├── src/events/index.ts   ← IEventBus (in-process, Redis-swappable interface)
 ├── src/cache/index.ts    ← ICache — in-memory
 ├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
-├── src/workers/index.ts  ← Bun native thread pool, auto-respawn
 ├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
 ├── src/ai/index.ts       ← IAIModel interface — adapters reach a vendor through conduit
 ├── src/client/index.ts   ← browser/Sierra client — service(), resource()
 ├── src/testing/index.ts  ← createTestApp(), request(), withTestMeta()
 │
-├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
+├── tools/                ← repl.ts and the snapshot/inspection scripts
 ├── example/              ← runnable apps (elegant.ts is the modern demo)
 └── test/
 ```
+
+The main entry is the four axes of a call — admission, call, carriage, announcement —
+and the host: `createApp`, plugins, config (`FJS-D639`). Everything else is a battery
+reached by its subpath: `/mail`, `/ai`, `/cache`, `/scheduler`, `/email`, `/webhooks`,
+`/openapi`, `/outbox`, `/backfill`, `/commitments`, `/manifest`, `/devtools`, `/export`,
+`/metrics`. A battery types its `app.<slot>` by augmenting an empty `App*` interface
+(`AppMail`, `AppAI`, `AppCache`, `AppScheduler`, `AppEmail`, `AppOutbox`,
+`AppCommitments`, `AppWebhooks`), so importing the subpath is what brings the type
+(`FJS-D640`). Junction opens no database: `createApp({ db })` is the one way in.
 
 ---
 
@@ -602,6 +608,8 @@ app.configure(healthPlugin({
 }))
 ```
 
+There is no built-in database check — junction opens no database, so the app names its client's check in `checks`.
+
 **`GET /health`** — readiness: `200` when healthy, `503` when any check fails or the app is draining. **`GET /health/live`** — liveness: consults no check, so a draining process is still alive. Point a `readinessProbe` at the first and a `livenessProbe` at the second.
 
 **`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry.
@@ -694,33 +702,19 @@ app.configure(csrf({
 }))
 ```
 
-**With Better Auth cookie sessions:**
+**With cookie sessions from any auth library:**
 
 ```typescript
-import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'
-import { combineOrigins } from '@frontierjs/junction'
-import { betterAuth } from 'better-auth'
+import { cors, csrf, combineOrigins } from '@frontierjs/junction'
 
-const betterAuthInstance = betterAuth({
-  // ... Better Auth config
-  // If you configure Better Auth to use cookies, CSRF protection is needed
-  // for your app's own service routes (Better Auth protects its own /auth/* routes).
-})
-
-const auth    = createBetterAuthAdapter({ auth: betterAuthInstance })
 const origins = combineOrigins(['https://myapp.com'])
-
-const app = createApp({ config, auth })
 
 // 1. cors() first — handles OPTIONS preflight before csrf() runs
 app.configure(cors({ ...origins.forCors(), credentials: true }))
 
 // 2. csrf() second — protects POST/PUT/PATCH/DELETE against cross-site requests
-//    Only needed because Better Auth sets a session cookie
+//    Needed whenever a session cookie exists
 app.configure(csrf(origins.forCsrf()))
-
-// 3. Mount Better Auth routes (/auth/sign-in, /auth/sign-out, etc.)
-app.configure(createBetterAuthPlugin(betterAuthInstance))
 ```
 
 If you use **bearer tokens only** (no cookies), omit `csrf()` entirely — bearer tokens are already CSRF-safe.
@@ -910,12 +904,14 @@ import.meta.url).pathname`.
 ## Auth
 
 ```typescript
-import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'
+import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 
-const auth = createBetterAuthAdapter({ auth: betterAuthInstance })
-const app  = createApp({ config, auth })
-app.configure(createBetterAuthPlugin(betterAuthInstance))  // mounts /auth/* routes
+const auth = createLitestoneAuth(db)
+const app  = createApp({ config, auth, db })
+app.configure(createAuthPlugin(auth))  // mounts /auth/* routes
 ```
+
+Junction defines the `IAuth` interface and ships no vendor adapter. An app that wants another library implements `IAuth` over it and mounts the library's handler on a raw route.
 
 The transport reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()` and stamps `ctx.auth.user`; the `authenticate` hook only refuses a call that has no `ctx.auth.user`.
 
@@ -983,7 +979,7 @@ auth.requestEmailVerification?(userId)                   // sends verification e
 auth.verifyEmail?(token)                                 // consumes token, returns session
 ```
 
-These are optional on `IAuth` — if your provider handles them differently (e.g. Better Auth has its own email flows), implement them in the provider adapter or leave them unset and handle the routes yourself.
+These are optional on `IAuth` — if your provider handles them differently (e.g. the library has its own email flows), implement them in your `IAuth` or leave them unset and handle the routes yourself.
 
 ---
 
@@ -1116,7 +1112,8 @@ Cache keys include the authenticated user's ID when present — `GET /orders` fo
 The underlying store is shared across all services. Override it at the app level with a SQLite-backed cache for persistence across restarts:
 
 ```typescript
-import { setServiceCache, createSqliteCache } from '@frontierjs/junction'
+import { setServiceCache } from '@frontierjs/junction'
+import { createSqliteCache } from '@frontierjs/junction/cache'
 
 setServiceCache(createSqliteCache({ path: './cache.db', defaultTtl: '1 minute' }))
 ```
@@ -1125,16 +1122,12 @@ setServiceCache(createSqliteCache({ path: './cache.db', defaultTtl: '1 minute' }
 
 ## Database
 
+Junction opens no database (`FJS-D641`). `createApp({ db })` is the one way in: a Litestone client, or any table-shaped client, becomes `app.db`. Opening it, its pragmas and its migrations are the client's business.
+
 ```typescript
-import { createDatabase } from '@frontierjs/junction'
-
-const db = createDatabase('./app.db')
-await db.migrate('./migrations')
+const db  = await createClient({ schema: './db/schema.lite', db: './app.db' })
+const app = createApp({ config, db })
 ```
-
-Production pragmas applied automatically: WAL mode, foreign keys, 5s busy timeout, 32MB page cache.
-
-For tests: `createInMemoryDatabase()` gives the same interface with `:memory:`.
 
 ---
 
@@ -1592,7 +1585,7 @@ const res = await request(app).options('/notes')
 expect(res.status).toBe(204)
 ```
 
-For a test that needs a real database, real factories and a principal bound into
+`createTestApp` creates no database: `app.db` is `undefined` unless the test passes a client in. For a test that needs a real database, real factories and a principal bound into
 every call, `@frontierjs/testing` composes this with Litestone's `createTestEnv`
 — it sits above this package, so it can mount an app where Litestone cannot.
 
@@ -1601,6 +1594,8 @@ every call, `@frontierjs/testing` composes this with Litestone's `createTestEnv`
 ## OpenAPI
 
 ```typescript
+import { openapi } from '@frontierjs/junction/openapi'
+
 app.configure(openapi({
   title:   'My API',
   version: '1.0.0',
@@ -1653,14 +1648,18 @@ schemas: {
 At-least-once webhook delivery built on the existing event bus. Every service mutation that fires `orders:created` etc. automatically fans out to registered HTTP endpoints with signed payloads and exponential-backoff retries.
 
 ```typescript
-import { webhooks } from '@frontierjs/junction'
+import { Database } from 'bun:sqlite'
+import { webhooks, createSqliteWebhookStore } from '@frontierjs/junction/webhooks'
 
 app.configure(webhooks({
   events: ['orders:created', 'orders:patched', 'users:created'],
   // or catch everything:
   // events: ['*'],
+  store: createSqliteWebhookStore(new Database('webhooks.db')),
 }))
 ```
+
+`store` is required — there is no default drawn from `app.db`.
 
 The plugin listens for declared events, writes a `webhook_deliveries` row, fires the HTTP request immediately, and schedules retries on failure: 1m → 5m → 30m → 2h → 8h → 24h. After 7 attempts the delivery is marked `dead` and stays in the table permanently.
 
@@ -1733,7 +1732,7 @@ webhooks retry <delivery-id>              force-retry dead/failed
 webhooks test <webhook-id>                fire a test ping
 ```
 
-**Custom store** — implement `IWebhookStore` for Postgres, Redis, etc.:
+**Custom store** — `createSqliteWebhookStore` takes a raw `bun:sqlite` `Database`; implement `IWebhookStore` for Postgres, Redis, etc.:
 
 ```typescript
 app.configure(webhooks({ events: ['*'], store: myPostgresStore }))
@@ -1750,43 +1749,6 @@ app.scheduler.once('30 seconds', async () => { /* warmup */ })
 ```
 
 ---
-
----
-
-## Workers
-
-Bun threads for CPU work that would otherwise block the event loop. A worker
-receives two different things by two different routes: **setup**, once, at
-construction, and **work**, repeatedly, over `postMessage`.
-
-```typescript
-import { createThread, createPool } from '@frontierjs/junction'
-
-const thread = createThread('./workers/resize.ts', { quality: 82 })
-thread.on('message', out => console.log(out))
-thread.postMessage({ file: 'a.jpg' })
-
-// A pool queues when every worker is busy. Each one — including a worker
-// respawned after an error — is constructed with the same setup data.
-const pool = createPool('./workers/resize.ts', 4, { quality: 82 })
-const out  = await pool.exec({ file: 'b.jpg' })
-```
-
-Inside the worker:
-
-```typescript
-import { workerHandler, workerData } from '@frontierjs/junction/workers'
-
-const { quality } = workerData<{ quality: number }>() ?? { quality: 90 }
-
-workerHandler(async ({ file }) => resize(file, quality))
-```
-
-`workerData()` is `undefined` on the main thread and in a worker given none, so
-`?? fallback` reads the same in both places. A handler that throws **rejects**
-the `pool.exec()` promise and counts on `stats().errors` — a worker cannot reject
-its caller's promise from inside itself, so it posts an envelope back and the
-pool translates it.
 
 ## Browser client
 
@@ -1828,7 +1790,7 @@ await client.auth.requestPasswordReset(email)
 ```
 
 A Sierra app gets a reactive `session` object and a `ready` promise over the
-top of this — see `@frontierjs/sierra/junction`.
+top of this — see `@frontierjs/sierra/resource`.
 
 ### Typed from the schema
 
@@ -2123,6 +2085,8 @@ and `hasRoute()` answers a *matching* question — every app registers
 where" needs the router asked rather than guessed.
 
 ```typescript
+import { manifestPlugin } from '@frontierjs/junction/manifest'
+
 app.configure(manifestPlugin({ db }))   // devOnly by default
 ```
 
@@ -2299,7 +2263,7 @@ expect(stubs['provider:hetzner'].calls).toHaveLength(1)
 
 | Subsystem    | Interface      | Swap to                    |
 |---|---|---|
-| Auth         | `IAuth`        | Better Auth, Clerk, custom |
+| Auth         | `IAuth`        | `@frontierjs/auth`, custom |
 | Mail         | `IMail`        | Resend, Postal, SMTP       |
 | AI           | `IAIModel`     | OpenAI, Anthropic, Ollama  |
 | Cache        | `ICache`       | memory, SQLite, Redis       |
@@ -2319,36 +2283,16 @@ The blast radius of swapping a provider is exactly one file.
 | `bun run repl` | Open the interactive REPL |
 | `bun run tools/repl.ts --port 4000` | REPL on a custom port |
 | `bun run tools/repl.ts --host x.com --https` | REPL against a remote host |
-| `bun run build:app ./app.ts` | Bundle an app for deployment |
 
 ---
 
 ## Deploying
 
-`bun run build:app <entry>` (also `junction build <entry>`) turns an app into a deployable artifact.
-
-```bash
-bun run build:app ./app.ts                        # → dist/app/app.js   ~348 KB
-bun run build:app ./app.ts --mode=binary          # → dist/app/app       ~95 MB
-bun run build:app ./app.ts --mode=docker          # + a matching Dockerfile
-bun run build:app ./app.ts --mode=docker --artifact=binary --target=bun-linux-x64-musl
-```
-
-| Mode | Output | Needs on the host |
-|---|---|---|
-| `js` *(default)* | one bundled `.js`, app + framework inlined | bun |
-| `binary` | `--compile` executable, Bun runtime embedded | nothing |
-| `docker` | either artifact plus a `Dockerfile` and `.dockerignore` | docker |
-
-`js` is the default because it is ~270× smaller and most hosts already have a bun image. Both artifacts read `PORT` from the environment.
-
-Generated Dockerfiles pick a base image from what the artifact actually links against — `oven/bun:1-slim` for js, `debian:bookworm-slim` for glibc binaries, and `alpine:3.20` plus `apk add libstdc++` for `-musl` targets. Neither binary is statically linked, so `scratch` will not work. The base image architecture must match `--target`.
-
-Other options: `--outdir`, `--port` (Dockerfile `ENV`/`EXPOSE`, default 80), `--no-minify`, `--sourcemap`, `--allow-autoload`.
+Deploy is `fli deploy`, from the Dockerfile `fli make:deploy` writes. Junction has no build step of its own: the image runs the app with `bun`.
 
 ### Autoload does not survive bundling
 
-This is the one thing that will bite you. A bundled app **must register its services statically** and set `autoload: false`:
+An app that bundles itself anyway (`bun build`) **must register its services statically** and set `autoload: false`:
 
 ```ts
 import { createMessagesService } from './messages.service.ts'
@@ -2364,11 +2308,9 @@ Directory autoload fails in a bundled build for two independent reasons:
 
 A missing services directory is a deliberate no-op, so nothing throws. You get a clean boot logging `"services":0` and a 404 on every autoloaded route — with `autoload` on the boot banner naming the directories that were looked at, which is the one place that miss is visible.
 
-`build:app` guards against this: it **errors** when it finds a services directory that would be skipped, and **warns** when it cannot rule the case out (no `autoload: false` in the entry, or a `junction.config.js` that may set `services.dir`). The one exception it allows silently is an in-place `js` build — `--outdir` equal to the entry's directory — where the output sits beside the original `.ts` services and autoload genuinely still works.
-
 ### Not Cloudflare Workers
 
-`bun build --target` accepts only `browser`, `bun`, and `node`. Junction is built on `Bun.serve`, `bun:sqlite`, `Bun.file`, and `Bun.main`, none of which exist on workerd. Running on Workers would mean replacing the transport with a `fetch` handler and the database layer with D1 — an architecture port, not a build flag. Container-based hosts (CapRover, Fly, Railway, Cloudflare's container product) work like any other Docker target.
+`bun build --target` accepts only `browser`, `bun`, and `node`. Junction is built on `Bun.serve`, `bun:sqlite`, `Bun.file`, and `Bun.main`, none of which exist on workerd. Running on Workers would mean replacing the transport with a `fetch` handler and the cache with D1 — an architecture port, not a build flag. Container-based hosts (CapRover, Fly, Railway, Cloudflare's container product) work like any other Docker target.
 
 ---
 
@@ -2378,4 +2320,4 @@ A missing services directory is a deliberate no-op, so nothing throws. You get a
 
 **Framework core**: zero external dependencies. Router, hook pipeline, logger, schema validator, scheduler, event bus, cache, body parser, static serving, WebSocket routing — all built on Bun's native APIs.
 
-**Optional**: `@frontierjs/litestone` (the only peer — models, gates, generated CRUD) and `better-auth` (an alternative auth provider). Neither is required to run the framework.
+**Optional**: `@frontierjs/litestone` (the only peer — models, gates, generated CRUD) and `@frontierjs/auth` (the native `IAuth`). Neither is required to run the framework.

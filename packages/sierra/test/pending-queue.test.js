@@ -25,7 +25,7 @@
 
 import { test, expect, vi } from 'vitest'
 
-import { createPendingQueue, unreachable } from '../src/junction/pending.js'
+import { createPendingQueue, unreachable } from '../src/resource/pending.js'
 
 const entry = (over = {}) => ({
   service: 'orders', model: 'Order', method: 'patch', id: 1, data: { total: 1 }, ...over,
@@ -174,8 +174,8 @@ test('a rejected entry can be retried: back to pending, same key, error cleared'
   expect(q.pending()[0].lastError).toBe(null)
 })
 
-test('the app queue is reachable from @frontierjs/sierra/junction', async () => {
-  const mod = await import('../src/junction/index.js')
+test('the app queue is reachable from @frontierjs/sierra/resource', async () => {
+  const mod = await import('../src/resource/index.js')
   expect(typeof mod.pendingQueue).toBe('function')
 })
 
@@ -183,7 +183,7 @@ test('the app queue is reachable from @frontierjs/sierra/junction', async () => 
 // headers name Globex by then, so a replay that took them was graded and
 // stamped there.
 test('a held write replays under the call headers it was made under', async () => {
-  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/resource/pending.js')
   _resetPendingQueue()
   const q = pendingQueue()
   await q.ready
@@ -202,7 +202,7 @@ test('a held write replays under the call headers it was made under', async () =
 // FJS-1278: a clock-in held at 09:46 and drained at 17:46 was dated 17:46. The
 // entry's own time is when the write was made, and the drain says so.
 test('a held write replays with the moment it was made', async () => {
-  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/resource/pending.js')
   _resetPendingQueue()
   const q = pendingQueue()
   await q.ready
@@ -222,7 +222,7 @@ test('a held write replays with the moment it was made', async () => {
 // The refusal at replay is the case FJS-1302 measured: parked, and nothing on
 // the device said so. It must be told and be retryable on the app's own queue.
 test('a write refused at replay is announced, and the app queue can retry it', async () => {
-  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/resource/pending.js')
   _resetPendingQueue()
   const q = pendingQueue()
   await q.ready

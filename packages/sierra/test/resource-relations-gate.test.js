@@ -15,7 +15,7 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
     resource: () => ({
@@ -26,8 +26,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { createResource, buildRelations, buildGate, canAtLevel, buildFieldRules } =
-  await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+  await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // Exactly what generateJsonSchema emits for:
 //   model Account { id Int @id  name String  users User[]  @@gate("2.4.4.5") }

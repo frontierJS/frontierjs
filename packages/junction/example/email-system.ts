@@ -76,7 +76,6 @@ const app = createApp({
     ...defaultConfig,
     port: 3000,
     name: 'email-example',
-    database: { url: '', log: false },
   }
 })
 

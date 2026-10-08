@@ -139,7 +139,7 @@ describe('a service method that cannot work is refused by the same phase', () =>
   function app(...svcs: unknown[]) {
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as { services: { register(s: unknown): void }, start(): Promise<void>, stop(): Promise<void> }
     for (const s of svcs) a.services.register(s)
     return a
@@ -222,7 +222,7 @@ describe('a service the loader could not load is refused, not stepped over', () 
     try {
       const a = createApp({
         logLevel: 'silent', autoload: dir,
-        config: { port: 0, database: { url: '', log: false } },
+        config: { port: 0 },
       }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
       try { await a.start(); await a.stop(); return null }
       catch (err) { return (err as Error).message }
@@ -260,7 +260,7 @@ describe('a service the loader could not load is refused, not stepped over', () 
     try {
       const a = createApp({
         logLevel: 'silent', autoload: dir,
-        config: { port: 0, database: { url: '', log: false } },
+        config: { port: 0 },
       }) as unknown as {
         services: { register(s: unknown): void }
         start(): Promise<void>, stop(): Promise<void>
@@ -320,7 +320,7 @@ describe('a hook that can never run is refused', () => {
   function app(...svcs: unknown[]) {
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as { services: { register(s: unknown): void }, start(): Promise<void>, stop(): Promise<void> }
     for (const s of svcs) a.services.register(s)
     return a
@@ -383,7 +383,7 @@ describe("an 'error' hook that throws is reported, and does not change the answe
     const events: Array<{ name: string, data: unknown }> = []
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as {
       services: { register(s: unknown): void }
       telemetry: { on(n: string, f: (d: unknown) => void): void }
@@ -415,7 +415,7 @@ describe("an 'error' hook that throws is reported, and does not change the answe
     const events: unknown[] = []
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as {
       services: { register(s: unknown): void }
       telemetry: { on(n: string, f: (d: unknown) => void): void }
@@ -447,7 +447,7 @@ describe('a plugin boot() that throws unwinds what already booted', () => {
   function bare() {
     return createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as {
       configure(p: unknown): unknown
       start(): Promise<void>, stop(): Promise<void>
@@ -519,7 +519,7 @@ describe('start() twice is refused by name', () => {
     // caller whose mistake was calling start() twice.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     let msg = ''
@@ -540,7 +540,7 @@ describe('start() twice is refused by name', () => {
     // contract (FJS-D479); the refusal is what says so.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     await a.stop()
@@ -556,7 +556,7 @@ describe('start() twice is refused by name', () => {
     // A latch that refused every app would satisfy both refusals above.
     const a = createApp({
       logLevel: 'silent',
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+      config: { port: 0, services: { dir: '/nonexistent' } },
     }) as unknown as { start(): Promise<void>, stop(): Promise<void> }
     await a.start()
     await a.stop()

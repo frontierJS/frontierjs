@@ -48,7 +48,7 @@ Sierra declares `@frontierjs/mesa` as a required peer and `@frontierjs/junction`
 | Package | Needed for |
 | --- | --- |
 | `@frontierjs/mesa` | always — the compiler and runtime |
-| `@frontierjs/junction` | `sierra/junction`, `sierra/presence` |
+| `@frontierjs/junction` | `sierra/resource`, `sierra/presence` |
 | `@frontierjs/litestone` | schema seeding from `db/schema.lite` (optional; absence is not an error) |
 
 ---
@@ -479,7 +479,7 @@ export async function getStaticPaths() {        // static builds only
 import {
   status, session, signIn, signOut, getClient, whenReady,
   createResource, createStore, useStore,
-} from '@frontierjs/sierra/junction'
+} from '@frontierjs/sierra/resource'
 ```
 
 `initJunction()` is called for you by `virtual:sierra` whenever `junction.url` is set. It
@@ -506,7 +506,7 @@ are there because Vite also loads this file in Node, which has neither `import.m
 
 ```html
 <script>
-  import { status } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/resource'
   $: status.connected
 </script>
 
@@ -531,7 +531,7 @@ that is a banner, a prompt or a silent reload is the app's answer:
 API realm:
 
 ```js
-import { createResource } from '@frontierjs/sierra/junction'
+import { createResource } from '@frontierjs/sierra/resource'
 
 export const leads = createResource('leads', {
   hooks: {
@@ -778,7 +778,7 @@ A page that shows a FrontierJS app it is not, such as a studio over the app it
 hosts, builds the resource from a handle on that app:
 
 ```js
-import { connectApp, createResource } from '@frontierjs/sierra/junction'
+import { connectApp, createResource } from '@frontierjs/sierra/resource'
 
 const hosted = connectApp({ url: `/hosted/${id}`, apiPrefix: '/api', schema, user })
 export const leads = createResource('leads', { app: hosted })
@@ -1226,7 +1226,7 @@ Runs automatically after `vite build`:
 | Step | Condition |
 | --- | --- |
 | `404/index.html` → `404.html` | always |
-| `public/robots.txt` → `dist/robots.txt` | always |
+| `robots.txt`: the public directory's, or a default naming `siteUrl`'s sitemap | always |
 | `_redirects` from routes with `redirect:` | always |
 | `sitemap.xml` from `indexed` routes | always |
 | `llms.txt` | `llms` is `true` or `'auto'` |
@@ -1309,7 +1309,9 @@ import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
 Without the `$:` the read is a snapshot taken at mount. Sierra passes
 `externalReactivityHints: 'strict'` to the Mesa compiler, so an uncovered member read on
 any imported object is reported at build time — say `var` if a one-time read is what you
-meant.
+meant. A `static` build reports it only for a component a published script contains, such
+as an island, since a page that ships no script never re-renders, and it prints a count
+of the ones it held back.
 
 With `theme` configured, the post-build pipeline injects an inline `<head>` script that
 applies the persisted preference before first paint, so there is no flash.
@@ -1339,12 +1341,13 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 
 | Subpath | Contents |
 | --- | --- |
-| `@frontierjs/sierra` | `VERSION`, re-exported router + theme API, `createSierraViteConfig` |
+| `@frontierjs/sierra` | the router and theme API, and nothing else — a battery or the build is reached by its subpath (`FJS-D649`) |
 | `.../build` | `createSierraViteConfig` |
 | `.../router` | navigation, `page`, guards, `RouterView`, `ChainRenderer` |
 | `.../router/internals` | chain resolution — used by `RouterView`, not public |
 | `.../scanner` | `scan`, `scanAndWrite`, `buildTree`, `classify`, frontmatter parsing |
-| `.../junction` | client wiring, `status`, auth, `createResource`, `createStore`, `useStore`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
+| `.../resource` | client wiring, `status`, auth, `createResource`, `createStore`, `useStore`, `buildFieldRules`, `buildRelations`, `buildGate`, `canAtLevel`, `validateAgainstFields`, `normalizeBlanks`, `coerceToSchema`, `resolveRef` |
+| `.../field-rules` | the Schema → UI projection alone — `controlFor`, `formFieldList`, `buildFieldRules`, `toFieldErrors`; imports no client |
 | `.../fetch` | `sierraFetch`, `configureFetch` |
 | `.../theme` | `theme`, `setTheme`, `toggleTheme`, `initTheme` |
 | `.../presence` | `presence(channelId, opts)` |

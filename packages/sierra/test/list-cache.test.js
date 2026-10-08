@@ -30,7 +30,7 @@ let finding = null
 let _store = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     on: () => () => {},
@@ -54,9 +54,9 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { createResource }  = await import('../src/junction/resource.js')
-const { listCache, listKey, _resetListCache } = await import('../src/junction/list-cache.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { createResource }  = await import('../src/resource/resource.js')
+const { listCache, listKey, _resetListCache } = await import('../src/resource/list-cache.js')
 
 const SOURCE = `
 model Sheet { id String @id @default(uuid())  name String  @@gate("0.0.0.0")  @@sync(server) }

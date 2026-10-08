@@ -21,7 +21,7 @@ title: New order
   import Order        from '@/resources/Order.mesa'
   import { orders }   from '@/resources/Order.mesa'
   import { goto } from '@frontierjs/sierra/router'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

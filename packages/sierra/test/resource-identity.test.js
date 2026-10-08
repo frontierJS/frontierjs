@@ -44,7 +44,7 @@ let _storeRows = []
 let ROWS = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => {
@@ -64,8 +64,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { createResource, resetResourcesForIdentityChange } = await import('../src/junction/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { createResource, resetResourcesForIdentityChange } = await import('../src/resource/resource.js')
 
 const SOURCE = `
 model Customer {

@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-08 — the raw handle is basecamp's own (`FJS-D641`)
+
+Junction no longer opens a database, so `api/src/core/sqlite.ts` opens the bun:sqlite handle that the migrations, conduit's store, the health probe and `app.sqlite` use. It sets the four pragmas junction's opener set. `db/seed.js` uses it too. `config.database: { url: '' }`, which kept junction from opening a second database, is gone, and so is the unused `DB_LOG`. Battery imports moved to junction's subpaths: `/metrics`, `/devtools`, `/mail`. `buildRoutes` now comes from the main entry. Whether this handle should open through litestone instead is `FJS-D646`.
+
 ## 2026-10-07 — the outpost target states `resilience`, and the channel hook is `AnnounceFn` (`FJS-D631`)
 
 `servers.service.ts` registers the outpost target with `resilience: { deadline_ms }` and compares `known?.resilience?.deadline_ms`, conduit's new name for the per-target numbers. Left as `policy`, it would have been dropped without a word and the deploy deadline lost (`FJS-1951`). `workspaceChannel` is typed `AnnounceFn`. `bun run typecheck` is back at its baseline.

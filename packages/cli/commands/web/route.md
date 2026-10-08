@@ -99,7 +99,7 @@ title: ${frontmatterValue(title)}
 ---
 <script>
   import { ${service} } from '${up}resources/${model}.mesa'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { useStore } from '@frontierjs/sierra/resource'
   import { $.onDestroy } from '@frontierjs/mesa/runtime'
 
   // useStore wraps the Resource's store as a Mesa signal. Call it once here —

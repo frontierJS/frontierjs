@@ -17,7 +17,7 @@ anArrat: [12,2,4, "thisString"]
   // each carry `@allow('write', auth().isAdmin)` in the seed, and none of that
   // is written here or on the screen — the boundary answers it.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const users = createResource('users', { model: 'User' })
 </script>

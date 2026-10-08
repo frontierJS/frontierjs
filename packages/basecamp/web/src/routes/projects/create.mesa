@@ -4,7 +4,7 @@ title: New project
 <script>
   import { goto } from '@frontierjs/sierra/router'
   import { projects } from '../../resources/Project.mesa'
-  import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { ResourceValidationError } from '@frontierjs/sierra/resource'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
 

@@ -20,7 +20,7 @@
   // did not render it would be showing a figure with no way back to where it
   // came from.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const payslips = createResource('payslips')
 </script>

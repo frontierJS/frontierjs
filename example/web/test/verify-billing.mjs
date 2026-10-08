@@ -36,7 +36,7 @@ import { db }              from '../../api/src/core/db.ts'
 import { SYSTEM }          from '../../api/src/core/gate.ts'
 import { commitmentHooks } from '../../api/src/core/commitments.ts'
 import { advancePeriod, settleInvoice, voidInvoice, startSubscription, DUNNING_DAYS, GRACE_DAYS, TERMS_DAYS } from '../../api/src/domain/billing'
-import { fireCommitment }  from '@frontierjs/junction'
+import { fireCommitment } from '@frontierjs/junction/commitments'
 import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 

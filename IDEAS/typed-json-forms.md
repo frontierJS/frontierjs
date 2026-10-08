@@ -113,5 +113,5 @@ becomes answerable the moment one of them has a screen.
 - `FJS-D176` — the `$merge` ruling this sits on.
 - `FJS-D176` (`DECISIONS.md`) — `$merge`, the write half
 - `packages/litestone/docs/json-types.md` — `Json @type(T)`
-- `packages/sierra/src/junction/field-rules.js` — `controlFor`, and the one table a control comes from
+- `packages/sierra/src/resource/field-rules.js` — `controlFor`, and the one table a control comes from
 - `FJS-D17` — a contributed control is two registrations, which is the seam a fieldset would arrive through

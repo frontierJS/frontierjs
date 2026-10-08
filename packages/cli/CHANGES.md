@@ -1,5 +1,13 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-08 — scaffolds import the Resource from `@frontierjs/sierra/resource` (`FJS-D650`)
+
+`fli make:model`, `fli admin:generate`, `fli web:route`, `fli new` and the tutor steps now write `@frontierjs/sierra/resource`, since sierra renamed the subpath and kept nothing for `./junction`. Proof: `test/generated-mesa.test.js`, `test/checks.test.js` and `test/ask.test.js` pass; the full suite's only other failure was a tty timing test that passes alone.
+
+## 2026-10-08 — `deploy:doctor` checks `.env` is gitignored; templates import junction's batteries by subpath (`FJS-D639`, `FJS-D642`)
+
+`fli deploy:doctor` fails a `.env` that `git check-ignore` does not ignore. The server pulls from git, so a tracked `.env` deploys its secrets. This is the one check from the deleted `junction setup audit` that `fli` had nowhere else (`FJS-D647`). It was driven both ways in a scratch repo. The backfill stub, `backfill:install`, `notifications:install` and the notify tutor now write `@frontierjs/junction/backfill` and `@frontierjs/junction/mail`, since junction's main entry re-exports no battery.
+
 ## 2026-10-07 — `tutor:live` and the scaffolds say *broadcast*, not *publish* (`FJS-D631`)
 
 Junction's `publish()` hook is `announce()`, and the lesson text, `make:model`, `make:scaffold` and `project/new.md` call the thing that goes out on a channel a *broadcast*. `tutor:site` keeps *publish*, which there means what a static build ships. No generated code changes: the scaffolds emit `channel:`, never the hook.

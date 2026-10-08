@@ -10,7 +10,7 @@ title: Sign in
   // This page asks for the password and nothing more. The code, when the
   // account owes one, is the shell's box: `signIn` resolves with no session and
   // `session.awaitingCode` set, and the layout renders from that.
-  import { session, signIn, getClient } from '@frontierjs/sierra/junction'
+  import { session, signIn, getClient } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

@@ -17,7 +17,7 @@
  * and surfaced as
  *
  *   Failed to resolve import "@frontierjs/junction/client"
- *     from ".../packages/sierra/src/junction/index.js"
+ *     from ".../packages/sierra/src/resource/index.js"
  *
  * under `bun link`, or in a `repo/packages/*` monorepo.
  *

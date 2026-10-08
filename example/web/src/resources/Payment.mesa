@@ -21,7 +21,7 @@
   // screen offers instead is the two verbs — `start` and `refund` — and both
   // are actions on the money rather than edits to the row.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const payments = createResource('payments')
 </script>

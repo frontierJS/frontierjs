@@ -317,12 +317,12 @@ export class GatePlugin extends Plugin {
 
   async onBeforeRead(model, args, ctx) {
     await this._check(model, 'read', ctx)
-    for (const target of collectIncludedModels(args, model, ctx.relationMap))
+    for (const target of collectIncludedModels(args, model, ctx.shapes))
       await this._check(target, 'read', ctx)
     // A @from field below its target's gate reads as null (gatedFromFields);
     // filtering or sorting on one would still answer for the rows behind it,
     // so naming one there is refused as the include would be.
-    const fromFields = ctx.fromMap?.[model]
+    const fromFields = ctx.shapes[model].fromFields
     const hidden = gatedFromFields(fromFields, ctx)
     if (hidden) for (const name of namedIn(args, hidden))
       await this._check(fromFields[name].target, 'read', ctx)
@@ -332,7 +332,7 @@ export class GatePlugin extends Plugin {
 
   async onBeforeCreate(model, args, ctx) {
     await this._check(model, 'create', ctx, liftsGate(args?.system))
-    const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
+    const nested  = collectNestedOps(args?.data, model, ctx.shapes)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {
       const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'create')
@@ -345,7 +345,7 @@ export class GatePlugin extends Plugin {
 
   async onBeforeUpdate(model, args, ctx) {
     await this._check(model, 'update', ctx, liftsGate(args?.system))
-    const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
+    const nested  = collectNestedOps(args?.data, model, ctx.shapes)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {
       const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'update')

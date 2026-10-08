@@ -13,7 +13,7 @@ title: New product
   import Product      from '@/resources/Product.mesa'
   import { products } from '@/resources/Product.mesa'
   import { goto } from '@frontierjs/sierra/router'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

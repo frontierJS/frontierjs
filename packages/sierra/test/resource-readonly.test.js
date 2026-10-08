@@ -26,7 +26,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 const _calls = []
 let _proxy
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     resource: () => ({
@@ -37,9 +37,9 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { buildFieldRules, stripReadOnly } = await import('../src/junction/field-rules.js')
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { buildFieldRules, stripReadOnly } = await import('../src/resource/field-rules.js')
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 beforeEach(() => {
   _calls.length = 0

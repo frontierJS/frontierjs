@@ -1,3 +1,4 @@
+// @ts-check
 // databases.js — the database a model's rows live in, opened, and the handles
 // read through it.
 //
@@ -13,11 +14,70 @@ import { resolve, dirname, existsSync, mkdirSync, mkdtempSync, join, tmpdir, ext
 import { noteMintedDirectory } from './db-path.js'
 import { ClientClosedError } from './errors.js'
 
+/** @import { LitestoneSchema, DatabaseBlock } from '../index.d.ts' */
+/**
+ * A prepared statement as the handles here see it — the engine's own, or a
+ * per-model view over one (`wideStmt`, `mappedStmt`) that carries only these.
+ * @typedef {object} Stmt
+ * @property {(...params: any[]) => any}   get
+ * @property {(...params: any[]) => any[]} all
+ * @property {(...params: any[]) => any}   run
+ */
+
+/**
+ * A connection as `#sql-engine` owes it (`engine.js` § The surface an engine
+ * owes) — stated structurally, because naming the server engine's type here
+ * would be the ninth file to name it (`FJS-D305`).
+ * @typedef {object} RawDb
+ * @property {(sql: string) => Stmt & { finalize?: () => void, values?: (...params: any[]) => any[] }} prepare
+ * @property {(sql: string) => Stmt}                        query
+ * @property {(sql: string, ...params: any[]) => unknown}   run
+ * @property {() => void}                                   close
+ */
+
+/**
+ * The connection every statement goes through: the cache from `wrapDb`, or a
+ * `wideDb`/`mappedDb`/read-router view over it. `$plain` points one layer in.
+ * @typedef {object} DbHandle
+ * @property {(sql: string) => Stmt}                     query
+ * @property {(sql: string) => Stmt}                     prepare
+ * @property {(sql: string, ...params: any[]) => unknown} run
+ * @property {RawDb | null}                              $raw
+ * @property {DbHandle}                                  [$plain]
+ * @property {() => void}                                [close]
+ * @property {boolean}                                   [closed]
+ * @property {number}                                    [cacheSize]
+ */
+
+/**
+ * One row of the registry `buildDbRegistry` answers. The write half is null on a
+ * readonly or `access: false` name, and both halves are null for a file driver.
+ * @typedef {object} DbEntry
+ * @property {'sqlite' | 'jsonl' | 'logger'}      driver
+ * @property {'readwrite' | 'readonly' | false}   access
+ * @property {string}                             absPath
+ * @property {string | null}                      retention
+ * @property {string | null}                      [maxSize]
+ * @property {string | null}                      [logModel]
+ * @property {unknown}                            [busyTimeout]
+ * @property {RawDb | null}                       rawWriteDb
+ * @property {RawDb | null}                       rawReadDb
+ * @property {DbHandle | null}                    writeDb
+ * @property {DbHandle | null}                    readDb
+ */
+
+/** @typedef {Record<string, 'readwrite' | 'readonly' | false>} AccessConfig */
+
 // ─── Statement cache ──────────────────────────────────────────────────────────
 // Wraps a Database with a prepared statement cache.
 // query() and prepare() compile once and reuse — zero recompilation on hot paths.
 // run() stays uncached — used only for transactions/pragmas (called rarely).
 
+/**
+ * @param {RawDb} rawDb
+ * @param {{ maxCacheSize?: number, label?: string }} [options]
+ * @returns {DbHandle}
+ */
 function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   // Map preserves insertion order, so delete+set on hit moves an entry to "most
   // recently used", and the first key is always the oldest. When we hit the cap,
@@ -40,11 +100,16 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   // skipped because `db.sql` passes them through.
   const SINGLE_USE = /^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)*EXPLAIN\b/i
   let closed = false
+  /** @param {string} sql */
   function singleUse(sql) {
     const s = rawDb.prepare(sql)
-    const once = (f) => (...a) => { try { return f.apply(s, a) } finally { try { s.finalize?.() } catch {} } }
+    /** @param {(...a: any[]) => any} f */
+    const once = (f) => (/** @type {any[]} */ ...a) => { try { return f.apply(s, a) } finally { try { s.finalize?.() } catch {} } }
+    // @ts-expect-error — `values()` is not in the surface an engine owes (engine.js) and
+    // `engines/sqlite-wasm.js` has none, so an EXPLAIN's `.values()` there is a TypeError.
     return { get: once(s.get), all: once(s.all), values: once(s.values), run: once(s.run) }
   }
+  /** @param {string} sql */
   function stmt(sql) {
     if (closed) throw new ClientClosedError(label)
     if (SINGLE_USE.test(sql)) return singleUse(sql)
@@ -69,7 +134,9 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
     return s
   }
   return {
+    /** @param {string} sql */
     query(sql)          { return stmt(sql) },
+    /** @param {string} sql */
     prepare(sql)        { return stmt(sql) },
     // The connection underneath, for the two things that are not SQL: loading
     // an extension, and anything else the C API owns. `wrapDb` is a statement
@@ -77,6 +144,7 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
     // a general escape — `rawHandle()` below is the one reader.
     $raw:               rawDb,
     // run() now caches UPDATE/DELETE/INSERT — only pragmas/transactions bypass
+    /** @param {string} sql @param {...any} params */
     run(sql, ...params) {
       if (closed) throw new ClientClosedError(label)
       if (NO_CACHE.test(sql)) return rawDb.prepare(sql).run(...params)
@@ -94,7 +162,6 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
       cache.clear()
     },
     get closed()        { return closed },
-    $raw: rawDb,
     get cacheSize()     { return cache.size },
   }
 }
@@ -120,18 +187,32 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
 // passing either — measured, `count()` on a wide model answered `0n`. So the
 // statement narrows what it returns, and there is no list of places to keep in
 // step.
-function wideStmt(stmt, bigFields) {
+/**
+ * @param {Stmt} plain
+ * @param {Set<string>} bigFields
+ * @returns {Stmt}
+ */
+function wideStmt(plain, bigFields) {
+  // The statement comes from `$plain`, the cache, so it is bun's own and has
+  // `safeIntegers`; a view's statement never reaches here — `wideDb` unwraps.
+  // Named here because bun-types 1.3 declares the open option and not the method.
+  const stmt = /** @type {Stmt & { safeIntegers: (on: boolean) => unknown }} */ (plain)
   stmt.safeIntegers(true)
   return {
-    get: (...a) => narrowRow(stmt.get(...a), bigFields),
-    all: (...a) => { const rows = stmt.all(...a); for (const r of rows) narrowRow(r, bigFields); return rows },
-    run: (...a) => stmt.run(...a),
+    get: (/** @type {any[]} */ ...a) => narrowRow(stmt.get(...a), bigFields),
+    all: (/** @type {any[]} */ ...a) => { const rows = stmt.all(...a); for (const r of rows) narrowRow(r, bigFields); return rows },
+    run: (/** @type {any[]} */ ...a) => stmt.run(...a),
   }
 }
 
 // One decision per model, covering every statement its ~30 read and RETURNING
 // sites build. Only a model that declares a `@big` gets one, so a schema with
 // none pays nothing at all — no wrapper, no `safeIntegers`, no per-row scan.
+/**
+ * @param {DbHandle} db
+ * @param {Set<string>} bigFields
+ * @returns {DbHandle}
+ */
 export function wideDb(db, bigFields) {
   // Unwrap first. A wide model's `makeTable` shadows its own `readDb`, and that
   // wrapper is then handed to the include resolver and the `@from` resolver,
@@ -140,9 +221,9 @@ export function wideDb(db, bigFields) {
   // into a rounded number. `$plain` is what makes the decision the target's.
   const base = db.$plain ?? db
   return {
-    query:   (sql) => wideStmt(base.query(sql), bigFields),
-    prepare: (sql) => wideStmt(base.prepare(sql), bigFields),
-    run:     (sql, ...params) => base.run(sql, ...params),
+    query:   (/** @type {string} */ sql) => wideStmt(base.query(sql), bigFields),
+    prepare: (/** @type {string} */ sql) => wideStmt(base.prepare(sql), bigFields),
+    run:     (/** @type {string} */ sql, /** @type {any[]} */ ...params) => base.run(sql, ...params),
     get $plain()    { return base },
     get $raw()      { return base.$raw },
     get closed()    { return base.closed },
@@ -162,6 +243,10 @@ export function wideDb(db, bigFields) {
 //
 // Only a model that maps something gets a wrapper, so a schema with no `@map`
 // pays nothing — no wrapper, no per-row scan.
+/**
+ * @param {Record<string, unknown> | null | undefined} row
+ * @param {Record<string, string>} back
+ */
 function unmapRow(row, back) {
   if (!row) return row
   for (const storage in back) {
@@ -174,16 +259,27 @@ function unmapRow(row, back) {
   return row
 }
 
+/**
+ * @param {Stmt} stmt
+ * @param {Record<string, string>} back
+ * @returns {Stmt}
+ */
 function mappedStmt(stmt, back) {
   return {
-    get: (...a) => unmapRow(stmt.get(...a), back),
-    all: (...a) => { const rows = stmt.all(...a); for (const r of rows) unmapRow(r, back); return rows },
-    run: (...a) => stmt.run(...a),
+    get: (/** @type {any[]} */ ...a) => unmapRow(stmt.get(...a), back),
+    all: (/** @type {any[]} */ ...a) => { const rows = stmt.all(...a); for (const r of rows) unmapRow(r, back); return rows },
+    run: (/** @type {any[]} */ ...a) => stmt.run(...a),
   }
 }
 
+/**
+ * @param {DbHandle} db
+ * @param {Record<string, string>} columnMap  field → column
+ * @returns {DbHandle}
+ */
 export function mappedDb(db, columnMap) {
   // Column → field, inverted once per model rather than per row.
+  /** @type {Record<string, string>} */
   const back = {}
   for (const field in columnMap) back[columnMap[field]] = field
   // Wraps what it is GIVEN and does not unwrap, because a model can be both wide
@@ -194,9 +290,9 @@ export function mappedDb(db, columnMap) {
   // their rows against this map would rewrite a key that means something else
   // there.
   return {
-    query:   (sql) => mappedStmt(db.query(sql), back),
-    prepare: (sql) => mappedStmt(db.prepare(sql), back),
-    run:     (sql, ...params) => db.run(sql, ...params),
+    query:   (/** @type {string} */ sql) => mappedStmt(db.query(sql), back),
+    prepare: (/** @type {string} */ sql) => mappedStmt(db.prepare(sql), back),
+    run:     (/** @type {string} */ sql, /** @type {any[]} */ ...params) => db.run(sql, ...params),
     get $plain()    { return db.$plain ?? db },
     get $raw()      { return db.$raw },
     get closed()    { return db.closed },
@@ -206,6 +302,7 @@ export function mappedDb(db, columnMap) {
 
 // The plain handle behind a wide wrapper, for the resolvers that answer for a
 // model of their own.
+/** @param {DbHandle} db */
 export const plainDb = (db) => db.$plain ?? db
 
 // The `bun:sqlite` Database under however many wrappers are on it. `wideDb`,
@@ -213,6 +310,7 @@ export const plainDb = (db) => db.$plain ?? db
 // this walks down and then reads the statement cache's own handle. Bounded
 // rather than `while (true)`, because a wrapper that pointed at itself would
 // otherwise hang the read that asked.
+/** @param {DbHandle | null | undefined} db */
 export function rawHandle(db) {
   let cur = db
   for (let i = 0; i < 8 && cur; i++) {
@@ -231,6 +329,10 @@ export function rawHandle(db) {
 // nothing per statement, so `id`, a count and a Boolean's 0/1 arrive wide too,
 // and a caller must not be able to tell that this model has a `@big` column in
 // it from the type of a column that has not.
+/**
+ * @param {Record<string, unknown> | null | undefined} row
+ * @param {Set<string>} bigFields
+ */
 function narrowRow(row, bigFields) {
   if (!row) return row
   for (const k in row) {
@@ -250,12 +352,17 @@ const MIN_SAFE = -MAX_SAFE
 
 // pathDef: { kind: 'literal', value } | { kind: 'env', var, default }
 // override: optional string from createClient options.databases[name].path
+/**
+ * @param {DatabaseBlock['path']} pathDef
+ * @param {string | undefined} override
+ * @param {string | null} [anchor]
+ */
 function resolveDbPath(pathDef, override, anchor = null) {
   // An override comes from code — `createClient({ db })`, `databases: {…}` —
   // and code is written against the process, not against the schema file.
   if (override) return override === ':memory:' ? ':memory:' : resolve(override)
 
-  const against = v => v === ':memory:' ? ':memory:'
+  const against = (/** @type {string} */ v) => v === ':memory:' ? ':memory:'
                      : anchor            ? resolve(anchor, v)
                      : resolve(v)
 
@@ -268,6 +375,11 @@ function resolveDbPath(pathDef, override, anchor = null) {
 }
 
 // Open a SQLite database pair (write + read) with standard Litestone pragmas.
+/**
+ * @param {string} absPath
+ * @param {unknown} busyTimeout
+ * @returns {{ rawWriteDb: RawDb | null, rawReadDb: RawDb, writeDb: DbHandle | null, readDb: DbHandle }}
+ */
 function openSqliteConnections(absPath, busyTimeout) {
   // SQLite can create a DB file but not its parent directory. If the configured
   // path points into a directory that doesn't exist yet, pre-create it so the
@@ -283,14 +395,16 @@ function openSqliteConnections(absPath, busyTimeout) {
     } catch { /* fall through — let the Database() call surface the real error */ }
   }
 
+  /** @type {RawDb} */
   let rawWriteDb
   try {
     rawWriteDb = openDatabase(absPath)
-  } catch (err) {
+  } catch (/** @type {any} */ err) {
     if (err?.code === 'SQLITE_CANTOPEN') {
       const hint = absPath === ':memory:'
         ? ''
         : `\n  path: ${absPath}\n  Check that the parent directory exists and is writable.`
+      /** @type {Error & { code?: string }} */
       const e = new Error(`unable to open SQLite database: ${err.message}${hint}`)
       e.code = err.code
       e.cause = err
@@ -343,6 +457,11 @@ function openSqliteConnections(absPath, busyTimeout) {
 }
 
 // A stub db that throws clearly when accessed on a restricted database.
+/**
+ * @param {string} dbName
+ * @param {false | 'readonly'} reason
+ * @returns {DbHandle}
+ */
 function makeThrowingDb(dbName, reason) {
   const msg = reason === false
     ? `Database '${dbName}' is not accessible in this client (access: false)`
@@ -354,8 +473,15 @@ function makeThrowingDb(dbName, reason) {
 // Merge readOnly shorthand into accessConfig.
 // readOnly: true  →  every SQLite database in the schema gets access: 'readonly'
 // Explicit accessConfig entries always win over readOnly shorthand.
+/**
+ * @param {AccessConfig | null | undefined} accessConfig
+ * @param {boolean | undefined} readOnly
+ * @param {LitestoneSchema} schema
+ * @returns {AccessConfig}
+ */
 export function resolveAccessConfig(accessConfig, readOnly, schema) {
   if (!readOnly) return accessConfig ?? {}
+  /** @type {AccessConfig} */
   const base = {}
   for (const db of schema.databases) {
     if (!db.driver || db.driver === 'sqlite') base[db.name] = 'readonly'
@@ -388,11 +514,22 @@ export function resolveAccessConfig(accessConfig, readOnly, schema) {
 // ':memory:' is excluded from the grouping: every `openDatabase(':memory:')` is
 // a database of its own, so those names really are separate files and sharing
 // one handle would put two schemas' tables in it.
+/**
+ * @param {LitestoneSchema} schema
+ * @param {string | null | undefined} dbPath
+ * @param {Record<string, { path?: string }>} dbOverrides
+ * @param {AccessConfig} accessConfig
+ * @param {boolean} [inMemory]
+ * @param {string | null} [anchor]
+ * @param {unknown} [busyTimeout]
+ * @returns {Record<string, DbEntry>}
+ */
 export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false, anchor = null, busyTimeout = null) {
+  /** @type {Record<string, DbEntry>} */
   const registry = {}
 
-  const pathFor = db => resolveDbPath(db.path, dbOverrides[db.name]?.path, anchor)
-  const isSqlite = db => !db.driver || db.driver === 'sqlite'
+  const pathFor = (/** @type {DatabaseBlock} */ db) => resolveDbPath(db.path, dbOverrides[db.name]?.path, anchor)
+  const isSqlite = (/** @type {DatabaseBlock} */ db) => !db.driver || db.driver === 'sqlite'
 
   // Which files anything writes to. Asked before the first open, because a
   // readonly block closes the write handle and a readwrite block on the same
@@ -412,12 +549,17 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
 
   // A per-database `busyTimeout` cannot differ for one file, so the first
   // declaration to open it decides — schema order, and main is normally first.
+  /**
+   * @param {string} absPath
+   * @param {string} name
+   * @param {boolean} wantsWrite
+   */
   function connectionsFor(absPath, name, wantsWrite) {
     const shared = absPath === ':memory:' ? null : opened.get(absPath)
     if (shared) return shared
     const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, name))
     if (!wantsWrite) {
-      conns.rawWriteDb.close()
+      conns.rawWriteDb?.close()
       conns.rawWriteDb = null
       conns.writeDb    = null
     }
@@ -477,11 +619,16 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
 }
 // Build a map of model name → database name from @@db model attributes.
 // Models without @@db fall through to 'main'.
+/**
+ * @param {LitestoneSchema} schema
+ * @returns {Record<string, string>}
+ */
 export function buildModelDbMap(schema) {
+  /** @type {Record<string, string>} */
   const map = {}
   for (const model of schema.models) {
     const dbAttr = model.attributes.find(a => a.kind === 'db')
-    map[model.name] = dbAttr?.name ?? 'main'
+    map[model.name] = /** @type {string | undefined} */ (dbAttr?.name) ?? 'main'
   }
   return map
 }
@@ -498,6 +645,10 @@ export function buildModelDbMap(schema) {
 //     model requestLogs @@db(audit)  →  ./audit/requestLogs.jsonl
 //
 // The directory is created automatically on first use.
+/**
+ * @param {string} absPath
+ * @param {string} modelName
+ */
 export function jsonlFilePath(absPath, modelName) {
   if (extname(absPath) === '.jsonl') {
     // Explicit single-file path — use it directly

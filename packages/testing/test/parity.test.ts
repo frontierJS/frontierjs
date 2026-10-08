@@ -43,7 +43,7 @@ interface BuildOpts {
 }
 
 function buildApp(db: unknown, { sockets = true, leadHooks }: BuildOpts = {}) {
-  const app = createApp({ db, auth: auth as never, config: { database: { url: '', log: false } } })
+  const app = createApp({ db, auth: auth as never, config: {  } })
   app.services.register(createService({
     name: 'leads', model: 'Lead', hooks: leadHooks as never,
     // A custom action, because it reaches the two transports by different names:

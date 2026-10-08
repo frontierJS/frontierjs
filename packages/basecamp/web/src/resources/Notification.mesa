@@ -9,7 +9,7 @@
   // `notifications created` to `notifications:user:<id>`, which the API joins
   // on connect, and the client routes that frame into this store — so neither
   // screen polls.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const notifications = createResource('notifications', { model: 'Notification' })
 

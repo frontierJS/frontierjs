@@ -33,7 +33,7 @@ function client() {
 }
 
 async function appWith(def: object) {
-  const app = createApp({ config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } } })
+  const app = createApp({ config: { port: 0, services: { dir: '/nonexistent' } } })
   app.services.register(createService(def as never))
   return app
 }

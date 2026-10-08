@@ -384,3 +384,8 @@ export function createSqliteCache(opts: SqliteCacheOptions = {}): ICache {
     }
   }
 }
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.cache`.
+declare module '../core/app.ts' {
+  interface AppCache extends ICache {}
+}

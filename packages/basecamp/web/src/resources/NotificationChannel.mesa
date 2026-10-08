@@ -11,7 +11,7 @@
   // modelNameFor() looks for `Channel`, misses, warns, and degrades to a bare
   // make() — validation, labels and field rules all silently stop being
   // schema-derived.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const channels = createResource('channels', {
     model: 'NotificationChannel',

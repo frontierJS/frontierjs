@@ -1,14 +1,22 @@
+// @ts-check
 // audit-log.js — `@log` and `@@log`: which reads and writes are recorded,
 // the entry each one writes, and the fire-and-forget write of it.
+
+/** @import { LitestoneSchema, ModelDef, LogEntry, LogRequestContext } from '../index.d.ts' */
+/** @import { Ctx } from './field-policy.js' */
 
 // ─── Logger driver helpers ────────────────────────────────────────────────────
 
 // The auto-generated model AST for driver:logger databases in auto mode.
 // Shape is fixed — owned by Litestone, not the user.
 // Model name: <dbName>Logs  e.g. audit → auditLogs
+/**
+ * @param {string} dbName
+ * @returns {ModelDef}
+ */
 export function makeLoggerAutoModel(dbName) {
   const name = dbName + 'Logs'
-  const f = (fieldName, typeName, optional = false) => ({
+  const f = (/** @type {string} */ fieldName, /** @type {string} */ typeName, optional = false) => ({
     name: fieldName,
     type: { kind: 'scalar', name: typeName, optional, array: false },
     attributes: [],
@@ -85,8 +93,12 @@ export function makeLoggerAutoModel(dbName) {
 // Returns:
 //   fields: { 'ModelName.fieldName': [{ db, reads, writes }] }
 //   models: { 'ModelName':           [{ db, reads, writes }] }
+/** @typedef {{ db: unknown, reads: unknown, writes: unknown }} LogTarget  one `@log`/`@@log` declaration, as the parser wrote it */
+/** @param {LitestoneSchema} schema */
 export function buildLogMap(schema) {
+  /** @type {Record<string, LogTarget[]>} */
   const fields = {}
+  /** @type {Record<string, LogTarget[]>} */
   const models = {}
 
   for (const model of schema.models) {
@@ -123,6 +135,7 @@ export function buildLogMap(schema) {
  * `system` rather than nothing for `asSystem()`, because *the application did
  * this* and *nobody was in scope* are different answers and only one of them
  * is null. `src/export.js` said `system` here while this line said nothing.
+ * @param {Ctx} ctx
  */
 function actorTypeOf(ctx) {
   if (ctx.auth?.type) return String(ctx.auth.type)
@@ -134,6 +147,12 @@ function actorTypeOf(ctx) {
 // Build the log entry object from the standard fields + onLog.
 // ctx is the request context (has ctx.auth).
 // onLog is the user-supplied function from createClient options.
+/**
+ * @param {{ operation: LogEntry['operation'], model: string, field?: string | null, transition?: string | null,
+ *           records?: unknown[], before?: unknown, after?: unknown, lifted?: string[] | null }} write
+ * @param {Ctx} ctx
+ * @param {((entry: Record<string, unknown>, ctx: Ctx) => Record<string, any> | null | void) | null | undefined} onLog
+ */
 export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted }, ctx, onLog) {
   // WHERE the write came from. Supplied by whoever owns the request — junction
   // installs a closure over its own request store — because this package sits
@@ -145,6 +164,7 @@ export function buildLogEntry({ operation, model, field, transition, records, be
   // A throw here must not take the write with it. The audit row is a side
   // effect of a write that already succeeded, and a provider that fails should
   // cost the provenance columns and nothing else.
+  /** @type {LogRequestContext | null} */
   let from = null
   const provide = ctx._logContext?.fn
   if (provide) { try { from = provide() ?? null } catch { from = null } }
@@ -240,9 +260,14 @@ const _loggedLogFailure = new Set()
 // recording reads exactly like an app doing nothing, and the one warning
 // scrolled past hours ago. So the counts are kept as well, and junction puts
 // them on /metrics. `stats` is the client's own object, shared by reference.
+/**
+ * @param {{ create: (args: { data: unknown }) => unknown } | null | undefined} logTable
+ * @param {{ model?: string } & Record<string, unknown>} entry
+ * @param {{ dropped: number, written: number, lastError?: string, lastDroppedAt?: string, lastWrittenAt?: string } | null | undefined} stats
+ */
 export function fireLog(logTable, entry, stats) {
   if (!logTable) return
-  const swallow = (err) => {
+  const swallow = (/** @type {any} */ err) => {
     if (stats) { stats.dropped++; stats.lastError = String(err?.message ?? err); stats.lastDroppedAt = new Date().toISOString() }
     const key = entry?.model ?? 'log'
     if (_loggedLogFailure.has(key)) return

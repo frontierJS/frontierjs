@@ -42,7 +42,7 @@ ${OUTBOX}
 const mkDb = () => createClient({ databases: ':memory:', schema: SCHEMA }) as unknown as Promise<any>
 
 /** Enough app for enqueue: the relay only has to be PRESENT. */
-const appWithRelay = () => ({ outbox: { deliver: async () => ({ delivered: 0, failed: 0 }) } })
+const appWithRelay = () => ({ outbox: { enqueue: enqueueOutbox, deliver: async () => ({ delivered: 0, failed: 0 }) } })
 
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return withCallEffects({
@@ -190,7 +190,7 @@ describe('ctx.enqueue — the relay kick', () => {
   test('a committed call kicks the relay once', async () => {
     const db = await mkDb()
     let kicks = 0
-    const app = { outbox: { deliver: async () => { kicks++; return { delivered: 1, failed: 0 } } } }
+    const app = { outbox: { enqueue: enqueueOutbox, deliver: async () => { kicks++; return { delivered: 1, failed: 0 } } } }
 
     await callService(shippingService(), ctx(db, { app }))
     await Bun.sleep(10)   // the kick is deliberately not awaited by the call
@@ -201,7 +201,7 @@ describe('ctx.enqueue — the relay kick', () => {
   test('a failed call kicks nothing', async () => {
     const db = await mkDb()
     let kicks = 0
-    const app = { outbox: { deliver: async () => { kicks++; return { delivered: 0, failed: 0 } } } }
+    const app = { outbox: { enqueue: enqueueOutbox, deliver: async () => { kicks++; return { delivered: 0, failed: 0 } } } }
     const svc = createService({
       name:          'posts',
       transactional: ['create'],
@@ -222,7 +222,7 @@ describe('ctx.enqueue — the relay kick', () => {
     // Observer tier: the row is committed and owed, and the sweep is what makes
     // swallowing this safe.
     const db  = await mkDb()
-    const app = { outbox: { deliver: async () => { throw new Error('queue is down') } } }
+    const app = { outbox: { enqueue: enqueueOutbox, deliver: async () => { throw new Error('queue is down') } } }
 
     const real = console.error
     console.error = () => {}
@@ -243,7 +243,7 @@ describe('ctx.enqueue — the relay kick', () => {
 // tenants })` sets no `db`, so the relay reported a clean pass over an empty
 // queue forever. A durable effect was enqueued and never delivered, silently.
 
-import { deliverOutbox, pendingOutbox } from '../src/core/outbox.ts'
+import { deliverOutbox, pendingOutbox, enqueueOutbox } from '../src/plugins/outbox/engine.ts'
 import type { App } from '../src/core/app.ts'
 
 /** Two tenants, each its own in-memory client with the outbox model. */

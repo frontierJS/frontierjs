@@ -939,12 +939,12 @@ export function buildSoftDeleteCascadeMap(schema) {
   return map
 }
 
-// Walk the hasMany edges of the relationMap to collect all child tables
+// Walk the hasMany edges of the relation graph (`shapes[m].relations`) to collect all child tables
 // that also have soft delete. Returns an array of
 // { childModel, childTable, parentModel, parentTable, foreignKey, referencedKey, hardDelete }
 // in BFS order.
 //
-// relationMap is keyed by PascalCase model name (e.g. "User"), and rel.targetModel
+// `shapes` is keyed by PascalCase model name (e.g. "User"), and rel.targetModel
 // is also PascalCase, so the BFS traverses model names. SQL table names are derived
 // on the way out via modelToTable, which converts the PascalCase model to its
 // snake_case (or plural) SQL name.
@@ -955,14 +955,14 @@ export function buildSoftDeleteCascadeMap(schema) {
 // left every page under a trashed page live (`FJS-1723`). Each model is
 // expanded once, so a cycle terminates here; following an edge back into the
 // rows it reached is the walker's job — `walkCascade` in client.js.
-export function getCascadeTargets(modelName, relationMap, softDeleteMap, modelToTable) {
+export function getCascadeTargets(modelName, shapes, modelToTable) {
   const targets  = []
   const expanded = new Set([modelName])
   const queue    = [modelName]
 
   while (queue.length) {
     const parent = queue.shift()
-    for (const [relName, rel] of Object.entries(relationMap[parent] ?? {})) {
+    for (const [relName, rel] of Object.entries(shapes[parent].relations)) {
       if (rel.kind !== 'hasMany') continue
       const child = rel.targetModel
       // @keep is the opt-out: these children stay live when the parent goes,
@@ -972,7 +972,7 @@ export function getCascadeTargets(modelName, relationMap, softDeleteMap, modelTo
       if (rel.keep) continue
       // @hardDelete children are always included regardless of their own softDelete setting.
       // Non-hardDelete children must also be a soft-delete table to cascade.
-      if (!rel.hardDelete && !softDeleteMap[child]) continue
+      if (!rel.hardDelete && !shapes[child].softDelete) continue
       targets.push({
         childModel:    child,
         childTable:    modelToTable(child),
@@ -1164,7 +1164,7 @@ export function buildFieldReadMap(schema, relationMap) {
       }
     }
   }
-  return { own, reaches, relationMap }
+  return { own, reaches }
 }
 
 export function buildGuardedMap(schema, relationMap) {
@@ -1183,7 +1183,7 @@ export function buildGuardedMap(schema, relationMap) {
       }
     }
   }
-  return { own, reaches, relationMap }
+  return { own, reaches }
 }
 // ─── Soft delete map ──────────────────────────────────────────────────────────
 // { modelName: boolean } — true if the model uses soft delete

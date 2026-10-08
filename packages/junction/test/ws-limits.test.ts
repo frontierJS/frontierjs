@@ -81,7 +81,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: 0,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http: {
         ...defaultConfig.http,
@@ -208,7 +207,7 @@ describe('too many sockets from one address (FJS-705)', () => {
   beforeAll(async () => {
     capped = createApp({
       config: {
-        port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+        port: 0, services: { dir: '/nonexistent' },
         http: { ...defaultConfig.http, drainTimeout: 250, ws: { maxConnectionsPerIp: 3 } },
       },
     })

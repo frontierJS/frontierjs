@@ -4,7 +4,7 @@
   // No `model:` — `users` is the regular plural of `User`. The service answers
   // `get` and `patch` on `me` alone, so this resource is never loaded as a
   // list; a workspace's people are its members, read through `workspaces`.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const users = createResource('users')
 

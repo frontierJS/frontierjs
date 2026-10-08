@@ -4,7 +4,7 @@
   // No model, like Portal and Infra: a zone and a record are the vendor's
   // to state and this app keeps no copy of either. `model: null` declares that
   // rather than letting a missing schema read as a misspelt one.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const edge = createResource('edge', { model: null })
 </script>

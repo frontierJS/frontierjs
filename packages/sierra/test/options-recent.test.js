@@ -40,7 +40,7 @@ const ROWS = [
  */
 let RANK = ['Black', 'Clay']
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: (name) => ({
       on: () => {},
@@ -63,8 +63,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const str = { type: 'string' }
 const SWATCH = { type: 'object', title: 'Swatch', properties: { name: str }, 'x-label-field': 'name' }

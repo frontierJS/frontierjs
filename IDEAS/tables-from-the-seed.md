@@ -42,7 +42,7 @@ nothing else** — no argued record, no ids, no ruling. This file is that record
 
 ## What already exists, so the work is composition
 
-`sierra/src/junction/field-rules.js` is a leaf module with no Junction-client
+`sierra/src/resource/field-rules.js` is a leaf module with no Junction-client
 import, so it runs in plain Node and can be compared against Junction's server
 rules rather than copied. Twenty-four exports, and most of what these three
 surfaces need is among them:

@@ -37,7 +37,7 @@ import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 import {
   buildFieldRules, displayFor, defaultDisplayFor, controlFor,
   registerDisplay, unregisterDisplay, registeredDisplays,
-} from '../src/junction/field-rules.js'
+} from '../src/resource/field-rules.js'
 
 const SOURCE = `
 database main { path ":memory:" }

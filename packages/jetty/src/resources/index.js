@@ -1,6 +1,6 @@
 // @frontierjs/jetty/resources — public API.
 //
-// Mirrors @frontierjs/sierra/junction's surface:
+// Mirrors @frontierjs/sierra/resource's surface:
 //   - createResource (4-phase hook pipeline, schema-driven make())
 //   - createStore (in-memory store)
 //   - createMakeFromSchema (JSON schema → defaults factory)

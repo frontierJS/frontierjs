@@ -10,7 +10,7 @@
  * is. A name is the one thing that crosses.
  *
  *   // one place in the app, at startup
- *   import { registerControl }     from '@frontierjs/sierra/junction'
+ *   import { registerControl }     from '@frontierjs/sierra/resource'
  *   import { registerFormControl } from '@frontierjs/ui/controls'
  *   import Duration from './Duration.mesa'
  *
@@ -92,7 +92,7 @@ export function registeredFormControls() {
 // for the same dependency reason: sierra's `displayFor` answers a name and
 // cannot hold a component, this kit binds the name and cannot import sierra.
 //
-//   import { registerDisplay }          from '@frontierjs/sierra/junction'
+//   import { registerDisplay }          from '@frontierjs/sierra/resource'
 //   import { registerDisplayComponent } from '@frontierjs/ui/controls'
 //   import Duration from './Duration.mesa'
 //

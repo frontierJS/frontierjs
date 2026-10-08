@@ -15,9 +15,9 @@
 import { describe, test, expect } from 'vitest'
 import { vi } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => null }))
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
-const { createResource } = await import('../src/junction/resource.js')
+const { createResource } = await import('../src/resource/resource.js')
 
 describe('the no-client fallback answers the real shapes', () => {
   const r = createResource('orders')

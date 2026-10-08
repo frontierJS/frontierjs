@@ -11,7 +11,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const _calls = []
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({
       create: (data) => { _calls.push(data); return Promise.resolve(data) },
@@ -25,10 +25,10 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { buildFieldRules, formFieldList, validateAgainstFields } = await import('../src/junction/field-rules.js')
-const { createResource }  = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { session }         = await import('../src/junction/session.js')
+const { buildFieldRules, formFieldList, validateAgainstFields } = await import('../src/resource/field-rules.js')
+const { createResource }  = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { session }         = await import('../src/resource/session.js')
 
 const EVENT = {
   type: 'object',

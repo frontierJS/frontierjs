@@ -19,8 +19,8 @@ import { writeFileSync, mkdirSync, symlinkSync } from 'fs'
 import { resolveSchemaPath, generateSchemas, schemaPlugin } from '../src/build/schema-plugin.js'
 import {
   registerSchemas, schemaFor, allSchemas, allDefs, hasSchemas, resolveRef,
-} from '../src/junction/schema-registry.js'
-import { buildGate, canAtLevel } from '../src/junction/field-rules.js'
+} from '../src/resource/schema-registry.js'
+import { buildGate, canAtLevel } from '../src/resource/field-rules.js'
 import { _generateVirtualSierra } from '../src/virtual/virtual-sierra.js'
 import { tmpDir } from './tmp.js'
 

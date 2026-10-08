@@ -1785,124 +1785,6 @@ describe('ChannelManager', () => {
   })
 })
 
-// ─── Database tests ───────────────────────────────────────────────────────
-
-import { createDatabase, createInMemoryDatabase } from '../src/storage/database/index.ts'
-import type { DatabaseClient } from '../src/storage/database/index.ts'
-
-describe('createDatabase', () => {
-
-  it('opens an in-memory database', () => {
-    const { db, close } = createInMemoryDatabase()
-    const row = db.query('SELECT 1 as n').get() as { n: number }
-    expect(row.n).toBe(1)
-    close()
-  })
-
-  it('applies WAL and foreign key pragmas by default', () => {
-    // WAL is not supported on :memory: databases — use a temp file
-    const path = `/tmp/test-pragmas-${Date.now()}.db`
-    const { db, close } = createDatabase(path)
-    const wal = db.query('PRAGMA journal_mode').get() as { journal_mode: string }
-    expect(wal.journal_mode).toBe('wal')
-    const fk  = db.query('PRAGMA foreign_keys').get() as { foreign_keys: number }
-    expect(fk.foreign_keys).toBe(1)
-    close()
-    // Clean up
-    try { require('node:fs').unlinkSync(path) } catch {}
-  })
-
-  it('opens a file another process is writing — the wait is set before the WAL switch', async () => {
-    // A file not yet in WAL, held EXCLUSIVE by a second process: the switch
-    // needs the lock, so with the timeout set after it the open throws
-    // SQLITE_BUSY in 0ms (`FJS-1331`). A second process because a lock held in
-    // this one blocks the event loop that would release it.
-    const path = `${tempDir('junction-wal-')}/held.db`
-    const { Database } = await import('bun:sqlite')
-    const init = new Database(path)
-    init.run('CREATE TABLE held (x)')
-    init.close()
-    const child = Bun.spawn(['bun', '-e', `
-      const { Database } = require('bun:sqlite')
-      const db = new Database(${JSON.stringify(path)})
-      db.run('BEGIN EXCLUSIVE'); db.run('INSERT INTO held VALUES (1)')
-      console.log('HELD')
-      setTimeout(() => { db.run('ROLLBACK'); db.close() }, 300)
-    `], { stdout: 'pipe' })
-    const reader = child.stdout.getReader()
-    let seen = ''
-    while (!seen.includes('HELD')) {
-      const { value, done } = await reader.read()
-      if (done) break
-      seen += new TextDecoder().decode(value)
-    }
-
-    const { db, close } = createDatabase(path)
-    expect((db.query('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode).toBe('wal')
-    close()
-  })
-
-  it('runs migrations from SQL strings via seed', async () => {
-    const { db, migrate, close } = createInMemoryDatabase()
-
-    // Write a temp migration file
-    const dir = tempDir('junction-migrations-')
-    await Bun.write(`${dir}/001_create_notes.sql`,
-      'CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT NOT NULL)'
-    )
-
-    const result = await migrate(dir)
-    expect(result.applied).toContain('001_create_notes.sql')
-
-    db.run("INSERT INTO notes (id, title) VALUES ('1', 'hello')")
-    const row = db.query('SELECT title FROM notes WHERE id = ?').get('1') as { title: string }
-    expect(row.title).toBe('hello')
-    close()
-  })
-
-  it('skips already-applied migrations on second run', async () => {
-    const { migrate, close } = createInMemoryDatabase()
-    const dir = tempDir('junction-migrations-')
-    await Bun.write(`${dir}/001_init.sql`, 'CREATE TABLE t1 (id TEXT PRIMARY KEY)')
-
-    const first  = await migrate(dir)
-    const second = await migrate(dir)
-    expect(first.applied.length).toBe(1)
-    expect(second.applied.length).toBe(0)
-    expect(second.skipped.length).toBe(1)
-    close()
-  })
-
-  it('transactions roll back failed migrations', async () => {
-    const { db, migrate, close } = createInMemoryDatabase()
-    const dir = tempDir('junction-migrations-')
-    await Bun.write(`${dir}/001_bad.sql`, 'THIS IS NOT VALID SQL @@@@')
-
-    await expect(migrate(dir)).rejects.toThrow()
-
-    // _migrations table should be empty — nothing committed
-    const rows = db.query('SELECT * FROM _migrations').all()
-    expect(rows.length).toBe(0)
-    close()
-  })
-
-  it('createDatabase integrates with createApp', async () => {
-    const { createApp }    = await import('../src/core/app.ts')
-    const { defaultConfig } = await import('../src/config/index.ts')
-    // Just verify app.db is populated when database.url is set
-    const app = createApp({
-      config: {
-        ...defaultConfig,
-        database: { url: ':memory:' }
-      }
-    })
-    expect(app.db).toBeDefined()
-    // `app.db` is `unknown` — a Litestone client and a raw bun:sqlite handle
-    // are both valid there. `config.database.url` is the raw-handle path.
-    expect((app.db as DatabaseClient).db).toBeDefined()
-  })
-})
-
 // ─── Testing utilities tests ──────────────────────────────────────────────
 
 import { createTestApp, createStubAuth, request, testCtx } from '../src/testing/index.ts'
@@ -1933,12 +1815,9 @@ describe('createStubAuth', () => {
 
 describe('createTestApp', () => {
 
-  it('boots with in-memory DB', async () => {
+  it('boots with no database — the test passes a client (FJS-D641)', async () => {
     const app = await createTestApp()
-    expect(app.db).toBeDefined()
-    // Basic DB query should work
-    const row = app.db!.db.query('SELECT 1 as n').get() as { n: number }
-    expect(row.n).toBe(1)
+    expect(app.db).toBeUndefined()
   })
 
   it('registers services', async () => {
@@ -4072,13 +3951,12 @@ describe('healthPlugin', () => {
     expect(typeof body.ts).toBe('string')
   })
 
-  it('GET /health includes database check when db is available', async () => {
+  it('GET /health names no database check of its own — the app declares one (FJS-D641)', async () => {
     const app = await makeApp()
     const res = await request(app).get('/health')
     const body = res.body as Record<string, unknown>
     const checks = body.checks as Record<string, { status: string }>
-    expect(checks.database).toBeDefined()
-    expect(checks.database.status).toBe('ok')
+    expect(checks.database).toBeUndefined()
   })
 
   it('GET /health returns 503 when a custom check fails', async () => {
@@ -4785,7 +4663,7 @@ describe('Plugin lifecycle', () => {
     // via opts are registered before that call, so boot() runs.
     // Simulate by configuring on a fresh app before _startForTest:
     const { createApp, defaultConfig } = await import('../index.ts')
-    const innerApp = createApp({ config: { ...defaultConfig, database: { url: '', log: false } } })
+    const innerApp = createApp({ config: { ...defaultConfig } })
     innerApp.configure({ name: 'p1', boot() { booted.push('p1') } })
     innerApp.configure({ name: 'p2', boot() { booted.push('p2') } })
     await innerApp._startForTest()

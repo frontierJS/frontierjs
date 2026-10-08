@@ -54,7 +54,7 @@ async function appWith() {
   // without which a base service refuses to reach `app.db` at all.
   const app = createApp({
     db: db as never,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { port: 0, services: { dir: '/nonexistent' } },
   })
   for (const [name, model] of [['memberships', 'Membership'], ['skus', 'Sku'], ['notes', 'Note']])
     app.services.register(createService({ name, model } as never))

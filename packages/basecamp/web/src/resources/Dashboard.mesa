@@ -12,7 +12,7 @@
   // There is no resource for `DashboardWidget`. A widget has no endpoint of its
   // own: the layout is managed through actions on the dashboard that owns it,
   // which is what keeps "may this widget be placed" one answer.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const dashboards = createResource('dashboards')
 </script>

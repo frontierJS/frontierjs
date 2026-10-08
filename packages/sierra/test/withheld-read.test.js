@@ -24,7 +24,7 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { buildFieldRules, withheldFields } from '../src/junction/field-rules.js'
+import { buildFieldRules, withheldFields } from '../src/resource/field-rules.js'
 
 // The shape litestone emits for a field `@allow('read', …)`. `notes` is the
 // policed one; `name` is the control, and it is the whole reason the flag is

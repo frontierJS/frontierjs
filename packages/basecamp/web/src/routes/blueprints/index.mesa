@@ -37,7 +37,7 @@ title: Blueprints
   import { projects }     from '../../resources/Project.mesa'
   import { servers }      from '../../resources/Server.mesa'
   import { deployments }  from '../../resources/Deployment.mesa'
-  import { schemaFor, buildFieldRules } from '@frontierjs/sierra/junction'
+  import { schemaFor, buildFieldRules } from '@frontierjs/sierra/resource'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'

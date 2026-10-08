@@ -24,7 +24,8 @@
 // directions. That is the pair of tests below that matter.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { createApp, createService, healthPlugin, manifestPlugin, defaultConfig } from '../index.ts'
+import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
+import { manifestPlugin } from '../src/plugins/manifest/index.ts'
 import { createBaseService, callService } from '../src/core/service.ts'
 
 const PORT = 3389
@@ -34,7 +35,6 @@ beforeAll(async () => {
   app = createApp({
     config: {
       port: PORT,
-      database: { url: '', log: false },
       services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 200 },
     },

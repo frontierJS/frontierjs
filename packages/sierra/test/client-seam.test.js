@@ -107,7 +107,7 @@ function clearEnv() {
  */
 async function freshJunction() {
   vi.resetModules()
-  return import('../src/junction/index.js')
+  return import('../src/resource/index.js')
 }
 
 beforeEach(installEnv)

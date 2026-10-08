@@ -46,7 +46,6 @@ export const env = defineEnv({
 
   // ── Database ──────────────────────────────────────────────
   DATABASE_URL: { default: './db/basecamp.db' },
-  DB_LOG:       { type: 'boolean', default: false },
 
   // ── Auth ──────────────────────────────────────────────────
   // No AUTH_SECRET. A session here is a ROW — @frontierjs/auth stores a random

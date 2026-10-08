@@ -24,7 +24,7 @@ import { renderComponent } from '../../mesa/src/render-component.js'
 // exists to prevent. field-rules.js is a leaf and imports nothing.
 import {
   formFieldList, registerControl, unregisterControl, registeredControls,
-} from '../../sierra/src/junction/field-rules.js'
+} from '../../sierra/src/resource/field-rules.js'
 // The kit's half of a contributed control. Same module instance the fixtures
 // below import through '../../controls.js' — both resolve to this file.
 import { unregisterFormControl, registeredFormControls } from '../controls.js'
@@ -502,7 +502,7 @@ await check(
   `<script>
      import Form  from '../forms/Form.mesa'
      import Stars from '../../test/fixtures/Stars.mesa'
-     import { registerControl }     from '../../../sierra/src/junction/field-rules.js'
+     import { registerControl }     from '../../../sierra/src/resource/field-rules.js'
      import { registerFormControl } from '../../controls.js'
      export let resource
 
@@ -550,7 +550,7 @@ await check(
   'a control nobody bound a component to says which half is missing',
   `<script>
      import Form from '../forms/Form.mesa'
-     import { registerControl } from '../../../sierra/src/junction/field-rules.js'
+     import { registerControl } from '../../../sierra/src/resource/field-rules.js'
      export let resource
 
      registerControl('half', (rule, ctx) => (ctx.field === 'reference' ? 'tag-input' : null))

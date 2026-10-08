@@ -33,7 +33,7 @@ beforeAll(async () => {
   const auth = createStubAuth({ users: [{ id: 'staff', isAdmin: true }, { id: 'shopper' }] })
   app = createApp({
     db, auth,
-    config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config:   { port: 0, services: { dir: '/nonexistent' } },
     logLevel: 'silent',
   }) as never
 

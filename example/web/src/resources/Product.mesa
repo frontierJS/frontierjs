@@ -4,7 +4,7 @@
   // Named for the model, exporting the accessor — see Order.mesa for why, and
   // for what a resource deliberately does not restate.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const products = createResource('products')
 </script>

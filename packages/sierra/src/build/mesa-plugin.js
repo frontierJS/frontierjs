@@ -10,7 +10,7 @@
  */
 
 import { parseFrontmatter } from '../scanner/parse-frontmatter.js'
-import { warnUnexportedSnippets, extractLayoutProps, positionless } from './warnings.js'
+import { warnUnexportedSnippets, extractLayoutProps, positionless, holdHints, recordChunks } from './warnings.js'
 import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
 import { resolve, dirname } from 'path'
@@ -205,7 +205,13 @@ function _escapeFencedCodeBlocks(src) {
 /** Click-to-source is on unless the app says `inspect: false`. The ask panel reads this too. */
 export const inspectOn = (mesaOptions = {}) => mesaOptions.inspect !== false
 
-export function mesaPlugin(mesaOptions = {}, sierraContext) {
+/**
+ * @param {object} [build]
+ * @param {boolean} [build.holdHints] — a static build: reactivity hints wait for
+ *   the prune step, which knows which modules a published script contains
+ *   (`FJS-D629`). Dev never holds, since a dev server renders in the browser.
+ */
+export function mesaPlugin(mesaOptions = {}, sierraContext, { holdHints: hold = false } = {}) {
   // Click-to-source. `inspect: false` turns off the injection AND the attribute
   // the compiler would stamp — the client is its only reader.
   const inspect    = mesaOptions.inspect ?? true
@@ -381,6 +387,12 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       }
     },
 
+    // Which modules each chunk carries, read after the prune step to say which
+    // held hints are about published code.
+    writeBundle(_opts, bundle) {
+      if (hold && !isDev && sierraContext) recordChunks(sierraContext, bundle)
+    },
+
     async transform(source, id) {
       if (!MESA_EXTENSIONS.test(id)) return null
       if (!compiler) return null
@@ -485,7 +497,9 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         // Forward Mesa compiler warnings (e.g. redundant $: path watches) to Vite
         const analysed = ctx.analysis?.warnings ?? []
         const echoed = new Set(analysed.map((w) => `Warning: ${w}`))
-        for (const w of analysed) this.warn(positionless(`[Mesa] ${w}`))
+        const held = hold && !isDev && sierraContext ? new Set(ctx.analysis?.reactivityHints ?? []) : new Set()
+        if (held.size) holdHints(sierraContext, id, [...held])
+        for (const w of analysed) if (!held.has(w)) this.warn(positionless(`[Mesa] ${w}`))
         for (const m of direct) {
           if (!echoed.has(m)) this.warn(positionless(`[Mesa] ${m.replace(/^Warning: /, '')}`))
         }

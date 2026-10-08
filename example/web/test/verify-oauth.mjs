@@ -195,10 +195,10 @@ console.log('\nwhat the screen can ask')
   // screen renders a token no person can read. The two live in separate
   // packages and neither imports the other, so this is the crossing.
   // By relative path to the source, not through the package: this drive runs
-  // under node, and `@frontierjs/sierra/junction` re-exports junction's browser
+  // under node, and `@frontierjs/sierra/resource` re-exports junction's browser
   // client, which is TypeScript that node's strip-only loader refuses.
   const { OAUTH_ERRORS } = await import(
-    '../../../packages/sierra/src/junction/session.js'
+    '../../../packages/sierra/src/resource/session.js'
   )
   const emitted = ['denied', 'state', 'exchange', 'unavailable', 'link_required']
   const missing = emitted.filter(c => !OAUTH_ERRORS[c])

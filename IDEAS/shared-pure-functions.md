@@ -90,7 +90,7 @@ agree. Each carries its own plural rules:
 | [ddl.js:7](../packages/litestone/src/core/ddl.js#L7) `pluralizeWord` | 20 irregulars + `es`/`ies` | *(pluralizer)* | `person` → `people` ✓ |
 | [introspect.js:25](../packages/litestone/src/tools/introspect.js#L25) `toSingular` | 20 irregulars, mirrored | `status` ✓ | `person` ✓ |
 | [litestone.ts:340](../packages/junction/src/core/litestone.ts#L340) `deriveModelName` | `ies`/`ses`, no irregulars | `status` ✓ | `people` ✗ |
-| [resource.js:501](../packages/sierra/src/junction/resource.js#L501) inline | `ies`/`s` only | `statuse` ✗ | `people` ✗ |
+| [resource.js:501](../packages/sierra/src/resource/resource.js#L501) inline | `ies`/`s` only | `statuse` ✗ | `people` ✗ |
 
 Litestone knows that `model Status` gets table `statuses` and that `Person`
 gets `people`. Sierra's inline singularizer — the one behind `createResource`,

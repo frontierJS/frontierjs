@@ -233,9 +233,11 @@ describe('every write path that carries a payload runs the check', () => {
   // like `create: createData`. Erring toward MORE methods being caught is the
   // safe direction — a false positive is a grid entry someone has to write, a
   // false negative is a write path nothing checks.
-  const declared = [...SRC.matchAll(/^ {4}async (\w+)\(\{([\s\S]*?)\} = \{\}\)/gm)]
+  // A planned verb (`updateMany(args)` → `planUpdateMany({ data … })`)
+  // destructures in its planner, so the planner is read as the verb.
+  const declared = [...SRC.matchAll(/^ {2,4}async (?:function )?(\w+)\(\{([\s\S]*?)\} = \{\}\)/gm)]
     .filter(m => /\b\w*[Dd]ata\b/.test(m[2]))
-    .map(m => m[1])
+    .map(m => m[1].replace(/^(plan|prepare)([A-Z])/, (_, __, c) => c.toLowerCase()))
 
   const grid: Record<string, (db: any) => Promise<unknown>> = {
     create:     db => db.task.create({ data: { title: 'a', tag: 'nope' }, select: false }),

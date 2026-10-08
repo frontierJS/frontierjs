@@ -1,7 +1,7 @@
 // testing/index.ts
 // First-class testing utilities for Junction apps.
 //
-// createTestApp()    — boots a full app with :memory: DB + stub auth
+// createTestApp()    — boots a full app with stub auth
 // request(app)       — chainable HTTP helper, no real server needed
 // createStubAuth()   — IAuth implementation backed by a plain Map
 //
@@ -24,7 +24,6 @@
 //   expect((res.body as { name: string }).name).toBe('Alice')
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
-import { createInMemoryDatabase }               from '../storage/database/index.ts'
 import { bridge, enterRequest, type ServiceContext }          from '../transport/bridge.ts'
 import { defaultConfig, deepMerge }               from '../config/index.ts'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
@@ -167,9 +166,6 @@ export interface TestAppOptions {
   // Pre-seeded test users (shorthand for createStubAuth)
   users?:      StubUser[]
 
-  // SQL to run after DB is created (seed data, extra tables)
-  seed?:       string | ((db: import('bun:sqlite').Database) => void)
-
   // Auto-discover services from a directory
   autoload?:   string
 
@@ -181,7 +177,6 @@ export interface TestAppOptions {
 
 export interface TestApp extends App {
   auth:    ReturnType<typeof createStubAuth>
-  db:      Awaited<ReturnType<typeof createInMemoryDatabase>>
   // Convenience: the token for a pre-seeded user
   tokenFor: (userId: string) => string
 }
@@ -196,29 +191,11 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
       ...defaultConfig,
       name:     'test',
       debug:    false,
-      // Force :memory: so createApp opens the right database.
-      // createTestApp does NOT create a second database — it uses app.db directly.
-      database: { url: ':memory:', log: false },
     },
     opts.config ?? {}
   )
 
   const app = createApp({ config, auth, system: opts.system, autoload: opts.autoload }) as TestApp
-
-  // app.db isn't set by createApp — Junction core doesn't know about Litestone.
-  // For test ergonomics, wire an in-memory database here so tests that read
-  // app.db (e.g. for seeding, direct queries) have something to use.
-  const db = await createInMemoryDatabase()
-  ;(app as TestApp).db = db
-
-  // ── Seed data ──────────────────────────────────────────────────────
-  if (opts.seed) {
-    if (typeof opts.seed === 'string') {
-      db.db.run(opts.seed)
-    } else {
-      opts.seed(db.db)
-    }
-  }
 
   // ── Register services ──────────────────────────────────────────────
   for (const factory of (opts.services ?? [])) {

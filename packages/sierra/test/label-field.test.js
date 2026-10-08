@@ -22,7 +22,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 
 let LAST = null   // what the picker asked the service for
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     // `service.getOptions()` is sugar over `find`, so `find` is what a picker
     // ultimately sends and what is recorded here.
@@ -47,8 +47,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { createResource, labelFieldFor, labelFieldInfo } =
-  await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+  await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 const str = { type: 'string' }
 

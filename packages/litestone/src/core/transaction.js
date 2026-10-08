@@ -1,3 +1,4 @@
+// @ts-check
 // transaction.js — `$transaction`: one open transaction per connection,
 // nesting by SAVEPOINT, and which connection a read goes to while one is open.
 
@@ -29,8 +30,28 @@ import { AsyncLocalStorage } from '#host'
 // into someone else's transaction. What changes is that the second caller waits
 // instead of being silently enrolled in a transaction it cannot see.
 
+/** @import { DbHandle } from './databases.js' */
+
+/** @typedef {{ depth: number }} TxState  one per client; `depth` counts everybody's nesting, not the caller's */
+
+/**
+ * What `begin` hands back and `commit`/`rollback` take: the savepoint, and the
+ * high-water marks of every per-transaction ledger at that moment.
+ * @typedef {object} Frame
+ * @property {number | null} sp
+ * @property {number}        mark
+ * @property {number}        cmark
+ * @property {number}        xmark
+ * @property {number}        wmark
+ * @property {boolean}       [settled]
+ */
+
+/** @typedef {{ grade: (db: DbHandle) => void, truncate: (n: number) => void, length: number }} Ledger */
+/** @typedef {{ grade: () => void, truncate: (n: number) => void, length: number }} Exclusions */
+
 // The txState objects the CURRENT async context has an open transaction on.
 // A Set because a callback may hold transactions on more than one client.
+/** @type {AsyncLocalStorage<Set<TxState>>} */
 const _txOwned = new AsyncLocalStorage()
 
 // Does the calling context own this client's open transaction? The only honest
@@ -39,7 +60,7 @@ const _txOwned = new AsyncLocalStorage()
 // holder. Every transaction here is opened through `exclusive`/`wrapExclusive`,
 // which establish ownership before `begin`, so an open transaction always has an
 // owning context and this can be asked instead of the counter.
-const ownsTx = (state) => _txOwned.getStore()?.has(state) ?? false
+const ownsTx = (/** @type {TxState} */ state) => _txOwned.getStore()?.has(state) ?? false
 
 // ── Every file a write can reach, not main's alone ───────────────────────────
 //
@@ -54,16 +75,24 @@ const ownsTx = (state) => _txOwned.getStore()?.has(state) ?? false
 // (`FJS-D35`), so a refusal anywhere before it leaves the durable effects
 // unwritten — and a refusal part way is thrown naming what committed and what
 // rolled back, the one thing a caller cannot find out afterwards.
+/**
+ * @param {{ name: string, db: DbHandle }[]} conns  main first
+ * @param {TxState} [state]
+ * @param {Ledger | null} [ledger]
+ * @param {Exclusions | null} [exclusions]
+ */
 export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclusions = null) {
   const db = conns[0].db
-  const each = (sql) => { for (const c of conns) c.db.run(sql) }
+  const each = (/** @type {string} */ sql) => { for (const c of conns) c.db.run(sql) }
   let spCount = 0
 
   // Lock as a promise chain. `tail` always resolves when the current holder
   // releases, so awaiting it is FIFO and starvation-free.
+  /** @type {Promise<void>} */
   let tail = Promise.resolve()
 
   function acquire() {
+    /** @type {() => void} */
     let release
     const prev = tail
     tail = new Promise(r => { release = r })
@@ -72,7 +101,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
 
   const isReentrant = () => ownsTx(state)
 
-  const withOwnership = (fn) => {
+  const withOwnership = (/** @type {() => any} */ fn) => {
     const store = new Set(_txOwned.getStore() ?? [])
     store.add(state)
     return _txOwned.run(store, fn)
@@ -89,7 +118,9 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   //
   // Flushed only when the OUTERMOST transaction commits, because until then
   // the rows are still provisional.
+  /** @type {(() => void)[]} */
   const pending = []
+  /** @param {() => void} fire */
   function queueEvent(fire) { pending.push(fire) }
   function flushPending() {
     const fns = pending.splice(0, pending.length)
@@ -104,13 +135,16 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   // the model on the OTHER side already written, which the caller refuses.
   // Marked per frame like `pending`, so a savepoint rolled back takes its
   // writes out of the pairing.
+  /** @type {{ model: string, anonymous: boolean }[]} */
   const wrote = []
+  /** @param {string} model @param {boolean} anonymous */
   function noteWrite(model, anonymous) {
     const other = wrote.find(w => w.anonymous !== anonymous)
     wrote.push({ model, anonymous })
     return other?.model ?? null
   }
 
+  /** @returns {Frame} */
   function begin() {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
     // lock up front. A deferred BEGIN upgrades to a write lock mid-transaction,
@@ -128,6 +162,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, xmark: exclusions?.length ?? 0, wmark: wrote.length }
   }
 
+  /** @param {Frame} frame */
   function commit(frame) {
     const { sp } = frame
     // Graded BEFORE the depth moves. A refusal here is thrown to the caller's
@@ -141,7 +176,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     const order = [...conns.slice(1), conns[0]]
     for (let i = 0; i < order.length; i++) {
       try { order[i].db.run('COMMIT') }
-      catch (e) {
+      catch (/** @type {any} */ e) {
         // Settled here, not by the caller's rollback(): the depth has already
         // moved, and the files committed before this one cannot be rolled back.
         frame.settled = true
@@ -149,7 +184,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
         wrote.length = 0
         for (const c of order.slice(i)) { try { c.db.run('ROLLBACK') } catch {} }
         if (conns.length === 1) throw e
-        const names = (cs) => cs.map(c => c.name).join(', ') || 'none'
+        const names = (/** @type {{ name: string }[]} */ cs) => cs.map(c => c.name).join(', ') || 'none'
         throw Object.assign(new Error(
           `Transaction could not commit in database '${order[i].name}': ${e.message}. ` +
           `Each database file commits on its own, so a transaction spanning files is not atomic at its commit — ` +
@@ -161,6 +196,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     flushPending()
   }
 
+  /** @param {Frame} frame */
   function rollback(frame) {
     if (frame.settled) return
     const { sp, mark, cmark, xmark, wmark } = frame
@@ -181,6 +217,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     if (failed) throw failed
   }
 
+  /** @param {() => any} fn */
   function wrap(fn) {
     const frame = begin()
     try { const r = fn(); commit(frame); return r }
@@ -190,6 +227,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   // The async entry point. `fn` may await; a nested call inherits the store and
   // takes a SAVEPOINT without touching the lock, which is what stops a genuine
   // nesting (basecamp's /setup) from waiting on a lock its own caller holds.
+  /** @param {() => any} fn */
   async function exclusive(fn) {
     if (isReentrant()) {
       const frame = begin()
@@ -210,6 +248,7 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   // only the acquire is awaited, which the callers can do because every table
   // method is already async. Without this a createMany arriving during another
   // request's transaction joined it and was lost on that request's rollback.
+  /** @param {() => any} fn */
   async function wrapExclusive(fn) {
     if (isReentrant()) return wrap(fn)
     const release = await acquire()
@@ -240,9 +279,14 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
 // (`FJS-638`). The holder is identified the same way `wrapExclusive` identifies
 // a genuine nesting, so the two cannot disagree about who is inside.
 
+/**
+ * @param {DbHandle} readDb
+ * @param {DbHandle} writeDb
+ * @param {TxState} txState
+ */
 export function makeReadRouter(readDb, writeDb, txState) {
   return {
-    query:  (sql) => (ownsTx(txState) ? writeDb : readDb).query(sql),
+    query:  (/** @type {string} */ sql) => (ownsTx(txState) ? writeDb : readDb).query(sql),
     inTx:   () => ownsTx(txState),
     // The router REPLACES conn.readDb, so the wrapper it closes over is
     // reachable from nowhere else — without this, _closeAll's readDb.close()

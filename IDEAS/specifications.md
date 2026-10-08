@@ -450,7 +450,7 @@ version carried back on a patch.
 **Would state:** a schema rule maps to a control name, or to `null` with a
 reason. Value-set strength picks the control. A contributed control crosses the
 boundary as a name. The form's error sources and the order they merge in.
-**Held today:** `packages/sierra/src/junction/field-rules.js` · `$context.form`
+**Held today:** `packages/sierra/src/resource/field-rules.js` · `$context.form`
 (`FJS-D17`, `FJS-D120`).
 
 #### 36. Design vocabulary

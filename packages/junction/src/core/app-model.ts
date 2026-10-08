@@ -16,10 +16,10 @@
 // re-exporting it, because two import paths to one function is the thing the
 // arrangement is trying to stop.
 
-import { buildRoutes, serializeHookMap } from '../plugins/manifest/index.ts'
 import { describePrincipalRealm, customMethodGrade, gateLevels, isCrudGatedMethod, TENANT_REGISTRY } from './litestone.ts'
 import type { PrincipalRealm, CustomMethodGrade }                                 from './litestone.ts'
 import type { App }                      from './app.ts'
+import type { HookMap }                  from './hooks.ts'
 
 // ─── the surface ──────────────────────────────────────────────────────────────
 
@@ -242,4 +242,82 @@ export function describeAppModel(app: App): AppModel {
     jobs:          describeJobs(app),
     notifications: describeNotifications(app),
   }
+}
+
+// ─── routes and hook chains ───────────────────────────────────────────────────
+
+export interface RouteManifest {
+  method:   string
+  path:     string
+  /**
+   * `service` — one of the auto-mounted CRUD routes; `raw` — anything a plugin
+   * or the app registered itself.
+   *
+   * The distinction is the useful half: the service routes are derivable from
+   * the service list, and the raw ones are the surface nothing else describes.
+   */
+  kind:     'service' | 'raw'
+  /** Present on a service route — which service answers it. */
+  service?: string
+}
+
+export interface HookManifest {
+  before: Record<string, string[]>
+  after:  Record<string, string[]>
+  around: Record<string, string[]>
+  error:  Record<string, string[]>
+}
+
+/**
+ * Every path the router will answer, by method.
+ *
+ * The surface is emergent — services auto-mount, plugins register their own —
+ * and `hasRoute()` is a MATCHING question, not an existence one: every app
+ * registers `GET /{service}`, which matches almost anything. So "what is
+ * actually mounted" had no cheap answer and a route in the wrong place was
+ * invisible until something 404'd (`FJS-091`; `FJS-012` is what it cost).
+ *
+ * Read off the router rather than rebuilt from the registry, so a path that is
+ * mounted appears here whether or not anything meant to mount it.
+ */
+export function buildRoutes(app: App): RouteManifest[] {
+  const router = (app as { http?: { router?: { routePaths?: (m: string) => string[] } } })
+    .http?.router
+  if (typeof router?.routePaths !== 'function') return []
+
+  const out: RouteManifest[] = []
+  for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']) {
+    for (const path of router.routePaths(method)) {
+      // The CRUD handler is registered against the `{service}` template, so a
+      // service route names no service — it names all of them.
+      const isService = path.includes('/{service}')
+      out.push({ method, path, kind: isService ? 'service' : 'raw' })
+    }
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
+}
+
+/**
+ * A hook chain as the names that will run, in order.
+ *
+ * Exported because `tools/surface.ts` and the manifest plugin render the same thing into the committed
+ * surface snapshot — a second spelling of "a hook is its function name, and
+ * anonymous means you cannot tell which one" would drift from this one silently.
+ */
+export function serializeHookMap(map: HookMap = {}): HookManifest {
+  const phases = ['before', 'after', 'around', 'error'] as const
+  const out: HookManifest = { before: {}, after: {}, around: {}, error: {} }
+
+  for (const phase of phases) {
+    const phaseMap = (map as Record<string, unknown>)[phase] as
+      Record<string, unknown> | undefined ?? {}
+
+    for (const [method, hooks] of Object.entries(phaseMap)) {
+      if (!Array.isArray(hooks)) continue
+      out[phase][method] = (hooks as ((...a: unknown[]) => unknown)[])
+        .map(fn => (typeof fn === 'function' ? fn.name || 'anonymous' : String(fn)))
+    }
+  }
+
+  return out
 }

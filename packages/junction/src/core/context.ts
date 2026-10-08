@@ -17,14 +17,35 @@ import type { FrameworkError } from './errors.ts'
 import { BadRequest } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
 import type { QueryDirectives, Page } from './directives.ts'
-// A value import, and outbox.ts imports only TYPES back — so the cycle is
-// erased at compile time and there is none at runtime.
-import { enqueueOutbox } from './outbox.ts'
 
 // ─── Context shape ────────────────────────────────────────────────────────
 // Single object throughout the pipeline (around → before → method → after
 // → error). There is NO separate HookContext — one shape, ctx.type says
 // which phase.
+
+/** What a caller may state at enqueue. */
+export interface EnqueueOptions {
+  /**
+   * Whose behalf the effect is on. Default: the principal on the call, so a
+   * durable effect names the same actor an immediate dispatch would.
+   * State `null` for work that is the app's own.
+   */
+  actor?: string | null
+}
+
+/** A definition carries its own name; a string is the caller restating it. */
+export type EnqueueRef = string | { name: string }
+
+/**
+ * What the core calls through `app.outbox`. The slot is the outbox battery's
+ * and stays empty until that module loads (`FJS-D643`), so the two places that
+ * reach it — this verb and the commit kick in `callService` — ask for exactly
+ * this much and no more.
+ */
+export interface OutboxRelay {
+  enqueue(ctx: ServiceContext, job: EnqueueRef, data: unknown, opts?: EnqueueOptions): Promise<string>
+  deliver(opts?: { db?: unknown; tenant?: string | null }): Promise<unknown>
+}
 
 export interface ServiceContext {
   // ── routing ──────────────────────────────────────────────────────────
@@ -262,8 +283,7 @@ export interface ServiceContext {
    * transaction, without the model, or with no relay installed, a row would be
    * either meaningless or undeliverable. `FJS-D35`.
    */
-  enqueue: (job: import('./outbox.ts').EnqueueRef, payload: unknown,
-            opts?: import('./outbox.ts').EnqueueOptions) => Promise<string>
+  enqueue: (job: EnqueueRef, payload: unknown, opts?: EnqueueOptions) => Promise<string>
 
   // instrumentation — set by callService, undefined for bypass (_find etc.)
   telemetryId?: string
@@ -301,7 +321,19 @@ export function withCallEffects(
   const ctx = base as ServiceContext
   ctx._afterCommit = queued
   ctx.afterCommit  = (fn) => { queued.push(fn) }
-  ctx.enqueue = (job, payload, opts) => enqueueOutbox(ctx, job, payload, opts)
+  ctx.enqueue = (job, payload, opts) => {
+    // The table is the outbox battery's, so the write goes through its slot.
+    // Refused here rather than there, because with no relay there is no there.
+    const relay = ctx.app?.outbox as OutboxRelay | undefined
+    if (!relay) {
+      const name = typeof job === 'string' ? job : job.name
+      return Promise.reject(new Error(
+        `ctx.enqueue('${name}') in '${ctx.service}.${String(ctx.method)}': no outbox relay is installed, so this row would never be delivered. ` +
+        `app.configure(outbox()) — it needs app.jobs, so configure caravan too.`
+      ))
+    }
+    return relay.enqueue(ctx, job, payload, opts)
+  }
   // Here rather than in the three builders, because callService calls this for
   // any context that arrived without it — a hand-built one in a test can run a
   // hook that names a system column too, and a missing set is a 403 the test

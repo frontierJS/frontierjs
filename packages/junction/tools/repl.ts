@@ -55,8 +55,25 @@
 
 import * as readline from 'node:readline'
 
-// ANSI palette + paint shared with the other CLI tools.
-import { c, dim, paint } from './ui.ts'
+// ─── ANSI palette ──────────────────────────────────────────────────────────
+
+const c = {
+  reset:    '\x1b[0m',
+  bold:     '\x1b[1m',
+  dim:      '\x1b[2m',
+  red:      '\x1b[31m',
+  cyan:     '\x1b[36m',
+  gray:     '\x1b[90m',
+  bred:     '\x1b[91m',
+  bgreen:   '\x1b[92m',
+  byellow:  '\x1b[93m',
+  bblue:    '\x1b[94m',
+  bmagenta: '\x1b[95m',
+  bcyan:    '\x1b[96m',
+  bwhite:   '\x1b[97m',
+}
+const paint = (col: string, t: string) => `${col}${t}${c.reset}`
+const dim   = (t: string) => paint(c.dim + c.gray, t)
 
 // ─── CLI args ──────────────────────────────────────────────────────────────
 
@@ -153,7 +170,7 @@ const ALL_CMDS  = [
   'health', 'metrics', 'services',
   'auth', 'unauth', 'header', 'headers', 'base',
   'set', 'vars', 'unset', 'inspect', 'last', 'watch',
-  'history', 'clear', 'help', 'tutorial', 'webhooks', 'setup', 'litestone', 'exit', 'quit',
+  'history', 'clear', 'help', 'tutorial', 'webhooks', 'exit', 'quit',
 ]
 
 function completer(line: string): [string[], string] {
@@ -1057,15 +1074,6 @@ function printHelp(): void {
     ${cmd('webhooks retry')} ${arg('<delivery-id>')}      manually retry a dead delivery
     ${cmd('webhooks test')} ${arg('<webhook-id>')}        fire a test ping
 
-  ${paint(c.bold + c.bwhite, 'Litestone ORM')}
-    ${cmd('litestone')}                                run setup audit
-    ${cmd('litestone audit')}                          same as above
-    ${note('Full wizard:')} ${arg('bun run litestone')} ${note('(run outside REPL)')}
-
-  ${paint(c.bold + c.bwhite, 'Project setup')}
-    ${cmd('setup')}                                    audit project configuration
-    ${note('Full wizard:')} ${arg('bun run setup')} ${note('(run outside REPL — new or existing projects)')}
-
   ${paint(c.bold + c.bwhite, 'Tutorial')}
     ${cmd('tutorial')}                                 start the interactive guide
     ${cmd('tutorial')} ${arg('basics|auth|variables|power')}  jump to a chapter
@@ -1574,98 +1582,6 @@ async function dispatch(rawLine: string): Promise<void> {
     baseUrl = url.replace(/\/$/, '')
     await refreshPaths()
     printSuccess(`Base → ${baseUrl}`)
-    return
-  }
-
-  // ── setup audit ──────────────────────────────────────────────────
-  // Runs the Junction project audit inline.
-  // Full interactive wizard: bun run setup (or bun run tools/setup.ts)
-
-  if (lower === 'setup') {
-    const sub = rest[0]?.toLowerCase()
-
-    if (!sub || sub === 'audit') {
-      console.log()
-      console.log(`  ${paint(c.bold + c.bwhite, 'Junction project audit')}`)
-      console.log()
-      try {
-        const { execSync } = await import('node:child_process')
-        const out = execSync('bun run tools/setup.ts audit', {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-          timeout: 30_000,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-        process.stdout.write(out)
-      } catch (err: unknown) {
-        const e = err as { stdout?: string; stderr?: string; message?: string }
-        if (e.stdout) process.stdout.write(e.stdout)
-        else printError(`Audit failed: ${e.message ?? 'unknown error'}`)
-      }
-      console.log(`  ${paint(c.gray, 'Full interactive wizard:')} ${paint(c.bcyan, 'bun run setup')}`)
-      console.log()
-      return
-    }
-
-    printError(`Unknown: setup ${sub}`)
-    console.log(`  ${paint(c.gray, 'Try:')} ${paint(c.bcyan, 'setup')}  or  ${paint(c.gray, 'bun run setup')} ${paint(c.gray, '(wizard)')}`)
-    console.log()
-    return
-  }
-
-  // ── litestone audit ──────────────────────────────────────────────
-  // Runs all Litestone setup checks inline and reports status.
-  // Full interactive wizard: bun run litestone (or bun run tools/litestone.ts)
-
-  if (lower === 'litestone') {
-    const sub = rest[0]?.toLowerCase()
-
-    if (!sub || sub === 'audit') {
-      console.log()
-      console.log(`  ${paint(c.bold + c.bwhite, 'Litestone audit')}`)
-      console.log()
-
-      // Dynamically import and run audit checks from the litestone tool
-      try {
-        const { execSync } = await import('node:child_process')
-        const result = execSync('bun run tools/litestone.ts audit', {
-          cwd: process.cwd(),
-          encoding: 'utf8',
-          timeout: 30_000,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-        process.stdout.write(result)
-      } catch (err: unknown) {
-        // execSync throws on non-zero exit — the audit output is in stdout
-        const e = err as { stdout?: string; stderr?: string; message?: string }
-        if (e.stdout) process.stdout.write(e.stdout)
-        else printError(`Audit failed: ${e.message ?? 'unknown error'}`)
-      }
-      console.log()
-      console.log(`  ${paint(c.gray, 'Full interactive wizard:')} ${paint(c.bcyan, 'bun run litestone')}`)
-      console.log()
-      return
-    }
-
-    if (sub === 'help') {
-      console.log(`
-  ${paint(c.bold + c.bwhite, 'Litestone commands')}
-
-  ${paint(c.bcyan, 'litestone')}              run setup audit inline
-  ${paint(c.bcyan, 'litestone audit')}        same as above
-  ${paint(c.gray, 'bun run litestone')}       interactive setup wizard (run outside REPL)
-  ${paint(c.gray, 'bun run litestone:audit')} audit only, exits 1 on failure (CI-friendly)
-  ${paint(c.gray, 'bun run litestone:audit --json')} machine-readable output
-
-  ${paint(c.gray, 'Checks:')} dependencies · schema.lite · generated files
-          · DATABASE_URL · app wiring · migrations
-`)
-      return
-    }
-
-    printError(`Unknown: litestone ${sub}`)
-    console.log(`  ${paint(c.gray, 'Try:')} ${paint(c.bcyan, 'litestone')}  or  ${paint(c.bcyan, 'litestone help')}`)
-    console.log()
     return
   }
 

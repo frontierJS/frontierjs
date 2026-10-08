@@ -60,7 +60,6 @@ const hosted = createApp({
   config: {
     port: hostedPort,
     apiPrefix: '/api',
-    database: { url: '', log: false },
     services: { dir: '/nonexistent' },
   },
   auth: {

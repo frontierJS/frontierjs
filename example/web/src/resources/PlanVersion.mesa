@@ -10,7 +10,7 @@
   // UPDATE schema alone, so the create form below still offers a price box and
   // an edit form would not.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const planVersions = createResource('plan-versions', { model: 'PlanVersion' })
 </script>

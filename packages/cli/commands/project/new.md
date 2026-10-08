@@ -1348,7 +1348,7 @@ siteName: ${appName}
 ---
 <script>
   import { goto, isActive, page } from '@frontierjs/sierra/router'
-  import { status, session, signOut } from '@frontierjs/sierra/junction'
+  import { status, session, signOut } from '@frontierjs/sierra/resource'
   import { theme, toggleTheme } from '@frontierjs/sierra/theme'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
@@ -1425,7 +1425,7 @@ siteName: ${appName}
 ---
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/resource'
   import { theme, toggleTheme } from '@frontierjs/sierra/theme'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
@@ -1497,7 +1497,7 @@ function makeRouteIndex(appName) {
 title: Home
 ---
 <script>
-  import { status } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/resource'
 
   // The $: line is the subscription — without it this renders once at the
   // initial false and never changes.
@@ -1670,7 +1670,7 @@ title: Sign in
 ---
 <script>
   import { goto }                                    from '@frontierjs/sierra/router'
-  import { session, signIn, submitCode, signOut }    from '@frontierjs/sierra/junction'
+  import { session, signIn, submitCode, signOut }    from '@frontierjs/sierra/resource'
   import Code                                        from '@frontierjs/ui/components/display/Code.mesa'
 
   let email    = ''
@@ -1792,7 +1792,7 @@ title: Reset your password
   // Nothing here signs anybody in. Confirming a reset ends every session the
   // account holds, so the next stop is the sign-in page.
   import { page }      from '@frontierjs/sierra/router'
-  import { getClient } from '@frontierjs/sierra/junction'
+  import { getClient } from '@frontierjs/sierra/resource'
 
   $: page.query
 
@@ -1891,12 +1891,12 @@ ${withName ? `  // The password and the sessions go through client.auth, which i
   // for them, because nothing there will take one. The name is the User row,
   // written through the users service; db/schema.lite's @@allow('update',
   // id == auth().id || …) is what lets a person write their own.
-  import { getClient, session, refresh } from '@frontierjs/sierra/junction'
+  import { getClient, session, refresh } from '@frontierjs/sierra/resource'
   import { at } from '../../datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
   // and sessions services scoped to the CALLER — nothing here names a user id,
   // because nothing there will take one. The name is not editable here: that
   // is a write to the User row, and this app has no users service to make it.
-  import { getClient, session } from '@frontierjs/sierra/junction'
+  import { getClient, session } from '@frontierjs/sierra/resource'
   import { at } from '../../datetime.js'`}
 
   $: (session.user, session.checked)
@@ -2024,7 +2024,7 @@ title: Create an account
 ---
 <script>
   import { goto }   from '@frontierjs/sierra/router'
-  import { signUp } from '@frontierjs/sierra/junction'
+  import { signUp } from '@frontierjs/sierra/resource'
 
   let email    = ''
   let password = ''

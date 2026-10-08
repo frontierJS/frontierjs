@@ -5,7 +5,7 @@
  *
  * Always runs:
  *   1. move404       — 404/index.html → 404.html (Cloudflare/Netlify)
- *   2. copyRobots    — public/robots.txt → dist/robots.txt
+ *   2. writeRobots   — a default robots.txt, unless the public dir gave one
  *   3. redirects     — generate _redirects from the route table
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
@@ -20,7 +20,7 @@
  */
 
 import { move404, NOT_FOUND_URL } from './move-404.js'
-import { copyRobots } from './copy-robots.js'
+import { writeRobots } from './robots.js'
 import { generateRedirects } from './redirects.js'
 import { generateSitemap } from './sitemap.js'
 import { generateLlms } from './llms.js'
@@ -75,7 +75,7 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
   // than at the sitemap step below, which is the only place it used to be.
   const siteUrl = config.siteUrl ?? ''
 
-  const rRobots = await copyRobots(root, outDir, siteUrl)
+  const rRobots = await writeRobots(outDir, siteUrl)
   if (rRobots) results.push(rRobots)
 
   // 3. _redirects

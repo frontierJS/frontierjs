@@ -9,7 +9,8 @@
 
 import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
 import { splitStatements } from '@frontierjs/litestone/migrate'
-import { createTestApp, channels, mailerPlugin } from '@frontierjs/junction'
+import { createTestApp, channels } from '@frontierjs/junction'
+import { mailerPlugin } from '@frontierjs/junction/mail'
 import { Database } from 'bun:sqlite'
 // Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
 // COPY under node_modules/.bun, so the package spec tests a stale reaper.

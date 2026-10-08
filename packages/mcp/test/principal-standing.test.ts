@@ -61,7 +61,7 @@ beforeAll(async () => {
   app = createApp({
     db,
     auth:     createStubAuth({ users: [{ id: 'ada' }, { id: 'vera' }] }),
-    config:   { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config:   { port: 0, services: { dir: '/nonexistent' } },
     logLevel: 'silent',
     principal: membershipClaim({
       tenantFrom: (ctx: { caller?: { headers?: Record<string, string> } }) => ctx.caller?.headers?.['x-workspace-id'],

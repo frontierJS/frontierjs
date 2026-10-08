@@ -16,13 +16,13 @@
  */
 
 import { describe, test, expect, vi } from 'vitest'
-import { matchesQuery } from '../src/junction/field-rules.js'
+import { matchesQuery } from '../src/resource/field-rules.js'
 
 // What Junction was handed, so the last section can ask whether the resource
 // actually built a matcher over the model it resolved.
 const _given = {}
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
     resource: (name, idField, opts) => {
@@ -48,8 +48,8 @@ describe('one owner', () => {
 
 describe('createResource hands the matcher to Junction', () => {
   test('built over the resolved model, not over nothing', async () => {
-    const { createResource } = await import('../src/junction/resource.js')
-    const { registerSchemas } = await import('../src/junction/schema-registry.js')
+    const { createResource } = await import('../src/resource/resource.js')
+    const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
     registerSchemas({
       Lead: {
@@ -73,7 +73,7 @@ describe('createResource hands the matcher to Junction', () => {
   })
 
   test('`stale` comes through, in the shape useStore takes', async () => {
-    const { createResource } = await import('../src/junction/resource.js')
+    const { createResource } = await import('../src/resource/resource.js')
     const leads = createResource('leads')
     // A live list can place a row and cannot fill a gap paging left; the count
     // is how a view offers the reload. Same `{ get, subscribe }` as a store, so

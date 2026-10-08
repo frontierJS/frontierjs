@@ -17,7 +17,7 @@
   // a `<service> <verb>` frame into this resource's store. It arrives only if
   // the server has the channels() plugin AND joins a connection to that
   // channel; without them the rows still persist and `load()` still reads them.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const notifications = createResource('notifications', {
     model: 'Notification',

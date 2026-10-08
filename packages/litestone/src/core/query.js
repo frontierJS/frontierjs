@@ -1,3 +1,4 @@
+// @ts-check
 // query.js — SQL clause builders + row serialization + select parsing
 
 import { ValidationError } from './validate.js'
@@ -43,6 +44,15 @@ import { toVectorBytes } from './vector.js'
 // statement. `FJS-1015` was exactly that: four nested doors with no refusal,
 // and quoting was doing its job at three of them.
 
+/** @import { ModelDef, FieldDef, LitestoneSchema } from '../index.d.ts' */
+
+/**
+ * One key of a cursor's ordering, as `findManyCursor` resolves it: the column,
+ * its direction, and for a `near` order the two columns the distance is over.
+ * @typedef {{ col: string, dir: string, nulls?: string | null, nullable?: boolean, near?: any, latCol?: string, lngCol?: string }} CursorField
+ */
+
+/** @param {string} name */
 export function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`
 }
@@ -61,6 +71,7 @@ export function quoteIdent(name) {
 //
 // Returns a RawClause: { _litestoneRaw: true, sql: string, params: any[] }
 
+/** @param {TemplateStringsArray} strings @param {...any} values */
 export function sql(strings, ...values) {
   let sqlStr   = ''
   const params = []
@@ -104,6 +115,7 @@ const RAW = Symbol.for('litestone.rawClause')
  * (`index.d.ts`, and the `$raw` type typegen writes into an app) and it reads
  * as what the object is. It identifies nothing — `isRawClause` tests the brand.
  */
+/** @param {string} sql @param {any[]} [params] */
 export function rawClause(sql, params = []) {
   return { [RAW]: true, _litestoneRaw: true, sql, params }
 }
@@ -117,6 +129,7 @@ export function rawClause(sql, params = []) {
  * check a hand-written fragment gets, because `datetime('now')` is wrong here
  * for exactly the reason it is wrong there (`FJS-226`).
  */
+/** @param {string} text */
 export function schemaRaw(text) {
   assertNoBareClock(text)
   return rawClause(expandNowTokens(text).trim())
@@ -124,6 +137,7 @@ export function schemaRaw(text) {
 
 // Is this a RawClause litestone itself made? The brand, never the property —
 // see `rawClause`.
+/** @param {unknown} val */
 export function isRawClause(val) {
   return val !== null && typeof val === 'object' && val[RAW] === true
 }
@@ -153,15 +167,109 @@ export function isRawClause(val) {
 // caller-supplied '-7 days' never enters the SQL pattern.
 const SQL_FRAGMENT = Symbol.for('litestone.sqlFragment')
 
-/** litestone's own SQL, safe to splice into a pattern. Never built from caller text. */
-function sqlFragment(sqlText, params = []) {
-  return { [SQL_FRAGMENT]: true, sql: sqlText, params }
+// ─── the fragment ─────────────────────────────────────────────────────────────
+//
+// A fragment is SQL text and its binds, TOGETHER. It is the one shape a clause
+// builder answers and a verb assembles, because the failure it removes is a
+// placeholder and its value travelling apart: `FJS-262` and `FJS-216` were a
+// filter's binds pushed in one order and its text spliced in another, and no
+// test can see that until a value lands in the wrong column's slot. A fragment
+// nested in a fragment keeps its binds beside its text, so the positional order
+// is the order of the text and nothing else.
+//
+// The brand is a security boundary, like the raw clause's above it: a fragment
+// is litestone's OWN SQL, built from schema-derived names and generated text,
+// and never from caller text (Invariant 8). Nothing a request body can carry is
+// one, because `JSON.parse` cannot produce a symbol key.
+
+/**
+ * @typedef {{ sql: string, params: any[] }} SqlFragment
+ */
+
+/**
+ * @param {string} sqlText
+ * @param {any[]} [params]
+ * @returns {SqlFragment}
+ */
+export function sqlFragment(sqlText, params = []) {
+  return /** @type {SqlFragment} */ ({ [SQL_FRAGMENT]: true, sql: sqlText, params })
 }
 
+/** @param {unknown} val @returns {val is SqlFragment} */
 export function isSqlFragment(val) {
-  return val !== null && typeof val === 'object' && val[SQL_FRAGMENT] === true
+  return val !== null && typeof val === 'object' && /** @type {any} */ (val)[SQL_FRAGMENT] === true
 }
 
+/**
+ * An identifier as a fragment. `quoteIdent` stays the one owner of quoting
+ * (`FJS-D169`); this is the spelling that lets a name sit in a `sql` template
+ * or a `join()` beside bound values without being mistaken for one.
+ * @param {string} name
+ * @returns {SqlFragment}
+ */
+export function ident(name) {
+  return sqlFragment(quoteIdent(name), [])
+}
+
+/**
+ * Fragments concatenated with `sep`, binds in the order of the text. A null or
+ * empty fragment is skipped, so a clause that had nothing to say costs the
+ * assembler no branch.
+ * @param {ReadonlyArray<SqlFragment | null | undefined>} frags
+ * @param {string} sep
+ * @returns {SqlFragment}
+ */
+export function join(frags, sep) {
+  let sqlText = ''
+  const params = []
+  let first = true
+  for (const f of frags) {
+    if (!f || !f.sql) continue
+    if (!first) sqlText += sep
+    first = false
+    sqlText += f.sql
+    if (f.params.length) params.push(...f.params)
+  }
+  return sqlFragment(sqlText, params)
+}
+
+/**
+ * @param {string} op
+ * @param {ReadonlyArray<SqlFragment | null | undefined>} frags
+ * @returns {SqlFragment | null}
+ */
+function conjoin(op, frags) {
+  /** @type {SqlFragment[]} */
+  const live = []
+  for (const f of frags) if (f && f.sql) live.push(f)
+  if (!live.length) return null
+  if (live.length === 1) return live[0]
+  // Every operand is parenthesized, because an operand is any clause another
+  // builder wrote and `a OR b AND c` reads as `a OR (b AND c)` whatever the
+  // builder meant.
+  let sqlText = ''
+  const params = []
+  for (let i = 0; i < live.length; i++) {
+    if (i) sqlText += ` ${op} `
+    sqlText += `(${live[i].sql})`
+    if (live[i].params.length) params.push(...live[i].params)
+  }
+  return sqlFragment(sqlText, params)
+}
+
+/**
+ * The conjunction of what is there: nulls and empty fragments skipped, one
+ * operand answered as itself, none answered as `null` so a caller can tell
+ * *no WHERE* from an empty one.
+ * @param {...(SqlFragment | null | undefined)} frags
+ * @returns {SqlFragment | null}
+ */
+export function and(...frags) { return conjoin('AND', frags) }
+
+/** @param {...(SqlFragment | null | undefined)} frags @returns {SqlFragment | null} */
+export function or(...frags) { return conjoin('OR', frags) }
+
+/** @param {...string} modifiers */
 export function now(...modifiers) {
   for (const m of modifiers) {
     if (typeof m !== 'string')
@@ -184,6 +292,7 @@ export function now(...modifiers) {
 // `julianday(dueAt) - julianday('now') < 7` compares like with like. Nor is
 // `strftime`, whose format string is the caller's to get right — and getting it
 // right is what `now()` is.
+/** @type {[RegExp, string][]} */
 const BARE_CLOCK = [
   // `\bdate(` also matches the tail of `datetime(`, so datetime is tested first
   // and each name is anchored on a word boundary.
@@ -203,6 +312,7 @@ const NOW_TOKEN     = /\bnow\s*\(\s*\)/gi
 const NOW_TOKEN_ARG = /\bnow\s*\(/gi
 export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
 
+/** @param {string} sqlText */
 export function expandNowTokens(sqlText) {
   if (!sqlText || !/\bnow\s*\(/i.test(sqlText)) return sqlText
   // Empty first: the second pattern would otherwise leave a trailing comma.
@@ -211,6 +321,7 @@ export function expandNowTokens(sqlText) {
     .replace(NOW_TOKEN_ARG, `strftime('%Y-%m-%dT%H:%M:%fZ','now',`)
 }
 
+/** @param {string} sqlText @param {string} [where] */
 export function assertNoBareClock(sqlText, where = 'raw SQL') {
   if (!sqlText) return
   for (const [re, name] of BARE_CLOCK) {
@@ -268,6 +379,7 @@ const TEXT_OPS = new Set(['contains', 'startsWith', 'endsWith'])
 // `contains: '_'` matches every row. `\`, `%` and `_` are escaped and the clause
 // says so with ESCAPE; a caller who wants a pattern has `$raw`.
 export const LIKE_SQL = `LIKE ? ESCAPE '\\'`
+/** @param {string} op @param {unknown} operand */
 export function likePattern(op, operand) {
   const text = String(operand).replace(/[\\%_]/g, '\\$&')
   return op === 'contains' ? `%${text}%` : op === 'startsWith' ? `${text}%` : `%${text}`
@@ -284,12 +396,12 @@ export function likePattern(op, operand) {
 // question that was asked, and `{ when: { contains: '2024-01' } }` against an ISO
 // column is a genuinely useful way to ask for a month.
 const TEXT_OP_REFUSALS = {
-  array:   (k, op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
+  array:   (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a JSON array, so "${op}" would substring-match the stored document rather than its elements — ` +
                       `use "has" for an element, or "hasSome"/"hasEvery" for several`,
-  json:    (k, op) => `"${k}" holds a JSON document, so "${op}" would match its serialized text, punctuation included — ` +
+  json:    (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a JSON document, so "${op}" would match its serialized text, punctuation included — ` +
                       `declare @type(...) on the column to filter by a path`,
-  file:    (k, op) => `"${k}" holds a file reference document, so "${op}" would match its serialized text rather than anything about the file`,
-  boolean: (k, op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
+  file:    (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" holds a file reference document, so "${op}" would match its serialized text rather than anything about the file`,
+  boolean: (/** @type {string} */ k, /** @type {string} */ op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
 }
 
 /**
@@ -315,10 +427,11 @@ const TEXT_OP_REFUSALS = {
  * Binds land in the order the `?`s appear in the text, which is the only
  * ordering positional parameters have.
  */
+/** @param {any} lat  a column, as a SQL string or `{ sql, param }` @param {any} lng @param {any} center @param {any[]} params */
 function haversineSql(lat, lng, center, params) {
   const A = typeof lat === 'string' ? { sql: lat } : lat
   const B = typeof lng === 'string' ? { sql: lng } : lng
-  const push = (v) => { if (v !== undefined) params.push(v) }
+  const push = (/** @type {unknown} */ v) => { if (v !== undefined) params.push(v) }
   push(center.lat); push(A.param); push(A.param)
   push(center.lat); push(center.lng); push(B.param)
   return `(2 * 6371008.8 * asin(min(1.0, sqrt(` +
@@ -341,8 +454,9 @@ function haversineSql(lat, lng, center, params) {
  * An empty string is not zero here: `Number('')` is 0, so a caller who sent
  * `?site[near][lat]=` would otherwise be searching the Gulf of Guinea.
  */
+/** @param {any} spec  a `near` order's argument */
 export function centerOf(spec) {
-  const num = (v) => {
+  const num = (/** @type {unknown} */ v) => {
     if (typeof v === 'number') return Number.isFinite(v) ? v : null
     if (typeof v !== 'string' || v.trim() === '') return null
     const n = Number(v)
@@ -368,6 +482,7 @@ export function centerOf(spec) {
  * tautology — an index on (lat, lng) prunes on the leading column anyway, and a
  * clause that admits everything only costs the planner.
  */
+/** @param {string} col @param {string} field @param {any} point @param {any} spec @param {any[]} params */
 function nearSql(col, field, point, spec, params) {
   const where = ['where', field]
   if (!spec || typeof spec !== 'object' || Array.isArray(spec))
@@ -386,11 +501,11 @@ function nearSql(col, field, point, spec, params) {
 
   let metres
   try { metres = parseLength(within) }
-  catch (e) { throw new ValidationError([{ path: where, message: e.message }]) }
+  catch (/** @type {any} */ e) { throw new ValidationError([{ path: where, message: e.message }]) }
 
   let boxes
   try { boxes = boundingBox({ lat, lng }, metres) }
-  catch (e) { throw new ValidationError([{ path: where, message: e.message }]) }
+  catch (/** @type {any} */ e) { throw new ValidationError([{ path: where, message: e.message }]) }
 
   const [latName, lngName] = pointColumns(field, point)
   const latCol = `${col.prefix}${quoteIdent(latName)}`
@@ -418,6 +533,7 @@ const WHERE_OPS = new Set([...JSON_LEAF_OPS, ...ARRAY_OPS, ...TEXT_OPS, 'equals'
 // whole JSON value — currently a no-op since we always traverse). The signal
 // is "any key that isn't a known operator" → it's a path. If all keys are
 // operators, fall through to the regular WhereOp handling at the column level.
+/** @param {unknown} val */
 function isTypedJsonPath(val) {
   for (const k of Object.keys(val)) {
     if (!JSON_LEAF_OPS.has(k)) return true
@@ -435,7 +551,18 @@ function isTypedJsonPath(val) {
 // `params`      — parameter array (mutated)
 // `typedJsonMap` — passed through for nested-type recursion (rarely needed
 //                  but kept for symmetry with the top-level signature)
+/**
+ * @param {string} colExpr
+ * @param {any} where
+ * @param {any} typeDecl  the `type` declaration the column carries
+ * @param {any} path  the JSON path so far — a prefix object at the top, a segment list below
+ * @param {any[]} params
+ * @param {any} typedJsonMap
+ * @param {string} colName
+ * @returns {string[]}
+ */
 function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJsonMap, colName) {
+  /** @type {string[]} */
   const clauses = []
   if (!typeDecl) return clauses
 
@@ -593,6 +720,18 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 // into `fromExprMap` because the two mean different things at the one identifier
 // point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
 // field is an ordinary column that still takes the table alias.
+/**
+ * @param {any} where  the caller's filter tree
+ * @param {any[]} params  bindings, appended in clause order — the order IS the correctness (`FJS-262`)
+ * @param {Record<string, string> | null} [fromExprMap]
+ * @param {string | null} [tableAlias]
+ * @param {any} [typedJsonMap]
+ * @param {((key: string, val: any, params: any[], tableAlias: string | null) => string) | null} [relFilter]
+ * @param {Map<string, string> | null} [fieldKinds]
+ * @param {Record<string, string> | null} [columnMap]
+ * @param {any} [pointMap]
+ * @returns {string}
+ */
 export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null, columnMap = null, pointMap = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
@@ -626,7 +765,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     }
     return v
   }
-  const checkBindable = (v, fieldName) => {
+  const checkBindable = (/** @type {any} */ v, /** @type {string} */ fieldName) => {
     if (v === undefined) {
       throw new Error(`where clause: field "${fieldName}" was given undefined — did you mean null?`)
     }
@@ -652,7 +791,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   // both coerces and bind-checks `v` against field name `k`. The factory keeps
   // hot-path overhead minimal — the closure is created once per top-level key
   // and reused for all operands at that key.
-  const pushFor = (fieldName) => (v) => params.push(checkBindable(coerce(v, fieldName), fieldName))
+  const pushFor = (/** @type {string} */ fieldName) => (/** @type {any} */ v) => params.push(checkBindable(coerce(v, fieldName), fieldName))
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
@@ -933,6 +1072,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 // $scope and never through a caller's own filter (FJS-578).
 //
 // `push` still coerces a boolean itself, for every caller that keeps binding.
+/** @param {any} v @param {(v: any) => void} push */
 function operandSql(v, push) {
   if (typeof v === 'boolean') return v ? '1' : '0'
   push(v)
@@ -963,6 +1103,7 @@ function operandSql(v, push) {
 // order the correctness, and ORDER BY comes after both the WHERE and the row
 // policy that is appended to it (FJS-215 is the same lesson).
 
+/** @param {any} val @param {any[]} outParams */
 function rawOrderPart(val, outParams) {
   if (typeof val === 'string')
     throw new Error(
@@ -989,6 +1130,7 @@ function rawOrderPart(val, outParams) {
  * and a caller who embedded an empty string would otherwise get a result list
  * ordered by nothing, with a 200.
  */
+/** @param {any} value @param {number} dim @param {string} field */
 export function vectorQueryBytes(value, dim, field) {
   if (value == null)
     throw new ValidationError([{ path: [field], message:
@@ -1025,6 +1167,7 @@ export function vectorQueryBytes(value, dim, field) {
  * time. A row with no vector is absent from a nearest-first list, which is the
  * same answer the JS path gives by dropping it.
  */
+/** @param {any} orderBy @param {any} vectorMap */
 export function vectorOrderPlan(orderBy, vectorMap) {
   if (!orderBy || !vectorMap) return null
 
@@ -1061,6 +1204,7 @@ export function vectorOrderPlan(orderBy, vectorMap) {
  * JS path hands to the candidate query so its own stable sort reproduces the
  * SQL path's `ORDER BY <distance>, <the rest>`.
  */
+/** @param {any} orderBy @param {string} field */
 export function orderByAfterVector(orderBy, field) {
   const out = []
   let seen = false
@@ -1084,6 +1228,7 @@ export function orderByAfterVector(orderBy, field) {
  * Two spellings of a distance is how the two disagree about `NULLS LAST`, which
  * is the part that decides whether a failed embedding opens every result list.
  */
+/** @param {string} field @param {string} col @param {any} val @param {any} vectorInfo @param {string | null} sqlDistanceFn @param {any[]} outParams */
 function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
   // Reached only where the caller's read cannot fall back to the JS path —
   // `search()`, which resolves its rows through FTS5 and then orders them, so
@@ -1105,6 +1250,14 @@ function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
   return `${sqlDistanceFn}(${quoteIdent(col)}, ?) ${d} NULLS LAST`
 }
 
+/**
+ * @param {any} orderBy
+ * @param {any[]} [outParams]
+ * @param {Record<string, string> | null} [columnMap]
+ * @param {any} [pointMap]
+ * @param {any} [vectorMap]
+ * @param {string | null} [sqlDistanceFn]
+ */
 export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap = null, vectorMap = null, sqlDistanceFn = null) {
   if (!orderBy) return ''
   // Graded for effect: a `near` key behind another one is refused here as well
@@ -1216,6 +1369,7 @@ export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap
 const _NAMED_AGG_FNS = ['count', 'sum', 'avg', 'min', 'max']
 
 /** Returns true if this args key+value is a named aggregate spec */
+/** @param {string} key @param {unknown} val */
 export function isNamedAgg(key, val) {
   return key.startsWith('_')
     && val !== null
@@ -1230,6 +1384,7 @@ export function isNamedAgg(key, val) {
  *
  * spec: { count?, sum?, avg?, min?, max?, filter?: RawClause | string, distinct?: boolean }
  */
+/** @param {string} alias @param {any} spec @param {any[]} extraParams */
 export function buildNamedAggExpr(alias, spec, extraParams) {
   const fn = _NAMED_AGG_FNS.find(f => f in spec)
   if (!fn) throw new Error(`Named aggregate "${alias}" must specify count, sum, avg, min, or max`)
@@ -1269,6 +1424,7 @@ export function buildNamedAggExpr(alias, spec, extraParams) {
 }
 
 /** Extract all named aggregate entries from an args object */
+/** @param {any} args */
 export function extractNamedAggs(args) {
   return Object.entries(args).filter(([k, v]) => isNamedAgg(k, v))
 }
@@ -1294,10 +1450,22 @@ export function extractNamedAggs(args) {
 //     LEFT JOIN "teams" _ob_author_team ON _ob_author_team."id" = _ob_author."teamId"
 //   → ORDER BY _ob_author_team."name" ASC
 
-export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = [], pointMap = null, vectorMap = null, sqlDistanceFn = null, columnMap = null) {
+/**
+ * @param {any} orderBy
+ * @param {string} modelName
+ * @param {Record<string, any>} shapes   `ctx.shapes` — the relations a hop crosses are the current model's
+ * @param {(m: string) => string} [modelToTable]
+ * @param {any[]} [outParams]
+ * @param {any} [pointMap]
+ * @param {any} [vectorMap]
+ * @param {string | null} [sqlDistanceFn]
+ * @param {Record<string, string> | null} [columnMap]
+ */
+export function buildRelationOrderBy(orderBy, modelName, shapes, modelToTable = (m) => m, outParams = [], pointMap = null, vectorMap = null, sqlDistanceFn = null, columnMap = null) {
   if (!orderBy) return { joinClauses: [], orderParts: [] }
 
   const items       = Array.isArray(orderBy) ? orderBy : [orderBy]
+  /** @type {string[]} */
   const joinClauses = []   // deduplicated by alias
   const seenAliases = new Set()
   // entries preserves positional order for mixed flat + relation orderBy.
@@ -1373,12 +1541,14 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
       // Detect aggregate orderBy: { posts: { _count: 'asc' } } or { posts: { _sum: { amount: 'asc' } } }
       const aggKeys = Object.keys(val).filter(k => k === '_count' || k === '_sum' || k === '_avg' || k === '_min' || k === '_max')
       if (aggKeys.length > 0) {
+        /** @type {string[]} */
         const sub = []
-        _buildAggregateOrder(key, val, aggKeys, modelName, relationMap, sub, modelToTable)
+        _buildAggregateOrder(key, val, aggKeys, modelName, shapes, sub, modelToTable)
         for (const s of sub) entries.push({ flat: false, sql: s })
       } else {
+        /** @type {string[]} */
         const sub = []
-        _walkRelationOrder(key, val, modelName, 't', relationMap, joinClauses, sub, seenAliases, `_ob_${key}`, modelToTable)
+        _walkRelationOrder(key, val, modelName, 't', shapes, joinClauses, sub, seenAliases, `_ob_${key}`, modelToTable)
         for (const s of sub) entries.push({ flat: false, sql: s })
       }
     }
@@ -1421,8 +1591,17 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
 // manyToMany: SELECT COUNT(*) FROM "_tags_posts" WHERE "postId" = t."<pk>"
 // _sum etc:   SELECT SUM("amount") FROM "orders" WHERE "orders"."userId" = t."id"
 
-function _buildAggregateOrder(relName, spec, aggKeys, modelName, relationMap, orderParts, modelToTable) {
-  const tableRels = relationMap[modelName] ?? {}
+/**
+ * @param {string} relName
+ * @param {any} spec
+ * @param {any} aggKeys
+ * @param {string} modelName
+ * @param {Record<string, any>} shapes
+ * @param {string[]} orderParts
+ * @param {(m: string) => string} modelToTable
+ */
+function _buildAggregateOrder(relName, spec, aggKeys, modelName, shapes, orderParts, modelToTable) {
+  const tableRels = shapes[modelName].relations
   const rel       = tableRels[relName]
 
   if (!rel) {
@@ -1459,7 +1638,7 @@ function _buildAggregateOrder(relName, spec, aggKeys, modelName, relationMap, or
       if (rel.kind === 'manyToMany') {
         throw new Error(`orderBy ${aggKey} is not supported on manyToMany relations — use a hasMany relation`)
       }
-      const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[aggKey]
+      const fn = /** @type {Record<string, string>} */ ({ _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' })[aggKey]
       for (const [field, dir] of Object.entries(dirOrSpec)) {
         const d = dir.toUpperCase()
         if (d !== 'ASC' && d !== 'DESC') throw new Error(`orderBy ${aggKey} direction must be 'asc' or 'desc', got: ${dir}`)
@@ -1470,8 +1649,20 @@ function _buildAggregateOrder(relName, spec, aggKeys, modelName, relationMap, or
   }
 }
 
-function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationMap, joinClauses, orderParts, seenAliases, joinAlias, modelToTable = (m) => m) {
-  const tableRels = relationMap[currentModel] ?? {}
+/**
+ * @param {string} relName
+ * @param {any} spec
+ * @param {string} currentModel
+ * @param {string} currentAlias
+ * @param {Record<string, any>} shapes
+ * @param {string[]} joinClauses
+ * @param {string[]} orderParts
+ * @param {Set<string>} seenAliases
+ * @param {string} joinAlias
+ * @param {(m: string) => string} [modelToTable]
+ */
+function _walkRelationOrder(relName, spec, currentModel, currentAlias, shapes, joinClauses, orderParts, seenAliases, joinAlias, modelToTable = (m) => m) {
+  const tableRels = shapes[currentModel].relations
   const rel       = tableRels[relName]
 
   if (!rel) {
@@ -1494,7 +1685,7 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
     if (val !== null && typeof val === 'object') {
       // Another level of nesting — recurse. currentModel becomes rel.targetModel
       // (the PascalCase model name); modelToTable converts it for the next JOIN.
-      _walkRelationOrder(key, val, rel.targetModel, joinAlias, relationMap, joinClauses, orderParts, seenAliases, `${joinAlias}_${key}`, modelToTable)
+      _walkRelationOrder(key, val, rel.targetModel, joinAlias, shapes, joinClauses, orderParts, seenAliases, `${joinAlias}_${key}`, modelToTable)
     } else {
       // Leaf — { field: 'asc'|'desc' }
       const d = val.toUpperCase()
@@ -1534,12 +1725,21 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
 //   - FK columns needed for include resolution are injected into the SQL SELECT
 //     and then stripped from results unless the user also selected them
 
-export function parseSelectArg(select, modelName, relationMap, computedSets, include, fromSets, computedFns, columnMap = null) {
+/**
+ * @param {any} select  the caller's `select`
+ * @param {string} modelName
+ * @param {Record<string, any>} shapes   `ctx.shapes`; the relations, computed and @from fields and column map are this model's
+ * @param {any} include
+ * @param {any} computedFns
+ */
+export function parseSelectArg(select, modelName, shapes, include, computedFns) {
   if (!select) return null
 
-  const tableRels      = relationMap?.[modelName] ?? {}
-  const tableComputed  = computedSets?.[modelName] ?? new Set()
-  const tableFrom      = fromSets?.[modelName] ?? new Map()
+  const shape          = shapes[modelName]
+  const tableRels      = shape.relations
+  const tableComputed  = shape.computedFields
+  const tableFrom      = shape.fromFields
+  const columnMap      = shape.columnMap
   const tableFns       = computedFns?.[modelName] ?? null
 
   const dbFields        = {}    // user-requested DB column names
@@ -1566,7 +1766,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
       if (needs) computedDeps.push(...needs)
       else       needsAllDbCols = true
 
-    } else if (tableFrom.has(key)) {
+    } else if ((key in tableFrom)) {
       // @from field — subquery is injected at buildSQL time, track for trimming
       requestedFrom.add(key)
 
@@ -1592,7 +1792,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
   // asking for a computed field must not smuggle its inputs into the result.
   if (!needsAllDbCols) {
     for (const name of computedDeps) {
-      if (tableFrom.has(name)) requestedFrom.add(name)
+      if ((name in tableFrom)) requestedFrom.add(name)
       else if (!(name in dbFields)) dbFields[name] = true
     }
   }
@@ -1636,7 +1836,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
     for (const name of requestedFrom) {
       // Every column of the correlation — a composite key is only a correlation
       // when all of it is in the row.
-      const def = tableFrom.get?.(name)
+      const def = tableFrom[name]
       for (const refCol of (def?.rowRef ?? def?.aggRef)?.refCols ?? []) {
         if (dbFields[refCol]) continue
         dbFields[refCol] = true
@@ -1648,7 +1848,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
   const sqlCols = needsAllDbCols
     ? '*'
     : Object.keys(dbFields).length > 0
-      ? Object.keys(dbFields).map(c => `"${columnMap?.[c] ?? c}"`).join(', ')
+      ? Object.keys(dbFields).map(c => `"${columnMap[c] ?? c}"`).join(', ')
       : '"_no_cols_"'  // edge case: only computed/relation fields selected
 
   return { sqlCols, relationSelects, requestedFields, injectedFKs, needsAllDbCols, requestedFrom }
@@ -1658,6 +1858,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
 // After reads + computed + includes, strip anything the user didn't ask for.
 // Called only when select was provided.
 
+/** @param {Record<string, any>} row @param {Set<string>} requestedFields @param {Set<string>} injectedFKs */
 export function trimToSelect(row, requestedFields, injectedFKs) {
   if (!row) return null
   const out = {}
@@ -1670,6 +1871,7 @@ export function trimToSelect(row, requestedFields, injectedFKs) {
   return out
 }
 
+/** @param {Record<string, any>[]} rows @param {Set<string>} requestedFields @param {Set<string>} injectedFKs */
 export function trimAllToSelect(rows, requestedFields, injectedFKs) {
   if (!requestedFields) return rows
   return rows.map(r => trimToSelect(r, requestedFields, injectedFKs))
@@ -1677,6 +1879,12 @@ export function trimAllToSelect(rows, requestedFields, injectedFKs) {
 
 // ─── JSON serialization ───────────────────────────────────────────────────────
 
+/**
+ * @template {Record<string, any> | null | undefined} T
+ * @param {T} row
+ * @param {any} jsonFields  the model's Json field names, as `client.js` keeps them
+ * @returns {T}
+ */
 export function deserializeRow(row, jsonFields) {
   if (!row || !jsonFields.size) return row
   const out = { ...row }
@@ -1688,6 +1896,7 @@ export function deserializeRow(row, jsonFields) {
   return out
 }
 
+/** @param {Record<string, any> | null | undefined} data @param {any} jsonFields */
 export function serializeRow(data, jsonFields) {
   if (!data || !jsonFields.size) return data
   const out = { ...data }
@@ -1722,15 +1931,17 @@ export function serializeRow(data, jsonFields) {
 // caller data, and `Zürich` is not a latin1 string.
 const B64URL = { '+': '-', '/': '_' }
 
+/** @param {string} text */
 function toBase64Url(text) {
   const bytes = new TextEncoder().encode(text)
   let binary = ''
   // Built one character at a time: a spread here is one argument per byte, and
   // that is a stack overflow on a long cursor rather than a slow one.
   for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/[+/]/g, (c) => B64URL[c]).replace(/=+$/, '')
+  return btoa(binary).replace(/[+/]/g, (c) => B64URL[/** @type {keyof typeof B64URL} */ (c)]).replace(/=+$/, '')
 }
 
+/** @param {string} token */
 function fromBase64Url(token) {
   if (typeof token !== 'string') throw new TypeError('cursor is not a string')
   const padded = token.replace(/-/g, '+').replace(/_/g, '/')
@@ -1739,6 +1950,7 @@ function fromBase64Url(token) {
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 }
 
+/** @param {Record<string, unknown>} values */
 export function encodeCursor(values) {
   return toBase64Url(JSON.stringify(values))
 }
@@ -1772,8 +1984,9 @@ export function encodeCursor(values) {
  * say nothing that `?col[gt]=…` does not, and signing would buy a key to rotate
  * in exchange for nothing.
  */
+/** @param {string} token @param {CursorField[] | null} [fields] */
 export function decodeCursor(token, fields = null) {
-  const refuse = (message) => {
+  const refuse = (/** @type {string} */ message) => {
     throw new ValidationError([{ path: ['$after'], message }])
   }
 
@@ -1833,6 +2046,7 @@ export function decodeCursor(token, fields = null) {
 // Parse orderBy into a consistent array of { col, dir } objects.
 // Relation orderBy items ({ rel: { field: 'asc' } }) are skipped — they are
 // not DB columns and cannot be used as cursor fields.
+/** @param {any} orderBy */
 export function normalizeOrderBy(orderBy) {
   if (!orderBy) return [{ col: 'id', dir: 'ASC' }]
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
@@ -1886,6 +2100,7 @@ export function normalizeOrderBy(orderBy) {
  * `DESC` puts them last. A cursor that guessed the other way would resume from
  * the wrong side of the nulls and lose every row on one side of them.
  */
+/** @param {string} dir @param {any} resolved */
 export function nullsPosition(dir, resolved) {
   if (dir !== null && typeof dir === 'object' && dir.nulls) {
     const n = dir.nulls.toUpperCase()
@@ -1906,6 +2121,12 @@ export function nullsPosition(dir, resolved) {
 //
 // which correctly continues from that position in either direction.
 
+/**
+ * @param {CursorField[]} fields
+ * @param {Record<string, any>} cursorValues
+ * @param {any[]} params
+ * @param {Record<string, string> | null} [columnMap]
+ */
 export function buildCursorWhere(fields, cursorValues, params, columnMap = null) {
   if (!cursorValues || !fields.length) return ''
 
@@ -1940,20 +2161,20 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
   // to sit here was the same comparison written twice, and only the multi-field
   // copy would have been fixed.
 
-  const quote = (col) => `"${columnMap?.[col] ?? col}"`
+  const quote = (/** @type {string} */ col) => `"${columnMap?.[col] ?? col}"`
 
   // The sort EXPRESSION for a field. A column is its own name; a distance key
   // is the same haversine the ORDER BY measures with, re-emitted here so the
   // comparison and the ordering cannot disagree. It pushes three binds of its
   // own, so it is built in the position its `?`s appear in the text — this
   // function's params are positional and that ordering is the correctness.
-  const expr = (f) => f.near
+  const expr = (/** @type {CursorField} */ f) => f.near
     ? haversineSql(quote(f.latCol), quote(f.lngCol), f.near, params)
     : quote(f.col)
 
   // The cursor's own position, as the SAME expression over the point it is
   // carrying — so `=` on the row that minted it is exactly true.
-  const cursorExpr = (f) => {
+  const cursorExpr = (/** @type {CursorField} */ f) => {
     const [lat, lng] = cursorValues[f.col].p
     return haversineSql({ sql: '?', param: lat }, { sql: '?', param: lng }, f.near, params)
   }
@@ -1961,15 +2182,15 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
   // *This row has no value on this field.* For a distance that is the POINT
   // being absent, asked of the generated column so the test costs no binds —
   // the expression would be NULL for the same rows and three params dearer.
-  const isNull = (f) => `${quote(f.near ? f.latCol : f.col)} IS NULL`
+  const isNull = (/** @type {CursorField} */ f) => `${quote(f.near ? f.latCol : f.col)} IS NULL`
 
   // Where the NULLs sit for this field. Stated by `cursorFields`; defaulted
   // here to SQLite's own so a hand-built field list cannot silently get DESC's
   // answer wrong — the direction decides it, not the absence of a key.
-  const nullsOf = ({ dir, nulls }) => nulls ?? (dir === 'DESC' ? 'LAST' : 'FIRST')
+  const nullsOf = (/** @type {CursorField} */ { dir, nulls }) => nulls ?? (dir === 'DESC' ? 'LAST' : 'FIRST')
 
   /** The row is tied with the cursor on this field. */
-  const equal = (f) => {
+  const equal = (/** @type {CursorField} */ f) => {
     const v = cursorValues[f.col]
     if (f.nullable && (v === null || v === undefined)) return isNull(f)
     if (f.near) return `${expr(f)} = ${cursorExpr(f)}`
@@ -1987,7 +2208,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
    * the index a keyset scan exists for. So the cost lands only on the columns
    * that actually have the problem.
    */
-  const after = (f) => {
+  const after = (/** @type {CursorField} */ f) => {
     const { col, dir } = f
     const v = cursorValues[col]
     const op = dir === 'ASC' ? '>' : '<'
@@ -2047,6 +2268,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
  * Binds land in the caller's `params`, so this is called at the point the
  * `ORDER BY` is appended — after the WHERE's own binds and before the limit.
  */
+/** @param {CursorField[]} fields @param {any[]} params */
 export function cursorOrderSql(fields, params) {
   return fields.map((f) => {
     const implicit = f.dir === 'DESC' ? 'LAST' : 'FIRST'
@@ -2072,6 +2294,7 @@ export function cursorOrderSql(fields, params) {
  * to one and a caller who moved the map between pages is resuming into an
  * ordering that never existed (`FJS-D324`).
  */
+/** @param {Record<string, any>} row @param {CursorField[]} fields */
 export function extractCursorValues(row, fields) {
   const values = {}
   for (const f of fields) {
@@ -2090,6 +2313,12 @@ export function extractCursorValues(row, fields) {
 // so JS developers get real true/false, not 0/1.
 
 // Deserialize: 0/1 → false/true on Boolean fields
+/**
+ * @template {Record<string, any> | null | undefined} T
+ * @param {T} row
+ * @param {any} boolFields  the model's Boolean field names, as `client.js` keeps them
+ * @returns {T}
+ */
 export function coerceBooleans(row, boolFields) {
   if (!row || !boolFields.size) return row
   const out = { ...row }
@@ -2102,6 +2331,7 @@ export function coerceBooleans(row, boolFields) {
 }
 
 // Serialize: true/false → 1/0 on Boolean fields
+/** @param {Record<string, any> | null | undefined} data @param {any} boolFields */
 export function serializeBooleans(data, boolFields) {
   if (!data || !boolFields.size) return data
   const out = { ...data }
@@ -2137,6 +2367,7 @@ export function serializeBooleans(data, boolFields) {
 // rows: [-2, 0] → ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
 //        [null, null] → ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
 
+/** @param {any} windowSpec @param {any[] | null} [filterParams] */
 export function buildWindowCols(windowSpec, filterParams = null) {
   if (!windowSpec || !Object.keys(windowSpec).length) return []
 
@@ -2163,6 +2394,7 @@ export function buildWindowCols(windowSpec, filterParams = null) {
   return cols
 }
 
+/** @param {string} alias @param {any} spec */
 function _buildWindowExpr(alias, spec) {
   // Positional functions
   if (spec.rowNumber)   return 'ROW_NUMBER()'
@@ -2199,19 +2431,20 @@ function _buildWindowExpr(alias, spec) {
   throw new Error(`window "${alias}": unrecognized window function spec. Use rowNumber, rank, denseRank, lag, lead, sum, avg, min, max, count, firstValue, lastValue.`)
 }
 
+/** @param {any} spec */
 function _buildOverClause(spec) {
   const parts = []
 
   // PARTITION BY
   if (spec.partitionBy) {
     const cols = Array.isArray(spec.partitionBy) ? spec.partitionBy : [spec.partitionBy]
-    parts.push(`PARTITION BY ${cols.map(c => `"${c}"`).join(', ')}`)
+    parts.push(`PARTITION BY ${cols.map((/** @type {string} */ c) => `"${c}"`).join(', ')}`)
   }
 
   // ORDER BY
   if (spec.orderBy) {
     const items = Array.isArray(spec.orderBy) ? spec.orderBy : [spec.orderBy]
-    const exprs = items.flatMap(item =>
+    const exprs = items.flatMap((/** @type {any} */ item) =>
       Object.entries(item).map(([col, dir]) => {
         if (dir !== null && typeof dir === 'object') {
           const d = dir.dir?.toUpperCase() ?? 'ASC'
@@ -2236,6 +2469,7 @@ function _buildOverClause(spec) {
   return `(${parts.join(' ')})`
 }
 
+/** @param {any} val @param {string} defaultDir */
 function _frameBound(val, defaultDir) {
   if (val === null || val === undefined) return `UNBOUNDED ${defaultDir}`
   if (val === 0)  return 'CURRENT ROW'
@@ -2243,6 +2477,7 @@ function _frameBound(val, defaultDir) {
   return `${val} FOLLOWING`
 }
 
+/** @param {unknown} val */
 function _sqlLit(val) {
   if (val === null) return 'NULL'
   if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`
@@ -2266,6 +2501,7 @@ function _sqlLit(val) {
 // say which kind of wrong it is.
 //
 // A relation IS filterable (`posts: { some: … }`), so relations stay in.
+/** @param {ModelDef} model */
 export function filterableKeysFor(model) {
   const filterable   = new Set()
   const computed     = new Set()
@@ -2310,6 +2546,7 @@ export const OPAQUE_SORT = {
   hashed:    `@hashed — sorting it orders rows by the digest, which is stable and equally meaningless`,
 }
 
+/** @param {FieldDef} f */
 export function opaqueSortKind(f) {
   if (f.attributes?.some(a => a.kind === 'hashed')) return 'hashed'
   if (f.attributes?.some(a => a.kind === 'encrypted' || a.kind === 'secret')) return 'encrypted'
@@ -2323,6 +2560,7 @@ export function opaqueSortKind(f) {
 // sortableKeysFor: a @from field sorts fine (it is in the SELECT) and cannot be
 // aggregated, and an opaque column is a real column, so it is kept and marked
 // rather than dropped.
+/** @param {ModelDef} model */
 export function aggregatableKeysFor(model) {
   const columns   = new Set()
   const computed  = new Set()
@@ -2371,6 +2609,10 @@ export function aggregatableKeysFor(model) {
 //
 // `@id` is absent because a table already shows it, and a `global` unique is
 // kept unchanged: it is unique across the installation on purpose.
+/**
+ * @param {ModelDef} model
+ * @param {(LitestoneSchema & { tenancy?: any }) | null | undefined} schema  `tenancy` is what the parser attaches and `index.d.ts` does not yet declare
+ */
 export function identifyingKeysFor(model, schema) {
   const modelNames = new Set((schema?.models ?? []).map(m => m.name))
   const fks        = new Set()
@@ -2406,6 +2648,7 @@ const EXCLUDED_FROM_IDENTITY = new Set([
   'guarded', 'encrypted', 'secret', 'hashed', 'system', 'id',
 ])
 
+/** @param {ModelDef} model */
 export function sortableKeysFor(model) {
   const sortable  = new Set()
   const relations = new Set()

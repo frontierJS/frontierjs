@@ -147,7 +147,8 @@ describe('the service reports both halves', () => {
   test('bulk is opt-in — an array body without allowBulk is a 400', async () => {
     // Guards against a missing id in a bulk patch wiping a table by accident.
     const app = await createTestApp({
-      services: [() => createService({ name: 'things', model: 'thing' })],
+      // The refusal comes before any read, so the table is never reached.
+      services: [() => createService({ name: 'things', model: 'thing', db: () => ({ thing: {} }) as never })],
     })
     const res = await request(app).post('/things').send([{ t: 1 }])
     expect(res.status).toBe(400)

@@ -1,6 +1,6 @@
 // web/src/session.js — who the caller is, and which workspace they are in.
 //
-// WHO is no longer this file's: `@frontierjs/sierra/junction` owns the session
+// WHO is no longer this file's: `@frontierjs/sierra/resource` owns the session
 // — the reactive object, the boot restore, sign in and sign out — and this
 // file's job is now the half no framework can answer, which is the tenant
 // everything downstream is scoped to.
@@ -19,7 +19,7 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
 import {
   session, ready as sessionReady, refresh, getClient,
   signIn as authSignIn, signOut as authSignOut, submitCode as authSubmitCode,
-} from '@frontierjs/sierra/junction'
+} from '@frontierjs/sierra/resource'
 
 export { session }
 

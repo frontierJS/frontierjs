@@ -8,7 +8,7 @@
   // the controls a form generates — rather than for a list. The service answers
   // `current` and `save` and no CRUD verb at all, which is what a settings row
   // with a constant primary key actually is.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const hubConfig = createResource('hub-config', { model: 'HubConfig' })
 </script>

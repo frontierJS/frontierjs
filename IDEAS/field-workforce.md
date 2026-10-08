@@ -117,7 +117,7 @@ is the first exercise that fails without it rather than merely wanting it.
 
 **4. Not offline.** Homestead is built through phase 5: `@@sync` is declared
 across `example`, the queue is
-[`pending.js`](../packages/sierra/src/junction/pending.js), the bytes drain as a
+[`pending.js`](../packages/sierra/src/resource/pending.js), the bytes drain as a
 second queue behind the row (`FJS-D301`), and a per-column merge against the
 base row the device read is `src/core/three-way.js` (`FJS-D334`, `FJS-D338`).
 **`@@sync(append)` — already carried by `InventoryMovement` — is exactly a clock

@@ -1,11 +1,10 @@
 {
   // .lite language, parser and SQLite client — mixed TS and JS.
   //
-  // checkJs is off: turning it on today reports 3,131 errors across untyped
-  // JS, which is noise rather than a gate. The config still gives editors
-  // import resolution and go-to-definition, and any .ts in this package is
-  // checked for real. Flip checkJs on per-directory when the JS here grows
-  // types worth enforcing.
+  // checkJs stays off — the whole package reports ~3,000 errors — and a file
+  // opts in with a `// @ts-check` pragma on its first line: the ten modules
+  // Phase 1 split out of core/client.js carry one. Their ceiling is the
+  // `litestone` entry in scripts/typecheck-baselines.json (Invariant 14).
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "checkJs": false },
   "include": ["src/**/*.ts", "src/**/*.js", "test/**/*.js"]

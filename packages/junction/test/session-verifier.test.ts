@@ -19,8 +19,7 @@ import { createApp, defaultConfig } from '../index.ts'
 import type { SessionVerifier, SessionContext } from '../src/auth/types.ts'
 
 const cfg = {
-  ...defaultConfig, port: 0,
-  database: { url: '', log: false }, services: { dir: '/nonexistent' },
+  ...defaultConfig, port: 0, services: { dir: '/nonexistent' },
 }
 
 /** One method. No cast. This is the whole provider. */

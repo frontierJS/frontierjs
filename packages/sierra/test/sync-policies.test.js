@@ -41,7 +41,7 @@ const _calls = []
 let _headers = {}
 const _listeners = []
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => _proxy,
     callHeaders: () => ({ ..._headers }),
@@ -57,10 +57,10 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { generateSchemas } = await import('../src/build/schema-plugin.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { createResource }  = await import('../src/junction/resource.js')
-const { pendingQueue, _resetPendingQueue } = await import('../src/junction/pending.js')
-const { attachmentQueue, _resetAttachmentQueue } = await import('../src/junction/attachments.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
+const { createResource }  = await import('../src/resource/resource.js')
+const { pendingQueue, _resetPendingQueue } = await import('../src/resource/pending.js')
+const { attachmentQueue, _resetAttachmentQueue } = await import('../src/resource/attachments.js')
 
 // Three models differing ONLY in the policy, plus one with no `@@sync` at all.
 // `Ledger` has no `@version` on purpose: `append` needs none, and the parser
@@ -120,7 +120,7 @@ const held = () => pendingQueue().pending()
 
 describe('the policy reaches the browser as itself', () => {
   test('each model carries its own word, and a model that said nothing carries none', async () => {
-    const { schemaFor } = await import('../src/junction/schema-registry.js')
+    const { schemaFor } = await import('../src/resource/schema-registry.js')
     expect(schemaFor('Served')['x-sync']).toBe('server')
     expect(schemaFor('Guard')['x-sync']).toBe('refuse')
     expect(schemaFor('Ledger')['x-sync']).toBe('append')

@@ -9,7 +9,7 @@
   // off `x-transitions` and answers what a person may ask for, which on this
   // model is `cancel` and nothing else. Nothing on any screen lists the four.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const subscriptions = createResource('subscriptions')
 </script>

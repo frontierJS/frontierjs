@@ -7,7 +7,7 @@ title: New lead
   // them are here, because all of them are in db/schema.lite.
   import { leads }    from '../../resources/Lead.mesa'
   import { accounts } from '../../resources/Account.mesa'
-  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
+  import { createResource, ResourceValidationError } from '@frontierjs/sierra/resource'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '../../session.js'
 

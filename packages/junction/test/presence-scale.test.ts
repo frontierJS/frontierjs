@@ -32,7 +32,7 @@ afterEach(async () => {
 async function serve(port: number, room: string, opts: Record<string, unknown> = {}) {
   const app: any = createApp({
     config: {
-      port, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+      port, services: { dir: '/nonexistent' },
       http: { ...defaultConfig.http, drainTimeout: 250 },
     },
     auth: {

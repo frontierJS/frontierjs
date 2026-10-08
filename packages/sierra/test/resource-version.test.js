@@ -52,7 +52,7 @@ function conflictError(actual, expected = 3) {
     } })
 }
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({
       get: async (id) => { calls.push(['get', id, null]); return rows.get(id) ?? null },
@@ -90,8 +90,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 }))
 
 const { createResource, buildVersion, isStaleWrite, toConflict, toFieldErrors, STALE_WRITE_MESSAGE } =
-  await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+  await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // Litestone by relative path — `bun install` resolves workspace:* to a copy, so
 // a package-name import would test a stale snapshot of the generator that

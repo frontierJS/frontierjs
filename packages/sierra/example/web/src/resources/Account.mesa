@@ -8,7 +8,7 @@
   // Which resource the picker reaches for is not written in the form either —
   // create.mesa derives it from `leads.relations.account.model`.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const accounts = createResource('accounts')
 </script>

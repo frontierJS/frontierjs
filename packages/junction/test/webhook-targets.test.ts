@@ -15,9 +15,10 @@
 // Every refusal here is PAIRED with the acceptance of an otherwise identical
 // request (`FJS-351`) — a guard that refuses everything satisfies any test that
 // only checks the refusal.
+import { Database } from 'bun:sqlite'
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { webhooks } from '../src/plugins/webhooks/index.ts'
+import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { assertPublicUrl, PublicUrlError } from '../src/core/public-url.ts'
 
 // ─── a receiver that can also redirect ────────────────────────────────────
@@ -48,7 +49,7 @@ const OPEN = { allowHttp: true, allowPrivate: true }
 
 async function makeApp(opts: Record<string, unknown> = {}, users = [{ id: 'admin', isAdmin: true }, { id: 'member' }]) {
   const app = await createTestApp({ users })
-  app.configure(webhooks({ events: ['*'], retryInterval: 3_600_000, ...opts }))
+  app.configure(webhooks({ events: ['*'], store: createSqliteWebhookStore(new Database(':memory:')), retryInterval: 3_600_000, ...opts }))
   await app._startForTest()
   return app as typeof app & { webhooks: NonNullable<typeof app.webhooks> }
 }

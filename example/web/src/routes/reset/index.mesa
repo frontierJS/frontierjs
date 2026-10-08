@@ -16,7 +16,7 @@ title: Set a password
   // account holds, so the next step is the sign-in page with the new password —
   // the same place a person who was invited goes next.
   import { page }      from '@frontierjs/sierra/router'
-  import { getClient } from '@frontierjs/sierra/junction'
+  import { getClient } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'

@@ -15,7 +15,7 @@ const NOW    = 1_800_000_000
 
 function appWith(auth?: { verifySession: (t: string) => Promise<SessionContext | null> }) {
   const app = createApp({
-    config: { ...defaultConfig, port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    config: { ...defaultConfig, port: 0, services: { dir: '/nonexistent' } },
     ...(auth ? { auth } : {}),
     credentials: [signedRequest({
       now: () => NOW,

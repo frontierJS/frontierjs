@@ -55,7 +55,7 @@ beforeAll(async () => {
   const { createApp, defaultConfig } = await import('../index.ts')
   app = createApp({
     db,
-    config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+    config: { port: 0, services: { dir: '/nonexistent' },
               http: { ...defaultConfig.http, drainTimeout: 50 } },
   } as never)
 
@@ -228,7 +228,7 @@ model Project {
     const { createApp, defaultConfig } = await import('../index.ts')
     const a = createApp({
       db: pdb,
-      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+      config: { port: 0, services: { dir: '/nonexistent' },
                 http: { ...defaultConfig.http, drainTimeout: 50 } },
     } as never)
     const svc = createService({ name: 'projects', model: 'Project' })

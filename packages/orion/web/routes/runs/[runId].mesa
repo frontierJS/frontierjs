@@ -12,7 +12,7 @@ title: Run
   // A waiting run can be cancelled by its flow's owner or an administrator; a
   // queued or running one is refused by the service (`FJS-1157`).
   import { runs } from '../../resources/Run.mesa'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { page } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'

@@ -13,10 +13,10 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => null }))
+vi.mock('@frontierjs/sierra/resource', () => ({ getClient: () => null }))
 
-const { createMakeFromSchema } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createMakeFromSchema } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // Exactly what generateJsonSchema produces for an enum + a model that uses it.
 const DEFS = {
@@ -171,7 +171,7 @@ describe('foreign keys default to null, not 0', () => {
 
   test('the null reaches the required check instead of the database', async () => {
     const { validateAgainstFields, buildFieldRules } =
-      await import('../src/junction/field-rules.js')
+      await import('../src/resource/field-rules.js')
     registerSchemas({ Order: ORDER }, ['Order'])
     const rules = buildFieldRules(ORDER)
     const make  = createMakeFromSchema(ORDER.properties, undefined, undefined, fks)

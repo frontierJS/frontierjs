@@ -1,3 +1,4 @@
+// @ts-check
 // include.js — the rows read through a relation: `include`, and `@from` on
 // the paths that assemble their own SQL.
 
@@ -14,6 +15,16 @@ import { applyFieldPolicyTo } from './field-policy.js'
 import { emitQuery, queryTapped } from './hooks.js'
 import { gatedFromFields } from './from-gate.js'
 
+/** @import { DbHandle } from './databases.js' */
+/** @import { Ctx } from './field-policy.js' */
+
+/** @typedef {Record<string, any>} Row  a row as SQLite handed it back, keyed by column */
+/**
+ * A model's `@from` entries by field name, as `client.js` builds them
+ * (`subquerySql`, `isObject`, `refCols`, …) — a shape nothing has typed yet.
+ * @typedef {Record<string, Record<string, any>>} FromFields
+ */
+
 // ─── @from on a path that builds its own SQL ─────────────────────────────────
 //
 // makeTable holds a table's own @from entries in a closure, which is right for
@@ -27,6 +38,7 @@ import { gatedFromFields } from './from-gate.js'
 // the dangerous one, because applyComputed still runs — a @computed field
 // reading a missing @from field answers a plausible 0 rather than throwing.
 
+/** @param {FromFields | null | undefined} fromFields @param {boolean} [aliased] */
 export function fromSelectExpr(fromFields, aliased = false) {
   const entries = Object.entries(fromFields ?? {})
   if (!entries.length) return null
@@ -58,6 +70,13 @@ export function fromSelectExpr(fromFields, aliased = false) {
 //
 // `depth` bounds a chain of references — A.last → B, B.last → A is a cycle, and
 // a cycle here is an infinite fetch rather than a wrong answer.
+/**
+ * @param {DbHandle} readDb
+ * @param {Row[]} rows
+ * @param {FromFields | null | undefined} fromFields
+ * @param {Ctx} ctx
+ * @param {number} [depth]
+ */
 export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
   if (!rows?.length || !fromFields || depth > 3) return rows
   const hidden = gatedFromFields(fromFields, ctx)
@@ -71,13 +90,13 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       for (const r of rows) if (name in r) r[name] = null
       continue
     }
+    /** @type {{ model: string, pk: string, fkCols: string[], refCols: string[], orderField: string, dir: string, extra?: string[] }} */
     const { model: target, pk, fkCols, refCols, orderField, dir, extra } = def.rowRef
     const tModel = ctx.schema?.models.find(m => m.name === target)
     const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target
-    const tFrom  = ctx.fromMap?.[target] ?? null
-    const policy = ctx.hasPolicies
-      ? buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
-      : null
+    const tShape = ctx.shapes[target]
+    const tFrom  = Object.keys(tShape.fromFields).length ? tShape.fromFields : null
+    const policy = ctx.hasPolicies ? buildPolicyFilter(target, 'read', ctx) : null
     const fromCols = tFrom ? fromSelectExpr(tFrom) : null
     const tHidden  = gatedFromFields(tFrom, ctx)
     const T        = `"${tTable}"`
@@ -90,7 +109,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     // partition and the lookup map — because the correlation is over all of it.
     // `keyOf` is that tuple as one string, JSON so two columns cannot join into
     // one value the way a separator would.
-    const keyOf   = (r, cols) => JSON.stringify(cols.map(c => r[c] ?? null))
+    const keyOf   = (/** @type {Row} */ r, /** @type {string[]} */ cols) => JSON.stringify(cols.map(c => r[c] ?? null))
     const refVals = refCols?.length ? rows.map(r => refCols.map(c => r[c])) : []
     const refs    = [...new Map(refVals
       .filter(vals => vals.every(v => v != null))
@@ -132,21 +151,20 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     // The @from repick reads the TARGET's rows, so wideness is the target's —
     // and the handle may already be wrapped for the PARENT, which would narrow
     // against the wrong field set.
-    const tBig  = ctx.bigMap?.[target]
-    const fromDb = tBig ? wideDb(readDb, tBig) : plainDb(readDb)
+    const fromDb = tShape.bigFields.size ? wideDb(readDb, tShape.bigFields) : plainDb(readDb)
     const stmt  = fromDb.query(sql)
     let got = stmt.all(...binds)
       .map((r) => {
         if (repick) delete r.__fromrn
         return deserializeFromRow(
-          coerceBooleans(deserializeRow(r, ctx.jsonMap?.[target] ?? new Set()), ctx.boolMap?.[target] ?? new Set()),
+          coerceBooleans(deserializeRow(r, tShape.jsonFields), tShape.boolFields),
           tFrom, tHidden)
       })
     // A referenced row may reference one of its own.
     resolveFromRowRefs(readDb, got, tFrom, ctx, depth + 1)
     got = got.map(r => applyComputed(r, target, ctx.computedFns, ctx))
-    const fp = ctx.fieldPolicyMap?.[target]
-    if (fp && Object.keys(fp).length)
+    const fp = tShape.fieldPolicy
+    if (Object.keys(fp).length)
       got = got.map(r => applyFieldPolicyTo(r, target, fp, ctx, { mode: 'single' }))
 
     if (repick) {
@@ -168,15 +186,22 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
 // With a read policy on the target the value is recomputed here, one GROUP BY
 // over the children of the parents in hand. A row missing its correlation
 // column keeps the startup value, which is why parseSelectArg injects it.
+/**
+ * @param {DbHandle} readDb
+ * @param {Row[]} rows
+ * @param {string} name
+ * @param {{ model: string, fkCols: string[], refCols: string[], op: string, opValue: string, extra?: string[] }} aggRef  one `@from` entry's aggregate half
+ * @param {Ctx} ctx
+ */
 function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
   if (!ctx.hasPolicies) return
   const { model: target, fkCols, refCols, op, opValue, extra } = aggRef
-  const policy = buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+  const policy = buildPolicyFilter(target, 'read', ctx)
   if (!policy || !fkCols?.length) return
   const tModel = ctx.schema?.models.find(m => m.name === target)
   const T      = `"${tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target}"`
 
-  const keyOf   = (r, cols) => JSON.stringify(cols.map(c => r[c] ?? null))
+  const keyOf   = (/** @type {Row} */ r, /** @type {string[]} */ cols) => JSON.stringify(cols.map(c => r[c] ?? null))
   const inHand  = rows.filter(r => name in r && refCols.every(c => r[c] !== undefined))
   const refs    = [...new Map(inHand
     .filter(r => refCols.every(c => r[c] != null))
@@ -199,8 +224,8 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
     const keys = fkCols.map((c, i) => `${T}."${c}" AS "__fk${i}"`).join(', ')
     const sql  = `SELECT ${keys}, ${agg} AS "__agg" FROM ${T} WHERE ${parts.join(' AND ')} ` +
                  `GROUP BY ${fkCols.map(c => `${T}."${c}"`).join(', ')}`
-    const tBig   = ctx.bigMap?.[target]
-    const fromDb = tBig ? wideDb(readDb, tBig) : plainDb(readDb)
+    const tBig   = ctx.shapes[target].bigFields
+    const fromDb = tBig.size ? wideDb(readDb, tBig) : plainDb(readDb)
     for (const g of fromDb.query(sql).all(...refs.flat(), ...policy.params))
       byRef.set(JSON.stringify(fkCols.map((_, i) => g[`__fk${i}`] ?? null)), op === 'exists' ? true : g.__agg)
   }
@@ -208,6 +233,13 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
 }
 
 // `hidden` is gatedFromFields' answer for these rows: each is read as null.
+/**
+ * @template {Row | null | undefined} T
+ * @param {T} row
+ * @param {FromFields | null | undefined} fromFields
+ * @param {Set<string> | null} [hidden]
+ * @returns {T}  the row as handed in, or a copy of the same shape
+ */
 export function deserializeFromRow(row, fromFields, hidden = null) {
   if (!row || !fromFields) return row
   let out = row
@@ -244,6 +276,7 @@ export function deserializeFromRow(row, fromFields, hidden = null) {
 // and everything here is not.
 
 // Coerce a raw edge column value (from a join/side table) to its JS type.
+/** @param {any} raw @param {{ type?: { name?: string } }} desc */
 export function coerceEdgeValue(raw, desc) {
   if (raw == null) return raw
   const tn = desc.type?.name
@@ -252,15 +285,22 @@ export function coerceEdgeValue(raw, desc) {
   return raw
 }
 
+/**
+ * @param {DbHandle} readDb
+ * @param {Row[]} rows
+ * @param {Record<string, any> | null | undefined} include  the caller's `include` arg
+ * @param {string} modelName
+ * @param {Ctx} ctx
+ */
 export function resolveIncludes(readDb, rows, include, modelName, ctx) {
   if (!include || !rows.length) return rows
 
-  const { relationMap, jsonMap, edgeMap, computedSets, fromMap, softDeleteMap, computedFns } = ctx
-  const tableRelations = relationMap[modelName] ?? {}
+  const { shapes, computedFns } = ctx
+  const tableRelations = shapes[modelName].relations
 
   // Resolve a PascalCase model name to its SQL table name. Relations in relationMap
   // carry the target as a model name; SQL emits the table name.
-  const modelToTable = (mName) => {
+  const modelToTable = (/** @type {string} */ mName) => {
     const m = ctx.schema?.models.find(x => x.name === mName)
     return m ? modelToTableName(m, ctx.pluralize ?? false) : mName
   }
@@ -272,18 +312,30 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
   // covered it, and a hundred-row populate read as one statement. The statement
   // is against the TARGET model, so that is the `model` and the `database` this
   // event names — a relation may live in another database block.
+  /**
+   * @param {DbHandle} dbh
+   * @param {string} targetModel
+   * @param {string} operation
+   * @param {string} sql
+   * @param {any[]} params
+   */
   const runInclude = (dbh, targetModel, operation, sql, params) => {
     const tapped = queryTapped(ctx)
     const t0     = tapped ? performance.now() : 0
     const out    = dbh.query(sql).all(...params)
     if (tapped)
-      emitQuery(ctx, modelToTable(targetModel), ctx.modelDbMap?.[targetModel] ?? 'main',
+      emitQuery(ctx, modelToTable(targetModel), shapes[targetModel].db,
         { operation, sql, params, duration: performance.now() - t0, rowCount: out.length })
     return out
   }
 
   // Append the target's @from subqueries to a nested SELECT list. A bare
   // include takes them all; an explicit nested select takes only what it named.
+  /**
+   * @param {string} sqlCols
+   * @param {FromFields | null | undefined} targetFrom
+   * @param {{ requestedFrom?: Set<string> } | null | undefined} parsedNested
+   */
   const withFromCols = (sqlCols, targetFrom, parsedNested) => {
     if (!targetFrom) return sqlCols
     if (sqlCols === '*') {
@@ -312,7 +364,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         }).map(k => [k, true]))
       : (include._count.select ?? include._count)
 
-    const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+    const idField = shapes[modelName].model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
     const pkValues = [...new Set(rows.map(r => r[idField]).filter(v => v != null))]
     const ph = pkValues.map(() => '?').join(', ')
 
@@ -333,7 +385,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // at a time. The join table alone cannot answer it once the TARGET is
       // policied, so the count joins through to the target in that case.
       const countPolicy = ctx.hasPolicies
-        ? buildPolicyFilter(rel.targetModel, 'read', ctx, ctx.policyMap, ctx.schema, relationMap)
+        ? buildPolicyFilter(rel.targetModel, 'read', ctx)
         : null
 
       if (rel.kind === 'manyToMany') {
@@ -347,17 +399,17 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
           [...pkValues, ...(countPolicy?.params ?? [])])
       } else {
-        const sdExtra = softDeleteMap[rel.targetModel] ? ` AND "deletedAt" IS NULL` : ''
+        const sdExtra = shapes[rel.targetModel].softDelete ? ` AND "deletedAt" IS NULL` : ''
         // Default _count behavior mirrors normal reads — exclude templates.
         // The relInclude here is `spec`, parsed above; we don't currently
         // surface withTemplates/onlyTemplates on _count selectors (matches
         // soft-delete: no withDeleted on _count either).
-        const targetHt = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
+        const targetHt = shapes[rel.targetModel].hasTemplates
         const htExtra  = targetHt ? ` AND "${targetHt}" = 0` : ''
         // The window, same terms: no flag is surfaced here, so it is always
         // read at `now`. Bound rather than inlined — the two above are literals
         // because a column name and a constant are all they need.
-        const cntWin   = ctx.effectiveMap?.[rel.targetModel] ?? null
+        const cntWin   = shapes[rel.targetModel].effective
         const cntBinds = []
         let   effExtra = ''
         if (cntWin?.imposed) {
@@ -367,9 +419,10 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         }
         // Build optional where filter using buildWhere
         let whereExtra = ''
+        /** @type {any[]} */
         const whereParams = []
         if (where) {
-          const ws = buildWhere(where, whereParams, null, null, null, null, ctx.filterKindMap?.[rel.targetModel])
+          const ws = buildWhere(where, whereParams, null, null, null, null, shapes[rel.targetModel].fieldKinds)
           if (ws) whereExtra = ` AND (${ws})`
         }
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
@@ -412,17 +465,17 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // build; `readDb` itself stays plain, because the nested include and the
     // @from resolver each answer for a model of their own. The `_count` query
     // above is deliberately not on it — a count is a count, not the column.
-    const relBig = ctx.bigMap?.[rel.targetModel]
+    const relBig = shapes[rel.targetModel].bigFields
     // The same reasoning for `@map`, and the two compose: the target's rows come
     // back keyed by ITS columns, and every key read out of them below — the join
     // key most of all — is a field name. `tcol` is the same fact in the other
     // direction, for the identifiers these branches write into SQL.
-    const relMap = ctx.columnMaps?.[rel.targetModel]
-    const tcol   = relMap && Object.keys(relMap).length
-      ? (name) => relMap[name] ?? name
-      : (name) => name
-    let relDb    = relBig ? wideDb(readDb, relBig) : plainDb(readDb)
-    if (relMap && Object.keys(relMap).length) relDb = mappedDb(relDb, relMap)
+    const relMap = shapes[rel.targetModel].columnMap
+    const tcol   = Object.keys(relMap).length
+      ? (/** @type {string} */ name) => relMap[name] ?? name
+      : (/** @type {string} */ name) => name
+    let relDb    = relBig.size ? wideDb(readDb, relBig) : plainDb(readDb)
+    if (Object.keys(relMap).length) relDb = mappedDb(relDb, relMap)
 
     // ── The target model's own read policy ──────────────────────────────────
     // Built once here and appended by each branch below, because the three
@@ -431,7 +484,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // the m2m branch, where the target is aliased `t` beside the join table `j`
     // and the compiler's unqualified column names would be ambiguous.
     const targetPolicy = ctx.hasPolicies
-      ? buildPolicyFilter(rel.targetModel, 'read', ctx, ctx.policyMap, ctx.schema, relationMap)
+      ? buildPolicyFilter(rel.targetModel, 'read', ctx)
       : null
     const policyClause = targetPolicy ? ` AND (${targetPolicy.sql})` : ''
     const policyParams = targetPolicy ? targetPolicy.params : []
@@ -440,7 +493,8 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       : ''
 
     // Field rules on the target — @guarded, @encrypted, @omit, field @allow.
-    const targetFieldPolicy = ctx.fieldPolicyMap?.[rel.targetModel] ?? null
+    const targetFieldPolicy = shapes[rel.targetModel].fieldPolicy
+    /** @param {Row[]} rows_ @param {{ mode?: 'list' | 'single' | 'select', selectedFields?: Set<string> | null }} opts */
     const shapeRelated = (rows_, opts) =>
       targetFieldPolicy && Object.keys(targetFieldPolicy).length
         ? rows_.map(r => applyFieldPolicyTo(r, rel.targetModel, targetFieldPolicy, ctx, opts))
@@ -450,10 +504,15 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // target's field rules. One definition: the three branches below build three
     // different SELECTs and each used to finish its rows with its own copy of
     // this expression, so a step added to one was absent from the other two.
+    /**
+     * @param {Row[]} rawRows
+     * @param {{ mode?: 'list' | 'single' | 'select', selectedFields?: Set<string> | null }} opts
+     * @param {Set<string> | null} [requested]
+     */
     const finishRelated = (rawRows, opts, requested = null) => {
       const hidden = gatedFromFields(targetFrom, ctx)
       const staged = rawRows.map(r => deserializeFromRow(
-        coerceBooleans(deserializeRow(r, targetJsonFields), ctx.boolMap?.[rel.targetModel] ?? new Set()),
+        coerceBooleans(deserializeRow(r, targetJsonFields), shapes[rel.targetModel].boolFields),
         targetFrom, hidden))
       resolveFromRowRefs(readDb, staged, targetFrom, ctx)
       return shapeRelated(
@@ -468,10 +527,11 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // Optional per-include filter: include: { posts: { where: { published: true } } }
     const relWhere = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.where ?? null : null
-    const relWhereSql = (extraAlias) => {
+    const relWhereSql = (/** @type {string | null | undefined} */ extraAlias) => {
       if (!relWhere) return { clause: '', params: [] }
+      /** @type {any[]} */
       const p = []
-      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, ctx.filterKindMap?.[rel.targetModel])
+      const ws = buildWhere(relWhere, p, null, extraAlias ?? null, null, null, shapes[rel.targetModel].fieldKinds)
       return { clause: ws ? ` AND (${ws})` : '', params: p }
     }
     // Soft delete mode for related table
@@ -495,29 +555,32 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // target's live rows, which is the opposite of the question (FJS-293). The
     // top-level read refuses in sdMode/htMode; this path builds its own SQL and
     // reaches neither.
-    if (nestedMode === 'onlyDeleted' && !(softDeleteMap[rel.targetModel] ?? false))
+    if (nestedMode === 'onlyDeleted' && !shapes[rel.targetModel].softDelete)
       throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyDeleted', '@@softDelete',
         'Every row here is live, so there is no deleted-only view to include.')
-    if (nestedHtMode === 'onlyTemplates' && (ctx.hasTemplatesMap?.[rel.targetModel] ?? null) === null)
+    if (nestedHtMode === 'onlyTemplates' && shapes[rel.targetModel].hasTemplates === null)
       throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyTemplates', '@@hasTemplates',
         'This model has no template rows, so there is no template-only view to include.')
-    if (nestedEffMode === 'onlyExpired' && (ctx.effectiveMap?.[rel.targetModel] ?? null) === null)
-      throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyExpired', '@@expires or @@effective',
-        'Every row here counts at every instant, so there is no out-of-window view to include.')
-    if (nestedEffMode === 'onlyExpired' && !ctx.effectiveMap[rel.targetModel].imposed)
-      throw new ValidationError([{ path: ['include', relName, 'onlyExpired'], message:
-        `onlyExpired on an include of ${rel.targetModel} has no moment to be out of force at — its ` +
-        `@@effective window is asked rather than imposed, and an include takes no asOf. Read ` +
-        `${rel.targetModel} with asOf instead` }])
+    if (nestedEffMode === 'onlyExpired') {
+      const targetEffective = shapes[rel.targetModel].effective
+      if (targetEffective === null)
+        throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyExpired', '@@expires or @@effective',
+          'Every row here counts at every instant, so there is no out-of-window view to include.')
+      if (!targetEffective.imposed)
+        throw new ValidationError([{ path: ['include', relName, 'onlyExpired'], message:
+          `onlyExpired on an include of ${rel.targetModel} has no moment to be out of force at — its ` +
+          `@@effective window is asked rather than imposed, and an include takes no asOf. Read ` +
+          `${rel.targetModel} with asOf instead` }])
+    }
 
-    const targetJsonFields  = jsonMap[rel.targetModel]      ?? new Set()
+    const targetJsonFields  = shapes[rel.targetModel].jsonFields
     // The target's @from fields. These paths build their own SQL, so nothing
     // appends the subqueries unless this does — before which an included row
     // carried no @from field at all and a @computed field reading one computed
     // from undefined, silently, on the include path only.
-    const targetFrom        = fromMap?.[rel.targetModel] ?? null
-    const targetSoftDelete  = softDeleteMap[rel.targetModel] ?? false
-    const targetHtField     = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
+    const targetFrom        = Object.keys(shapes[rel.targetModel].fromFields).length ? shapes[rel.targetModel].fromFields : null
+    const targetSoftDelete  = shapes[rel.targetModel].softDelete
+    const targetHtField     = shapes[rel.targetModel].hasTemplates
     const targetHasTemplates = targetHtField !== null
 
     // Build the @@hasTemplates SQL fragment for nested includes. Same logic as
@@ -542,7 +605,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // Only an IMPOSED window reaches here. An `@@effective` target is history
     // that this row points at — `subscription.planVersion` is the price still
     // being charged — and filtering it would answer the pointer with null.
-    const targetWin = ctx.effectiveMap?.[rel.targetModel] ?? null
+    const targetWin = shapes[rel.targetModel].effective
     const effWhere  = (() => {
       if (!targetWin?.imposed || nestedEffMode === 'withExpired') return null
       const at = targetWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
@@ -563,9 +626,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (!fkValues.length) { rows.forEach(r => r[relName] = null); continue }
 
       const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Map(Object.entries(targetFrom)) } : null,
-                         computedFns)
+        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -629,7 +690,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       // @edge fields on the target that decorate THIS join → surface under their
       // namespace, pulled from the join row (the traversal binds the dimension).
-      const edgeDescs = Object.values(edgeMap?.[rel.targetModel] ?? {})
+      const edgeDescs = Object.values(shapes[rel.targetModel].edges)
         .filter(d => d.storage === 'decorate' && d.table === rel.joinTable)
       const edgeSelect = edgeDescs.map(d => `, j."${d.col}" AS "__edge_${d.col}"`).join('')
 
@@ -648,6 +709,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // Pull edge values off each raw row (and strip the temp cols) before shaping.
       const edgeBags = rawRows.map(r => {
         if (!edgeDescs.length) return null
+        /** @type {Record<string, Record<string, unknown>>} */
         const bag = {}
         for (const d of edgeDescs) {
           const alias = `__edge_${d.col}`
@@ -688,9 +750,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
       const parsedNested = nestedSelect
-        ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Map(Object.entries(targetFrom)) } : null,
-                         computedFns)
+        ? parseSelectArg(nestedSelect, rel.targetModel, shapes, nestedInclude, computedFns)
         : null
 
       let sqlCols = parsedNested?.sqlCols ?? '*'
@@ -727,11 +787,12 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       if (Object.keys(mergedInclude).length)
         resolveIncludes(readDb, related, mergedInclude, rel.targetModel, ctx)
 
+      /** @type {Map<unknown, Row[]>} */
       const grouped = new Map()
       for (const r of related) {
         const k = r[rel.foreignKey]
         if (!grouped.has(k)) grouped.set(k, [])
-        grouped.get(k).push(r)
+        grouped.get(k)?.push(r)
       }
 
       for (const row of rows) {

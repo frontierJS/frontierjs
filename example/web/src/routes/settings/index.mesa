@@ -9,7 +9,7 @@ title: Settings
   //
   // Everything here is a real preference the rest of the app reads, not a
   // control put on a page to be looked at.
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { orders } from '../../resources/Order.mesa'
   import { prefs, savePrefs } from '@/stores/prefs.js'
   import { CURRENCIES, BASE, rateNote } from '@/lib/money.js'

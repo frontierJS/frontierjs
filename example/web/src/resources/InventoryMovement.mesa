@@ -22,7 +22,7 @@
   // `type StockAdjustment` in db/schema.lite, which are not models, so there is
   // no record to generate a form from.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // ─── offlineQuery — what a stockroom must already have ────────────────────
   //

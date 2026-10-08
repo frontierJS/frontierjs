@@ -1,5 +1,9 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-08 — reactivity hints are named on `analysis.reactivityHints` (`FJS-D629`)
+
+Each warning the path tier emits is also pushed to `analysis.reactivityHints`, as the same string. A hint is true only of code that re-renders in a browser, and Sierra's static build withholds it for a component no published script contains. Telling hints from the other warnings by their wording would put them all back the first time one was reworded. Documented in `docs/EXTERNAL_REACTIVITY.md`. Proof: `test/import-watch.test.js` asserts the list equals the hint warnings and carries nothing else.
+
 ## 2026-10-07 — the Vite plugin's warnings carry no false position (`FJS-1919`)
 
 The `warning` callback handed `this.warn` a string. Vite turns a string into `new Error()`, and under Bun that Error's own `line` and `column`, a place in Vite's chunk, were reported as a place in the `.mesa` file. The callback, and the warning when the compiler cannot load, now pass `{ message }`. Proof: `test/vite-plugin.test.js` § compiler warnings asserts every warning reaches `this.warn` as an object, and fails with the plugin reverted.

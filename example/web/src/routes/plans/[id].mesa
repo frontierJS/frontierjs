@@ -29,7 +29,7 @@ title: Plan
   import PlanVersion, { planVersions } from '@/resources/PlanVersion.mesa'
   import { plans }         from '@/resources/Plan.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
-  import { session } from '@frontierjs/sierra/junction'
+  import { session } from '@frontierjs/sierra/resource'
   import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../lib/money.js'

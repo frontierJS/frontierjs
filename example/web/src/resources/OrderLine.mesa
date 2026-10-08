@@ -14,7 +14,7 @@
   // here would offer to edit what a customer was charged, on a table whose
   // whole point is that nobody does that.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const orderLines = createResource('order-lines', { model: 'OrderLine' })
 </script>

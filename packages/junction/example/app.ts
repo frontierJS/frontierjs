@@ -76,14 +76,27 @@
 //   curl http://localhost:3000/api/openapi.json
 
 import {
-  createApp, loadConfig, createLogger,
-  channels, openapi, healthPlugin, webhooks,
-  authenticate, requireRole, protect, timestamps, circuitBreaker,
+  createApp,
+  loadConfig,
+  createLogger,
+  channels,
+  healthPlugin,
+  authenticate,
+  requireRole,
+  protect,
+  timestamps,
+  circuitBreaker,
   announce,
-  correlationId, rateLimit, requestLogger,
-  createSchema, v,
+  correlationId,
+  rateLimit,
+  requestLogger,
+  createSchema,
+  v,
   createService,
 } from '../index.ts'
+import { openapi } from '../src/plugins/openapi/index.ts'
+import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
+import { Database } from 'bun:sqlite'
 
 import { createUsersService, verifyDemoToken } from './services/users.service.ts'
 import { createNotesService }                  from './services/notes.service.ts'
@@ -92,7 +105,6 @@ import type { App }            from '../src/core/app.ts'
 import type { IAuth }          from '../src/auth/types.ts'
 import type { WsContext }      from '../src/transport/types.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
-import type { DatabaseClient } from '../src/storage/database/index.ts'
 
 // ─── Logger ───────────────────────────────────────────────────────────────
 
@@ -105,7 +117,7 @@ const config = await loadConfig(new URL('./config', import.meta.url).pathname)
 // ─── Auth ─────────────────────────────────────────────────────────────────
 // Token-based demo auth: token is returned on user creation.
 // Pre-seeded admin: token = 'demo-admin-token'
-// In production: swap for createBetterAuthAdapter()
+// In production: @frontierjs/auth
 
 const auth: IAuth = {
   async verifySession(token) { return verifyDemoToken(token) },
@@ -129,27 +141,6 @@ const auth: IAuth = {
 // but noisily) skip them as duplicates.
 const app = createApp({ config, auth, autoload: false })
 
-// ─── Database (in-memory for demo — swap url in config for persistence) ───
-
-// `app.db` is `unknown`: a Litestone client and a raw bun:sqlite handle are
-// both valid there, and only the app knows which it asked for. This one set
-// `config.database.url`, which is the DatabaseClient path.
-const rawDb = app.db as DatabaseClient | undefined
-
-if (rawDb) {
-  rawDb.db.run(`
-    CREATE TABLE IF NOT EXISTS notes (
-      id         TEXT    PRIMARY KEY,
-      title      TEXT    NOT NULL,
-      body       TEXT    NOT NULL DEFAULT '',
-      tags       TEXT    NOT NULL DEFAULT '[]',
-      author_id  TEXT,
-      created_at TEXT    NOT NULL,
-      updated_at TEXT    NOT NULL
-    )
-  `)
-}
-
 // ─── Plugins ──────────────────────────────────────────────────────────────
 
 // Global middleware — applied to all routes (register first so they cover everything)
@@ -160,8 +151,7 @@ app.configure(rateLimit({ max: 200, window: '1 minute' }))
 // Health + metrics at /health and /metrics
 app.configure(healthPlugin({
   checks: {
-    // Add your own readiness checks here:
-    // database: async () => { app.db?.db.query('SELECT 1').get(); return true },
+    // Add your own readiness checks here.
   },
 }))
 
@@ -182,8 +172,10 @@ app.configure(openapi({
 }))
 
 // Webhooks — fans out service events to registered HTTP endpoints
+// A file path instead of ':memory:' keeps registrations across restarts.
 app.configure(webhooks({
   events: ['notes:created', 'notes:patched', 'notes:removed', 'users:created'],
+  store:  createSqliteWebhookStore(new Database(':memory:')),
 }))
 
 // ─── Services ─────────────────────────────────────────────────────────────

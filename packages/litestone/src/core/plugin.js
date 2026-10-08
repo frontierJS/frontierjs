@@ -10,6 +10,12 @@
 //     store config, or validate options. ctx is the shared client context,
 //     before ctx.tables exists.
 //
+//   A model's facts are `ctx.shapes[model]` (FJS-D03) — one frozen record per
+//   model with every facet present: `relations`, `fromFields`, `softDelete`,
+//   `policy`, `fieldPolicy`, `db` and the rest (`Shape` in client.js). A plugin
+//   reads the record and never a per-model map on ctx; a facet the model does
+//   not declare is its explicit empty value, so there is nothing to default.
+//
 //   Every other hook gets the CALLING flavor's ctx, and ctx.tables is that
 //   flavor's own accessors (ctx.tables.issue) — the one client a hook has to
 //   read another row with, graded by the caller's policies.

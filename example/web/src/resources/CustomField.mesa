@@ -4,7 +4,7 @@
   // Named for the model, exporting the accessor. An ordinary resource over an
   // ordinary model: the fact that its ROWS decide what another model's form
   // offers is the settings screen's business, not this file's.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const customFields = createResource('customFields')
 </script>

@@ -4,7 +4,7 @@ description: Run every drive `fli proves` names — start what each needs, run i
 alias: prove
 examples:
   - fli prove
-  - fli prove packages/sierra/src/junction/resource.js packages/sierra/test/sync-policies.test.js
+  - fli prove packages/sierra/src/resource/resource.js packages/sierra/test/sync-policies.test.js
   - fli prove --from main
 args:
   -

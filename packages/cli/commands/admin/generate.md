@@ -128,7 +128,7 @@ function makeResourceFile(model, service, exportName) {
 // resource.fields, resource.relations and resource.gate at runtime, so a column
 // added later shows up on the next reload.
 
-import { createResource } from '@frontierjs/sierra/junction'
+import { createResource } from '@frontierjs/sierra/resource'
 
 // The first argument is the SERVICE name and \`model\` is the MODEL. Only the
 // regular English plurals were guessed — an irregular (Person -> people) comes
@@ -240,7 +240,7 @@ ${index}
 <script>
   // models comes from <script module> above — same file, module scope.
   import { isActive } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/junction'
+  import { status } from '@frontierjs/sierra/resource'
   import { session } from '${paths.session}'
 
   // Both are plain objects that other modules write through a proxy — naming

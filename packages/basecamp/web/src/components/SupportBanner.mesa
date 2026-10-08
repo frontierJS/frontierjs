@@ -14,7 +14,7 @@
   import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import { session } from '../session.js'
-  import { getClient, refresh } from '@frontierjs/sierra/junction'
+  import { getClient, refresh } from '@frontierjs/sierra/resource'
 
   let busy = false
 

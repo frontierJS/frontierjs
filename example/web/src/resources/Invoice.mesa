@@ -21,7 +21,7 @@
   // TRIGGER, and any announcement about this invoice re-runs the read rather
   // than replacing a document with its header.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // ─── What a list of invoices is ───────────────────────────────────────────
   //

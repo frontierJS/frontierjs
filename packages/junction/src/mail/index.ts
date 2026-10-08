@@ -383,7 +383,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
 // Registers a mailer on app.mail so it's accessible everywhere.
 //
 // Usage:
-//   import { mailerPlugin, createResendMailer } from '@frontierjs/junction'
+//   import { mailerPlugin, createResendMailer } from '@frontierjs/junction/mail'
 //
 //   app.configure(mailerPlugin(createResendMailer({
 //     credentials: { get: ref => process.env[ref] },   // or a Conduit resolver
@@ -401,4 +401,9 @@ export function mailerPlugin(mailer: IMail): import('../core/app.ts').Plugin {
       app.mail = mailer   // typed App field — no cast
     }
   }
+}
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.mail`.
+declare module '../core/app.ts' {
+  interface AppMail extends IMail {}
 }

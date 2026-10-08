@@ -13,12 +13,12 @@
  * @module sierra/build
  */
 
-import { resolve, isAbsolute } from 'path'
+import { resolve, isAbsolute, relative } from 'path'
 import { existsSync } from 'fs'
 import { readdir, rm } from 'fs/promises'
 import { pathToFileURL } from 'url'
 import { mesaPlugin, prepareForCompile, inspectOn } from './mesa-plugin.js'
-import { devtoolsPlugin } from './devtools-plugin.js'
+import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
 import { localDbPlugin } from './local-db-plugin.js'
@@ -34,7 +34,7 @@ import { appAliasPlugin } from './app-alias-plugin.js'
 import { staticDataPlugin } from './static-data-plugin.js'
 import { fsAllowPlugin } from './fs-allow-plugin.js'
 import { askPlugin } from './ask-plugin.js'
-import { explainModuleInitFailure } from './warnings.js'
+import { explainModuleInitFailure, shippedHints } from './warnings.js'
 import { beginBuildImports, importAppModule } from './app-import.js'
 
 /**
@@ -151,7 +151,7 @@ export function createSierraViteConfig(config = {}) {
       // The island build is handed `root` explicitly, so the alias plugin
       // resolves `@` there exactly as it does in the main build.
       appAliasPlugin(),
-      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext),
+      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }),
     ]))
   }
 
@@ -172,7 +172,7 @@ export function createSierraViteConfig(config = {}) {
   // vite.config.js sets it. See app-alias-plugin.js.
   sierraPlugins.push(appAliasPlugin())
 
-  sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext))
+  sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static' }))
   // Dev only, when the app has @frontierjs/cli: shift+alt-click asks Claude.
   if (inspectOn(mesaOptions)) sierraPlugins.push(askPlugin())
 
@@ -599,6 +599,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           )
           for (const f of pruned.removed) console.log(`    · ${f}`)
         }
+        reportShippedHints(sierraContext, pruned.kept, root)
       }
 
       if (results.length > 0) {
@@ -742,5 +743,29 @@ async function removeOrphanIslandChunks(outDir, before) {
   for (const name of after) {
     if (before.has(name)) continue
     await rm(resolve(outDir, 'assets', name), { force: true }).catch(() => {})
+  }
+}
+
+/**
+ * Print the reactivity hints a static build held, for the modules a published
+ * script contains, and count the rest (`FJS-D629`). The count is printed
+ * because a rule whose passing case is invisible reads as a rule that is not
+ * running.
+ */
+function reportShippedHints(sierraContext, kept, root) {
+  const { shipped, withheld } = shippedHints(sierraContext, kept)
+  if (shipped.length) {
+    const n = shipped.reduce((sum, s) => sum + s.hints.length, 0)
+    console.warn(`\n  [Sierra] ${n} reactivity hint(s) in code a published script runs:`)
+    for (const { id, hints } of shipped) {
+      console.warn(`    ${relative(root, id)}`)
+      for (const h of hints) console.warn(`      [Mesa] ${h}`)
+    }
+  }
+  if (withheld) {
+    console.log(
+      `\n  [Sierra] ${withheld} reactivity hint(s) not printed: no published script ` +
+      `contains their component, so nothing re-renders it.`
+    )
   }
 }

@@ -12,7 +12,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 const calls = []
 let row
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({
       get:   async (id) => { calls.push(['get', id]); return row },
@@ -27,8 +27,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 const { parse } = await import('../../litestone/src/core/parser.js')
 const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
 

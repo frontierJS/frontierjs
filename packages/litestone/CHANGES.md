@@ -1,5 +1,76 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — the single-row write verbs and `upsert` run on the executor; `upsertMany` stays, by the stop rule
+
+Step 5b of `IDEAS/litestone-by-construction.md`. `create`, `update`, `remove`, `delete` and `upsert`'s fast path now plan and hand `executeWrite` the plan; the verb bodies are their own meaning only. Of the ten lock sites the proposal counted, the three left outside the executor are `upsertMany`, `restore` and `$transaction`.
+
+- **The plan grew what a single row needs**: `result` (what to read back), `refuse` (the zero-row ladder as values: transition, `@version`, the seals, in the order `update` asked them), `before` (the prefetched row for the trail), `transition`, `bare` (no lock on the autocommit path, with the `FJS-1107` tripwire moved into the executor) and `announce: null` for a write with nothing to say. The trail's before/after snapshots are an op table, not a verb's choice.
+- **`upsert` is one plan plus the verb's own choice**: the `ON CONFLICT` statement is a plan; a unique refusal falls to the read-then-write path, which is `findFirst` plus `update`/`create` — already planned verbs. The executor knows nothing of upsert's shape.
+- **`upsertMany` was stopped by § 5.** Which half a row falls in is decided by what earlier statements of the same batch wrote, and the per-half policy grade, trail and announcement follow from it. That is run-time state, not a plan value. It stays as it was, and `test/write-plans.test.ts` names it as the one unplanned write.
+- **Three holes closed by construction**, none pinned by a test before: a `@@log` model's `create({ select: false })` skipped RETURNING and wrote no trail entry; `update({ select: false })` moving a row onto a hidden parent skipped the refusal; a zero-row `delete` reported `rowCount: 1`. Two events gained: an empty-patch `update` reports its read-back query, and a `select: false` logged update announces its row.
+- **`insertSql` is shared** by `create` and `createMany` from the per-shape cache, so `create({ select: false })` dropped its per-call prepare (about −25% CPU time).
+
+Proof: both grids identical; 5828 tests, `test:browser` 28/28, typecheck at the 58 ceiling, `"${` ceiling 381 → 350; junction's announcement tests 54/54; a 57-case SQL and event probe identical to the pre-change capture except the four intended differences above. `create()` is flat on the CPU bench; `remove`, `delete` and the fast `upsert` carry 3–5 µs of plan assembly on 14–20 µs calls, priced as 5a's were. Found and filed: `FJS-2029` (`upsert` answers `null` with nothing written), `FJS-2030` (`upsertMany` names a refused row by the wrong index; the `onAfterDelete` header line is stale).
+
+## 2026-10-08 — a bulk write verb produces a plan, and one executor runs it
+
+Step 5a of `IDEAS/litestone-by-construction.md`, the four bulk verbs: `updateMany`, `deleteMany`, `createMany`, `removeMany`. Each repeated by hand the lock, the constraint mapping, the RETURNING decision, the cardinality and exclusion notes, the query event, the logs and the announcement — ten lock sites, eight error mappings, forty emit calls across the file.
+
+- **A plan is a value**: `{ verb, op, statements, returning, where, prefetch, moves, exclusion, post, softCascade, batch, logs, system, announce }`, fragments and booleans and plain objects, never a closure. A verb body is now its own meaning only — hooks, stamps, `writeData`, value sets, the version strip, the SET and WHERE assembly — and ends in `executeWrite(plan)`.
+- **`executeWrite` owns the unit, in one stated order**: prefetch (only when a plugin or cascade sink listens), soft-cascade roots, the before-notes, `movesOnto`, `cascadeDoomed`, the statements with their per-row refusals and the error mapping by `op`, the post-update policy, the after-notes, then `fireQuery`, `afterDelete`, `emitLogs`, `cascadeRemoved`, `announceBulk`. `createMany` opens the lock itself because `applySequences` writes counters inside the unit, and runs the same `writeUnit`.
+- **Unifying the four settled three differences** they had: hard `removeMany` never noted cardinality before its DELETE where `deleteMany` did (both do now); soft `removeMany` fired no query event and translated no constraint (it does now, measured below the noise floor); the delete prefetch ran before the lock and now runs inside it, so the rows `afterDelete` sees are the rows the statement reached.
+- **`test/write-plans.test.ts` reaches a plan without running it** through `table[PLAN]`, a `Symbol.for('litestone.plan')` seam exported from `client.js` and never from the package entry — a plan is internal (§ 7 of the proposal), so there is no `$plan`. Its expectations are the SQL each verb ran BEFORE the split, captured from the query tap. The seam passes through `installHooks`, `withArgValidation` and `wrapForFlavor`, whose `{ ...table }` spread had dropped a non-enumerable symbol.
+- **The INSERT text is cached per column shape** at table level, which is where `createMany`'s 40% CPU-time win comes from: it rebuilt the statement and re-prepared it per call.
+
+Proof: both grids identical; 5817 tests, `test:browser` 28/28, typecheck at the 58 ceiling; junction's `data-write-announcement` and `announce-grading` 54/54. **Price, paid knowingly** (`FJS-638`'s precedent): `updateMany`, `deleteMany` and soft `removeMany` carry 1–2 µs of plan allocation on a 9–15 µs call. On this machine, with another session's builds running, that reads anywhere from −11% to +25% between consecutive pairs and the A-side itself swings 15%; `create()` and `findMany`, the lines § 5 names, are flat. A quiet-machine measurement is owed before 1.0 — the scripts are described in the proposal's § 3.
+
+## 2026-10-08 — the read rules are declared once, in `READ_RULES`, and every verb folds them through `visibleWhere`
+
+Step 4 of `IDEAS/litestone-by-construction.md`. The rule sequence a read applies — global filter, plugin read filters, soft-delete, templates, the effective window, the caller's where, the row policy — was restated by hand in eleven verb bodies, and a verb that missed one was a silent hole until a grid caught it (`FJS-262`, `FJS-216`, `FJS-720`).
+
+- **`READ_RULES`** (client.js, inside `makeTable`) is one frozen array in `buildSQL`'s order. Each rule names the verbs it reaches: the two scope rules reach reads only, `templates` and `effective` reach everything but `restore`, `softDelete` and `policy` reach every verb. The four owners of what a rule means (`applySdFilter`, `applyHtFilter`, `applyEffFilter`, `resolveGlobalFilter`) are unchanged; the registry only states the order and the reach. `gate` is not a where rule and is not here.
+- **`visibleWhere(verb, where, args)`** is the one fold. `buildSQL` and `count`, `exists`, `findManyAndCount`, `aggregate`, `groupBy`, `findManyCursor`, `search`, the tree walk, and the where-half of `update`, `updateMany`, `remove`, `removeMany`, `restore`, `delete` and `deleteMany` call it. A verb `VERBS` does not place is refused at build, and a rule naming a verb that does not exist is refused the same way. `_hardDeleteWhere` and `applyEff` are gone; a hard delete states its purge-hatch contract as its own args.
+- **Three subsets are now data rather than silence**: scopes narrow a read and never a write; `restore` takes no widening flag; the tree walk is reached by neither scope (`FJS-2010`). The grid's six `globalFilter × write` cells turn out to be blind (`FJS-2011`).
+
+Proof: both grids identical before and after; a byte-level probe of 178 statements across every folded verb is identical but for one redundant paren pair in `search` with no caller where; 5811 tests, `test:browser` 28/28, typecheck at the 58 ceiling, bench within noise. `IDEAS/litestone-by-construction.md` § 5 asked whether the per-verb dimension was enumeration in a new place: no rule body branches on a verb, so it stayed.
+
+## 2026-10-08 — a model's facts are one frozen record, `ctx.shapes[model]`, and the per-model maps leave `ctx`
+
+Step 2 of `IDEAS/litestone-by-construction.md`. `makeTable` took a `shape` holding some of a model's facts, destructured with defaults, and read the rest from 44 per-model maps on the shared `ctx` by `[modelName]`, optional-chained — so a map with no entry read as *this model has no such rule*. Nothing in the test corpus had hit that, which is the kind of fact that is true until it is not.
+
+- **`shapeFor(model)` builds every model's and every view's record once**, with every facet present and an explicit empty value for one the model does not declare (`version: null`, `softDelete: false`, `relations: {}`, …). `Shape` is a typedef beside it. The record and `ctx.shapes` are frozen. A builder that must answer for every model and has no entry **throws at client build**; a sparse map is read by `Object.hasOwn`, never `??`.
+- **The 44 maps are gone from `ctx`**: `relationMap`, `policyMap`, `fieldPolicyMap`, `columnMaps`, `versionMap`, `softDeleteMap`, `logMap`, `modelDbMap` and the rest. A host-model read is `shape.x`; a cross-model read is `ctx.shapes[other].x`. Left on `ctx` by lifetime: the flavor (`auth`, `isSystem`, `scopedBy`, `enc`, `tables`, listeners) and the schema-wide indexes (`schema`, `models`, `typeMap`, `enumTypeMap`, `hasPolicies`, `plugins`, `tx`). `computedFns` stays because it is the app's code, not the schema's fact.
+- **`policy.js`'s runtime entries take `ctx` alone**: `buildPolicyFilter(model, op, ctx)`, `policyVerdict`, `checkCreatePolicy`, `checkPostUpdatePolicy`, `compileScope`, `evalJs`. The build-time checkers keep their map parameters, because they run before shapes exist. A compile with no client (`compileStatic`, `verifyRowPolicies`) states `shapes: null` and gets a `NO_CLIENT` record; `undefined` throws.
+- **The plugin contract changed in the same change** (`FJS-D03`): a plugin reads `ctx.shapes[model]` and never a per-model map; `src/core/plugin.js`'s header says so. No reader outside litestone existed.
+
+Proof: the `VERBS_REPORT` and `MATRIX_REPORT` grids are identical before and after; 5811 tests, `test:browser` 28/28, typecheck at the 58 ceiling, interleaved bench within noise (`findMany` −4.8%, `create` +4.6%). Junction's suite, sierra's `test:safety`, the chatwoot stressor's API tests and the example and basecamp verify drives were run after.
+
+## 2026-10-08 — a fragment is SQL and its binds together, and three statements are built from fragments
+
+Step 1 of `IDEAS/litestone-by-construction.md`. `sqlFragment` was `query.js`'s private currency for `now()`; it is now exported with `ident(name)`, `and(...)`, `or(...)` and `join(frags, sep)`, each a fragment that carries its own params in text order. `quoteIdent` stays the one quoting owner (`FJS-D169`); `ident` calls it. `buildPolicyFilter`, `sealWhereClause` and `sealSelfClause` return branded fragments.
+
+- **`buildSQL`, `updateMany` and `deleteMany` assemble fragments.** The table name is `ident(tableName)` once per table; the WHERE is `and(where, policy)` then sealed; the statement is one `join`. Gone from those three: the shared `params` accumulator, `params.push(...policy.params)`, the separate `setParams`/`whereParams` arrays, and the regex that stripped LIMIT/OFFSET for the window wrap. A placeholder and its value can no longer travel apart there.
+- **`test/sql-idents.test.ts` is a ratchet** over hand-quoted `"${` occurrences per `src/core` file (client.js 395, ddl.js 100, query.js 76, …). A count may only go down, and a beaten ceiling must be lowered.
+- **Proof.** `VERBS_REPORT` and `MATRIX_REPORT` grids identical before and after. Interleaved in-process A/B over 5 rounds: `findMany` and `updateMany` within the noise floor (`create()`, untouched, swings ±6%). `test:browser` 28/28.
+
+Found and filed, not fixed: `FJS-1992` (a `$raw` window filter binds in the wrong position), `FJS-1993` (a string window filter reaches the pattern verbatim).
+
+## 2026-10-08 — the ten modules split out of `client.js` are type-checked, under a ceiling that only falls
+
+Step 3 of `IDEAS/litestone-by-construction.md`. `checkJs` stays off for the package; each of `args.js`, `audit-log.js`, `computed.js`, `databases.js`, `field-policy.js`, `hooks.js`, `include.js`, `stamps.js`, `transaction.js` and `query.js` opts in with a `// @ts-check` pragma, so the directory question never arises. 770 errors on the first run; JSDoc types and six behavior-neutral guards took it to 59, recorded as `litestone: 59` in `scripts/typecheck-baselines.json` (Invariant 14). A first entry is written by hand, because `--update` only lowers a number that exists.
+
+- **`Ctx` is a typedef in `field-policy.js`**, a `LitestoneCtx` plus the internal maps `client.js` builds, each named so an unlisted one is an error rather than `any`. It moves to `client.js` when that file is checked.
+- **`DbHandle`, `Stmt`, `RawDb` are typedefs in `databases.js`**, structural, off the `engine.js` contract. A JSDoc `import('bun:sqlite')` is an import to `test/engine-seam.test.ts` and was refused by it.
+- **One `@ts-expect-error`**, in `databases.js` `singleUse()`: `values()` is not in the surface an engine owes, and the wasm engine has none. Filed with `safeIntegers` as `FJS-1991`.
+- **A duplicate `$raw` key in `databases.js`** was removed; the second silently won.
+
+## 2026-10-08 — two tripwires that a revert passed now bite (`FJS-1871`, `FJS-1872`)
+
+Step 0 of `IDEAS/litestone-by-construction.md`: a refactor proven by a loose tripwire is not proven, so both were tightened before any `client.js` change.
+
+- **`shared-tables.test.ts` counts builds instead of timing them.** The 2000 µs bound was 8× the cost of a per-flavor rebuild, so reverting `FJS-722` passed. The shared plugin ctx is one object for every flavor, and `makeTable` registers its cascade sink on it once per build, so the test wraps that registration: 20 principals touching every model must register nothing, and each sink keeps its identity. The reverted shape reads 60.
+- **`test/external-ref-flavors.test.ts` drives `ExternalRefPlugin` with two principals at once**, held inside `serialize()` until both have stashed, for a `File?` and a `File[]`. Each cleanup must name the principal whose row held the ref. A stash keyed on `ctx` rather than `ctx._flavor` fails both.
+
 ## 2026-10-07 — db push asks y/N at a terminal before dropping a column (`FJS-1926`)
 
 `db push` refused a change that drops a column wherever it ran, and said to rerun with `--accept-data-loss`. Prisma's `db push` asks a person at a terminal instead.

@@ -21,8 +21,9 @@ import {
   createTestApp, request, testCtx,
   createService, callService,
   protect,
-  webhooks,
 } from '../index.ts'
+import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
+import { Database } from 'bun:sqlite'
 import { parseBody, extractIP } from '../src/transport/body.ts'
 
 // ─── 1. Cache clone-on-read/write ─────────────────────────────────────────
@@ -154,7 +155,7 @@ describe('P0: webhook routes — auth required, secrets redacted', () => {
     })
     // `allowPrivate` skips the destination lookup — this block is about the
     // secret being shown once, not about where a hook may point.
-    app.configure(webhooks({ events: [], targets: { allowPrivate: true } }))   // store auto-created from app.db
+    app.configure(webhooks({ events: [], store: createSqliteWebhookStore(new Database(':memory:')), targets: { allowPrivate: true } }))
     return app
   }
 

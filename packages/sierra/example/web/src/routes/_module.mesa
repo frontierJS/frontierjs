@@ -3,7 +3,7 @@ siteName: Sierra example
 ---
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
-  import { status, login, logout } from '@frontierjs/sierra/junction'
+  import { status, login, logout } from '@frontierjs/sierra/resource'
   import { session, setLevel } from '../session.js'
 
   $: (page.siteName, page.route)

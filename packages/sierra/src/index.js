@@ -1,17 +1,14 @@
 /**
  * sierra — main entry point
  *
- * Re-exports the public API. Most things are accessed via subpath imports:
- *   import { createSierraViteConfig } from 'sierra/build'
- *   import { goto, params, RouterView } from 'sierra/router'
- *   import { scan } from 'sierra/scanner'
- *
- * This file is for convenience imports and version info.
+ * The router and the theme switch, and nothing else (FJS-D649): this entry is
+ * what a page imports in the browser, so it names no Node build code and no
+ * battery. Everything else is reached by its subpath:
+ *   import { createSierraViteConfig } from '@frontierjs/sierra/build'
+ *   import { createResource } from '@frontierjs/sierra/resource'
+ *   import { scan } from '@frontierjs/sierra/scanner'
  */
 
-export const VERSION = '0.1.0'
-
-// Re-export most-used router API at the top level
 export {
   goto,
   back,
@@ -32,8 +29,4 @@ export {
   provideSlot,
 } from './router/index.js'
 
-// Theme management
 export { theme, setTheme, toggleTheme, initTheme } from './theme/index.js'
-
-// Re-export build config
-export { createSierraViteConfig } from './build/index.js'

@@ -11,10 +11,16 @@
 // the dev server is already on.
 
 import {
-  createApp, channels, manifestPlugin, metricsPlugin, devtools, exportPlugin,
-  bearerClaim, header,
+  createApp,
+  channels,
+  bearerClaim,
+  header,
   type App,
 } from '@frontierjs/junction'
+import { manifestPlugin } from '@frontierjs/junction/manifest'
+import { metricsPlugin } from '@frontierjs/junction/metrics'
+import { devtools } from '@frontierjs/junction/devtools'
+import { exportPlugin } from '@frontierjs/junction/export'
 
 import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
 import type { CredentialChange }                 from '@frontierjs/auth'
@@ -23,7 +29,9 @@ import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
 import { orion }                                from '@frontierjs/orion/plugin'
 import { mcpPlugin }                            from '@frontierjs/mcp'
-import { mailerPlugin, outbox, commitments }    from '@frontierjs/junction'
+import { mailerPlugin } from '@frontierjs/junction/mail'
+import { outbox } from '@frontierjs/junction/outbox'
+import { commitments } from '@frontierjs/junction/commitments'
 
 import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from './core/db.ts'
 import { perShopAuth }                          from './core/auth.ts'

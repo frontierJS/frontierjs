@@ -10,7 +10,7 @@
   // the strings a DOM control produces, rewriting blanks to NULL and validating
   // against the schema are all on by default (they were three flags every
   // resource in this app set, which is why they stopped being flags).
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const projects = createResource('projects')
 </script>

@@ -6,7 +6,7 @@
 // Deliberately a **leaf module**: no resource, no client, and one import — a
 // toolbelt kit, which is pure and runs anywhere this does. It takes rows and
 // returns notices, so it runs in plain node and is testable without a
-// browser or a server — the same reason `sierra/src/junction/field-rules.js`
+// browser or a server — the same reason `sierra/src/resource/field-rules.js`
 // is written this way. Every screen and the shell call the same function, so
 // "needs attention" cannot mean two different things in two places.
 //

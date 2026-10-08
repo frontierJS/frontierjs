@@ -34,7 +34,17 @@ if (cmd === 'preview') {
   const server = await serveSite({ dir: resolve(root, 'dist'), port: port ?? 0, host: lan ? '0.0.0.0' : '127.0.0.1' })
   console.log(`\n  ·  serving ${dir}/dist at ${server.url}\n`)
 } else {
-  const vite = await import('vite')
+  // The site's vite, which is a peer: Vite finds a preset's preprocessors
+  // (ksite's sass) beside its own copy. A bare import from a linked site-kit
+  // finds the workspace's copy instead, and every .scss fails to compile.
+  let vitePath
+  try {
+    vitePath = Bun.resolveSync('vite', root)
+  } catch {
+    console.error(`site-kit: vite does not resolve from ${root}; the site installs it, as a peer of @frontierjs/site-kit`)
+    process.exit(1)
+  }
+  const vite = await import(vitePath)
   const { siteKit } = await import('../config/vite.js')
   const config = await siteKit({ root, port, host: lan })
 

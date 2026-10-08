@@ -58,7 +58,7 @@ export const QUESTIONS = [
     q: 'which file owns matchesQuery' },
   { intent: 'owner',  cite: 'packages/junction/src/core/envelope.ts',
     q: 'who owns wrapResult' },
-  { intent: 'owner',  cite: 'packages/sierra/src/junction/field-rules.js',
+  { intent: 'owner',  cite: 'packages/sierra/src/resource/field-rules.js',
     q: 'who owns toFieldErrors' },
 
   // ─── locate ────────────────────────────────────────────────────────────────

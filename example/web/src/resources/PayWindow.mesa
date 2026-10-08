@@ -14,7 +14,7 @@
   // `FJS-D164`, and it is only an argument because they are the same
   // arrangement rather than two dialects.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const payWindows = createResource('pay-windows', { model: 'PayWindow' })
 </script>

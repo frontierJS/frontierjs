@@ -67,3 +67,8 @@ export interface IEmail {
   system:    ISystemEmail
   campaign:  ICampaignEmail   // throws if campaign not configured
 }
+
+// The battery fills its own slot (`FJS-D640`); augment, never redeclare `App.email`.
+declare module '../../core/app.ts' {
+  interface AppEmail extends IEmail {}
+}

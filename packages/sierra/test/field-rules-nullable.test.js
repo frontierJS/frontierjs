@@ -20,7 +20,7 @@ import { describe, test, expect } from 'vitest'
 import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 
-import { buildFieldRules, controlFor } from '../src/junction/field-rules.js'
+import { buildFieldRules, controlFor } from '../src/resource/field-rules.js'
 
 const SOURCE = `
 enum Status { open closed }

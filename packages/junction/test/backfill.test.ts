@@ -15,7 +15,7 @@ import {
   defineBackfill, runChunk, ensureRun, backfillStatus, nextDelayMs, chunkId,
   idInfoFor, assertField, decodeCursor, accessorFor, hasBackfillModel, isBackfillDefinition,
   backfillSchemaFragment,
-} from '../src/core/backfill.ts'
+} from '../src/plugins/backfill/engine.ts'
 
 // The SHIPPED fragment, not a copy: a model this file wrote and the one an app
 // installs would be free to disagree.

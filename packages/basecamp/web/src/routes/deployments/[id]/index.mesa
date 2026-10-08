@@ -3,7 +3,7 @@ title: Deployment
 ---
 <script>
   import { page, goto }   from '@frontierjs/sierra/router'
-  import { status }       from '@frontierjs/sierra/junction'
+  import { status }       from '@frontierjs/sierra/resource'
   import { session }      from '../../../session.js'
   import { deployments, DEPLOY_TONE } from '../../../resources/Deployment.mesa'
   import { clock, at }    from '../../../datetime.js'

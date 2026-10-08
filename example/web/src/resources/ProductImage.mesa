@@ -4,7 +4,7 @@
   // Same stated `model:` as ProductVariant.mesa, for the same reason: the
   // service is named for its URL and the hyphen does not survive inflection.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const productImages = createResource('product-images', { model: 'ProductImage' })
 </script>

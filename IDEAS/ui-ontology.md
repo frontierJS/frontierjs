@@ -71,7 +71,7 @@ named.** Read off the tree on 2026-09-24.
 | Level | In FrontierJS | Where |
 | --- | --- | --- |
 | Tasks & Concepts | the seed, and the JSON Schema derived from it — `x-values`, `x-transitions`, `@label` | `db/schema.lite` → `generateJsonSchema` |
-| Abstract UI | **Resource**, and two functions that are one idea: `controlFor` answers *what may WRITE this field*, `displayFor` answers *what may SHOW it* | `packages/sierra/src/junction/field-rules.js:483` and `:796` |
+| Abstract UI | **Resource**, and two functions that are one idea: `controlFor` answers *what may WRITE this field*, `displayFor` answers *what may SHOW it* | `packages/sierra/src/resource/field-rules.js:483` and `:796` |
 | Concrete UI | the kit's components, and css's vocabulary of 56 terms in eight tiers | `packages/ui/components/`, `packages/css/vocabulary.json` |
 | Final UI | a Mesa compiler backend — the DOM today, terminal and native by ruling | `FJS-D38` |
 
@@ -391,6 +391,6 @@ next is argued.
   the *what does it change* branch
 - `IDEAS/derived-suspense.md` — async boundaries from the dependency graph
 - `packages/css/vocabulary.json` — the tiers § 2 reads
-- `packages/sierra/src/junction/field-rules.js` — `controlFor`, `displayFor`
+- `packages/sierra/src/resource/field-rules.js` — `controlFor`, `displayFor`
 - `packages/mesa/docs/VISION.md` §§ 2, 4 — the variable kinds and `$:`
 - `FJS-D38` · `FJS-D44` · `FJS-D17` · `FJS-D257` · `FJS-D06` § 3

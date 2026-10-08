@@ -458,7 +458,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">324 across 23 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">323 across 23 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">Setup</td>
@@ -997,7 +997,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Auth</td>
-      <td class="m sub">import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'</td>
+      <td class="m sub">import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1017,7 +1017,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Database</td>
-      <td class="m sub">import { createDatabase } from '@frontierjs/junction'</td>
+      <td class="m sub">Junction opens no database (FJS-D641).</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1042,7 +1042,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">OpenAPI</td>
-      <td class="m sub">app.configure(openapi({</td>
+      <td class="m sub">import { openapi } from '@frontierjs/junction/openapi'</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1053,11 +1053,6 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td class="m"></td>
       <td class="m">Scheduler</td>
       <td class="m sub">app.scheduler.every('5 minutes', async () =&gt; { /* cleanup */ })</td>
-      <td class="m sub">README.md</td>
-    </tr>,<tr data-row>
-      <td class="m"></td>
-      <td class="m">Workers</td>
-      <td class="m sub">Bun threads for CPU work that would otherwise block the event loop.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -1092,7 +1087,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Deploying</td>
-      <td class="m sub">bun run build:app &lt;entry&gt; (also junction build &lt;entry&gt;) turns an app into a deployable artifact.</td>
+      <td class="m sub">Deploy is fli deploy, from the Dockerfile fli make:deploy writes.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -2412,11 +2407,11 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>example: verify:cart — the only drive that puts a claim on a caller with no session, and the only one that proves a header crossed a WS frame</td>
       <td><span class="tally"><b>example</b>verify:cart</span></td>
     </tr><tr data-row>
-      <td>the DEVICE'S OWN DATABASE — sierra/src/junction/local-db.js, build/local-db-plugin.js, or offline: { db: … }</td>
+      <td>the DEVICE'S OWN DATABASE — sierra/src/resource/local-db.js, build/local-db-plugin.js, or offline: { db: … }</td>
       <td>packages/sierra: test/local-db.test.js for the seam — when it writes, when it reads, and that null means cannot answer and falls through rather than rendering as an empty list. The engine is litestone's and is proved by packages/litestone: bun run test:browser, which is the only thing that runs it over OPFS at all. What NEITHER can see is the packaging, and the packaging is where this breaks: a bundler rewrites new Worker(new URL(…, import.meta.url)) and nothing else, the wasm entry must be served as .js, and that same static signal puts the worker in every app unless the build stubs it out — each of those failed silently, with the app looking like it worked. So a change here is also cd example &amp;&amp; bun run build, read for the shell WEIGHT — and the numbers are three, not one: 1 kB is the seam in an app that left the database off, 880 kB is example with it on, and anything near 400 means the worker is being shipped by an app that did not ask for it (FJS-D302). example: verify:shell is what grades the feature end to end, and its decisive block is the one that empties the list cache with the network already down and asks the screen again: every other assertion passes with the database absent, because a slot a load() wrote answers the same question with the same rows. Since FJS-D337 the WARM writes no such slot for a model the device kept, which the drive asserts directly. That is how orderBy: '-id' reaching SQLite unchanged — junction's wire spelling, which litestone throws on — was invisible for as long as it existed</td>
       <td><span class="tally"><b>packages/sierra</b>test/local-db.test.js</span><span class="tally"><b>packages/litestone</b>bun run test:browser</span><span class="tally"><b>example</b>verify:shell</span></td>
     </tr><tr data-row>
-      <td>the DECLARED OFFLINE READ — sierra/src/junction/offline.js, offlineQuery, or anything that builds a cache key</td>
+      <td>the DECLARED OFFLINE READ — sierra/src/resource/offline.js, offlineQuery, or anything that builds a cache key</td>
       <td>packages/sierra: test/offline-query.test.js. Every case is warmed, then offline, then read and never the warm ran, because the way this feature fails is a warm written under a key no load() looks under — which nothing about the app looks wrong for until somebody is in a basement. Two negative controls keep that honest: breaking the key turns 6 of the 13 red, and routing the warm through load() instead of find() turns exactly the the store the screen is showing is not touched case red. A change to listKey, to either side of the warm, or to when it is armed needs a case here. The warm also fills the DEVICE's tables, which is hydration, and that half is graded in test/local-db.test.js under a question the warm never asked — the only kind a cache cannot answer. Its fake device KEEPS what it is given, because one that answers reads regardless cannot tell a hydrated device from an empty one, and the sharpest test here passed against a device nothing had written to until it did. example: verify:shell is the end of it — a screen opened offline for the first time in that browser with the cache emptied, and since FJS-D337 with no slot for the warm to have written at all: what the drive waits on is the warm's own frame, tapped before the app's first script, because a fact nothing writes cannot be read back · verify:offline for the queue underneath it</td>
       <td><span class="tally"><b>packages/sierra</b>test/offline-query.test.js</span><span class="tally"><b>example</b>verify:shell</span></td>
     </tr><tr data-row>
@@ -2516,7 +2511,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
       <td>packages/outpost: bun run test for the filesystem half — the digest, the atomic swap, the path allow-list and the two containment checks, all against a real temp directory, because a fake fs passes every one of them while the machine does none. packages/basecamp: bun run test for the refusals a person meets (api/test/inline-app.test.ts), then bun run verify § 9f, which is the only thing that puts the two sides together and the only thing that reads the page back off the disk. Neither half alone can see the protocol: the outpost suite asserts this package's idea of the body, basecamp's asserts that one's — the drive is where a renamed field shows up</td>
       <td><span class="tally"><b>packages/outpost</b>bun run test</span><span class="tally"><b>packages/basecamp</b>bun run test</span></td>
     </tr><tr data-row>
-      <td>junction channels/publish</td>
+      <td>junction channels/announce</td>
       <td>example: verify:live — nothing else can see a broadcast</td>
       <td><span class="tally"><b>example</b>verify:live</span></td>
     </tr><tr data-row>

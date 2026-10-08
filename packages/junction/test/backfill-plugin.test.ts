@@ -17,7 +17,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient }  from '../../litestone/src/index.js'
 import { backfills }     from '../src/plugins/backfill/index.ts'
-import { defineBackfill, BACKFILL_JOB } from '../src/core/backfill.ts'
+import { defineBackfill, BACKFILL_JOB } from '../src/plugins/backfill/engine.ts'
 
 const BACKFILL = await Bun.file(new URL('../db/backfill.lite', import.meta.url)).text()
 

@@ -373,6 +373,20 @@ if (envCheckOn) {
   renderCheck('envCheck', 'info', 'disabled — set deploy.api.envCheck: true to validate server env before each deploy')
 }
 
+// The server pulls from git, so a tracked `.env` ships its secrets with the
+// source. Moved here from `junction setup audit` when that was deleted (FJS-D642).
+if (existsSync(resolvePath($.paths.root, '.env'))) {
+  const ignored = $.exec({
+    command: 'git check-ignore -q .env', cwd: $.paths.root, stdio: 'pipe', allowFailure: true,
+  })
+  if ((ignored?.status ?? 0) === 0) {
+    renderCheck('.env is gitignored', 'pass')
+  } else {
+    renderCheck('.env is gitignored', 'fail', 'add .env to .gitignore — a committed .env deploys its secrets to every clone')
+    fail()
+  }
+}
+
 // ─── Junction detection ───────────────────────────────────────────────────
 const junctionDep = hasDep(rootPkg, '@frontierjs/junction')
 const junctionImport = fileContains(apiSrcCandidates, /from\s+['"]@frontierjs\/junction['"]/)

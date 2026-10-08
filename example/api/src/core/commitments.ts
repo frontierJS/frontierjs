@@ -6,7 +6,7 @@
 // it through junction's own `fireCommitment` and has to hand it the same hooks
 // — a copy in the drive would grade the copy.
 
-import type { CommitmentHook } from '@frontierjs/junction'
+import type { CommitmentHook } from '@frontierjs/junction/commitments'
 import { occurrenceKey }       from '@frontierjs/toolbelt/history'
 import { renewPeriod }         from '../domain/billing'
 import collectInvoice          from '../jobs/invoice-collect.job.ts'

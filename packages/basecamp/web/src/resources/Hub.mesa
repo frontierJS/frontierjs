@@ -13,7 +13,7 @@
   // client stamps it globally, and the hub service ignores it: `requireSystemAdmin`
   // is the whole guard, and the workspace a sysadmin happens to be looking at
   // has no bearing on which tenants they can see.
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const hub = createResource('hub', { model: null })
 </script>

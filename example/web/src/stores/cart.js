@@ -28,7 +28,7 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
  * Where this store gets its Junction client.
  *
  * INJECTED, and it has to be. This module imported `getClient` from
- * `@frontierjs/sierra/junction` and that is correct for an SPA — the client is
+ * `@frontierjs/sierra/resource` and that is correct for an SPA — the client is
  * an app-wide singleton `virtual:sierra` builds at boot — but it put sierra's
  * junction module in the import graph of anything that touches a basket. On a
  * `target: 'static'` surface a basket is touched by an ISLAND, and an island's

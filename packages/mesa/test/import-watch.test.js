@@ -140,6 +140,22 @@ describe('imported reads nothing here watches', () => {
     expect(warned[0]).toMatch(/'s\.other'/)
   })
 
+  // A static build holds these back for a component no published script
+  // contains, so it must be able to tell them from every other warning without
+  // reading their wording (FJS-D629).
+  it('lists each reactivity hint on analysis.reactivityHints, and nothing else', async () => {
+    const ctx = await compileSource(`<script>
+  import { s } from './store.js'
+  import Card from './Card.mesa'
+  let x = true
+</script>
+<p>{s.a}</p>
+<Card>{#if x}<span slot="a">a</span>text{/if}</Card>`, { filename: '/S.mesa', dev: false, css: false, externalReactivityHints: 'strict', warning: () => {} })
+    const hints = ctx.analysis.warnings.filter((w) => /watch covers it/.test(w))
+    expect(hints).toHaveLength(1)
+    expect(ctx.analysis.reactivityHints).toEqual(hints)
+  })
+
   it('names the const in the strict warning when only a const reads it', async () => {
     const ctx = await compileSource(`<script>
   import { s } from './store.js'

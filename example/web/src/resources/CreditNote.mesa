@@ -9,7 +9,7 @@
   // them — so `credit-notes` declares `methods: ['find', 'get']` and there is
   // nothing to generate a form over.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   export const creditNotes = createResource('credit-notes', { model: 'CreditNote' })
 </script>

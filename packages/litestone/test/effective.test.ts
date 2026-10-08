@@ -312,7 +312,7 @@ describe('@@expires — the decisions with no precedent to copy', () => {
 
   test('a delete carries `asOf`, so a sweep at a stated instant takes the right rows', async () => {
     const { env, db } = await staged()
-    // The regression this row exists for: the flags reached `_hardDeleteWhere`
+    // The regression this row exists for: the flags reached the delete's fold
     // and `asOf` did not, so a sweep stating an instant deleted at `now` and
     // matched nothing — silently, because a delete that removed no rows answers
     // a count rather than an error.

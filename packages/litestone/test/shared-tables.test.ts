@@ -79,32 +79,54 @@ const seed = async () => {
 
 describe('the build is shared', () => {
   test('two flavors reach ONE built table, and it is not the wrapper', async () => {
-    const db: any = await seed()
+    // The plugin ctx IS the shared ctx — one object for every flavor and every
+    // model — and `makeTable` registers its cascade sink on it at construction
+    // depth, once per build. So a build is COUNTABLE from outside: wrap that
+    // registration and a rebuild per flavor shows up as a number, where it used
+    // to show up as microseconds. The wall-clock tripwire this replaces had a
+    // 2000 µs bound against a reverted cost measured at ~50 µs on this schema
+    // (`FJS-1871`): no bound separates 15 µs from 65 µs without flaking on a
+    // loaded box, and a count cannot flake.
+    let shared: any = null
+    const db: any = await createClient({
+      schema: SCHEMA, db: ':memory:',
+      plugins: [{ name: 'capture', onBeforeRead(_m: any, _a: any, ctx: any) { shared = ctx } }],
+    } as any)
     const a = db.$setAuth({ id: 1 })
     const b = db.$setAuth({ id: 2 })
 
     // The wrappers differ — each carries its own flavor.
     expect(a.doc).not.toBe(b.doc)
 
-    // But a rebuild would show up as cost, and this is the assertion that
-    // fails if anyone reintroduces one: touching every model on a fresh
-    // principal is cheap only if nothing is being built.
+    // One read hands the shared ctx over. Every shared table was already built
+    // for the root client at createClient, so from here any build is a REbuild.
+    await a.doc.findMany()
+    expect(shared).not.toBeNull()
+
+    // A build's footprint on the shared ctx is the cascade sink it registers,
+    // and each model has one, which is what ties the registration wrapped below
+    // to a build rather than to nothing. Identity is kept too: a rebuild
+    // re-registers, and `Map.set` replaces.
+    const models = ['User', 'Doc', 'Vault']
+    const sinksBefore = models.map(m => shared.cascadeSinkFor(m))
+    for (const sink of sinksBefore) expect(sink).toBeTruthy()
+
+    let builds = 0
+    const register = shared.registerCascadeSink
+    Object.defineProperty(shared, 'registerCascadeSink', {
+      configurable: true, enumerable: false,
+      value: (...args: any[]) => { builds++; return register(...args) },
+    })
+
+    // Twenty principals touching every model build NOTHING. This is the
+    // assertion that fails if anyone reintroduces a per-flavor build.
     const names = Object.keys(db).filter(k => !k.startsWith('$') && !['sql', 'query', 'asSystem'].includes(k))
-    const t0 = Bun.nanoseconds()
     for (let i = 0; i < 20; i++) {
       const c = db.$setAuth({ id: i })
       for (const n of names) void c[n]
     }
-    const perClient = (Bun.nanoseconds() - t0) / 20 / 1000
-
-    // A tripwire for a REBUILD, not a performance budget. Rebuilding this
-    // schema's tables costs ~110 µs per model, so a client touching all of them
-    // would be tens of milliseconds; wrapping them is microseconds. The bound
-    // sits two orders of magnitude above the wrapped cost and one below the
-    // rebuilt one, because a wall-clock assertion inside a parallel suite that
-    // is tight enough to measure anything is tight enough to flake — and a
-    // flaky tripwire gets deleted, which is worse than a loose one.
-    expect(perClient).toBeLessThan(2000)
+    expect(builds).toBe(0)
+    models.forEach((m, i) => expect(shared.cascadeSinkFor(m)).toBe(sinksBefore[i]))
     db.$close()
   })
 })
@@ -215,7 +237,7 @@ describe('a read that outlived its call is refused', () => {
     // And everything schema-derived still answers, because only four keys are
     // the flavor's — a ctx kept for its schema facts is not broken by this.
     expect(held.schema).toBeTruthy()
-    expect(typeof held.relationMap).toBe('object')
+    expect(typeof held.shapes).toBe('object')
     db.$close()
   })
 

@@ -68,7 +68,7 @@ let _open   = []
 // Mesa's component scope — neither of which exists outside a running app. The
 // module under test is the whole of what is real here; these two are the seams
 // it is reached BY.
-vi.mock('../src/junction/index.js', () => ({ getClient: () => _client }))
+vi.mock('../src/resource/index.js', () => ({ getClient: () => _client }))
 // Only `onDestroy` is stubbed — it needs a component scope, which no test has.
 // `createSignal` is left REAL: `signal()` is what the store is, so mocking it
 // would make every assertion below a conversation with the mock.

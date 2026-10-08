@@ -11,7 +11,7 @@
   // A miss warns and degrades to a bare `make()`, so the symptom would be a
   // form with no fields rather than an error.
 
-  import { createResource } from '@frontierjs/sierra/junction'
+  import { createResource } from '@frontierjs/sierra/resource'
 
   // ─── offlineQuery — and it is a FOREIGN KEY that makes it required ────────
   //

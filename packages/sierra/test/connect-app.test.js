@@ -90,7 +90,7 @@ const PAGE_DEFS = {
 
 async function boot({ token = null } = {}) {
   vi.resetModules()
-  const J = await import('../src/junction/index.js')
+  const J = await import('../src/resource/index.js')
   J.registerSchemas(PAGE_DEFS, ['Customer'])
   J.initJunction({ url: PAGE })
   if (token) J.getClient().setToken(token)

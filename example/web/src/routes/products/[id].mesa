@@ -22,7 +22,7 @@ title: Product
   import { money }     from '@/lib/money.js'
   import { prefs }     from '@/stores/prefs.js'
   import { page }    from '@frontierjs/sierra/router'
-  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { session, useStore } from '@frontierjs/sierra/resource'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'

@@ -12,7 +12,7 @@ title: Home
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs } from '../resources/Job.mesa'
   import { dashboards } from '../resources/Dashboard.mesa'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { useStore } from '@frontierjs/sierra/resource'
   import ActionQueue from '../components/ActionQueue.mesa'
   import LaunchSteps from '../components/LaunchSteps.mesa'
   import { computeNotices } from '../notices.js'

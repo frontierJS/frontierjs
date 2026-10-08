@@ -1,3 +1,4 @@
+// @ts-check
 // field-policy.js — a field `@allow(read)` applied to rows that have been read:
 // the value withheld or refused, per row, for the caller asking.
 
@@ -30,8 +31,51 @@ import { decryptField } from './encryption.js'
 // itself, globally; the ANSWER depends on the caller and is cached per context.
 // Two WeakMaps because the two facts have different lifetimes, and conflating
 // them would make a schema-level truth expire with a principal.
+/** @type {WeakMap<object, boolean>} */
 const ROW_FREE_EXPRS = new WeakMap()
 
+/**
+ * The public ctx plus what `client.js` hangs on it for its own modules, which
+ * the consumer surface in `index.d.ts` deliberately does not name. A field
+ * typed `any` is something `client.js` builds and nothing has typed yet — it is
+ * listed so that a name NOT here is an error, and it wants a real shape when
+ * `client.js` is checked. Not `& Record<string, any>`: that intersection turns
+ * every typed field here into `any` as well.
+ *
+ * Everything per MODEL is `shapes[modelName]` (`Shape`, built once by
+ * `shapeFor` in client.js); what stays here is the flavor and the schema-wide.
+ * @typedef {import('../index.d.ts').LitestoneCtx & {
+ *   schema?:        import('../index.d.ts').LitestoneSchema,
+ *   models:         Record<string, import('../index.d.ts').ModelDef>,
+ *   shapes:         Record<string, import('./client.js').Shape>,
+ *   pluralize?:     boolean,
+ *   now?:           any,
+ *   hasPolicies?:   any,
+ *   computedFns?:   any,
+ *   enc?:           any,  scopedBy?:      any,  hookRunner?: any,  _flavor?:       any,
+ *   _fieldReadHoist?: any,
+ *   _logContext?:   { fn?: () => any } | null,
+ *   onQuery?:       ((e: unknown) => any) | null,
+ *   _queryListeners: Set<(e: unknown) => any>,
+ *   result?:        unknown, args?: unknown, operation?: string,
+ * }} Ctx
+ */
+
+/**
+ * What one field's policy says, as `client.js` builds it per model.
+ * @typedef {object} FieldPolicy
+ * @property {string | null}                 [omit]
+ * @property {boolean}                       [guarded]
+ * @property {boolean}                       [encrypted]
+ * @property {boolean}                       [hashed]
+ * @property {boolean}                       [json]
+ * @property {{ read?: unknown[] } | null}   [allow]
+ */
+
+/**
+ * @param {Ctx} ctx
+ * @param {unknown[]} exprs
+ */
 export function hoistedFieldRead(ctx, exprs) {
   let free = ROW_FREE_EXPRS.get(exprs)
   if (free === undefined) ROW_FREE_EXPRS.set(exprs, free = !exprs.some(referencesRow))
@@ -49,12 +93,21 @@ export function hoistedFieldRead(ctx, exprs) {
     // `data` is null on purpose: a row-free predicate must not be able to reach
     // one, and passing a row here would hide a mis-classification behind a
     // correct-looking answer.
-    answer = exprs.some(expr => evalJs(expr, ctx, null, null, ctx.policyMap ?? {}, ctx.relationMap, 'read'))
+    answer = exprs.some(expr => evalJs(expr, ctx, null, null, 'read'))
     memo.answers.set(exprs, answer)
   }
   return answer
 }
 
+/**
+ * @template {Record<string, any> | null | undefined} T
+ * @param {T} row
+ * @param {string} modelName
+ * @param {Record<string, FieldPolicy> | null | undefined} fieldPolicy
+ * @param {Ctx} ctx
+ * @param {{ mode?: 'list' | 'single' | 'select', selectedFields?: Set<string> | null }} [options]
+ * @returns {T | Record<string, unknown>}  the row as handed in, or a shaped copy
+ */
 export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'list', selectedFields = null } = {}) {
   if (!row || !fieldPolicy) return row
   const isSystem = ctx.isSystem
@@ -105,7 +158,7 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
       // rather than reassigning `auth` — and is keyed by `ctx.auth` anyway, so
       // a context that ever did reassign it invalidates instead of going stale.
       visible = hoistedFieldRead(ctx, allow.read) ?? allow.read.some(expr =>
-        evalJs(expr, ctx, out, modelName, ctx.policyMap ?? {}, ctx.relationMap, 'read')
+        evalJs(expr, ctx, out, modelName, 'read')
       )
     }
 
@@ -136,7 +189,7 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
         if (policy.json && typeof out[fieldName] === 'string') {
           try { out[fieldName] = JSON.parse(out[fieldName]) } catch {}
         }
-      } catch (err) {
+      } catch (/** @type {any} */ err) {
         // A protected value that cannot be decrypted used to become `null`, and
         // that is a WRONG ANSWER rather than a missing one: the column reads as
         // empty, every check on it passes, and the row looks fine (`FJS-716`).
@@ -149,7 +202,7 @@ export function applyFieldPolicyTo(row, modelName, fieldPolicy, ctx, { mode = 'l
           // would make the whole row unreadable to punish one column the app
           // already said it was giving up — so this one degrades, and only this
           // one. Everything else is a key that should have been there.
-          if (ctx.secretMap?.[modelName]?.[fieldName]?.rotate === false) {
+          if (ctx.shapes[modelName].secrets[fieldName]?.rotate === false) {
             out[fieldName] = null
           } else {
             err.model = modelName

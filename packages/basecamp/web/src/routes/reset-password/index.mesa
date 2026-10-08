@@ -14,7 +14,7 @@ title: Reset password
   // that this app has no mailer, which `session.canMail` carries from `/setup/probe` — a screen
   // promising a message that no provider could send is the failure to avoid.
   import { page, goto }  from '@frontierjs/sierra/router'
-  import { getClient }   from '@frontierjs/sierra/junction'
+  import { getClient }   from '@frontierjs/sierra/resource'
   import { session, signOut } from '../../session.js'
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'

@@ -6,7 +6,7 @@ examples:
   - fli proves
   - fli proves --from main
   - fli proves --json
-  - fli proves packages/sierra/src/junction/resource.js
+  - fli proves packages/sierra/src/resource/resource.js
 args:
   -
     name: paths

@@ -32,7 +32,7 @@
  */
 
 import { createClient, parse, generateJsonSchema } from '@frontierjs/litestone'
-import { buildFieldRules, displayFor, filterOpFor } from '../src/junction/field-rules.js'
+import { buildFieldRules, displayFor, filterOpFor } from '../src/resource/field-rules.js'
 
 let passed = 0
 const failures = []

@@ -204,6 +204,13 @@ Clarifications settled by the code:
   **Pivot** is the transition at which N-1 compatibility ends. It is the deploy
   instance of a Run's pivot (`FJS-D634`), and it is the same test for a contract
   migration and a client retention window.
+- **A Release serves from an Environment, qualified at every use** — a *deploy
+  environment*, never bare, since `createTestEnv` holds the *test environment*
+  (`FJS-D636`). An Environment supplies configuration only, and serving state is
+  the pair (Release, generation). **Promote is a verb and not a noun**: a deploy
+  of a digest that already served in another deploy environment, which the
+  journal recognizes rather than records. *Entitlement* is refused — in this
+  tree it is a Capability or a claim (`FJS-D637`).
 
 **Two channels, kept separate.** When you *describe* the codebase, use these
 words and only these words. When you *evaluate* the vocabulary itself, do it
@@ -212,9 +219,10 @@ vocabulary is mandatory for describing and fully open for challenging.
 
 ### Not yet named
 
-- **Environment** and **Audience** in the Deployment realm — proposed in
-  `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
-  the gate ladder.
+- **Audience** in the Deployment realm — the set of principals a Release is
+  served to, proposed in `IDEAS/release-transitions.md`. The word is `open`
+  because four senses already run (`FJS-D636`), litestone's `audience: 'client'`
+  among them; it is ruled when Phase 4 builds the routing.
 - **State only the browser has** — a reader's toggles, a basket, preferences,
   which device this browser is. It lives in `web/src/stores/`, which borrows the
   ecosystem's folder word without making *store* a noun here (`FJS-D625`).
@@ -312,9 +320,9 @@ is substrate below the graph and may be imported by any package (`FJS-D26`).
 Report these accurately; don't treat them as bugs. A defect is in `ISSUES.md`;
 what is here is a question the mental model has not answered.
 
-- **The Deployment realm's remaining nouns.** Release and Pivot are ruled and in
-  code; Environment and Audience are proposed (`IDEAS/release-transitions.md`)
-  and collide with words the Data realm and Mesa already hold (§2).
+- **The Deployment realm's Audience.** Release, Pivot and Environment are ruled
+  (`FJS-D636`); Audience is proposed (`IDEAS/release-transitions.md`) and the
+  word already runs in four other senses (§2).
 - **Auth's routes.** `/auth/*` establishes a session and deliberately bypasses
   the Service abstraction — login cannot be gated by login (`FJS-D20`). Whether
   a second provider inherits that shape unchanged is not yet asked.

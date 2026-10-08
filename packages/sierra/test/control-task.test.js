@@ -22,7 +22,7 @@ import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
 
 import {
   buildFieldRules, controlFor, registerControl, unregisterControl, INTERACTION_TASKS,
-} from '../src/junction/field-rules.js'
+} from '../src/resource/field-rules.js'
 
 const SOURCE = `
 enum Status { open closed }

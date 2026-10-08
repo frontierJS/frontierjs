@@ -18,7 +18,7 @@
   // conventional names, then the id — so a model that declares one is honored
   // and a model that declares nothing degrades the same way everywhere in the
   // app rather than differently on this screen.
-  import { schemaFor, buildFieldRules, labelFieldFor } from '@frontierjs/sierra/junction'
+  import { schemaFor, buildFieldRules, labelFieldFor } from '@frontierjs/sierra/resource'
 
   export let value  = undefined
   export let column = undefined

@@ -14,7 +14,7 @@
 
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@frontierjs/sierra/junction', () => ({
+vi.mock('@frontierjs/sierra/resource', () => ({
   getClient: () => ({
     service: () => ({ find: async () => ({ data: [] }), on: () => {} }),
     resource: () => ({
@@ -24,8 +24,8 @@ vi.mock('@frontierjs/sierra/junction', () => ({
   }),
 }))
 
-const { createResource, buildCommitments, commitmentsAt } = await import('../src/junction/resource.js')
-const { registerSchemas } = await import('../src/junction/schema-registry.js')
+const { createResource, buildCommitments, commitmentsAt } = await import('../src/resource/resource.js')
+const { registerSchemas } = await import('../src/resource/schema-registry.js')
 
 // By relative path, for resource-transitions.test.js's reason: a package-name
 // import resolves a stale copy under node_modules/.bun.

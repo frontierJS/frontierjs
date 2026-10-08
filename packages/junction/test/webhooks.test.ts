@@ -8,9 +8,10 @@
 // p0-fixes.test.ts. Nothing had ever sent a webhook and looked at what arrived.
 // Doing that found four defects; every describe block below is one of them.
 
+import { Database } from 'bun:sqlite'
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
-import { webhooks } from '../src/plugins/webhooks/index.ts'
+import { webhooks, createSqliteWebhookStore } from '../src/plugins/webhooks/index.ts'
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 
 // ─── A real receiver ──────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ async function makeApp(events: string[] = ['*']) {
   // own file. Nothing else in the repo turns it off.
   app.configure(webhooks({
     events,
+    store:         createSqliteWebhookStore(new Database(':memory:')),
     retryInterval: 3_600_000,
     targets: { allowHttp: true, allowPrivate: true },
   }))
@@ -446,16 +448,14 @@ describe('plugin wiring', () => {
       .toThrow(/already claimed/)
   })
 
-  it('refuses to register with no store and no app.db', async () => {
+  it('refuses to register with no store', async () => {
     const app = await createTestApp()
-    ;(app as { db?: unknown }).db = undefined
 
-    expect(() => app.configure(webhooks({ events: [] }))).toThrow(/No database configured/)
+    expect(() => app.configure(webhooks({ events: [] } as never))).toThrow(/No store/)
   })
 
-  it('accepts a custom store instead of app.db', async () => {
+  it('accepts a custom store', async () => {
     const app = await createTestApp()
-    ;(app as { db?: unknown }).db = undefined
     const registrations: unknown[] = []
     const store = {
       register: async (u: string, e: string[]) => {

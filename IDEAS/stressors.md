@@ -136,7 +136,7 @@ a wall tablet taking forty clock-ins a morning is.
 **Struck 2026-09-21, and the rank is now unargued rather than wrong.** This row
 was written against *there is a browser engine and no sync engine*, and that
 stopped being true: Homestead is built through phase 5 (`IDEAS/homestead.md`),
-`@@sync` declares the policy per Model, `packages/sierra/src/junction/pending.js`
+`@@sync` declares the policy per Model, `packages/sierra/src/resource/pending.js`
 owns a mutation that has not reached the server, and `@version`'s 409 is no
 longer the only answer — `@@sync(field)` merges per column against the base row
 the device read (`FJS-D334`, `FJS-D338`). `example`'s `verify:offline` drives all

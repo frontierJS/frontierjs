@@ -4,7 +4,7 @@ title: Leads
 <script>
   import { leads } from '../../resources/Lead.mesa'
   import { session } from '../../session.js'
-  import { useStore } from '@frontierjs/sierra/junction'
+  import { useStore } from '@frontierjs/sierra/resource'
 
   const { get: rows, unsubscribe } = useStore(leads.store)
   $.onDestroy(unsubscribe)
