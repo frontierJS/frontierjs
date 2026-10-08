@@ -1717,6 +1717,70 @@ export function tierFor(row) {
   return Object.keys(TIERS).find(t => TIERS[t].includes(key)) ?? null
 }
 
+/* ─── Which part of "a row in a database" a word serves ───────────────────────
+ *
+ * `FJS-D635`: litestone owns what is true about a row — its shape, who may read
+ * and write it, what moves it may make, and how its shape changes. A word that
+ * serves none of those is a battery's, and this is where that is visible: a new
+ * word that cannot say which axis it serves is a sign the language is growing a
+ * feature the package should host rather than own.
+ *
+ *   shape     — column kinds, relations, constraints, indexes, derived values,
+ *               and every rule a value must meet.
+ *   access    — the gate, row policies, protected fields, tenancy, the principal.
+ *   life      — transitions, soft delete, effective time, commitments, the trail,
+ *               sealing, and who and when stamped a row.
+ *   evolution — how the shape changes: what the migration differ does not own.
+ *   battery   — a knob for something litestone hosts rather than is.
+ *
+ * Hand-maintained, and graded like TIERS: a word on no axis fails, a word on two
+ * fails, a key naming a word that is gone fails. `battery` is a real answer and
+ * a thin one; if it grows, that is the signal, not the table.
+ */
+export const AXES = {
+  shape: [
+    'schema:import', 'schema:database', 'schema:model', 'schema:view', 'schema:enum',
+    'schema:valueset', 'schema:scope', 'schema:function', 'schema:trait', 'schema:extend',
+    'schema:type', 'field:id', 'field:unique', 'field:map', 'field:default', 'field:sequence',
+    'field:relation', 'field:from', 'field:edge', 'field:scoped', 'field:computed',
+    'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big',
+    'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
+    'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
+    'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:date',
+    'field:datetime', 'field:time', 'field:regex', 'field:length', 'field:startsWith',
+    'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
+    'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
+    'model:id', 'model:unique', 'model:exclude', 'model:check', 'model:arc', 'model:relator',
+    'model:map', 'model:label', 'model:noStrict', 'model:fts', 'model:extensible',
+    'model:hasTemplates', 'model:db', 'model:trait'
+  ],
+  access: [
+    'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
+    'field:capability', 'field:encrypted', 'field:hashed', 'field:personal',
+    'field:secret', 'field:allow', 'model:capabilities', 'model:gate', 'model:export',
+    'model:allow', 'model:deny', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
+    'model:anonymous'
+  ],
+  life: [
+    'field:keep', 'field:immutable', 'field:sealed', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
+    'field:version', 'field:trail', 'model:sync', 'model:softDelete', 'model:expires',
+    'model:effective', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
+    'model:updatedBy'
+  ],
+  evolution: [
+    'model:external'
+  ],
+  battery: [
+    'field:hardDelete', 'field:keepVersions'
+  ]
+}
+
+/** shape | access | life | evolution | battery, or null for a word nobody has placed. */
+export function axisFor(row) {
+  const key = `${row.level}:${row.word}`
+  return Object.keys(AXES).find(a => AXES[a].includes(key)) ?? null
+}
+
 /* ─── What a person types when they do not know the word ──────────────────────
  *
  * The catalog names ONE word per concept and a reader arrives with their own.

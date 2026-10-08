@@ -81,7 +81,7 @@ Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/threat-model.md`
 
 The paper's seed rows were re-probed before ruling. The 2026-09 litestone findings it cited as open (where-key injection, the transaction bypass) are FJS-634 and FJS-638, closed. The Bearer sent off-origin is FJS-788, closed. Their tests pass.
 
-*Lives in:* `THREATS.md` (to be built) · `VOCABULARY.md` (Adversary, Promise, Origin) · `FJS-D06` · `FJS-D258` · `FJS-D345`.
+*Lives in:* `THREATS.md` · `VOCABULARY.md` (Adversary, Promise, Origin) · `FJS-D06` · `FJS-D258` · `FJS-D345`.
 
 ### <a id="fjs-d655"></a>2026-10-08 · `FJS-D655` — A failure is a **Fault**, and every layer that may try again reads it. A durable retrier that gives up is **dead**, and `retry(id)` is the one way back.
 

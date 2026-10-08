@@ -7,8 +7,8 @@ dated: 2026-10-07
 # Idea — Litestone's edge: what it owns, and what it hosts as a battery
 
 **Status: PARTIAL.** Dated 2026-10-07; every count was measured on the working
-tree that day. The edge is ruled (`FJS-D635`) and § 3 is unbuilt; `driver jsonl`
-is still open. It answers *can litestone be feature complete*, by stating the edge
+tree that day. The edge is ruled (`FJS-D635`) and § 3 is built (items 1–5);
+`driver jsonl` is still open. It answers *can litestone be feature complete*, by stating the edge
 that bounds it.
 
 ## The question this answers
@@ -113,6 +113,16 @@ keyed by (word, level) and never by word alone. Against the four axes:
   verbs (`migrate`, `autoMigrate`) and not vocabulary. Whether migration is an axis the language
   has words for, or only a property of the client, needs answering before the column claims four
   values.
+
+**Built 2026-10-08** as `AXES` beside `TIERS` in `catalog.js`, not as a group default with
+overrides: with about 26 overrides the default saves little, and a second table to keep agreeing
+with `group` is a second origin. The three judgment calls: the trail and `version` are **life**
+(a record of moves, and a guard on them), `keepVersions` is a **battery** (a File-storage knob,
+with `hardDelete`). Migration stays an axis, `evolution`, holding `@@external` alone; `noStrict`
+is shape because it changes the DDL of one table, not how a shape changes. Differs from the
+pricing above in three placements: schema-level `scope` is shape (it names what `@@exclude`
+serializes on), and `@@createdBy` / `@@updatedBy` are life with their field forms. Test:
+`catalog.test.ts` § *axes*.
 
 Cost: about half a day once the three are answered. That covers an axis per group, overrides on
 roughly 26 rows, the test (every row resolves to one of the four axes; a new group names its

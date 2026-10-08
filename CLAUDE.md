@@ -157,6 +157,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 - **The workspace, read rather than described** → `fli ws:atlas` (`--as=report` is the runbook: what to run, from where, every snapshot and its generator).
 - **Testing, CI and ports reference** → `docs/TESTING.md`, `docs/CI.md`, `docs/PORTS.md`.
 - **What a write guarantees after it returns** → `docs/CONSISTENCY.md`.
+- **What each attacker may do, and which test proves it** → `THREATS.md`.
 - **Trying a change end to end** → `example/`, the kitchen sink across every surface; start at its `PROJECT_STATE.md`.
 
 ## Communication style

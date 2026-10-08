@@ -1,12 +1,12 @@
 ---
 id: threat-model
-status: proposed
+status: shipped
 dated: 2026-10-08
 ---
 
 # Idea — the threat model: who attacks a FrontierJS app, and what each boundary promises
 
-**Status: ruled as `FJS-D656` (A), nothing built.** Corrections from the re-probe before ruling: B3 and B4 have no open hole (F1/F2 are FJS-634/638 and the Bearer finding is FJS-788, all closed), and § 4's Origin row missed the doctrine's sense, so Origin stays open. Dated 2026-10-08. Wave 5 of the vocabulary
+**Status: ruled as `FJS-D656` (A) and built: [`THREATS.md`](../THREATS.md), graded by `fli check`'s `threat-row`. Option C, one test identity per adversary, is still the later shape for B1–B5.** Corrections from the re-probe before ruling: B3 and B4 have no open hole (F1/F2 are FJS-634/638 and the Bearer finding is FJS-788, all closed), and § 4's Origin row missed the doctrine's sense, so Origin stays open. Dated 2026-10-08. Wave 5 of the vocabulary
 atlas (*papers before nouns*): the nouns below come out of this paper, they
 are not ruled. Do not cite this file as describing behavior — see
 `VERIFYING.md`.

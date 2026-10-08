@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — every `.lite` word names the axis it serves (`FJS-D635`)
+
+`AXES` in `src/core/catalog.js` places each word on `shape`, `access`, `life`, `evolution` or `battery`, keyed `level:word` like `TIERS`, and `axisFor(row)` answers. `catalog.test.ts` § *axes* fails a word on no axis, a word on two, and a key naming a word that is gone. It is a table beside `TIERS` and not a `group` map: `stamp`, `operate` and `declare` each hold words from more than one axis. `battery` holds `@hardDelete` and `@keepVersions`, the two File-storage knobs; `evolution` holds `@@external` alone.
+
 ## 2026-10-08 — the trail is spelled *trail*: `@@trail`, `@trail`, `driver trail`, `db.auditTrail` (`FJS-D661`)
 
 `@@log` / `@log` spelled the audit trail with the word for what a process says, and the observability paper's case rests on the two being different things. One stem now, so knowing one spelling predicts the rest. No alias — an old spelling is an unknown attribute.

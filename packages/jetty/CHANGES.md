@@ -1,5 +1,10 @@
 # Changes — @frontierjs/jetty
 
+## 2026-10-08 — the relay's boundary has a test (`THREATS.md` B7)
+
+`test/phase2.test.js` § defineHarbor boot asserts Harbor registers `runtime.onConnect` once and never `onConnectExternal`. An external listener would hand every call Harbor can make to any extension or site that knows the id. Nothing tested it before, and `THREATS.md` cites it as the row's proof. No source change.
+
+
 ## 2026-10-08 — a page runs sierra's Resource over Harbor; the fork is gone (`FJS-D650`, `FJS-2024`)
 
 **Breaking:** `@frontierjs/jetty/resources` no longer exports `createResource`, `createStore`, `createMakeFromSchema`, `ResourceHookError`, `useStore` or the hook utilities, and the main entry no longer exports the first five. A page writes `createResource(name, { app: harborApp() })`, taking `createResource` and `useStore` from `@frontierjs/sierra/resource`. `src/resources/resource.js` and `store.js` are deleted.

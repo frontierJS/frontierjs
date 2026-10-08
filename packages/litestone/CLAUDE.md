@@ -88,7 +88,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | a policy form | `test/policy-interpreters.test.ts` — both compilers, same rows |
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
-| a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row |
+| a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row, a tier, and an axis in `AXES` (`FJS-D635`) |
 | a `src/` directory, or an axis import of a battery | `test/edge.test.ts` — classified, or a ruling |
 | a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
 

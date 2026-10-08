@@ -31,7 +31,7 @@ import { parse } from '../src/core/parser.js'
 import { deriveAccess } from '../src/access.js'
 import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, lookup, typed, grouped, GROUPS,
          POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor,
-         SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor } from '../src/core/catalog.js'
+         SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor, AXES, axisFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
          TYPE_FORBIDDEN_FIELD_ATTRS, ALLOWED_TOKENIZERS, SYNC_POLICIES, ON_DELETE_ACTIONS,
          DATABASE_DRIVERS } from '../src/core/parser.js'
@@ -520,5 +520,43 @@ describe('lookup and grouping', () => {
       const flat = grouped(level).flatMap(g => g.rows)
       expect(flat.length).toBe(CATALOG.filter(r => r.level === level).length)
     }
+  })
+})
+
+// FJS-D635: a word names the axis it serves, or it is a battery's. Placement is
+// a judgment and is not graded; that one was made is.
+describe('axes', () => {
+  const live = CATALOG.filter(r => !r.removed)
+  const keys = Object.values(AXES).flat()
+
+  test('every word names its axis — a new one fails here until somebody says', () => {
+    const unplaced = live.filter(r => !keys.includes(`${r.level}:${r.word}`)).map(r => typed(r))
+    expect(unplaced).toEqual([])
+  })
+
+  test('no word is on two axes', () => {
+    const seen = new Set<string>()
+    const dups = keys.filter(k => (seen.has(k) ? true : (seen.add(k), false)))
+    expect(dups).toEqual([])
+  })
+
+  test('no axis names a word that is gone', () => {
+    const orphans = keys.filter(k => !live.some(r => `${r.level}:${r.word}` === k))
+    expect(orphans).toEqual([])
+  })
+
+  test('the axes are the ruled five', () => {
+    expect(Object.keys(AXES)).toEqual(['shape', 'access', 'life', 'evolution', 'battery'])
+  })
+
+  test('a removed word is on no axis', () => {
+    for (const row of CATALOG.filter(r => r.removed)) expect(axisFor(row)).toBeNull()
+  })
+
+  test('axisFor answers the axis a word is on, and null for a word on none', () => {
+    expect(axisFor(lookup('@guarded')!)).toBe('access')
+    expect(axisFor(lookup('@@transitions')!)).toBe('life')
+    expect(axisFor(lookup('@hardDelete')!)).toBe('battery')
+    expect(axisFor({ level: 'field', word: 'nosuchthing' } as any)).toBeNull()
   })
 })

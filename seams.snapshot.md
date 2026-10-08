@@ -40,6 +40,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
+| `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 3 |
 
 ## Data → API
 
@@ -114,7 +115,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.describe()` | `packages/junction/src/core/service.ts` | yes | 9 |
 | `isBuiltService(v)` / `Symbol.for('junction.service')` | `packages/junction/src/core/service.ts` | yes | — |
 | `normalizePrefix()` | `packages/junction/src/core/app.ts` | yes | — |
-| `ctx.enqueue(job, payload)` / `deliverOutbox(app)` | `packages/junction/src/plugins/outbox/engine.ts` | yes | 2 |
+| `ctx.enqueue(job, payload)` / `deliverOutbox(app)` | `packages/junction/src/plugins/outbox/engine.ts` | yes | 3 |
 | `claimIdempotency(ctx, key, config)` | `packages/junction/src/core/idempotency.ts` | yes | — |
 | `runStartPhases(bindHost)` | `packages/junction/src/core/app.ts` | yes | — |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | yes | 9 |
