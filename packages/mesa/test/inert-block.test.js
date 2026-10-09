@@ -137,8 +137,8 @@ describe('the unbraced forms are unaffected', () => {
 describe('compilation still succeeds', () => {
 
   test('an inert block reports but does not abort the build', async () => {
-    // analysis.errors surface as warnings in Mesa today — see the note in
-    // CHANGES.md about whether they should be fatal.
+    // analysis.errors surface as warnings, not a failed build: one inert
+    // block should not stop an app from compiling.
     const ctx = await compileSource(
       `<script>let a = 1, b = 2\n$: { (a, b) }</script><p>{a}</p>`,
       { filename: '/t/T.mesa', dev: false }

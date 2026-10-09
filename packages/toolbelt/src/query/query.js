@@ -38,6 +38,10 @@
  * **`true`, `false` and `null` are themselves.** Unambiguous, and the two that
  * were not handled were each a silent empty list at the Data boundary.
  *
+ * **`{}` and `[]` are themselves.** An empty operand has no bracket spelling,
+ * and dropping it widened the filter: `tasks: { none: {} }` over HTTP answered
+ * every row where the socket answered the unplaced ones (`FJS-2047`).
+ *
  * **A quoted value is a literal string.** `?code="5"` is `'5'`. The one escape
  * in the design, for the case a caller means text and no model is there to say
  * so; it is what the encoder emits when a string would otherwise read back as
@@ -110,6 +114,10 @@ export function parseValue(v) {
   if (v === 'true')  return true
   if (v === 'false') return false
   if (v === 'null')  return null
+  // Empty containers have no bracket spelling: `k[]` is an append and `k[x]`
+  // names a member. Fresh each read, so a caller mutating one shares nothing.
+  if (v === '{}')    return {}
+  if (v === '[]')    return []
 
   return isNumericLiteral(v) ? Number(v) : v
 }
@@ -318,6 +326,7 @@ function walk(out, prefix, value, depth) {
   if (depth > LIMITS.depth) return
 
   if (Array.isArray(value)) {
+    if (!value.length) { out.push([prefix, '[]']); return }
     // `k[]=a&k[]=b`, which parses back as an array of one element too — where a
     // repeated bare key would read as a scalar the first time.
     for (const item of value.slice(0, LIMITS.items)) walk(out, `${prefix}[]`, item, depth + 1)
@@ -326,10 +335,12 @@ function walk(out, prefix, value, depth) {
 
   if (value !== null && typeof value === 'object') {
     if (value instanceof Date) { out.push([prefix, value.toISOString()]); return }
+    const before = out.length
     for (const [k, v] of Object.entries(value)) {
       if (FORBIDDEN_KEYS.has(k)) continue
       walk(out, `${prefix}[${k}]`, v, depth + 1)
     }
+    if (out.length === before) out.push([prefix, '{}'])
     return
   }
 

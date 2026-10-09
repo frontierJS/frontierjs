@@ -7,7 +7,7 @@ dated: 2026-08-24
 # Idea — Sandboxes: a tenant with a parent
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-24, from the same audit of
-[open-mrp/api](https://github.com/open-mrp/api) as `IDEAS/permission-sets.md`.
+[open-mrp/api](https://github.com/open-mrp/api) as `IDEAS/shipped/permission-sets.md`.
 Unlike that one, this is not a missing mechanism — it is three mechanisms that
 already exist for other reasons, never pointed at each other. Do not cite this file
 as describing behavior — see `VERIFYING.md`.

@@ -64,8 +64,6 @@ if (report.unfinished) process.exitCode = 1
 The steps that close a change out and fail in silence when skipped, asked of
 `git diff HEAD` plus untracked files:
 
-- **changes-entry** — every directory with a `CHANGES.md` that has a changed
-  file under it gained a `## ` heading there.
 - **layout-named** — a new module is named in its package's `CLAUDE.md`, when
   that file already names most of the new module's siblings.
 - **module-named** — a new command is named in its namespace's `_module.md`,

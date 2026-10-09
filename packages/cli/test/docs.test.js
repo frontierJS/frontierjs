@@ -52,7 +52,7 @@ describe('doc-commands', () => {
     // would make the check fire on 29 mentions that are all correct.
     expect(isReferenceDoc('IDEAS/diagnostics.md')).toBe(false)
     expect(isReferenceDoc('ISSUES.md')).toBe(false)
-    expect(isReferenceDoc('packages/cli/CHANGES.md')).toBe(false)
+    expect(isReferenceDoc('docs/changes-archive/cli.md')).toBe(false)
     expect(isReferenceDoc('docs/handoff-archive/2026-08.md')).toBe(false)
   })
 

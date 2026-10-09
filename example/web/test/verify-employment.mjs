@@ -11,7 +11,7 @@
  *
  * Every other drive in this repository asks *what is true*. This one asks *what
  * was true*, which is the question payroll is built on and the one the schema
- * language cannot yet help with (`IDEAS/payroll.md` phase 2).
+ * language cannot yet help with (`IDEAS/shipped/payroll.md` phase 2).
  *
  * A single pay window makes every one of these pass by accident — with one row,
  * *what were they on in March* and *what are they on* are the same query — so

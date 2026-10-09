@@ -277,7 +277,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/orion`
 
-`packages/orion` · ships `CHANGES.md` `CLAUDE.md` `PROJECT_STATE.md` `README.md` `bench/` `db/` `mockup/` `package.json` `src/` `test/` `tsconfig.json` `web/`
+`packages/orion` · ships `CLAUDE.md` `PROJECT_STATE.md` `README.md` `bench/` `db/` `mockup/` `package.json` `src/` `test/` `tsconfig.json` `web/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

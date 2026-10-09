@@ -258,7 +258,7 @@ client glue* — arrived at from a completely different direction.
 
 ## Open questions
 
-- ~~**FJS-390 — Who owns the busy state of an element that is not a submit button?**~~ **Answered 2026-10-05 (`FJS-D590`), then reopened the same day below**: that ruling was written without reading `IDEAS/async-function-state.md`, shipped the same day, which already owns *a write outside `<Form>` is in flight*.
+- ~~**FJS-390 — Who owns the busy state of an element that is not a submit button?**~~ **Answered 2026-10-05 (`FJS-D590`), then reopened the same day below**: that ruling was written without reading `IDEAS/shipped/async-function-state.md`, shipped the same day, which already owns *a write outside `<Form>` is in flight*.
 - ~~**FJS-390 — Does a row action's busy state come from keying `$async` per call, or from a `busy(el)` handle beside it?**~~ **Answered 2026-10-05 (`FJS-D591`): A — key `$async` per call: `$async.remove.pendingFor(row.id)` is true while a call whose first argument is `row.id` is in flight, with the error keyed the same way. A function that has to lock only part of its body is split in two. (`pendingFor` is a placeholder name.).**
   A submit button is covered by `Button.mesa` reading `form?.submitting`, and a
   write outside a form by `$async.f.pending` (`packages/mesa/docs/VISION.md`

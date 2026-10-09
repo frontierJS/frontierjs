@@ -175,7 +175,7 @@ shape of "which moves are legal for this row". Optimistic concurrency
 (`@version`) and how the version travels on a write. Soft delete and how it
 interacts with uniqueness. **Patch semantics: an explicit `null` clears.**
 **Held today:** `packages/litestone/docs/schema.md` § Lifecycle, § State
-machines · Invariant 9 · `IDEAS/state-machines.md`.
+machines · Invariant 9 · `IDEAS/shipped/state-machines.md`.
 
 #### 7. Tenancy
 

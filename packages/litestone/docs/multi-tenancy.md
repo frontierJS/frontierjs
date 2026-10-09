@@ -327,8 +327,9 @@ carries no tenant column of its own, and which parent to scope by is not
 decidable — a model may have two — so those are still reported, with the same
 three ways out. And the column is prepended to the **declaration**, which means a
 field-level `@unique` is lifted to a table constraint: `db/ddl.snapshot.sql` is
-where the result is readable, and an `upsertMany({ conflictTarget })` naming the
-old columns alone no longer matches an index, which SQLite refuses by name.
+where the result is readable. An `upsertMany({ conflictTarget })` naming the
+declared columns alone is led with the tenant column, so it reaches the scoped
+index; a target of a `@unique(global)` is taken as written.
 
 ---
 

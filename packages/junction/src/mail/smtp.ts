@@ -93,6 +93,39 @@ export function assertAddress(addr: unknown, field: string): string {
   return addr
 }
 
+/**
+ * A mailbox: `local@domain`, `<local@domain>`, `Name <local@domain>` or
+ * `"Quoted, Name" <local@domain>` — the forms the Resend adapter beside this
+ * accepts. Without a name a help desk's `Support <support@acme.test>` threw at
+ * send, after commit, over SMTP only. The address is graded as a bare one and
+ * is all the envelope ever sees; the name is re-rendered by `formatMailbox`, so
+ * nothing the caller typed reaches a header verbatim. An unquoted name holding
+ * `@ , ;` is refused: that is two addresses in one string, not a name.
+ */
+export function assertMailbox(value: unknown, field: string): { name: string | null, address: string } {
+  if (typeof value !== 'string' || !value)
+    throw new SmtpError(`Mail: ${field} must be a non-empty address string`)
+  if (/[\r\n]/.test(value))
+    throw new SmtpError(`Mail: ${field} contains a line break — SMTP is line-oriented and this would inject a command`)
+  const m = /^\s*(?:"((?:[^"\\]|\\.)*)"|([^<>"]*?))\s*<([^<>]*)>\s*$/.exec(value)
+  if (!m) return { name: null, address: assertAddress(value, field) }
+  const name = m[1] !== undefined ? m[1].replace(/\\(.)/g, '$1') : m[2]
+  if (/[\x00-\x1f\x7f]/.test(name))
+    throw new SmtpError(`Mail: ${field} contains a control character`)
+  if (m[1] === undefined && /[@,;]/.test(name))
+    throw new SmtpError(`Mail: ${field} has an unquoted display name holding @ , or ; — quote the name, or send one address per entry`)
+  return { name: name || null, address: assertAddress(m[3], field) }
+}
+
+/** A mailbox as a header writes it: the name as an atom, a quoted-string or encoded-words. */
+function formatMailbox(value: string): string {
+  const { name, address } = assertMailbox(value, 'address')
+  if (!name) return address
+  if (/^[A-Za-z0-9!#$%&'*+/=?^_`{|}~ .-]+$/.test(name)) return `${name} <${address}>`
+  if (/^[\x20-\x7e]*$/.test(name)) return `"${name.replace(/(["\\])/g, '\\$1')}" <${address}>`
+  return `${encodeMimeHeader(name)} <${address}>`
+}
+
 /** A header VALUE that cannot become a second header. */
 export function assertHeaderValue(value: unknown, field: string): string {
   const v = String(value ?? '')
@@ -107,12 +140,12 @@ export function assertHeaderValue(value: unknown, field: string): string {
 export function assertMessageAddresses(msg: {
   from?: unknown; to?: unknown; cc?: unknown; bcc?: unknown; replyTo?: unknown; subject?: unknown
 }): void {
-  if (msg.from !== undefined) assertAddress(msg.from, 'from')
+  if (msg.from !== undefined) assertMailbox(msg.from, 'from')
   const list = (v: unknown): unknown[] => v === undefined || v === null ? [] : Array.isArray(v) ? v : [v]
-  for (const a of list(msg.to))  assertAddress(a, 'to')
-  for (const a of list(msg.cc))  assertAddress(a, 'cc')
-  for (const a of list(msg.bcc)) assertAddress(a, 'bcc')
-  if (msg.replyTo !== undefined && msg.replyTo !== null) assertAddress(msg.replyTo, 'replyTo')
+  for (const a of list(msg.to))  assertMailbox(a, 'to')
+  for (const a of list(msg.cc))  assertMailbox(a, 'cc')
+  for (const a of list(msg.bcc)) assertMailbox(a, 'bcc')
+  if (msg.replyTo !== undefined && msg.replyTo !== null) assertMailbox(msg.replyTo, 'replyTo')
   if (msg.subject !== undefined) assertHeaderValue(msg.subject, 'subject')
 }
 
@@ -196,7 +229,8 @@ function parseResponse(raw: string): { response: SmtpResponse; consumed: number 
 // ─── Session ─────────────────────────────────────────────────
 
 async function openSession(config: SmtpConfig): Promise<{
-  sendMessage: (msg: SmtpMessage) => Promise<void>
+  /** Answers the Message-ID the message went out under. */
+  sendMessage: (msg: SmtpMessage) => Promise<string>
   quit:        () => Promise<void>
   // RSET, so a batch can reuse the session after one message fails.
   // `sendMailBatch` has always called it; the annotation had not named it, so
@@ -424,13 +458,17 @@ async function openSession(config: SmtpConfig): Promise<{
 
   // ── Public session methods ────────────────────────────────
 
-  async function sendMessage(msg: SmtpMessage): Promise<void> {
+  async function sendMessage(msg: SmtpMessage): Promise<string> {
     // Before ANY socket write. The last gate before the wire, and the only one
     // `sendMail` alone reaches.
     assertMessageAddresses(msg)
     // Every address that must RECEIVE this, which is not the same set as the
     // addresses that appear in the headers: a bcc is here and nowhere else.
     const recipients = envelopeRecipients(msg)
+    const { header: idHeader, id } = messageIdOf(msg)
+    // Built before MAIL FROM, so a refusal while writing it leaves no
+    // transaction open behind it.
+    const raw = buildMimeMessage(idHeader ? { ...msg, headers: { ...msg.headers, [idHeader]: id } } : msg)
 
     // A refusal mid-transaction abandons a half-open one — the session is
     // reusable and the next message would otherwise inherit this one's envelope
@@ -441,7 +479,7 @@ async function openSession(config: SmtpConfig): Promise<{
     }
 
     // MAIL FROM
-    const mailFrom = await command(`MAIL FROM:<${msg.from}>`)
+    const mailFrom = await command(`MAIL FROM:<${assertMailbox(msg.from, 'from').address}>`)
     try { assertCode(mailFrom, 250, 'MAIL FROM') } catch (e) { return fatal(e) }
 
     // RCPT TO — one command per recipient
@@ -457,12 +495,12 @@ async function openSession(config: SmtpConfig): Promise<{
     // Construct and send the message body.
     // Dot-stuffing (RFC 5321 §4.5.2): any line beginning with "." must
     // have an extra "." prepended. The terminating sequence is "\r\n.\r\n".
-    const raw     = buildMimeMessage(msg)
     const stuffed = raw.replace(/^\.(.*)$/gm, '..$1')
     socket.write(stuffed + '\r\n.\r\n')
 
     const dataEnd = await readResponse()
     assertCode(dataEnd, 250, 'DATA end')
+    return id
   }
 
   async function quit(): Promise<void> {
@@ -507,6 +545,19 @@ const asList = (v: string | string[] | undefined): string[] =>
  */
 export function envelopeRecipients(msg: SmtpMessage): string[] {
   return [...asList(msg.to), ...asList(msg.cc), ...asList(msg.bcc)]
+    .map(a => assertMailbox(a, 'recipient').address)
+}
+
+/**
+ * The message's Message-ID: the one stated, or one minted on the From's
+ * domain. Minted HERE because a reply's In-Reply-To must name an id the app
+ * learned from `send()`; an id a relay assigns is one it never sees.
+ */
+export function messageIdOf(msg: SmtpMessage): { header: string | null, id: string } {
+  const stated = Object.keys(msg.headers ?? {}).find(k => k.toLowerCase() === 'message-id')
+  if (stated) return { header: null, id: msg.headers![stated] }
+  const domain = assertMailbox(msg.from, 'from').address.split('@').pop()!
+  return { header: 'Message-ID', id: `<${crypto.randomUUID()}@${domain}>` }
 }
 
 /**
@@ -549,7 +600,6 @@ function base64Lines(content: ArrayBuffer | Uint8Array | string): string {
 }
 
 function buildMimeMessage(msg: SmtpMessage): string {
-  const to       = Array.isArray(msg.to) ? msg.to.join(', ') : msg.to
   const date     = new Date().toUTCString()
   const boundary = `----=_Part_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`
 
@@ -557,24 +607,25 @@ function buildMimeMessage(msg: SmtpMessage): string {
   // than encoding it. `From`/`To`/`Reply-To` used to be interpolated raw, so a
   // CRLF in any of them wrote a header of the caller's choosing into a message
   // the app composed.
-  const cc = asList(msg.cc).join(', ')
+  const to = asList(msg.to).map(formatMailbox).join(', ')
+  const cc = asList(msg.cc).map(formatMailbox).join(', ')
 
   const baseHeaders = [
-    `From: ${encodeMimeHeader(msg.from)}`,
-    `To: ${encodeMimeHeader(to)}`,
+    `From: ${formatMailbox(msg.from)}`,
+    `To: ${to}`,
     // A copy is visible by definition. `bcc` is deliberately NOT here — it is
     // in the envelope and in no header, which is the whole of what makes it
     // blind; emitting it is how every blind recipient learns about the others.
-    ...(cc ? [`Cc: ${encodeMimeHeader(cc)}`] : []),
+    ...(cc ? [`Cc: ${cc}`] : []),
     `Subject: ${encodeMimeHeader(msg.subject)}`,
     `Date: ${date}`,
     `MIME-Version: 1.0`,
-    ...(msg.replyTo ? [`Reply-To: ${encodeMimeHeader(msg.replyTo)}`] : []),
+    ...(msg.replyTo ? [`Reply-To: ${formatMailbox(msg.replyTo)}`] : []),
     // The caller's own headers, name and value both graded. Last, so a caller
     // cannot restate `From` or `Content-Type` ahead of the message's own.
     ...Object.entries(msg.headers ?? {}).map(([k, v]) =>
       `${assertHeaderName(k)}: ${encodeMimeHeader(String(v))}`),
-  ]
+  ].map(foldHeader)
 
   // Attachments: the whole message becomes multipart/mixed, with everything
   // above as the first part. Built by wrapping rather than by a fourth branch,
@@ -677,8 +728,42 @@ function encodeMimeHeader(value: string): string {
   // an encoder is the wrong owner of a rule about what may be sent at all.
   assertHeaderValue(value, 'header')
   if (/^[\x20-\x7E]*$/.test(value)) return value
-  const encoded = Buffer.from(value).toString('base64')
-  return `=?UTF-8?B?${encoded}?=`
+  // One word per 45 bytes, cut on a code point: a word is at most 75 octets
+  // (RFC 2047 § 2), and a single word holding a long subject is one unbroken
+  // token that `foldHeader` has nowhere to fold.
+  const words: string[] = []
+  let chunk = ''
+  for (const ch of value) {
+    if (chunk && Buffer.byteLength(chunk + ch) > 45) { words.push(chunk); chunk = '' }
+    chunk += ch
+  }
+  words.push(chunk)
+  return words.map(w => `=?UTF-8?B?${Buffer.from(w).toString('base64')}?=`).join(' ')
+}
+
+const HEADER_LINE_SOFT = 78     // RFC 5322 § 2.1.1 SHOULD
+const HEADER_LINE_MAX  = 998    // RFC 5322 § 2.1.1 MUST
+
+/**
+ * A header line folded at its whitespace (RFC 5322 § 2.2.3). A caller cannot
+ * fold a value itself — `assertHeaderValue` refuses every CRLF — so the writer
+ * is the one place a 30-id References gets under 998 octets. A line with no
+ * whitespace to fold at is refused rather than sent malformed.
+ */
+function foldHeader(line: string): string {
+  if (line.length <= HEADER_LINE_SOFT) return line
+  const lines: string[] = []
+  let cur = ''
+  for (const piece of line.match(/[ \t]*[^ \t]+|[ \t]+$/g) ?? [line]) {
+    if (cur && cur.length + piece.length > HEADER_LINE_SOFT && /^[ \t]+[^ \t]/.test(piece)) {
+      lines.push(cur)
+      cur = piece
+    } else cur += piece
+  }
+  lines.push(cur)
+  for (const l of lines) if (Buffer.byteLength(l) > HEADER_LINE_MAX)
+    throw new SmtpError(`Mail: header ${line.slice(0, line.indexOf(':'))} has a run longer than ${HEADER_LINE_MAX} octets with no whitespace to fold at`)
+  return lines.join('\r\n')
 }
 
 // Quoted-printable encoding per RFC 2045.
@@ -763,12 +848,13 @@ function wrapQpLine(line: string): string {
  * For high-volume use, connection pooling should be layered on top —
  * this function is intentionally stateless and connection-per-send.
  *
+ * @returns the Message-ID the message went out under
  * @throws SmtpError on connection failure, auth failure, or rejected message
  */
-export async function sendMail(config: SmtpConfig, message: SmtpMessage): Promise<void> {
+export async function sendMail(config: SmtpConfig, message: SmtpMessage): Promise<string> {
   const session = await openSession(config)
   try {
-    await session.sendMessage(message)
+    return await session.sendMessage(message)
   } finally {
     await session.quit()
   }
@@ -788,16 +874,15 @@ export async function sendMail(config: SmtpConfig, message: SmtpMessage): Promis
 export async function sendMailBatch(
   config:   SmtpConfig,
   messages: SmtpMessage[]
-): Promise<Array<{ ok: boolean; error?: string }>> {
+): Promise<Array<{ ok: boolean; id?: string; error?: string }>> {
   if (!messages.length) return []
 
   const session = await openSession(config)
-  const results: Array<{ ok: boolean; error?: string }> = []
+  const results: Array<{ ok: boolean; id?: string; error?: string }> = []
   try {
     for (const msg of messages) {
       try {
-        await session.sendMessage(msg)
-        results.push({ ok: true })
+        results.push({ ok: true, id: await session.sendMessage(msg) })
       } catch (err) {
         results.push({ ok: false, error: err instanceof Error ? err.message : String(err) })
         // Clear any half-finished transaction; if RSET itself fails the

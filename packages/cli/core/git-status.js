@@ -38,11 +38,11 @@ export const zoneOf = (path) => {
 
 // ─── roles ────────────────────────────────────────────────────────────────────
 //
-// A role is what the file is FOR, not its extension: `CHANGES.md` and a design
+// A role is what the file is FOR, not its extension: `DECISIONS.md` and a design
 // note are both markdown and are not the same thing to a reader scanning a
 // diff. Ordered — a snapshot is generated output before it is anything else.
 
-const RECORDS = new Set(['CHANGES.md', 'DECISIONS.md', 'ISSUES.md', 'CLAUDE.md', 'AGENTS.md', 'README.md', 'PROJECT_STATE.md', 'DRIVES.md', 'HANDOFF.md', 'ARCHITECT.md', 'PHILOSOPHY.md', 'VERIFYING.md'])
+const RECORDS = new Set(['DECISIONS.md', 'ISSUES.md', 'CLAUDE.md', 'AGENTS.md', 'README.md', 'PROJECT_STATE.md', 'DRIVES.md', 'HANDOFF.md', 'ARCHITECT.md', 'PHILOSOPHY.md', 'VERIFYING.md'])
 
 const ROLE_RULES = [
   { role: 'snapshot', test: p => /\.snapshot\.[a-z]+$/.test(p) },

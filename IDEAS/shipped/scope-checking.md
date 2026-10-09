@@ -7,14 +7,14 @@ dated: 2026-09-03
 # Proposal — resolving identifiers over a compiled command unit
 
 **Shipped 2026-10-06** as `packages/cli/core/scope.js` and the `command-resolves` rule, with the PROJECT's TypeScript as the parser rather than a new dependency — the third option below, one package over; `test/scope.test.js` holds this tree at zero. The rest of this file is the argument as it was made. Prompted by
-[`FJS-726`](../ISSUES_ARCHIVE.md#fjs-726), and by the four defects the prototype found
+[`FJS-726`](../../ISSUES_ARCHIVE.md#fjs-726), and by the four defects the prototype found
 on a tree that was otherwise green.
 
 ---
 
 ## The failure
 
-`swapContainer` in [`commands/deploy/_module.md`](../packages/cli/commands/deploy/_module.md)
+`swapContainer` in [`commands/deploy/_module.md`](../../packages/cli/commands/deploy/_module.md)
 built its `docker run` line with `dockerLogArgs(deployConf)`. Its options are
 `{ host, container, image, apiPort, dbPath, envFile, build, log }` — **nothing
 binds `deployConf`**. Every real `fli deploy` threw `ReferenceError` while
@@ -28,7 +28,7 @@ of them is a rule this repo keeps on purpose:**
 - **The parse sweep parses the wrong artefact.** `test/compiler.test.js`
   compiles every command with an *empty* namespace module — `compileCli(src, '', file)`
   — but the runtime compiles it with the namespace's `_module.md` script prepended
-  ([`core/runtime.js`](../packages/cli/core/runtime.js), `Command()` and
+  ([`core/runtime.js`](../../packages/cli/core/runtime.js), `Command()` and
   `runOneStep`). The sweep therefore parses a file that never runs.
 - **A parse is not a resolve.** `FJS-269` is the same sentence one layer up:
   `fli check` had never executed at all because of a free `resolve`, and its
@@ -140,7 +140,7 @@ how the next `FJS-269` survives:
 
 ## Related
 
-- [`FJS-726`](../ISSUES_ARCHIVE.md#fjs-726) — the free identifier that broke every deploy.
+- [`FJS-726`](../../ISSUES_ARCHIVE.md#fjs-726) — the free identifier that broke every deploy.
 - `FJS-269` — `fli check` itself, unexecutable for the same reason.
 - Invariant 15 — *a clean compile is not proof of valid JS*. This is the next
   question after that one: a clean parse is not proof of a resolvable module.

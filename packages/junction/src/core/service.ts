@@ -5,7 +5,7 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope } from './context.ts'
+import { requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
@@ -917,7 +917,7 @@ async function _callService(
     if (scope) { scope.effects.push(...queued) }
     else for (const fn of queued) {
       try {
-        await fn()
+        await runAfterCommitEffect(`${service.name}.${method as string}`, fn)
       } catch (err) {
         // Observer tier (FJS-D06): the write is committed and the announcement
         // is out, so this cannot be reported as the call failing — a 500 here
@@ -1426,7 +1426,7 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
           catch (e) { console.error(`[Junction] a deferred announcement threw after commit: ${(e as Error)?.message}`) }
         }
         for (const effect of effects) {
-          try { await effect() }
+          try { await runAfterCommitEffect('transaction', effect) }
           catch (e) {
             console.error(
               `[Junction] afterCommit callback threw after the transaction committed: ${(e as Error)?.message}. ` +

@@ -248,3 +248,75 @@ describe('retryable comes from the reply code', () => {
     expect(new SmtpError('socket closed').retryable).toBe(true)
   })
 })
+
+// FJS-1996: what a help desk's reply looks like on the wire. Each was measured
+// replaying a composed reply into a sink: the named From threw at send, a long
+// References went out as one illegal line, and the id send() answered was on
+// no header, so a reply's In-Reply-To named nothing.
+describe('a help-desk reply on the wire', () => {
+
+  /** Sends one message; answers the conversation and what send() returned. */
+  async function sent(msg: unknown): Promise<{ w: string, lines: string[], id: string }> {
+    const s = await sink()
+    try {
+      const r = await mailer(s.port).send(msg as never)
+      return { w: s.log.join('\n'), lines: s.log, id: r.id }
+    } finally { s.close() }
+  }
+
+  /** A header's value with its folds undone (RFC 5322 § 2.2.3). */
+  function unfolded(lines: string[], name: string): string | undefined {
+    const i = lines.findIndex(l => l.toLowerCase().startsWith(name.toLowerCase() + ':'))
+    if (i < 0) return undefined
+    let v = lines[i].slice(name.length + 1)
+    for (let j = i + 1; j < lines.length && /^[ \t]/.test(lines[j]); j++) v += lines[j]
+    return v.trim()
+  }
+
+  it('a From with a display name sends, the envelope carrying the address alone', async () => {
+    const { w } = await sent({ from: 'Support <support@acme.test>', to: 'Ana Lima <ana@cust.test>', subject: 'Re: help', text: 'hi' })
+    expect(w).toContain('MAIL FROM:<support@acme.test>')
+    expect(w).toContain('RCPT TO:<ana@cust.test>')
+    expect(w).toContain('From: Support <support@acme.test>')
+    expect(w).toContain('To: Ana Lima <ana@cust.test>')
+  })
+
+  it('a name holding a comma is quoted, and a non-ASCII one is encoded', async () => {
+    const { w } = await sent({ from: '"Acme, Inc." <support@acme.test>', to: 'José <jose@cust.test>', subject: 's', text: 't' })
+    expect(w).toContain('From: "Acme, Inc." <support@acme.test>')
+    expect(w).toContain(`To: =?UTF-8?B?${Buffer.from('José').toString('base64')}?= <jose@cust.test>`)
+  })
+
+  it('two addresses in one string are still refused', async () => {
+    const s = await sink()
+    try {
+      await expect(mailer(s.port).send({ to: 'a@b.test, c@d.test', subject: 's', text: 't' } as never)).rejects.toThrow(/Mail: to/)
+    } finally { s.close() }
+  })
+
+  it('a References past 998 octets is folded, and unfolds to what was stated', async () => {
+    const refs = Array.from({ length: 30 }, (_, i) => `<${crypto.randomUUID()}.${i}@acme.test>`).join(' ')
+    const { lines } = await sent({ to: 'a@b.test', subject: 's', text: 't', headers: { References: refs } })
+    for (const l of lines) expect(Buffer.byteLength(l)).toBeLessThanOrEqual(998)
+    expect(unfolded(lines, 'References')).toBe(refs)
+  })
+
+  it('a long non-ASCII subject is split into encoded-words no line overruns', async () => {
+    const subject = 'Ação '.repeat(300)
+    const { lines } = await sent({ to: 'a@b.test', subject, text: 't' })
+    for (const l of lines) expect(Buffer.byteLength(l)).toBeLessThanOrEqual(998)
+    expect(unfolded(lines, 'Subject')).toMatch(/^=\?UTF-8\?B\?/)
+  })
+
+  it('with no Message-ID stated one is written, and send() answers it', async () => {
+    const { lines, id } = await sent({ from: 'Support <support@acme.test>', to: 'a@b.test', subject: 's', text: 't' })
+    expect(id).toMatch(/^<[^<>@\s]+@acme\.test>$/)
+    expect(unfolded(lines, 'Message-ID')).toBe(id)
+  })
+
+  it('a stated Message-ID is the one written, once, and the one answered', async () => {
+    const { lines, id } = await sent({ to: 'a@b.test', subject: 's', text: 't', headers: { 'Message-Id': '<m1@acme.test>' } })
+    expect(id).toBe('<m1@acme.test>')
+    expect(lines.filter(l => /^message-id:/i.test(l))).toEqual(['Message-Id: <m1@acme.test>'])
+  })
+})

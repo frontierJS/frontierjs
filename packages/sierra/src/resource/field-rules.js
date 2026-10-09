@@ -1284,7 +1284,11 @@ const _LABEL_FIELDS = ['name', 'title', 'label', 'displayName', 'reference', 'em
 
 export function labelFieldInfo(fields, fallback = 'id', declared = null) {
   const rules = fields && typeof fields === 'object' ? fields : {}
+  // `writeOnly` (`@hashed`) is never answered by a read, and `x-sortable` is
+  // the boundary's refusal of an order by it. The picker orders by the column
+  // it shows, so a guess landing on either is an error and an empty list.
   const plain = (r) => r?.type === 'string' && !r.enum && !r.references && !r.readOnly
+    && !r.writeOnly && !r['x-sortable']
 
   // A declaration is NOT checked against the rules map, and must not be. The
   // schema refused every shape a picker cannot use before this ran, and the

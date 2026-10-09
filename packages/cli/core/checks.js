@@ -162,7 +162,7 @@ export const RULES = [
   { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
     title: 'a .mesa <style> holds no raw color, size or spacing value' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
-    title: 'four markdown files are the standard at a package root' },
+    title: 'three markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
     title: 'a hand-listed test script names every test file beside it' },
   { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,
@@ -2700,10 +2700,10 @@ const CHECKS = {
   },
 
   // Invariant 17. Repo scope: an app root is the developer's own, but a package
-  // published from this tree keeps four files at its root and puts the rest in
+  // published from this tree keeps three files at its root and puts the rest in
   // docs/.
   //
-  // **A warning, not an error.** The four are the standard and a fifth file is
+  // **A warning, not an error.** The three are the standard and a fourth file is
   // worth a conversation, not a refused build — the rule cannot know whether the
   // new file is a stray design note or the next thing everyone needs at the root.
   // So it names what it found and leaves the decision to a person; an allowance
@@ -2711,7 +2711,7 @@ const CHECKS = {
   // written down once it is made.
   //
   // The rule reports the CEILING and the FLOOR, and only the ceiling needs that
-  // judgement. A file that is missing needs none: the four are named in the
+  // judgement. A file that is missing needs none: the three are named in the
   // invariant, so an absent one is decidable from the listing. Reporting only
   // what was NOT in `allowed` could catch a fifth file and could never catch a
   // missing fourth, which left seven packages short a standard file with the
@@ -3307,7 +3307,7 @@ const CHECKS = {
     }
     if (!pkgs.length) return { skipped: 'no packages/' }
 
-    const STANDARD = ['README.md', 'CLAUDE.md', 'PROJECT_STATE.md', 'CHANGES.md']
+    const STANDARD = ['README.md', 'CLAUDE.md', 'PROJECT_STATE.md']
 
     // AGENTS.md is permitted and not required. It is the same KIND of thing as
     // CLAUDE.md — a root-level document whose whole value is being findable at
@@ -3330,8 +3330,8 @@ const CHECKS = {
       const extra = entries.filter(n => n.endsWith('.md') && !allowed.has(n) && !generated(n))
       if (extra.length) findings.push({
         file: dir,
-        message: `${extra.length} markdown file(s) beyond the four at the package root — ${extra.join(', ')}. ` +
-                 `README/CLAUDE/PROJECT_STATE/CHANGES is the standard, because the root is the index and ` +
+        message: `${extra.length} markdown file(s) beyond the three at the package root — ${extra.join(', ')}. ` +
+                 `README/CLAUDE/PROJECT_STATE is the standard, because the root is the index and ` +
                  `an index nobody can hold in their head is a directory listing. Does this one belong at ` +
                  `the root, or in docs/? Record the answer as an allowance either way.`,
       })
@@ -3342,16 +3342,16 @@ const CHECKS = {
       // every missing one too.
       for (const name of STANDARD.filter(n => !entries.includes(n))) findings.push({
         file: join(dir, name),
-        message: `${name} is missing from the package root. The four are what somebody picking this ` +
+        message: `${name} is missing from the package root. The three are what somebody picking this ` +
                  `package up cold reads in order — what it is (README), how to work in it (CLAUDE), ` +
-                 `where it stands (PROJECT_STATE), what changed (CHANGES) — so an absent one is a ` +
+                 `where it stands (PROJECT_STATE); what changed is git — so an absent one is a ` +
                  `question with no answer rather than a shorter index. A package deliberately without ` +
                  `it is an allowance under "structure", same as a fifth file.`,
       })
     }
     return { findings }
   },
-  // Invariant 17 sends everything past the four root files into `docs/`, and
+  // Invariant 17 sends everything past the three root files into `docs/`, and
   // says nothing about `docs/` having an index — so a page can be written,
   // committed and linked by nothing. That is not a discoverability nicety: a
   // reader who cannot find `exact-numbers.md` reads `roadmap.md` instead and

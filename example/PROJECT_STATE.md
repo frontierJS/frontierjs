@@ -405,7 +405,7 @@ And the first wave, from moving the existing markup onto the kit:
 | **junction** | The HTTP fallback recursed forever for custom actions — async, so it never settled and nothing pointed at it |
 | **junction** | Startup banner said nothing about the Data realm |
 
-Details are in each package's `CHANGES.md` (all dated 2026-08-04) and in the
+Details are in each package's `docs/changes-archive/example.md` (all dated 2026-08-04) and in the
 README's *Found by building this* table.
 
 ---

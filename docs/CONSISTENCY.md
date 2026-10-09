@@ -19,7 +19,7 @@ One row per seam. Each row is a guarantee, the way it fails, the file that keeps
 | Seam | Guarantee | How it fails | Kept by | Proved by |
 | --- | --- | --- | --- | --- |
 | The announcement | Held until the OUTERMOST transaction commits (`FJS-D170`). A rolled-back write announces nothing. | — | `junction/src/core/context.ts` (the commit scope), `junction/src/core/service.ts` | `junction/test/commit-scope.test.ts` |
-| `ctx.afterCommit(fn)` | Runs once, on the success path only. **At most once.** | A crash between the commit and the callback loses it, with no error. Mail or a third-party call belongs in `ctx.enqueue` ([FJS-2070](../ISSUES.md#fjs-2070) adds a development warning). | `junction/src/core/service.ts` | `junction/test/commit-scope.test.ts` |
+| `ctx.afterCommit(fn)` | Runs once, on the success path only. **At most once.** | A crash between the commit and the callback loses it, with no error. Mail or a third-party call belongs in `ctx.enqueue` Mail and `app.conduit.send()` warn in development when an `afterCommit` effect reaches them ([FJS-2070](../ISSUES.md#fjs-2070)). | `junction/src/core/service.ts` | `junction/test/commit-scope.test.ts`, `junction/test/after-commit-warning.test.ts` |
 | `ctx.enqueue(job, payload)` | An outbox row written in the call's own transaction, delivered by a kick after commit and by a sweep. **At least once.** A handler is made idempotent by the job id, as caravan's `dispatch({ id })` is. | A handler that is not idempotent runs twice after a crash. | `junction/src/plugins/outbox/` | `junction/test/outbox.test.ts`, `outbox-relay.test.ts` |
 
 ## Across processes and the wire

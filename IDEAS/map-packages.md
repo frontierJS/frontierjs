@@ -276,7 +276,7 @@ afternoon, or V2.
 
 ## See also
 
-- `IDEAS/permission-sets.md` — **`warden`'s own record**, and the first run of this file's test
+- `IDEAS/shipped/permission-sets.md` — **`warden`'s own record**, and the first run of this file's test
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison; most of the original tier 1 originates there
 - `IDEAS/stressors.md` — products worth building to find a seam. Its three
   no-exercise-needed gaps are i18n, an image pipeline and geo, all three of which land on this page

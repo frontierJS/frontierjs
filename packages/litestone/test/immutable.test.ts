@@ -158,3 +158,73 @@ model Ledger {
     expect(rows.filter(r => /threw/.test(r.message ?? ''))).toEqual([])
   })
 })
+
+// FJS-1988. A `@sequence` value is the counter's, not the caller's: one agent
+// renumbering ticket #1 to #2 made every later create in the org a 409, the
+// system's included, because a failed insert rolls the counter back to the
+// number now taken. So the column is frozen after create without anyone
+// writing `@immutable` beside it, and the update schema says so to a form.
+describe('@sequence is frozen after create', () => {
+  const TICKETS = `
+database main { path ":memory:" }
+enum TicketState {
+  draft
+  issued
+}
+model Ticket {
+  id     Int @id @default(autoincrement())
+  orgId  Int
+  number Int @sequence(scope: orgId)
+  title  String
+  @@unique([orgId, number])
+}
+model Invoice {
+  id     Int @id @default(autoincrement())
+  orgId  Int
+  number Int @sequence(scope: orgId)
+  state  TicketState @default(draft)
+  total  Int @immutable
+  @@transitions(state, issue: draft -> issued @seals)
+}
+`
+  const tickets = () => createClient({ schema: TICKETS, resolveFrom: import.meta.dir })
+
+  test('an update naming it is refused, for the system too, and the counter keeps counting', async () => {
+    const db = await tickets()
+    const one = await db.ticket.create({ data: { orgId: 1, title: 'a' } })
+    expect(one.number).toBe(1)
+    await expect(db.ticket.update({ where: { id: one.id }, data: { number: 2 } }))
+      .rejects.toThrow(/number is a @sequence/)
+    await expect(db.asSystem().ticket.update({ where: { id: one.id }, data: { number: 2 } }))
+      .rejects.toThrow(/number is a @sequence/)
+    await expect(db.ticket.updateMany({ where: {}, data: { number: 9 } }))
+      .rejects.toThrow(/number is a @sequence/)
+    const two = await db.asSystem().ticket.create({ data: { orgId: 1, title: 'b' } })
+    expect(two.number).toBe(2)
+  })
+
+  test('a create may still state it, and the rest of the row still moves', async () => {
+    const db = await tickets()
+    const row = await db.ticket.create({ data: { orgId: 1, number: 10, title: 'a' } })
+    expect(row.number).toBe(10)
+    await db.ticket.update({ where: { id: row.id }, data: { title: 'b' } })
+    expect((await db.ticket.findFirst({ where: { id: row.id } })).title).toBe('b')
+  })
+
+  test('a sealing model freezes it at create, not at the seal — a draft renumbered breaks the counter all the same', async () => {
+    const db = await tickets()
+    const draft = await db.invoice.create({ data: { orgId: 1, total: 5 } })
+    await expect(db.invoice.update({ where: { id: draft.id }, data: { number: 4 } }))
+      .rejects.toThrow(/number is a @sequence/)
+  })
+
+  test('readOnly in the update schema, so no generated edit form draws it', () => {
+    const parsed = parse(TICKETS)
+    const create = generateJsonSchema(parsed.schema ?? parsed, { mode: 'create' })
+    const update = generateJsonSchema(parsed.schema ?? parsed, { mode: 'update' })
+    expect(create.$defs.Ticket.properties.number.readOnly).toBeUndefined()
+    expect(update.$defs.Ticket.properties.number.readOnly).toBe(true)
+    expect(update.$defs.Ticket.properties.number['x-litestone-kind']).toBe('sequence')
+    expect(update.$defs.Invoice.properties.number.readOnly).toBe(true)
+  })
+})

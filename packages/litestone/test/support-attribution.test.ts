@@ -112,7 +112,7 @@ describe('a trail the app declared itself keeps only what it declared', () => {
     //
     // Asserted rather than argued, and asserted as still-BROKEN: the fix is a
     // `litestone advise` rule, deliberately not built while every scaffolded
-    // app uses the auto-model (IDEAS/support-mode.md § What was cut). When that
+    // app uses the auto-model (IDEAS/shipped/support-mode.md § What was cut). When that
     // rule lands this row is what tells you it did.
     const dir = mkdtempSync(join(tmpdir(), 'fjs-support-'))
     try {

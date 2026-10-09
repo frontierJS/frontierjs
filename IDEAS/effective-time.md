@@ -8,7 +8,7 @@ dated: 2026-09-22
 
 **Status: PHASE 1 IS BUILT** — `@@effective(to:)` with the whole `asOf`
 directive, ruled [`FJS-D351`](../DECISIONS.md#fjs-d351) and recorded in
-`packages/litestone/CHANGES.md`. **PHASE 2 IS BUILT AND ADOPTED**, and building
+`docs/changes-archive/litestone.md`. **PHASE 2 IS BUILT AND ADOPTED**, and building
 it split the word: [`FJS-D352`](../DECISIONS.md#fjs-d352) makes an expiry
 `@@expires(col)`, imposed as phase 1 shipped it, and a validity window
 `@@effective(from:, to:)`, ASKED — a read stating no `asOf` gets every row,
@@ -391,7 +391,7 @@ re-answered wrongly.*
     spelling by hand, and is the paper's own claim in § 1 that the two
     unfiltered reads stop being invisible.
 
-- ~~**What does an `@@effective` row look like to a BROADCAST?**~~ **Answered by [`FJS-D351`](../DECISIONS.md#fjs-d351) (C)**; the half C cannot close is [`FJS-1274`](../ISSUES.md#fjs-1274). Measured, and the
+- ~~**What does an `@@effective` row look like to a BROADCAST?**~~ **Answered by [`FJS-D351`](../DECISIONS.md#fjs-d351) (C)**; the half C cannot close is [`FJS-1274`](../ISSUES_ARCHIVE.md#fjs-1274). Measured, and the
   precedent does not transfer. `$readAs`
   ([`client.js:12383`](../packages/litestone/src/core/client.js)) grades the
   gate, the row policy and the field policies, and grades **neither

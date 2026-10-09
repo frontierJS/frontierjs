@@ -18,7 +18,7 @@ whether it still matches what was declared.**
 The gap has a shape rather than a size. Grading is one of the two best-covered
 areas in the framework and it cannot see production — not because grading is
 weak, but because the thing it would grade never arrives. `IDEAS/lantern.md`,
-`IDEAS/logbook.md` and `IDEAS/traffic-analysis.md` are each a way OUT of a
+`IDEAS/shipped/logbook.md` and `IDEAS/traffic-analysis.md` are each a way OUT of a
 running process; none of them is a way for a running process to be **asked a
 question**. Build the graders without that and the arc does not close.
 

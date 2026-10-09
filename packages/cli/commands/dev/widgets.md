@@ -1,10 +1,10 @@
 ---
-title: widgets:dev
+title: dev:widgets
 description: Start the widget surface's dev server
 alias: widgets-dev
 examples:
-  - fli widgets:dev
-  - fli widgets:dev --port 8200
+  - fli dev:widgets
+  - fli dev:widgets --port 8200
 flags:
   port:
     char: p

@@ -230,7 +230,7 @@ export function nextDecisionNumber(root) {
   const files = ['DECISIONS.md', 'ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => join(dir, f))
   const ideas = join(dir, 'IDEAS')
   const id    = new RegExp(`${prefix}-D(\\d+)`, 'g')
-  if (existsSync(ideas)) for (const n of readdirSync(ideas)) if (n.endsWith('.md')) files.push(join(ideas, n))
+  for (const d of [ideas, join(ideas, 'shipped')]) if (existsSync(d)) for (const n of readdirSync(d)) if (n.endsWith('.md')) files.push(join(d, n))
 
   let max = 0
   for (const f of files) {

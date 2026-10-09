@@ -214,7 +214,7 @@ a rule can be improved for every app; a scaffolded copy means it never changes a
 `fli` already has `workspace:version`, `workspace:publish`, `workspace:changed` and
 `npm:release`, and `CLAUDE.md` records that `ws:*` understands this repo's single-repo
 shape — one commit, one `<name>@<version>` tag each, one push. There are no changesets
-and `CHANGES.md` is written by hand per package.
+and history is git (`FJS-D675` retired the hand-written per-package `CHANGES.md`).
 
 Two things unresolved rather than missing:
 
@@ -223,9 +223,8 @@ Two things unresolved rather than missing:
   and `CLAUDE.md` already records the trap on the other side — **publishing a package
   silences every loose peer range that names it**, and below 1.0 a caret pins the
   minor. That combination is a live foot-gun with no tooling pointed at it.
-- **A hand-written `CHANGES.md` is the right call and should be defended, not fixed.**
-  Generated changelogs from commit messages are worse than what this repo already
-  produces. The gap is only that nothing checks a published version has an entry.
+- **Overruled by `FJS-D675`:** this argued a hand-written `CHANGES.md` should be
+  defended. It was retired; release notes come from `fli changelog`.
 
 ---
 

@@ -11,5 +11,8 @@ export function head({ params, data }) {
   return {
     title:       `Read ${params.slug} — the blog`,
     description: `Everything about ${params.slug}.`,
+    meta:        [{ property: 'og:title', content: `Read ${params.slug}` }],
+    links:       [{ rel: 'canonical', href: `https://x.test/blog/${params.slug}/` }],
+    jsonLd:      { '@type': 'BlogPosting', headline: params.slug },
   }
 }

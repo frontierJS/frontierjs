@@ -15,7 +15,7 @@
 // ============================================================
 
 import type { App, Plugin } from '@frontierjs/junction'
-import { NotFound, createService, requestMeta } from '@frontierjs/junction'
+import { NotFound, createService, requestMeta, warnEffectInDrain } from '@frontierjs/junction'
 import { createConduit }    from './conduit.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './trace.ts'
 import type { ConduitOptions, IConduit, TargetDescriptor } from './types.ts'
@@ -126,6 +126,10 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
 
       // claim() rather than `app.conduit = instance`: a second plugin
       // claiming the same name used to win silently and leave this one dead.
+      // send() warns from an afterCommit effect (FJS-D659); the core stays
+      // junction-free, so the plugin is where it learns where it runs.
+      const send = instance.send
+      instance.send = ((req) => { warnEffectInDrain('app.conduit.send()'); return send(req) }) as IConduit['send']
       app.claim('conduit', instance)
 
       // Wire into Junction's /metrics endpoint. Called straight rather than

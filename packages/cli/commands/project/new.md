@@ -582,8 +582,21 @@ await app.start()
 // SPA handler — 200 with an HTML body, which the client reports as the API
 // answering nonsense. An api-only app has no proxy and no such need, so it takes
 // Junction's own default: no prefix, routes at /.
-function makeApiAppTs(useAuth, useWeb) {
+function makeApiAppTs(useAuth, useWeb, useQueue = false) {
   const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
+  const queueImport = useQueue ? `\nimport { createCaravan } from '@frontierjs/caravan'` : ''
+  // The queue's own settings are DECLARED in junction.config.js (its database,
+  // its job directory), so the call takes none.
+  const queue = useQueue ? `// ─── Deferred work ────────────────────────────────────────────────────────
+// Caravan is a SQLite queue in its own file, db/jobs.db. \`boot()\` autoloads
+// api/src/jobs/*.job.ts and \`work()\` starts the workers; a job that declares
+// \`cron\` needs no line here. retention.job.ts is the one that matters on day
+// one: the schema declares \`retention 90d\` on the audit trail, and litestone
+// sweeps it once when the client opens, so a server that stays up prunes
+// nothing after that unless a job does.
+app.configure(createCaravan())
+
+` : ''
   if (useAuth) {
     return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
@@ -593,7 +606,7 @@ function makeApiAppTs(useAuth, useWeb) {
 // \`app.start()\` call lives in api/index.ts so that test code can import this
 // file without binding a port.
 
-import { createApp, channels } from '@frontierjs/junction'
+import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { auth, authPlugin, authCleanup } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
 import { db }               from './core/db.ts'
@@ -644,7 +657,7 @@ app.configure({
   async shutdown() { authCleanup.stop() },
 })
 
-// Services in api/src/services/*.service.ts are autoloaded at boot
+${queue}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
 
 export default app
@@ -654,7 +667,7 @@ export default app
   return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
 
-import { createApp, channels } from '@frontierjs/junction'
+import { createApp, channels } from '@frontierjs/junction'${queueImport}
 import { joinChannels }                                  from './core/channels.ts'
 import { db }                                            from './core/db.ts'
 import { env }                                           from './core/env.ts'
@@ -679,7 +692,7 @@ app.configure(channels((a) => {
   a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
 
-// Services in api/src/services/*.service.ts are autoloaded at boot
+${queue}// Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
 
 export default app
@@ -878,7 +891,12 @@ describe('User', () => {
 `
 }
 
-function makeApiCoreDbTs() {
+function makeApiCoreDbTs(useQueue = false) {
+  const sys = useQueue ? `
+// The documented bypass: no gate, no row policy. A job has no caller to grade,
+// so retention.job.ts reaches the database through this and says so.
+export const sys = db.asSystem()
+` : ''
   return `// api/src/core/db.ts
 // One Litestone client for the whole app, graded by the resolver in gate.ts.
 //
@@ -918,6 +936,48 @@ export const db = await createClient({
   encryptionKey: env.ENCRYPTION_KEY,
   plugins:       [gate],
 })
+${sys}`
+}
+
+function makeRetentionJobTs() {
+  return `// api/src/jobs/retention.job.ts
+//
+// \`db/schema.lite\` says \`database audit { … retention 90d }\`, and without this
+// file that sentence is true for exactly one moment: litestone sweeps once
+// inside createClient, so an API that stays up for a month pruned on the day it
+// booted and never again. The declaration is the policy; the schedule is the
+// app's, because the clock belongs to the queue and litestone cannot import it.
+//
+// The file name is the job's name, \`cron\` is when it runs, and autoloading from
+// \`jobsDir\` (api/config/junction.config.js) is the rest.
+
+import { defineJob } from '@frontierjs/caravan'
+import { sys }       from '../core/db.ts'
+
+/**
+ * Sweep every declared retention policy.
+ *
+ * \`sys\` because it is a DELETE against the base table and applies no gate, no
+ * row policy and no \`@@softDelete\`. Answers one row per table it touched.
+ *
+ * 04:00 daily, the hour an app is quietest.
+ */
+export default defineJob(
+  'retention',
+  async () => {
+    const swept   = await sys.$retain()
+    const removed = swept.reduce((n, r) => n + r.removed, 0)
+
+    // A table it could not sweep is a declared policy quietly not applying,
+    // which is the failure this job exists to stop being invisible.
+    for (const row of swept.filter(r => r.error))
+      console.error(\`[retention] \${row.model}: \${row.error}\`)
+
+    if (removed)
+      console.log(\`[retention] removed \${removed} row(s) across \${swept.filter(r => r.removed).length} table(s)\`)
+  },
+  { cron: '0 4 * * *' },
+)
 `
 }
 
@@ -1045,14 +1105,31 @@ export const authCleanup = createAuthCleanupJobs(db)
 `
 }
 
-function makeJunctionConfig(appName, useWeb) {
+function makeJunctionConfig(appName, useWeb, useQueue = false) {
   const prefixLine = useWeb ? `\n    apiPrefix: '/api',` : ''
+  // Anchored to THIS FILE: a relative queue path resolves against the working
+  // directory, so the app would open a second, empty db/jobs.db from anywhere
+  // but the app root.
+  const hereImport = useQueue ? `
+import { fileURLToPath } from 'node:url'
+
+const here = (p) => fileURLToPath(new URL(p, import.meta.url))
+` : ''
+  const caravan = useQueue ? `
+  // The job queue: a SQLite file of its own, and the directory its \`*.job.ts\`
+  // files are autoloaded from. Declared here, so app.ts passes createCaravan()
+  // nothing.
+  caravan: {
+    db:      here('../../db/jobs.db'),
+    jobsDir: here('../src/jobs'),
+  },
+` : ''
   return `// api/config/junction.config.js
 // Loaded automatically by createApp() when called with no opts, or merged
 // with opts.config when both are present. Tells Junction's autoloaders
 // where to find services / jobs / conduit targets, and configures the
 // built-in middleware.
-
+${hereImport}
 export default {
   app: {
     name:      '${appName}',${prefixLine}
@@ -1095,7 +1172,7 @@ export default {
     health:   true,
     manifest: true,
   },
-
+${caravan}
   // Third-party services this app needs and does not own — an n8n, a mail
   // server, a search cluster. Declared here, BOUND per environment as ordinary
   // variables, and the app refuses to start if one is missing or bound halfway.
@@ -2381,8 +2458,12 @@ if (flag.dry) {
 
 mkdirSync(finalTarget, { recursive: true })
 
+// A queue is what gives the audit trail's declared retention a clock after boot.
+const useQueue = useApi && withPkgs.includes('caravan')
+
 const dirs = ['db']
 if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/services')
+if (useQueue) dirs.push('api/src/jobs')
 if (useApi && useAuth) dirs.push('api/test')
 // cli/src/routes is fli:init's to write, and fli:init refuses a directory that
 // already exists. Creating it here left the FLI surface an empty folder and a
@@ -2419,14 +2500,18 @@ const filesToWrite = [
 if (useApi) {
   filesToWrite.push(
     ['api/index.ts',                makeApiIndexTs()],
-    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
+    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb, useQueue)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
     ['api/src/core/gate.ts',        makeApiCoreGateTs()],
-    ['api/src/core/db.ts',          makeApiCoreDbTs()],
+    ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
-    ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
+    ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb, useQueue)],
   )
 }
+
+// The audit database declares `retention`, and the sweep that runs it again after
+// boot is a job. Without the queue there is nowhere to put one.
+if (useQueue) filesToWrite.push(['api/src/jobs/retention.job.ts', makeRetentionJobTs()])
 
 if (useAuth) {
   filesToWrite.push(

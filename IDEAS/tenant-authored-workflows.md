@@ -158,6 +158,6 @@ declared SHAPE and never writes an expression.
 
 ## See also
 
-- `IDEAS/tenant-declared-fields.md` — the `declaredBy` precedent, for columns
+- `IDEAS/shipped/tenant-declared-fields.md` — the `declaredBy` precedent, for columns
 - `packages/litestone/docs/schema.md` § State machines — the enum machine this extends
 - `fjs-prototypes/linear/PLAN.md` § Q2 — the run, and the table of what was measured

@@ -73,6 +73,6 @@ Point-in-time reviews. Read them for the reasoning; re-verify before citing a nu
 Task-oriented walkthroughs for real scenarios:
 
 - [guides/multi-tenant-saas.md](guides/multi-tenant-saas.md) — per-tenant databases, encryption, audit log, migrations
-- [guides/audit-trail.md](guides/audit-trail.md) — @@trail setup, before/after snapshots, onLog enrichment, querying
+- [guides/audit-trail.md](guides/audit-trail.md) — @@trail setup, before/after images, onLog enrichment, querying
 - [guides/file-uploads.md](guides/file-uploads.md) — FileStorage + presigned URLs end-to-end
 - [guides/row-level-security.md](guides/row-level-security.md) — policies + GatePlugin together, layered security

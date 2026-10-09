@@ -185,6 +185,70 @@ describe('a declared input is enforced', () => {
   })
 })
 
+// ─── a nested type's values ───────────────────────────────────────────────
+
+// A member typed by another `type` is graded by that type's rules, at any
+// depth: no Data boundary stands behind an `input:` to catch `contact.email:
+// 'nope'` later (FJS-2128).
+describe('a nested type is graded by its own rules', () => {
+  const NESTED = `
+    type Contact { email String @email  first String }
+    type Address { zip String @regex("^[0-9]{5}$")  city String  tags String[]? }
+    type Start   { key String  contact Contact  property Address?  stops Address[] }
+    type Node    { label String @length(1, 5)  children Node[]? }
+    model Order  { id Int @id }
+  `
+  async function mkStart() {
+    const db  = await createClient({ db: ':memory:', schema: NESTED })
+    const app = createApp({ db: db as never })
+    const seen: unknown[] = []
+    app.services.register(createService({
+      name: 'orders', model: 'Order', db: db as never,
+      methods: [{ method: 'start', input: 'Start' }, { method: 'tree', input: 'Node' }],
+      async start(ctx: any) { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } },
+      async tree(ctx: any)  { seen.push(ctx.data); ctx.dispatch = false; return { ok: true } },
+    } as never))
+    await app._startForTest()
+    return { app, seen }
+  }
+  const start = { key: 'k', contact: { email: 'a@b.co', first: 'a' }, stops: [] }
+  const refusal = async (app: any, body: unknown) => {
+    let err: any
+    try { await app.service('orders').call('start', null, body as never) } catch (e) { err = e }
+    expect(err).toBeDefined()
+    expect(err.code ?? err.status ?? err.statusCode).toBe(400)
+    return JSON.stringify(err.data ?? err.errors ?? err.message)
+  }
+
+  test('a nested value that breaks its type is a 400 naming its path', async () => {
+    const { app } = await mkStart()
+    expect(await refusal(app, { ...start, contact: { email: 'nope', first: 'a' } })).toMatch(/contact\.email/)
+    expect(await refusal(app, { ...start, property: { zip: 'abc', city: 'c' } })).toMatch(/property\.zip/)
+    expect(await refusal(app, { ...start, stops: [{ zip: '12345', city: 'c' }, { zip: 'abc', city: 'c' }] }))
+      .toMatch(/stops\[1\]\.zip/)
+  })
+
+  test('a nested required key that is absent is refused', async () => {
+    const { app } = await mkStart()
+    expect(await refusal(app, { ...start, contact: { email: 'a@b.co' } })).toMatch(/contact\.first/)
+  })
+
+  test('…and a nested value that keeps its type passes, absent optionals included', async () => {
+    const { app, seen } = await mkStart()
+    const body = { ...start, property: { zip: '12345', city: 'c' }, stops: [{ zip: '54321', city: 'd' }] }
+    await app.service('orders').call('start', null, body as never)
+    expect(seen[0]).toMatchObject(body)
+  })
+
+  test('a type that holds itself compiles, and is graded at every depth', async () => {
+    const { app } = await mkStart()
+    let err: any
+    const body = { label: 'a', children: [{ label: 'b', children: [{ label: 'too long' }] }] }
+    try { await app.service('orders').call('tree', null, body as never) } catch (e) { err = e }
+    expect(JSON.stringify(err?.data ?? err?.message)).toMatch(/children\[0\]\.children\[0\]\.label/)
+  })
+})
+
 // ─── failing open is worse than failing loud ──────────────────────────────
 
 describe('a type that is not there', () => {

@@ -32,6 +32,9 @@ import { unknownKeys }            from '../src/core/litestone.ts'
 
 const SCHEMA = `
   type PayOrder { reference String  amount Int @gte(1) }
+  type Address  { zip String  city String }
+  type Contact  { email String  first String }
+  type Start    { key String  contact Contact  property Address?  stops Address[] }
 
   model Post {
     id        Int      @id
@@ -50,8 +53,10 @@ async function mkApp() {
   const app = createApp({ db: db as never })
   app.services.register(createService({
     name: 'posts', model: 'Post', db: db as never,
-    methods: ['find', 'get', 'create', 'update', 'patch', { method: 'pay', input: 'PayOrder' }],
-    async pay(ctx: any) { ctx.dispatch = false; return { got: ctx.data } },
+    methods: ['find', 'get', 'create', 'update', 'patch',
+      { method: 'pay', input: 'PayOrder' }, { method: 'start', input: 'Start' }],
+    async pay(ctx: any)   { ctx.dispatch = false; return { got: ctx.data } },
+    async start(ctx: any) { ctx.dispatch = false; return { got: ctx.data } },
   } as never))
   await app._startForTest()
   return { app, db }
@@ -113,9 +118,16 @@ describe('a key that names nothing is refused', () => {
     // PUT the whole thing back sends them on every write.
     const { app } = await mkApp()
     const row = await call(app, 'create', null,
-      { title: 'a', id: 99, createdAt: '2020-01-01T00:00:00Z', secret: 'shh' }) as any
+      { title: 'a', id: 99, createdAt: '2020-01-01T00:00:00Z' }) as any
     expect(row.title).toBe('a')
     expect(row.id).not.toBe(99)
+  })
+
+  test('…but a @guarded column is never an echo, so naming one is refused (FJS-1970)', async () => {
+    // A @guarded column is never read, so a client cannot have fetched it.
+    const { app } = await mkApp()
+    expect(call(app, 'create', null, { title: 'a', secret: 'shh' }))
+      .rejects.toThrow(/secret: is @guarded on Post/)
   })
 
   test('a @transient key is accepted — it is a declared field', async () => {
@@ -147,6 +159,34 @@ describe('a key that names nothing is refused', () => {
     const { app } = await mkApp()
     const out = await call(app, 'pay', null, { reference: 'r', amount: 1 }) as any
     expect(out.got).toEqual({ reference: 'r', amount: 1 })
+  })
+
+  // A nested type is as much the app's statement of what a caller may send as
+  // the top level: a method spreading `...contact` into a model otherwise lets
+  // a stranger set every column the type left out (FJS-2075).
+  const start = { key: 'k', contact: { email: 'a@b.co', first: 'a' }, stops: [] }
+
+  test('a nested type refuses a key it does not declare, by its path', async () => {
+    const { app } = await mkApp()
+    await expect(call(app, 'start', null, { ...start, contact: { ...start.contact, stage: 'won' } }))
+      .rejects.toThrow(/contact\.stage: is not a field of type Contact/)
+    await expect(call(app, 'start', null, { ...start, property: { zip: '1', city: 'c', turfSqft: 9 } }))
+      .rejects.toThrow(/property\.turfSqft: is not a field of type Address/)
+    await expect(call(app, 'start', null, { ...start, stops: [{ zip: '1', city: 'c' }, { zip: '2', city: 'c', x: 1 }] }))
+      .rejects.toThrow(/stops\[1\]\.x: is not a field of type Address/)
+  })
+
+  test('a dotted key is graded against the nested type it reaches into', async () => {
+    const { app } = await mkApp()
+    await expect(call(app, 'start', null, { ...start, 'contact.stage': 'won' }))
+      .rejects.toThrow(/contact\.stage: is not a field of type Contact/)
+  })
+
+  test('…and a nested value holding only declared keys is accepted', async () => {
+    const { app } = await mkApp()
+    const body = { ...start, property: { zip: '1', city: 'c' }, stops: [{ zip: '2', city: 'd' }] }
+    const out  = await call(app, 'start', null, body) as any
+    expect(out.got).toEqual(body)
   })
 
   test('a bulk write PARTITIONS rather than failing wholesale', async () => {

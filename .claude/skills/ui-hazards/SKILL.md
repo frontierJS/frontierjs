@@ -5,7 +5,7 @@ description: Mesa and Sierra — a `.mesa` file, a resource, a form or control, 
 
 # UI-realm live hazards
 
-**Correct behavior you have to know about.** Things that are *wrong* live in `ISSUES.md`, one id each; things that are *fixed* live in `CHANGES.md`. If a rule here is pinned by a test that cannot be deleted quietly, it does not need to be here.
+**Correct behavior you have to know about.** Things that are *wrong* live in `ISSUES.md`, one id each; things that are *fixed* live in git. If a rule here is pinned by a test that cannot be deleted quietly, it does not need to be here.
 
 **The index below is each hazard's rule; its section's reference file holds the rest** — the mechanism, the measurement, and what it refuses. Read that file before changing code the rule is about.
 
@@ -16,6 +16,8 @@ Detail: `references/routes-prerender-and-static.md`
 - **A component rendered at BUILD time may import a sibling by relative path, and that had never worked.**
 - **On a static target, dev is an SPA and the build is files, and only the build checks anything.**
 - **A static route that produced no page fails the build where it was broken, and warns where it opted out.**
+- **A server render answers every browser global as a wide desktop, so only a mobile-first branch bakes correctly.**
+- **`renderComponent` reuses a compiled tree, so `<script module>` state is shared across every render in the process.**
 
 ## Live stores and records
 Detail: `references/live-stores-and-records.md`
@@ -44,6 +46,15 @@ Detail: `references/mesa.md`
 - **On an ELEMENT `bind:` means the DOM writes back, so it is `value`, `checked`, `files` — plus `group` and `this` — and every other `bind:x` there is refused, naming `x={expr}`** (`FJS-D136`)
 - **Mesa's scoped styles do not reach into child components.**
 - **A block that reads a `const` derived from another `const` can mount a STALE value** (`FJS-1684`)
+- **Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception.**
+- **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
+- **A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation.**
+- **A watched object cannot be cloned or spread out of its proxy — `unproxy()` it.**
+- **An unkeyed `{#each}` is keyed by INDEX, so a row's DOM state stays with the position after a reorder.**
+- **`null` renders as nothing, but `false` means three different things depending on where it lands.**
+- **A `type="number"` or `"range"` input binds a NUMBER, and an empty box binds `undefined`.**
+- **In a `.md` file `{…}` interpolates a bare path only; anything else stays literal text, with no error.**
+- **A compiled component called directly instead of through `mount()` renders and never answers a click.**
 
 ## Driving a browser
 Detail: `references/driving-a-browser.md`

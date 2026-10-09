@@ -21,7 +21,7 @@ record that row is allowed.
 ## Why this one, with Calendly already running
 
 The break this exercise would have claimed first is already filed by the
-exercise in flight: [`FJS-1215`](../ISSUES.md#fjs-1215) — nothing in the
+exercise in flight: [`FJS-1215`](../ISSUES_ARCHIVE.md#fjs-1215) — nothing in the
 language can declare *no two of these may overlap* — came out of Calendly, with
 the design question stated and the `db.$lock` fallback named. This record does
 not re-argue it.
@@ -190,9 +190,9 @@ half these exercises are abandoned before the interesting part.
 ## See also
 
 - `IDEAS/stressors.md` § 2 — the row, and why a stressor lives outside the tree
-- [`FJS-1215`](../ISSUES.md#fjs-1215) — *no two of these may overlap*, open, from Calendly
+- [`FJS-1215`](../ISSUES_ARCHIVE.md#fjs-1215) — *no two of these may overlap*, open, from Calendly
 - `IDEAS/time-and-recurrence.md` — the zoned wall-clock column (`FJS-D143`, `FJS-D144`, `FJS-D288`)
 - `IDEAS/homestead.md` — the offline engine, built through phase 5
 - `IDEAS/overview.md` 2.17 — push and SMS, one a driver and one a design
-- `IDEAS/permission-sets.md` — per-team, per-feature permission, if the comms layer is reached
+- `IDEAS/shipped/permission-sets.md` — per-team, per-feature permission, if the comms layer is reached
 - `example/api/src/domain/payroll/` — the half that is built

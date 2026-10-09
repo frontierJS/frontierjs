@@ -9,7 +9,7 @@
  * THIS workspace* — a claim the principal resolver adds per call off a
  * `WorkspaceMember` row, which the session does not carry. A projection graded
  * off the session offers an admin and a viewer one identical list, and that is
- * what the first measurement here found (`packages/mcp/CHANGES.md`).
+ * what the first measurement here found (`docs/changes-archive/mcp.md`).
  *
  * What it gates is the RELATIONS — the ladder is strictly ordered, each rung a
  * named tool apart, the tenant scopes the rows — and never the counts, which are

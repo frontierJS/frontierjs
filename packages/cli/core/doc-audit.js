@@ -27,7 +27,7 @@
 // `*.snapshot.md` is generated and gated by the `snapshots` CI phase already.
 // `packages/cli/commands/**` is executable — a `.md` there is a command, and its
 // prose is interpolated at run time. History is excluded from the citation rule
-// alone: `CHANGES.md`, `ISSUES_ARCHIVE.md` and the handoff archive legitimately
+// alone: `ISSUES_ARCHIVE.md` and the handoff and changes archives legitimately
 // name files that were deleted afterwards, and that is what a history IS.
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
@@ -43,7 +43,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.cache', 'c
 const NOT_DOCS = [join('packages', 'cli', 'commands')]
 
 // Files whose job is to describe a tree that no longer exists.
-const HISTORY = [/(^|[\\/])CHANGES\.md$/, /(^|[\\/])ISSUES_ARCHIVE\.md$/, /handoff-archive[\\/]/]
+const HISTORY = [/changes-archive[\\/]/, /(^|[\\/])ISSUES_ARCHIVE\.md$/, /handoff-archive[\\/]/]
 
 const isHistory = rel => HISTORY.some(re => re.test(rel))
 
@@ -866,7 +866,7 @@ export function docStatusStale({ root }) {
 // `doc-unchecked-count` reads — rather than `CLAUDE.md` alone. A package README
 // is in that tier (§VII), and grading only the CLAUDE.md half left a README
 // carrying a struck-through defect record, two *fixed on <date>* parentheticals
-// and a `## Breaking changes` section doing `CHANGES.md`'s job.
+// and a `## Breaking changes` section doing git's job.
 //
 // A date inside a code span is a VALUE (`datetime('now')` answers one) and a
 // date inside quotation marks is a quoted example — House style quotes the bad
@@ -916,7 +916,7 @@ export function docMapNarration({ root }) {
       findings.push({
         file: doc.path, line: lineOf(text, raw.index),
         message: `opens with what used to be true — "${s.slice(0, 56).trim()}…". A map carries live facts, ` +
-                 `and history belongs to \`CHANGES.md\`, \`DECISIONS.md\` and git (\`FJS-D187\`). State the ` +
+                 `and history belongs to \`DECISIONS.md\` and git (\`FJS-D187\`). State the ` +
                  `rule and cite the id. The one exception House style keeps is a past bug stated MID-sentence ` +
                  `because the shape still invites the mistake, which this does not report.`,
       })

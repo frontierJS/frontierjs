@@ -287,9 +287,9 @@ nobody.
 
 ## Relationship to the other files
 
-- `IDEAS/tables-from-the-seed.md` — the record with the most to gain
+- `IDEAS/shipped/tables-from-the-seed.md` — the record with the most to gain
 - `IDEAS/rigs.md` — the design whose mechanism already exists elsewhere
-- `IDEAS/permission-sets.md` — the gap Ash has from the other side
+- `IDEAS/shipped/permission-sets.md` — the gap Ash has from the other side
 - `IDEAS/agent-surface.md` — 4.2, and its approval-gate half
 - `IDEAS/conflict-as-data.md` — § 5's one finding, argued as a design
 - `IDEAS/review-coherence.md` — the inward-facing equivalent of this file

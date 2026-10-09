@@ -6,7 +6,7 @@ dated: 2026-09-12
 
 # Idea — `resource.list()`: the layer above the table
 
-**Status: PROPOSED. The block is gone.** `FJS-1070` closed 2026-09-12 — the
+**Status: SHIPPED** (`resource.list()`, `docs/changes-archive/sierra.md`). **The block is gone.** `FJS-1070` closed 2026-09-12 — the
 compiler no longer freezes a binding over a value a call handed back — and with
 it the reason this could not be built. Two of the nine questions failed on
 2026-09-10 and both failed on that defect; they are re-answered below and the

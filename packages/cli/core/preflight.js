@@ -8,7 +8,7 @@
 //
 // ── Why the table and not a declaration ─────────────────────────────────────
 //
-// `IDEAS/control-surface.md` §7 weighed two ways out: declare the preamble
+// `IDEAS/shipped/control-surface.md` §7 weighed two ways out: declare the preamble
 // beside the script (`"fli": { "needs": [...] }`), or make the drive's own
 // refusal structured (`verify:live --preflight`). It preferred the second and
 // rejected the first as a THIRD copy that can drift.

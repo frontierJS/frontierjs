@@ -76,7 +76,7 @@ export { requestMeta } from './src/transport/bridge.ts'
 // a unit test holding a hand-built context, or an app invoking a method
 // outside the pipeline. `callService` opens the scope for every ordinary
 // path; without this, a method that reads `$` cannot be called any other way.
-export { $, currentCall, enterCall } from './src/core/context.ts'
+export { $, currentCall, enterCall, inAfterCommitDrain, warnEffectInDrain } from './src/core/context.ts'
 export type { CallContext } from './src/core/context.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────

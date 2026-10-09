@@ -308,7 +308,7 @@ describe('doc-claims-count', () => {
 
   test('history states what was true and is left alone', () => {
     const root = tree('count-history', { ...kit(3),
-      'packages/ui/CHANGES.md': '63 components, all compiling.\n' })
+      'docs/changes-archive/ui.md': '63 components, all compiling.\n' })
     expect(docClaimsCount({ root }).findings).toHaveLength(0)
   })
 
@@ -390,7 +390,7 @@ describe('the readers', () => {
       'ISSUES.md':                        'b',
       'IDEAS/x.md':                       'c',
       'packages/cli/commands/db/seed.md':  'd',
-      'packages/cli/CHANGES.md':           'e',
+      'docs/changes-archive/cli.md':       'e',
       'packages/cli/db.snapshot.md':       'f',
     })
     const all = docCorpus(root).map(d => d.rel)
@@ -399,7 +399,7 @@ describe('the readers', () => {
     expect(all).not.toContain(join('packages', 'cli', 'db.snapshot.md'))
 
     const strict = docCorpus(root, { history: false, registers: false, proposals: false }).map(d => d.rel)
-    expect(strict).not.toContain(join('packages', 'cli', 'CHANGES.md'))
+    expect(strict).not.toContain(join('docs', 'changes-archive', 'cli.md'))
     expect(strict).not.toContain('ISSUES.md')
     expect(strict).not.toContain(join('IDEAS', 'x.md'))
   })

@@ -851,7 +851,7 @@ value cannot tell you.
 
 **Enforced, and the grant column is declared.** What is not built is the affordance —
 `x-capabilities` to a browser, a section in `access.snapshot.md`, and
-`db.$capabilitiesFor(principal)`. `IDEAS/permission-sets.md` § *Build order* is what
+`db.$capabilitiesFor(principal)`. `IDEAS/shipped/permission-sets.md` § *Build order* is what
 is left.
 
 A `@@gate` is a ladder and answers *how far up is this caller*. A business

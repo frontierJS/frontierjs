@@ -39,3 +39,33 @@ test('the first commit comes after the initial migration is written', () => {
   expect(migration).toBeGreaterThan(-1)
   expect(commit).toBeGreaterThan(migration)
 })
+
+// FJS-1480 — the scaffold declares `retention 90d` on the audit database, and
+// litestone sweeps once inside createClient. A server that stays up needs the
+// queue to run it again, so a caravan app is given the job that does.
+import { spawnSync } from 'child_process'
+
+const scaffold = (name, ...flags) => {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-new-retention-'))
+  roots.push(dir)
+  const r = spawnSync(process.execPath, [join(import.meta.dir, '../bin/fli.js'), 'new', name, ...flags,
+    '--yes', '--no-install', '--no-git', '--source', 'local'], { cwd: dir, encoding: 'utf8' })
+  expect(r.status).toBe(0)
+  return join(dir, name)
+}
+
+test('a caravan app is scaffolded with the job that runs its declared retention', () => {
+  const app = scaffold('with-queue', '--full')
+  const job = join(app, 'api/src/jobs/retention.job.ts')
+  expect(existsSync(job)).toBe(true)
+  expect(readFileSync(job, 'utf8')).toContain('$retain()')
+  expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).toMatch(/export const sys\s*=\s*db\.asSystem\(\)/)
+  expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('createCaravan')
+  expect(readFileSync(join(app, 'api/config/junction.config.js'), 'utf8')).toMatch(/jobsDir:\s*here\('\.\.\/src\/jobs'\)/)
+}, 60_000)
+
+test('an app with no queue gets no job it could not run', () => {
+  const app = scaffold('no-queue', '--minimal')
+  expect(existsSync(join(app, 'api/src/jobs'))).toBe(false)
+  expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).not.toContain('asSystem')
+}, 60_000)

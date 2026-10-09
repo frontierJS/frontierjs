@@ -184,7 +184,7 @@ cross-realm suite.
 
 `IAuth` declared `setupTotp` as an optional method and the native provider
 implemented neither it nor `verifyTotp`. It does now — `FJS-D261`, and
-`packages/auth/CHANGES.md` carries what the ruling cost: a `login()` that answers
+`docs/changes-archive/auth.md` carries what the ruling cost: a `login()` that answers
 a union, `LoginChallenge` as a model, and a replay guard on the credential row.
 The website's claim about TOTP is true as of that date; OAuth was already.
 
@@ -374,7 +374,7 @@ declared attached service, which is the right treatment for a tool you have chos
 but it is not an answer to whether the app can receive its own events without one.
 
 **The email leg, added 2026-08-24** from the OpenMRP audit (see
-`IDEAS/permission-sets.md` for the provenance). Inbound is not only webhooks:
+`IDEAS/shipped/permission-sets.md` for the provenance). Inbound is not only webhooks:
 that project runs a shared inbox — an SES-backed email bridge where a customer
 replies to a thread and the reply lands as a message on the record it belongs to,
 with agent-drafted responses a human approves. FJS has every outbound half of this
@@ -530,7 +530,7 @@ than re-derived — the boundary is ours, the vendor is the app's.
 | Missing | Shape | Verdict |
 | --- | --- | --- |
 | A cache an app can share between nodes | Junction's cache is `bun:sqlite`, which is right for one box and wrong for two. The multi-node story ends here the way § 3's ended at the second machine | in-house driver seam; Redis is not HTTP, so Conduit cannot carry it |
-| Vectors and embeddings | An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor. **Argued 2026-09-18** in `IDEAS/chat-surface.md` § Part 2 and **measured 2026-09-20** in `IDEAS/embedding.md`, which is now the record: the gate and the row policies do not merely apply to retrieval for free, a prefilter measures as a 3–4× cut to the scan; `vec0` measures no faster than a plain scan so the virtual table is refused; and the wasm engine's `OMIT_LOAD_EXTENSION` makes the extension an accelerator behind the engine seam rather than the mechanism | in-house column type; the model that produces the embedding is a Conduit target already |
+| Vectors and embeddings | An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor. **Argued 2026-09-18** in `IDEAS/chat-surface.md` § Part 2 and **measured 2026-09-20** in `IDEAS/shipped/embedding.md`, which is now the record: the gate and the row policies do not merely apply to retrieval for free, a prefilter measures as a 3–4× cut to the scan; `vec0` measures no faster than a plain scan so the virtual table is refused; and the wasm engine's `OMIT_LOAD_EXTENSION` makes the extension an accelerator behind the engine seam rather than the mechanism | in-house column type; the model that produces the embedding is a Conduit target already |
 | Secrets at rest | `defineEnv` validates and `/redact` hides, and `@encrypted` covers columns. Nothing encrypts a `.env` or rotates an app secret; `IDEAS/release-transitions.md` reaches for `sops` and does not own it | Deployment realm, in-house — an app secret is a Release fact |
 | Maintenance mode | `fli deploy` mints a Release and swaps; there is no *this app is down on purpose* state. Absent, a deploy that must pause serving has to be done by stopping a container, which the journal then reads as a crash | in-house, and it is a transition rather than a flag. **Built — `IDEAS/release-transitions.md` § Phase 3b** (`fli deploy:pause`), and it was not small: the enum it adds needed a migration path `deploy.db` had never had |
 

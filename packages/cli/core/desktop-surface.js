@@ -33,7 +33,7 @@
  * generated app has it for the day it writes one.
  *
  * `FJS_DESKTOP_URL` is the other debug-only input: the window loads that URL
- * instead of the bundle, which is how `desktop:dev` puts the screens' dev
+ * instead of the bundle, which is how `dev:desktop` puts the screens' dev
  * server, HMR included, in the native window. It is an environment variable and
  * not tauri.conf.json's `devUrl`, because a `devUrl` makes every debug build —
  * `desktop:run`'s and `verify:desktop`'s included — load the server rather than
@@ -347,7 +347,7 @@ export function desktopBuildRs() {
 
 export function desktopTauriConf({ productName = 'app', identifier = 'dev.app.desktop' } = {}) {
   // No devUrl: with one set, every debug build loads the dev server instead of
-  // the bundle. desktop:dev names the server through FJS_DESKTOP_URL instead.
+  // the bundle. dev:desktop names the server through FJS_DESKTOP_URL instead.
   return `${JSON.stringify({
     productName,
     version:    '0.0.0',
@@ -375,7 +375,7 @@ export function desktopMainRs({ productName = 'app' } = {}) {
 // the two commands below.
 //
 // A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
-// fli desktop:dev points it at the screens' dev server. That page's origin is
+// fli dev:desktop points it at the screens' dev server. That page's origin is
 // the server's, not tauri://localhost, so an origin or CORS fault shows only
 // in the bundled build.
 //

@@ -62,7 +62,8 @@ export async function sendInApp(
       type:        notification.notificationType,
       data:        data,
       contextType: message.contextType ?? null,
-      contextId:   message.contextId   ?? null,
+      // The column is String; an integer id arrives as a number from a builder.
+      contextId:   message.contextId == null ? null : String(message.contextId),
     },
   })
 

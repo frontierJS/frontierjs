@@ -213,7 +213,7 @@ Every example below is verified end-to-end, not sketched. A broken one is a bug.
 
 **Every package has its own `README.md`** — what it is and how to use it — beside
 a `CLAUDE.md` (the inside view: what it owns, its traps, which drive proves a
-change), a `PROJECT_STATE.md` and a `CHANGES.md`.
+change) and a `PROJECT_STATE.md`. History is git.
 
 | Package                                            | README                                                               |
 | ---------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -415,7 +415,7 @@ the SPA deletes the site with nothing said. `fli check` reports a `target: 'stat
 config found inside another surface for exactly this reason.
 
 **Dev is an SPA and the build is files.** `target: 'static'` uses the SPA's Vite config
-and prerenders afterwards, so `fli site:dev` serves the routes as a client-routed app —
+and prerenders afterwards, so `fli dev:site` serves the routes as a client-routed app —
 that is the writing loop. The publish check, the island chunks and the one-file-per-route
 output exist only in the build, so anything touching a `load()` or a page's frontmatter
 is proved with `fli site:build`.

@@ -42,7 +42,7 @@ than started.
 | # | Product shape | What it breaks first | Existing record |
 | --- | --- | --- | --- |
 | 1 | **Calendly** — scheduling | a recurring wall-clock window in one zone booked as an instant from another; and *no two of these may overlap*, which nothing here can declare | `time-and-recurrence.md` ([`FJS-D143`](../DECISIONS.md#fjs-d143) · [`FJS-D144`](../DECISIONS.md#fjs-d144)) · `bearer-access.md` |
-| 2 | **Connecteam** — field workforce coordination | a shift that recurs in a wall-clock zone; [`FJS-1215`](../ISSUES.md#fjs-1215) in four shapes at once; a reminder that has to reach a phone; and a write nobody may attribute | `field-workforce.md` · `time-and-recurrence.md` · `overview.md` 2.17 |
+| 2 | **Connecteam** — field workforce coordination | a shift that recurs in a wall-clock zone; [`FJS-1215`](../ISSUES_ARCHIVE.md#fjs-1215) in four shapes at once; a reminder that has to reach a phone; and a write nobody may attribute | `field-workforce.md` · `time-and-recurrence.md` · `overview.md` 2.17 |
 | 3 | **Linear / Plane** — issue tracker | *(premise struck — see below)* cross-model search; and a replay refusal with four mutations queued behind it | `homestead.md` · `tenant-authored-queries.md` |
 | 4 | **Notion** — collaborative documents | concurrent editing, and per-block sharing, which a ladder cannot express | `permission-sets.md` · `html-over-the-wire.md` |
 | 5 | **Chatwoot / Zendesk** — help desk | receiving mail; one person across channels that disagree who a person is | `inbound-integrations.md` · `stored-templates.md` · `chat-surface.md` |
@@ -163,8 +163,8 @@ through `$.db` is the whole of it. **The spanning verb is still not owed.**
 **linear is on `@@fts` too (2026-10-04).** Its `$raw` + bm25 two-step was
 the FJS-1289 workaround and outlived the fix; ⌘K is now three graded
 `search()` calls and `$search` answers over the wire. Its row policies, which
-remnant lacked, exposed [`FJS-1692`](../ISSUES.md#fjs-1692) and
-[`FJS-1694`](../ISSUES.md#fjs-1694). What remnant did need that linear did not was
+remnant lacked, exposed [`FJS-1692`](../ISSUES_ARCHIVE.md#fjs-1692) and
+[`FJS-1694`](../ISSUES_ARCHIVE.md#fjs-1694). What remnant did need that linear did not was
 a fold on both sides of the index, [`FJS-1466`](../ISSUES.md#fjs-1466), and
 adding `@@fts` to a table that already held rows broke every write to it,
 [`FJS-1463`](../ISSUES_ARCHIVE.md#fjs-1463).
@@ -421,7 +421,7 @@ cannot hold it. A `.sql` data migration works on a database already holding the
 corpus, then fails a fresh one, where the history never created the rows it
 corrects, and blocks every migration after it. A `.js` one crashes the CLI
 ([FJS-1472](../ISSUES_ARCHIVE.md#fjs-1472)), and by design stops `migrate create` for
-good ([FJS-1474](../ISSUES.md#fjs-1474), which wants a ruling). An `UPDATE` that
+good ([FJS-1474](../ISSUES_ARCHIVE.md#fjs-1474), which wants a ruling). An `UPDATE` that
 moves a natural key commits its orphans ([FJS-1473](../ISSUES_ARCHIVE.md#fjs-1473)).
 **`FJS-D164` does not stretch, and no second record is owed.** One question
 separates the two: was the old value true in its day? A price that changed was,

@@ -11,7 +11,7 @@ count in § 1–2 was measured on the working tree that day, with a path named. 
 five questions are ruled (`FJS-D649` to `FJS-D653`), each as recommended, and
 § 3 is the build, and all six items are built (sierra, jetty and junction
 `CHANGES.md`, 2026-10-08). It is
-[`litestone-scope.md`](litestone-scope.md) and [`junction-scope.md`](junction-scope.md)
+[`litestone-scope.md`](../litestone-scope.md) and [`junction-scope.md`](../junction-scope.md)
 asked of the UI realm, and the answer is shaped differently: sierra hosts few
 batteries and they are small. **Its finding is that the realm's own noun lives
 in a directory named for another package**, and that two of its axes import

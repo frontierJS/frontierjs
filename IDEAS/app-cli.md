@@ -85,7 +85,7 @@ reading the schemas, not the counts:
   was `{}`, so an agent reading `orders_find` could not see that `status` is a
   filter or that `limit` is a number either. `query` now lists the model's
   filterable columns, each as its type or an operator object, and the directives
-  are typed off `DIRECTIVE_SCHEMAS` (`packages/mcp/CHANGES.md`).
+  are typed off `DIRECTIVE_SCHEMAS` (`docs/changes-archive/mcp.md`).
 - **Thirty custom methods describe no payload** — `carts.addLine`,
   `payments.start`, the `flows.*` set. That is `declared-method-contract.md`'s
   territory, not this file's. The CLI's `--data` fallback covers them, and each
@@ -120,7 +120,7 @@ than the fallback. Three more things came out of it:
   workspace header every member graded 1; with it, admin, developer and viewer still
   saw one identical 109, because the plugin graded the session and the role is a claim
   the principal resolver adds. `standingOf` now asks through `app.withDb`
-  (`packages/mcp/CHANGES.md`).
+  (`docs/changes-archive/mcp.md`).
 - **The tenant has to travel, as `FJS-D399` assumed.** A client naming no workspace
   holds no role — correct, and exactly what a CLI with no current workspace would
   offer. The header is basecamp's own spelling, read by `resolveWorkspaceId`.
@@ -140,7 +140,7 @@ MCP client of the app's own `/mcp`: `tools/list` becomes the command tree,
 `tools/call` runs one. The pieces:
 
 - **argv from a JSON Schema — built 2026-09-25**, `@frontierjs/mcp/client` until the
-  package is named (`packages/mcp/CHANGES.md`). Scalars and enums are flags; a nested object or an
+  package is named (`docs/changes-archive/mcp.md`). Scalars and enums are flags; a nested object or an
   array takes `--data @file.json` or `-` for stdin rather than an invented flag
   grammar. `--limit`/`--offset`/`--order-by`/`--select` come off the directives
   table and every other flag on `find` is a filter.
@@ -163,7 +163,7 @@ MCP client of the app's own `/mcp`: `tools/list` becomes the command tree,
 
 ### 2. Credentials and profiles
 
-**Built 2026-09-25** (`packages/mcp/CHANGES.md`): a 0600 file rather than a keyring,
+**Built 2026-09-25** (`docs/changes-archive/mcp.md`): a 0600 file rather than a keyring,
 and `login` refuses a key the app reads as nobody by comparing tool lists, since a
 Bearer junction cannot verify is a stranger rather than a 401.
 

@@ -68,7 +68,7 @@ Fix at the owner (Invariant 4). Run the package's own `test` script from its dir
 
 ## 6. Record and close
 
-A `CHANGES.md` entry per package touched, inserted above the newest entry: a heading of the form `## <today, YYYY-MM-DD> — <what is now true, in plain words>` with the row id in backticks and parentheses after it, then prose. The files run to 14,000 lines, so read the first 20 for the voice and no further.
+No change-log entry: history is git (`FJS-D675`). A fix that leaves correct-but-surprising behavior behind adds it to its realm's hazard skill.
 
 ```
 fli close FJS-### --how "<the cause, the fix, and the test or drive that proves it>"

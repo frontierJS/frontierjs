@@ -2,7 +2,7 @@
 
 State as of **2026-09-05**. The kit was added on 2026-08-03; on 08-06 it was
 renamed to `@frontierjs/email-kit` everywhere (`FJS-D15`) and its suite was
-found to have been failing entirely — see `CHANGES.md`.
+found to have been failing entirely — see `docs/changes-archive/email-kit.md`.
 
 ## What this is
 
@@ -39,7 +39,7 @@ and removing it took Mesa from 27 skipped tests to zero.
 ## Fixed on arrival
 
 Two silent defects in the rendered output — the Outlook button fallback shipping
-to every client, and markup in the plain-text alternative — are in `CHANGES.md`;
+to every client, and markup in the plain-text alternative — are in `docs/changes-archive/email-kit.md`;
 the traps behind them, and the one consequence to know (render through
 `renderEmail`, never `renderComponent` directly), are `docs/HTML_EMAIL_TRAPS.md`.
 

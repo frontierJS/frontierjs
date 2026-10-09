@@ -16,8 +16,8 @@ this file as describing behavior — see `VERIFYING.md`.
 
 It is the umbrella over four siblings and replaces none of them:
 [`logbook.md`](logbook.md) (the log line and the trail — phases 0–3 shipped),
-[`lantern.md`](lantern.md) (the span tree and *why was this refused*),
-[`alerting.md`](alerting.md) (a reading crossed a line; something threw) and
+[`lantern.md`](../lantern.md) (the span tree and *why was this refused*),
+[`alerting.md`](../alerting.md) (a reading crossed a line; something threw) and
 `overview.md` 2.4b `beacon` (traffic). Each of those owns one stream. **None of
 them owns the join**, and the join is the gap this paper is about.
 

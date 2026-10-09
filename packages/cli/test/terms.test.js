@@ -464,32 +464,32 @@ describe('the page', () => {
   })
 })
 
-// A package register, written where the declared table expects one. The reader
+// A package vocabulary, written where the declared table expects one. The reader
 // is keyed on the PATH rather than on a glob, so a fixture has to put the file
 // exactly where the row names it — which is the property being relied on.
-function cssRegister(root, { terms = [], notATerm = {} } = {}) {
+function cssVocabulary(root, { terms = [], notATerm = {} } = {}) {
   mkdirSync(join(root, 'packages', 'css'), { recursive: true })
   writeFileSync(join(root, 'packages', 'css', 'vocabulary.json'),
     JSON.stringify({ terms, notATerm }))
 }
 
-describe('a package register', () => {
+describe('a package vocabulary', () => {
   test('a term the root file never names is named by the package that defines it', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Sprocket, another Sprocket, and a Sprocket.' })
-    cssRegister(root, { terms: [{ term: 'Sprocket', element: '<span>', meaning: 'a toothed wheel' }] })
+    cssVocabulary(root, { terms: [{ term: 'Sprocket', element: '<span>', meaning: 'a toothed wheel' }] })
 
     const row = collectTerms({ root }).concepts.find(r => r.term === 'Sprocket')
     expect(row.status).toBe('blessed')
     expect(row.label.means).toBe('a toothed wheel')
     // Who named it, which is the field that only had one possible answer while
-    // there was one register — and the whole of what makes the row auditable.
+    // there was one vocabulary — and the whole of what makes the row auditable.
     expect(row.label.source).toBe('packages/css/vocabulary.json')
     rmSync(root, { recursive: true, force: true })
   })
 
   test('an axis is vocabulary too — Invariant 13 is written in those words', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Treatment, and a second Treatment.' })
-    cssRegister(root, { terms: [], notATerm: { treatment: ['outlined', 'ghost'] } })
+    cssVocabulary(root, { terms: [], notATerm: { treatment: ['outlined', 'ghost'] } })
 
     const row = collectTerms({ root }).concepts.find(r => r.term === 'Treatment')
     expect(row.status).toBe('blessed')
@@ -499,7 +499,7 @@ describe('a package register', () => {
 
   test('a term wins over the axis of the same name, so Heading keeps its definition', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Heading and a Heading.' })
-    cssRegister(root, {
+    cssVocabulary(root, {
       terms:    [{ term: 'Heading', element: '<h1>', meaning: 'level is outline, not size' }],
       notATerm: { heading: ['h1', 'h2'] },
     })
@@ -515,7 +515,7 @@ describe('a package register', () => {
   // from the terms that worked. css ships three: Steps, Tabs, Facts.
   test('a plural term is found under the singular the corpus folded it into', () => {
     const root = fixture({ 'packages/alpha/a.md': 'one Sprocket, then Sprockets, then more Sprockets.' })
-    cssRegister(root, { terms: [{ term: 'Sprockets', meaning: 'where the Sprockets go' }] })
+    cssVocabulary(root, { terms: [{ term: 'Sprockets', meaning: 'where the Sprockets go' }] })
 
     const { concepts } = collectTerms({ root })
     // The fold ran, so there is no `Sprockets` row to match exactly.
@@ -526,11 +526,11 @@ describe('a package register', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  // Paired with it: the alias must not overwrite a term the register names in
+  // Paired with it: the alias must not overwrite a term the vocabulary names in
   // its own right, or `Item` would take `Items`' definition.
-  test('a singular the register names itself is not overwritten by a plural alias', () => {
+  test('a singular the vocabulary names itself is not overwritten by a plural alias', () => {
     const root = fixture({ 'packages/alpha/a.md': 'one Sprocket and some Sprockets here.' })
-    cssRegister(root, {
+    cssVocabulary(root, {
       terms: [
         { term: 'Sprocket',  meaning: 'the thing itself' },
         { term: 'Sprockets', meaning: 'where they go' },
@@ -542,9 +542,9 @@ describe('a package register', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  test('the root register outranks it where the root has DECIDED', () => {
+  test('the root vocabulary outranks it where the root has DECIDED', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Sprocket and a Sprocket.' })
-    cssRegister(root, { terms: [{ term: 'Sprocket', meaning: 'a toothed wheel' }] })
+    cssVocabulary(root, { terms: [{ term: 'Sprocket', meaning: 'a toothed wheel' }] })
     writeFileSync(join(root, 'VOCABULARY.md'), [
       '| Term | Status | Means | Note |',
       '| --- | --- | --- | --- |',
@@ -562,7 +562,7 @@ describe('a package register', () => {
   // presence of a root row.
   test('an open root row still wins, and is reported as answered elsewhere', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Sprocket and a Sprocket.' })
-    cssRegister(root, { terms: [{ term: 'Sprocket', meaning: 'a toothed wheel' }] })
+    cssVocabulary(root, { terms: [{ term: 'Sprocket', meaning: 'a toothed wheel' }] })
     writeFileSync(join(root, 'VOCABULARY.md'), [
       '| Term | Status | Means | Note |',
       '| --- | --- | --- | --- |',
@@ -577,27 +577,27 @@ describe('a package register', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  // The command is exploratory and ungated (`FJS-1211`), so a register it cannot
+  // The command is exploratory and ungated (`FJS-1211`), so a vocabulary it cannot
   // read must not stop it. What it must not do is fall silent: every term goes
   // back to `unnamed`, which is what a package that named nothing also looks
   // like, so the two are separated by the row this asserts.
-  test('an unreadable register degrades to unnamed and SAYS it was unreadable', () => {
+  test('an unreadable vocabulary degrades to unnamed and SAYS it was unreadable', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Sprocket and a Sprocket.' })
     mkdirSync(join(root, 'packages', 'css'), { recursive: true })
     writeFileSync(join(root, 'packages', 'css', 'vocabulary.json'), '{ not json')
 
     const model = collectTerms({ root })
     expect(model.concepts.find(r => r.term === 'Sprocket').status).toBe('unnamed')
-    expect(model.registers[0].found).toBe(false)
-    expect(model.registers[0].terms).toBe(0)
+    expect(model.vocabularies[0].found).toBe(false)
+    expect(model.vocabularies[0].terms).toBe(0)
     rmSync(root, { recursive: true, force: true })
   })
 
-  test('a register that is simply absent reads the same way and does not throw', () => {
+  test('a vocabulary that is simply absent reads the same way and does not throw', () => {
     const root = fixture({ 'packages/alpha/a.md': 'a Sprocket and a Sprocket.' })
     const model = collectTerms({ root })
     expect(model.concepts.find(r => r.term === 'Sprocket').status).toBe('unnamed')
-    expect(model.registers[0].found).toBe(false)
+    expect(model.vocabularies[0].found).toBe(false)
     rmSync(root, { recursive: true, force: true })
   })
 })
@@ -704,10 +704,10 @@ describe('over this repo', () => {
     expect(model.counts.labelled).toBeGreaterThan(50)
   })
 
-  // The control, and the only thing standing between a register that moved and
+  // The control, and the only thing standing between a vocabulary that moved and
   // a package that never named anything: both read as every css term `unnamed`,
   // and only the COUNT separates them.
-  test('@frontierjs/css\'s own register resolves and contributes its terms', () => {
+  test('@frontierjs/css\'s own vocabulary resolves and contributes its terms', () => {
     const { read } = packageVocabularies(REPO)
     const css = read.find(r => r.owner === 'css')
     expect(css.found).toBe(true)
@@ -719,7 +719,7 @@ describe('over this repo', () => {
       expect(model.corpus.byKind[kind]).toBeGreaterThan(10)
   })
 
-  // The audit reads the authored registers, which are prose. Asking it of the
+  // The audit reads the authored vocabularies, which are prose. Asking it of the
   // widened corpus changes what every row MEANS with nothing saying so — the
   // first run over code took `unlabelled` from 0 to 123 by counting identifiers
   // as spread. The number is small because the question is the same one.
@@ -734,10 +734,10 @@ describe('over this repo', () => {
     expect(row?.label?.owner).toBe('css')
   })
 
-  // Surface is spelled by both registers. The root row names the app's
+  // Surface is spelled by both vocabularies. The root row names the app's
   // directory, and outranks css's block shape, so the css sense cannot
   // silently become the framework's.
-  test('a word both registers name is the root file\'s', () => {
+  test('a word both vocabularies name is the root file\'s', () => {
     const row = model.concepts.find(r => r.term === 'Surface')
     expect(row?.status).toBe('blessed')
     expect(row?.label?.owner).toBeUndefined()

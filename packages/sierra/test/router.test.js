@@ -244,6 +244,11 @@ describe('buildUrl', () => {
     expect(result).toBe('/leads/')
   })
 
+  test('omits a cleared multi-select, and keeps an empty operand under a filter', () => {
+    expect(buildUrl('/leads', { tags: [], meta: {} }, 'always')).toBe('/leads/')
+    expect(buildUrl('/leads', { tasks: { none: {} } }, 'always')).toBe('/leads/?tasks[none]=%7B%7D')
+  })
+
   // A query the caller put ON the path. `normalizePath` strips it — it has to,
   // since the same function answers what a route MATCHES — so rebuilding from
   // the normalized half alone discarded it in silence, and every filter bar in

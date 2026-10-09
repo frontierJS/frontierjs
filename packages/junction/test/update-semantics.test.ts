@@ -182,3 +182,64 @@ describe('what update IS — patch with an id required', () => {
     expect((res.body as { id: number }).id).toBe(row.id)
   })
 })
+
+// FJS-1970 -- the strip is for a column a client echoes back, and a @guarded
+// column is never read, so it can never be echoed: sending one is deliberate.
+describe('a write naming a @guarded column', () => {
+  const GUARDED = `
+    model Hook {
+      id     Int    @id
+      name   String
+      token  String? @guarded
+      secret String? @secret
+    }
+  `
+
+  async function hookApp() {
+    const db  = await createClient({ db: ':memory:', schema: GUARDED, encryptionKey: 'a'.repeat(64) } as never)
+    const app = createApp({
+      db: db as never,
+      config: { port: 0, services: { dir: '/nonexistent' } },
+    })
+    app.services.register(createService({ name: 'hooks', model: 'Hook', allowBulk: true } as never))
+    return { app, db }
+  }
+
+  test('is a 400 naming it, not a 201 with the value dropped', async () => {
+    const { app } = await hookApp()
+
+    const res = await request(app).post('/hooks').send({ name: 'a', token: 'x' })
+
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toMatch(/token/)
+    expect(JSON.stringify(res.body)).toMatch(/@guarded/)
+  })
+
+  test('and so is a @secret, which is a guarded column too', async () => {
+    const { app } = await hookApp()
+
+    const res = await request(app).post('/hooks').send({ name: 'a', secret: 'x' })
+
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toMatch(/secret/)
+  })
+
+  test('on update as well, and the rest of the body does not land', async () => {
+    const { app } = await hookApp()
+    const row = (await request(app).post('/hooks').send({ name: 'a' })).body as { id: number }
+
+    const res = await request(app).patch(`/hooks/${row.id}`).send({ name: 'b', token: 'x' })
+
+    expect(res.status).toBe(400)
+    const after = (await request(app).get(`/hooks/${row.id}`)).body as { name: string }
+    expect(after.name).toBe('a')
+  })
+
+  test('a body naming neither is untouched', async () => {
+    const { app } = await hookApp()
+
+    const res = await request(app).post('/hooks').send({ name: 'a' })
+
+    expect(res.status).toBe(201)
+  })
+})

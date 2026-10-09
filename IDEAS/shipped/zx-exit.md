@@ -6,7 +6,7 @@ dated: 2026-10-05
 
 # Idea — leaving zx: `$` is the command in progress
 
-**Status: SHIPPED 2026-10-06** — `FJS-D593`, `FJS-D594`, `FJS-D595`; Phases 0–4 landed as `packages/cli/CHANGES.md` records. Dated 2026-10-05 as written; Every count below is
+**Status: SHIPPED 2026-10-06** — `FJS-D593`, `FJS-D594`, `FJS-D595`; Phases 0–4 landed as `docs/changes-archive/cli.md` records. Dated 2026-10-05 as written; Every count below is
 an `rg` over `packages/cli` on that day and every runtime claim was probed against
 `bun-1.4.2`; nothing is read off release notes. Do not cite this file as behavior —
 see `VERIFYING.md`.
@@ -146,7 +146,7 @@ does.
 builtins — they resolve from anywhere, cost nothing, and 23 files use them without
 importing — so the shim head imports them rather than making 23 files grow a
 `<script>` block. Everything else is destructured from `$`, so the free-identifier
-budget (`IDEAS/scope-checking.md` § 3) drops from zx's ~45 names to three, which is
+budget (`IDEAS/shipped/scope-checking.md` § 3) drops from zx's ~45 names to three, which is
 small enough to write down and GRADE. The alternative — `$` alone, explicit imports
 in each file — is cleaner by one rule and costs 23 edits plus every future
 command's first two lines; the owner picks.
@@ -237,7 +237,7 @@ nothing.
 - `README.md` § The context and `CLAUDE.md` move with the code (`doc-hygiene`).
 - Compile every command (`core/registry.js` knows them all) and scan the shims for
   free identifiers outside `$`, `path`, `fs` and JS/node globals. This is the
-  check `FJS-730` wanted and `IDEAS/scope-checking.md` costed; with three injected
+  check `FJS-730` wanted and `IDEAS/shipped/scope-checking.md` costed; with three injected
   names its false-positive budget is three lines. It lands as a `fli check` rule
   over an app's commands and runs over fli's own in the `structure` phase — the
   `core/checks.js` shape, one engine, two callers.

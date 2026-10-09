@@ -9,7 +9,7 @@ revised: 2026-09-25
 
 **Status: PARTIAL.** Dated 2026-09-05, revised 2026-09-25: **the declared prefix
 is built** — `"registers": { "prefix", "dir" }` in the project's `package.json`,
-read by `registerLayout()` (`packages/cli/CHANGES.md`, 2026-09-25) — and
+read by `registerLayout()` (`docs/changes-archive/cli.md`, 2026-09-25) — and
 `elitelawncare/ela` is the first project outside this repo on it. The write
 verbs other than `decide`, the scaffold, `--root` for the pages and the
 file-per-record migration are not built. Two defects found while asking the

@@ -364,7 +364,7 @@ if (flag('--serve')) {
     for (const f of falls) console.log(green(`  lowered  ${f}`))
     if (flag('--update') && falls.length && !failures.length) { await write(merged((was, now) => was === undefined || now < was)); console.log(green('baseline updated with the improvements')) }
     else if (falls.length) console.log(dim('  `--update` writes the improvements back'))
-    if (rises.length) failures.push(`${rises.length} gated number(s) rose — fix it, or \`--adopt\` with the reason in CHANGES.md`)
+    if (rises.length) failures.push(`${rises.length} gated number(s) rose — fix it, or \`--adopt\` with the reason in the commit message`)
   }
   if (partial) console.log(dim('--only: the DOM baseline covered only the operations run'))
 

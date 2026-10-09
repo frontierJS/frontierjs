@@ -12,7 +12,7 @@ HTTP, in-process so junction's broadcast telemetry can be counted) and
 `web/test/verify-order-offline.mjs` (one device offline in a real browser,
 Chrome and Firefox against the build and `vite dev`, **identical in all four
 cells**). Every claim marked *measured* was run there on 2026-09-22; *read*
-means a source file says so. Decision row: [`FJS-D366`](../ISSUES.md#fjs-d366).
+means a source file says so. Decision row: [`FJS-D366`](../ISSUES_ARCHIVE.md#fjs-d366).
 Prior record: `ecosystem-gaps.md` § 15 (*user-defined ordering*), `overview.md`
 5.12, and [`FJS-229`](../ISSUES_ARCHIVE.md) (`@@order`, closed as *a named order is
 a scope*).
@@ -44,7 +44,7 @@ columns: `rank String` (a base-62 fractional key) and `position Int`.
 **Offline** (one device drags in a tunnel while 49 correct drags land, then its
 queue drains). The device reads five columns of 60, one board, and the resource
 forgets all but the last 200 rows, so a drag of an early card is sent with no
-version and refused 400 ([`FJS-1309`](../ISSUES.md#fjs-1309)). The lab re-reads each
+version and refused 400 ([`FJS-1309`](../ISSUES_ARCHIVE.md#fjs-1309)). The lab re-reads each
 dragged row, so the table measures order and not that:
 
 | Case | Held on the device | At the drain | Result |

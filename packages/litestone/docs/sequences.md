@@ -24,6 +24,10 @@ inv2.invoiceNumber  // → 2  (second for account 1)
 inv3.invoiceNumber  // → 1  (first for account 2 — independent counter)
 ```
 
+## Written at create, never after
+
+A create may state the number, and the counter moves past it. An update that names the column is refused (a 400 naming the field), for `asSystem()` too, and the update JSON Schema marks it `readOnly` so a generated edit form draws no box for it. On a model with a `@seals` move the column is frozen from create rather than from the seal. A renumbered row takes a value the counter has not reached yet, so the next create collides with it, and the failed insert rolls the counter back to that same number.
+
 ## Formatting
 
 Sequence values are plain integers. Format them in application code:

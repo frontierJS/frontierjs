@@ -264,3 +264,34 @@ describe('mounted', () => {
     r.end()
   })
 })
+
+// ─── An awaited right-hand side ───────────────────────────────────────────────
+
+describe('an assignment whose right-hand side is an await (FJS-2129)', () => {
+  // Rewritten on its own, `await load(id)` is outside any async function, and
+  // acorn's expression parser reads `await` there as an IDENTIFIER and stops —
+  // no throw, so `load(id)` was left bare and the handler threw
+  // "id is not defined" the first time it ran.
+  const src = (handler) =>
+    `<script>\n  let { id } = $props()\n  let day = $state(null)\n  async function load(x) { return x }\n${handler}\n</script>\n` +
+    `<button onclick={async () => { day = await load(id) }}>{day}</button>`
+
+  for (const [label, line] of [
+    ['bare',          '  $: id, async () => { day = await load(id) }'],
+    ['parenthesized', '  $: id, async () => { day = (await load(id)) }'],
+    ['compound arg',  '  $: id, async () => { day = await load(id + 0) }'],
+  ]) {
+    test(`a watch handler reads the prop through its signal — ${label}`, async () => {
+      const { result } = await compileSource(src(line), { filename: '/t/T.mesa', dev: false })
+      const handler = result.split('\n').find((l) => l.includes('$$first_wh0 = false'))
+      expect(handler).toMatch(/load\(\$\$runtime\.get\(\$\$sig_id\)/)
+      expect(handler).not.toMatch(/load\(id\b/)
+    })
+  }
+
+  test('a template event handler reads the prop through its signal', async () => {
+    const { result } = await compileSource(src(''), { filename: '/t/T.mesa', dev: false })
+    const handler = result.split('\n').find((l) => l.includes('__click'))
+    expect(handler).toMatch(/\$\$set_day\(await load\(\$\$runtime\.get\(\$\$sig_id\)\)\)/)
+  })
+})

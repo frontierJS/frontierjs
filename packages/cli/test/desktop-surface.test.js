@@ -196,7 +196,7 @@ describe('what desktop:run reads', () => {
   })
 })
 
-describe('what desktop:dev reads', () => {
+describe('what dev:desktop reads', () => {
   test('the shell reads FJS_DESKTOP_URL only behind the debug guard', () => {
     const fn = desktopMainRs().match(/fn dev_url\(\)[\s\S]*?\n}\n/)?.[0] ?? ''
     const guard = fn.indexOf('if !cfg!(debug_assertions)')

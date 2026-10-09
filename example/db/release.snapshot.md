@@ -602,7 +602,7 @@ table `notification` · db `main` · gate `0.8.4.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `contextId` | `Int` | yes | — | — |
+| `contextId` | `String` | yes | — | — |
 | `contextType` | `NotificationContext` | yes | — | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `data` | `Json` | no | — | **required on write** |

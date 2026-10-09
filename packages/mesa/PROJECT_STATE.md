@@ -2,7 +2,7 @@
 
 **Shipped.** A `.mesa` component compiler and the signal runtime its output runs
 on, a static/SSR renderer, a Vite plugin at the `@frontierjs/mesa/vite` subpath,
-and a REPL. The version is `package.json`'s. History is `CHANGES.md`; open
+and a REPL. The version is `package.json`'s. History is git; open
 defects are `../../ISSUES.md`; the package map and its traps are `CLAUDE.md`.
 
 ## How it is proven
@@ -23,7 +23,7 @@ proves a change).
 | Area | Read |
 | --- | --- |
 | The language | `docs/VISION.md` — numbered RULEs, cited by number |
-| `runtime.js` | `CHANGES.md` § 2026-08-01 — the reactivity audit and the block-teardown pass: the two failure shapes behind every block-removal bug, and the claims that died under testing |
+| `runtime.js` | `git log` § 2026-08-01 — the reactivity audit and the block-teardown pass: the two failure shapes behind every block-removal bug, and the claims that died under testing |
 | Either renderer | `docs/STATIC_RENDERING.md` — what runs on the server, the two component-children protocols, island markers, `tmpDir`, and what a browser global answers during a render |
 | External state reaching a component | `docs/EXTERNAL_REACTIVITY.md` — why sierra exports plain objects watched with `$:`, and the silent failure that survives it |
 | The Vite plugin, HMR, the browser drives | `CLAUDE.md` § What bites here and § The browser drives |

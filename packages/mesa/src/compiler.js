@@ -716,7 +716,11 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
 
   let ast
   try {
-    ast = acorn.parseExpressionAt(expr, 0, { ecmaVersion: 'latest' })
+    // The right-hand side of `day = await load(id)` arrives here on its own,
+    // outside its async function. Without the flag acorn reads `await` as an
+    // identifier and stops after it, without throwing, so `load(id)` stayed
+    // bare and threw "id is not defined" when the handler ran (FJS-2129).
+    ast = acorn.parseExpressionAt(expr, 0, { ecmaVersion: 'latest', allowAwaitOutsideFunction: true })
   } catch (_) {
     try {
       ast = acorn.parse(expr, { ecmaVersion: 'latest', sourceType: 'module' })

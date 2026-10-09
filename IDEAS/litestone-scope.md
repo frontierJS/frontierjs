@@ -70,11 +70,11 @@ The trail already has a second form that needs none of this. On a SQLite databas
 it names a real model (`model AuditLog`), which can carry a `@@gate`, an `@@allow`,
 an index and a migration — *the whole reason to put a trail in SQLite rather than
 in a directory of jsonl* (`parser.js`, the `logModel` check;
-`IDEAS/logbook.md` § 3).
+`IDEAS/shipped/logbook.md` § 3).
 
 ## 3. What `FJS-D635` leaves to build
 
-**Built 2026-10-08**, items 1–4 (`packages/litestone/CHANGES.md`). One thing the test found that this section missed: `src/core/client.js` imported `tools/retention.js`. `@@retention`'s runner was on the axis but filed under `tools/`, so it moved to `core/`.
+**Built 2026-10-08**, items 1–4 (`docs/changes-archive/litestone.md`). One thing the test found that this section missed: `src/core/client.js` imported `tools/retention.js`. `@@retention`'s runner was on the axis but filed under `tools/`, so it moved to `core/`.
 
 About a day, and none of it touches the core:
 

@@ -299,10 +299,35 @@ export function composeWrapper(pageFile, layoutChain, { elementChildren = true }
 export function wrapDocument(bodyHTML, {
   title, description, css, styles, lang = 'en', stylesheets = [],
   bodyClass = '', htmlClass = '',
+  meta = [], links = [], jsonLd = [], bodyAttrs = {}, head = '', bodyEnd = '',
 } = {}) {
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+
+  // `meta`, `links` and `bodyAttrs` carry values read from a row, so every
+  // value is escaped. A NAME is written bare, and one holding a space or `=`
+  // would add an attribute of the caller's choosing -- refused, not stripped.
+  const attrs = (obj) => Object.entries(obj ?? {})
+    .filter(([, v]) => v !== undefined && v !== null && v !== false)
+    .map(([k, v]) => {
+      if (!/^[a-zA-Z_:][-a-zA-Z0-9_:.]*$/.test(k))
+        throw new Error(`[Sierra] document: '${k}' is not an attribute name`)
+      return v === true ? ` ${k}` : ` ${k}="${esc(v)}"`
+    }).join('')
+
+  const metaTags = (meta ?? []).map((m) => `\n  <meta${attrs(m)}>`).join('')
+  const relTags = (links ?? []).map((l) => `\n  <link${attrs(l)}>`).join('')
+
+  // JSON inside <script> ends at the first `</script`, and `<!--` changes how
+  // the parser reads the rest, so `<` is written as its JSON escape: the text
+  // parses back to the same value and can no longer close the element.
+  const ldTags = [].concat(jsonLd ?? [])
+    .map((d) => `\n  <script type="application/ld+json">${JSON.stringify(d).replace(/</g, '\\u003c')}</script>`)
+    .join('')
+
+  const rawHead = head ? `\n  ${head}` : ''
+  const rawBodyEnd = bodyEnd ? `\n${bodyEnd}` : ''
 
   // One <style id="mHASH"> per component when the renderer supplies the split,
   // rather than one anonymous blob.
@@ -331,7 +356,7 @@ export function wrapDocument(bodyHTML, {
     .map((href) => `\n  <link rel="stylesheet" href="${esc(href)}">`)
     .join('')
 
-  const bodyAttr = bodyClass ? ` class="${esc(bodyClass)}"` : ''
+  const bodyAttr = (bodyClass ? ` class="${esc(bodyClass)}"` : '') + attrs(bodyAttrs)
 
   // The theme class belongs on <html> and not on <body>, because that is where
   // the switcher writes it — `theme/index.js` says why the element is not a
@@ -355,10 +380,10 @@ export function wrapDocument(bodyHTML, {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${descTag}${linkTags}${styleTag}
+  <title>${esc(title ?? '')}</title>${descTag}${metaTags}${relTags}${ldTags}${linkTags}${styleTag}${rawHead}
 </head>
 <body${bodyAttr}>
-${bodyHTML}
+${bodyHTML}${rawBodyEnd}
 </body>
 </html>
 `
@@ -386,6 +411,9 @@ export async function prerenderRoutes(opts) {
     // (asset URLs from the main build) and the <body> class its index.html
     // carries. Both are per-BUILD, not per-route.
     stylesheets = [], bodyClass = '', htmlClass = '', lang = 'en',
+    // The app's own HTML for every page: `head` and `bodyEnd` verbatim, and
+    // `bodyAttrs` (an object) beside the body class.
+    docHead = '', docBodyEnd = '', bodyAttrs = {},
     // ── Static-safety inputs (FJS-081) ────────────────────────────────
     // `schemaDefs`/`schemaModels` come from schema-plugin, which has already
     // run in this build. `db` is a Litestone client the build can tap to see
@@ -583,6 +611,12 @@ export async function prerenderRoutes(opts) {
         stylesheets,
         bodyClass,
         htmlClass,
+        bodyAttrs,
+        head:    docHead,
+        bodyEnd: docBodyEnd,
+        meta:    head?.meta,
+        links:   head?.links,
+        jsonLd:  head?.jsonLd,
         lang:   node.meta?.lang ?? lang,
       })
 

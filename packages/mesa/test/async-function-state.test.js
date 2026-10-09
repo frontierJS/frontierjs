@@ -3,7 +3,7 @@
  *
  * `$async.<name>` on a top-level `async function` — RULE 16 widened so a write
  * outside `<Form>` stops hand-keeping a `busy`/`error` pair
- * (`IDEAS/async-function-state.md`). And the refusal RULE 16 never had: a read
+ * (`IDEAS/shipped/async-function-state.md`). And the refusal RULE 16 never had: a read
  * of any other name compiled to a bare `$async.n.error` and failed on the page
  * (`FJS-1720`).
  *

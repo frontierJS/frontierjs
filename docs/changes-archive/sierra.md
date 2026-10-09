@@ -1112,7 +1112,7 @@ store subscription, where the filters live, the load, its re-run on a change, an
 `apply`, `sort`, `more`, `reload` and `destroy`. It owns no markup. `state: 'url'` is the default and
 makes the address bar the list, with nothing held here; `state: 'local'` is the embedded list that must
 not navigate, and `where` scopes it OVER the filters so a bar can neither see nor widen the scope.
-`IDEAS/list-controller.md` carries the argument; `test/resource-list.test.js` drives it through the
+`IDEAS/shipped/list-controller.md` carries the argument; `test/resource-list.test.js` drives it through the
 real router and Junction's real client, and every mutant tried reds at least one row — the route guard,
 replace-versus-merge, `where` under the filters, the local re-run, the debounce, a default filter
 merged under the URL, and the `columns:` default.
@@ -1246,7 +1246,7 @@ and css.
 
 **Nothing is disabled and that is deliberate**: a control switched off by the
 flag is switched off for every caller the predicate ADMITS, which is most of
-them. `IDEAS/declared-field-state.md` carries the half that would answer it
+them. `IDEAS/shipped/declared-field-state.md` carries the half that would answer it
 before the write.
 
 ## 2026-09-10 — the README stops calling the payload pipeline default-off
@@ -1294,7 +1294,7 @@ their control-side mirrors.
 
 ## 2026-09-08 — the other three surfaces: a table, a detail view, a filter bar
 
-`IDEAS/tables-from-the-seed.md` is shipped. Four rulings and the pieces behind
+`IDEAS/shipped/tables-from-the-seed.md` is shipped. Four rulings and the pieces behind
 them.
 
 **`displayFor(rule, ctx)` is a second registry** (`FJS-D242`), not a mode on

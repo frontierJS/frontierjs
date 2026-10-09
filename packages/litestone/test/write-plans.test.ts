@@ -1,7 +1,7 @@
 // test/write-plans.test.ts
 //
 // A write verb PLANS and one executor runs the plan
-// (IDEAS/litestone-by-construction.md § Step 5). A plan is a value — the
+// (IDEAS/shipped/litestone-by-construction.md § Step 5). A plan is a value — the
 // statement, its binds, whether it carries RETURNING, what it announces — so
 // it is read here through the `PLAN` seam and never run: every expectation
 // below is the SQL the verb ran BEFORE it was split, captured from the query

@@ -40,7 +40,7 @@ Four places already say something, and they agree:
   transform hook; chunking is refused as the app's.
 - `IDEAS/ecosystem-gaps.md` — one row with the verdict already applied: *in-house
   column type; the model that produces the embedding is a Conduit target already*.
-- `packages/litestone/CHANGES.md` — names it in *what actually remains*, beside
+- `docs/changes-archive/litestone.md` — names it in *what actually remains*, beside
   `LatLng`.
 
 **What was missing:** no record of its own, no engine measurement, and PHILOSOPHY

@@ -55,7 +55,7 @@ pages with many blocks (Storyblok's top con).
 Ranked by love per unit of work. Each step extends `verify:ask` with its own
 case before it is called done.
 
-### 1. Multi-pick, one run — BUILT 2026-10-04 (`packages/cli/CHANGES.md`)
+### 1. Multi-pick, one run — BUILT 2026-10-04 (`docs/changes-archive/cli.md`)
 
 Shift+alt-click on a second element ADDS it to the pick list; the panel lists
 the picks with a remove control each; one instruction goes out with all of them.
@@ -66,7 +66,7 @@ still one ledger and one Undo.
 Drive case: pick two headings in two files, one instruction, both change, one
 Undo restores both.
 
-### 2. Direct text edit, no Claude — BUILT 2026-10-04 (`packages/cli/CHANGES.md`)
+### 2. Direct text edit, no Claude — BUILT 2026-10-04 (`docs/changes-archive/cli.md`)
 
 **Measured on `website/site`, 29 routes, 6770 text-bearing elements:** 52%
 direct, 11% split by inline markup, 36% interpolated. The interpolated share is
@@ -98,7 +98,7 @@ with where it came from — and that is a compiler change worth its own idea fil
 Drive case: edit a static heading (no Claude spawned — assert the fake CLI was
 never called), edit an interpolated one (falls back), Undo each.
 
-### 3. Hand the conversation to a terminal — BUILT 2026-10-04 (`packages/cli/CHANGES.md`)
+### 3. Hand the conversation to a terminal — BUILT 2026-10-04 (`docs/changes-archive/cli.md`)
 
 The session id is already what `claude --resume` takes. The panel gains a
 "Continue in terminal" control that copies `cd <root> && claude --resume <id>`.

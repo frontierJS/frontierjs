@@ -1,10 +1,10 @@
 ---
-title: api:dev
+title: dev:api
 description: Start the API dev server
 alias: api-dev
 examples:
-  - fli api:dev
-  - fli api:dev --test
+  - fli dev:api
+  - fli dev:api --test
 flags:
   test:
     char: t

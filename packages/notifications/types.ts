@@ -68,8 +68,8 @@ export interface NotificationRecord {
   type:        string
   data:        Record<string, unknown>
   contextType: string | null
-  contextId:   number | string | null
-  readAt:      string | null
+  contextId:   string | null
+  readAt:     string | null
   createdAt:   string
 }
 

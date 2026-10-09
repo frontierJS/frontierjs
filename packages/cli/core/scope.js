@@ -9,7 +9,7 @@
 // one scope, which is a SyntaxError the command never loads past.
 //
 // Real scope chains or nothing: a flat "declared somewhere in the file" test
-// calls a parameter of some OTHER function bound (`IDEAS/scope-checking.md`).
+// calls a parameter of some OTHER function bound (`IDEAS/shipped/scope-checking.md`).
 //
 // The parser is TypeScript's, loaded from the project being checked — the
 // same way `functions.js` reads it, because `fli` is global and a dependency

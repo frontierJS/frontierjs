@@ -5,7 +5,6 @@ scripts/**
 node_modules/**
 tsconfig.json
 CLAUDE.md
-CHANGES.md
 PROJECT_STATE.md
 *.vsix
 **/*.image-ref.*

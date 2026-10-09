@@ -1,12 +1,12 @@
 ---
 id: changes-retirement
-status: proposed
+status: partial
 dated: 2026-09-28
 ---
 
 # Idea — Retire `CHANGES.md`: history is git, lessons go where they are read
 
-**Status: PROPOSED. Nothing described here as the proposal exists.** Dated
+**Status: RULED — `FJS-D675`, 2026-10-08. Steps 1 and 3 are done. Step 2 stopped after the mesa pilot: 11 lessons filed in `ui-hazards`, two rulings recovered (`FJS-D676`, `FJS-D677`), about 4% of entries held a lesson. The owner chose to leave the other packages in `docs/changes-archive/` unmined. Steps 4 and 5 (inbound links, code comments) are open.** Dated
 2026-09-28. Do not cite this file as behavior — see `VERIFYING.md`. The numbers
 were measured on 2026-09-26 and are true for that afternoon.
 

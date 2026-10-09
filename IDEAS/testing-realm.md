@@ -11,7 +11,7 @@ parity have SHIPPED — in `@frontierjs/litestone/testing` plus `@frontierjs/tes
 Phase 3's derived page model, Phase 5's generated pair and Phase 6 are unbuilt.**
 Dated 2026-08-11, amended 2026-08-12. This is a design record, not a description of behavior
 (`VERIFYING.md`) — except where § The plan marks a phase shipped, and those claims
-belong to `packages/litestone/CHANGES.md`, which is where they should be read.
+belong to `docs/changes-archive/litestone.md`, which is where they should be read.
 Every claim about *another framework* was web-researched on the date above and is
 sourced in § Evidence; every claim about *this repo* was probed by reading the
 tree, and the file it was read from is named.
@@ -151,7 +151,7 @@ needs a principal at level N, which is Phase 2's job.
 `litestone access` / `fli test:access` writes `db/access.snapshot.md`; `--check`
 exits 1 when it is stale, and a fifth `access` phase in `scripts/ci.mjs` runs that
 over every committed snapshot. Basecamp's is committed — 37 models, all gated.
-`packages/litestone/CHANGES.md` is the record; what follows is what the plan got
+`docs/changes-archive/litestone.md` is the record; what follows is what the plan got
 wrong.
 
 **The generator was thinner than this file claimed.** `generateGateMatrix` emitted
@@ -262,7 +262,7 @@ const env = await createTestEnv({ schema: 'db/schema.lite', plugins: [appGate] }
 ```
 
 Migrated database, client, factories and both auth doors, in one call. Lives in
-`@frontierjs/litestone/testing`; `packages/litestone/CHANGES.md` is the record.
+`@frontierjs/litestone/testing`; `docs/changes-archive/litestone.md` is the record.
 
 **Template-clone landed and the number is the whole argument**: 476ms → 13ms per
 database on basecamp's 37 models, and litestone's own suite went 41.5s to 33.7s
@@ -591,7 +591,7 @@ The Rainsberger grid, once the environment and the generators exist.
 #### Transport parity. **Shipped.**
 
 `env.verifyTransportParity()` — HTTP and WS answering the same call the same way,
-over a real port and a real socket. `packages/testing/CHANGES.md` is the record.
+over a real port and a real socket. `docs/changes-archive/testing.md` is the record.
 It landed here rather than with the cheap parser-walk generators because it needs
 a live server, which the first draft mis-costed as generation work.
 
@@ -732,7 +732,7 @@ a further phase with the islands machinery behind it, not a freebie from
 
 Ten rules in `packages/cli/core/checks.js`, reached by `fli check` for a client
 app and by a new `structure` phase in `scripts/ci.mjs` for this repo.
-`packages/cli/CHANGES.md` is the record. They share the engine, imported by
+`docs/changes-archive/cli.md` is the record. They share the engine, imported by
 relative path, which was the condition this was written under: two
 implementations of one rule is how a framework ends up breaking rules it
 publishes.

@@ -71,6 +71,11 @@ const FILTERS: Array<[string, Record<string, unknown>]> = [
   // a proximity search that answers the wrong rows (`FJS-D323`).
   ['a near filter',       { site: { near: { lat: 51.5074, lng: -0.1278, within: '5mi' } } }],
   ['a near at 0,0',       { site: { near: { lat: 0, lng: 0, within: '500m' } } }],
+  // An empty operand has no bracket spelling, and dropping it widens the filter:
+  // `tasks: { none: {} }` answered every row over HTTP (`FJS-2047`).
+  ['a relation with none', { direction: 'inbound', tasks: { none: {} } }],
+  ['a relation with some', { cards: { some: {} } }],
+  ['an empty in-list',     { id: { in: [] } }],
 ]
 
 describe('a filter means the same thing on both transports', () => {

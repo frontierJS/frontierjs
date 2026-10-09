@@ -57,6 +57,14 @@ describe('the schema fragment', () => {
     expect(fields.has('readAt')).toBe(true)
   })
 
+  test('contextId is String — a ULID or uuid row id must fit the column (FJS-1270)', () => {
+    const out    = parse('database main { path "./x.db" }\n' + readFileSync(join(root, FRAGMENT), 'utf8'))
+    type Field   = { name: string, type: { name: string } }
+    const models = out.schema!.models as Array<{ name: string, fields: Field[] }>
+    const field  = models.find(m => m.name === 'Notification')!.fields.find(f => f.name === 'contextId')
+    expect(field!.type.name).toBe('String')
+  })
+
   test('create is SYSTEM and not LOCKED — 9 would stop notify() writing a row', () => {
     const text = readFileSync(join(root, FRAGMENT), 'utf8')
     const gate = text.match(/@@gate\("([\d.]+)"\)/)?.[1]

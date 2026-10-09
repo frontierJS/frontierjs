@@ -269,6 +269,62 @@ describe('wrapDocument', () => {
     expect(out).toContain('<body>')
     expect(out).not.toContain('<link')
   })
+
+  // FJS-1539: the document held a title, a description and the stylesheets,
+  // so og: tags, a canonical, JSON-LD and a site-wide script had no way in
+  // short of rewriting the built HTML.
+  describe('what reaches <head> and <body>', () => {
+    const headOf = (out) => out.slice(out.indexOf('<head>'), out.indexOf('</head>'))
+
+    test('meta and links are emitted as tags, every value escaped', () => {
+      const out = wrapDocument('<p></p>', {
+        meta: [{ property: 'og:title', content: 'Tees & "mugs"' }, { name: 'robots', content: 'noindex' }],
+        links: [{ rel: 'canonical', href: 'https://x.test/a?b=1&c=2' }],
+      })
+      const head = headOf(out)
+      expect(head).toContain('<meta property="og:title" content="Tees &amp; &quot;mugs&quot;">')
+      expect(head).toContain('<meta name="robots" content="noindex">')
+      expect(head).toContain('<link rel="canonical" href="https://x.test/a?b=1&amp;c=2">')
+    })
+
+    test('an attribute name that is not a name is refused, not written', () => {
+      expect(() => wrapDocument('', { meta: [{ 'x onload=alert(1) y': 'z' }] })).toThrow(/attribute/)
+    })
+
+    test('jsonLd is a script that parses back, and cannot close itself', () => {
+      const data = { '@context': 'https://schema.org', '@type': 'WebSite', name: '</script><b>x' }
+      const head = headOf(wrapDocument('', { jsonLd: [data, { '@type': 'Thing' }] }))
+      const bodies = [...head.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => m[1])
+      expect(bodies).toHaveLength(2)
+      expect(JSON.parse(bodies[0])).toEqual(data)
+      expect(head).not.toContain('</script><b>')
+    })
+
+    test('a single jsonLd object is one script', () => {
+      const head = headOf(wrapDocument('', { jsonLd: { '@type': 'Thing' } }))
+      expect(head.match(/application\/ld\+json/g)).toHaveLength(1)
+    })
+
+    test('head and bodyEnd are the app\'s own HTML, verbatim, in the right element', () => {
+      const out = wrapDocument('<p></p>', {
+        head: '<script async src="/gtm.js"></script>',
+        bodyEnd: '<script src="/lead.js" defer></script>',
+      })
+      expect(headOf(out)).toContain('<script async src="/gtm.js"></script>')
+      expect(out.indexOf('<script src="/lead.js" defer></script>')).toBeGreaterThan(out.indexOf('<p></p>'))
+      expect(out.indexOf('/lead.js')).toBeLessThan(out.indexOf('</body>'))
+    })
+
+    test('bodyAttrs sit beside the body class', () => {
+      expect(wrapDocument('', { bodyClass: 'app', bodyAttrs: { id: 'app' } })).toContain('<body class="app" id="app">')
+    })
+
+    test('a page with none of them is unchanged', () => {
+      const out = wrapDocument('<p></p>', { title: 'x' })
+      expect(out).not.toContain('ld+json')
+      expect(out).toContain('<body>')
+    })
+  })
 })
 
 describe('pathsForRoute', () => {
@@ -373,6 +429,34 @@ describe('prerenderRoutes', () => {
     expect(second).toContain('<title>Read second-post — the blog</title>')
     expect(first).toContain('<meta name="description" content="Everything about hello-world.">')
     expect(first).not.toBe(second)
+  }, REAL_RENDER_TIMEOUT)
+
+  test('head() meta, links and jsonLd reach each page\'s <head> (FJS-1539)', async () => {
+    const out = tmpDir('sierra-head-tags-')
+    await run(out)
+    const html = readFileSync(resolve(out, 'blog/second-post/index.html'), 'utf8')
+    const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
+    expect(head).toContain('<meta property="og:title" content="Read second-post">')
+    expect(head).toContain('<link rel="canonical" href="https://x.test/blog/second-post/">')
+    const ld = head.match(/<script type="application\/ld\+json">(.*?)<\/script>/)
+    expect(JSON.parse(ld[1])).toEqual({ '@type': 'BlogPosting', headline: 'second-post' })
+  }, REAL_RENDER_TIMEOUT)
+
+  test('document head, bodyEnd and bodyAttrs reach every page (FJS-1539)', async () => {
+    const out = tmpDir('sierra-doc-')
+    const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
+    const { scan } = await import('../src/scanner/index.js')
+    const tree = await scan('src/routes', { cwd: ROOT })
+    await prerenderRoutes({
+      tree, root: ROOT, outDir: out, renderComponent,
+      docHead: '<meta name="theme-color" content="#fff">',
+      docBodyEnd: '<script src="/lead.js" defer></script>',
+      bodyAttrs: { id: 'app' },
+    })
+    const html = readFileSync(resolve(out, 'about/index.html'), 'utf8')
+    expect(html).toContain('<meta name="theme-color" content="#fff">')
+    expect(html).toContain('<body id="app">')
+    expect(html.indexOf('/lead.js')).toBeLessThan(html.indexOf('</body>'))
   }, REAL_RENDER_TIMEOUT)
 
   test('a route with no head() keeps its frontmatter title', async () => {

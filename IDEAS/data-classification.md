@@ -6,7 +6,7 @@ dated: 2026-10-08
 
 # Idea — data classification: how a field's sensitivity and retention are declared
 
-**Status: ruled as `FJS-D657`; built 2026-10-08 except the data map and `forget()`'s stop at a second person model, which wait on `forgetting.md`'s ruling.** The grammar, the trail's `[personal]`, the warning, `redact()` over declarations and the three call sites moved onto the owner are in `packages/litestone/CHANGES.md`. The regime table is `PERSONAL_CATEGORIES` in `src/core/personal.js` and nothing reads it yet. Corrections from the re-probe before ruling: the protected-set owner already exists (`buildFieldPolicyMap`), so C moves three call sites onto it rather than adding a table; `@@retain` is dropped, because the measured clock is a query over children; `subject` had five live senses, all roles, so the model word is `@@person`. Dated 2026-10-08. Every "exists" line below
+**Status: ruled as `FJS-D657`; built 2026-10-08 except the data map and `forget()`'s stop at a second person model, which wait on `forgetting.md`'s ruling.** The grammar, the trail's `[personal]`, the warning, `redact()` over declarations and the three call sites moved onto the owner are in `docs/changes-archive/litestone.md`. The regime table is `PERSONAL_CATEGORIES` in `src/core/personal.js` and nothing reads it yet. Corrections from the re-probe before ruling: the protected-set owner already exists (`buildFieldPolicyMap`), so C moves three call sites onto it rather than adding a table; `@@retain` is dropped, because the measured clock is a query over children; `subject` had five live senses, all roles, so the model word is `@@person`. Dated 2026-10-08. Every "exists" line below
 cites a file and line, and the parser claims were probed by running
 `parse()` from `packages/litestone/src/index.js`, not read from docs. Do not
 cite this file as describing behavior — see `VERIFYING.md`.
@@ -306,9 +306,9 @@ that exists.
   `Restrict` gets the by-name refusal `forgetting.md` already plans). What
   is left for a model word is a non-relator row ABOUT the person — a note, a
   message body.
-- ~~**Q9 — The misleading parse error.**~~ Filed as [FJS-2060](../ISSUES.md#fjs-2060):
+- ~~**Q9 — The misleading parse error.**~~ Filed as [FJS-2060](../ISSUES_ARCHIVE.md#fjs-2060):
   `@pii(x)` reports *unknown function*. Q4's `SECRETS` half is
-  [FJS-2059](../ISSUES.md#fjs-2059).
+  [FJS-2059](../ISSUES_ARCHIVE.md#fjs-2059).
 
 ## See also
 
@@ -316,6 +316,6 @@ that exists.
   this feeds (data map, DSAR, erasure)
 - [`forgetting.md`](forgetting.md) — `@personal` and the walk, measured; its
   Q2 owns the word for *delete on forget* (Q8 here)
-- [`logbook.md`](logbook.md) — the database-grain retention sweep
+- [`logbook.md`](shipped/logbook.md) — the database-grain retention sweep
 - `FJS-D205`, `FJS-D454`, `FJS-D322`, `FJS-D359`, `FJS-D574`, `FJS-521`,
   `FJS-1250`, Invariants 4 and 7

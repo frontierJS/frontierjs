@@ -1,5 +1,5 @@
 // A fragment is SQL text and its binds, together — the currency a clause
-// builder answers and a verb assembles (IDEAS/litestone-by-construction.md § Step 1).
+// builder answers and a verb assembles (IDEAS/shipped/litestone-by-construction.md § Step 1).
 //
 // The failure it removes is a placeholder and its value travelling apart:
 // FJS-262 and FJS-216 were a filter's text spliced in one order and its binds

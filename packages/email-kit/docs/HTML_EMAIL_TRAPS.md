@@ -4,7 +4,7 @@ Two failure modes that a DOM-based renderer creates and that no test catches by
 accident: both leave the output **well-formed**, so the only way to see them is
 to look at what a mail client shows.
 
-These were live defects in this kit on 2026-08-03 (see `CHANGES.md`); this file
+These were live defects in this kit on 2026-08-03 (see `docs/changes-archive/email-kit.md`); this file
 is the durable account, because the shape recurs for any component that carries
 Outlook fallbacks or a text alternative.
 

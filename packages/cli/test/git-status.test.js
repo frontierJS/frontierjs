@@ -11,10 +11,10 @@ const z = (lines) => lines.map(l => l + '\0').join('')
 test('every path in, exactly once out', () => {
   const paths = [
     'packages/litestone/src/core/engine.js',
-    'packages/litestone/CHANGES.md',
+    'packages/litestone/DECISIONS.md',
     'example/db/schema.lite',
     'example/web/src/routes/people/index.mesa',
-    'example/CHANGES.md',
+    'example/DECISIONS.md',
     'IDEAS/geo.md',
     'CLAUDE.md',
     'exports.snapshot.md',
@@ -39,7 +39,7 @@ test('every role a rule can answer is in the print order', () => {
   // A role the renderer never reaches prints nothing, and the file vanishes
   // from its place while the header still counts it.
   const probes = ['a/x.lite', 'a/x.ts', 'a/x.mesa', 'a/test/x.ts', 'a/config/x.js',
-                  'a/deploy/x.sh', 'a/x.snapshot.md', 'a/CHANGES.md', 'a/notes.md']
+                  'a/deploy/x.sh', 'a/x.snapshot.md', 'a/DECISIONS.md', 'a/notes.md']
   for (const p of probes) expect(ROLE_ORDER).toContain(roleOf(p))
 })
 
@@ -113,13 +113,13 @@ test('blast reaches a file through the reader, and 0 is not null', () => {
   const index = { 'packages/cli/core/checks.js': { usedBy: 24, band: 3 },
                   'packages/cli/core/lonely.js': { usedBy: 0,  band: 0 } }
   const model = buildStatus({
-    porcelain: z([' M packages/cli/core/checks.js', ' M packages/cli/core/lonely.js', ' M packages/cli/CHANGES.md']),
+    porcelain: z([' M packages/cli/core/checks.js', ' M packages/cli/core/lonely.js', ' M packages/cli/DECISIONS.md']),
     blastOf: (p) => index[p] ?? null,
   })
   const by = Object.fromEntries(model.zones[0].files.map(f => [f.rel, f.blast]))
   expect(by['core/checks.js']).toEqual({ usedBy: 24, band: 3 })
   expect(by['core/lonely.js']).toEqual({ usedBy: 0, band: 0 })
-  expect(by['CHANGES.md']).toBe(null)
+  expect(by['DECISIONS.md']).toBe(null)
 })
 
 test('with no reader every file reads null rather than 0', () => {
@@ -152,7 +152,7 @@ test('an app checked out on its own groups by surface rather than into the root'
 
 test('an app inside a workspace groups by its surfaces, a package stays whole', () => {
   expect(zoneOf('example/web/src/app.js')).toMatchObject({ zone: 'example/web', prefix: 'example/web/' })
-  expect(zoneOf('example/CHANGES.md')).toMatchObject({ zone: 'example', prefix: 'example/' })
+  expect(zoneOf('example/DECISIONS.md')).toMatchObject({ zone: 'example', prefix: 'example/' })
   expect(zoneOf('packages/basecamp/web/src/x.mesa')).toMatchObject({ zone: 'basecamp', prefix: 'packages/basecamp/' })
   expect(zoneOf('IDEAS/ontology.md')).toMatchObject({ zone: 'IDEAS', group: 'repo' })
 })
@@ -171,7 +171,7 @@ test('hubs are the amber rows alone, most reach first, untracked only when asked
                   'packages/cli/core/new.js': { usedBy: 40, band: 3 } }
   const model = buildStatus({
     porcelain: z([' M packages/cli/core/checks.js', ' M packages/litestone/src/core/parser.js',
-                  ' M packages/cli/core/mid.js', '?? packages/cli/core/new.js', ' M packages/cli/CHANGES.md']),
+                  ' M packages/cli/core/mid.js', '?? packages/cli/core/new.js', ' M packages/cli/DECISIONS.md']),
     blastOf: (p) => index[p] ?? null,
   })
   expect(hubsOf(model)).toEqual(['packages/litestone/src/core/parser.js', 'packages/cli/core/checks.js'])

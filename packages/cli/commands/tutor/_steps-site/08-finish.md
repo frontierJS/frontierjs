@@ -28,7 +28,7 @@ log.info('')
 log.info('  site/src/routes/notes/index.meta.js   load() — runs in Node, at build time')
 log.info('  site/dist/notes/index.html            the page, with the data already in it')
 log.info('')
-log.info('  fli site:dev                          write against it as an SPA')
+log.info('  fli dev:site                          write against it as an SPA')
 log.info('  fli tutor:deploy                      next — a real deploy to this machine, and a revert')
 log.info('')
 

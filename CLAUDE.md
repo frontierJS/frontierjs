@@ -16,7 +16,7 @@ Only two things are binding: the **Invariants** below, and rulings in `DECISIONS
 
 **A change that turns on a judgment call runs `decision-rules`** (`.claude/skills/`). It fires on the ACT rather than on the doubt: adding an option, coining a noun, restating something already stated, choosing between two designs, or finding the code and a document disagree.
 
-**This file is only what is live**, and a line here earns its place by changing what someone does in the next hour. History belongs in `packages/*/CHANGES.md`, open defects in `ISSUES.md`, settled arguments in `DECISIONS.md`.
+**This file is only what is live**, and a line here earns its place by changing what someone does in the next hour. History is git, open defects in `ISSUES.md`, settled arguments in `DECISIONS.md`.
 
 ---
 
@@ -30,7 +30,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 4. **One owner per translation.** Exactly one place turns a thrown value into an HTTP status, one wraps/unwraps the result envelope, one parses `$`-params into `ctx.directives`, one announces a write, one startup phase list every caller runs. Add to the owner, never beside it; the owners are § Bridge index.
 5. **One owner per `app.<thing>`.** Claim it with `app.claim(name, value)`; type it by augmenting an exported interface, never by redeclaring the property — declaration merging requires identical types, so a redeclaration silently loses. The verb is not `provide`, because a Provider is a third party the app speaks to (`FJS-D06`).
 6. **Access is declared in the schema, not in hooks.** Gates, `@encrypted`, `@guarded`, `@@transitions` are enforced at the Data boundary. `x-gate` on the client is a UI affordance only — unknown answers are permissive and the server enforces regardless. No exceptions.
-7. **Protected fields are redacted in the audit trail.** `@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and `@personal` as `[personal]`, in field entries and in `before`/`after` snapshots.
+7. **Protected fields are redacted in the audit trail.** `@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and `@personal` as `[personal]`, in field entries and in `before`/`after` images.
 8. **Caller-supplied names never enter a SQL pattern.**
 9. **Patch semantics: an explicit `null` clears.** Test key presence (`key in updates`), not `??`.
 10. **A `$`-PREFIXED KEY is transport syntax only.** `ctx.query` is filters, `ctx.directives` is `{limit, offset, orderBy, select}`, and no `$`-prefixed key survives the bridge — one the table does not name is REFUSED there by name (`FJS-D237`). The table is `@frontierjs/toolbelt/directives`; what the values mean is `@frontierjs/toolbelt/query` (`FJS-D125`). Junction's ambient `$`, the call in progress, is a different thing sharing a character.
@@ -40,7 +40,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 14. **Typecheck baselines ratchet down only.** `scripts/typecheck-baselines.json`, one number per package; absent means 0. `bun run typecheck -- --update` writes an improvement back.
 15. **A clean compile is not proof of valid JS.** Compiler tests parse their output.
 16. **Runnable examples are verified, not sketches.** A broken one is a bug.
-17. **Four markdown files at a package root is the standard** — `README.md`, `CLAUDE.md`, `PROJECT_STATE.md`, `CHANGES.md`; everything else in `<pkg>/docs/`. `AGENTS.md` is a permitted fifth, for a package's consumers (`FJS-D163`). A sixth is a `package-root-md` warning to answer — move the file or record why it stays. Generated `*.snapshot.md` is exempt.
+17. **Three markdown files at a package root is the standard** — `README.md`, `CLAUDE.md`, `PROJECT_STATE.md`; everything else in `<pkg>/docs/`. `AGENTS.md` is a permitted fourth, for a package's consumers (`FJS-D163`). A fifth is a `package-root-md` warning to answer — move the file or record why it stays. Generated `*.snapshot.md` is exempt.
 18. **In a Sierra app, `src/resources/` holds `.mesa` files, and a resource file carries its model's default form.** A Resource is a UI-realm noun, written in the UI-realm language. The `<script module>` data half is required and the markup half is optional; a file with no `<script module>` is a component in the wrong folder (`FJS-D112`).
 19. **A resource file is named for its noun — PascalCase, singular — one Resource per file.** `App.mesa` exporting `export const apps`; where a model exists the filename IS the model name, so an irregular is visible.
 
@@ -69,7 +69,7 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 Match the file you are in first. The code rules load from `.claude/rules/code-style.md` when a source file is read; these are the ones a new file needs before any read.
 
 - **No semicolons**, single quotes, 2-space indent. TypeScript in junction, auth, caravan, conduit, notifications, mcp and testing; plain ESM JavaScript in every other package.
-- **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history, dates and narration of your own change belong in `CHANGES.md`, `DECISIONS.md` and git.
+- **A comment explains the failure, not the mechanism, and must be load-bearing.** Edit history, dates and narration of your own change belong in `DECISIONS.md` and git (`FJS-D675`).
 - **A comment inside a template literal uses plain words or `--` quoting** — a backtick there closes the literal and the file fails to parse.
 - **American spelling** in prose and identifiers (`FJS-D192`); `cancelled`, a persisted enum value, is the one exception, and `fli check` grades it.
 - **A document an agent reads is written by `doc-hygiene`** (`.claude/skills/`). **A section a parser reads moves only with its parser** — modules read this file's Invariants, Packages table and Bridge index by path.
@@ -98,7 +98,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 
 ## Packages
 
-**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, a file-by-file layout map, its traps, and which drive proves a change. History is its `CHANGES.md`, state its `PROJECT_STATE.md`, open items `ISSUES.md`. This table is the one-line version. **Ring** is the order a newcomer reads them in, center out, and `fli ws:atlas --as=rings` draws it from this column — a package with none lands in *unplaced*.
+**Every package has its own `CLAUDE.md`, loaded when you read a file in that package** — what it owns, a file-by-file layout map, its traps, and which drive proves a change. History is git, state its `PROJECT_STATE.md`, open items `ISSUES.md`. This table is the one-line version. **Ring** is the order a newcomer reads them in, center out, and `fli ws:atlas --as=rings` draws it from this column — a package with none lands in *unplaced*.
 
 | Package | Realm/Domain | What it is | State | Ring |
 | --- | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | ui | UI | Mesa component kit over `@frontierjs/css` | Shipped. **Every component forwards its caller's attributes**, and a form control puts them on the CONTROL rather than the `.field-group` wrapper, because that is what a `<label for>` and an `aria-describedby` must reach. | batteries |
 | testing | Testing / Suite | `createTestEnv`'s API tier — a real Junction app over the env's own Litestone client | Working. Sits **above Junction** and is imported by nothing, which is the whole reason it exists: Litestone's `createTestEnv` cannot mount an app without importing Junction (Invariant 1). | batteries |
 | email-kit | UI / email | Table-based email components + `target: 'email'` wrapper — an MJML replacement | Working. Never opened in a real mail client; Outlook conditional-comment handling is fragile — see its `docs/` | batteries |
-| orion | D5 / automations | Flows of triggers, conditions and actions, run by an engine installed into the app (`FJS-D269`) | Being ported (`IDEAS/orion-port.md`). | batteries |
+| orion | D5 / automations | Flows of triggers, conditions and actions, run by an engine installed into the app (`FJS-D269`) | Ported (`IDEAS/orion-port.md` phases 1–6); publishable, never released (`FJS-1369`). | batteries |
 | basecamp | D7 / app | **Fleet operations app. An FJS application, not a library** — the largest dogfooding surface | Working. All three realms real, zero raw SQL, and every model declares `@@gate`. | frontier |
 | oracle | Data / modeling | The step before `db/schema.lite`: a catalog of canonical entities, the checks a model's answer must pass, and an emitter from that answer to `.lite` — no model inside (`FJS-D601`) | Working, private. **Access is derived, never written**: a row policy is assembled from who the answer says reaches a row, so a signed-in level with no policy cannot be emitted by accident. `mockup/` is the old React recognizer, kept as reference. | tooling |
 

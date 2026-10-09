@@ -224,7 +224,7 @@ describe('matching the changed column', () => {
   test('a symbol in a document, a test or a comment is not a change to it', () => {
     const row = 'litestone migrations (`autoMigrate`, `diffSchemas`)'
     const section = (file, line) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,0 +1 @@\n+${line}\n`
-    expect(matchChanged(row, { files: [], diff: section('packages/litestone/CHANGES.md', 'now `autoMigrate` refuses'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/litestone/README.md', 'now `autoMigrate` refuses'), packages: [] })).toBeNull()
     expect(matchChanged(row, { files: [], diff: section('packages/litestone/test/m.test.ts', 'await autoMigrate(db)'), packages: [] })).toBeNull()
     expect(matchChanged(row, { files: [], diff: section('packages/litestone/src/m.js', '// autoMigrate runs first'), packages: [] })).toBeNull()
     expect(matchChanged(row, { files: [], diff: section('packages/litestone/src/m.js', 'await autoMigrate(db)'), packages: [] })?.tier).toBe('symbol')

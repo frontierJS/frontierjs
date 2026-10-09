@@ -26,7 +26,7 @@ export function createEmployeesService() {
      *
      * **This is the second copy of `plans.reprice` in this application**, over
      * an unrelated noun, and the duplication is the finding rather than an
-     * oversight (`IDEAS/payroll.md` phase 2). The four steps are identical:
+     * oversight (`IDEAS/shipped/payroll.md` phase 2). The four steps are identical:
      * find the open window, refuse two, close it at `now`, open the next.
      *
      * The schema says *one open window per parent* now

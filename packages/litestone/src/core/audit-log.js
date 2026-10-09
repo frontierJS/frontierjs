@@ -30,7 +30,7 @@ export function makeLoggerAutoModel(dbName) {
       f('field',      'String',     true),
       // WHICH named move an update was, where it was one. `operation` stays
       // `update` because the row is one; two moves between the same states
-      // write identical before and after snapshots, and only this separates
+      // write identical before- and after-images, and only this separates
       // an order abandoned by its commitment from one a person cancelled.
       f('transition', 'String',     true),
       f('records',    'Json'),

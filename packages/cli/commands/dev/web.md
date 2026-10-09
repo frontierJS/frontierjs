@@ -1,10 +1,10 @@
 ---
-title: web:dev
+title: dev:web
 description: Start the web app dev server
 alias: web-dev
 examples:
-  - fli web:dev
-  - fli web:dev --test
+  - fli dev:web
+  - fli dev:web --test
 flags:
   test:
     char: t

@@ -355,7 +355,7 @@ somebody made rather than a limit somebody hit.
 changes no answer — the same rows come back either way — so every behavioral
 test passes with the promotion silently not happening. The assertion is the
 `EXPLAIN`, exactly as it is for `@@index([cols], where: …)`
-([partial-indexes.md](partial-indexes.md)), and for the same reason.
+([partial-indexes.md](../partial-indexes.md)), and for the same reason.
 
 ## Open questions
 
@@ -676,11 +676,11 @@ one hand-written `INSERT … SELECT` rather than a hazard.
 
 ## See also
 
-- [scoped-sql.md](scoped-sql.md) — why a segment must be a `where` through the ORM
+- [scoped-sql.md](../scoped-sql.md) — why a segment must be a `where` through the ORM
   and never authored SQL, and the ruling that closed that hole by refusal
-- [schema-variants.md](schema-variants.md) — a different runtime-shaped schema
+- [schema-variants.md](../schema-variants.md) — a different runtime-shaped schema
   question, and the Django-versus-Rails prior art split that this file's
   Frappe-versus-Salesforce split is the same argument as
-- [scaling.md](scaling.md) — why the whole of this is `strategy database`'s
+- [scaling.md](../scaling.md) — why the whole of this is `strategy database`'s
   problem, and what that strategy does and does not isolate
 - `packages/litestone/src/core/migrate.js` — `diffColumns`, and the line

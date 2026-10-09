@@ -16,7 +16,7 @@ is still unbuilt is the FRAMING — the
 matcher is wired into the store rather than dispatched through the resource's hook
 pipeline (§ *There is no new API*), so a pushed record still runs no `after` hook
 and an app cannot replace the matcher for a query it can decide and the framework
-cannot. Read the tables below as the design; read `packages/sierra/CHANGES.md`
+cannot. Read the tables below as the design; read `docs/changes-archive/sierra.md`
 2026-08-15 for what shipped. See `VERIFYING.md`.
 
 ---

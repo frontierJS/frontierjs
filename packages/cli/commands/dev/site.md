@@ -1,10 +1,10 @@
 ---
-title: site:dev
+title: dev:site
 description: Start the site surface's dev server
 alias: site-dev
 examples:
-  - fli site:dev
-  - fli site:dev --port 8600
+  - fli dev:site
+  - fli dev:site --port 8600
 flags:
   port:
     char: p

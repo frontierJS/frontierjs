@@ -35,7 +35,7 @@ model Notification {
   type        String              // the notification's stable name
   data        Json                // whatever its formatter built
   contextType String?             // a loose reference, with no foreign key
-  contextId   Int?
+  contextId   String?
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 

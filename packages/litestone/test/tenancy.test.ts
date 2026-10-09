@@ -939,3 +939,36 @@ describe('a unique on a tenant-scoped model', () => {
     expect(reported[0]).toContain('Page.path')
   })
 })
+
+// FJS-1918 — D310 widens the UNIQUE a `@unique` builds to (tenant, field), so a
+// bulk upsert naming the field alone must reach that index, not SQLite's
+// "does not match any PRIMARY KEY or UNIQUE constraint".
+describe('upsertMany conflictTarget under row tenancy', () => {
+  const SCHEMA = `
+    tenancy { strategy row  column accountId  claim accountId }
+    model Job { id Int @id @default(autoincrement())  accountId Int  externalId String @unique  title String }
+  `
+
+  it('prepends the tenant column to a conflictTarget the scoped @unique names', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.job.create({ data: { accountId: 2, externalId: 'x', title: 'theirs' } })
+    const caller = db.$setAuth({ id: 'u1', accountId: 1 })
+
+    await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'one' }], conflictTarget: ['externalId'] })
+    await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'two' }], conflictTarget: ['externalId'] })
+
+    const mine = await caller.job.findMany({})
+    expect(mine.map((j: any) => j.title)).toEqual(['two'])
+    const all = await sys.job.findMany({ orderBy: { id: 'asc' } })
+    expect(all.map((j: any) => [j.accountId, j.title])).toEqual([[2, 'theirs'], [1, 'two']])
+  })
+
+  it('leaves a conflictTarget that already names the tenant column alone', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const caller = db.$setAuth({ id: 'u1', accountId: 1 })
+    await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'one' }], conflictTarget: ['accountId', 'externalId'] })
+    await caller.job.upsertMany({ data: [{ externalId: 'x', title: 'two' }], conflictTarget: ['accountId', 'externalId'] })
+    expect((await caller.job.findMany({})).map((j: any) => j.title)).toEqual(['two'])
+  })
+})

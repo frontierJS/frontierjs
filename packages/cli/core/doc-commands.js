@@ -31,7 +31,7 @@
 // ── What is NOT graded ───────────────────────────────────────────────────────
 //
 // `IDEAS/` names commands that deliberately do not exist — that is what an idea
-// paper IS — and the registers and CHANGES files are history and argument. The
+// paper IS — and the registers and the changes archive are history and argument. The
 // surface graded is the one that tells you what to run: a README, a CLAUDE.md,
 // an AGENTS.md, and a command file naming a sibling.
 
@@ -53,8 +53,8 @@ const MENTION = /`fli ([a-z][a-z0-9-]*(?::[a-z][a-z0-9-]*)?)(?![a-z0-9:-])/g
 /** A doc that tells you what to run, as opposed to one that argues about it. */
 export function isReferenceDoc(path) {
   const rel = path.split('\\').join('/')
-  if (/(^|\/)(IDEAS|docs\/handoff-archive)\//.test(rel)) return false
-  if (/(^|\/)(ISSUES|ISSUES_ARCHIVE|DECISIONS|HANDOFF|CHANGES)\.md$/.test(rel)) return false
+  if (/(^|\/)(IDEAS|docs\/handoff-archive|docs\/changes-archive)\//.test(rel)) return false
+  if (/(^|\/)(ISSUES|ISSUES_ARCHIVE|DECISIONS|HANDOFF)\.md$/.test(rel)) return false
   return /(^|\/)(README|CLAUDE|AGENTS)\.md$/.test(rel) || /(^|\/)commands\/.*\.md$/.test(rel)
 }
 

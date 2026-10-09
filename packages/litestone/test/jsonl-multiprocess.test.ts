@@ -8,7 +8,7 @@
 // **These run REAL processes.** Every one of the three needs two writers racing
 // on one file, which is the one thing a single-process test cannot stage: the
 // window is between two adjacent syscalls, and nothing inside one event loop can
-// sit in it. Measured on the pre-fix code, and the numbers are in `CHANGES.md`.
+// sit in it. Measured on the pre-fix code, and the numbers are in `docs/changes-archive/litestone.md`.
 
 import { describe, test, expect, afterEach } from 'bun:test'
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, appendFileSync, statSync } from 'node:fs'

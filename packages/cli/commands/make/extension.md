@@ -119,7 +119,7 @@ if (existsSync(pkgPath)) {
 
 log.info('')
 log.info('  fli extension:build     → extension/dist/chrome/')
-log.info(`  fli extension:dev       watch + reload, dev port ${devPort}`)
+log.info(`  fli dev:extension       watch + reload, dev port ${devPort}`)
 log.info('  fli extension:audit     permissions declared vs. chrome.* called')
 log.info('')
 log.info(`  Then load ${dir}/dist/chrome/ unpacked — see ${dir}/test/README.md`)

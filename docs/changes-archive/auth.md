@@ -90,7 +90,7 @@ run no sweep. The code is unchanged.
 
 `account-recovery.resetTotp` graded both the operator and the person with `services.level`. That option also sets the level `account.me` publishes, which a browser gates its buttons on. An app whose level is per tenant had no honest value for both, so basecamp could not reach recovery. `recoveryLevel` grades recovery alone and falls back to `level`. `example`, which passes only `level`, is unchanged ([`FJS-D550`](../../DECISIONS.md#fjs-d550), amending `FJS-D264`).
 
-The floor and the peer test are now positive and require a finite number. `level(op) < SYSADMIN` and `level(person) >= level(op)` are both false for `undefined`, so a resolver with no number for somebody let the reset through ([`FJS-1559`](../../ISSUES.md#fjs-1559)). Four rows in `test/account-recovery.test.ts`: `recoveryLevel` is read in place of `level` while `account.me` still answers `level`; the peer rule holds under it; and a resolver that answers no number, for the operator or for the person, refuses. The last two fail against the old comparisons. The suite has 407 passing and typecheck is at baseline.
+The floor and the peer test are now positive and require a finite number. `level(op) < SYSADMIN` and `level(person) >= level(op)` are both false for `undefined`, so a resolver with no number for somebody let the reset through ([`FJS-1559`](../../ISSUES_ARCHIVE.md#fjs-1559)). Four rows in `test/account-recovery.test.ts`: `recoveryLevel` is read in place of `level` while `account.me` still answers `level`; the peer rule holds under it; and a resolver that answers no number, for the operator or for the person, refuses. The last two fail against the old comparisons. The suite has 407 passing and typecheck is at baseline.
 
 ## 2026-09-28 — an API key with scopes cannot manage its owner's credentials (`FJS-1446`)
 
@@ -454,7 +454,7 @@ at upgrade, so without it the operator's open tabs go on acting as whoever they
 were before the change — as themselves after a start, and as the SUBJECT after an
 end, which is the episode outliving itself.
 
-Closes [`FJS-142`](../../ISSUES_ARCHIVE.md#fjs-142). `IDEAS/support-mode.md` carries the
+Closes [`FJS-142`](../../ISSUES_ARCHIVE.md#fjs-142). `IDEAS/shipped/support-mode.md` carries the
 design, the prior art it was corrected by, and what was deliberately cut.
 
 ## 2026-08-24 — a sign-in screen can ask which providers exist, and the models are imported rather than pasted

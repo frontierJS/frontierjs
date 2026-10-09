@@ -6,7 +6,7 @@ dated: 2026-08-29
 
 # Polymorphic relations, refused; `@@arc`, shipped
 
-**Ruled by [`FJS-D189`](../DECISIONS.md#fjs-d189).** Litestone has no polymorphic
+**Ruled by [`FJS-D189`](../../DECISIONS.md#fjs-d189).** Litestone has no polymorphic
 relation and this record is the argument that it should not grow one; `@@arc`
 ships in its place. The ruling names the condition for reopening it: an open
 target set that has to carry a real foreign key, a real cascade and a

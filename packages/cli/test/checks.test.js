@@ -1477,7 +1477,7 @@ describe('the extension surface', () => {
 })
 
 describe('the repo scope', () => {
-  test('a fifth markdown file at a package root is a WARNING that names it', () => {
+  test('a fourth markdown file at a package root is a WARNING that names it', () => {
     // Ruled 2026-08-14: the four are the standard and a fifth is a question, not
     // a refused build — the rule cannot tell a stray design note from the next
     // thing everyone needs at the root, and it was refusing both. The severity
@@ -1488,7 +1488,6 @@ describe('the repo scope', () => {
       'packages/thing/README.md':        '#\n',
       'packages/thing/CLAUDE.md':        '#\n',
       'packages/thing/PROJECT_STATE.md': '#\n',
-      'packages/thing/CHANGES.md':       '#\n',
       'packages/thing/NOTES.md':         '#\n',
     })
     const { findings } = runChecks({ root, scope: 'repo' })
@@ -1497,7 +1496,7 @@ describe('the repo scope', () => {
     expect(findings[0].message).toMatch(/NOTES\.md/)
   })
 
-  test('a MISSING one of the four is a finding that names it', () => {
+  test('a MISSING one of the three is a finding that names it', () => {
     // The other half of the same rule, and the half that was never reported:
     // building `allowed` and reporting what is not in it catches a fifth file
     // and can never catch an absent fourth. Seven packages were short a
@@ -1509,8 +1508,7 @@ describe('the repo scope', () => {
     })
     const { findings } = runChecks({ root, scope: 'repo' })
     expect(findings.map(f => f.message).join(' ')).toMatch(/PROJECT_STATE\.md is missing/)
-    expect(findings.map(f => f.message).join(' ')).toMatch(/CHANGES\.md is missing/)
-    expect(findings).toHaveLength(2)
+    expect(findings).toHaveLength(1)
   })
 
   test('a missing file is allowed by its own PATH, not by its package', () => {
@@ -1521,7 +1519,6 @@ describe('the repo scope', () => {
       'packages/thing/package.json':     '{}',
       'packages/thing/README.md':        '#\n',
       'packages/thing/CLAUDE.md':        '#\n',
-      'packages/thing/PROJECT_STATE.md': '#\n',
       'packages/thing/NOTES.md':         '#\n',
     })
     const { findings, allowed } = runChecks({
@@ -1530,7 +1527,7 @@ describe('the repo scope', () => {
     })
     expect(allowed).toHaveLength(1)
     expect(findings).toHaveLength(1)
-    expect(findings[0].message).toMatch(/CHANGES\.md is missing/)
+    expect(findings[0].message).toMatch(/PROJECT_STATE\.md is missing/)
   })
 
   test('a generated *.snapshot.md at a package root says nothing at all', () => {
@@ -1542,19 +1539,17 @@ describe('the repo scope', () => {
       'packages/thing/README.md':          '#\n',
       'packages/thing/CLAUDE.md':          '#\n',
       'packages/thing/PROJECT_STATE.md':   '#\n',
-      'packages/thing/CHANGES.md':         '#\n',
       'packages/thing/routes.snapshot.md': '#\n',
     })
     expect(runChecks({ root, scope: 'repo' }).findings).toEqual([])
   })
 
-  test('the four named ones are not', () => {
+  test('the three named ones are not', () => {
     const root = tree('repo-ok', {
       'packages/thing/package.json':     '{}',
       'packages/thing/README.md':        '#\n',
       'packages/thing/CLAUDE.md':        '#\n',
       'packages/thing/PROJECT_STATE.md': '#\n',
-      'packages/thing/CHANGES.md':       '#\n',
       'packages/thing/docs/DEPTH.md':    '#\n',
     })
     expect(runChecks({ root, scope: 'repo' }).findings).toEqual([])

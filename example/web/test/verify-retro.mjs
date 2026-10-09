@@ -3,7 +3,7 @@
  * makes wrong.
  *
  * **bun, and no server.** Every claim here is about the Data boundary,
- * `api/src/domain/payroll` and `api/src/domain/payroll` — `IDEAS/payroll.md` phase 6.
+ * `api/src/domain/payroll` and `api/src/domain/payroll` — `IDEAS/shipped/payroll.md` phase 6.
  *
  * ─── What only this drive can ask ─────────────────────────────────────────
  *

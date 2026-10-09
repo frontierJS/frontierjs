@@ -90,7 +90,7 @@ in the pipeline compares them, and the failure mode is the worst available shape
 stage and production reporting the same version while running different code.
 
 That last one was reachable in a sharper form until this session: **the pipeline
-never ran `bun install` at all** (fixed, `packages/cli/CHANGES.md`). The API side was
+never ran `bun install` at all** (fixed, `docs/changes-archive/cli.md`). The API side was
 covered by accident because its Dockerfile installs inside the image; web built
 against whatever `node_modules` the server was carrying.
 

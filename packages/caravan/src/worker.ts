@@ -260,7 +260,7 @@ export class QueueWorker {
               `[Caravan] job '${record.name}' (${record.id}) — its actor '${record.actor_id}' ` +
               `no longer resolves, so it failed without retrying. Declare ` +
               `onMissingActor: 'system' to run it as the app instead.`
-            ), { terminal: true })
+            ), { retryable: false })
           })
         : () => run(null)
       await this._bounded(invoke(), handler.timeout, record)
@@ -283,8 +283,10 @@ export class QueueWorker {
       const attempt = record.attempts  // already incremented by claimNext
 
       const failedAt = Date.now()
-      if (attempt >= max || (err as { terminal?: boolean })?.terminal) {
-        // Out of retries — mark failed (terminal)
+      // `retryable: false` means the work may already have been applied — an
+      // unkeyed POST that got a 5xx may have charged — so another attempt is
+      // the double charge FJS-D194 exists to stop, and it fails now.
+      if (attempt >= max || (err as { retryable?: unknown })?.retryable === false) {
         const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,
           status: 'failed',

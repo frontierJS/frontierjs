@@ -1,5 +1,9 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — `PROJECT_STATE.md` states the version that shipped
+
+The status line said v1.1.0 with npm `latest` on 1.0.3; both are 1.1.9. `docs/schema.md` had a link repointed by `fli register:archive` (its row moved to `ISSUES_ARCHIVE.md`).
+
 ## 2026-10-08 — A Boolean write parses text and refuses what it cannot read (`FJS-2031`)
 
 `serializeBooleans` stored `value ? 1 : 0`, so the text `'false'` — a non-empty string — was written as 1 and read back `true`, through `asSystem()` and a scoped principal alike. `loadRows` reading the same cell stored 0, and a where filter on `'false'` matched the false rows, so the write path was the one disagreeing.
@@ -181,7 +185,7 @@ Proof: 5833 tests, 0 failures; `test/edge.test.ts` fails on a planted `core → 
 
 ## 2026-10-08 — the single-row write verbs and `upsert` run on the executor; `upsertMany` stays, by the stop rule
 
-Step 5b of `IDEAS/litestone-by-construction.md`. `create`, `update`, `remove`, `delete` and `upsert`'s fast path now plan and hand `executeWrite` the plan; the verb bodies are their own meaning only. Of the ten lock sites the proposal counted, the three left outside the executor are `upsertMany`, `restore` and `$transaction`.
+Step 5b of `IDEAS/shipped/litestone-by-construction.md`. `create`, `update`, `remove`, `delete` and `upsert`'s fast path now plan and hand `executeWrite` the plan; the verb bodies are their own meaning only. Of the ten lock sites the proposal counted, the three left outside the executor are `upsertMany`, `restore` and `$transaction`.
 
 - **The plan grew what a single row needs**: `result` (what to read back), `refuse` (the zero-row ladder as values: transition, `@version`, the seals, in the order `update` asked them), `before` (the prefetched row for the trail), `transition`, `bare` (no lock on the autocommit path, with the `FJS-1107` tripwire moved into the executor) and `announce: null` for a write with nothing to say. The trail's before/after snapshots are an op table, not a verb's choice.
 - **`upsert` is one plan plus the verb's own choice**: the `ON CONFLICT` statement is a plan; a unique refusal falls to the read-then-write path, which is `findFirst` plus `update`/`create` — already planned verbs. The executor knows nothing of upsert's shape.
@@ -193,7 +197,7 @@ Proof: both grids identical; 5828 tests, `test:browser` 28/28, typecheck at the 
 
 ## 2026-10-08 — a bulk write verb produces a plan, and one executor runs it
 
-Step 5a of `IDEAS/litestone-by-construction.md`, the four bulk verbs: `updateMany`, `deleteMany`, `createMany`, `removeMany`. Each repeated by hand the lock, the constraint mapping, the RETURNING decision, the cardinality and exclusion notes, the query event, the logs and the announcement — ten lock sites, eight error mappings, forty emit calls across the file.
+Step 5a of `IDEAS/shipped/litestone-by-construction.md`, the four bulk verbs: `updateMany`, `deleteMany`, `createMany`, `removeMany`. Each repeated by hand the lock, the constraint mapping, the RETURNING decision, the cardinality and exclusion notes, the query event, the logs and the announcement — ten lock sites, eight error mappings, forty emit calls across the file.
 
 - **A plan is a value**: `{ verb, op, statements, returning, where, prefetch, moves, exclusion, post, softCascade, batch, logs, system, announce }`, fragments and booleans and plain objects, never a closure. A verb body is now its own meaning only — hooks, stamps, `writeData`, value sets, the version strip, the SET and WHERE assembly — and ends in `executeWrite(plan)`.
 - **`executeWrite` owns the unit, in one stated order**: prefetch (only when a plugin or cascade sink listens), soft-cascade roots, the before-notes, `movesOnto`, `cascadeDoomed`, the statements with their per-row refusals and the error mapping by `op`, the post-update policy, the after-notes, then `fireQuery`, `afterDelete`, `emitLogs`, `cascadeRemoved`, `announceBulk`. `createMany` opens the lock itself because `applySequences` writes counters inside the unit, and runs the same `writeUnit`.
@@ -205,17 +209,17 @@ Proof: both grids identical; 5817 tests, `test:browser` 28/28, typecheck at the 
 
 ## 2026-10-08 — the read rules are declared once, in `READ_RULES`, and every verb folds them through `visibleWhere`
 
-Step 4 of `IDEAS/litestone-by-construction.md`. The rule sequence a read applies — global filter, plugin read filters, soft-delete, templates, the effective window, the caller's where, the row policy — was restated by hand in eleven verb bodies, and a verb that missed one was a silent hole until a grid caught it (`FJS-262`, `FJS-216`, `FJS-720`).
+Step 4 of `IDEAS/shipped/litestone-by-construction.md`. The rule sequence a read applies — global filter, plugin read filters, soft-delete, templates, the effective window, the caller's where, the row policy — was restated by hand in eleven verb bodies, and a verb that missed one was a silent hole until a grid caught it (`FJS-262`, `FJS-216`, `FJS-720`).
 
 - **`READ_RULES`** (client.js, inside `makeTable`) is one frozen array in `buildSQL`'s order. Each rule names the verbs it reaches: the two scope rules reach reads only, `templates` and `effective` reach everything but `restore`, `softDelete` and `policy` reach every verb. The four owners of what a rule means (`applySdFilter`, `applyHtFilter`, `applyEffFilter`, `resolveGlobalFilter`) are unchanged; the registry only states the order and the reach. `gate` is not a where rule and is not here.
 - **`visibleWhere(verb, where, args)`** is the one fold. `buildSQL` and `count`, `exists`, `findManyAndCount`, `aggregate`, `groupBy`, `findManyCursor`, `search`, the tree walk, and the where-half of `update`, `updateMany`, `remove`, `removeMany`, `restore`, `delete` and `deleteMany` call it. A verb `VERBS` does not place is refused at build, and a rule naming a verb that does not exist is refused the same way. `_hardDeleteWhere` and `applyEff` are gone; a hard delete states its purge-hatch contract as its own args.
 - **Three subsets are now data rather than silence**: scopes narrow a read and never a write; `restore` takes no widening flag; the tree walk is reached by neither scope (`FJS-2010`). The grid's six `globalFilter × write` cells turn out to be blind (`FJS-2011`).
 
-Proof: both grids identical before and after; a byte-level probe of 178 statements across every folded verb is identical but for one redundant paren pair in `search` with no caller where; 5811 tests, `test:browser` 28/28, typecheck at the 58 ceiling, bench within noise. `IDEAS/litestone-by-construction.md` § 5 asked whether the per-verb dimension was enumeration in a new place: no rule body branches on a verb, so it stayed.
+Proof: both grids identical before and after; a byte-level probe of 178 statements across every folded verb is identical but for one redundant paren pair in `search` with no caller where; 5811 tests, `test:browser` 28/28, typecheck at the 58 ceiling, bench within noise. `IDEAS/shipped/litestone-by-construction.md` § 5 asked whether the per-verb dimension was enumeration in a new place: no rule body branches on a verb, so it stayed.
 
 ## 2026-10-08 — a model's facts are one frozen record, `ctx.shapes[model]`, and the per-model maps leave `ctx`
 
-Step 2 of `IDEAS/litestone-by-construction.md`. `makeTable` took a `shape` holding some of a model's facts, destructured with defaults, and read the rest from 44 per-model maps on the shared `ctx` by `[modelName]`, optional-chained — so a map with no entry read as *this model has no such rule*. Nothing in the test corpus had hit that, which is the kind of fact that is true until it is not.
+Step 2 of `IDEAS/shipped/litestone-by-construction.md`. `makeTable` took a `shape` holding some of a model's facts, destructured with defaults, and read the rest from 44 per-model maps on the shared `ctx` by `[modelName]`, optional-chained — so a map with no entry read as *this model has no such rule*. Nothing in the test corpus had hit that, which is the kind of fact that is true until it is not.
 
 - **`shapeFor(model)` builds every model's and every view's record once**, with every facet present and an explicit empty value for one the model does not declare (`version: null`, `softDelete: false`, `relations: {}`, …). `Shape` is a typedef beside it. The record and `ctx.shapes` are frozen. A builder that must answer for every model and has no entry **throws at client build**; a sparse map is read by `Object.hasOwn`, never `??`.
 - **The 44 maps are gone from `ctx`**: `relationMap`, `policyMap`, `fieldPolicyMap`, `columnMaps`, `versionMap`, `softDeleteMap`, `logMap`, `modelDbMap` and the rest. A host-model read is `shape.x`; a cross-model read is `ctx.shapes[other].x`. Left on `ctx` by lifetime: the flavor (`auth`, `isSystem`, `scopedBy`, `enc`, `tables`, listeners) and the schema-wide indexes (`schema`, `models`, `typeMap`, `enumTypeMap`, `hasPolicies`, `plugins`, `tx`). `computedFns` stays because it is the app's code, not the schema's fact.
@@ -226,7 +230,7 @@ Proof: the `VERBS_REPORT` and `MATRIX_REPORT` grids are identical before and aft
 
 ## 2026-10-08 — a fragment is SQL and its binds together, and three statements are built from fragments
 
-Step 1 of `IDEAS/litestone-by-construction.md`. `sqlFragment` was `query.js`'s private currency for `now()`; it is now exported with `ident(name)`, `and(...)`, `or(...)` and `join(frags, sep)`, each a fragment that carries its own params in text order. `quoteIdent` stays the one quoting owner (`FJS-D169`); `ident` calls it. `buildPolicyFilter`, `sealWhereClause` and `sealSelfClause` return branded fragments.
+Step 1 of `IDEAS/shipped/litestone-by-construction.md`. `sqlFragment` was `query.js`'s private currency for `now()`; it is now exported with `ident(name)`, `and(...)`, `or(...)` and `join(frags, sep)`, each a fragment that carries its own params in text order. `quoteIdent` stays the one quoting owner (`FJS-D169`); `ident` calls it. `buildPolicyFilter`, `sealWhereClause` and `sealSelfClause` return branded fragments.
 
 - **`buildSQL`, `updateMany` and `deleteMany` assemble fragments.** The table name is `ident(tableName)` once per table; the WHERE is `and(where, policy)` then sealed; the statement is one `join`. Gone from those three: the shared `params` accumulator, `params.push(...policy.params)`, the separate `setParams`/`whereParams` arrays, and the regex that stripped LIMIT/OFFSET for the window wrap. A placeholder and its value can no longer travel apart there.
 - **`test/sql-idents.test.ts` is a ratchet** over hand-quoted `"${` occurrences per `src/core` file (client.js 395, ddl.js 100, query.js 76, …). A count may only go down, and a beaten ceiling must be lowered.
@@ -236,7 +240,7 @@ Found and filed, not fixed: `FJS-1992` (a `$raw` window filter binds in the wron
 
 ## 2026-10-08 — the ten modules split out of `client.js` are type-checked, under a ceiling that only falls
 
-Step 3 of `IDEAS/litestone-by-construction.md`. `checkJs` stays off for the package; each of `args.js`, `audit-log.js`, `computed.js`, `databases.js`, `field-policy.js`, `hooks.js`, `include.js`, `stamps.js`, `transaction.js` and `query.js` opts in with a `// @ts-check` pragma, so the directory question never arises. 770 errors on the first run; JSDoc types and six behavior-neutral guards took it to 59, recorded as `litestone: 59` in `scripts/typecheck-baselines.json` (Invariant 14). A first entry is written by hand, because `--update` only lowers a number that exists.
+Step 3 of `IDEAS/shipped/litestone-by-construction.md`. `checkJs` stays off for the package; each of `args.js`, `audit-log.js`, `computed.js`, `databases.js`, `field-policy.js`, `hooks.js`, `include.js`, `stamps.js`, `transaction.js` and `query.js` opts in with a `// @ts-check` pragma, so the directory question never arises. 770 errors on the first run; JSDoc types and six behavior-neutral guards took it to 59, recorded as `litestone: 59` in `scripts/typecheck-baselines.json` (Invariant 14). A first entry is written by hand, because `--update` only lowers a number that exists.
 
 - **`Ctx` is a typedef in `field-policy.js`**, a `LitestoneCtx` plus the internal maps `client.js` builds, each named so an unlisted one is an error rather than `any`. It moves to `client.js` when that file is checked.
 - **`DbHandle`, `Stmt`, `RawDb` are typedefs in `databases.js`**, structural, off the `engine.js` contract. A JSDoc `import('bun:sqlite')` is an import to `test/engine-seam.test.ts` and was refused by it.
@@ -245,7 +249,7 @@ Step 3 of `IDEAS/litestone-by-construction.md`. `checkJs` stays off for the pack
 
 ## 2026-10-08 — two tripwires that a revert passed now bite (`FJS-1871`, `FJS-1872`)
 
-Step 0 of `IDEAS/litestone-by-construction.md`: a refactor proven by a loose tripwire is not proven, so both were tightened before any `client.js` change.
+Step 0 of `IDEAS/shipped/litestone-by-construction.md`: a refactor proven by a loose tripwire is not proven, so both were tightened before any `client.js` change.
 
 - **`shared-tables.test.ts` counts builds instead of timing them.** The 2000 µs bound was 8× the cost of a per-flavor rebuild, so reverting `FJS-722` passed. The shared plugin ctx is one object for every flavor, and `makeTable` registers its cascade sink on it once per build, so the test wraps that registration: 20 principals touching every model must register nothing, and each sink keeps its identity. The reverted shape reads 60.
 - **`test/external-ref-flavors.test.ts` drives `ExternalRefPlugin` with two principals at once**, held inside `serialize()` until both have stashed, for a `File?` and a `File[]`. Each cleanup must name the principal whose row held the ref. A stash keyed on `ctx` rather than `ctx._flavor` fails both.
@@ -724,9 +728,9 @@ a `role` and USER(4) with one (`FJS-D197`); both now say so.
 ## 2026-09-29 — `docs/roadmap.md` retired
 
 Each open entry moved to a home that already existed or a new one: Embedding →
-`IDEAS/embedding.md` and LatLng → `IDEAS/geo.md`, both already ruled there;
+`IDEAS/shipped/embedding.md` and LatLng → `IDEAS/geo.md`, both already ruled there;
 `@slug` sourcing and collisions → `IDEAS/slug-sourcing.md`; ExternalSync →
-`IDEAS/external-field-cache.md`; `resolveMany()` → `IDEAS/polymorphic-relations.md`;
+`IDEAS/external-field-cache.md`; `resolveMany()` → `IDEAS/shipped/polymorphic-relations.md`;
 read replicas and a query cache → `IDEAS/scaling.md`; introspect `@@db` →
 `FJS-1555`. CREATOR is already documented in `access-control.md`, changing `@scale`'s
 `n` in `exact-numbers.md`, and the npm name in `PROJECT_STATE.md`. The shipped
@@ -1861,7 +1865,7 @@ happened.
 
 `FJS-1193`'s language half, on the engine seam that landed earlier the same day.
 `FJS-D332` ruled the declaration and `FJS-D333` the retrieval; the measurements
-are `IDEAS/embedding.md` and the reference page is `docs/vectors.md`.
+are `IDEAS/shipped/embedding.md` and the reference page is `docs/vectors.md`.
 
 ```
 model Passage {
@@ -3056,7 +3060,7 @@ reads the row.
 ## 2026-09-10 — `@required(where: …)`, and it becomes a CHECK
 
 `FJS-D259`. Required as a CONDITION, attributed to a field — the one sentence
-`IDEAS/declared-field-state.md` named that the tree genuinely could not say.
+`IDEAS/shipped/declared-field-state.md` named that the tree genuinely could not say.
 
 ```
 trackingCode String? @required(where: status == 'shipped',
@@ -3302,7 +3306,7 @@ have passed both.
 and zero used as `Json @type(T)` on a column — they are all service `input:`
 contracts. Shipped complete and never run, which is `FJS-970`'s shape one realm
 over. Found by asking whether a `type` could hold a tenant-declared field list;
-it cannot, because a type is CLOSED on write (`IDEAS/tenant-declared-fields.md`
+it cannot, because a type is CLOSED on write (`IDEAS/shipped/tenant-declared-fields.md`
 Phase 1).
 
 `test/typed-json-depth.test.ts` — 18 rows, every refusal paired with the same
@@ -7812,7 +7816,7 @@ list; a column that holds one value refuses it by name.
 ## 2026-08-29 — the open polymorphic pair, told what it may name
 
 No language change. `@@arc` still stops around six members, the pair is still
-the answer above that, and `IDEAS/polymorphic-relations.md`'s ruling stands: no
+the answer above that, and `IDEAS/shipped/polymorphic-relations.md`'s ruling stands: no
 real polymorphic relation, because a relation's target is an input to the
 access-control compiler and N targets is N gates.
 
@@ -8253,7 +8257,7 @@ so a polymorphic target is N branches in a `CASE`, each carrying its own
 a list as a 200 with fewer rows, which is exactly the shape Invariant 6 is
 arranged around. Prisma refuses it too; ZenStack's `@@delegate` is the best
 answer in the ecosystem and solves the *closed* set only, since `extends` is a
-closed set by construction. The argument is `IDEAS/polymorphic-relations.md`
+closed set by construction. The argument is `IDEAS/shipped/polymorphic-relations.md`
 (4.28), and the open set keeps `subjectType`/`subjectId` and keeps saying what it
 cannot do — `references/Tag.lite` argues both sides where somebody copies from.
 
@@ -8413,7 +8417,7 @@ are unaffected.
 
 ## 2026-08-26 — a finer capability grant REPLACES the coarse one
 
-`IDEAS/permission-sets.md` step 7, found by adopting the grid in basecamp. 3226
+`IDEAS/shipped/permission-sets.md` step 7, found by adopting the grid in basecamp. 3226
 tests, 0 fail.
 
 **A `@capability` column and a named move both required `Model.update` as well
@@ -8576,7 +8580,7 @@ prerenders twelve products from the surface root.
 
 ## 2026-08-26 — `access --for`, and what a rename cost
 
-Step 6 of `IDEAS/permission-sets.md` § *Build order*, and it amended a ruling.
+Step 6 of `IDEAS/shipped/permission-sets.md` § *Build order*, and it amended a ruling.
 
 **`litestone access --for <who>`** — the command `FJS-D148` names, and a CALLER of
 `$capabilitiesFor` rather than a second implementation, so a support screen asking
@@ -8620,7 +8624,7 @@ not model.
 
 ## 2026-08-26 — the affordance: `x-capabilities`, `$capabilitiesFor`, and the snapshot
 
-Step 5 of `IDEAS/permission-sets.md` § *Build order*. Everything that has to KNOW
+Step 5 of `IDEAS/shipped/permission-sets.md` § *Build order*. Everything that has to KNOW
 about the boundary without being it — a screen choosing buttons, a reviewer reading a
 diff, an operator asking what somebody can do. All of it permissive-when-unknown, the
 contract `x-gate` already has (Invariant 6).
@@ -8738,7 +8742,7 @@ missing from the root client's own `ownKeys`.
 
 ## 2026-08-26 — the grant column: `Capability[]`
 
-Step 4 of `IDEAS/permission-sets.md` § *Build order*. Enforcement asks *does this
+Step 4 of `IDEAS/shipped/permission-sets.md` § *Build order*. Enforcement asks *does this
 caller hold X*; this is where an X comes from.
 
 **`Capability` is synthesized from the schema's own surface, as a real enum** —
@@ -8845,7 +8849,7 @@ client stamp now and a hand-written statement owns its own.
 
 ## 2026-08-26 — capabilities are enforced
 
-Step 3 of `IDEAS/permission-sets.md` § *Build order*. All three tiers refuse at the
+Step 3 of `IDEAS/shipped/permission-sets.md` § *Build order*. All three tiers refuse at the
 Data boundary now; what is still unbuilt is the grant column that validates a role's
 array and the affordance that offers the list.
 
@@ -8901,7 +8905,7 @@ refusal from the outside and only one of them is somebody's afternoon.
 
 ## 2026-08-26 — `@@capabilities` and `@capability` parse, and the set derives
 
-The first shipped piece of the capability design (`IDEAS/permission-sets.md`,
+The first shipped piece of the capability design (`IDEAS/shipped/permission-sets.md`,
 seven rulings). **Two declarations and one derivation — nothing enforces yet.**
 
 **`@@capabilities` is a switch, not a list**, because `FJS-D139` rules that a
@@ -9355,7 +9359,7 @@ the right buttons with nothing written. Now in the `@@transitions` reference and
 in the catalog, with the consequence stated — **every move not at 8 is one a
 person can make**, which is the only mechanical line between the two halves of a
 machine, and the one filter a capability set could ever be derived through
-(`IDEAS/permission-sets.md`).
+(`IDEAS/shipped/permission-sets.md`).
 
 **Two copies of the comparison went with it.** `levelPasses()` declares itself
 the one definition of *does this level pass this gate*, warning that a second
@@ -9515,7 +9519,7 @@ problem: it bound a raw `false`, which equals nothing the column ever stores, so
 every boolean move would have reported a conflict.
 
 Both found by asking where a per-column capability would live
-(`IDEAS/permission-sets.md`).
+(`IDEAS/shipped/permission-sets.md`).
 
 ## 2026-08-25 — a refusal that told you to try again
 

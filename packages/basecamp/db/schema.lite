@@ -126,7 +126,7 @@
 // DATABASES
 // ============================================================
 // The audit logger. Every write to a @@trail(audit) model lands in
-// db/audit/auditTrail.jsonl with before/after snapshots, queryable through the
+// db/audit/auditTrail.jsonl with before/after images, queryable through the
 // `auditTrail` accessor. Two things to know:
 //   • The path is resolved relative to the PROCESS CWD, not this file — it
 //     assumes the API is started from the package root.

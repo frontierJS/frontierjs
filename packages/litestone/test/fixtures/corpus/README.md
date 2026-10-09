@@ -104,7 +104,7 @@ that would make one useful.
 
 **160 models**, fetched because `erpnext` no longer contains payroll: HR was
 split back out into `frappe/hrms`, so the ERP port has `GLEntry` and `Employee`
-and no `Salary Slip` at all. Added as phase 0 of `IDEAS/payroll.md` — read the
+and no `Salary Slip` at all. Added as phase 0 of `IDEAS/shipped/payroll.md` — read the
 refusals before writing a model.
 
 **526 unexpressed, and `0 changed`.** Nothing was silently mis-stated; the whole
@@ -139,7 +139,7 @@ mature payroll application's schema declares none of them:
   a closed interval is a third. Evidence that the two-column window is a choice
   rather than the only shape — which is what the open question about declaring
   validity windows in the schema needs in front of it before it is answered
-  (`IDEAS/payroll.md` § The rulings this will force).
+  (`IDEAS/shipped/payroll.md` § The rulings this will force).
 - **Amend-not-edit is a plain self-relation, used 54 times.** `amendedFrom` points
   a new document at the cancelled one it replaces. That is *reversal rather than
   edit* already in the wild, and it is the nearest thing in this corpus to
@@ -148,12 +148,12 @@ mature payroll application's schema declares none of them:
   `condition`, `formula` and `amountBasedOnFormula`; `TaxableSalarySlab` carries
   `condition`. Frappe evaluates them as Python. That is schema-as-data, which
   `IDEAS/proving-grounds.md` § Considered declined to build and
-  `IDEAS/payroll.md` § Out of scope declines again — now with the source in front
+  `IDEAS/shipped/payroll.md` § Out of scope declines again — now with the source in front
   of it rather than from memory.
 
 **And it prices the 80/20 budget.** Of 160 models, roughly 38 are payroll proper;
 the rest are recruitment, appraisal, leave, travel, expenses, shifts and
-onboarding — every one of them a domain `IDEAS/payroll.md` § Out of scope names.
+onboarding — every one of them a domain `IDEAS/shipped/payroll.md` § Out of scope names.
 The plan's budget of **eight models** is measured against that 38, not invented.
 
 ## The whole corpus

@@ -80,7 +80,11 @@ export function workOf(root, model, { today = new Date().toISOString().slice(0, 
 function papersOf(root) {
   const dir = join(root, 'IDEAS')
   if (!existsSync(dir)) return { count: 0, byStatus: [] }
-  const files = readdirSync(dir).filter(f => f.endsWith('.md'))
+  const shipped = join(dir, 'shipped')
+  const files = [
+    ...readdirSync(dir).filter(f => f.endsWith('.md')),
+    ...(existsSync(shipped) ? readdirSync(shipped).filter(f => f.endsWith('.md')).map(f => join('shipped', f)) : []),
+  ]
   const by = {}
   for (const f of files) {
     const m = readFileSync(join(dir, f), 'utf8').match(/^---\n[\s\S]*?^status:\s*(\S+)/m)
@@ -535,8 +539,8 @@ function client(D) {
     title: 'Prove', where: 'fli prove <files> · DRIVES.md',
     d: `Runs every drive DRIVES.md names for the files changed, starting what each needs first and stopping it after. A failure an open row already names is tagged open: ${P}-###. A baseline is run in a separate worktree, never by copying HEAD over this one.` })
   step('close', SX[5], SY, SW, SH, 'Close', 'fli close --how', {
-    title: 'Close', where: '/fix-next § 6 · CHANGES.md · fli close',
-    d: 'A CHANGES.md entry for each package touched, then fli close <id> --how with the cause, the fix and what proves it. fli done lists anything still unfinished. The session\'s last line is fix-next: <id> closed.' })
+    title: 'Close', where: '/fix-next § 6 · fli close',
+    d: 'fli close <id> --how with the cause, the fix and what proves it. fli done lists anything still unfinished. The session\'s last line is fix-next: <id> closed.' })
   for (let i = 0; i < 5; i++) wire([[SX[i] + SW, SY + SH / 2], [SX[i + 1], SY + SH / 2]], '', 'issue')
   wire([[850, 152], [850, SY]], '', 'issue')
 
@@ -615,7 +619,7 @@ function client(D) {
   const BX = [540, 810, 1080, 1350], BW = 250
   proc('done', BX[0], 975, BW, 50, 'fli done', 'is the change finished?', {
     title: 'fli done', where: 'fli done --json',
-    d: 'Reads the working tree: history in CHANGES.md, docs pointers, test wiring, snapshots, the registers, and the drives the change needs. Clear what it lists, or say in a sentence why an item stays.' }, 'honest')
+    d: 'Reads the working tree: docs pointers, test wiring, snapshots, the registers, and the drives the change needs. Clear what it lists, or say in a sentence why an item stays.' }, 'honest')
   guard('regcheck', BX[1], 975, BW, 50, 'fli register:check', 'the files obey their rules', {
     title: 'fli register:check', where: 'ISSUES.md · DECISIONS.md · IDEAS/',
     d: 'Grades the three files against the rules they state about themselves: a row with the wrong number of columns, an id issued twice, a citation pointing at nothing, a section out of date order. CI runs the same engine.' })
@@ -625,9 +629,9 @@ function client(D) {
   noun('atlas', BX[3], 975, BW, 50, 'honest', 'fli register:atlas', 'all three files, one page', {
     kind: 'page', title: 'fli register:atlas', where: 'fli register:atlas --open',
     d: 'The registers as one interactive page: what to work on, what to decide, what is open, settled and not started.' })
-  noun('changes', BX[0], 1050, BW, 50, 'honest', 'CHANGES.md', 'what is now true, per package', {
-    title: 'CHANGES.md', where: 'packages/*/CHANGES.md',
-    d: 'One entry per package a fix touched: a dated heading saying what is now true, the row id, then prose. Edit history lives here and in git, never in a code comment.' })
+  noun('hazards', BX[0], 1050, BW, 50, 'honest', 'hazard skills', 'what is true and surprising', {
+    title: 'hazard skills', where: '.claude/skills/{data,api,ui}-hazards',
+    d: 'A fix that leaves correct-but-surprising behavior behind writes it here, in the realm that will load it. What changed is git, never a code comment.' })
   noun('handoff', BX[1], 1050, BW, 50, 'honest', 'HANDOFF.md', 'the order things were found in', {
     title: 'HANDOFF.md', where: 'HANDOFF.md → docs/handoff-archive/',
     d: 'The two most recent sessions, as narrative: the order things were found and why one led to the next. It names nothing a register doesn\'t also hold; a session that leaves a fact only here hasn\'t finished.' })
@@ -651,12 +655,12 @@ function client(D) {
     next: ['issues', 'fixloop', 'pick', 'decidable', 'overview'],
     fixloop: ['next', 'pick', 'brief', 'reprobe', 'fix', 'prove', 'close', 'busy', 'corrected', 'blocked', 'failed', 'loopreview'],
     pick: ['next', 'brief', 'busy'], brief: ['pick', 'reprobe'], reprobe: ['brief', 'fix', 'corrected'],
-    fix: ['reprobe', 'prove', 'blocked', 'failed'], prove: ['fix', 'close', 'failed', 'ci'], close: ['prove', 'issues', 'changes', 'done'],
+    fix: ['reprobe', 'prove', 'blocked', 'failed'], prove: ['fix', 'close', 'failed', 'ci'], close: ['prove', 'issues', 'hazards', 'done'],
     busy: ['pick'], corrected: ['reprobe', 'issues'], blocked: ['fix', 'qfiled', 'decidable'], failed: ['prove', 'fix', 'fixloop'],
     qpaper: ['ideas', 'frame'], qfiled: ['blocked', 'decidable', 'issues', 'ruling'], frame: ['qpaper', 'decidable', 'loopreview'],
     decidable: ['frame', 'qfiled', 'owner', 'next'], owner: ['decidable', 'ruling', 'decisions'], ruling: ['owner', 'decisions', 'qfiled', 'next'],
-    loopreview: ['fixloop', 'frame'], done: ['close', 'changes', 'ci'], regcheck: ['issues', 'decisions', 'ideas', 'ci'], archive: ['issues'],
-    atlas: ['issues', 'ideas', 'decisions'], changes: ['close', 'done'], handoff: ['session'], ci: ['check', 'regcheck', 'prove'], overview: ['next', 'frame', 'owner', 'decidable'],
+    loopreview: ['fixloop', 'frame'], done: ['close', 'hazards', 'ci'], regcheck: ['issues', 'decisions', 'ideas', 'ci'], archive: ['issues'],
+    atlas: ['issues', 'ideas', 'decisions'], hazards: ['close', 'done'], handoff: ['session'], ci: ['check', 'regcheck', 'prove'], overview: ['next', 'frame', 'owner', 'decidable'],
   }
   const inspect = document.getElementById('inspect')
   function show(id) {

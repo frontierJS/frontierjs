@@ -197,6 +197,23 @@ describe('it is find’s twin', () => {
     expect(res.status).toBe(200)
     expect((res.body as { data: unknown[] }).data.length).toBe(4)   // 4 groups, ceiling 100
   })
+
+  test('a page of groups SAYS it was cut, as a page of rows does (FJS-2051)', async () => {
+    // A screen reading the first page of groups as all of them prints a figure
+    // that is wrong and ordinary: 20 clients of 124, no error.
+    const app  = await appWith()
+    type Page  = { data: unknown[]; limit: number; offset: number; hasMore: boolean }
+    const cut  = (await agg(app, 'sales', { by: ['id'], limit: 2, _count: true })).body as Page
+    expect(cut).toMatchObject({ limit: 2, offset: 0, hasMore: true })
+    expect(cut.data.length).toBe(2)
+
+    const last = (await agg(app, 'sales', { by: ['id'], limit: 2, offset: 2, _count: true })).body as Page
+    expect(last).toMatchObject({ limit: 2, offset: 2, hasMore: false })
+    expect(last.data.length).toBe(2)
+
+    const all  = (await agg(app, 'sales', { by: ['region'], _count: true })).body as Page
+    expect(all.hasMore).toBe(false)
+  })
 })
 
 describe('the numbers are computed over the rows the caller may READ', () => {

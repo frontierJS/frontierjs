@@ -69,7 +69,7 @@ const ALLOWED = [
 ]
 
 /**
- * postbuild/ by half (IDEAS/sierra-scope.md § 2.6). What a build owes its own
+ * postbuild/ by half (IDEAS/shipped/sierra-scope.md § 2.6). What a build owes its own
  * output is derived from the route table or the build's hashes. The site half is
  * FJS-D608's: a new site step starts as site-kit code and a Sierra owner is
  * earned by a second consumer, so a file added here says which half it is.

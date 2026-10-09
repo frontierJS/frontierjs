@@ -97,7 +97,7 @@ consumer and producer options diverge and one string carries both.
 Two records, one relationship:
 
 ```
-integration 'stripe'
+provider 'stripe'
   ├── target     address · auth · encoding          ← ships today, unchanged
   └── receiver   path · verify · window · dedupe    ← new
 ```
@@ -208,6 +208,92 @@ installs nothing and runs nothing.
 
 ---
 
+## The noun — wave 6 of the vocabulary atlas
+
+**Ruled 2026-10-09 as [`FJS-D681`](../DECISIONS.md#fjs-d681): A, and a broker stays a Target.**
+
+*Added 2026-10-09. The paper as written: the atlas's thin-area card asks to
+"name the inbound counterpart of Target in the same ruling", and per wave 5's
+rule the word comes out of a paper. Counts are `rg` over `IDEAS/`,
+`DECISIONS.md`, `packages/*/src` and `packages/*/docs` on this date.*
+
+### What the register already holds
+
+| Word | Row today | What it actually covers |
+| --- | --- | --- |
+| **Provider** | blessed, Integrations, **no definition** | ARCHITECT § 2: *a third party the app speaks to*; refuses *adapter, driver, integration* as synonyms |
+| **Target** | blessed, Integrations, Home Provider | *a Conduit declaration of a third party*; refuses *endpoint, integration, service* |
+| **subscriber** | the far side of junction's outbound webhooks (`FJS-D636`) | a row, graded per delivery (`FJS-D193`) |
+
+Two findings fall out of that table before any coining:
+
+- **Target's definition is wider than Target.** *A declaration of a third party*
+  is the relationship. The code means *a place we send to*:
+  `TargetDescriptor` carries an address, and a `broker` target is the one kind
+  that is subscribed to rather than sent to (`FJS-D235`). Whatever names the
+  inbound end, Target's row narrows in the same ruling or the two overlap.
+- **The relationship already has a word, and it is Provider.** The diagram
+  above says `integration 'stripe'`, and *integration* is the word ARCHITECT
+  refuses. Stripe is a Provider; a Target and the new record are its two ends.
+  Provider's empty definition cell is the gap, not a missing noun.
+
+### What the inbound end must not be called
+
+- **listener** — 109 hits, nearly all the socket sense: outpost's two
+  listeners (`FJS-D345`), `stripe/sink.ts`'s *dev listener*. A receiver does not
+  own a socket; it is a route on junction's.
+- **source** — Kafka Connect's *source/sink* pair is the obvious prior art, and
+  it fails twice here: `sink` is already the dev stand-in for a counterparty
+  (`mail-sink.ts`, `stripe/sink.ts`), and a broker target is a source that
+  `FJS-D235` already ruled a Target. *Source* would rename a ruled thing.
+- **webhook handler / hook** — *Hook* is blessed, and it is code inside the
+  pipeline. A receiver runs before any principal exists and must never become
+  one (§ *What receiving must never do*).
+- **endpoint** — refused by Target's row already.
+
+### Options
+
+**A — Receiver.** One new row: *a Conduit declaration of a route a Provider
+calls us on — path, how its signature is verified, the freshness window, the
+dedupe key.* Home Provider, beside Target. Provider gets its definition: *a
+third party the app integrates with, declared once, holding the credentials
+both ends spend*. Target narrows to *a place this app sends to or subscribes
+to*. 60 live hits, and every one is already this role — toolbelt's
+`verifyRequest` says *from the receiver's clock*, junction's webhooks plugin
+says *a receiver verifies with `verifyRequest`*. Blessing it names the role the
+code already writes, so the role and the record agree: our subscriber is a
+receiver of ours, and our Receiver is how we receive theirs.
+*Cost:* a generic word. A reader may hear any inbound HTTP route; the row has to
+say *declared under a Provider*, and a raw route that verifies with
+`verifyRequest` by hand is a route, not a Receiver.
+
+**B — no noun; a Target grows a `receive:` block.** One record per Provider,
+the inbound half as a field. Fewer words. *It is refused by this file's own
+ruled half:* `FJS-D177` settled two records because a target's options and a
+receiver's diverge — the Camel URI leak above. B re-opens a ruling to save one
+row, so it is priced here only to be dropped.
+
+**C — rename Target too: Outlet / Inlet, or Send / Receive.** A matched pair
+reads well. It moves a blessed word with ~every conduit caller for symmetry
+alone, and *outlet/inlet* is plumbing nobody else in the ecosystem says. Fails
+*familiarity vs. precision* in the ecosystem direction (PHILOSOPHY § IV).
+
+### Recommend A
+
+One row added, two rows filled (Provider) or narrowed (Target), nothing
+renamed. Junction's half A takes **no noun**: its registration is a row, its far
+side is already *subscriber*, and receiving its own scheme is `verifyRequest`
+with `secrets` (§ Order step 2). Inbound email takes none either —
+[`inbound-email.md`](inbound-email.md) routes what a mail provider's Receiver
+hands over, so a mailbox, if it is ever a word, is that paper's to coin.
+
+**Open for the owner:** whether a `broker` target stays a Target (A keeps it,
+per `FJS-D235`) or moves under Receiver because messages arrive on it. The
+paper says stay: the *who dials* axis put it outbound, and a Receiver's whole
+mechanism — route, signature, window — does not apply to a socket we opened.
+
+---
+
 ## Order
 
 **1 — the credential seam.** `IDEAS/third-party-credentials.md` leg three. It is
@@ -250,6 +336,6 @@ in both directions, and a vendor still does not live inside conduit.
 - [`conduit-connectors.md`](conduit-connectors.md) — which connectors FrontierJS maintains
 - [`DECISIONS.md` `FJS-D177`](../DECISIONS.md#fjs-d177) — **the ruling this file argues for**: conduit holds the relationship, the axis is who dials
 - [`DECISIONS.md` `FJS-D153`](../DECISIONS.md#fjs-d153) — the mechanism/vendor line, which holds unchanged in the new direction
-- [`ISSUES.md` `FJS-371`](../ISSUES.md#fjs-371) — the machine-principal gap this is deliberately not
+- [`ISSUES.md` `FJS-371`](../ISSUES_ARCHIVE.md#fjs-371) — the machine-principal gap this is deliberately not
 - `packages/junction/src/plugins/webhooks/index.ts` — the outbound half of A, shipped
 - `packages/toolbelt/src/signature/signature.js` — the shared primitive, and the one-secret limit

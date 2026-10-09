@@ -107,6 +107,18 @@ describe('labelFieldInfo — four tiers, and it says which one answered', () => 
       .toEqual({ field: 'firstName', source: 'scan' })
   })
 
+  test('a column the boundary will refuse is never the guess (FJS-1253)', () => {
+    // A `@hashed` column arrives `writeOnly` and unsortable; the picker orders
+    // by what it shows, so picking it answered an error and an empty list.
+    const hashed = { ...str, writeOnly: true, 'x-sortable': 'stores a serialization — not sortable' }
+    expect(labelFieldInfo({ kioskPin: hashed, badge: str }))
+      .toEqual({ field: 'badge', source: 'scan' })
+    expect(labelFieldInfo({ kioskPin: hashed }, 'id'))
+      .toEqual({ field: 'id', source: 'fallback' })
+    expect(labelFieldInfo({ name: hashed, badge: str }))
+      .toEqual({ field: 'badge', source: 'scan' })
+  })
+
   test('nothing readable falls to the caller-supplied value', () => {
     expect(labelFieldInfo({ status: { ...str, enum: ['a'] } }, 'id'))
       .toEqual({ field: 'id', source: 'fallback' })

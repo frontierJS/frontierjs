@@ -2,8 +2,7 @@
 
 **Body written:** 2026-04-25 · **header re-verified:** 2026-08-05
 **Tests:** 1416 pass / 0 fail across 6 files (`bun run test`)
-**Status:** shipped — workspace is **v1.1.0**. npm `latest` is still 1.0.3, so anything
-installed from the registry outside this workspace gets the pre-rename dialect.
+**Status:** shipped — **v1.1.9**, which is also npm `latest` (checked 2026-10-08).
 
 > The body below is the April pre-publish snapshot. Its narrative of *what was
 > built and why* still reads true; its numbers, "outstanding work" and backlog

@@ -1,9 +1,9 @@
 ---
-title: desktop:dev
+title: dev:desktop
 description: Open the desktop window on the screens' dev server, so an edit reaches it by HMR
 examples:
-  - fli desktop:dev
-  - fli desktop:dev --no-build
+  - fli dev:desktop
+  - fli dev:desktop --no-build
 flags:
   build:
     type: boolean

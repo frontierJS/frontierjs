@@ -202,8 +202,8 @@ export interface LogEntry {
   /** The named `@@transitions` move an update made, or null. */
   transition: string | null
   records:    string         // JSON array of affected IDs
-  before:     string | null  // JSON snapshot
-  after:      string | null  // JSON snapshot
+  before:     string | null  // JSON image
+  after:      string | null  // JSON image
   actorId:    number | string | null
   actorType:  string | null
   /** WHERE the write came from — filled from `logContext`, null without one. */

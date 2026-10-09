@@ -421,7 +421,7 @@ Checkout navigates to whatever it says.
 Proved by running all eight: cart 32, catalog 39, widget 40, money 107,
 offline 55, users 98, stock 41, shell 30 — the last against a scratch baseline
 lent for the run, because its build is blocked by
-[`FJS-1272`](../ISSUES.md#fjs-1272).
+[`FJS-1272`](../ISSUES_ARCHIVE.md#fjs-1272).
 
 ## 2026-09-22 — the hold expiry is a declaration
 

@@ -17,7 +17,7 @@
 // ============================================================
 
 import { describe, it, expect } from 'bun:test'
-import { createTestApp, request, Forbidden } from '@frontierjs/junction'
+import { createTestApp, request, Forbidden, createService, callService } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { conduit as conduitPlugin } from './src/plugin.ts'
 import { createStaticResolver } from './src/credentials.ts'
@@ -542,5 +542,34 @@ describe('broker subscription health', () => {
     const check = (app as unknown as { _readiness: Map<string, () => boolean> })._readiness.get('conduit:broker:orders')
     expect(check).toBeDefined()
     expect(check!()).toBe(false)
+  })
+})
+
+// FJS-2070: an afterCommit effect is at-most-once, so a send from one warns in
+// development and names ctx.enqueue, the durable spelling.
+describe('app.conduit.send() inside an afterCommit drain', () => {
+  it('warns once per call site, and not outside the drain', async () => {
+    const app = await bootApp({ targets: [] })
+    const svc = createService({
+      name: 'pings',
+      async create() { return { ok: true } },
+      hooks: { after: { create: [(c: any) => {
+        c.afterCommit(() => conduitOf(app).send({ target: 'nowhere', method: 'GET', path: '/' } as never))
+      }] } },
+    } as never)
+    const logged: string[] = []
+    const real = console.warn
+    console.warn = (...a: unknown[]) => { logged.push(a.map(String).join(' ')) }
+    try {
+      await conduitOf(app).send({ target: 'nowhere', method: 'GET', path: '/' } as never)
+      expect(logged).toEqual([])
+      const ctx = () => ({ service: 'pings', method: 'create', data: {}, query: {}, auth: { user: null },
+        caller: {}, route: {}, locals: {}, app, result: null, type: 'before' }) as never
+      await (callService as any)(svc, ctx())
+      await (callService as any)(svc, ctx())
+    } finally { console.warn = real }
+    expect(logged).toHaveLength(1)
+    expect(logged[0]).toContain('app.conduit.send()')
+    expect(logged[0]).toContain('ctx.enqueue')
   })
 })

@@ -19,16 +19,15 @@ is marked where a claim is about a named product.
 wrong starts by treating them as one.**
 
 - **A changelog** tells a DEVELOPER what changed in the code. It lives in git and
-  nobody stores it in a database. This repo already has both halves of it: every
-  package's `CHANGES.md`, and `fli changelog` / `fli gr`, which write a
-  `CHANGELOG.md` out of commit history for any project.
+  nobody stores it in a database. This repo already has it: git, and `fli changelog` /
+  `fli gr`, which write a `CHANGELOG.md` out of commit history for any project
+  (`FJS-D675`).
 - **What's new** tells a USER of the application what they can now do. It is
   shown inside the app, it has an unread badge, and it is the half this file is
   about. The framework has nothing for it.
 
 The split is already argued once in this tree: `packages/frontierjs-vscode` keeps
-`CHANGELOG.md` for the marketplace beside `CHANGES.md` for contributors, cited in
-`DECISIONS.md` § `FJS-D163` as the precedent for two audiences being two files.
+`CHANGELOG.md` for the marketplace while contributors read git (`FJS-D675`).
 
 **Commit messages are the wrong source for the second one.** They are written for
 the person reviewing the diff, so a what's-new panel generated from conventional

@@ -309,7 +309,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
     over linked references and ejected files alike.
   - **B** — no codemods: linked parts move through npm and the rig's own
     migrations; ejected files get the drift report from the eject question above,
-    and the rig's `CHANGES.md` says what broke.
+    and the commit says what broke.
   - **Recommend B** — a codemod over an ejected file edits a file the rig promised
     never to touch, and over a linked part it is redundant with npm plus a
     migration. B costs nothing beyond the eject record already recommended.

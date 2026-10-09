@@ -1264,7 +1264,7 @@ every flavor of client.
 
 **Protected fields are redacted in the trail.** Any `@encrypted` / `@guarded` /
 `@secret` value logs as `[redacted]` in both the field entry and the
-`before`/`after` snapshots — the record says *that* the field was written, never
+`before`/`after` images — the record says *that* the field was written, never
 what it held. That is what makes `@secret`'s expansion safe: it implies
 `@trail(<first trail db>)`, so declaring a trail database alone starts logging
 every secret field, and without redaction that writes plaintext beside a correctly

@@ -10,7 +10,7 @@
     ".": {
       "drive-opens-chrome:packages/mesa/test/drive.test.js": "The driver's own test: it passes the flag to prove openChrome() refuses it.",
       "drive-opens-chrome:packages/cli/test/checks.test.js": "The rule's own fixtures: a launch it must find.",
-      "package-root-md:packages/frontierjs-vscode": "CHANGELOG.md. The VS Code marketplace renders a Changelog tab and reads that name and no other, so it is the one root file here with an audience outside this tree — written for somebody deciding whether to install the extension. CHANGES.md beside it is the engineering history in the house voice and is .vscodeignore'd out of the .vsix along with PROJECT_STATE.md. Two audiences is why it is two files rather than one: folding them would either put defect archaeology on a marketplace page or take the tab away."
+      "package-root-md:packages/frontierjs-vscode": "CHANGELOG.md. The VS Code marketplace renders a Changelog tab and reads that name and no other, so it is the one root file here with an audience outside this tree — written for somebody deciding whether to install the extension. The engineering history is git (FJS-D675); this file is the marketplace's alone."
     },
     "packages/basecamp": {
       "service-as-system:api/src/services/hub/hub.service.ts": "Correct, and does not expire. `/hub/` is the cross-workspace tier — a separate service taking no workspace, behind one `requireSystemAdmin` hook — so reaching every tenant is the whole of what it is for. The request's own client would scope it to the sysadmin's own workspace and answer an empty fleet with a 200.",

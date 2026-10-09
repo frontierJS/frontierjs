@@ -834,6 +834,6 @@ CRUD page is, which makes it the consumer and not a peer.
 ## Relationship to the other files
 
 - `IDEAS/overview.md` 1.1 — the row this file is the missing half of
-- `IDEAS/permission-sets.md` — once capabilities are built, *which actions a
+- `IDEAS/shipped/permission-sets.md` — once capabilities are built, *which actions a
   row offers* has a second input beside the gate and the transition list
 - `IDEAS/ecosystem-gaps.md` — `admin:generate`, the consumer

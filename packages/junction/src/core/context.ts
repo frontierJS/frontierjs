@@ -1047,6 +1047,46 @@ export function runInCommitScope<T>(fn: (scope: CommitScope, owner: boolean) => 
   return _commitScopeStore.run(scope, () => fn(scope, true))
 }
 
+// ─── Inside an afterCommit drain ─────────────────────────────────────────
+// `afterCommit` is at-most-once: a crash between the commit and the effect
+// loses it, where `ctx.enqueue` survives one. Mail and a Conduit send are the
+// effects an app usually needed delivered, so they read this and warn in
+// development (`FJS-D659`). A flag on the drain, not a second commit scope:
+// it says only that the code running is an effect, never who owns it.
+const _drainStore = new AsyncLocalStorage<string>()
+
+/** Run one afterCommit effect, marked so a battery can tell it is one. */
+export function runAfterCommitEffect<T>(label: string, fn: () => T): T {
+  return _drainStore.run(label, fn)
+}
+
+/** The call whose afterCommit drain is running, or undefined outside one. */
+export function inAfterCommitDrain(): string | undefined {
+  return _drainStore.getStore()
+}
+
+const _warnedSites = new Set<string>()
+
+/**
+ * Warn once per call site that `what` ran inside an afterCommit drain. A
+ * warning, not a refusal: a toast from afterCommit is correct. The site is the
+ * first stack frame outside a battery's own source, which is the app's line.
+ */
+export function warnEffectInDrain(what: string): void {
+  if (process.env.NODE_ENV === 'production') return
+  const call = _drainStore.getStore()
+  if (call === undefined) return
+  const frames = (new Error().stack ?? '').split('\n').slice(1)
+  const site = frames.find(f => !/[\\/](junction|conduit)[\\/]src[\\/]|node:/.test(f))?.trim() ?? call
+  if (_warnedSites.has(site)) return
+  _warnedSites.add(site)
+  console.warn(
+    `[Junction] ${what} ran inside an afterCommit effect of '${call}' (${site}). ` +
+    `afterCommit is at-most-once: a crash after the commit loses it. ` +
+    `Use ctx.enqueue(job, payload) for an effect that must be delivered.`
+  )
+}
+
 // ─── Which service is announcing this call, and which rows ───────────────
 // Read by the Litestone adapter's write tap, which announces a write that
 // nothing else did. Every service write also passes that tap, so without this

@@ -135,7 +135,7 @@ reads is the level the boundary grades with — against a Junction app on a real
 port. `verify:mcp` proves the ANSWERS: a real `@modelcontextprotocol/client`, a
 real schema, a real gate ladder, and an app with no `app.db` at all.
 
-**The absolute counts in `CHANGES.md` are a dated measurement and are meant to
+**The absolute counts in `docs/changes-archive/mcp.md` are a dated measurement and are meant to
 be.** What the drive gates is the relations and the credential absence; a
 typed-in count is `FJS-773`'s own failure. Run `packages/junction` too —
 `customMethodGrade` and `CALL_OPTIONS_AT` are imported from it, so a change

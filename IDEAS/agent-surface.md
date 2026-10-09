@@ -350,7 +350,7 @@ are in the ruling rather than restated here.
   threshold the call becomes a proposal instead of a write. A background agent with
   nobody behind it is then not a caller with special standing; it is a caller whose
   every protected move waits. What remains open is **who may approve** — which is a
-  grid question, not a ladder one, and therefore `IDEAS/permission-sets.md`.
+  grid question, not a ladder one, and therefore `IDEAS/shipped/permission-sets.md`.
 - ~~**Custom methods are the interesting tools and they dispatch by header**~~ **Answered 2026-10-09 (`FJS-D02`): FJS-D02 already answers this: a custom method is a method of the service and `X-Service-Method` is only its HTTP wire spelling, so the projection names it directly (`toolName`); the grading half is `FJS-D408`'s declared `gate:` plus the move floor, both built.**
   (`X-Service-Method`). MCP has no such concept, so the projection must name them
   directly — `posts.publish` — which is an argument that the header dispatch was
@@ -400,7 +400,7 @@ are in the ruling rather than restated here.
 - `IDEAS/compliance-from-the-seed.md` — the audit and disclosure half
 - `IDEAS/rigs.md` — the "a Gate is harder for an agent to get wrong" argument, in
   its original context
-- `IDEAS/permission-sets.md` — who may approve a held call; the grid the ladder
+- `IDEAS/shipped/permission-sets.md` — who may approve a held call; the grid the ladder
   cannot express
 - `IDEAS/operational-edge.md` 4 — durable workflows (4.19), the noun the hold needs
 - `CLAUDE.md` § Bridge index — `bridge.toContext()`, `sessionGateLevel()`,

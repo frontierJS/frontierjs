@@ -386,7 +386,7 @@ next is argued.
 - `IDEAS/ontology.md` — the Data realm's paper, whose shape this one takes
 - `IDEAS/page-composition.md` — the containment tier css never built; the
   *frame* leaf
-- `IDEAS/list-controller.md` — `resource.list()`; the *many rows* leaf
+- `IDEAS/shipped/list-controller.md` — `resource.list()`; the *many rows* leaf
 - `IDEAS/declared-interaction.md` — four facts about a call still in client glue;
   the *what does it change* branch
 - `IDEAS/derived-suspense.md` — async boundaries from the dependency graph

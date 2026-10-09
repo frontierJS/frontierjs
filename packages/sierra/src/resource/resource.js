@@ -2354,7 +2354,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    *
    * `by` makes it a group-by and the answer is the LIST envelope, the groups
    * under `data` — a list keeps its envelope, the one unwrap rule junction's
-   * `unwrapResult` owns. Without `by` it is a single object. Uncached, deliberately: `options()`
+   * `unwrapResult` owns. The groups are a PAGE (`limit`, default 20): `hasMore`
+   * says whether more lie past it, and there is no `total`. Without `by` it is
+   * a single object. Uncached, deliberately: `options()`
    * caches because a picker's list is stable, and a total is the opposite —
    * every caller of this wants the number as it is now.
    *

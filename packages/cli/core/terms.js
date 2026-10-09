@@ -55,6 +55,9 @@ const SKIP_DIRS = new Set([
   // A running fli's compiled commands: a copy of every .md it ran, deleted
   // when that process exits, so a walk racing it dies on ENOENT.
   '.fli-tmp',
+  // Retired change logs (FJS-D675): the vocabulary of a tree that has moved on,
+  // and one owner for 24 packages' words, so every term in them reads as spread.
+  'changes-archive',
 ])
 
 // ─── what the corpus is made of ───────────────────────────────────────────────
@@ -665,14 +668,14 @@ export function authoredVocabulary(root) {
   return out
 }
 
-// ─── a package's own register ─────────────────────────────────────────────────
+// ─── a package's own vocabulary ─────────────────────────────────────────────────
 //
-// `VOCABULARY.md` is the root register and it is not the only one. A package
+// `VOCABULARY.md` is the root vocabulary and it is not the only one. A package
 // that defines its own terms well enough to CHECK them has named them, and
 // reporting those terms as named nowhere is the measurement being wrong about
 // the tree — @frontierjs/css defines 56 and every one of them read `unnamed`.
 //
-// The register is READ, never copied here. A copy is 56 rows maintained by hand
+// The vocabulary is READ, never copied here. A copy is 56 rows maintained by hand
 // and stale the first time css renames one, which is what the root file already
 // says about itself: defined in one place, measured in another.
 //
@@ -735,11 +738,11 @@ export function placed(root, pkg) {
   return { ...root, under: pkg.under, underFrom: pkg.owner }
 }
 
-// Every package register, joined. A malformed or missing one is SKIPPED rather
+// Every package vocabulary, joined. A malformed or missing one is SKIPPED rather
 // than thrown: this command is exploratory and ungated on purpose (`FJS-1211`),
-// so it has to keep running while a register is being written. What is not
+// so it has to keep running while a vocabulary is being written. What is not
 // allowed is skipping quietly — the count each one contributed is carried out
-// to the presentation, because a register that stopped resolving returns every
+// to the presentation, because a vocabulary that stopped resolving returns every
 // one of its terms to `unnamed`, which reads exactly like a package that never
 // named anything.
 export function packageVocabularies(root) {
@@ -759,7 +762,7 @@ export function packageVocabularies(root) {
       const entry = { ...row, status: 'blessed', source: reg.file, owner: reg.owner }
       if (!terms.has(key)) terms.set(key, entry)
       // The corpus folds a plural into its singular when both were seen, so the
-      // row is `Step` where the register says `Steps` and an exact lookup misses
+      // row is `Step` where the vocabulary says `Steps` and an exact lookup misses
       // — which is every plural term css ships (`Steps`, `Tabs`, `Facts`) and no
       // singular one, so the gap was invisible from the terms that worked. The
       // alias is the fold's own function, asked here rather than re-spelled.
@@ -1014,7 +1017,7 @@ export function collectTerms({ root }) {
     const dot  = path.lastIndexOf('.')
     const kind = KIND_BY_EXT.get(path.slice(dot))
     if (!kind) continue
-    // The authored register is a list OF terms, not prose that uses them —
+    // The authored vocabulary is a list OF terms, not prose that uses them —
     // counting it would let a word gain spread by being labelled, which is the
     // measurement grading its own input.
     const rel = relative(root, path)
@@ -1140,7 +1143,7 @@ export function collectTerms({ root }) {
       : 'concept'
     // § 2 is the doctrine and outranks the file, which is what the file says
     // about itself: where the two disagree, VOCABULARY.md is the stale one.
-    // A package register is one rung below both, which is §VII's own ladder —
+    // A package vocabulary is one rung below both, which is §VII's own ladder —
     // invariant, ruling, map, package document — so a word the root file and a
     // package both name is the root file's, and nothing here can widen a term
     // the doctrine already ruled on.
@@ -1177,7 +1180,7 @@ export function collectTerms({ root }) {
   const byTerm = new Map(conceptRows.map(r => [r.term.toLowerCase(), r]))
 
   // The audit's counts are PROSE counts. Every question in it is about the
-  // authored registers, which are prose, and the widened corpus moves all of
+  // authored vocabularies, which are prose, and the widened corpus moves all of
   // them at once with nothing saying so — measured on the first run over code:
   // `unlabelled` went 0 → 123, dead doctrine 4 → 0 (a blessed word is never
   // rare once identifiers count), and the forbidden column 18 → 28.
@@ -1230,7 +1233,7 @@ export function collectTerms({ root }) {
 
   // ── the audit is asked of the PROSE, and stays that way ──
   //
-  // Every question in it is about the authored registers, which are prose and
+  // Every question in it is about the authored vocabularies, which are prose and
   // were seeded from prose at spread 4. Asking them of the widened corpus would
   // change what each one MEANS with nothing saying so: the first run over code
   // put Math, Record and SessionContext into *not in VOCABULARY.md* and took it
@@ -1288,7 +1291,7 @@ export function collectTerms({ root }) {
       droppedHits: [...droppedWords.values()].reduce((a, b) => a + b, 0)
     },
     sources,
-    registers: pkgVocab.read,
+    vocabularies: pkgVocab.read,
     concepts: conceptRows,
     language: languageRows,
     api,
@@ -1313,8 +1316,8 @@ export function collectTerms({ root }) {
         (r) => r.spread >= 4 && !r.label && !blessed.has(r.term.toLowerCase())
       ),
       forbiddenUsed: forbidden.filter((r) => r.count > 0),
-      // The root register has SEEN the word and not decided, and a package
-      // register has. `open` is not an answer — the file says so itself, *seen
+      // The root vocabulary has SEEN the word and not decided, and a package
+      // vocabulary has. `open` is not an answer — the file says so itself, *seen
       // and not yet decided, the seeded default* — so it outranks a package
       // definition on the ladder while carrying less than one, which is the one
       // place the precedence reads as an answer and is not.
@@ -1323,7 +1326,7 @@ export function collectTerms({ root }) {
       // over two realms — a Table is a `<table>` in css and a database table in
       // litestone, a Field is a control and a column — which is § 2's own
       // `Channel` case, and a reader needs to be shown both rather than handed
-      // whichever register spoke last.
+      // whichever vocabulary spoke last.
       undecidedButDefined: conceptsProse
         .filter((r) => r.label?.status === 'open' && pkgVocab.terms.has(r.term.toLowerCase()))
         .map((r) => {
@@ -1410,11 +1413,11 @@ export function renderList(model, { limit = 40, lens = 'concept', kinds = null }
   out.push(
     `  VOCABULARY.md defines ${model.counts.authored} · ${model.audit.unlabelled.length} term(s) at spread 4+ unlisted`
   )
-  // The count per register, not a total. A register that stopped resolving
+  // The count per vocabulary, not a total. A vocabulary that stopped resolving
   // returns every one of its terms to `unnamed`, which is what a package that
   // named nothing also looks like — so the number that separates them is
   // printed, and `not found` is printed rather than omitted.
-  for (const reg of model.registers ?? [])
+  for (const reg of model.vocabularies ?? [])
     out.push(`  ${reg.file} ${reg.found ? `defines ${reg.terms}` : 'NOT FOUND'}`)
   if (kinds) out.push(`  narrowed to ${[...kinds].join(', ')} — count and spread are RECOMPUTED, not filtered`)
   out.push('')
@@ -1591,7 +1594,7 @@ function auditPane(model, root = '') {
           )
           .join('')}</tbody>
       </table></div>`
-    : '<p class="text-xs text-muted">no open row has an answer waiting in a package register.</p>'
+    : '<p class="text-xs text-muted">no open row has an answer waiting in a package vocabulary.</p>'
 
   const pairs = model.audit.phraseCandidates.length
     ? `<div class="table-wrap"><table class="table striped dense">
@@ -1617,7 +1620,7 @@ function auditPane(model, root = '') {
         : '<p class="text-xs text-muted">every widespread term is listed.</p>'
     }
     <div class="section-header"><h2 class="h5">Open here, answered there</h2>
-      <p class="text-xs text-muted">VOCABULARY.md says <code>open</code> — seen and not yet decided — and a package register already defines the word. Most are one spelling over two realms, so the decision is which sense the root file is naming, not whether to copy this one in</p></div>
+      <p class="text-xs text-muted">VOCABULARY.md says <code>open</code> — seen and not yet decided — and a package vocabulary already defines the word. Most are one spelling over two realms, so the decision is which sense the root file is naming, not whether to copy this one in</p></div>
     ${answered}
     <div class="section-header"><h2 class="h5">Defined here, seen nowhere</h2>
       <p class="text-xs text-muted">a VOCABULARY.md row the scan cannot match — the word left the prose, or it is excluded in terms.js and the definition was orphaned</p></div>

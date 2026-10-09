@@ -50,7 +50,7 @@ test/fixtures/bad-jobs/          a job whose name disagrees with its file
 
 | | |
 |---|---|
-| Tests | **220 pass, 0 fail**, 12 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found, 2026-08-16 for the job principal, 2026-09-02 for what two processes on one jobs.db could not survive, and 2026-09-03 for what the admin surface cost at 1M rows |
+| Tests | **220 pass, 0 fail**, 12 files (`bun run test`) — verified. See `docs/changes-archive/caravan.md` 2026-08-06 for the three defects `example/` found, 2026-08-16 for the job principal, 2026-09-02 for what two processes on one jobs.db could not survive, and 2026-09-03 for what the admin surface cost at 1M rows |
 | Known flake | `test/cron-dst.test.ts` › the two *two instances over one jobs.db* cases fail intermittently, with `unable to open database file` under them. Pre-existing and measured against a HEAD copy — `FJS-729` |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified |
 | Public exports | `createCaravan`, `defineJob`, plus types — verified |

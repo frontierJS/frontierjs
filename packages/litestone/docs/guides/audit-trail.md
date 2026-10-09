@@ -1,13 +1,13 @@
 # Guide: Audit Trail
 
-Set up a complete audit trail that records every write, captures before/after snapshots, attributes changes to actors, and is queryable through the ORM.
+Set up a complete audit trail that records every write, captures before/after images, attributes changes to actors, and is queryable through the ORM.
 
 ---
 
 ## What we're building
 
 - Every write to sensitive models logged automatically
-- Before/after snapshots on single-row updates
+- Before/after images on single-row updates
 - Actor attribution (who made the change)
 - Custom metadata (request ID, IP address)
 - Full query API on the audit log

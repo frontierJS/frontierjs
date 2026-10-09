@@ -45,7 +45,7 @@ is a bug, not a sketch.
 ## Invariants worth knowing before you change anything
 
 These are the ones that have already cost a debugging session each. The full
-accounts are in `CHANGES.md`.
+accounts are in `docs/changes-archive/junction.md`.
 
 - **`toFrameworkError()` is THE error boundary** (`src/core/errors.ts`) — one
   point where a thrown value becomes a status. If you own an error class, give
@@ -105,5 +105,5 @@ Add a new one to `../../ISSUES.md`, not to this file.
 
 `README.md` (users) · `AGENTS.md` (an app's author) · `CLAUDE.md` (the map) ·
 `docs/internals.md` (the depth) · `PROJECT_STATE.md`
-(this) · `CHANGES.md` (history, newest first). Per the root convention, nothing
+(this). History is git. Per the root convention, nothing
 else belongs at this package root.

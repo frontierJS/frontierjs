@@ -50,7 +50,7 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | --- | --- |
 | `fli new` · `fli make:*` | Scaffold — an app, a model, a service, a resource, a route, a widget, an extension, a deploy config |
 | `fli check` | **The arch tests.** `fli check --list` names every rule over the file tree — see below |
-| `fli dev` · `fli api:dev` · `fli web:dev` | Run the realms. `dev` refuses a port already answering, and warns about an empty database |
+| `fli dev` · `fli dev:api` · `fli dev:web` | Run the realms. `dev` refuses a port already answering, and warns about an empty database |
 | `fli db:*` | The Data realm — `push`, `pull`, `migrate`, `seed`, `studio`, `tinker`, `reset`, `tables` |
 | `fli test:*` | `access`, `ddl`, `snapshots`, `mutate`, `types` — the Testing realm's committed-artefact half |
 | `fli release:check` | Can the release still serving and the release starting share one database? |

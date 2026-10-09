@@ -559,7 +559,7 @@ bundler you do not control, `bun run build` emits a single file:
 
 ## Breaking changes
 
-In `CHANGES.md`, with the reasoning. The two that move markup are
+In `docs/changes-archive/css.md`, with the reasoning. The two that move markup are
 `.shell.fixed` → `.shell.viewport` and the `.text-*` utilities gaining a layer
 of their own.
 

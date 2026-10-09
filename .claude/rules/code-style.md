@@ -9,7 +9,7 @@ Loaded when a source file is read. Match the file you are in first; this is what
 
 - **Comments explain the failure, not the mechanism.** `// increment the counter` is noise; `// vite hops ports silently, so the drive would talk to the other app` is the house voice.
 - **A comment must be load-bearing. Delete it otherwise.** Test: if it vanished, could someone editing this file make a mistake it would have prevented?
-  - **No edit history in code** ("used to be", "this replaced X", "merged 2026-08-08"). That is `CHANGES.md`, `DECISIONS.md` and git. Narrow exception: a past bug stated because the shape still invites it (`--ring` in `tokens.css`), where the history IS the warning.
+  - **No edit history in code** ("used to be", "this replaced X", "merged 2026-08-08"). That is `DECISIONS.md` and git. Narrow exception: a past bug stated because the shape still invites it (`--ring` in `tokens.css`), where the history IS the warning.
   - **No dates in code comments.** If the comment needs one, it belongs in a decision record the code points at.
   - **No persuasion** — "the whole point", "deliberately", "which is exactly why", italics for emphasis. State the constraint flatly; if it needs selling, it needs a ruling.
   - **Never narrate your own edit.** The reader does not know a change happened.

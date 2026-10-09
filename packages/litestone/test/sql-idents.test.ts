@@ -1,5 +1,5 @@
 // A hand-quoted identifier — `"${…}"` inside a template literal — is the
-// spelling `ident()` replaces (IDEAS/litestone-by-construction.md § Step 1).
+// spelling `ident()` replaces (IDEAS/shipped/litestone-by-construction.md § Step 1).
 // Nothing tells a schema-derived name from a caller's once both are written
 // that way, so Invariant 8 holds at each of these sites only because someone
 // read it. The count per file may only go down: a new site is refused here, and

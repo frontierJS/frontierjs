@@ -71,6 +71,14 @@ class UnbuiltWelcome extends Notification {
   }
 }
 
+class OnShift extends Notification {
+  static type = 'OnShift'
+  via(): Transport[] { return ['inApp'] }
+  toInApp(): InAppMessage {
+    return inApp().title('Shift').context('Shift', '01K5Z9QW8YR3N4T6V7X8Y9Z0AB').build()
+  }
+}
+
 let h: Harness
 beforeAll(async () => { h = await makeApp() })
 
@@ -97,7 +105,16 @@ describe('fan-out to all three transports', () => {
     expect(row.data.action).toEqual({ label: 'Get started', url: '/dashboard' })
     expect(row.data.plan).toBe('pro')
     expect(row.contextType).toBe('Order')
-    expect(row.contextId).toBe(7)
+    expect(row.contextId).toBe('7')
+  })
+
+  test('a ULID context id is stored whole (FJS-1270)', async () => {
+    await h.app.notify({ id: 'u3', email: 'e@f.test' }, new OnShift())
+
+    const rows = await h.rows()
+    const row  = rows[rows.length - 1]
+    expect(row.contextType).toBe('Shift')
+    expect(row.contextId).toBe('01K5Z9QW8YR3N4T6V7X8Y9Z0AB')
   })
 
   test('an email notification sends a real subject AND body', async () => {

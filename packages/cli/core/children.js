@@ -27,7 +27,7 @@
 // A child dies with the GUI. That is tidy and it is not what somebody who just
 // started `api` expects, so it is stated on the page rather than discovered.
 // Detaching to OUTLIVE the GUI would buy the expectation and cost the stop
-// button, which is the open question in `IDEAS/control-surface.md` §9 and is
+// button, which is the open question in `IDEAS/shipped/control-surface.md` §9 and is
 // not answered here.
 //
 // **A child is its own process group and it is stopped as one.** Every command

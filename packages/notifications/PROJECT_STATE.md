@@ -1,6 +1,6 @@
 # Notifications — Project State
 
-_State, not history. What is fixed and when is in `CHANGES.md`; what is open is
+_State, not history. What is fixed and when is in git; what is open is
 in `../../ISSUES.md`._
 
 > Drop this file into a fresh session to pick up Notifications cold.

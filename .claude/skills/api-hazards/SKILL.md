@@ -5,7 +5,7 @@ description: Junction — a service, the hook pipeline, HTTP/WS transport, a raw
 
 # API-realm live hazards
 
-**Correct behavior you have to know about.** Things that are *wrong* live in `ISSUES.md`, one id each; things that are *fixed* live in `CHANGES.md`. If a rule here is pinned by a test that cannot be deleted quietly, it does not need to be here.
+**Correct behavior you have to know about.** Things that are *wrong* live in `ISSUES.md`, one id each; things that are *fixed* live in git. If a rule here is pinned by a test that cannot be deleted quietly, it does not need to be here.
 
 **The index below is each hazard's rule; its section's reference file holds the rest** — the mechanism, the measurement, and what it refuses. Read that file before changing code the rule is about.
 

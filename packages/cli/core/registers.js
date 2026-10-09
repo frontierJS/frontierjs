@@ -42,7 +42,7 @@
 // refuses by name, rather than guessing one.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { dirname, join, relative, resolve }      from 'node:path'
+import { basename, dirname, join, relative, resolve }      from 'node:path'
 
 import { splitFrontmatter } from './compiler.js'
 
@@ -583,10 +583,18 @@ function readIdeas({ root, dir: registerDir, ids }) {
   const ranks = ideaRanks(dir)
   const out   = []
 
-  for (const name of readdirSync(dir).filter(n => n.endsWith('.md')).sort()) {
+  // A shipped paper moves to `IDEAS/shipped/` and stays a record: an id it
+  // reserved must still resolve, or a citation to it reads as dangling.
+  const shipped = join(dir, 'shipped')
+  const names   = [
+    ...readdirSync(dir).filter(n => n.endsWith('.md')),
+    ...(existsSync(shipped) ? readdirSync(shipped).filter(n => n.endsWith('.md')).map(n => join('shipped', n)) : []),
+  ].sort()
+
+  for (const name of names) {
     const raw          = readFileSync(join(dir, name), 'utf8')
     const { meta, body } = splitFrontmatter(raw, join(dir, name))
-    const id           = meta.id || name.replace(/\.md$/, '')
+    const id           = meta.id || basename(name, '.md')
 
     out.push({
       kind:    'idea',
@@ -597,7 +605,7 @@ function readIdeas({ root, dir: registerDir, ids }) {
       revised: meta.revised || '',
       // What the overview ranks it, where it ranks it at all. The overview is
       // itself declared derived, so a paper it has never heard of is normal.
-      rank:    ranks.get(name) ?? null,
+      rank:    ranks.get(basename(name)) ?? null,
       body:    plain(body),
       refs:    refsIn(body, ids),
       files:   linkedFiles(body),

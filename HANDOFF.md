@@ -6,7 +6,7 @@ dated, never cited as behavior, and read cold rather than consulted.
 
 **It names nothing a register does not also hold.** A defect gets an id in
 `ISSUES.md`, a settled argument a ruling in `DECISIONS.md`, a shipped change a
-line in the package's `CHANGES.md`, and a live fact a sentence in a `CLAUDE.md`.
+commit, and a live fact a sentence in a `CLAUDE.md`.
 What belongs here is the ORDER those were found in and why one led to the next —
 the half a register cannot carry, and the half that costs nothing when the entry
 rotates out. A session that ends with something recorded only here has not
@@ -18,7 +18,7 @@ finished.
 
 > **Started as "where did we leave Oracle" and ended with eight reference files one rung below the catalog Oracle was, that same morning, rebuilt on.** The through-line: the references folder's own rule — write a file only from a real instance — was blocked on *no instance in this tree*, and the eight `fjs-prototypes` schemas plus basecamp, example and the nine fixture corpora are now instances for every unwritten row.
 
-**What is recorded where.** The review is the artifact *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt): corpus, a shape-by-schema heatmap, ten shapes with every instance named and where they contradict, the fidelity/abstraction axis, and a before/after of Oracle. The eight files are `packages/litestone/references/` (`CHANGES.md` there has the two entries); `references.test.ts` now finds a trait-only file's noun on `schema.traits`. The four rulings the files leaned on are `IDEAS/owed-rulings.md` § Shapes, unfiled.
+**What is recorded where.** The review is the artifact *The Ten Shapes* (https://claude.ai/artifact/KFxSqaTYsKfZLcVquhfQVt): corpus, a shape-by-schema heatmap, ten shapes with every instance named and where they contradict, the fidelity/abstraction axis, and a before/after of Oracle. The eight files are `packages/litestone/references/`; `references.test.ts` now finds a trait-only file's noun on `schema.traits`. The four rulings the files leaned on are `IDEAS/owed-rulings.md` § Shapes, unfiled.
 
 **How it moved.** This session read Oracle as V2-deferred under `FJS-D14`; a parallel session the same morning lifted that (`FJS-D600`) and built the module (`FJS-D601`): `src/catalog.js` is the 32 entities with typed fields, `checkAnswer` grades a model's answer under thirteen rules, `emit` writes the graded plan onto the scaffold's `db/schema.lite`, no model inside. The two sessions did not see each other until the end. What this one adds is one rung below that catalog: reading nine prototype schemas side by side showed the reuse is not the entities (which share only a WORD across apps) but 4–8-column shapes — a bearer grant, an occupying interval, a weekday slot, a decision stamp, a tree, a poller, a delivery row — recurring byte-for-byte under six names each. Litestone already has the construct (`trait` + `@@trait`), so those are now `references/` files, and the join is obvious and not done: `emit` could spread `@@trait(Interval)` where an answer names a span, instead of emitting the pair by hand. The ladder's fourth rung, *shape*, between variant and novel, is the catalog entry that would carry it.
 
@@ -73,102 +73,3 @@ were hidden*.
 clock; `@@expires` and `@@effective` are the clock changing what counts and
 write nothing; `@@commitment` is the clock causing a write. On one date the
 window is the truth for reads and the transition is the record that catches up.
-
----
-
-# Handoff — 2026-09-22 (a word for what a number counts, and three time gaps that turned out to be one)
-
-> **The session was gap 04 of the `.lite` language survey and ended by settling
-> gaps 03, 07 and 08 together in one paper.** The through-line is the same move
-> twice: a fact the tree already states in a place nothing can read, given a
-> declaration — and both times the measurement, not the reasoning, decided the
-> shape.
-
-**Gap 04 shipped: `@unit`.** [`FJS-D348`](DECISIONS.md#fjs-d348) rules it,
-[`FJS-1240`](ISSUES_ARCHIVE.md#fjs-1240) is the build. `@money` was the precedent and
-carried the whole shape — a symbol from a shipped table, refused at parse,
-emitted as an `x-` keyword, read by the control layer — so the word cost no new
-mechanism. **It converts nothing**: the value stored is the value sent and the
-emitted DDL is byte-identical with the attribute and without it, asserted both
-ways against a real database. The symbol table is closed because the attribute
-promises the symbol resolves to a DIMENSION, and a free-text `@unit("widgets")`
-would have been [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236)'s shape on a new word.
-
-**The artifact that framed the gap was wrong about its case, and measuring first
-is what caught it.** It reasoned about `weightGrams`, which exists nowhere in
-the tree; the real corpus is 123 columns carrying a unit in the identifier, of
-which **107 are durations and 10 are bytes and 0 are mass**. That changed the
-table that shipped. One defect the tests found rather than the reasoning: the
-first cut copied `@scale`/`@money`'s validation walk, which reads models only —
-correctly, since those are refused inside a `type` — so
-`type Box { w String @unit(kgg) }` parsed clean and emitted `x-unit` for a
-symbol resolving to nothing. The walk covers types.
-
-**Then sierra, because a declaration nothing can read is the thing being
-removed.** `_CARRIED` is an allowlist, so `x-unit` would have been dropped
-between the schema and `$context.form`. Carried — and deliberately NOT joined to
-`@money`/`@scale` in answering `control: null`: those refuse a control because
-the box and the column disagree, and `300` typed into a `@unit(s)` field is the
-`300` that is stored.
-
-**Gap 07 was next and the register was righter than the paper.**
-`IDEAS/ontology.md` said the fourth shape — a commitment a person can SEE — had
-no instance in the repo. It has one and it is broken:
-[`FJS-1241`](ISSUES_ARCHIVE.md#fjs-1241), `basecamp`'s `Job.nextRunAt`, set once on
-create to `now + 60s` by a line whose own comment calls it a placeholder, never
-written again, and rendered on a screen as *Next run*. Caravan already answers
-the true value through `nextRuns()` and basecamp's own tests already call it.
-The paper is corrected in place.
-
-**The turn worth remembering is that a lint was the wrong answer and only
-running it showed that.** The obvious shape for gap 07 was an attribute marking
-the deadline column plus a `fli check` rule saying *every read filters on it*.
-Graded against all five reads of `StockReservation`: three filter, one
-deliberately inverts, one omits correctly — so the rule finds **zero** defects
-and fires **twice wrongly**. The answer is an automatic filter on
-`@@softDelete`'s pattern, under which both omissions become a stated
-`withExpired` and stop being indistinguishable from a bug.
-
-**Which is how three gaps became one paper.** `IDEAS/effective-time.md`.
-`expiresAt > now` is the one-sided case of a validity window, so gaps 03 and 07
-are one mechanism at two arities — and the load-bearing argument is the
-DIRECTIVE rather than the filter: the four opt-back-in directives in
-`@frontierjs/toolbelt/directives` are all `asBool`, expiry alone needs a fifth
-boolean, and valid time needs a VALUE. Ship 07 first and the language carries
-two directive families for one idea for ever, with `withDeleted` as the
-precedent for how immovable a flag becomes. So `asOf: <instant>` lands first and
-every flag is sugar over it. Gap 08 composes rather than merges, and
-[`FJS-D143`](DECISIONS.md#fjs-d143)'s own word says why — *a zoned comparison is
-a window the framework BINDS* — the window's edge IS `asOf`.
-`overview.md` row 4.21 had asked for exactly this settlement and is now pointed
-at it.
-
-**The second prize in that paper is the clock.** `inventory.ts`'s filter reads
-raw `Date.now()` rather than `createClient({ now })`, so `advance()` moves
-nothing and shape 1's entire correctness condition — *a hold is dead the instant
-it passes, whether or not the job ran* — is untested and untestable.
-`verify-stock.mjs` stages expiry by moving the CUTOFF to `2099-01-01`, which
-proves the sweep and never touches the read.
-
-**And the thing that must not be swept up, which is why the three had to be
-taken together.** Eight `periodStart`/`periodEnd` columns on `Invoice`,
-`InvoiceLine`, `PayRun` and `Payslip` are `@immutable` facts copied onto a
-document, spelled almost identically to a validity window and emphatically not
-one. Auto-filtering them would make a payslip vanish from a read. A one-gap
-write-up would never have had to think about it and would have been free to get
-it wrong later.
-
-**Picked up cold.** The survey's agreed order was 01 · 04 · 05 · 02 · 03 · 08 ·
-06 · 07, cheapest first; 01 and 04 are shipped, 05 has a paper
-(`IDEAS/relators.md`, written the same day in a parallel session) and 07 now has
-one that also covers 03 and 08. Phase 1 of `effective-time.md` is
-`@@effective(to:)` with the full `asOf` directive, and `FJS-1241` is the second
-caller `FJS-D143` said to wait for.
-
-**Two things a fresh session will trip on and neither is a defect of this
-work.** `packages/litestone` has two pre-existing failures in
-`test/device-schema.test.ts` from `example/db/schema.lite` at HEAD, and
-`test/jsonl-multiprocess.test.ts` is load-flaky in the full suite and passes
-alone. And the tree is dirty from a parallel session — conduit, junction, mesa
-and several litestone docs are not this work's, which is why `fli done` reports
-three `changes-entry` misses that should be left alone.

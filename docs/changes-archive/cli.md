@@ -186,7 +186,7 @@ A fourth tiebreak under severity: how many workspace packages depend on the row'
 
 `fli` runs under bun (`FJS-D593`): the three shebangs flipped, `bin/fli.js` refuses a node run by name, and `create-frontier` spawns `bun` rather than `process.execPath`. A compiled command's body is `run($)` — `$` is the context, callable as the shell tag — and the head imports `path` and `fs` and nothing else (`FJS-D594`); `flags, args, flag, arg, log, tty, echo, chalk, answers` are destructured from `$`. `core/shell.js` owns both: `commandContext()` builds the callable, and `` $`…` `` is `Bun.$` under fli's rules — captures unless `--verbose`, runs nothing under `--dry` through `log.dry` (the one dry owner, which `$.exec` and `$.stream` now call too), throws with the command named, `.lines()` an array. `tty.line(prompt, { default })` replaces zx's `question()` (`FJS-D595`, closes `FJS-1406`): raw mode is handed back for the line and taken again after, `--yes` answers the default, no terminal refuses by name. `core/color.js` is the one chalk; the seven chained sites are nested calls; `plainChalk` and the `globalThis.echo` shadow are gone, `echo` is on `$` in both modes. The `node_modules` symlink `fliTmpRoot()` kept for one bare import is gone with it (`FJS-166` stays closed by `test/project-root.test.js`'s bare-specifier assertion). Every `context.` in every command, step, fixture, generator and doc is `$.`; `sleep` is `Bun.sleep`; `make:factory --open` lends the screen through `tty.aside` + `$.stream`.
 
-**`core/scope.js` + `command-resolves`** — the free-identifier check `IDEAS/scope-checking.md` costed: real lexical scopes over the unit the runtime loads, with the project's own TypeScript as the parser (no new dependency; no parser is a skip that says so). Its first sweep found 15 live `ReferenceError`s on a green tree — `log`/`echo`/`tty` reached from `<script>` helpers in `crypto:keygen`, `deploy:doctor`, `fli:validate`, `ksite:update` and the cli's own `hello:greet`, and a missing `randomBytes` import in `project/_module.md` — all fixed. `test/scope.test.js` holds this package's commands and `cli/src/routes` at zero.
+**`core/scope.js` + `command-resolves`** — the free-identifier check `IDEAS/shipped/scope-checking.md` costed: real lexical scopes over the unit the runtime loads, with the project's own TypeScript as the parser (no new dependency; no parser is a skip that says so). Its first sweep found 15 live `ReferenceError`s on a green tree — `log`/`echo`/`tty` reached from `<script>` helpers in `crypto:keygen`, `deploy:doctor`, `fli:validate`, `ksite:update` and the cli's own `hello:greet`, and a missing `randomBytes` import in `project/_module.md` — all fixed. `test/scope.test.js` holds this package's commands and `cli/src/routes` at zero.
 
 **Measured, the four things no suite covers.** A running command (`fli hello:exec /tmp --dry`) is 51ms wall, average of 10, where `PROJECT_STATE.md` had recorded ~206ms for a running command with zx's ~110ms import in it; `fli list` is 42ms. `bun pm pack` + `npm i -g` into a prefix then made read-only runs `fli list` and `fli fli:doctor` with the session under `/tmp/fli-<digest>/` and no symlink. Two concurrent `POST /api/run` streams of a command that echoes three times with pauses each carry only their own lines. `fli make:factory Product --open` under a pty runs `$EDITOR` through `tty.aside` and returns.
 
@@ -5126,7 +5126,7 @@ steps later, and asserting both is now the point of the pair.
 
 ## 2026-09-03 — five commands that could not run, and the check that found them
 
-`FJS-730`, `FJS-731`, `FJS-732`. Design record: `IDEAS/scope-checking.md`.
+`FJS-730`, `FJS-731`, `FJS-732`. Design record: `IDEAS/shipped/scope-checking.md`.
 
 `FJS-726` was a free identifier, so the obvious next question was how many more
 there are. A prototype answers it: parse the compiled unit the RUNTIME builds —
@@ -5165,7 +5165,7 @@ rather than its orchestrator's reports **27 free names instead of 0** — the un
 is the join, not the file.
 
 Nothing is committed but the fixes and the write-up: the checker itself is
-`IDEAS/scope-checking.md` 0.10, and its one open decision is a parser dependency.
+`IDEAS/shipped/scope-checking.md` 0.10, and its one open decision is a parser dependency.
 The tree now answers 0 free identifiers and 0 parse failures over 237 units,
 which is what would let a rule go in at zero rather than at a baseline.
 
@@ -5652,7 +5652,7 @@ either side can reach ([`FJS-D158`](../../DECISIONS.md#fjs-d158)).
 
 `(subjectType, subjectId)` is the ruled answer for a target set that is open —
 no foreign key, no cascade, no `include`, and the target deliberately not an
-input to the access-control compiler (`IDEAS/polymorphic-relations.md`). None of
+input to the access-control compiler (`IDEAS/shipped/polymorphic-relations.md`). None of
 that changes.
 
 **What changed is that the discriminator was carrying no rule at all.**
@@ -5813,7 +5813,7 @@ run: it is in the `test` script now, which is the rule `fli check`'s
 
 ## 2026-08-29 — a dev surface has a name
 
-1430 tests + 99 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.6,
+1430 tests + 99 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` §10.6,
 `IDEAS/overview.md` 5.19.
 
 `example.localhost` rather than `localhost:8010`, and it is worth having only
@@ -5919,7 +5919,7 @@ opened, so that is what it counts.
 
 ## 2026-08-29 — the rules, and the machine, where somebody looks
 
-1396 tests + 99 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.5.
+1396 tests + 99 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` §10.5.
 
 `fli check` is the arch-test surface and `fli doctor` asks whether this machine
 can run fli at all. Neither was anywhere a person looks, which for a set of
@@ -5959,7 +5959,7 @@ had been passing on timing were rewritten to ask for the poll they depend on.
 
 ## 2026-08-29 — answering is not working
 
-1375 tests + 82 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.4.
+1375 tests + 82 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` §10.4.
 
 The state badge is a socket that opened, which is equally true of a Junction app
 whose database probe is failing and of a process that bound the port and wedged.
@@ -6087,7 +6087,7 @@ a freshly scaffolded app fails its backup, and blames the container).
 
 ## 2026-08-29 — the dashboard answers *does it pass*, not only *is it running*
 
-1282 tests + 64 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.2.
+1282 tests + 64 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` §10.2.
 
 The child table held an exit code and sixty lines of output and threw both away
 — `stopRow` deleted the entry and `startRow` overwrote it — so every drive and
@@ -6121,7 +6121,7 @@ dropped the moment it does.
 
 ## 2026-08-29 — one button starts the whole thing
 
-1269 tests + 51 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.1.
+1269 tests + 51 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` §10.1.
 
 `verify:live` needs `db:seed`, then `api` and `web` — three rows pressed in
 order, with the order living in prose and in the drive's own exit 1. The drive
@@ -6162,7 +6162,7 @@ without that it POSTs a null id and the person reads `no runnable called null`.
 ## 2026-08-29 — the dashboard answers *what proves this change*
 
 1235 tests + 35 browser assertions, 0 fail. `IDEAS/proof-map.md` step 4, which
-is `IDEAS/control-surface.md` §10.3.
+is `IDEAS/shipped/control-surface.md` §10.3.
 
 `GET /api/proves` and a panel above the tiles. Every answer resolved to a
 runnable row renders as the same start button the tile below it carries, which
@@ -6476,7 +6476,7 @@ buttonless form.
 
 ## 2026-08-27 — `project:view` says whether the app it maps is running
 
-1112 tests + 21 browser assertions, 0 fail. `IDEAS/control-surface.md` step 6,
+1112 tests + 21 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` step 6,
 which completes the paper's build list.
 
 The viewer is read off FILES, so it drew a complete chain of responsibility for
@@ -6517,7 +6517,7 @@ of the process GROUP.
 
 ## 2026-08-27 — the dashboard starts a row, and refuses to stop one it did not start
 
-1107 tests + 21 browser assertions, 0 fail. `IDEAS/control-surface.md` step 5.
+1107 tests + 21 browser assertions, 0 fail. `IDEAS/shipped/control-surface.md` step 5.
 
 `core/children.js` is the table: `POST /api/start/:id`, `POST /api/stop/:id`,
 `GET /api/output/:id`, and a kill on the way out.
@@ -6565,7 +6565,7 @@ assert the rule now.
 
 ## 2026-08-27 — the GUI's front page is a dashboard of what can run
 
-1089 tests + a browser drive, 0 fail. `IDEAS/control-surface.md` steps 3 and 4.
+1089 tests + a browser drive, 0 fail. `IDEAS/shipped/control-surface.md` steps 3 and 4.
 
 `fli gui`'s front page was an empty state saying *select a command*. It is now
 the answer to the question this whole paper is about — what can I start here,
@@ -6610,7 +6610,7 @@ that survives a developer having things up.
 
 ## 2026-08-27 — `core/runnables.js` — what can run in this project, one flat list
 
-1083 tests, 0 fail. The inventory half of `IDEAS/control-surface.md`, step 1.
+1083 tests, 0 fail. The inventory half of `IDEAS/shipped/control-surface.md`, step 1.
 
 92 rows on this workspace — 9 surfaces, 4 tools, 28 drives, 21 suites, 6 tasks,
 24 snapshots — each `{ kind, id, name, dir, start, port, open, needs, source }`.

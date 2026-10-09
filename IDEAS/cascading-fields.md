@@ -272,7 +272,7 @@ useful.
 
 ## See also
 
-- `IDEAS/state-machines.md` — the sibling argument, and where the "must radiate into
+- `IDEAS/shipped/state-machines.md` — the sibling argument, and where the "must radiate into
   three realms" bar comes from. *(That file says nothing is built; `@@transitions` has
   since shipped — it is stale, not wrong about the design.)*
 - `packages/litestone/docs/soft-delete.md` — the shipped special case

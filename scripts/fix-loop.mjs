@@ -291,7 +291,7 @@ async function span(hit, spans) {
 function phaseOf(part, edited) {
   const text = `${part.input?.command ?? ''} ${part.input?.file_path ?? ''}`
   if (/\bfli proves?\b|\bverify[:\w-]*|\bbun run (api|web)\b|test:browser/.test(text)) return 'prove'
-  if (/\bfli (close|file|done)\b|register:(close|file)|CHANGES\.md/.test(text)) return 'close'
+  if (/\bfli (close|file|done)\b|register:(close|file)/.test(text)) return 'close'
   return edited ? 'fix' : 'orient'
 }
 

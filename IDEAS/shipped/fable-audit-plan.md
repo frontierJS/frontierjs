@@ -1,12 +1,12 @@
 ---
 id: fable-audit-plan
-status: proposed
+status: shipped
 dated: 2026-10-05
 ---
 
 # Idea — The Fable 5 audit plan: what is still unread, and how each run reports
 
-**Status: PROPOSED. Nothing here has run.** Dated 2026-10-05. A queue of audits to run
+**Status: SHIPPED — every run reported.** Findings filed as `FJS-1816`–`1820` and `FJS-1831`–`1876`; rulings `FJS-D615`–`D619`. Dated 2026-10-05. A queue of audits to run
 on Fable 5 (`claude-fable-5-1`), ordered by unaudited risk first and judgment-heavy
 work second. A finding lands in `ISSUES.md` with an id. This file stays the plan, and
 it is not a register.

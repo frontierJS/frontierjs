@@ -280,7 +280,7 @@ different audience.
 
 ## See also
 
-- `IDEAS/logbook.md` — the sibling that shipped, and where the correlation id and
+- `IDEAS/shipped/logbook.md` — the sibling that shipped, and where the correlation id and
   the audit trail come from
 - `IDEAS/lantern.md` — the third sibling: spans, and explaining a refusal
 - `IDEAS/operational-edge.md` — the surrounding argument about what happens

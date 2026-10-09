@@ -22,7 +22,7 @@ and `example`'s `verify:support` drives an episode end to end. The remainder is
 the declared-trail silence that test's fifth row asserts as still-broken.
 
 Promoted out of `compliance-from-the-seed.md` §6, which argued the *why* in eleven lines
-and named no mechanism. It closes [`FJS-142`](../ISSUES_ARCHIVE.md#fjs-142), which is filed
+and named no mechanism. It closes [`FJS-142`](../../ISSUES_ARCHIVE.md#fjs-142), which is filed
 against basecamp and is a framework question — two screens carry an *Impersonate* button,
 neither is built, and both say so on the screen instead.
 
@@ -369,7 +369,7 @@ all of the risk.
 ## Open questions
 
 - ~~**An operator who impersonates an administrator inherits administrator.**~~
-  **Answered 2026-10-04 by [`FJS-D574`](../DECISIONS.md#fjs-d574):** a subject above the
+  **Answered 2026-10-04 by [`FJS-D574`](../../DECISIONS.md#fjs-d574):** a subject above the
   operator is refused at `/auth/support/start`, graded by `services.standingLevel`; a peer
   is allowed.
 - ~~**Does the subject get told?**~~ **Answered 2026-10-04 by `FJS-D574`:** `support.started`

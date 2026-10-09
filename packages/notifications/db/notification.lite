@@ -58,12 +58,18 @@ model Notification {
   // asSystem() are all held to it, and it reaches the browser as a set a picker
   // renders rather than a text box.
   //
+  // contextId is String, not Int: it points at more than one table, and a model
+  // a phone writes offline has a ULID id (litestone refuses an autoincrement
+  // there). An integer id fits as digits, a uuid or ULID fits as itself, and
+  // "has this gone out" stays a query on (type, contextId) -- the same trade
+  // User.accountId makes in auth.
+  //
   // Spelt contextType/contextId because the in-app driver names those. The
   // reference catalog prefers subjectType/subjectId for anything NEW; here
   // the package has already chosen, and a rename is a migration plus a package
   // change.
   contextType String?
-  contextId   Int?
+  contextId   String?
   // null = unread. The one column a recipient writes, which is what the U in
   // the gate below is for.
   readAt      DateTime?

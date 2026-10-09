@@ -220,11 +220,10 @@ out/                  build output, not source
   know is to look at one. Nothing in `npm test` or `verify:package` can see it:
   both check that the FILE is shipped and named, which is the half that used to
   be wrong.
-- **There are two changelogs and the marketplace reads only one.** `CHANGELOG.md`
-  is the name the Changelog tab is generated from and no other name works, so it
-  ships in the `.vsix`; `CHANGES.md` is the engineering history and is
-  `.vscodeignore`d, along with `PROJECT_STATE.md`. Writing an entry in
-  `CHANGES.md` alone changes nothing a user of the extension ever sees. The fifth
+- **`CHANGELOG.md` is for the marketplace.** It is the name the Changelog tab is
+  generated from and no other name works, so it ships in the `.vsix`; the
+  engineering history is git (`FJS-D675`), and `PROJECT_STATE.md` is
+  `.vscodeignore`d. The extra
   root markdown file is answered by an allowance in `scripts/ci-allowances.json`.
 - **`capabilities` is a security statement, not metadata.** Mesa diagnostics load
   the workspace's OWN compiler and call it, so `untrustedWorkspaces.supported` is

@@ -10,7 +10,7 @@ It followed sierra's rename of `./junction`.
 
 ## 2026-09-29 — a new notification reaches the bell
 
-[`FJS-1573`](../../ISSUES.md#fjs-1573). The inApp driver pushed `notification:created`, and the
+[`FJS-1573`](../../ISSUES_ARCHIVE.md#fjs-1573). The inApp driver pushed `notification:created`, and the
 browser client routes a frame to a service's store only when its name is `<service> <verb>`,
 split on the space. The old name was a single word to the client, so it reached no store and
 every bell stayed at the count from its first load until a reload. Nothing reported it. The

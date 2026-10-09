@@ -1,6 +1,6 @@
 # Audit Logging
 
-Litestone provides field-level and model-level audit logging via the `logger` database driver. Every write produces a structured log entry with before/after snapshots, actor attribution, and optional custom metadata.
+Litestone provides field-level and model-level audit logging via the `logger` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
 
 ## Setup
 
@@ -57,7 +57,7 @@ model User {
 }
 ```
 
-`before`/`after` snapshots are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write records **which** rows it touched and **what** it did to them, never their contents:
+`before`/`after` images are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write records **which** rows it touched and **what** it did to them, never their contents:
 
 ```js
 // db.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
@@ -85,7 +85,7 @@ model Vault {
 { operation: 'update', model: 'vault', field: 'apiKey',
   records: [7], before: '[redacted]', after: '[redacted]', actorId: 'user_abc', ... }
 
-// model-level snapshot — name is logged, apiKey is not
+// model-level image — name is logged, apiKey is not
 { operation: 'update', model: 'vault', field: null, records: [7],
   before: { id: 7, name: 'prod', apiKey: '[redacted]' },
   after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
@@ -102,7 +102,7 @@ The value returned to the caller is never affected — redaction happens on the 
 
 ## Personal data — @personal and @@person
 
-A column about a person is `@personal`, optionally with a category. A reader the gate admits still sees it; the trail does not keep it, because the trail outlives the row and an erased person's email would otherwise stay in every snapshot. It logs as `'[personal]'`, so an entry still says which kind of value was dropped:
+A column about a person is `@personal`, optionally with a category. A reader the gate admits still sees it; the trail does not keep it, because the trail outlives the row and an erased person's email would otherwise stay in every before- and after-image. It logs as `'[personal]'`, so an entry still says which kind of value was dropped:
 
 ```prisma
 model Candidate {

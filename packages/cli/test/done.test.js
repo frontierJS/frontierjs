@@ -12,7 +12,7 @@ import { join, dirname } from 'path'
 import { tmpdir }        from 'os'
 import { execFileSync }  from 'child_process'
 
-import { changesEntries, layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey } from '../core/done.js'
+import { layoutNamed, moduleNamed, collectChanges, runDone, stopVerdict, itemKey } from '../core/done.js'
 
 function tree(files) {
   const root = mkdtempSync(join(tmpdir(), 'fli-done-'))
@@ -22,32 +22,6 @@ function tree(files) {
   }
   return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
-
-const diffAdding = (file, ...lines) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,0 +1,${lines.length} @@\n${lines.map(l => `+${l}`).join('\n')}\n`
-
-describe('changes-entry', () => {
-  const files = { 'packages/a/CHANGES.md': '# Changes\n', 'packages/a/src/x.js': '', 'packages/a/x.snapshot.md': '' }
-
-  test('a package changed with no new heading in its CHANGES.md is unfinished, and one with a heading is not', () => {
-    const { root, cleanup } = tree(files)
-    try {
-      const bare = changesEntries({ root, changed: ['packages/a/src/x.js'], diff: '' })
-      expect(bare.map(i => i.ok)).toEqual([false])
-
-      const prose = changesEntries({ root, changed: ['packages/a/src/x.js', 'packages/a/CHANGES.md'], diff: diffAdding('packages/a/CHANGES.md', 'a line, not a heading') })
-      expect(prose.map(i => i.ok)).toEqual([false])
-
-      const entry = changesEntries({ root, changed: ['packages/a/src/x.js', 'packages/a/CHANGES.md'], diff: diffAdding('packages/a/CHANGES.md', '## 2026-09-14 — a thing', '', 'Body.') })
-      expect(entry.map(i => i.ok)).toEqual([true])
-    } finally { cleanup() }
-  })
-
-  test('a regenerated snapshot alone asks for no entry', () => {
-    const { root, cleanup } = tree(files)
-    try { expect(changesEntries({ root, changed: ['packages/a/x.snapshot.md'], diff: '' })).toEqual([]) }
-    finally { cleanup() }
-  })
-})
 
 describe('layout-named', () => {
   const doc   = '# a\n\n```\ncore/\n  one.js\n  two.js\n  three.js\n```\n'
@@ -115,7 +89,7 @@ describe('the diff', () => {
 
 describe('the Stop hook verdict', () => {
   const report = (...items) => ({ items })
-  const item   = (subject, ok = false) => ({ check: 'changes-entry', subject, ok, message: `${subject} needs an entry` })
+  const item   = (subject, ok = false) => ({ check: 'layout-named', subject, ok, message: `${subject} needs an entry` })
 
   test('an unchanged tree builds nothing, and a changed one asks for the report', () => {
     const state = { head: 'h1', fingerprint: 'f1', shown: [] }

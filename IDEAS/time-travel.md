@@ -61,7 +61,7 @@ Four properties matter for checkpoints, and all four are already true:
 3. **Entries are queryable through the ordinary ORM** (accessor `db.auditLogs`),
    so "the history" needs no second query language.
 4. **Protected values are redacted** — `@encrypted` / `@guarded` / `@secret` log as
-   `[redacted]` in field entries *and* in the `before`/`after` snapshots. That is
+   `[redacted]` in field entries *and* in the `before`/`after` images. That is
    repo Invariant 7 and it is pinned by 8 tests.
 
 Point 4 is the design constraint that decides the whole shape (below), and it is a

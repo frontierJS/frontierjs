@@ -68,7 +68,7 @@ of the kit this way rather than declaring breadth enough.
   running a command.
 
 Both drives pass against the dev server and against the production build. The
-defects this found are in `CHANGES.md`; the ones that were Mesa's are in that
+defects this found are in `docs/changes-archive/ui.md`; the ones that were Mesa's are in that
 package's.
 
 The kit is loaded there from the workspace source through a Vite alias, not

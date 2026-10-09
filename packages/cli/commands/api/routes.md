@@ -40,7 +40,7 @@ where something meant to put it.
 
 The manifest plugin must be declared — `plugins: { manifest: true }` in
 `api/config/junction.config.js`, which the scaffold writes — and it is skipped
-in production by default. Start the API first — `fli api:dev`.
+in production by default. Start the API first — `fli dev:api`.
 
 ```js
 const base = (flag.url || process.env.API_URL ||
@@ -57,7 +57,7 @@ for (const path of ['/manifest', '/api/manifest']) {
     manifest = await res.json()
     break
   } catch {
-    log.error(`Cannot reach the API at ${base} — is it running? (fli api:dev)`)
+    log.error(`Cannot reach the API at ${base} — is it running? (fli dev:api)`)
     return
   }
 }

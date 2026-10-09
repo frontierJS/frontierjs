@@ -22,7 +22,7 @@ model Notification {              // PascalCase singular → accessor db.notific
   type        String              // stable notification id, e.g. 'PaymentReceived'
   data        Json                // payload built by toInApp() — varies by type
   contextType String?             // optional: 'Order', 'Project', 'Invoice'
-  contextId   Int?                // optional: id of the related record (loose ref, no FK)
+  contextId   String?             // optional: id of the related record (loose ref, no FK)
   readAt      DateTime?           // null = unread
   createdAt   DateTime  @default(now())
 

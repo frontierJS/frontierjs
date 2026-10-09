@@ -1,6 +1,6 @@
 # Mesa Docs
 
-Everything that is not the package README, `../PROJECT_STATE.md`, or `../CHANGES.md`.
+Everything that is not the package README, or `../PROJECT_STATE.md`.
 
 ## Specification
 
@@ -17,5 +17,5 @@ Everything that is not the package README, `../PROJECT_STATE.md`, or `../CHANGES
 
 ---
 
-Read `../CHANGES.md` § 2026-08-01 (the reactivity and block-teardown passes) before
-changing `runtime.js`; `STATIC_RENDERING.md` before changing either renderer.
+Read `ui-hazards` and `git log -- packages/mesa/src/runtime.js` (the 2026-08-01
+reactivity and block-teardown passes) before changing `runtime.js`; `STATIC_RENDERING.md` before changing either renderer.

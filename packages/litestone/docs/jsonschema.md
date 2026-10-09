@@ -283,7 +283,7 @@ compares what went out against what came back for flagged columns only, and
 `<Form>` renders the result in the slot a server error would have used
 (`FJS-1071`). Answering *may I write this* BEFORE the write needs the expression
 and a row, which is a second reader on the policy language and a decision of its
-own (`IDEAS/declared-field-state.md`).
+own (`IDEAS/shipped/declared-field-state.md`).
 
 **`x-litestone-required-where` is the one that carries the EXPRESSION, and the
 contrast with the flag above is the whole rule for deciding which to emit.** A

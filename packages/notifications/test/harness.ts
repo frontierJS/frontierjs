@@ -28,7 +28,7 @@ model Notification {
   type        String
   data        Json
   contextType String?
-  contextId   Int?
+  contextId   String?
   readAt      DateTime?
   createdAt   DateTime  @default(now())
 

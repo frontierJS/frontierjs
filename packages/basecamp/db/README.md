@@ -278,7 +278,7 @@ database audit { path "./audit/" driver trail retention 90d }
 ```
 
 Every write to a `@@trail(audit)` model lands in `./audit/auditTrail.jsonl` with
-before/after snapshots and actor attribution, and is queryable through the
+before/after images and actor attribution, and is queryable through the
 `auditTrail` accessor (`sys.auditTrail.findMany()`). **All 16 non-event models
 carry it**, including `Secret`, `Credential`, `Session` and `Verification` —
 an access trail over a credential is the whole point of having one.

@@ -32,7 +32,7 @@ Conduit is not* is the boundary as shipped.
 Reproduce: `cd packages/conduit && bun run test && bun run typecheck`.
 
 Three things landed in the three days before this file and each has its
-`CHANGES.md` entry: per-target resilience (`FJS-728`), a refused replay no longer
+`docs/changes-archive/conduit.md` entry: per-target resilience (`FJS-728`), a refused replay no longer
 travelling outward as `retryable: true` (`FJS-733`), and an outbound call
 carrying the request that caused it (`FJS-742`).
 

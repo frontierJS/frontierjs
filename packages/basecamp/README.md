@@ -225,7 +225,6 @@ is the generated, checkable list of which model is which.
 |---|---|
 | `docs/SCREENS.md` | The mock inventory — 41 of 41 built, and what each phase decided |
 | `docs/ADAPTERS.md` | **Picking the adapters back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
-| `CHANGES.md` | History, newest first |
 | `db/README.md` | The Data realm: conventions, identity, encryption, the audit trail, intended gates |
 | `PROJECT_STATE.md` | Current state in detail, and what each pass found |
 | `docs/VISION.md` | What Basecamp is *for*. Aspirational and says so at the top |

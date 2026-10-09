@@ -968,7 +968,7 @@ Everything in `sierra.config.js`:
 | `outDir` | `'dist/client'` | build output |
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
-| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, lang }`. The build's own CSS assets are linked automatically |
+| `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, bodyAttrs, htmlClass, lang, head, bodyEnd }`. The build's own CSS assets are linked automatically |
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written. A build writes `routes.build.js` beside it, so it never overwrites the table a running dev server serves |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
@@ -1149,6 +1149,16 @@ Sierra assembles it — Vite's HTML transform never runs on these files, so what
   `@frontierjs/css` is one class on an ancestor, so `bodyClass: 'app
   theme-default'` is what makes a prerendered page look like the app. `lang`
   defaults to `en`, and a route may override it with `lang:` in its frontmatter.
+- **`document: { head, bodyEnd, bodyAttrs }`** is what is the same on every page: `head` and
+  `bodyEnd` are HTML strings written verbatim at the end of `<head>` and `<body>` (a
+  site-wide third-party loader, a `theme-color`, a WebSite JSON-LD), and `bodyAttrs`
+  (`{ id: 'app' }`) is attributes for `<body>` beside `bodyClass`.
+- **`head()` answers the per-page tags too:** `{ title, description, meta, links, jsonLd }`.
+  `meta` and `links` are arrays of attribute objects
+  (`meta: [{ property: 'og:title', content }]`, `links: [{ rel: 'canonical', href }]`) and
+  `jsonLd` is one object or an array. These values come from a row, so they are escaped; an
+  attribute name that is not a name fails the build. Static only — the router's `head()`
+  reads title and description.
 
 ### Islands — making a static page interactive
 
@@ -1383,5 +1393,5 @@ runner reports failures that are runner artifacts rather than bugs.
 - Every named layout slot emits a duplicate-declaration warning from the Mesa compiler.
   Cosmetic — the build and the slot both work.
 
-See [`CHANGES.md`](CHANGES.md) for the detailed history of what was fixed and why, and the
+See git history for what was fixed and why, and the
 repo's `DECISIONS.md` before relitigating any semantics.

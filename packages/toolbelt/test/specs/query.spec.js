@@ -163,6 +163,25 @@ test('query: undefined is dropped and null is sent', function () {
   assert.equal(pairs.b, 'null')
 })
 
+// FJS-2047: `tasks: { none: {} }` encoded to nothing, so the HTTP fallback
+// answered every row where the socket answered the unplaced ones.
+test('query: an empty object or array is sent, not dropped', function () {
+  const q = { direction: 'inbound', tasks: { none: {} }, cards: { some: {} }, id: { in: [] } }
+  assert.equal(encodeQueryString(q), '?direction=inbound&tasks[none]=%7B%7D&cards[some]=%7B%7D&id[in]=[]')
+  assert.deepEqual(parseQueryString(encodeQueryString(q)), q)
+  assert.deepEqual(parseParams(encodePairs(q)), q)
+})
+
+test('query: {} and [] are themselves, and quoted they are text', function () {
+  assert.deepEqual(parseValue('{}'), {})
+  assert.deepEqual(parseValue('[]'), [])
+  assert.ok(parseValue('{}') !== parseValue('{}'), 'each read is a fresh container')
+  const pairs = Object.fromEntries(encodePairs({ a: '{}', b: '[]' }))
+  assert.equal(pairs.a, '"{}"')
+  assert.equal(pairs.b, '"[]"')
+  assert.deepEqual(parseQueryString('?a[b]={}&a[c]=1'), { a: { b: {}, c: 1 } })
+})
+
 test('query: an empty query encodes to no search string', function () {
   assert.equal(encodeQueryString({}), '')
   assert.equal(encodeQueryString(null), '')

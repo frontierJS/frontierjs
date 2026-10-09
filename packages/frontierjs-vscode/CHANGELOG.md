@@ -1,7 +1,7 @@
 # Changelog
 
 The user-facing history of the FrontierJS VS Code extension. Engineering detail
-— why a defect existed and what it cost — is in `CHANGES.md` in the repository.
+— why a defect existed and what it cost — is in the repository's git history.
 
 ## 0.1.3 — unreleased
 

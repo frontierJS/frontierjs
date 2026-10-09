@@ -1,10 +1,10 @@
 ---
-title: extension:dev
+title: dev:extension
 description: Watch the extension surface and push reloads to the loaded-unpacked build
 alias: ext-dev
 examples:
-  - fli extension:dev
-  - fli extension:dev --browser both --launch
+  - fli dev:extension
+  - fli dev:extension --browser both --launch
 flags:
   browser:
     char: b

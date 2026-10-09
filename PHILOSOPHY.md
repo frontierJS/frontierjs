@@ -242,8 +242,8 @@ say.**
   principle is not yet true about, and belongs in the register. A principle
   is true on the day it is written and on the day the code catches up; a number
   is true for an afternoon.
-- **Register** — `DECISIONS.md`, `ISSUES.md`, `CHANGES.md`. Dated, cited,
-  append-only. History lives here and nowhere else.
+- **Register** — `DECISIONS.md`, `ISSUES.md`. Dated, cited, append-only.
+  What changed is git; why it changed is the ruling or the defect row.
 - **Map** — the root and package `CLAUDE.md`, a package `README.md`, the committed
   snapshots. Live facts, each one backed by a generator or a check that fails when
   it stops being true. A README is here rather than one tier down because a

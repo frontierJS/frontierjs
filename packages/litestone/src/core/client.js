@@ -721,13 +721,19 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `stamped` is per row, as writeData's is: one row's stamp must not excuse
   // another row's caller-named key.
   //
+  // A key the call names under `system:` is the application's statement, as a
+  // stamp is: a hook that copies a parent id from a row it read puts there a
+  // parent the caller may not read, and grading it as the caller's guess
+  // answered 422 'names no …' for a value the caller never chose (FJS-1953).
+  //
   // A refusal names the first hidden relation and carries every one in
   // `hidden`, for the create policy to read as missing: a rule reading a
   // hidden parent's column answers by that column, and the caller chose both
   // the key and the payload it is compared with (FJS-1712).
-  async function hiddenParents(rows, stamped = []) {
+  async function hiddenParents(rows, stamped = [], system = null) {
     const out = []
     if (ctx.isSystem || !_parentKeys.length) return out
+    const lifted = new Set(system == null ? [] : [system].flat())
     for (const p of _parentKeys) {
       const tbl  = ctx.tables?.[modelToAccessor(p.target)]
       const sink = ctx.cascadeSinkFor?.(p.target)
@@ -735,7 +741,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       const verdict = new Map()
       for (const [i, row] of rows.entries()) {
         if (!row || typeof row !== 'object' || !p.fields.every(f => f in row)) continue
-        if (p.fields.every(f => stamped[i]?.has(f))) continue
+        if (p.fields.every(f => stamped[i]?.has(f) || lifted.has(f))) continue
         const values = p.fields.map(f => row[f])
         if (values.some(v => v == null || typeof v === 'object')) continue
         const key = JSON.stringify(values)
@@ -1048,6 +1054,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // asSystem(). Precomputed for the same reason the two above are.
   const _immutableWriteKeys = new Set(
     Object.keys(fieldPolicy).filter(name => fieldPolicy[name].immutable)
+  )
+  // @sequence — the counter's number, frozen after create with no `@immutable`
+  // beside it and no seal to wait for. A renumbered row takes a value the
+  // counter has not reached; the next create collides on it, the failed insert
+  // rolls the counter back to the same value, and the scope 409s for ever
+  // (`FJS-1988`).
+  const _sequenceWriteKeys = new Set(
+    (_modelForKeys?.fields ?? []).filter(f => f.attributes?.some(a => a.kind === 'sequence')).map(f => f.name)
   )
   // @capability — the column tier of the grid. Precomputed for the same reason:
   // empty on almost every model, so the per-write cost is a size test.
@@ -2934,6 +2948,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
     )
   }
 
+  function refuseSequenceWrite(data) {
+    const denied = Object.keys(data).filter(k => _sequenceWriteKeys.has(k))
+    if (denied.length) throw new ValidationError(
+      denied.map(f => ({
+        path: [f],
+        message: `${f} is a @sequence — the counter assigned it when the row was created, and nobody writes it after. ` +
+                 `Leave it out of the payload; a create may state one, which moves the counter past it.`,
+      })),
+      { model: modelName, operation: 'write' }
+    )
+  }
+
   function refuseMissingRequired(model, data) {
     const missing = []
     for (const f of model.fields) {
@@ -3293,6 +3319,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // editable while it is still a draft. The refusal moves into the WHERE with
     // the other state guards; `_sealImmutable` below is where the keys go.
     if (!creating && _immutableWriteKeys.size && !_sealSelf && data && typeof data === 'object' && !Array.isArray(data)) refuseImmutableWrite(data, stamped)
+    if (!creating && _sequenceWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseSequenceWrite(data)
 
     // ── @capability, the column tier ──────────────────────────────────────
     // `Server.update` says a caller may write the row; `Server.hostname` says
@@ -5220,7 +5247,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // a row reading "just edited by Bob" when Ann edited it.
     const stamped = new Set()
     data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
-    const [_umHidden] = await hiddenParents([data], [stamped])
+    const [_umHidden] = await hiddenParents([data], [stamped], system)
     // @version bumps here but is never required: a where clause matching many
     // rows matches many versions, so there is no single value to compare
     // against. Bumping is the part that matters — without it a bulk write
@@ -5402,7 +5429,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, system }, ctx)
     refuseOffEntry(data)
     // The rows as the caller wrote them: every stamp lands later, inside the unit.
-    const hidden = await hiddenParents(data)
+    const hidden = await hiddenParents(data, [], system)
     const parent = ctx.hasPolicies ? data.map((row, i) => checkCreate(authStamped(row, modelName, ctx), hidden[i])) : []
     for (const [i, r] of parent.entries()) hidden[i] = firstRefusal(r, hidden[i])
     // A logged model already takes RETURNING, so opting in costs it nothing.
@@ -5514,7 +5541,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     data = applyGeneratedDefaults(data, shape.generatedDefaults, stamped)
     data = applyAuthDefaults(data, shape.authDefaults, ctx.auth, stamped)
     data = stampFromAuth(data, shape.createdBy, ctx.auth, stamped)
-    const [_crHid] = await hiddenParents([data], [stamped])
+    const [_crHid] = await hiddenParents([data], [stamped], system)
     // After the auth stamps, never before — see authStamped (FJS-1402).
     const _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined
     // A new row is version 1, whatever the payload says. Honouring a supplied
@@ -5569,7 +5596,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select, system }, ctx)
     const stamped = new Set()
     data = stampFromAuth(data, shape.updatedBy, ctx.auth, stamped)
-    const [_upHidden] = await hiddenParents([data], [stamped])
+    const [_upHidden] = await hiddenParents([data], [stamped], system)
 
     // ── @version — take the caller's expected version off the payload ───────
     // It is a precondition, not a value to write: the column is bumped by SQL
@@ -5880,7 +5907,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     refuseSystemEntries(system, ['create', 'update'])
     // The fast path's two halves; the slow path is create() and update(),
     // which grade their own.
-    const _upsHidden = await hiddenParents([createData, updateData])
+    const _upsHidden = await hiddenParents([createData, updateData], [], system)
     // ── an upsert addressed by a relator's relata ──────────────────────
     //
     // Refused rather than answered, because the answer would be a wrong one
@@ -7325,6 +7352,24 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _upMove = _bulkTransitionField(updateFields, 'upsertMany')
       if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
       if (!data?.length) return { count: 0 }
+      // Under row tenancy a `@unique` was built as (tenant, field) (`FJS-D310`),
+      // so a target naming the field alone matches no index and SQLite refuses
+      // it without naming the model or the column (`FJS-1918`). The target is
+      // widened only when that scoped constraint exists, so a target the caller
+      // already led with the tenant column, or one of a `@unique(global)`, is
+      // taken as written.
+      const target = (() => {
+        const named = conflictTarget
+          ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
+          : [idField]
+        const t = ctx.schema?.tenancy
+        if (t?.strategy !== 'row' || named.includes(t.column)) return named
+        const scoped = shape.model.attributes?.some(a =>
+          (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && a.generated === 'tenancy' &&
+          a.fields.length === named.length + 1 && a.fields[0] === t.column &&
+          named.every((c, i) => a.fields[i + 1] === c))
+        return scoped ? [t.column, ...named] : named
+      })()
       for (const row of data) extractWriteOps(row, { where: 'upsertMany' })
       refuseSystemEntries(system, ['create', 'update'])
       await enforceValueSets(modelName, data, ctx)
@@ -7349,11 +7394,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const _usKeys = updateFields
           ? [updateFields].flat()
           : [...new Set(data.flatMap(d => Object.keys(d)))]
-              .filter(k => !(conflictTarget ? [conflictTarget].flat() : [idField]).includes(k))
+              .filter(k => !target.includes(k))
         await plugins.beforeUpdate(modelName, { data: Object.fromEntries(_usKeys.map(k => [k, undefined])), system }, ctx)
       }
       refuseOffEntry(data)
-      const _usHidden = await hiddenParents(data)
+      const _usHidden = await hiddenParents(data, [], system)
 
       const autoId       = shape.autoId
       const genDefaults  = shape.generatedDefaults
@@ -7400,10 +7445,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           try { return writeData(d, { requireAll: true, system, stamped, creating: true }) }
           catch (e) { throw asBatchRowError(e, i, data.length, null) }
         })
-
-        const target  = conflictTarget
-          ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
-          : [idField]
 
         // ON CONFLICT DO UPDATE is resolved by SQLite, which has never heard of
         // soft delete — so a batch whose conflict key matched a DELETED row

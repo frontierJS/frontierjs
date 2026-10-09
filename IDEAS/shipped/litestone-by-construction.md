@@ -1,12 +1,12 @@
 ---
 id: litestone-by-construction
-status: proposed
+status: shipped
 dated: 2026-10-07
 ---
 
 # Idea — Litestone by construction: a rule no verb can skip
 
-**Status: PROPOSED. Nothing here has started.** Dated 2026-10-07; every number
+**Status: SHIPPED — all six steps landed 2026-10-08** (`docs/changes-archive/litestone.md`); `upsertMany` stopped at § 5, and a quiet-machine bench is still owed. Dated 2026-10-07; every number
 below was measured on the working tree that day. It is F9's fix (1) from the
 [foundation audit](https://claude.ai/code/artifact/f629d9fc-1ae7-4aaf-b7fe-20a863c41211),
 the second phase of the `client.js` split, and the construction half of

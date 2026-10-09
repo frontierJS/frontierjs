@@ -43,7 +43,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 
 | What happened | Where it goes |
 | --- | --- |
-| A behavior changed | the package's `CHANGES.md`, newest first |
+| A behavior changed | the commit; a surprise still true goes in the realm's hazard skill (`FJS-D675`) |
 | A defect found and not fixed now | an `FJS-###` row in `ISSUES.md` |
 | A judgement settled | an `FJS-D##` in `DECISIONS.md` |
 | A design not started | `IDEAS/` — never cited as behavior |

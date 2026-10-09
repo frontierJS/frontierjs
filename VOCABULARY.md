@@ -24,14 +24,14 @@ over there already says, and nothing would read it.
 `blessed` here with the same meaning. Where the two disagree, § 2 is right and
 this file is stale.
 
-**This is the root register and not the only one.** A package that defines its
+**This is the root vocabulary and not the only one.** A package that defines its
 own terms well enough to CHECK them has named them, and `fli ws:terms` reads
-those registers rather than asking anyone to copy them here —
+those vocabularies rather than asking anyone to copy them here —
 `@frontierjs/css/vocabulary.json` is 56 terms and 8 axes, each graded against
 the real CSSOM by that package's own spec. A row here outranks one there, with
 one exception that is the point: **`open` is not an answer**, so a word this
 file has merely seen does not shadow a package that defined it. Those land in
-`ws:terms`'s audit instead of being decided by whichever register spoke last,
+`ws:terms`'s audit instead of being decided by whichever vocabulary spoke last,
 because most of them are one spelling over two realms — a Table is a `<table>`
 in css and a database table in litestone — and what is owed is which sense this
 file is naming, not a copy of the other one.
@@ -76,7 +76,7 @@ before you meet it.
 | Hook | blessed | Shared | | | |
 | Service | blessed | API | | | |
 | Plugin | blessed | API | | what extends the thing it is installed into — Junction's app, Litestone's client, Vite's build | `FJS-D06`, `FJS-D631`. Name the host where it is unclear: *a Vite plugin* |
-| Provider | blessed | Integrations | | | |
+| Provider | blessed | Integrations | | a third party the app integrates with, declared once, holding the credentials both ends spend — a Target is where we send, a Receiver where it calls us | `FJS-D681`. Not *integration*, *adapter* or *driver* |
 | Event | blessed | API | | what Junction announces — after a write, or by `announce()` — carried on a Channel to whoever may read it | `FJS-D44`, `FJS-D393`. *Announce* is its verb, and it has no second noun: *Announcement* and *Mutation* are not terms, and *a write* is the plain phrase |
 | Channel | blessed | API | | | |
 | Job | blessed | Automation | | | |
@@ -88,6 +88,9 @@ before you meet it.
 | Warden | blessed | Data | | the whole access system: everything that decides whether a call may touch a row or a column — principal and claims, gate, capabilities, row policies, field protection, a transition's authority half. `asSystem()` lifts it and holds the integrity rules | `FJS-D546`. The Data boundary is where it enforces. Prior art is the *reference monitor* (Anderson 1972): cited, not used, because it names the mediator and not the declarations, and reads as an OS kernel |
 | Capability | blessed | Data | Warden | a reference to a move the seed already declares, held by a principal per tenant — `auth().capabilities`, `@@capabilities` | `FJS-D139`, `FJS-D149`, `FJS-D151`. Never what a Plugin adds: that is *extends* (`FJS-D631`) |
 | Invariant | blessed | Framework | | a rule the framework does not break without a ruling — numbered in `CLAUDE.md` § Invariants and graded by `fli ws:invariants` | a CONTRIBUTOR word: cited by number in comments and registers, where the reader has the list. An app developer does not have it, so nothing an app sees cites one by number ([`FJS-1282`](ISSUES.md#fjs-1282)) — it states the rule |
+| Owner | blessed | Framework | | the one place with authority over a capability's definition and lifecycle — many may take part, one decides | PHILOSOPHY axiom 3, Invariants 4 and 5. An app's `ownerId` column is not this; who owns a row is an Actor role |
+| Register | blessed | Framework | | a document kind — dated, cited, append-only: `DECISIONS.md`, `ISSUES.md` | PHILOSOPHY § document kinds. Not a list of terms: this file and `css/vocabulary.json` are vocabularies. The verb `register` (the Plugin protocol, `app.registerX`) is a different word |
+| Ruling | blessed | Framework | Register | one `FJS-D##` entry in `DECISIONS.md`, binding until marked `superseded-by`, `amended-by` or `withdrawn` | Precedence: invariant, then ruling, then map (PHILOSOPHY). A defect is an `FJS-###` row in `ISSUES.md`, not a ruling |
 | State | open | Data | Transition | | |
 | PascalCase | open | | | | |
 | Phase | blessed | Shared | | a named step of an ordered list something runs — qualified at every use, *startup phase* or *CI phase*, never bare | `FJS-D395`. Junction's startup phases are one list both entry points run (Invariant 4); CI's are `scripts/ci.mjs`'s table. A Plugin's `register`/`boot`/`ready`/`shutdown` are not phases — `boot-plugins` and `ready-hooks` are the phases that call them |
@@ -137,7 +140,7 @@ before you meet it.
 | Row | open | Data | Model | | |
 | Block | open | | | | |
 | Question | open | | | | |
-| Domain | open | Framework | | | |
+| Domain | blessed | Framework | | never bare: *business domain* (what an app models), *DNS domain* (cloudflare-edge's `Domain` model), or ARCHITECT § 4's domain map, named as that section names it | [`FJS-D678`](DECISIONS.md#fjs-d678). Three live senses and none owns the word, so each use says which |
 | Home | open | | | | |
 | Lead | open | | | | |
 | Rule | open | Developer | | | |
@@ -175,14 +178,17 @@ before you meet it.
 | Queue | blessed | Automation | Job | what a Job runs on | `FJS-D198` |
 | Run | blessed | Automation | | one bounded execution that finishes and can be interrupted and resumed — an orion run, a backfill, a deploy's journal. Not a Job: its host may or may not run its steps as Jobs | [`FJS-D634`](DECISIONS.md#fjs-d634). The noun is shared and the engine is not ([`FJS-D503`](DECISIONS.md#fjs-d503)). *Saga* is refused (a Run whose steps compensate), and the cli's *runnable* is a launch target, never a Run |
 | Flow | blessed | Automation | Run | a declared sequence of steps a Run executes, declared in code or stored as data (orion's) | [`FJS-D634`](DECISIONS.md#fjs-d634). *Workflow* is refused because it half-fits three different things in the ecosystem |
-| Target | blessed | Integrations | Provider | a Conduit declaration of a third party | ARCHITECT.md § 2 |
+| Target | blessed | Integrations | Provider | a place this app sends to or subscribes to — an address, or a `broker` (`FJS-D235`) | ARCHITECT.md § 2, `FJS-D681` |
+| Receiver | blessed | Integrations | Provider | a Conduit declaration of a route a Provider calls us on — its path, how its signature is verified, the freshness window, the dedupe key. It never mints a principal | `FJS-D681`. A raw route that calls `verifyRequest` by hand is a route, not a Receiver. Not *listener* (a socket), *source* (a broker is a Target), *webhook handler* (Hook is pipeline code) or *endpoint* |
 | Transport | blessed | API | Channel | the delivery medium — not the broadcast set | `FJS-D06` |
 | Pivot | blessed | Automation | Run | the step past which a Run only goes forward; a step before it may be compensable. A Release's pivot is the transition at which N-1 compatibility ends | [`FJS-D634`](DECISIONS.md#fjs-d634), generalizing `FJS-D06`'s Deployment sense into one definition with the release as its instance. *Pivot transaction* is the saga literature's word |
+| Contract | blessed | Deployment | Release | the verdict on a change that narrows what N-1 relies on — a drop, a field made required, a narrowing. `classifyPivot` answers expand · contract · unknown, and unknown counts as contract | [`FJS-D678`](DECISIONS.md#fjs-d678). The expand/contract of Fowler's parallel change. Never the promise itself: what a published interface guarantees is a Promise, and a contract is the change that ends it at a Pivot |
 | Realm | blessed | Framework | | Data, API, UI, Deployment, Testing | ARCHITECT.md § 1 |
-| Surface | blessed | Framework | | a directory beside `db/` with its own config, tests and release — `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` | CLAUDE.md Invariant 3. `@frontierjs/css` spells its base block shape the same way (`.surface`, the lineage of Card, Alert and Dialog); that sense is the css register's and is written `.surface` where the two could meet |
+| Surface | blessed | Framework | | a directory beside `db/` with its own config, tests and release — `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` | CLAUDE.md Invariant 3; [`FJS-D678`](DECISIONS.md#fjs-d678). An interface that is not a directory is not a surface: mcp's tool set is a Projection (`FJS-D632`), and the control page and the command line are named for what they are. `@frontierjs/css` spells its base block shape the same way (`.surface`); that sense is the css vocabulary's and is written `.surface` where the two could meet |
 | Rig | blessed | Framework | | a package assembled from realm parts — `model/`, `service/`, `resource/`, `suite/` — any subset of which an app installs; its `service/` part is a Plugin. Notifications, orion, auth | `FJS-D630` |
 | Schema | blessed | Data | | `db/schema.lite` — the declaration of what is true about the data over its whole life, and the app's one origin | `FJS-D632`. *The schema is the seed* is the thesis's metaphor (PHILOSOPHY § VIII); no sentence that means the file calls it *the seed* |
 | Seed | blessed | Data | | rows written into a database before anyone uses it — development, test or reference data | `litestone seed`, litestone's `Seeder`, `FJS-D632`. The ecosystem's word, and it fits whole, so the schema gave it back. A seeded PRNG is ordinary English |
+| Migration | blessed | Data | Schema | a change to a database's structure that litestone's differ derives from the Schema, or a data migration written beside it | `FJS-D148`: a rename emits a data migration. Never an upgrade path for the framework's own past — pre-alpha owes none (CLAUDE.md § Evolution policy) |
 | Declaration | blessed | Framework | | what an app states for the framework to enforce or derive from — a model, a gate, a policy, a `view`, a `tenancy { }` block, a Conduit Target, a service's `methods:` | `FJS-D632`, `FJS-D45`. A Hook is code that runs. One binds from the first request, and its absence implies nothing (PHILOSOPHY § III) |
 | Projection | blessed | Framework | | a second shape of a truth, derived from its origin and never written — so never writable | `FJS-D632`. A `view` projects rows; the DDL, JSON Schema, client types, a default form and mcp's tool set project the Schema. A column subset is a `select`, and a component's computed value is *derived* |
 | Principal | blessed | Data | Warden | whose standing a Call is graded at — what the Warden reads a gate level and claims off | `FJS-D633`. A session, an API key and a Bearer are its kinds; an agent over MCP is one of those. `asSystem()` has none |
@@ -209,7 +215,8 @@ before you meet it.
 | Layout tier | open | UI | | one arrangement each and no skin, composable onto any tier — Stack, Cluster, Center, Split, Container | Read from `packages/css/vocabulary.json`; across the ladder, not on it |
 | Detail | open | | | | |
 | Portal | open | | | | |
-| Session | open | | | | |
+| Session | blessed | Auth | | a sign-in — what `/auth/*` establishes and a row of auth's `Session` model stores | [`FJS-D680`](DECISIONS.md#fjs-d680), [`FJS-D20`](DECISIONS.md#fjs-d20). The browser's `sessionStorage` is the ecosystem's word |
+| Account | blessed | Auth | | auth's `account` service — the signed-in user's own settings | [`FJS-D680`](DECISIONS.md#fjs-d680). An app's own `Account` model is its business-domain word, not this one |
 | Reference | open | | | | |
 | Secret | open | | | | |
 | BigInt | open | | | | |
@@ -217,7 +224,7 @@ before you meet it.
 | Slider | open | | | | |
 | Toaster | open | | | | |
 | Pass | open | | | | |
-| Origin | open | Shared | | | Two live senses, neither ruled ([`FJS-D656`](DECISIONS.md#fjs-d656)): the doctrine's *one origin* of truth (PHILOSOPHY axiom 1, the Schema row) and the browser's scheme+host+port (csrf, `FJS-D345`). litestone's cross-process `origin` column names a writer, and SQLite's index `origin` is SQLite's word |
+| Origin | blessed | Shared | | never bare: *origin of truth* (PHILOSOPHY axiom 1, the Schema row) or *HTTP origin* (scheme+host+port — csrf, `FJS-D345`) | [`FJS-D678`](DECISIONS.md#fjs-d678), settling what `FJS-D656` left open. litestone's cross-process `origin` column names a writer, and SQLite's index `origin` is SQLite's word |
 | Start | open | | | | |
 | Ring | open | Framework | | one band of the order a newcomer reads the workspace in, center out — a package's is the `Ring` column of the root `CLAUDE.md` table | `fli ws:atlas --as=rings`. Not a dependency layer: the spine imports the substrate one ring out, and is read first anyway |
 | Environment | blessed | Deployment | | a named place a Release serves from — it supplies configuration only, and is mutable but generational: serving state is (Release, generation). Qualified at every use: a *deploy environment*, a *test environment* | [`FJS-D636`](DECISIONS.md#fjs-d636). `createTestEnv` stands up the test sense. The port schema's ENV digit and environment variables are ordinary English; basecamp's `model Environment` is an app's |
@@ -226,8 +233,8 @@ before you meet it.
 | Audience | open | | | | [`FJS-D636`](DECISIONS.md#fjs-d636). Four senses live: litestone's `audience: 'client' \| 'system'` (`FJS-D454`), a credential's audience (sierra fetch, the JWT `aud`), an app's own column (`example`'s `Discount.audience`), and Deployment's proposed set of principals a Release is served to (`IDEAS/release-transitions.md`, unbuilt). A webhook's is a *subscriber*. Ruled when Phase 4 builds the routing |
 | Entitlement | refused | Data | Warden | Capability, or a claim (`FJS-D514`) | [`FJS-D637`](DECISIONS.md#fjs-d637). Nothing is a tenant-held grant yet; what a tenant has paid for is ruled when an app first gates a feature on its plan |
 | Drive | blessed | Testing | | a script that runs an app or a package end to end — a real server and database, usually a real browser — and asserts on what a person or a caller would see | [`FJS-D638`](DECISIONS.md#fjs-d638). Listed in `DRIVES.md`; `fli proves` names the ones a diff needs. `@frontierjs/mesa/drive` is the CDP harness one steers Chrome with |
-| Stressor | open | Testing | | | [`FJS-D638`](DECISIONS.md#fjs-d638) left it open: a product built to find seams, listed in `IDEAS/stressors.md` — an exercise, not something the framework runs |
-| Snapshot | blessed | Testing | | a committed `*.snapshot.*` file that names the command that generated it — the `snapshots` CI phase reruns it with `--check` | [`FJS-D638`](DECISIONS.md#fjs-d638). The audit trail's before/after copies are an *audit snapshot* |
+| Stressor | blessed | Testing | | a real product built on FrontierJS to find its seams, listed in `IDEAS/stressors.md` | [`FJS-D680`](DECISIONS.md#fjs-d680). An exercise, not something the framework runs |
+| Snapshot | blessed | Testing | | a committed `*.snapshot.*` file that names the command that generated it — the `snapshots` CI phase reruns it with `--check` | [`FJS-D638`](DECISIONS.md#fjs-d638). The trail's `before`/`after` values are a *before-image* and an *after-image*, never snapshots ([`FJS-D678`](DECISIONS.md#fjs-d678)) |
 | Vector | blessed | Testing | | conformance data — an input and its expected output, runnable against any implementation, each set pairing a positive case with its negative control | [`FJS-D638`](DECISIONS.md#fjs-d638), `FJS-D631`. `IDEAS/specifications.md` |
 | Fixture | blessed | Testing | | a file a test reads | [`FJS-D638`](DECISIONS.md#fjs-d638). Not a Seed, which is rows written (`FJS-D632`) |
 | Person | blessed | Data | Model | a model whose every row is a person — `@@person`; `@@person(child)` when every row is a child in the legal sense | [`FJS-D657`](DECISIONS.md#fjs-d657). An `@@auth` model is one by derivation. Where erase and export walks start. Not *subject*, which is the role |

@@ -15,7 +15,7 @@ export interface MailMessage {
   subject:     string
   html?:       string
   text?:       string
-  from?:       string          // overrides config default
+  from?:       string          // overrides config default; 'Name <addr>' or a bare addr, as every address here
   replyTo?:    string
   cc?:         string | string[]
   bcc?:        string | string[]
@@ -321,7 +321,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
       // configured `from` reaches the wire exactly as a stated one does.
       assertMessageAddresses({ ...message, from: message.from ?? defaultFrom, replyTo: message.replyTo ?? defaultReplyTo })
       assertMessageHeaders(message)
-      await sendMail(
+      const id = await sendMail(
         { host, port, user, pass, tls, timeoutMs },
         {
           from:     message.from    ?? defaultFrom,
@@ -340,7 +340,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
           attachments: message.attachments,
         }
       )
-      return { id: crypto.randomUUID(), message: 'sent' }
+      return { id, message: 'sent' }
     },
 
     async batch(messages: MailMessage[]): Promise<SendResult[]> {
@@ -368,7 +368,7 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
         })
       )
       return results.map(r => r.ok
-        ? { id: crypto.randomUUID(), message: 'sent' }
+        ? { id: r.id!, message: 'sent' }
         : { id: '', message: `failed: ${r.error}` })
     }
   }
@@ -377,6 +377,8 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
 // ─── Mailer plugin ────────────────────────────────────────────────────────
 // Registers a mailer on app.mail so it's accessible everywhere.
 //
+import { warnEffectInDrain } from '../core/context.ts'
+
 // Usage:
 //   import { mailerPlugin, createResendMailer } from '@frontierjs/junction/mail'
 //
@@ -393,7 +395,13 @@ export function mailerPlugin(mailer: IMail): import('../core/app.ts').Plugin {
   return {
     name: 'mailer',
     register(app: import('../core/app.ts').App): void {
-      app.mail = mailer   // typed App field — no cast
+      // Wrapped rather than read by each adapter: the warning is about where the
+      // send runs, which no adapter knows.
+      // Object.create keeps a class-instance mailer's own methods reachable.
+      app.mail = Object.assign(Object.create(mailer), {
+        send:  (m: MailMessage)   => { warnEffectInDrain('app.mail.send()');  return mailer.send(m) },
+        batch: (ms: MailMessage[]) => { warnEffectInDrain('app.mail.batch()'); return mailer.batch(ms) },
+      })
     }
   }
 }

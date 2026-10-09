@@ -136,7 +136,7 @@ naming it is a legal requirement, not a nicety.
 
 ### 6. Support mode — bounded, audited impersonation — **shipped**
 
-Built and argued in `IDEAS/support-mode.md`, proved by `example`'s `verify:support`.
+Built and argued in `IDEAS/shipped/support-mode.md`, proved by `example`'s `verify:support`.
 What it adds to this file: the ceiling is the SUBJECT's standing, the trail names the
 operator as actor and the subject separately, and an episode has a start, an end and a
 reason — so a subject access request can answer *who looked at my record, when, and

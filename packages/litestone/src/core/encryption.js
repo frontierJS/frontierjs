@@ -21,7 +21,7 @@ import { createCipheriv, createDecipheriv, randomBytes, createHmac } from '#host
 //
 // `v1s.` was a fourth prefix that stored an HMAC under the @encrypted name and is
 // gone. Nothing reads it: a column holding one is unrecoverable, so recognizing the
-// prefix could only produce a friendlier way to say the same loss. See CHANGES.md.
+// prefix could only produce a friendlier way to say the same loss. See docs/changes-archive/litestone.md.
 //
 // Payload (base64url) is `iv + tag + ciphertext` for both AES modes, so one
 // decrypt path serves them; @hashed has no decrypt path at all.

@@ -206,8 +206,8 @@ case with no declared ceiling is refused by the runner rather than run unjudged.
 
 The CI phase **reports and does not fail**, the shape `access` already uses for the
 same reason: a timing red on a shared runner trains everyone to skip the phase. What it
-reports is read by a person, and a regression kept on purpose gets a line in the
-package's `CHANGES.md` saying what it bought.
+reports is read by a person, and a regression kept on purpose gets a commit message
+saying what it bought.
 
 ### Recorded — an absolute, on named hardware, per release
 
@@ -215,7 +215,8 @@ The numbers a device or an operator actually asks about, which no ratio answers:
 RSS and `heapUsed` under `--smol`, survival under a `MemoryMax` cgroup, cold start, the
 write ceiling on a real file with fsync, and junction's p99 at a constant request rate.
 
-**These go in the release's `CHANGES.md` entry, stamped with machine and bun version** —
+**These go in the release's notes, stamped with machine and bun version** (the home
+was `CHANGES.md`, retired by `FJS-D675`; which file replaces it is owed) —
 a register, because an absolute number is history the day after it is taken, and never
 a snapshot, because a `--check` over a timing would fail on noise. Any speed claim the
 website or a README makes cites one of these or is not made.
@@ -450,7 +451,7 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
 ## Decision questions
 
 - *Another origin?* No. Ceilings live in the case, baselines in their file, absolutes
-  in `CHANGES.md`; this record carries the shape and no number of authority.
+  in the release notes; this record carries the shape and no number of authority.
 - *Concept budget?* Unchanged. *Baseline* and its ratchet are Invariant 14's; *reports
   rather than judges* is the `access` phase's. The tiers are named by verdict. *Budget*
   is refused as a name — it already means the concept budget.

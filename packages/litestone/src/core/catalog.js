@@ -1255,7 +1255,7 @@ const MODEL = [
     'model',
     'operate',
     '(<database>[, reads: false][, writes: false])',
-    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
+    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] and @personal ones as [personal], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
     '@@trail(audit)',
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',

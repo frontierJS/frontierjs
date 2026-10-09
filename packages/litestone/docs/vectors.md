@@ -8,7 +8,7 @@ comparison run* — and the answer is not the same on a server and in a browser.
 computes it.
 
 Ruled in `FJS-D328`–`FJS-D333` and built as `FJS-1193`; the reasoning and the
-measurements are `IDEAS/embedding.md`.
+measurements are `IDEAS/shipped/embedding.md`.
 
 ## The declaration
 

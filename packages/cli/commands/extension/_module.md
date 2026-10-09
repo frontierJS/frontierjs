@@ -14,7 +14,7 @@ An app may have this surface and no `web/` at all.
 | Command | What it does |
 | --- | --- |
 | `fli make:extension` | create the surface — config, harbor, dock, test and deploy notes |
-| `fli extension:dev` | jetty's dev server: watch, rebuild, push a reload over port 8400 |
+| `fli dev:extension` | jetty's dev server: watch, rebuild, push a reload over port 8400 |
 | `fli extension:build` | → `extension/dist/chrome/` (and `dist/firefox/` with `--browser both`) |
 | `fli extension:audit` | permissions declared vs. `chrome.*` actually called, both directions |
 

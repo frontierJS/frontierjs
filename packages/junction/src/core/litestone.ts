@@ -35,7 +35,7 @@ import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
-import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
+import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
@@ -1172,7 +1172,19 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
       args.where = { ...(args.where as Record<string, unknown>), ...softDeleteFilter() }
 
-      if (Array.isArray(by) && by.length) return await table.groupBy(args)
+      // A page of groups says whether it was cut, as a page of rows does: a
+      // screen that reads the first page as all of them prints a figure that is
+      // wrong and ordinary (FJS-2051). One group past the page answers hasMore;
+      // `total` stays absent because litestone has no count of groups, and
+      // reporting the page length as one is what makes a capped list look whole.
+      if (Array.isArray(by) && by.length) {
+        const limit  = args.limit  as number
+        const offset = args.offset as number
+        const groups = await table.groupBy({ ...args, limit: limit + 1 })
+        return list(ctx.service, groups.slice(0, limit), {
+          limit, offset, hasMore: groups.length > limit,
+        })
+      }
 
       // An aggregate over the whole selection answers ONE row, so a limit and
       // an offset mean nothing to it and litestone refuses what it does not
@@ -1677,20 +1689,47 @@ export function checkUnknownKeys(
   fields: Set<string>,
   what:   string,
   escape: string,
+  guarded: Set<string> = new Set(),
 ): void {
   // Fail OPEN on an empty set. A service over a view, an `@@external` model or
   // no model at all resolves to no fields, and refusing every key there would
   // turn a shape this cannot see into a shape nothing can call.
   if (!fields.size) return
   const bad = unknownKeys(row, fields)
-  if (!bad.length) return
+  const locked = guarded.size && row && typeof row === 'object' && !Array.isArray(row)
+    ? Object.keys(row).filter(k => guarded.has(k))
+    : []
+  if (!bad.length && !locked.length) return
 
-  throw fieldError(
-    bad.map(field => ({
+  throw fieldError([
+    ...bad.map(field => ({
       field,
       message: `is not a field of ${what}. ${escape}`,
     })),
-  )
+    // The strip is for a column a client echoes back from a read. A @guarded
+    // column is never read, so naming one is never an echo: dropping it would
+    // answer 2xx for a value that was not stored (`FJS-1970`, `FJS-D427`).
+    ...locked.map(field => ({
+      field,
+      message: `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
+    })),
+  ])
+}
+
+/**
+ * The columns of a model the Data boundary refuses a caller's write of.
+ * Asked of litestone (`$protectedFields`) rather than read off the attributes,
+ * because `@secret` expands to a guarded column and only the client knows it.
+ * A client without the method, or one that throws for the accessor, answers
+ * none and the boundary underneath still refuses.
+ */
+function guardedFieldNames(client: unknown, accessor: string): Set<string> {
+  try {
+    const lookup = (client as { $protectedFields?: (a: string) => Record<string, string> }).$protectedFields
+    if (typeof lookup !== 'function') return new Set()
+    const out = lookup.call(client, accessor) ?? {}
+    return new Set(Object.keys(out).filter(k => out[k] === 'guarded'))
+  } catch { return new Set() }
 }
 
 const _compiledFor = new WeakMap<object, Map<string, {
@@ -1705,6 +1744,9 @@ const _compiledFor = new WeakMap<object, Map<string, {
    *  `@guarded` — and wrong about a word that is not a column at all, which can
    *  never come to mean anything. Only this set separates the two. */
   fields:    Set<string>
+  /** The `@guarded` / `@secret` subset of `fields`: never read, so a write
+   *  naming one is deliberate and is refused rather than stripped. */
+  guarded:   Set<string>
   /** The model's own name, for the sentence a refusal writes. */
   model:     string
 } | null>>()
@@ -1838,6 +1880,7 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
                          defsKey, withVersionProperty(jsonSchema, updateSchemaDoc, defsKey), 'update')),
             transient: transientFields(jsonSchema, defsKey),
             fields:    modelFieldNames(client.$schema, defsKey),
+            guarded:   guardedFieldNames(client, accessor),
             model:     defsKey,
           })
         } catch (err) {
@@ -1860,6 +1903,7 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
       checkUnknownKeys(
         ctx, row, compiled.fields, compiled.model,
         'Declare it `@transient` on the model if a caller should be able to send it.',
+        compiled.guarded,
       )
       return compiled[mode].parse(row) as Record<string, unknown>
     }
@@ -1904,6 +1948,96 @@ function _objectDefNames(jsonSchema: LitestoneJsonSchema): string[] {
     .sort()
 }
 
+// ─── Keys a nested type does not declare ──────────────────────────────────
+//
+// A member typed by another `type` compiles to a bare `object`, so parse()
+// passes its value through whole and checkUnknownKeys sees only the top level.
+// Without this, `contact: { stage: 'won' }` reaches a method that spreads
+// `...contact` into a Client, and a stranger sets a column the input type left
+// out (FJS-2075). No Data boundary stands behind an `input:` to refuse it, so
+// the refusal is here, walked off the same `$defs` the top level compiles from.
+
+interface ClosedTypeDef {
+  type?:                 string
+  properties?:           Record<string, LiJsonProp>
+  additionalProperties?: unknown
+  'x-litestone-file'?:   boolean
+}
+
+/** The closed object type a property holds, through `?` and `[]`; null for anything else. */
+function closedTypeOf(
+  prop: LiJsonProp | undefined,
+  defs: LitestoneJsonSchema['$defs'],
+): { name: string; def: ClosedTypeDef; list: boolean } | null {
+  const p    = prop?.anyOf ? prop.anyOf.find(x => x.type !== 'null') : prop
+  const t    = Array.isArray(p?.type) ? p.type.find(x => x !== 'null') : p?.type
+  const list = t === 'array'
+  const ref  = (list ? p?.items : p)?.$ref
+  if (!ref) return null
+  const name = ref.replace(/^#\/\$defs\//, '')
+  const def  = defs[name] as ClosedTypeDef | undefined
+  // `additionalProperties: false` is how a type says it is closed; a def that
+  // does not say so declares no set to refuse against.
+  if (def?.type !== 'object' || def['x-litestone-file'] || def.additionalProperties !== false) return null
+  return { name, def, list }
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+/**
+ * Every key below the top level of `row` that its nested type does not
+ * declare, as the path a field error names — `property.turfSqft`,
+ * `stops[1].x`. A top-level key is checkUnknownKeys' to answer, except a
+ * dotted one, which is followed into the type it names.
+ */
+function undeclaredNestedKeys(
+  row:  unknown,
+  top:  ClosedTypeDef | undefined,
+  defs: LitestoneJsonSchema['$defs'],
+): { field: string; type: string }[] {
+  const out: { field: string; type: string }[] = []
+  if (!isPlainObject(row) || !top) return out
+
+  const walk = (value: unknown, prop: LiJsonProp | undefined, path: string): void => {
+    const held = closedTypeOf(prop, defs)
+    if (!held) return
+    if (held.list) {
+      if (Array.isArray(value)) value.forEach((v, i) => inside(v, held.name, held.def, `${path}[${i}]`))
+    } else {
+      inside(value, held.name, held.def, path)
+    }
+  }
+  const inside = (value: unknown, name: string, def: ClosedTypeDef, path: string): void => {
+    if (!isPlainObject(value)) return
+    for (const [key, v] of Object.entries(value)) {
+      const prop = def.properties?.[key]
+      if (!prop) out.push({ field: `${path}.${key}`, type: name })
+      else walk(v, prop, `${path}.${key}`)
+    }
+  }
+
+  for (const [key, v] of Object.entries(row)) {
+    if (!key.includes('.')) { walk(v, top.properties?.[key], key); continue }
+    const segs = key.split('.')
+    let def  = top
+    let name = ''
+    for (let i = 0; i < segs.length; i++) {
+      const prop = def.properties?.[segs[i]]
+      if (!prop) {
+        if (i > 0) out.push({ field: segs.slice(0, i + 1).join('.'), type: name })
+        break
+      }
+      const held = i < segs.length - 1 ? closedTypeOf(prop, defs) : null
+      if (!held || held.list) break
+      def  = held.def
+      name = held.name
+    }
+  }
+  return out
+}
+
 /**
  * before-hook that validates ctx.data against a `type` declared in the seed.
  *
@@ -1935,7 +2069,7 @@ export function validateInput(defsKey: string, serviceName: string, method: stri
         )
       } else {
         try {
-          compiled = createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'create'))
+          compiled = createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'input'))
         } catch (err) {
           compiled = new Error(
             `[Junction] service '${serviceName}': ${method}'s input type ` +
@@ -1959,6 +2093,13 @@ export function validateInput(defsKey: string, serviceName: string, method: stri
         ctx, row, declared, `type ${defsKey}`,
         `Add it to \`type ${defsKey}\` in the seed if this method should accept it.`,
       )
+      const nested = undeclaredNestedKeys(row, jsonSchema.$defs[defsKey] as ClosedTypeDef, jsonSchema.$defs)
+      if (nested.length) {
+        throw fieldError(nested.map(({ field, type }) => ({
+          field,
+          message: `is not a field of type ${type}. Add it to \`type ${type}\` in the seed if this method should accept it.`,
+        })))
+      }
       return schema.parse(row) as Record<string, unknown>
     }
 
@@ -4762,10 +4903,16 @@ export function appJsonSchema(app: { db?: unknown }, mode: JsonSchemaMode = 'cre
   return _deriveJsonSchema(app?.db, mode)
 }
 
+/**
+ * `input` compiles a type an `input:` names: required-ness as `create`, and a
+ * member typed by another type graded by that type's rules. A MODEL's typed
+ * Json column stays a bare object — Litestone's validateTypedJson grades it at
+ * the write, and a `{ $merge }` patch is not the type's shape.
+ */
 export function jsonSchemaToJunctionSchema(
   modelName:  string,
   fullSchema: LitestoneJsonSchema,
-  mode:       'create' | 'update' = 'create'
+  mode:       'create' | 'update' | 'input' = 'create'
 ): Schema {
   const modelDef = fullSchema.$defs[modelName]
   if (!modelDef || modelDef.type !== 'object') {
@@ -4773,13 +4920,13 @@ export function jsonSchemaToJunctionSchema(
   }
 
   const required =
-    (mode === 'create' ? (modelDef as LitestoneModelDef).required : undefined) ?? []
+    (mode !== 'update' ? (modelDef as LitestoneModelDef).required : undefined) ?? []
   const schema: Schema = {}
 
   for (const [field, prop] of Object.entries(
     (modelDef as LitestoneModelDef).properties ?? {}
   )) {
-    const def = mapProp(prop, field, required, fullSchema.$defs)
+    const def = mapProp(prop, field, required, fullSchema.$defs, mode === 'input')
 
     // A `readOnly` column's default belongs to the DATA BOUNDARY, not to this
     // validator — on either mode.
@@ -4835,9 +4982,10 @@ function mapProp(
   prop:     LiJsonProp,
   field:    string,
   required: string[],
-  defs:     Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>
+  defs:     Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>,
+  nested    = false,
 ): FieldDef {
-  const def = _mapProp(prop, field, required, defs)
+  const def = _mapProp(prop, field, required, defs, nested)
   const raw = prop as LiJsonProp & { title?: string; 'x-messages'?: Record<string, string> }
   if (typeof raw.title === 'string') def.label = raw.title
   const messages = raw['x-messages']
@@ -4845,16 +4993,41 @@ function mapProp(
   return def
 }
 
+// A member typed by another `type` carries that type's rules, or validate()
+// passes `contact.email: 'nope'` whole — and no Data boundary stands behind an
+// `input:` to refuse it later (FJS-2128). Memoized per `$defs` and registered
+// before its members are mapped, so `type Node { children Node[] }` closes on
+// itself rather than recursing without end.
+const _nestedSchemas = new WeakMap<object, Map<string, Schema>>()
+
+function nestedSchema(
+  name: string,
+  def:  LitestoneTypeDef,
+  defs: Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>
+): Schema {
+  let byName = _nestedSchemas.get(defs)
+  if (!byName) _nestedSchemas.set(defs, byName = new Map())
+  const known = byName.get(name)
+  if (known) return known
+  const schema: Schema = {}
+  byName.set(name, schema)
+  for (const [field, prop] of Object.entries(def.properties ?? {})) {
+    schema[field] = mapProp(prop, field, def.required ?? [], defs, true)
+  }
+  return schema
+}
+
 function _mapProp(
   prop:     LiJsonProp,
   field:    string,
   required: string[],
-  defs:     Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>
+  defs:     Record<string, LitestoneModelDef | LitestoneEnumDef | LitestoneTypeDef | LitestoneFileDef>,
+  nested:   boolean,
 ): FieldDef {
   if (Array.isArray(prop.type)) {
     const nonNullType = prop.type.find((t) => t !== 'null')
     const synth: LiJsonProp = { ...prop, type: nonNullType }
-    const def = _mapProp(synth, field, required, defs)
+    const def = _mapProp(synth, field, required, defs, nested)
     def.nullable = true
     return def
   }
@@ -4889,6 +5062,7 @@ function _mapProp(
         required: required.includes(field) || undefined,
         nullable: nullable || undefined,
         default:  inner.default,
+        schema:   nested ? nestedSchema(refName, refDef as LitestoneTypeDef, defs) : undefined,
       }
     }
 
@@ -4921,7 +5095,7 @@ function _mapProp(
   if (inner['x-transforms']?.length) def.transforms = inner['x-transforms']
 
   if (def.type === 'array' && inner.items) {
-    def.items = mapProp(inner.items, `${field}[]`, [], defs)
+    def.items = mapProp(inner.items, `${field}[]`, [], defs, nested)
   }
 
   return def

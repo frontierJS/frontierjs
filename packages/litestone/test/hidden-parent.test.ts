@@ -362,3 +362,55 @@ describe('a create rule reading a parent the caller cannot read', () => {
     db.$close()
   })
 })
+
+// A key the app names under `system:` is its statement, as a stamp is
+// (`FJS-1953`). A hook that copies a parent id onto a row the caller may not
+// read the parent of must not be answered as the caller's guess at it.
+describe('a foreign key the app names under system:', () => {
+  const LIFT = `
+    model Project {
+      id      Int    @id @default(autoincrement())
+      ownerId String
+      tasks   Task[] @relation("lifted")
+      @@allow('all', ownerId == auth().id)
+    }
+
+    model Task {
+      id       Int      @id @default(autoincrement())
+      ownerId  String
+      liftedId Int?     @system
+      lifted   Project? @relation("lifted", fields: [liftedId], references: [id])
+      @@allow('all', ownerId == auth().id)
+    }
+  `
+  async function lifted() {
+    const db: any = await createClient({ db: ':memory:', schema: LIFT })
+    const sys = db.asSystem()
+    await sys.project.create({ data: { ownerId: 'bob' } })   // 1
+    return { db, sys, alice: db.$setAuth({ id: 'alice' }) }
+  }
+
+  test('create, createMany, update and upsert take the hidden parent the app names', async () => {
+    const { db, alice } = await lifted()
+    const t = await alice.task.create({ data: { ownerId: 'alice', liftedId: 1 }, system: ['liftedId'] })
+    expect(t.liftedId).toBe(1)
+    const many = await alice.task.createMany({ data: [{ ownerId: 'alice', liftedId: 1 }], system: ['liftedId'] })
+    expect(many).toBeDefined()
+    await alice.task.update({ where: { id: t.id }, data: { liftedId: null }, system: ['liftedId'] })
+    expect((await alice.task.update({ where: { id: t.id }, data: { liftedId: 1 }, system: ['liftedId'] })).liftedId).toBe(1)
+    expect((await alice.task.upsert({
+      where: { id: 77 }, create: { ownerId: 'alice', liftedId: 1 }, update: {}, system: ['liftedId'],
+    })).liftedId).toBe(1)
+    db.$close()
+  })
+
+  test('a parent that does not exist is still SQLite\'s refusal, and an unnamed key is still graded', async () => {
+    const { db, alice } = await lifted()
+    expect(await refusal(alice.task.create({ data: { ownerId: 'alice', liftedId: 999 }, system: ['liftedId'] })))
+      .toBeInstanceOf(ForeignKeyError)
+    // Without the statement the write is refused before the key is looked at.
+    const e = await refusal(alice.task.create({ data: { ownerId: 'alice', liftedId: 1 } }))
+    expect(e.message).not.toContain('created')
+    db.$close()
+  })
+})

@@ -236,9 +236,9 @@ checking before either is committed rather than fetched.
 
 - `IDEAS/review-prior-art.md` — the same instinct one altitude up: read whole projects
   rather than mechanisms. This is its Data-realm half
-- `IDEAS/permission-sets.md` — the gap Keycloak, Moodle and Keto each answer
+- `IDEAS/shipped/permission-sets.md` — the gap Keycloak, Moodle and Keto each answer
   differently
-- `IDEAS/polymorphic-relations.md` — the corpus already priced this; the library
+- `IDEAS/shipped/polymorphic-relations.md` — the corpus already priced this; the library
   is where the good answers would sit
 - `IDEAS/partial-indexes.md` — the largest thing the corpus found unrepresented
 - `packages/litestone/test/fixtures/corpus/README.md` — the measurement, and the

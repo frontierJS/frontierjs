@@ -678,6 +678,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       }
     }
 
+    // @sequence — the counter's number, refused on every update with no seal to
+    // wait for. A create may state one, so only the update schema withholds it.
+    if (mode === 'update' && field.attributes.some(a => a.kind === 'sequence')) {
+      fieldSchema.readOnly = true
+      fieldSchema['x-litestone-kind'] = 'sequence'
+      delete fieldSchema['x-litestone-seal']
+    }
+
     // @transient — accepted on the wire, stored nowhere. The write-mode-only
     // half is decided above; this is what says so to a consumer, which is how a
     // generated form knows to offer a control for a value no read answers.

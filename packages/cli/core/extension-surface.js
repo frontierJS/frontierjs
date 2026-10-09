@@ -194,7 +194,7 @@ the build emits.
 
 \`\`\`sh
 fli extension:build              # → extension/dist/chrome/
-fli extension:dev                # watch + reload over the dev port (8400)
+fli dev:extension                # watch + reload over the dev port (8400)
 fli extension:audit              # permissions declared vs. chrome.* actually called
 \`\`\`
 

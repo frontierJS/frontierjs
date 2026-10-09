@@ -1,7 +1,7 @@
 // ─── done.js — is the change in the working tree finished ────────────────────
 //
-// The steps that close out a change and fail in silence when skipped: a history
-// entry for every package touched, a new module named where its package lists
+// The steps that close out a change and fail in silence when skipped: a new
+// module named where its package lists
 // its siblings, a new command named where its namespace lists its siblings, a
 // new test file in the script that runs tests, snapshots regenerated, registers
 // agreeing with themselves. Most of those already have an engine; nothing asked
@@ -56,28 +56,6 @@ export function collectChanges(root) {
 //
 // Each answers a list of `{ check, subject, ok, message }`. `subject` is what
 // the item is about, and `check:subject` is its identity across runs.
-
-/** Every package touched has a new heading in its own CHANGES.md. */
-export function changesEntries({ root, changed, untracked = [], diff }) {
-  const owners = new Map()
-  for (const file of changed) {
-    if (/\.snapshot\./.test(file) || basename(file) === 'CHANGES.md') continue
-    const owner = nearestWith(root, file, 'CHANGES.md')
-    if (owner) owners.set(owner, (owners.get(owner) ?? 0) + 1)
-  }
-
-  const added = addedLines(diff)
-  return [...owners].map(([owner, n]) => {
-    const log = join(owner, 'CHANGES.md')
-    const ok  = untracked.includes(log) || (added.get(log) ?? []).some(l => /^##\s/.test(l))
-    return {
-      check: 'changes-entry', subject: owner, ok,
-      message: ok
-        ? `${log} has a new entry`
-        : `${n} file(s) changed under ${owner} and ${log} gained no \`## \` heading`,
-    }
-  })
-}
 
 /** A new module is named in its package's CLAUDE.md where that names most of its siblings. */
 export function layoutNamed({ root, added }) {
@@ -177,7 +155,6 @@ export function runDone(root, { changes = null, engines = true } = {}) {
   if (!c.changed.length) return { root, changed: 0, items: [], drives: [], unfinished: 0 }
 
   const items = [
-    ...changesEntries({ root, ...c }),
     ...layoutNamed({ root, ...c }),
     ...moduleNamed({ root, ...c }),
     ...(engines ? engineItems(root) : []),
@@ -242,18 +219,6 @@ function nearestWith(root, file, name) {
     dir = dirname(dir)
   }
   return null
-}
-
-// `git diff -U0` → `file → lines it adds`.
-function addedLines(diff) {
-  const out = new Map()
-  let file  = null
-  for (const line of String(diff ?? '').split('\n')) {
-    const head = line.match(/^\+\+\+ b\/(.+)$/)
-    if (head) { file = head[1]; out.set(file, []); continue }
-    if (file && line.startsWith('+') && !line.startsWith('+++')) out.get(file).push(line.slice(1))
-  }
-  return out
 }
 
 function titleOf(path) {

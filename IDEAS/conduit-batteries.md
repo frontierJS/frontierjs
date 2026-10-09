@@ -17,7 +17,7 @@ credential expiry, refresh, OAuth2 client credentials and a per-tenant key are l
 three of [`third-party-credentials.md`](third-party-credentials.md); an inbound
 receiver is [`inbound-integrations.md`](inbound-integrations.md) under
 [`FJS-D177`](../DECISIONS.md#fjs-d177); junction's webhooks plugin dialing out
-without conduit is [`FJS-659`](../ISSUES.md#fjs-659).
+without conduit is [`FJS-659`](../ISSUES_ARCHIVE.md#fjs-659).
 
 | Item | What it would do | Note |
 | --- | --- | --- |

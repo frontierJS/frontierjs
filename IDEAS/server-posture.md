@@ -50,10 +50,10 @@ carries `outpost_version` and nothing about the OS.
   [`FJS-1761`](../ISSUES.md#fjs-1761).
 - **The install is unpinned**: `get.docker.com | sh` and `bun.sh/install` run
   whatever those servers return that day, and `bunx` resolves the Outpost at each
-  restart. [`FJS-1762`](../ISSUES.md#fjs-1762).
+  restart. [`FJS-1762`](../ISSUES_ARCHIVE.md#fjs-1762).
 - **Nothing installs or checks time sync**, and both sides refuse a signed
   request past 300 seconds of skew. The refusal names the skew, but the operator
-  sees a machine that stopped answering. [`FJS-1763`](../ISSUES.md#fjs-1763).
+  sees a machine that stopped answering. [`FJS-1763`](../ISSUES_ARCHIVE.md#fjs-1763).
 
 ---
 
@@ -317,5 +317,5 @@ two routes, which stays severable inside the one file that already runs commands
 
 `IDEAS/production-grading.md` (the same *does what runs match what was declared*,
 for the app) · `IDEAS/uptime-monitoring.md` (the outside vantage) ·
-`IDEAS/deploy-plane.md` (the install rings) · `IDEAS/restore-verify.md` (the backup
+`IDEAS/deploy-plane.md` (the install rings) · `IDEAS/shipped/restore-verify.md` (the backup
 half of the owner's question).

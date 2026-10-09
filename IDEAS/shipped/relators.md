@@ -6,7 +6,7 @@ dated: 2026-09-22
 
 # The relationship that is a thing, and the question it has been answering in silence
 
-**Status: BUILT 2026-09-22, ruled [`FJS-D350`](../DECISIONS.md#fjs-d350).** The
+**Status: BUILT 2026-09-22, ruled [`FJS-D350`](../../DECISIONS.md#fjs-d350).** The
 word is `@@relator`, the behavior is `packages/litestone/src/core/parser.js`
 § `expandRelator`, and `packages/litestone/test/relator.test.ts` is what holds
 it. **This file is the ARGUMENT, not the reference** — the ruling is the record
@@ -274,7 +274,7 @@ Subscription      @@relator([customerId, planVersionId], many)
 | `many` | the reverse indexes only, no unique |
 
 **The reverse index is what forced the shape, and it was measured before it was
-designed.** [`FJS-413`](../ISSUES_ARCHIVE.md#fjs-413) found ten unindexed foreign key
+designed.** [`FJS-413`](../../ISSUES_ARCHIVE.md#fjs-413) found ten unindexed foreign key
 columns in `basecamp`, four of them on cascading join tables, and the pattern
 was always the same: a composite leading with the other side.
 `ServerNetwork` now carries the fix by hand with the defect id in its comment —
@@ -393,7 +393,7 @@ itself, once ruled, is a Register entry and a row in `catalog.snapshot.md`.
 ## Open questions
 
 **The first is answered and the rest stand.** `@@relator` was picked
-([`FJS-D350`](../DECISIONS.md#fjs-d350)) on the adjudication below — kept here
+([`FJS-D350`](../../DECISIONS.md#fjs-d350)) on the adjudication below — kept here
 because the argument is what the record cites.
 
 - ~~**Is the word `@@relator`?**~~ **Ruled: A.**
@@ -419,7 +419,7 @@ because the argument is what the record cites.
   - **Recommend C** — then A once a `many` relator with no ordinal discriminator needs a bound. The one live case, `AppServer` in `packages/basecamp/db/schema.lite`, has `replicaIndex`, so C costs nothing new. When A is needed it beats B: the pair is already declared once on the relator, and B restates it from one side, and which side owns it is a choice B leaves open.
 - **Still open, and now live — does the absence of the word come to mean
   something, and does anything grade it?** `@@relator` exists as of
-  [`FJS-D350`](../DECISIONS.md#fjs-d350) and nothing was built for this, so a model with two cascading required
+  [`FJS-D350`](../../DECISIONS.md#fjs-d350) and nothing was built for this, so a model with two cascading required
   relations and no declaration is either deliberate or forgotten. An
   `opportunities.js` rule could ask — confidence, never severity — but the
   literature's own `FreeRole` is the warning: a recognizer that fires on every
@@ -473,12 +473,12 @@ because the argument is what the record cites.
   relationship that is one
 - `IDEAS/effective-time.md` — class 3's discriminator. `@@effective(from:, to:)`
   is what a relator repeating over time is identified by
-- `IDEAS/polymorphic-relations.md` — the neighboring refusal: a relation's
+- `IDEAS/shipped/polymorphic-relations.md` — the neighboring refusal: a relation's
   target is an input to the access compiler
 - `packages/litestone/src/core/cardinality.js` — the audit's gap 01, being
   built in the tree on 2026-09-22 and untracked. It owns a bound, which is why
   this paper carries none
-- [`FJS-413`](../ISSUES_ARCHIVE.md#fjs-413) — ten unindexed foreign keys, four on
+- [`FJS-413`](../../ISSUES_ARCHIVE.md#fjs-413) — ten unindexed foreign keys, four on
   cascading join tables, and the four hand-written reverse indexes that are this
   proposal's measurement
 - `packages/litestone/docs/edge-fields.md` § *Growing up* — `@edge` is the

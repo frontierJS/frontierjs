@@ -103,7 +103,7 @@ is indistinguishable from a correct one, and what it leaks is records.
 
 ## Part 2 — `Embedding(n)` and `findSimilar()`
 
-**Superseded by `IDEAS/embedding.md` (2026-09-20), which measured the engines and
+**Superseded by `IDEAS/shipped/embedding.md` (2026-09-20), which measured the engines and
 changed both names in this heading.** The claim below survives and is strengthened
 — a prefilter measures as a 3–4× cut to the scan, so the gate does not merely
 apply for free, it pays for itself — but the column is `Bytes @vector(n)` and the

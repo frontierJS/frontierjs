@@ -28,7 +28,7 @@
 // batch that applied whole or not at all, so a second attempt repeats it rather
 // than finishing half of it. Anything below 500 is the same answer next time —
 // a record somebody else made at the hostname, a Domain that is gone — so it is
-// marked terminal and the job's error is the sentence a person reads. *Not
+// marked `retryable: false`, which caravan fails at once, and the job's error is the sentence a person reads. *Not
 // yet* is neither: `syncStep` answers it as skipped, and the drift on `/dns/`
 // still names the hostname as missing.
 //
@@ -58,7 +58,7 @@ const domainDns = defineJob<{ domainId: string }>(
       else             log.info('pushed', { id: ctx.data.domainId, hostname: out.hostname })
     } catch (err) {
       const code = Number((err as { code?: unknown }).code)
-      if (code >= 400 && code < 500) (err as { terminal?: boolean }).terminal = true
+      if (code >= 400 && code < 500) (err as { retryable?: boolean }).retryable = false
       log.error('push failed', { id: ctx.data.domainId, error: (err as Error).message, retried: code >= 500 || !code })
       dns = err
     }

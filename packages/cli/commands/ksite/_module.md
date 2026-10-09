@@ -9,7 +9,7 @@ named by `KSITE_DIR`, and convert a sitemap into markdown under
 `site/content/`.
 
 They lived under `site:` until `site/` became a FrontierJS surface (`fli
-make:site`, `fli site:dev`). One namespace cannot mean both a prerendered
+make:site`, `fli dev:site`). One namespace cannot mean both a prerendered
 Sierra surface and an unrelated toolchain, and the surface is the one an FJS
 app has. The short aliases are unchanged — `fli clone`, `fli fetch` — and the
 generic `fli serve` is gone, because two things now serve a directory called

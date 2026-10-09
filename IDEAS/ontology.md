@@ -285,7 +285,7 @@ shipped the same day (`FJS-D351`/`FJS-D352`) across `src/core/parser.js`
   the DDL byte-identical with and without the attribute, and every snapshot
   regenerated from its own header's command
 
-  **Built 2026-09-22** (`packages/litestone/CHANGES.md`). The read is
+  **Built 2026-09-22** (`docs/changes-archive/litestone.md`). The read is
   `db.<model>.due({ by, timeZone, transition, where })` →
   `[{ transition, id, dueAt }]`, through `findMany`; step 2's fire re-asks it
   with `where: { id }`. Three departures from the list above: the toolbelt
@@ -317,7 +317,7 @@ plugin, `packages/junction/src/plugins/outbox/index.ts`.
   clause
 - Proof: junction tests against a REAL Caravan and a REAL Litestone client
 
-  **Built 2026-09-22** (`packages/junction/CHANGES.md`). `commitments()` at
+  **Built 2026-09-22** (`docs/changes-archive/junction.md`). `commitments()` at
   `@frontierjs/junction/commitments`; `db.$commitments` in litestone is the
   listing it walks. Four departures from the list above, each measured:
   - **The probe refused the service path.** `example`'s `subscriptions.cancel`
@@ -351,7 +351,7 @@ no external effect: the smallest case that runs every piece.
   `api/src/jobs/abandoned-orders-sweep.job.ts` and `ABANDON_AFTER_DAYS`
 - Regenerate example's snapshots; run what `fli proves` names
 
-  **Built 2026-09-22** (`example/CHANGES.md`). Three things the list did not
+  **Built 2026-09-22** (`docs/changes-archive/example.md`). Three things the list did not
   name:
   - **The screens.** `x-transitions` carries `abandon` to the browser, where it
     rendered as a disabled button on every pending order. The orders screens
@@ -382,8 +382,8 @@ model?* is answered (`FJS-D362`, A), and so is *Where does `recover` live?*
   `domain/billing/billing.ts`, called from `settleInvoice` and a new
   `voidInvoice` (`FJS-D363`), and the job goes after
 
-  **Built 2026-09-23** (`packages/litestone/CHANGES.md`,
-  `packages/junction/CHANGES.md`, `example/CHANGES.md`). Two things the list
+  **Built 2026-09-23** (`docs/changes-archive/litestone.md`,
+  `docs/changes-archive/junction.md`, `docs/changes-archive/example.md`). Two things the list
   did not name:
   - **`due()` asks the TARGET's from-state**, as a relation filter. Leaving it
     to the fire would have been enough for the case the ruling names, but not
@@ -406,9 +406,9 @@ model?* is answered (`FJS-D362`, A), and so is *Where does `recover` live?*
 on the subscription screen. The first thing a person sees; proof is the drive
 `fli proves` names.
 
-  **Built 2026-09-23** (`packages/toolbelt/CHANGES.md`,
-  `packages/litestone/CHANGES.md`, `packages/sierra/CHANGES.md`,
-  `example/CHANGES.md`). Sierra alone: `@frontierjs/ui` needed nothing, since a
+  **Built 2026-09-23** (`docs/changes-archive/toolbelt.md`,
+  `docs/changes-archive/litestone.md`, `docs/changes-archive/sierra.md`,
+  `docs/changes-archive/example.md`). Sierra alone: `@frontierjs/ui` needed nothing, since a
   date is a `StatCard` or an `Alert`. Three things the line did not name:
   - **The date has one owner at both ends.** Litestone's JS `dueAt` moved to
     `@frontierjs/toolbelt/datetime`; `due()` and the screen call the same
@@ -431,7 +431,7 @@ on `close` issues the invoice and opens the next period; the renewal sweep
 job goes and `occurrenceKey` leaves renewal. The largest reshape of
 `example`, so it goes last among the steps with a caller.
 
-  **Built 2026-09-23** (`packages/junction/CHANGES.md`, `example/CHANGES.md`),
+  **Built 2026-09-23** (`docs/changes-archive/junction.md`, `docs/changes-archive/example.md`),
   after `FJS-D367` answered *Renewal is not a transition* A and `FJS-D368`
   answered where the close's effect runs. Three things the line did not name:
   - **The hook is the plugin's, not a service's.** The fire was a bare
@@ -454,8 +454,8 @@ job goes and `occurrenceKey` leaves renewal. The largest reshape of
 transition on a Boolean column) **and on a caller** — nothing in the tree
 sends one, so it waits the way `FJS-D143` waited for a second caller.
 
-  **Built 2026-09-23** (`packages/litestone/CHANGES.md`,
-  `packages/junction/CHANGES.md`, `example/CHANGES.md`), after `FJS-D370`
+  **Built 2026-09-23** (`docs/changes-archive/litestone.md`,
+  `docs/changes-archive/junction.md`, `docs/changes-archive/example.md`), after `FJS-D370`
   answered A. The caller is `example`'s own: an invoice reminds its customer
   three days before `dueOn`, while it is `issued`. Two things the line did not
   name:
@@ -476,7 +476,7 @@ sweeping a model that declares `@@commitment` is a finding. A `data-hazards`
 section on *the window is the truth for reads, the transition is the record*.
 An `invariants` row if an enforcer lands.
 
-  **Built 2026-09-23** (`packages/cli/CHANGES.md`). `commitment-swept`, an app
+  **Built 2026-09-23** (`docs/changes-archive/cli.md`). `commitment-swept`, an app
   warning: a `*.job.*` file naming a declaring model and making its committed
   move. Two things the line did not name:
   - **The move has three spellings.** The sweep `abandon` replaced made
@@ -492,7 +492,7 @@ An `invariants` row if an enforcer lands.
   three of four times; `subscriptions-renew` swept `Subscription`, which the
   period's commitment does not move.
 
-**Every step:** a `CHANGES.md` entry per package touched, the snapshots
+**Every step:** the snapshots
 regenerated, and `fli done` clean before it is called finished.
 
 ---
@@ -513,7 +513,7 @@ stops counting at `endsOn` and is also moved `active -> ended` — and then the
 window is the truth for reads and the transition is the record that catches up, which
 is shape 1 against shape 2 inside one row. Legal, not refused.
 
-- ~~**What kind of noun is a deferred obligation?**~~ **Answered 2026-09-22 (`FJS-D353`): A — **a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.** The three shapes and the
+- ~~**What kind of noun is a deferred obligation?**~~ **Answered 2026-09-22 (`FJS-D353`): A — **a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/shipped/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.** The three shapes and the
   fourth, measured against `@@transitions` rather than against a job file.
   **Shape 2** keeps its deadline nowhere — `subscriptions-dun` reads `dueOn`
   against the shop's today and compares it with two JS constants, `GRACE_DAYS`
@@ -536,7 +536,7 @@ is shape 1 against shape 2 inside one row. Legal, not refused.
     not `cancel` with a `while:`. `x-transitions` already reaches the browser,
     so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off
     the schema. An effect OUTSIDE the database stays a hook on the transition, as
-    `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine
+    `IDEAS/shipped/state-machines.md` settled (*side effects stayed hooks; the machine
     runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction
     through the outbox, so it happens once per transition. The schema names no job. A
     transition fired by a commitment whose from-state no longer holds is a quiet
@@ -756,10 +756,10 @@ is shape 1 against shape 2 inside one row. Legal, not refused.
   run under
 - `IDEAS/intent-recognizer.md` — a customer's words against a seed, and the
   *nowhere to live yet* verdict this classifies
-- `IDEAS/relators.md` — the continuant leaf added above: what a relationship
+- `IDEAS/shipped/relators.md` — the continuant leaf added above: what a relationship
   that persists is, and why *can this happen twice* is the half of it that
   can be declared
-- `IDEAS/state-machines.md` — the *happening now* leaf
+- `IDEAS/shipped/state-machines.md` — the *happening now* leaf
 - `example/api/src/jobs/` — the three shapes, each with its reasoning in its own
   header. `holds-release`, `subscriptions-dun`, `subscriptions-renew`
 - `packages/toolbelt/src/history/history.js` — `occurrenceKey`, shape 3's once-ness

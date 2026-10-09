@@ -10,7 +10,7 @@ dated: 2026-08-06
 closed — `packages/sierra/src/build/static-safety.js`, wired into
 `build/prerender.js`, 39 tests plus `bun run test:safety` against a real
 Litestone client, exercised in `example/` (`bun run build:site`). See
-`packages/sierra/CHANGES.md`.
+`docs/changes-archive/sierra.md`.
 
 **One premise in this file was wrong, and it mattered.** §What would have to be
 built item 1 says to track resource reads *during prerender*, because "the

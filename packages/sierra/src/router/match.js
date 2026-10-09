@@ -237,7 +237,10 @@ export function normalizePath(pathname, trailingSlash = 'always') {
  */
 export function buildUrl(path, params = {}, trailingSlash = 'always') {
   const normalized = normalizePath(path, trailingSlash)
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  // A cleared control is absent from the URL. The encoder sends `[]` and `{}`
+  // as filters, so a multi-select with nothing picked is dropped here or it
+  // reads back as an `in` list that matches no row.
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '' && !isEmptyContainer(v))
   const hash = _hashOf(path)
 
   // `params` REPLACES the query — it does not merge with one the path carries.
@@ -275,6 +278,11 @@ function _searchOf(path) {
 function _hashOf(path) {
   const hi = path.indexOf('#')
   return hi === -1 ? '' : path.slice(hi)
+}
+
+function isEmptyContainer(v) {
+  if (Array.isArray(v)) return v.length === 0
+  return v !== null && typeof v === 'object' && !(v instanceof Date) && Object.keys(v).length === 0
 }
 
 

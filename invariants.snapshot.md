@@ -122,11 +122,11 @@ Covered: **18 of 19**.
 
 **none** — nothing in this repo fails when it stops being true.
 
-### 17. Four markdown files at a package root is the standard
+### 17. Three markdown files at a package root is the standard
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| `fli check` | `package-root-md` | four markdown files are the standard at a package root |
+| `fli check` | `package-root-md` | three markdown files are the standard at a package root |
 | `fli check` | `docs-index` | a docs/ index links every page beside it |
 
 ### 18. In a Sierra app, `src/resources/` holds `.mesa` files, and a resource file carries its model's default form

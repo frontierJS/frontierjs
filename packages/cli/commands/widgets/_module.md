@@ -13,7 +13,7 @@ An app may have this surface and no `web/` at all.
 | Command | What it does |
 | --- | --- |
 | `fli make:widget <Name>` | create a widget — and the surface, the first time |
-| `fli widgets:dev` | Vite over `widgets/`, port 8200, while a widget is written |
+| `fli dev:widgets` | Vite over `widgets/`, port 8200, while a widget is written |
 | `fli widgets:build` | one self-contained IIFE per widget → `dist/embeds/` |
 | `fli widgets:serve` | serve them with the CORS + cache headers they deploy with |
 

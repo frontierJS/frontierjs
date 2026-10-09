@@ -738,6 +738,6 @@ if (missing.length) {
 }
 
 echo('')
-echo('  Sierra rescans src/routes on the next build — restart fli web:dev if it is running.')
+echo('  Sierra rescans src/routes on the next build — restart fli dev:web if it is running.')
 echo('')
 ```

@@ -47,7 +47,7 @@ site/
 ```
 
 **Dev is an SPA and the build is files.** `target: 'static'` uses the SPA's Vite
-config and prerenders afterwards, so `fli site:dev` serves the routes as a
+config and prerenders afterwards, so `fli dev:site` serves the routes as a
 client-routed app — that is the writing loop. The publish check, the island
 chunks and the one-file-per-route output exist only in the build, so anything
 touching a `load()` or frontmatter is proved with `fli site:build`.

@@ -457,7 +457,7 @@ missed the index it had just declared, with nothing anywhere reporting it.
   `FJS-D130`, `nullsDistinct`
 - `ISSUES.md` — `FJS-576` (the migrator blindness), `FJS-480` (the derived index),
   `FJS-603` (the unique half), `FJS-592` (the constraint-kind migration split)
-- `IDEAS/payroll.md` phase 2 · `IDEAS/billing.md` phase 1 — the two domains that
+- `IDEAS/shipped/payroll.md` phase 2 · `IDEAS/billing.md` phase 1 — the two domains that
   produced the three unique near misses
 - [ddl.js `createIndexes`](../packages/litestone/src/core/ddl.js) ·
   [migrate.js `introspect`/`indexKey`/`tableUniques`](../packages/litestone/src/core/migrate.js) ·

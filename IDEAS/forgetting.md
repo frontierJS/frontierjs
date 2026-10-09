@@ -291,9 +291,9 @@ model Message {
 - [`compliance-from-the-seed.md`](compliance-from-the-seed.md) — items 1–3; this
   record answers its *anonymize vs delete* question
 - `ISSUES.md` — [FJS-1485](../ISSUES.md#fjs-1485) (the row this answers),
-  [FJS-1497](../ISSUES.md#fjs-1497) (cascade unseen by plugins),
+  [FJS-1497](../ISSUES_ARCHIVE.md#fjs-1497) (cascade unseen by plugins),
   [FJS-1498](../ISSUES.md#fjs-1498) (counter upsert),
-  [FJS-1454](../ISSUES.md#fjs-1454) (the delete-direction FK error),
+  [FJS-1454](../ISSUES_ARCHIVE.md#fjs-1454) (the delete-direction FK error),
   [FJS-1480](../ISSUES.md#fjs-1480) (the trail's own retention never runs)
 - `DECISIONS.md` — FJS-D349 (the trail as a correlation hazard, measured here the
   other way), FJS-D342 (a bearer's trail row carries the subject), FJS-D36 (the

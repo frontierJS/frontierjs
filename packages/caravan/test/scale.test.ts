@@ -6,7 +6,7 @@
 // defect was a plan — a filter that selected nothing and steered SQLite onto a
 // temp b-tree — so the plan is what has to stay fixed, and a millisecond
 // threshold in CI is a coin flip on a loaded machine. The measured numbers that
-// motivated each one are in CHANGES.md.
+// motivated each one are in docs/changes-archive/caravan.md.
 //
 // Traps in this file:
 //   • Every case needs a real file: `:memory:` gets its own database per

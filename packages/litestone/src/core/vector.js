@@ -23,7 +23,7 @@
 //
 // ─── The measurements that shaped it ──────────────────────────────────────
 //
-// Taken 2026-09-20, 1536 dimensions, and written up in `IDEAS/embedding.md`:
+// Taken 2026-09-20, 1536 dimensions, and written up in `IDEAS/shipped/embedding.md`:
 //
 //   • the extension is ~2x, not an order of magnitude, and what it buys is not
 //     faster arithmetic — it is arithmetic that never materializes the blob

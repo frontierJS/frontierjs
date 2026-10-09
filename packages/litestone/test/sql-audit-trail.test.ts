@@ -5,7 +5,7 @@
 // litestream replica. So an app that wanted a trail its own UI could show had
 // to write a SECOND one by hand beside it — which is what basecamp does, and
 // that duplication is the argument for this feature rather than a story about
-// it (`IDEAS/logbook.md`).
+// it (`IDEAS/shipped/logbook.md`).
 //
 // The rule that makes it safe: on a SQLite database `model` is REQUIRED. There
 // is nothing to synthesize into — a table the app never declared cannot carry a

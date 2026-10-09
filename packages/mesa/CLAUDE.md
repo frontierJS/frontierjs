@@ -178,10 +178,9 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   `ref.count` is live and `ref.count = 2` writes it. Handing over the anchor
   comment instead fails silently.
 - **`<mesa:element this={tag}>` is compiled under a placeholder tag** and
-  transplanted at runtime, wrapped in a `keyBlock` so a changed tag rebuilds. A
-  **tag selector** in a scoped `<style>` cannot match it — the scoper runs on the
-  parsed template, where the tag is still `mesa-dynamic-element`. Match on a
-  class. Unknown `mesa:*` names are an error listing the ones that exist; they
+  transplanted at runtime, wrapped in a `keyBlock` so a changed tag rebuilds.
+  The scope class rides on the placeholder and is copied across, so a scoped
+  `h2 { }` does match the transplanted `<h2>`. Unknown `mesa:*` names are an error listing the ones that exist; they
   used to emit nothing, which made a typo and a missing feature the same event.
 - **`{#each}` takes an array, an iterable or an array-like — and refuses a
   number or a plain object by name.** `eachItems()` in `runtime.js` is the one

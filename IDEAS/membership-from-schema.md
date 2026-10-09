@@ -70,5 +70,5 @@ declarations and run `packages/basecamp`: `bun run test` and `bun run verify`.
 
 ## See also
 
-[`IDEAS/relators.md`](relators.md) · [`FJS-D113`](../DECISIONS.md#fjs-d113) ·
+[`IDEAS/shipped/relators.md`](shipped/relators.md) · [`FJS-D113`](../DECISIONS.md#fjs-d113) ·
 [`FJS-D359`](../DECISIONS.md#fjs-d359) · [`FJS-D360`](../DECISIONS.md#fjs-d360)

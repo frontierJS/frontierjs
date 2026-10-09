@@ -323,7 +323,7 @@ core/
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
   desktop-surface.js    what a `desktop/` surface IS — `make:desktop`, the binary and
                         API origin `desktop:run` reads off one, the start-or-reuse
-                        of the API and dev server `desktop:run` and `desktop:dev`
+                        of the API and dev server `desktop:run` and `dev:desktop`
                         share, and the launcher entry `desktop:install` writes.
                         `example/desktop/`
                         is its output, compared byte for byte in the suite, because
@@ -1312,7 +1312,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   reason — and neither replaces the other.
 - **A rule proposed off a hazard paragraph is a lead, not a spec.** Measure it
   before writing it: of three proposed from one catalog, two had been fixed after
-  the paragraph was written and the third was ruled against (`CHANGES.md`).
+  the paragraph was written and the third was ruled against (`docs/changes-archive/cli.md`).
 
 ## The context in this package — `$`
 

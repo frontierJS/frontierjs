@@ -147,7 +147,7 @@ has. Root `README.md` § Project Structure is canonical.
 
 ```sh
 fli make:extension          # config/, src/harbor, src/dock, test/, deploy/
-fli extension:dev           # watch + reload over the dev port (8400)
+fli dev:extension           # watch + reload over the dev port (8400)
 fli extension:build         # → extension/dist/chrome/ (--browser both for Firefox too)
 fli extension:audit         # permissions declared vs. chrome.* actually called
 ```
@@ -200,7 +200,7 @@ because Harbor holds the token.
   described here and in `CLAUDE.md`
 - Mesa vision: `packages/mesa/docs/VISION.md` (informed Phase 3 integration)
 - Resources are sierra's, over a relaying Junction client (`FJS-D650`);
-  `IDEAS/sierra-scope.md` § 2.7 and § 3 item 5.
+  `IDEAS/shipped/sierra-scope.md` § 2.7 and § 3 item 5.
 
 ## FJS port scheme
 

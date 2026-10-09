@@ -484,6 +484,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           stylesheets: (sierraContext.cssAssets ?? [])
             .map((f) => (config.base ?? '/').replace(/\/$/, '') + '/' + f),
           bodyClass: config.document?.bodyClass,
+          bodyAttrs: config.document?.bodyAttrs,
+          docHead:    config.document?.head,
+          docBodyEnd: config.document?.bodyEnd,
           htmlClass: resolveHtmlClass(config),
           lang:      config.document?.lang,
           // Compile temp modules inside the app so a layout's bare imports

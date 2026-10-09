@@ -545,7 +545,7 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "type" TEXT NOT NULL,
   "data" TEXT NOT NULL,
   "contextType" TEXT,
-  "contextId" INTEGER,
+  "contextId" TEXT,
   "readAt" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("contextType" IN ('Order'))
@@ -771,7 +771,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_plan_version_planId" ON "plan_version" (
 -- 
 -- ─── The third shape, and why this one ────────────────────────────────────
 -- 
--- `IDEAS/payroll.md` phase 0 found three effective-dating spellings in real
+-- `IDEAS/shipped/payroll.md` phase 0 found three effective-dating spellings in real
 -- schemas: a nullable `effectiveTo` pair, a `fromDate` with NO end column
 -- where the window is closed by the next row's start, and a closed interval.
 -- Frappe writes the second.

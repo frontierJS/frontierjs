@@ -2736,7 +2736,7 @@ model StocktakeCount {
 
 /// Which side of the books a journal line lands on.
 ///
-/// Five accounts and no more, because phase 1 of `IDEAS/payroll.md` posts one
+/// Five accounts and no more, because phase 1 of `IDEAS/shipped/payroll.md` posts one
 /// kind of journal — a sale. The names are the ones a bookkeeper uses, not the
 /// ones this schema would invent, and the set grows when something else starts
 /// posting: a pay run wants wages expense and three control accounts.
@@ -2805,7 +2805,7 @@ model JournalEntry {
   source     JournalSource @immutable @label("Source")
   
   /// What it was raised for — and it is an ARC now, which is what phase 1 of
-  /// `IDEAS/payroll.md` said it would become the moment a second thing posted.
+  /// `IDEAS/shipped/payroll.md` said it would become the moment a second thing posted.
   ///
   /// Two optional foreign keys of which exactly one is set. That keeps a real
   /// FK, a real cascade and a real `include` on both sides, where the
@@ -2937,7 +2937,7 @@ model Employee {
 ///
 /// ─── The third shape, and why this one ────────────────────────────────────
 ///
-/// `IDEAS/payroll.md` phase 0 found three effective-dating spellings in real
+/// `IDEAS/shipped/payroll.md` phase 0 found three effective-dating spellings in real
 /// schemas: a nullable `effectiveTo` pair, a `fromDate` with NO end column
 /// where the window is closed by the next row's start, and a closed interval.
 /// Frappe writes the second.
@@ -3122,7 +3122,7 @@ enum PayRunStatus { draft  calculated  approved  paid }
 /// What a payslip line IS.
 ///
 /// An enum rather than a table, which is the 80/20 line this whole domain is
-/// drawn at (`IDEAS/payroll.md` § The size budget). Frappe spends three
+/// drawn at (`IDEAS/shipped/payroll.md` § The size budget). Frappe spends three
 /// doctypes here and the third evaluates a Python expression per component,
 /// which is schema-as-data. A real bureau makes this a table; a shop's set is
 /// fixed, an enum emits a table CHECK, and a picker renders it for free.
@@ -3366,7 +3366,7 @@ model PayslipLine {
   /// Which CLOSED run this line puts right, where it puts one right.
   ///
   /// **This column is the whole of what the language can say about *derived
-  /// from*, and saying it is the finding** (`IDEAS/payroll.md` phase 6). A
+  /// from*, and saying it is the finding** (`IDEAS/shipped/payroll.md` phase 6). A
   /// backdated raise makes three already-paid periods wrong; they are corrected
   /// by arrears lines on a later payslip and never by editing the closed ones,
   /// which `@immutable` enforces above. So a line exists that was computed from
@@ -3426,7 +3426,7 @@ type EmploymentPay {
   /// says nothing about when we learnt them, so *record what is true from now*
   /// and *correct what we believed about March* are one write to one interval.
   /// The second axis exists in this application only where a document happened
-  /// to freeze it (`IDEAS/payroll.md` phase 6).
+  /// to freeze it (`IDEAS/shipped/payroll.md` phase 6).
   effectiveFrom String? @date @label("From")
 }
 
@@ -3501,7 +3501,7 @@ model Notification {
   type         String
   data         Json
   contextType  NotificationContext?
-  contextId    Int?
+  contextId    String?
   readAt       DateTime?
   createdAt    DateTime   @default(now())
   

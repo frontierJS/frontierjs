@@ -402,7 +402,7 @@ const PKGS = [
   rows:[
     { k:'A surface', v:'<code>extension/</code> sits beside <code>api/</code> and <code>web/</code>',
       why:'It earns its own directory because its config, its tests and its release are all different answers — and it reaches the same services with the same client.',
-      code:'$ fli make:extension\n$ fli extension:dev     # MV3, hot-reloaded\n$ fli extension:build',
+      code:'$ fli make:extension\n$ fli dev:extension     # MV3, hot-reloaded\n$ fli extension:build',
       r:['Plasmo','WXT','a hand-rolled MV3 setup'] },
     { k:'The relay', v:'A service worker carries calls to the API',
       why:'The adapter is the real client rather than a lookalike, so sign-in, live updates and gating behave exactly as they do in the app.',

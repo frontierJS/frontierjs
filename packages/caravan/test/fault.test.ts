@@ -18,7 +18,7 @@ afterEach(async () => {
 const SETTLE = 500
 
 describe('a fault that is not retryable', () => {
-  it.failing('stops the job after one attempt', async () => {
+  it('stops the job after one attempt', async () => {
     const q = createCaravan({ db: ':memory:', pollInterval: 10, drainTimeout: 100 })
     made.push(q)
     q.handle('charge', async () => {

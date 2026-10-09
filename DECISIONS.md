@@ -27,9 +27,51 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d681"></a>2026-10-09 · `FJS-D681` — The inbound end of a Provider is a **Receiver**; Provider is the relationship, Target narrows to where we send, and a broker stays a Target
+
+Asked by wave 6 of the vocabulary atlas; the paper is [`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) § *The noun*. The owner took both recommendations.
+
+**Receiver** is a Conduit declaration of a route a Provider calls us on: path, signature check, freshness window, dedupe key. It sits under Provider beside Target, the two records `FJS-D177` settled. The word was already live in that role 60 times (`verifyRequest` *from the receiver's clock*, junction's webhooks plugin), so the record and the role now agree. A raw route that verifies by hand is a route, not a Receiver, and a Receiver never mints a principal.
+
+**Provider** gets the definition its row lacked: the third party, declared once, holding the credentials both ends spend. *Integration* stays refused, and this file's diagram moves to it. **Target** narrows from *a declaration of a third party* to *a place this app sends to or subscribes to*.
+
+**A `broker` stays a Target** (`FJS-D235` unchanged): we dial it, and a Receiver's route, signature and window do not apply to a socket we opened.
+
+Refused: *listener* (the socket sense, 109 hits), *source*/*sink* (`sink` is the dev stand-in; a broker is already a Target), *webhook handler* (Hook is pipeline code), *endpoint* (Target's row). B, a `receive:` block on Target, reopened `FJS-D177`; C, renaming both ends, moved a blessed word for symmetry. Junction's own-scheme half and inbound email take no noun.
+
+Unenforced: nothing flags an inbound route declared outside conduit. Owed when the Receiver is built (§ Order step 4).
+
+### <a id="fjs-d680"></a>2026-10-09 · `FJS-D680` — Three rows left open on purpose are ruled: *Session* is a sign-in, *Account* is auth's own-settings service, *Stressor* is a product built to find seams; Audience stays open
+
+Asked by the vocabulary atlas's *rows left open on purpose* step: for each, does something now force it. Three were forced; the owner took every recommendation.
+
+**Session is a sign-in.** Auth's `Session` model, the `sessions` service (`FJS-D20`) and the bridge name `sessionGateLevel` all mean one thing: what `/auth/*` establishes and a row of `Session` stores. The browser's `sessionStorage` is the ecosystem's word, not this one.
+
+**Account is auth's `account` service** — the signed-in user's own settings. An app that names a model `Account` (basecamp, sierra's example) is using its own business-domain word, which this row does not govern.
+
+**Stressor is blessed though the framework never runs one**, because it is the word every handoff and plan already uses: a real product built on FrontierJS to find its seams, listed in `IDEAS/stressors.md`.
+
+**Audience stays open** — its row already names its trigger, Phase 4's routing, which is unbuilt. **`*.spec.*` needs no row**: the Suite row (`FJS-D638`) defines it.
+
+### <a id="fjs-d678"></a>2026-10-09 · `FJS-D678` — The five open collisions: *contract* stays the expand/contract verdict and is never the promise; *surface* is the directory only; the trail's `before`/`after` are a *before-image* and an *after-image*; *origin* and *domain* are never written bare
+
+Asked by the vocabulary atlas's *Rule the open collisions* step, each word swept across the tree before it was put to the owner. The owner took every recommendation, and two departed from the atlas's own.
+
+**Contract is the verdict, not the promise.** The atlas said bless *Contract* as the compatibility promise of a published interface, with Pivot where one ends. The sweep found the word already spent in the opposite direction: `classifyPivot` answers expand · contract · unknown, and a *contract* is the change that BREAKS what N-1 relies on (`packages/cli/core/release.js`, `plan.js`, and sixteen documents on expand/contract). One word for both the promise and its breaking would make "a contract migration" ambiguous. The verdict keeps the word, which is the ecosystem's (parallel change); the promise uses the blessed *Promise* (`FJS-D656`), and a Pivot is where a contract ends one. Interface evolution hangs off Promise and Pivot, not a new noun.
+
+**Surface is the directory beside `db/` and nothing else.** The atlas said *Projection* for the interface sense. That fits mcp's tool set, which `FJS-D632` already counts as a Projection, but not the control page or the command line, which are not derived from the schema. So the interface sense is refused rather than renamed wholesale: each thing is named for what it is. Existing IDEAS titles (`control-surface`, `command-surface`) are history and are not renamed.
+
+**Before-image and after-image.** With the trail renamed (`FJS-D661`), *snapshot* in Invariant 7 collided with the blessed Testing noun (`FJS-D638`). The database literature's word was already in the register (`FJS-2039`'s *after-image*). Invariant 7, litestone's docs and the `@@trail` catalog description now say images; the column names `before`/`after` are unchanged.
+
+**Origin and Domain are blessed only qualified**, the way Environment is (`FJS-D636`): *origin of truth* or *HTTP origin*; *business domain*, *DNS domain*, or ARCHITECT § 4's domain map as that section names it. § 4's axis is not renamed until it causes a misreading.
+
+**The qualify rule is not enforced.** A bare *surface*, *origin* or *domain* in prose fails no check; a grader waits until a misreading recurs.
+
+*Lives in:* `VOCABULARY.md` (Contract, Surface, Snapshot, Origin, Domain) · `CLAUDE.md` Invariant 7 · `packages/litestone/src/core/catalog.js` (`@@trail`) · `packages/cli/core/release-view.js` (`classifyPivot`) · `FJS-D632` · `FJS-D636` · `FJS-D656` · `FJS-D661`.
+
 ### <a id="fjs-d661"></a>2026-10-08 · `FJS-D661` — Wave 5's four words: the trail is spelled *trail* everywhere it is declared (`@@trail`, `@trail`, `driver trail`, `db.auditTrail`), the client's reconnect event is `reconnected`, a health check is `registerReadiness` — and `correlationId` keeps its name.
 
-Asked by [`IDEAS/observability.md`](IDEAS/observability.md) § 6 and [`IDEAS/consistency.md`](IDEAS/consistency.md) § Open questions, each swept across the tree before it was put to the owner. **Nothing here has shipped, so each rename moves every caller and keeps no alias** (*preservation vs. evolution*).
+Asked by [`IDEAS/shipped/observability.md`](IDEAS/shipped/observability.md) § 6 and [`IDEAS/consistency.md`](IDEAS/consistency.md) § Open questions, each swept across the tree before it was put to the owner. **Nothing here has shipped, so each rename moves every caller and keeps no alias** (*preservation vs. evolution*).
 
 **The trail — `@@log` → `@@trail`, and its family with it.** `FJS-D633` already says *the audit trail*, and the observability paper's § 4 rests on the trail not being the log: one is a record the Data boundary owes, the other is what the process says. The seed is where the word is first met, so the seed spelled the collision. Field-level `@log` becomes `@trail`, a database's `driver logger` becomes `driver trail`, and the synthesized `<db>Logs` model becomes `<db>Trail` (`db.auditTrail`) — one concept, one stem, so knowing one spelling predicts the other three (§ V 4). The argument — the database a declaration writes into — is unchanged. `db.$audit()` keeps its name: it records an EVENT nothing wrote, and the trail is the place, not the verb.
 
@@ -65,11 +107,11 @@ Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/data-classificat
 
 **Left to `forgetting.md`'s ruling:** its model word for *delete this row on forget* must not be a sibling of `@@person`. Its `@@subject` is renamed `@@person` by this ruling.
 
-*Lives in:* `.lite` grammar (to be built) · `src/core/schema-maps.js` · `src/transform/framework.js` · `CLAUDE.md` Invariant 7 · `VOCABULARY.md` (Person, Personal, Subject, Sensitivity) · [FJS-2059](ISSUES.md#fjs-2059) · [FJS-2060](ISSUES.md#fjs-2060).
+*Lives in:* `.lite` grammar (to be built) · `src/core/schema-maps.js` · `src/transform/framework.js` · `CLAUDE.md` Invariant 7 · `VOCABULARY.md` (Person, Personal, Subject, Sensitivity) · [FJS-2059](ISSUES_ARCHIVE.md#fjs-2059) · [FJS-2060](ISSUES_ARCHIVE.md#fjs-2060).
 
 ### <a id="fjs-d656"></a>2026-10-08 · `FJS-D656` — The threat model is one root table, `THREATS.md`: a row per **adversary** and boundary, its **promise**, where it is enforced and the test that proves it, graded by `fli check`. The operator is a trusted row. An agent never sees more than a person at its level.
 
-Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/threat-model.md`](IDEAS/threat-model.md). **A** was picked over **B** (a `## Threats` section in each package's `CLAUDE.md`) and **C** (one test identity per adversary in `@frontierjs/testing`, now). B was refused because every hole open today sits at a seam between packages (FJS-1607, FJS-1833, FJS-1858), where a per-package section has no owner. C is the later shape of the Data and API rows, and the table's *Proved by* column is the seam it fills.
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/shipped/threat-model.md`](IDEAS/shipped/threat-model.md). **A** was picked over **B** (a `## Threats` section in each package's `CLAUDE.md`) and **C** (one test identity per adversary in `@frontierjs/testing`, now). B was refused because every hole open today sits at a seam between packages (FJS-1607, FJS-1833, FJS-1858), where a per-package section has no owner. C is the later shape of the Data and API rows, and the table's *Proved by* column is the seam it fills.
 
 **A promise cites its ruling and does not restate it.** The table is a Map (PHILOSOPHY § VII): it says which ruling or invariant holds the boundary, which file enforces it and which test proves it. A promise written out in the row would be a second origin for the ruling. `fli check`'s `threat-row` rule fails a row that names no test, or names one that does not exist.
 
@@ -77,7 +119,7 @@ Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/threat-model.md`
 
 **An agent is at most the person.** An MCP agent sees what a person at the same level sees, or less. `narrow` only removes (`FJS-D258`). The admin `levels` preview skips `narrow` because it reports a level, not a principal (`packages/mcp/src/plugin.ts`).
 
-**Origin stays open.** The paper proposed the browser sense for the bare word. It missed the doctrine's sense: PHILOSOPHY axiom 1, *one origin* of truth, used in 74 markdown files. Both are live, and this ruling picks neither.
+**Origin stays open.** The paper proposed the browser sense for the bare word. It missed the doctrine's sense: PHILOSOPHY axiom 1, *one origin* of truth, used in 74 markdown files. Both are live, and this ruling picks neither. *Closed by [`FJS-D678`](#fjs-d678): both stay, each written with its qualifier.*
 
 The paper's seed rows were re-probed before ruling. The 2026-09 litestone findings it cited as open (where-key injection, the transaction bypass) are FJS-634 and FJS-638, closed. The Bearer sent off-origin is FJS-788, closed. Their tests pass.
 
@@ -817,7 +859,7 @@ word is `Run`, which the cli has already spent on runnables. It stays in
 `ARCHITECT.md` § *Not yet named* until a second instance asks for it.
 
 *Lives in:* `ARCHITECT.md` § 2 · `packages/caravan/src/types.ts` ·
-`packages/caravan/CLAUDE.md` · [`FJS-711`](ISSUES.md#fjs-711) `caravan-12` ·
+`packages/caravan/CLAUDE.md` · [`FJS-711`](ISSUES_ARCHIVE.md#fjs-711) `caravan-12` ·
 `FJS-D06` · `FJS-D36`
 
 ### <a id="fjs-d06"></a>2026-08-16 · `FJS-D06` — the coherence-review vocabulary, ruled. Three hook tiers not five, `Provider` is a third party, and `Slice` waits for a second author.
@@ -1341,7 +1383,7 @@ The nine, answered after the build and named as late:
    A create under a generated tenancy deny answers a missing, hidden or
    another tenant's parent as the same `ForeignKeyError` (`FJS-1704`).
 
-Tier: Register. ([`FJS-1702`](ISSUES.md#fjs-1702), [`FJS-1703`](ISSUES.md#fjs-1703))
+Tier: Register. ([`FJS-1702`](ISSUES_ARCHIVE.md#fjs-1702), [`FJS-1703`](ISSUES_ARCHIVE.md#fjs-1703))
 
 ### <a id="fjs-d575"></a>2026-10-04 · `FJS-D575` — a write names the gate it lifts: `system: ['@@gate']` grades that one call SYSTEM against the model's own `@@gate` and keeps the row policies, the redaction and the audit actor. The list is closed — a `@system` column, a field with declared moves, or `'@@gate'` — and anything else is refused by name.
 
@@ -1444,7 +1486,7 @@ cannot import, and which an app reaches from its `onCredentialChanged` anyway.
 [auth.ts `startSupport`](packages/auth/auth.ts) · [types.ts](packages/auth/types.ts) ·
 [test/support-refusals.test.ts](packages/auth/test/support-refusals.test.ts) ·
 [test/credential-events.test.ts](packages/auth/test/credential-events.test.ts) ·
-`example`: `verify:support` · closes [`FJS-1696`](ISSUES.md#fjs-1696), [`FJS-1697`](ISSUES.md#fjs-1697) ·
+`example`: `verify:support` · closes [`FJS-1696`](ISSUES_ARCHIVE.md#fjs-1696), [`FJS-1697`](ISSUES_ARCHIVE.md#fjs-1697) ·
 *amends* [`FJS-D550`](#fjs-d550) (the name)
 
 ### <a id="fjs-d570"></a>2026-10-03 · `FJS-D570` — What does an emailed copy carry to an address with no user row, and who must agree to it — B, and the address confirms once, by a link, before its first send. An unconfirmed address is skipped and logged in the delivery log (X11), never mailed.
@@ -1481,7 +1523,7 @@ standing that travels with the user. basecamp passes `basecampGateLevel`, the
 resolver every request is already graded by, so there is no second role→level
 mapping. `example` passes only `level` and falls back unchanged.
 
-**Both tests are positive and want a number** ([`FJS-1559`](ISSUES.md#fjs-1559)). The
+**Both tests are positive and want a number** ([`FJS-1559`](ISSUES_ARCHIVE.md#fjs-1559)). The
 floor was `level(op) < SYSADMIN`, which is false for `undefined`, and the peer
 test `level(person) >= level(op)` failed open the same way. A resolver that
 answers anything but a finite number now refuses.
@@ -1607,7 +1649,7 @@ Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. *
 A scans island props by NAME, so a column renamed into a prop, or interpolated into plain markup with no island at all, reaches the page unseen, and props carry no model so a harmless key collides. The read is the one place that knows a protected value was returned: probed, asSystem() returns @guarded and @encrypted values and a bare or $setAuth read strips both, so the check fires only on event.system. It also covers every @encrypted, @hashed and @secret column, since $protectedFields names them all, and it is the per-column read set FJS-D496 will want. Its cost is that a system read of a model with a protected column must write select, which is the declaration the page owed anyway.
 *Lives in:* `packages/sierra/src/build/static-safety.js` (`collectExposed`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
 
-### <a id="fjs-d470"></a>2026-09-28 · `FJS-D470` — Where may a row under an enum `@@transitions` START: is `@default` the one entry a caller may name, or does the machine declare its entries — `@default` is the only entry, for every principal. A create that names any other state is refused with `TransitionViolationError`, and the message names the default. `asSystem()` is held too (`FJS-D502`): a row that genuinely starts elsewhere is created at the default and walked there by its declared moves, or is put there by `sys.sql`. Nothing new to spell: the entry is derived from a declaration that already exists, and `IDEAS/state-machines.md`'s *a create is not graded* is struck.
+### <a id="fjs-d470"></a>2026-09-28 · `FJS-D470` — Where may a row under an enum `@@transitions` START: is `@default` the one entry a caller may name, or does the machine declare its entries — `@default` is the only entry, for every principal. A create that names any other state is refused with `TransitionViolationError`, and the message names the default. `asSystem()` is held too (`FJS-D502`): a row that genuinely starts elsewhere is created at the default and walked there by its declared moves, or is put there by `sys.sql`. Nothing new to spell: the entry is derived from a declaration that already exists, and `IDEAS/shipped/state-machines.md`'s *a create is not graded* is struck.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the machine declares its entries as moves with no `from`: `@@transitions(status, start: -> draft, rush: -> urgent @gate(5), …)`. A create must land on an entry that the caller's level reaches. With no entry declared, `@default` is the only one (A's rule), and a declared `@default` that is not an entry is refused at parse. This is the spelling `IDEAS/tenant-authored-workflows.md` gives the enum form, next to D365 B's `fromId: null` row), **C** (no Data-boundary rule. The kit leaves a `@@transitions` column out of a generated create form, and apps keep a hook per machine (`example`'s `checkOrderRules`). A direct `create()` still skips the gate, against Invariant 6).
 
@@ -1681,7 +1723,7 @@ Asked in [`IDEAS/field-workforce.md`](IDEAS/field-workforce.md) § Open question
 
 **C is refused on the same argument.** The thing being protected is not a column's value but the correlation between two rows, so a field-grain word is in the wrong place to say anything about it. `@hashed` and `@encrypted` already own *this value is protected*; nothing owns *this row has no author and must stay uncorrelatable*.
 
-**The honest costs, stated so the word does not hide them.** (1) **It cannot close route four itself.** Nothing shuffles a table and nothing should — a database that hid its own insertion order would be a different product. The declaration closes the route by refusing the other end of the join, which is a weaker and more honest promise than *anonymous* sounds, and the word's documentation must say so in `@@allow`'s tier language rather than `@@check`'s. Raw SQL against the file reads the rowids regardless, and `discovery/open-questions.md` § 2 already guessed the employer's own DBA is somebody who may not know — a guess this record makes right for a reason the guess did not have. (2) **It cannot be tightened later.** An anonymity added to a model that has been attributable is an anonymity for rows written from now on, so this is a declaration whose value is entirely in being written first — which is an argument for `fli advise` asking, not for the word being optional. (3) **It is adjacent to a gate that cannot be written.** The rule this model wanted is `@@gate("6.4.9.9")` — any employee writes one, only HR reads them — refused at boot because levels must be non-decreasing ([`FJS-1244`](ISSUES.md#fjs-1244)), so *only HR may read these* had to be demoted into a row policy, which turns a refusal into a silent empty list. Whether `@@anonymous` should imply anything about the read side is left open deliberately; it should not be decided inside a row about the ladder. Prior record: [`FJS-1247`](ISSUES_ARCHIVE.md#fjs-1247) states the gap and carries the measurements.
+**The honest costs, stated so the word does not hide them.** (1) **It cannot close route four itself.** Nothing shuffles a table and nothing should — a database that hid its own insertion order would be a different product. The declaration closes the route by refusing the other end of the join, which is a weaker and more honest promise than *anonymous* sounds, and the word's documentation must say so in `@@allow`'s tier language rather than `@@check`'s. Raw SQL against the file reads the rowids regardless, and `discovery/open-questions.md` § 2 already guessed the employer's own DBA is somebody who may not know — a guess this record makes right for a reason the guess did not have. (2) **It cannot be tightened later.** An anonymity added to a model that has been attributable is an anonymity for rows written from now on, so this is a declaration whose value is entirely in being written first — which is an argument for `fli advise` asking, not for the word being optional. (3) **It is adjacent to a gate that cannot be written.** The rule this model wanted is `@@gate("6.4.9.9")` — any employee writes one, only HR reads them — refused at boot because levels must be non-decreasing ([`FJS-1244`](ISSUES_ARCHIVE.md#fjs-1244)), so *only HR may read these* had to be demoted into a row policy, which turns a refusal into a silent empty list. Whether `@@anonymous` should imply anything about the read side is left open deliberately; it should not be decided inside a row about the ladder. Prior record: [`FJS-1247`](ISSUES_ARCHIVE.md#fjs-1247) states the gap and carries the measurements.
 
 ### <a id="fjs-d344"></a>2026-09-20 · `FJS-D344` — A portal client who later signs up — The app's own act: its `register` path attaches the subject to the new `User` and revokes the grant, and the framework ships nothing.
 
@@ -2706,7 +2748,7 @@ schema syntax rather than data stored in a customer's rows, which is what made
 `FJS-D139` urgent and makes this recoverable.
 
 **What this does not settle**: whether a model that opts in still applies its
-`@@gate`, and how the two compose — deferred, and `IDEAS/permission-sets.md`
+`@@gate`, and how the two compose — deferred, and `IDEAS/shipped/permission-sets.md`
 § *Open questions* carries it. Nor does it change the one model that opts into
 none of this: the table whose rows decide access keeps its full ladder, because
 its writers go through `asSystem()` and a capability declared there would be
@@ -2780,7 +2822,7 @@ does it settle `FJS-519` — `asSystem()` is all-or-nothing, so a capability
 declared on the model whose rows decide access is enforced by nothing, and that
 is a hole rather than a shape.
 
-`IDEAS/permission-sets.md` is the record.
+`IDEAS/shipped/permission-sets.md` is the record.
 
 ### <a id="fjs-d131"></a>2026-08-23 · `FJS-D131` — the access diff answers *what did this branch do to access*, which is a wider question than *who may now do more*. What it cannot grade it reports.
 
@@ -3447,7 +3489,7 @@ The paper's recommendation, taken as written: three of the four things the app h
 
 ### <a id="fjs-d556"></a>2026-09-29 · `FJS-D556` — `@money` states its currency: a bare `@money` is refused at parse, and there is no app default currency.
 
-Asked in [`FJS-1589`](ISSUES.md#fjs-1589). **Refusing** was picked over a new top-level `.lite` declaration naming a default, and over a `sierra.config.js` key.
+Asked in [`FJS-1589`](ISSUES_ARCHIVE.md#fjs-1589). **Refusing** was picked over a new top-level `.lite` declaration naming a default, and over a `sierra.config.js` key.
 
 A bare `@money` meant *the app's default currency*, and nothing stated one. So `<Cell>`, `MoneyInput`, `FilterBar` and `formatMoney` each fell back to a literal `USD`, and a shop keeping its books in pounds would have shown and taken dollars on every bare column. A default in sierra's config reaches the UI alone, so an email formatted in the API picks its own. A schema-level default is one origin, but it is a new word in the language to save writing `USD` beside each amount. No app schema used the bare form, only three mcp test fixtures.
 
@@ -3559,7 +3601,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **A trail in SQLite exists to be an ordinary model** — gated, policed, indexed, migrated, joined to `User`, paged and replicated — and a table the app never declared carries none of that. So `@@log(main)` on a SQLite database with no `model <Name>` is a parse error naming both ways out; `driver logger` keeps its synthesized `<db>Logs`. Lives in `packages/litestone/src/core/parser.js` (`logTargets`, `logTargetHint`). Refused alternative: synthesizing the table, which yields a trail with no gate on it.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: one declared model against an ungated audit table.  **§ V's ninth question**: *a SQLite trail with no declared model does not parse* — `test/sql-audit-trail.test.ts` › "the parser says which mistake was made" › "a SQLite target with no `model` key names the two ways out". No register row originates it; the design is `IDEAS/logbook.md`. Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: one declared model against an ungated audit table.  **§ V's ninth question**: *a SQLite trail with no declared model does not parse* — `test/sql-audit-trail.test.ts` › "the parser says which mistake was made" › "a SQLite target with no `model` key names the two ways out". No register row originates it; the design is `IDEAS/shipped/logbook.md`. Picked by the owner in session.
 
 ---
 
@@ -3627,7 +3669,7 @@ The paper's recommendation, taken as written: every source C and D reach is reac
 
 ### <a id="fjs-d353"></a>2026-09-22 · `FJS-D353` — What kind of noun is a deferred obligation — A transition the system owes at a time, `@@commitment(<transition>, on:, while:)`, and no framework table and no job name in the schema.
 
-**a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.
+**a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/shipped/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.
 
 Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a framework-shipped `Commitment { subject, kind, dueAt, state, key }` table. Closest to REA; the gate, the audit trail and the visible row come free. It fails *derived, not restated* — `dueAt` is a copy of a row's time, which is `FJS-1241` made framework-wide — and it is a second owner beside Caravan's `jobs.run_at`), **C** (a declaration naming a JOB (`run: 'subscription-renew'`). The Data realm then names an API-realm file, which Litestone cannot resolve, and a rename breaks it silently; it is also a second place a job's trigger is written, beside the `cron:` option the job file already owns), **D** (no noun. The shapes become a section of `data-hazards` and a `fli check` rule over job files. Cheapest, and shape 4 stays inexpressible).
 
@@ -3681,7 +3723,7 @@ Asked in [`IDEAS/effective-time.md`](IDEAS/effective-time.md). It settles four o
 
 ### <a id="fjs-d350"></a>2026-09-22 · `FJS-D350` — What does a schema owe a relationship that is a ROW — One question, `@@relator([…], once | many | many: <column>)`, and repeatability is required rather than defaulted.
 
-Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was picked over **B** (`@@mediates`, UFO's own word for the link), **C** (`@@link`).
+Asked in [`IDEAS/shipped/relators.md`](IDEAS/shipped/relators.md) § Open questions. **A** was picked over **B** (`@@mediates`, UFO's own word for the link), **C** (`@@link`).
 
 **The gap was filed as a missing LABEL and the correction is the ruling.** The `.lite` surface audit's gap 05 asked for a word saying *this model is a join table*, which would have been the first attribute in the language whose only job is to be read — unexecuted, therefore ungradeable, therefore wrong forever the first time a schema moved under it. Relator-ness is also DERIVABLE: two or more required relations with a unique across them was tested against both apps and missed nothing. What is not derivable is **can this relationship happen twice**, because `once` and a bare `many` are distinguished by an ABSENCE. Measured across `example` and `basecamp` on 2026-09-22: eleven models answer it, in four spellings, and state it zero times. [`AppServer`](packages/basecamp/db/schema.lite) and `AppNetwork` sit eighteen lines apart with identical relata and opposite answers.
 
@@ -3753,9 +3795,9 @@ Asked in [`fjs-prototypes/calendly/PLAN.md`](IDEAS/stressors.md) § Q2, the cale
 
 **The honest cost, stated plainly because the word must not hide it.** Raw SQL against the file, and a second process writing it directly, are unguarded — `@@check` remains the only word that holds there and it cannot express this, by definition, because it is a ROW check and cannot see another row. Any app for which that gap matters has a problem no schema in this language solves. The declaration must therefore be documented in `@@allow`'s tier and named in `fli explain --visibility` beside it, so that *what it holds against* is answered where the other boundary rules answer it, rather than being assumed from the company `@@check` keeps.
 
-**Two things this record does NOT rule, and they should not be assumed settled.** The spelling is open — the stressor's schema speculates `@@exclude([hostId], range: [startsAt, endsAt])` and nothing has graded it. And the SECOND face is a different shape and probably a different word: *a booking must fall INSIDE an availability window* is inclusion against a related row, not exclusion against a sibling, and the calendly schema's guess that *one word might carry both* now looks wrong. Both belong in the paper that designs the word. Prior record: [`FJS-1215`](ISSUES.md#fjs-1215) states the gap, [`FJS-1216`](ISSUES_ARCHIVE.md#fjs-1216) and [`FJS-1217`](ISSUES_ARCHIVE.md#fjs-1217) are the fallback's two defects and are **preconditions**: the declaration cannot ship on top of a primitive that cannot be reached and does not wait.
+**Two things this record does NOT rule, and they should not be assumed settled.** The spelling is open — the stressor's schema speculates `@@exclude([hostId], range: [startsAt, endsAt])` and nothing has graded it. And the SECOND face is a different shape and probably a different word: *a booking must fall INSIDE an availability window* is inclusion against a related row, not exclusion against a sibling, and the calendly schema's guess that *one word might carry both* now looks wrong. Both belong in the paper that designs the word. Prior record: [`FJS-1215`](ISSUES_ARCHIVE.md#fjs-1215) states the gap, [`FJS-1216`](ISSUES_ARCHIVE.md#fjs-1216) and [`FJS-1217`](ISSUES_ARCHIVE.md#fjs-1217) are the fallback's two defects and are **preconditions**: the declaration cannot ship on top of a primitive that cannot be reached and does not wait.
 
-**Evidence arriving after the ruling, 2026-09-22 — the connectteam stressor, which has four shapes of the constraint instead of one, and drove all four concurrently ([`FJS-1215`](ISSUES.md#fjs-1215) carries the numbers).** It settles the second open half and opens a new one. **The second face is a different word.** Inclusion is coverage of a range by a UNION of ranges and exclusion is never that: a person who declares 06:00–14:00 and 14:00–22:00 is available 06:00–22:00, and a shift of 10:00–18:00 is contained by no single row, so a per-row predicate refuses a shift they plainly may work — while exclusion is per-row by construction, because one intersecting sibling is a counter-example all by itself. The two faces do not quantify the same way, so no flag on `@@exclude` reaches the second one. **What is newly open is the KEY.** All four shapes in that app must serialise on `person:${employeeId}` — four models, one key — because two of the four races are BETWEEN models: `Shift` against `LeaveRequest`, and `Shift` against `AvailabilityWindow`. A declaration written on one model and compiling to a key scoped to that model excludes nothing across either pair, and both were measured landing two writes that had each checked the other. So the word has to name the scope of exclusion independently of the model it is written on, which the sketch above does not do. **And one argument for this ruling that the ruling did not make**: a conflict check written in a service has to read rows the caller may not — the manager assigning the shift cannot read the leave they must not collide with — so every such check reaches for `asSystem()` and drops the row policies of the model it is checking, with nothing narrower available. A declaration evaluated at the Data boundary needs no such hole.
+**Evidence arriving after the ruling, 2026-09-22 — the connectteam stressor, which has four shapes of the constraint instead of one, and drove all four concurrently ([`FJS-1215`](ISSUES_ARCHIVE.md#fjs-1215) carries the numbers).** It settles the second open half and opens a new one. **The second face is a different word.** Inclusion is coverage of a range by a UNION of ranges and exclusion is never that: a person who declares 06:00–14:00 and 14:00–22:00 is available 06:00–22:00, and a shift of 10:00–18:00 is contained by no single row, so a per-row predicate refuses a shift they plainly may work — while exclusion is per-row by construction, because one intersecting sibling is a counter-example all by itself. The two faces do not quantify the same way, so no flag on `@@exclude` reaches the second one. **What is newly open is the KEY.** All four shapes in that app must serialise on `person:${employeeId}` — four models, one key — because two of the four races are BETWEEN models: `Shift` against `LeaveRequest`, and `Shift` against `AvailabilityWindow`. A declaration written on one model and compiling to a key scoped to that model excludes nothing across either pair, and both were measured landing two writes that had each checked the other. So the word has to name the scope of exclusion independently of the model it is written on, which the sketch above does not do. **And one argument for this ruling that the ruling did not make**: a conflict check written in a service has to read rows the caller may not — the manager assigning the shift cannot read the leave they must not collide with — so every such check reaches for `asSystem()` and drops the row policies of the model it is checking, with nothing narrower available. A declaration evaluated at the Data boundary needs no such hole.
 
 ### <a id="fjs-d337"></a>2026-09-20 · `FJS-D337` — Q10 — when a device has a database, is the declared window the SCREEN's question or the DEVICE's — the device's, and the keyed cache warm is skipped for that model, wherever the database actually opened.
 
@@ -3783,31 +3825,31 @@ The paper's recommendation on WHERE, taken as written, plus the half it did not 
 
 ### <a id="fjs-d333"></a>2026-09-20 · `FJS-D333` — Is retrieval a new verb, or an `orderBy` on `findMany` — `orderBy: { embedding: { near: v } }` on the ordinary read.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (`db.doc.findSimilar({ vector, limit })`, a verb of its own, as the roadmap sketch has it).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **A** was picked over **B** (`db.doc.findSimilar({ vector, limit })`, a verb of its own, as the roadmap sketch has it).
 
 The paper's recommendation, taken as written: `search()` earned its verb because FTS5 is a different engine on a different table, which is what the language tells adopters in those words; a vector column is not, it sits on the model's own table. So the ordering composes with `where`, `select`, `include`, cursors, `@@softDelete`, the tenant filter, both row policies and the gate **by doing nothing at all**, where B would restate every one of `findMany`'s options and then have to keep them in sync. It is also § V's six-months-out tiebreak answered: no second surface to learn, and the free composition is a consequence of where the column lives rather than a promise in a document.
 
 ### <a id="fjs-d332"></a>2026-09-20 · `FJS-D332` — How is a vector DECLARED — `embedding Bytes @vector(1536)`, an attribute on existing storage.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **B** was picked over **A** (`embedding Embedding(1536)`, a ninth scalar), **C** (`@@vec([embedding])`, the `@@fts` shape over a `vec0` table).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **B** was picked over **A** (`embedding Embedding(1536)`, a ninth scalar), **C** (`@@vec([embedding])`, the `@@fts` shape over a `vec0` table).
 
 The paper's recommendation, taken as written: the storage already exists and only the marker is new, which is `FJS-D288` (`String @date` rather than a `Date` type) and geo's `@point` a third time. A is not one new type but the grammar's **first parameterized scalar** — `SCALAR_TYPES` is a flat set — whose parameter then has to travel into the DDL, the differ, the JSON Schema, `select`, `orderBy`, patch semantics, the audit trail and the import tiers, and it spends a scalar on a `Bytes` with a promise attached. C is refused on the measurement rather than on taste: `vec0` is exact brute force at 0.1.9 and measured *slower* than a plain scan at 50k, so its shadow table, triggers, differ rule, soft-delete rule and hot-path JOIN would be paid in full for a ratio below one.
 
 ### <a id="fjs-d330"></a>2026-09-20 · `FJS-D330` — Who holds the query vector — the caller, or litestone — The caller passes floats; litestone never calls a model.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (a paved road where the *text* is the argument and litestone calls an app-registered embedder).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **A** was picked over **B** (a paved road where the *text* is the argument and litestone calls an app-registered embedder).
 
 The paper's recommendation, taken as written: B puts a vendor network call with a deadline inside a read, and therefore inside whatever transaction the read is in; that is exactly what `IDEAS/orion-port.md` keeps out of its executor loop. It also splits the failure: under B a model timeout surfaces as a failed query. One line at the call site keeps the failure attributable and keeps `FJS-D153` intact — the vendor stays the app's.
 
 ### <a id="fjs-d329"></a>2026-09-20 · `FJS-D329` — Does V1 ship a distance cutoff, or the distance itself — No cutoff. The ordering puts the computed distance on the row, the way `search()` already returns `_rank`, and the app filters on it.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (`maxDistance:` as a declared filter beside the ordering).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **A** was picked over **B** (`maxDistance:` as a declared filter beside the ordering).
 
 The paper's recommendation, taken as written: the precedent exists and is the same shape (`withRank` / `_rank`), it hands the app the number instead of a knob it has to guess, the grounding decision stays where the domain knowledge is, and B remains addable later without a break. A cutoff shipped now is the config flag § IV's paved-road row says widens the shoulder and records nothing.
 
 ### <a id="fjs-d328"></a>2026-09-20 · `FJS-D328` — Is a vector column in the default `select` — The attribute excludes it; naming it in `select` is how you get it.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (a general `@lazy`-shaped rule, which is a second concept and would want other users before it earns a word), **C** (no exclusion; the column behaves like any other and the cost is documented).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **A** was picked over **B** (a general `@lazy`-shaped rule, which is a second concept and would want other users before it earns a word), **C** (no exclusion; the column behaves like any other and the cost is documented).
 
 The paper's recommendation, taken as written: the declaration already knows the size class, so excluding it there restates nothing, and C ships a performance trap whose failure is a slow list nobody attributes to the schema. B is the right shape only if a second kind of oversized column turns up; coining it for one user is the concept budget spent early.
 
@@ -4109,7 +4151,7 @@ and the realms above it stay severable projections. **Tier:** Register.
 ### <a id="fjs-d259"></a>2026-09-10 · `FJS-D259` — a conditional required is `@required(where: …)`, one attribute, and its predicate reads THIS ROW's own columns only. That restriction is what buys the CHECK, and the CHECK is what makes the rule true against a migration.
 
 *Four sentences an application says constantly and none of them has a home* was
-the premise of `IDEAS/declared-field-state.md`, and the measurement overturned
+the premise of `IDEAS/shipped/declared-field-state.md`, and the measurement overturned
 it: `@immutable`, `@allow('write', …)`, `@allow('read', …)` and `@@check`
 already enforce all four at the Data boundary. One thing was genuinely absent —
 **required as a condition, attributed to a field** — and two things about how to
@@ -4537,7 +4579,7 @@ yet, so the hole is a trap rather than a live defect.
 
 ### <a id="fjs-d189"></a>2026-09-03 · `FJS-D189` — a polymorphic relation is refused. The closed set is `@@arc`, the open set stays two plain columns, and the reason is that a relation's target is an input to the access-control compiler.
 
-`IDEAS/polymorphic-relations.md` is the argument, measured against the tree
+`IDEAS/shipped/polymorphic-relations.md` is the argument, measured against the tree
 rather than estimated. The request arrives as one question and is two, and
 conflating them is how a project buys the expensive answer and still does not get
 what it wanted.
@@ -4605,7 +4647,7 @@ told something.
 *Lives in:* `packages/litestone/src/core/parser.js` (`@@arc`) ·
 `packages/litestone/src/core/ddl.js` · `packages/litestone/src/release.js` ·
 `packages/cli/core/checks.js` (`polymorphic-subject`) ·
-`IDEAS/polymorphic-relations.md` is the argument · `example`: `verify:collect` is
+`IDEAS/shipped/polymorphic-relations.md` is the argument · `example`: `verify:collect` is
 the only `@@arc` in either app and the only place a provider's answer drives a
 state machine.
 
@@ -6285,19 +6327,19 @@ The paper's recommendation, taken as written: "what persists" already has an own
 
 ### <a id="fjs-d501"></a>2026-09-27 · `FJS-D501` — Q5 — Who decides that a verify runs without the key — The operator, every time: in a terminal it asks; with no terminal it refuses unless the command says `--without-key`. A key present asks nothing, and a schema with no `@encrypted`/`@secret` column needs no key.
 
-Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Detect it: run keyless only when the environment looks like a test (`NODE_ENV`, a hostname, a marker file)), **C** (As ruled: keyless is allowed and warned about).
+Asked in [`IDEAS/shipped/restore-verify.md`](IDEAS/shipped/restore-verify.md) § Open questions. **A** was picked over **B** (Detect it: run keyless only when the environment looks like a test (`NODE_ENV`, a hostname, a marker file)), **C** (As ruled: keyless is allowed and warned about).
 
 The paper's recommendation, taken as written: nothing in an environment reliably says *this run is ours*, and any variable B reads is one anybody sets; a flag typed into the cron line is the statement, and its absence cannot be mistaken for it.
 
 ### <a id="fjs-d500"></a>2026-09-27 · `FJS-D500` — Q4 — Who runs the verify on a schedule and raises the alarm — Nobody yet: the command, its exit code and its JSON report; scheduling and alerting arrive with Basecamp's per-app backups (frontier-cloud step 5), and until then a cron line.
 
-Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Each app, as a Caravan cron job that notifies), **C** (Outpost, reporting to Basecamp).
+Asked in [`IDEAS/shipped/restore-verify.md`](IDEAS/shipped/restore-verify.md) § Open questions. **A** was picked over **B** (Each app, as a Caravan cron job that notifies), **C** (Outpost, reporting to Basecamp).
 
 The paper's recommendation, taken as written: B hands every app bucket credentials and a download it does not otherwise need; C is the right home but waits on Outpost's first run on a real machine (step 4).
 
 ### <a id="fjs-d499"></a>2026-09-27 · `FJS-D499` — Q3 — Under database tenancy, which tenants does each verify restore — All of them, every run.
 
-Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (The registry plus a rotating sample, covering every tenant within a cycle), **C** (The registry plus one tenant).
+Asked in [`IDEAS/shipped/restore-verify.md`](IDEAS/shipped/restore-verify.md) § Open questions. **A** was picked over **B** (The registry plus a rotating sample, covering every tenant within a cycle), **C** (The registry plus one tenant).
 
 The paper's recommendation, taken as written: a complete proof at the scale every current app is at; the cost is one download per tenant, revisited past hundreds of them.
 
@@ -6305,19 +6347,19 @@ The paper's recommendation, taken as written: a complete proof at the scale ever
 
 **Status:** amended-by [`FJS-D501`](#fjs-d501) — keyless is still a warning and never a pass, but it runs only when the operator states it: asked in a terminal, `--without-key` otherwise.
 
-Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Required: no key, no verify), **C** (Never: encrypted columns are skipped).
+Asked in [`IDEAS/shipped/restore-verify.md`](IDEAS/shipped/restore-verify.md) § Open questions. **A** was picked over **B** (Required: no key, no verify), **C** (Never: encrypted columns are skipped).
 
 The paper's recommendation, taken as written: a lost key makes every backup useless, so the proof has to be available, but whether a drill host holds the production key is the operator's call, and absence must be loud rather than silent.
 
 ### <a id="fjs-d497"></a>2026-09-27 · `FJS-D497` — Q1 — What proves a restored copy is good, given an app suite cannot run on real data — Derived checks only: integrity, foreign keys, schema match, `validateRows`, a client read of every model, and replica lag reported.
 
-Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (The derived checks, plus an optional app file of business facts (`db/drill.ts`) run after them), **C** (The app suite, in a new read-only mode that suites are rewritten to be data-agnostic for).
+Asked in [`IDEAS/shipped/restore-verify.md`](IDEAS/shipped/restore-verify.md) § Open questions. **A** was picked over **B** (The derived checks, plus an optional app file of business facts (`db/drill.ts`) run after them), **C** (The app suite, in a new read-only mode that suites are rewritten to be data-agnostic for).
 
 The paper's recommendation, taken as written: it works for every app on the day it ships and adds no file convention; B stays open as a later addition once a real app wants a fact the schema cannot state.
 
 ### <a id="fjs-d477"></a>2026-09-27 · `FJS-D477` — Is `litestone restore`'s verify half a flag on restore, its own command, or a separate row — Split: build `litestone restore` under FJS-552 now; file the verify half as its own row, which later becomes `restore --verify <dir>` restoring into a temp dir and running the suite with it as the env's database.
 
-**Status:** amended-by [`FJS-D497`](#fjs-d497) — the clause *running the suite with it as the env's database*. An app suite arranges its own rows and cannot run on restored data, so the verify runs checks derived from the schema instead (`IDEAS/restore-verify.md`). The split into two rows stands.
+**Status:** amended-by [`FJS-D497`](#fjs-d497) — the clause *running the suite with it as the env's database*. An app suite arranges its own rows and cannot run on restored data, so the verify runs checks derived from the schema instead (`IDEAS/shipped/restore-verify.md`). The split into two rows stands.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (One command, `litestone restore --verify`, built together; restoring without verifying stays possible but verify is the documented default), **C** (A separate `litestone restore:check` that restores into a temp dir only, never over the live files).
 
@@ -6673,7 +6715,7 @@ tests in `test/migrations-fixes.test.ts`.
 
 ### <a id="fjs-d662"></a>2026-10-08 · `FJS-D662` — The one door from the four streams to the outside is junction's `otlp({ endpoint, headers })` plugin: OTLP/JSON over `fetch`, spans for calls, hooks and queries, the log, and metric sources as gauges. It samples nothing itself, never exports the trail, and a failed export costs telemetry, never a request.
 
-Asked by [`IDEAS/observability.md`](IDEAS/observability.md) § 6 as option **B**, the step after `FJS-D660`. Four owner picks, each the paper's recommendation: a junction plugin over its own package, no `sample` option, a fake receiver in the suite plus a real collector as a drive, and `otlp()` over the paper's `telemetry()`.
+Asked by [`IDEAS/shipped/observability.md`](IDEAS/shipped/observability.md) § 6 as option **B**, the step after `FJS-D660`. Four owner picks, each the paper's recommendation: a junction plugin over its own package, no `sample` option, a fake receiver in the suite plus a real collector as a drive, and `otlp()` over the paper's `telemetry()`.
 
 **A junction plugin, not a package.** It reads `app.telemetry`, the logger and `collectMetrics` — three junction internals — and junction is Bun-only, so a package would buy no portability and cost a boundary across the exact seams it reads (*batteries vs. smallness*: severable means one seam, and the plugin is one file behind one export, `@frontierjs/junction/otlp`).
 
@@ -6691,7 +6733,7 @@ Asked by [`IDEAS/observability.md`](IDEAS/observability.md) § 6 as option **B**
 
 ### <a id="fjs-d660"></a>2026-10-08 · `FJS-D660` — A request has one id. When it states a well-formed `traceparent`, that header's trace id IS `correlationId`. Otherwise a well-formed `x-request-id` is used, and otherwise junction mints a 32-hex id. A malformed inbound id is replaced, never refused. The name `correlationId` stays.
 
-Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/observability.md`](IDEAS/observability.md). **A** was picked over **B** (A plus one OTLP export door, `telemetry({ endpoint })`) and **C** (a native observe store and viewer). B is the next step, and its own questions stay open in the paper: plugin or package, and what it samples. C is refused for the paper's reason: it duplicates three papers' phases and competes with every vendor.
+Asked by the vocabulary atlas of 2026-10-07, wave 5, in [`IDEAS/shipped/observability.md`](IDEAS/shipped/observability.md). **A** was picked over **B** (A plus one OTLP export door, `telemetry({ endpoint })`) and **C** (a native observe store and viewer). B is the next step, and its own questions stay open in the paper: plugin or package, and what it samples. C is refused for the paper's reason: it duplicates three papers' phases and competes with every vendor.
 
 **The failure it closes was measured.** A request carrying `traceparent` and no `x-request-id` filed its log line and trail row under a fresh UUID, while conduit continued the upstream trace on the outbound call. That gave two ids for one request, and nothing reported the disagreement.
 
@@ -6983,7 +7025,7 @@ The paper's recommendation, taken as written: it rides on the support branch `bu
 
 ### <a id="fjs-d539"></a>2026-09-28 · `FJS-D539` — Does a create on a repeatable relator have to carry an idempotency key, and what says so — An advisory rule. `opportunities.js` or `fli check` asks it: *this service creates a model declaring `@@relator(…, many)` and no idempotency config, so a retry writes a second occurrence*. Confidence, never severity. Costs nothing to anyone who ignores it.
 
-Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was picked over **B** (enforcement at the boundary. A create on a `many` relator with no key is refused. Correct and unshippable as stated: every existing caller breaks, and the framework would be demanding a header for a write the app may legitimately want to repeat), **C** (nothing, until an app is bitten. The word makes the hazard nameable; a reader who knows what `many` means can reach for a key).
+Asked in [`IDEAS/shipped/relators.md`](IDEAS/shipped/relators.md) § Open questions. **A** was picked over **B** (enforcement at the boundary. A create on a `many` relator with no key is refused. Correct and unshippable as stated: every existing caller breaks, and the framework would be demanding a header for a write the app may legitimately want to repeat), **C** (nothing, until an app is bitten. The word makes the hazard nameable; a reader who knows what `many` means can reach for a key).
 
 The paper's recommendation, taken as written: cheap, and it satisfies `opportunities.js`'s own contract that *every finding names the WORD it is about*, which `@@relator` now does. It is the good kind of recognizer rather than the `FreeRole` kind warned about below, because it fires on a narrow declared shape instead of on every unmarked pair. **Held rather than built**: nothing in this workspace creates a `many` relator from a retryable path, so the rule would ship with no true positive to point at, and a rule whose first firing is hypothetical is one nobody trusts when it finally fires.
 
@@ -7071,7 +7113,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. Erg
 
 ### <a id="fjs-d437"></a>2026-09-26 · `FJS-D437` — A payload key naming no field of the model is a 400; a field the caller may not write is dropped in silence
 
-The strip is kept for fields that exist but are not writable (`id` on a create, `createdAt`, a `@guarded` column), which a client echoing a fetched row sends on every write. A key naming nothing the model declares is refused per row, because dropping it turns a typo into a 201 the caller believes in; `@transient` is the escape. Lives in `checkUnknownKeys`, `packages/junction/src/core/litestone.ts`. Narrows `FJS-D58` at the API boundary only: its reason is mass assignment, which covers a field that exists. Refused alternative: stripping both kinds, which is silent about the typo.
+The strip is kept for fields that exist but are not writable (`id` on a create, `createdAt`), which a client echoing a fetched row sends on every write. **A `@guarded` / `@secret` column is not one of them** ([`FJS-1970`](ISSUES.md#fjs-1970)): it is never read, so it can never be echoed and naming one is deliberate. It is a 400 naming the field, per row, in the same `checkUnknownKeys` — the API-boundary half of [`FJS-D427`](#fjs-d427). A key naming nothing the model declares is refused per row, because dropping it turns a typo into a 201 the caller believes in; `@transient` is the escape. Lives in `checkUnknownKeys`, `packages/junction/src/core/litestone.ts`. Narrows `FJS-D58` at the API boundary only: its reason is mass assignment, which covers a field that exists. Refused alternative: stripping both kinds, which is silent about the typo.
 
 Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the default was chosen by counting trips across both apps.  **§ V's ninth question**: *a key naming no field never reaches a success status* — `packages/junction/test/update-semantics.test.ts` › "and a key that names no column is a 400 naming it", paired with "…while a column the caller may not WRITE is dropped in silence". ([`FJS-889`](ISSUES_ARCHIVE.md#fjs-889)) Picked by the owner in session.
 
@@ -7169,7 +7211,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **`validateInput` compiles a `type T { … }` into junction's validator and applies no `@trim`/`@lower`/`@upper`/`@slug`, because litestone transforms before validating and junction's `transform` slot runs after, so `@trim @length(3,12)` on `'  ab  '` would pass a service and fail the Data boundary.** A named `input:` type that does not exist throws, where a missing model only warns. Where it lives: `packages/junction/src/core/litestone.ts` (`validateInput`). Refused alternative: wiring the transforms through junction's post-validation `transform`, which would make the two boundaries disagree about what is valid.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Doctrine vs. discovery*: this rules out the naive wiring only; `FJS-401` stays open for the shared owner.  **§ V's ninth question**: *no transform runs here until one owner exists, and a missing type throws* — `packages/junction/test/method-input.test.ts` › "a transform does NOT run — @trim is a Data-boundary rule (FJS-401)" and "a type that is not there" › "throws naming the type and what the schema does have". ([`FJS-401`](ISSUES.md#fjs-401)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Doctrine vs. discovery*: this rules out the naive wiring only; `FJS-401` stays open for the shared owner.  **§ V's ninth question**: *no transform runs here until one owner exists, and a missing type throws* — `packages/junction/test/method-input.test.ts` › "a transform does NOT run — @trim is a Data-boundary rule (FJS-401)" and "a type that is not there" › "throws naming the type and what the schema does have". ([`FJS-401`](ISSUES_ARCHIVE.md#fjs-401)) Picked by the owner in session.
 
 ### <a id="fjs-d459"></a>2026-09-26 · `FJS-D459` — junction carries `traceparent` verbatim and parses nothing; conduit reads it, and with no upstream trace derives the trace id from the correlation id.
 
@@ -7305,7 +7347,7 @@ The paper's recommendation, taken as written: the kit already owns *what a query
 
 ### <a id="fjs-d314"></a>2026-09-19 · `FJS-D314` — a static mount says whether its bytes came from strangers. `untrusted: true` answers `attachment` for anything the inline allow-list refuses, and `fli check` grades the mount that should have said so.
 
-Asked in [`IDEAS/untrusted-bytes.md`](IDEAS/untrusted-bytes.md) § Open questions. **A** was picked over **B** (the local provider owns its own mount, so the headers arrive by construction and there is no flag to forget. Litestone cannot serve HTTP (Invariant 1), so this is a bridge rather than a move: the provider supplies the policy and junction mounts it), **C** (invert the default everywhere: `attachment` unless `isInlineSafe`, with an app naming its own exceptions. Fail-closed by construction, and blunt — it breaks the ordinary SPA that serves its own HTML and JS from a static root), **D** (nothing at the transport; declare it at the Data boundary instead, by requiring `@accept` on a `File` column. Invariant 6's shape, and it settles nothing here: an app may legitimately declare `@accept("image/svg+xml")` for a logo uploader and the disposition question returns unchanged).
+Asked in [`IDEAS/shipped/untrusted-bytes.md`](IDEAS/shipped/untrusted-bytes.md) § Open questions. **A** was picked over **B** (the local provider owns its own mount, so the headers arrive by construction and there is no flag to forget. Litestone cannot serve HTTP (Invariant 1), so this is a bridge rather than a move: the provider supplies the policy and junction mounts it), **C** (invert the default everywhere: `attachment` unless `isInlineSafe`, with an app naming its own exceptions. Fail-closed by construction, and blunt — it breaks the ordinary SPA that serves its own HTML and JS from a static root), **D** (nothing at the transport; declare it at the Data boundary instead, by requiring `@accept` on a `File` column. Invariant 6's shape, and it settles nothing here: an app may legitimately declare `@accept("image/svg+xml")` for a logo uploader and the disposition question returns unchanged).
 
 The paper's recommendation, taken as written: the fail-open objection is the whole argument for B, and the second fact above shrinks it (the flag lands on a mount that is entirely uploads) while `fli check` closes it properly, which is this framework's standing answer to a declaration somebody forgets: a declaration plus a rule that fires when it is absent. B puts a serving policy in a package that cannot serve, for one header. C is the right default in a world where a static root held one population, and it does not. **D is worth doing on its own terms and is not an alternative to any of these.**.
 
@@ -7519,7 +7561,7 @@ shell is above the gate it asks for.
 `queueVerdict`, `queueStateLine`) · `packages/cli/commands/deploy/_steps-pause/`
 (`02a-queues-resume`, `03b-queues-pause`) · `scripts/scaffold-build.mjs`
 `pauseQueueCycle` · `IDEAS/release-transitions.md` § Phase 3b · `FJS-D198` ·
-`FJS-D36` · [`FJS-711`](ISSUES.md#fjs-711)
+`FJS-D36` · [`FJS-711`](ISSUES_ARCHIVE.md#fjs-711)
 
 ### <a id="fjs-d261"></a>2026-09-12 · `FJS-D261` — TOTP is a second STEP of login, not a second standing. The half-finished login is its own row, `login()` answers a union, and the gate ladder does not move.
 
@@ -7961,7 +8003,7 @@ resolver turns the ref into material at send time, so credentials stay out of th
 registry, out of `resolve()`/`list()`, out of hooks and off the management
 routes. Junction's mail battery takes the secret itself as a constructor
 argument. One framework, two habits, about the most sensitive value an
-integration holds ([`FJS-659`](ISSUES.md#fjs-659)).
+integration holds ([`FJS-659`](ISSUES_ARCHIVE.md#fjs-659)).
 
 **The cause is placement, not disagreement.** Nobody chose two conventions. The
 convention lives in `@frontierjs/conduit`, junction may not depend on it — that
@@ -7996,7 +8038,7 @@ is a seam and grows no tendril — `IMail` keeps working with no resolver at all
 
 *Lives in:* `packages/junction/src/mail/index.ts` (`createResendMailer`) ·
 `packages/conduit/src/credentials.ts` (the resolvers that already satisfy it) ·
-[`FJS-659`](ISSUES.md#fjs-659) is the implementation ·
+[`FJS-659`](ISSUES_ARCHIVE.md#fjs-659) is the implementation ·
 [`FJS-D215`](#fjs-d215) is the same argument about a vendor rather than a secret
 
 ### <a id="fjs-d220"></a>2026-09-05 · `FJS-D220` — the outbound webhook signature stays FrontierJS's own. A subscriber verifies with the published kit, and is told so.
@@ -8183,7 +8225,7 @@ is where a reader looking for surprising behavior looks.
 Cites `FJS-D193`: a delivery needs a nameable principal, and a deleted one is
 not nameable. Same question with a queue in place of a webhook.
 
-*Lives in:* `FJS-D193` · [`FJS-711`](ISSUES.md#fjs-711) `caravan-14` ·
+*Lives in:* `FJS-D193` · [`FJS-711`](ISSUES_ARCHIVE.md#fjs-711) `caravan-14` ·
 `packages/caravan/src/types.ts`
 
 ### <a id="fjs-d201"></a>2026-09-04 · `FJS-D201` — one fault vocabulary, in `@frontierjs/toolbelt`, read by every package that decides whether to try again
@@ -8221,7 +8263,7 @@ stopped counting everything passes any test that only checks the new kinds
 (`FJS-351`).
 
 *Lives in:* `FJS-D194` · `FJS-D197` · `FJS-D26` ·
-[`FJS-710`](ISSUES.md#fjs-710) · [`FJS-711`](ISSUES.md#fjs-711) · `FJS-684`
+[`FJS-710`](ISSUES_ARCHIVE.md#fjs-710) · [`FJS-711`](ISSUES_ARCHIVE.md#fjs-711) · `FJS-684`
 
 ### <a id="fjs-d200"></a>2026-09-04 · `FJS-D200` — `$` is a CLOSED set the framework owns. App state is `ctx.locals`.
 
@@ -8250,7 +8292,7 @@ What it permits: the three `core-11` asks are framework concerns and may land on
 call's own facts and have nowhere else to live.
 
 *Lives in:* Invariant 5 · `FJS-687` · `packages/junction/src/core/context.ts` ·
-`CLAUDE.md` § Bridge index · [`FJS-706`](ISSUES.md#fjs-706) `core-11`
+`CLAUDE.md` § Bridge index · [`FJS-706`](ISSUES_ARCHIVE.md#fjs-706) `core-11`
 
 ### <a id="fjs-d199"></a>2026-09-04 · `FJS-D199` — Junction refuses an unknown AUTHORING key by name, and reports every one of them at `start()`
 
@@ -8289,7 +8331,7 @@ the first exactly as it is.
 missing feature. A flag permitting it widens the shoulder and records nothing
 (§ IV, the paved road).
 
-*Lives in:* [`FJS-706`](ISSUES.md#fjs-706) · [`FJS-709`](ISSUES_ARCHIVE.md#fjs-709) ·
+*Lives in:* [`FJS-706`](ISSUES_ARCHIVE.md#fjs-706) · [`FJS-709`](ISSUES_ARCHIVE.md#fjs-709) ·
 [`FJS-431`](ISSUES_ARCHIVE.md#fjs-431) · `FJS-579` ·
 `packages/junction/src/config/index.ts` · `core/service.ts` · `core/loader.ts`
 
@@ -10196,21 +10238,31 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d676"></a>2026-10-08 · `FJS-D676` — A component's instance script and its `$:` statements run in source order. Mesa does not hoist them the way Svelte 4 does.
+
+Ruled by the owner during `FJS-846` and `FJS-1679` and recorded only in the mesa change log; written here when that log was retired (`FJS-D675`). In source order, what the file says first runs first, so reading the file top to bottom predicts what runs. A Svelte 4 author expects a `$:` to be moved after the declarations it reads. That habit is the ecosystem's, and § IV *familiarity vs. precision* is settled for precision.
+*Lives in:* `packages/mesa/src/compiler.js` · `packages/mesa/test/script-order.test.js`.
+
+### <a id="fjs-d677"></a>2026-10-08 · `FJS-D677` — An unkeyed `{#each}` is keyed by index. A row's DOM state (focus, input value, a running transition) stays with the POSITION when the list reorders. `{#each items as item (item.id)}` is how it follows the item.
+
+Ruled as *a semantics decision* in `FJS-325` and recorded only in the mesa change log; written here when that log was retired (`FJS-D675`). Index keying is the cheapest default and matches Svelte. The surprise it leaves is listed in `ui-hazards`, which is where an author meets it.
+*Lives in:* `packages/mesa/src/runtime.js` · `.claude/skills/ui-hazards/references/mesa.md`.
+
 ### <a id="fjs-d652"></a>2026-10-08 · `FJS-D652` — Who owns the field rules' import path — `@frontierjs/sierra/field-rules`, the path ui's fixtures already write, added to `exports`.
 
-Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **A** was picked over **B** (Toolbelt).
+Asked in [`IDEAS/shipped/sierra-scope.md`](IDEAS/shipped/sierra-scope.md) § Open questions. **A** was picked over **B** (Toolbelt).
 
 The paper's recommendation, taken as written: the leaf is already a leaf, and A makes the path that is already written a real one. B misreads toolbelt's license: `FJS-D26` admits *facts with many possible answers that must have one*, and the field rules are a projection of one schema, not a shared fact.
 
 ### <a id="fjs-d651"></a>2026-10-08 · `FJS-D651` — Which way may Navigation and Resource import — State it. Resource may import Navigation and never the reverse, and the edge test holds the direction.
 
-Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **B** was picked over **A** (Cut it. The list's route binding and the prefetch invalidation are handed in at boot, and the two axes are independent).
+Asked in [`IDEAS/shipped/sierra-scope.md`](IDEAS/shipped/sierra-scope.md) § Open questions. **B** was picked over **A** (Cut it. The list's route binding and the prefetch invalidation are handed in at boot, and the two axes are independent).
 
 The paper's recommendation, taken as written: a list answering only while its route is on screen *is* a Navigation fact, and cutting it adds a seam before anything has measured a cost, the reason `FJS-D640` refused its **C**. Jetty under Q2's **B** is the measurement: if the router is weight jetty cannot carry, **A** is owed, and Q2's **C** needs it anyway.
 
 ### <a id="fjs-d650"></a>2026-10-08 · `FJS-D650` — Where does the Resource live, and what is it called — A, and then jetty de-forks onto it: jetty registers a client-shaped object over its relay, the way `connectApp()` already makes a Resource over another app, and its `store.js` and `resource.js` go.
 
-Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **B** was picked over **A** (Rename in place: `src/resource/`, `@frontierjs/sierra/resource`, every caller in the same change, nothing kept for the old spelling. Jetty's fork stays), **C** (Its own package, `@frontierjs/resource`, above junction, which sierra and jetty both peer. It extracts the Resource, not offline alone, so `FJS-D297`'s objection to *a package spanning realms* does not apply. It has to cut § 2.2's import of the router first, and it adds a package), **D** (Leave it).
+Asked in [`IDEAS/shipped/sierra-scope.md`](IDEAS/shipped/sierra-scope.md) § Open questions. **B** was picked over **A** (Rename in place: `src/resource/`, `@frontierjs/sierra/resource`, every caller in the same change, nothing kept for the old spelling. Jetty's fork stays), **C** (Its own package, `@frontierjs/resource`, above junction, which sierra and jetty both peer. It extracts the Resource, not offline alone, so `FJS-D297`'s objection to *a package spanning realms* does not apply. It has to cut § 2.2's import of the router first, and it adds a package), **D** (Leave it).
 
 The paper's recommendation, taken as written: the rename is a mechanical sweep, and the fork has already cost a lost-update defect, which is the drift the second copy was always going to produce. B reaches one implementation without a new package, and the cost it has to measure is the router riding into jetty's bundle. If that cost is real, C is the next move, with nothing to undo. D fails *one name* (§ II) every time a reader looks for the Resource, and *one owner* every time sierra's copy is fixed and jetty's is not.
 
@@ -10237,19 +10289,19 @@ The paper's recommendation, taken as written: B fails toolbelt's license (`FJS-D
 
 ### <a id="fjs-d584"></a>2026-10-05 · `FJS-D584` — Overlapping calls — Take no position: `disabled={$async.f.pending}` is the caller's guard.
 
-Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **A** was picked over **B** (the wrapper drops or queues a call made while one is in flight).
+Asked in [`IDEAS/shipped/async-function-state.md`](IDEAS/shipped/async-function-state.md) § Open questions. **A** was picked over **B** (the wrapper drops or queues a call made while one is in flight).
 
 The paper's recommendation, taken as written: a drop-or-queue policy would be a second proposal.
 
 ### <a id="fjs-d583"></a>2026-10-05 · `FJS-D583` — `fetching` reads wrong on a write — Rename it to `pending` for both forms, with every caller moved, which the evolution policy allows.
 
-Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **A** was picked over **B** (keep `fetching` on both forms).
+Asked in [`IDEAS/shipped/async-function-state.md`](IDEAS/shipped/async-function-state.md) § Open questions. **A** was picked over **B** (keep `fetching` on both forms).
 
 The paper's recommendation, taken as written: one object read the same way for a load and a write, and the name says what a write is doing.
 
 ### <a id="fjs-d582"></a>2026-10-05 · `FJS-D582` — An unhandled rejection from an `onclick` — When `$async.f.error` is read in the template, the generated wrapper treats the rejection as handled.
 
-Asked in [`IDEAS/async-function-state.md`](IDEAS/async-function-state.md) § Open questions. **B** was picked over **A** (rethrow anyway. The console noise is honest and an error boundary catches it).
+Asked in [`IDEAS/shipped/async-function-state.md`](IDEAS/shipped/async-function-state.md) § Open questions. **B** was picked over **A** (rethrow anyway. The console noise is honest and an error boundary catches it).
 
 The paper's recommendation, taken as written: reading the error is the handling, and the template is where the compiler can see that.
 
@@ -10263,7 +10315,7 @@ The owner's pick, 2026-10-03: Transit keeps the A prototype on § R9's three ter
 
 **Status:** amended-by [`FJS-D556`](#fjs-d556) — the bare-`@money` clause. There is no `USD` fallback, because a bare `@money` is refused at parse.
 
-Asked in [`FJS-1582`](ISSUES.md#fjs-1582). A built-in control was picked over shipping `MoneyInput` for the app to register, which would have left a form putting cents in a dollar box until an app added two lines. It amends how `FJS-D17` was applied, not what it says: the table answered `control: null` for `@money` and left the control to the app, and every app that met that answer wrote the same box. An app still replaces it by registering `money`.
+Asked in [`FJS-1582`](ISSUES_ARCHIVE.md#fjs-1582). A built-in control was picked over shipping `MoneyInput` for the app to register, which would have left a form putting cents in a dollar box until an app added two lines. It amends how `FJS-D17` was applied, not what it says: the table answered `control: null` for `@money` and left the control to the app, and every app that met that answer wrote the same box. An app still replaces it by registering `money`.
 
 **The box is text in major units and hands back minor ones**, converted by the currency's ISO 4217 exponent. Blank is `null`. A value it cannot store exactly is refused through `reportInvalid` and never rounded: more decimals than the currency has, or `12,50`, which as grouping is 1250. `type="number"` would blank `1,200` and turn on scroll-wheel stepping.
 
@@ -10619,7 +10671,7 @@ stubs — `text` → `equals` reds 1, `json` → `contains` 1, `list` → `conta
 `packages/sierra/src/junction/resource.js` · `packages/ui/controls.js` ·
 `packages/ui/components/display/FilterBar.mesa` ·
 `packages/cli/core/crud-templates.js`; the argument is
-`IDEAS/tables-from-the-seed.md` § Question 4.
+`IDEAS/shipped/tables-from-the-seed.md` § Question 4.
 
 ### <a id="fjs-d242"></a>2026-09-08 · `FJS-D242` — A DISPLAY is the mirror of a control and is a second registry, because the two tables disagree at their first branch.
 `displayFor(rule, ctx)` in Sierra's `field-rules.js` answers *how is this column
@@ -10733,7 +10785,7 @@ leave the rest stale.
 *Lives in:* `packages/sierra/src/junction/resource.js` (`summary`, `children`) ·
 `packages/cli/core/crud-templates.js` · `packages/cli/commands/admin/generate.md`
 (`_routes.js`); pinned in `packages/sierra/test/resource-schema-modes.test.js`.
-Argued in `IDEAS/tables-from-the-seed.md`.
+Argued in `IDEAS/shipped/tables-from-the-seed.md`.
 
 ### <a id="fjs-d225"></a>2026-09-06 · `FJS-D225` — a stored value the list no longer offers is SHOWN, disabled and marked, never dropped.
 
@@ -12219,13 +12271,13 @@ Asked in chat while closing `FJS-2058`, which found `FJS-D608`'s *wire `sierra/a
 
 ### <a id="fjs-d653"></a>2026-10-08 · `FJS-D653` — What owns *is this file inside the root* — Keep both copies, with one vector set of URLs and verdicts that both packages' tests read (`FJS-D631`'s *vectors*).
 
-Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **C** was picked over **A** (A toolbelt subpath for the string half (decode, refuse `..` and NUL, the prefix test), with `realpath` left to each caller), **B** (Sierra's static origins move to outpost or cli, the Release side, and the copy count stays two).
+Asked in [`IDEAS/shipped/sierra-scope.md`](IDEAS/shipped/sierra-scope.md) § Open questions. **C** was picked over **A** (A toolbelt subpath for the string half (decode, refuse `..` and NUL, the prefix test), with `realpath` left to each caller), **B** (Sierra's static origins move to outpost or cli, the Release side, and the copy count stays two).
 
 The paper's recommendation, taken as written: the two copies drifted on cases, not on code, and a vector set is the one origin for the cases without an import that Invariant 1 or toolbelt's no-`node:` rule would refuse. A is worth it only if a third server appears. B relocates the copy without removing it.
 
 ### <a id="fjs-d649"></a>2026-10-08 · `FJS-D649` — What is sierra's edge — The batteries stay in sierra behind a seam, as `FJS-D635` and `FJS-D639` ruled. Nothing in an axis directory imports one, a test fails if anything does, and every battery is reached by its subpath. A new `sierra.config.js` key, `page.` field, subpath or `src/` directory names its axis, or it is a battery.
 
-Asked in [`IDEAS/sierra-scope.md`](IDEAS/sierra-scope.md) § Open questions. **A** was picked over **B** (Each battery moves to its own package), **C** (Admit them and widen the edge to name them).
+Asked in [`IDEAS/shipped/sierra-scope.md`](IDEAS/shipped/sierra-scope.md) § Open questions. **A** was picked over **B** (Each battery moves to its own package), **C** (Admit them and widen the edge to name them).
 
 The paper's recommendation, taken as written: § 1 measured every battery as already outside the axes. A costs one test and one entry trim, and B stays open with nothing to untangle first. C is what makes "done" unreachable.
 
@@ -12313,19 +12365,19 @@ The paper's recommendation, taken as written: it is where `mintRelease` already 
 
 ### <a id="fjs-d595"></a>2026-10-06 · `FJS-D595` — What replaces zx's `question()` — `tty.line(prompt, { default })` beside `tty.keys()`, with the same rules: `--yes` answers the default, no terminal refuses by name, the web runner gets an event.
 
-Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (keep `question` as a name destructured from `$`).
+Asked in [`IDEAS/shipped/zx-exit.md`](IDEAS/shipped/zx-exit.md) § Open questions. **A** was picked over **B** (keep `question` as a name destructured from `$`).
 
 The paper's recommendation, taken as written: the input already has an owner, `core/tty.js`, and `FJS-1406` is the measurement that a second one beside it breaks the first.
 
 ### <a id="fjs-d594"></a>2026-10-06 · `FJS-D594` — Which names does the compiled shim inject — Three: `$`, `path`, `fs`. The two builtins resolve from anywhere and 23 command files use them without importing.
 
-Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (`$` alone; each file imports what it uses).
+Asked in [`IDEAS/shipped/zx-exit.md`](IDEAS/shipped/zx-exit.md) § Open questions. **A** was picked over **B** (`$` alone; each file imports what it uses).
 
 The paper's recommendation, taken as written: three names is a list short enough to write down and grade, and B costs 23 edits plus the first two lines of every future command for one rule fewer.
 
 ### <a id="fjs-d593"></a>2026-10-06 · `FJS-D593` — What runtime is `fli` — `fli` runs under bun; `Bun.$` is the shell. The three shebangs flip, a missing bun is refused by name, and `create-frontier` (reached through `npm create`, so still node) spawns `bun` rather than `process.execPath`.
 
-Asked in [`IDEAS/zx-exit.md`](IDEAS/zx-exit.md) § Open questions. **A** was picked over **B** (`fli` stays dual-runtime; its own `$` over `spawn('bash', ['-c'])`, no Windows).
+Asked in [`IDEAS/shipped/zx-exit.md`](IDEAS/shipped/zx-exit.md) § Open questions. **A** was picked over **B** (`fli` stays dual-runtime; its own `$` over `spawn('bash', ['-c'])`, no Windows).
 
 The paper's recommendation, taken as written: the engines field already says it, every test and CI invocation already runs `fli` under bun, and junction and litestone's client are bun-only, so an app's `fli` cannot run where its API cannot. `FJS-D222` does not bind: it rules that a HARNESS runs under node, and `fli` is not one — `fli ci` only forwards to `scripts/ci.mjs`, which stays node, and `fli check` is a package the harness spawns, which D222 permits (*a package runs under what it needs*). The one node-only argument, `IDEAS/bun-natives.md`'s *fli is node*, was a premise and not a ruling.
 
@@ -13737,6 +13789,23 @@ outright would have taken a working reference with it, and executing a table
 that maps intentions onto directories is not a thing a probe can do.
 
 
+### <a id="fjs-d675"></a>2026-10-08 · `FJS-D675` — `CHANGES.md` is retired. History is git; a lesson goes where it is read. Three markdown files at a package root are the standard, and `fli done` no longer asks for a change-log heading.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions; **A** on all four. The paper's case, measured 2026-09-26: 23 files, 3.4 MB, grown 20–70 entries a day by the `changes-entry` gate, and each entry a copy of the diff, a test count, an `ISSUES.md` narrative and a `DECISIONS.md` argument. Only the lessons had no other home.
+
+**Archived, not deleted.** The 24 files moved to `docs/changes-archive/<package>.md`. They are history-tier, like `docs/handoff-archive/`: they are never cited as behavior, `doc-audit` leaves their dead names alone, and nothing new is written there. This departs from the paper's *delete in the same commit as the extraction*. The archive is how the extraction runs package by package without a half-mined file sitting at a package root. A package's archive file is deleted once its lessons are filed.
+
+- **Q1** — `fli done` asks nothing in its place. The diff is the record.
+- **Q2** — a cli, toolbelt or config lesson goes in that package's own `CLAUDE.md`. A css lesson goes in `ui-hazards`.
+- **Q3** — the developer half of release notes is git plus `fli changelog`.
+- **Q4** — the long narratives on closed rows in `ISSUES.md` and `DECISIONS.md` get their own later pass.
+
+**Amends** Invariant 17 (three files at a package root, `AGENTS.md` a permitted fourth), `PHILOSOPHY.md` § VII (the Register tier is `DECISIONS.md` and `ISSUES.md`, and history is git) and [`FJS-D163`](#fjs-d163)'s count. `frontierjs-vscode/CHANGELOG.md` is for the marketplace and stays.
+
+**Silence.** A `CHANGES.md` that comes back at a package root is a `package-root-md` warning, because it is no longer in `STANDARD`. A live lesson dropped during extraction has no guard (`none`). The only guard is the per-entry pass, which reads the current source before it files anything.
+
+*Lives in:* `packages/cli/core/done.js`, `packages/cli/core/checks.js` (`package-root-md`), `packages/cli/core/doc-audit.js` (`HISTORY`), `docs/changes-archive/`.
+
 ### <a id="fjs-d163"></a>2026-08-30 · `FJS-D163` — `AGENTS.md` is a permitted fifth file at a package root and is not a required one. It is `CLAUDE.md`'s question asked about the other audience, and that audience has a tarball rather than a tree.
 
 **The problem.** Invariant 17 named four files and warned about a fifth, which is
@@ -14463,7 +14532,7 @@ D533's reason was the part of YAML that caused FJS-821, and C still refuses that
 
 ### <a id="fjs-d554"></a>2026-09-29 · `FJS-D554` — The browser drive an app imports is `@frontierjs/mesa/drive`: the driver half of mesa's harness, published; the spec runner stays in `test/browser/` and is not.
 
-Asked in [`FJS-1580`](ISSUES.md#fjs-1580). **A** was picked over **B** (a new leaf package, `@frontierjs/drive`), **C** (`@frontierjs/testing/browser`) and **D** (a toolbelt kit).
+Asked in [`FJS-1580`](ISSUES_ARCHIVE.md#fjs-1580). **A** was picked over **B** (a new leaf package, `@frontierjs/drive`), **C** (`@frontierjs/testing/browser`) and **D** (a toolbelt kit).
 
 Mesa is the leaf, so every package's drive and every app's may import it. litestone's browser-client drive already did, by relative path. C sits above junction, so mesa, ui and css could not use it, which leaves two harnesses for good. D spends toolbelt's license: `FJS-D26` admits it below the graph because every export is pure, and a kit that spawns processes and installs exit handlers makes that "pure, except". B is the same code under a clearer name, plus a package and a noun. It is the rename to reach for if app-level helpers (an authenticator, server preflight, a report) outgrow a substrate subpath.
 
@@ -14564,7 +14633,7 @@ Closes `FJS-D254`, and amends `FJS-D12` by adding constraints 7 and 8.
 
 ### <a id="fjs-d331"></a>2026-09-20 · `FJS-D331` — May a server run the JS path, or is the extension required there — The JS path exists on both engines; the extension is an optional accelerator a server may install.
 
-Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (the extension is required on a server; the JS path is browser-only).
+Asked in [`IDEAS/shipped/embedding.md`](IDEAS/shipped/embedding.md) § Open questions. **A** was picked over **B** (the extension is required on a server; the JS path is browser-only).
 
 The paper's recommendation, taken as written: measured, the extension is 2.1× at 50k, and what B demands in exchange is a platform-specific binary on five targets with no musl build, on every server, forever. B also gives the two paths different status, which is how the one nobody runs rots; under A both are load-bearing and the oracle that holds them together is a test somebody notices failing. Two implementations is a real cost either way — A does not make it free, it makes it honest.
 
@@ -14813,7 +14882,7 @@ trace, and every one of those is a second origin.
 calls `app.registerHealthCheck` nowhere — so this ruling names three things the
 tree does not have, and a settled question with no artefact reads exactly like a
 built one from every document that cites it. The open work, the obligation
-clause included, is [`FJS-1014`](ISSUES.md#fjs-1014).
+clause included, is [`FJS-1014`](ISSUES_ARCHIVE.md#fjs-1014).
 
 ### <a id="fjs-d233"></a>2026-09-07 · `FJS-D233` — FrontierJS ships no cost story, and the reason is that a cost fact has its origin outside the app
 
@@ -14949,7 +15018,7 @@ end is conduit's and is not built (`IDEAS/inbound-integrations.md`).
 
 **Three things are excluded by name**, so the edge of what was taken is decidable
 rather than argued later: a machine caller **becoming a principal**
-([`FJS-371`](ISSUES.md#fjs-371)), which is junction's auth door; inbound email,
+([`FJS-371`](ISSUES_ARCHIVE.md#fjs-371)), which is junction's auth door; inbound email,
 which Rails made its own noun (`ActionMailbox`) and was right to; and a polled
 feed, which is a cursor rather than a route.
 

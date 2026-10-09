@@ -41,7 +41,7 @@ a live socket) are only exercised against a real app.
   what the framework is missing is not a consumer of the package written to ask
   the same question one layer down. Nothing is filed for this; it is a gap in
   adoption rather than a defect.
-- **A full parity sweep is not run by anything.** `CHANGES.md` records one over
+- **A full parity sweep is not run by anything.** `docs/changes-archive/testing.md` records one over
   the whole of basecamp on 2026-08-17 with no mismatches; the call that survives
   in the tree is narrowed to a single service, so the HTTP-against-WS comparison
   is exercised against one model per CI run. Widening it is the cheapest real
@@ -75,7 +75,7 @@ workspace.
 ## Unconfirmed
 
 - Whether `verifyTransportParity` still finds zero mismatches across the whole of
-  basecamp. The 2026-08-17 sweep in `CHANGES.md` is the only record of one and it
+  basecamp. The 2026-08-17 sweep in `docs/changes-archive/testing.md` is the only record of one and it
   was run against an app that has grown since.
 - Whether an installing app's resolution of the declared peers is what this
   package expects. The ranges (`junction ^0.1.0`, `litestone ^1.1.0`) do resolve —

@@ -306,7 +306,7 @@ The edge adapter's first half, reads only (`IDEAS/cloudflare-edge.md` Phases 1�
 - **The Config tab** lists the runtime settings in place of the Json card, and Edit opens the schema form, which offers every column.
 - `verify:outpost` was posting `config.env`, which `FJS-1600` had already made a 400. It now sets columns plus a variable and reads `NanoCpus`/`Memory` off the real container.
 
-`bun run test` 507/507. New tests cover the snapshot holding the runtime and ignoring a later edit, the write-time refusals (volume path, CPU, health without a port), and a blueprint's settings landing on the columns. `verify:outpost` 25/26 with Docker: the runtime checks pass, and the one FAIL is the seed's missing decoy ([`FJS-1606`](../../ISSUES.md#fjs-1606)), which predates this change. `verify:screens` 221/221, with a new check that the Config tab shows the blueprint's limits. `verify:build` 8/8, typecheck at baseline (13).
+`bun run test` 507/507. New tests cover the snapshot holding the runtime and ignoring a later edit, the write-time refusals (volume path, CPU, health without a port), and a blueprint's settings landing on the columns. `verify:outpost` 25/26 with Docker: the runtime checks pass, and the one FAIL is the seed's missing decoy ([`FJS-1606`](../../ISSUES_ARCHIVE.md#fjs-1606)), which predates this change. `verify:screens` 221/221, with a new check that the Config tab shows the blueprint's limits. `verify:build` 8/8, typecheck at baseline (13).
 
 ## 2026-09-30 — a command reaches a machine only over pinned TLS (`FJS-1603`, `FJS-D557`)
 
@@ -340,7 +340,7 @@ A container's environment lived in two Json blobs. `App.config.env` reached the 
 - **A `variables` service** handles find, get, create, patch and remove. A protected environment still refuses a developer on its own variables (`refuseProtectedForDeveloper` moved to `core/hooks.ts`). An app's own variable needs the authority that patches the app. Remove hard-deletes, so the key can be set again. `apps` refuses `config.env` and `config.secretEnv` and says where they go.
 - **A secret environment variable used to be plaintext** in a column readable at viewer, and the screen masked it for display only. Now it is encrypted and absent from every response. The editor says *secret · set* and offers Replace, not Reveal.
 - **`VariablesEditor.mesa`** is the editor on both the environment screen and the app's Config tab. The Config tab's callout, which said the schema had no per-app override, is gone.
-- The rest of `App.config` is still Json that outpost reads into. Some of what a blueprint writes there is never applied ([`FJS-1605`](../../ISSUES.md#fjs-1605)).
+- The rest of `App.config` is still Json that outpost reads into. Some of what a blueprint writes there is never applied ([`FJS-1605`](../../ISSUES_ARCHIVE.md#fjs-1605)).
 
 `bun run test` 502/502. New tests: the environment's and app's merge, including a plain app value replacing an environment secret; delete and restore carrying an app's variables; the protected guard on create, patch and remove; the key rule and per-scope uniqueness; a secret staying secret on an edit with its key freed by remove; `config.env` refused; and a release snapshot holding a secret by id only, with plain values frozen at creation. `verify:screens` 220/220: the blueprint deploy reads the password back as a secret variable with no value in any read, and the app's Config tab lists it as set. `verify:build` 8/8, `verify:mcp` 15/15, typecheck at baseline. `fli check`: `capability-ladder` baseline 2 → 3, answered the same way as Server and Environment. `bun run verify` was not run: it needs the dev database empty, and port 8020 was held by another process.
 
@@ -363,7 +363,7 @@ The catalog showed what a blueprint would send, and a callout said nothing could
 - **A blueprint's `volumePath` is kept across releases.** Outpost removes the old container on every deploy, so a Postgres made from the catalog would have come back empty after its second release. Outpost now mounts a named volume, `fjs-<app>-data`, at that path.
 - **`/blueprints/`** has a Deploy button on every offered card for anyone in a workspace. It opens a drawer with the environment, the app name, an optional machine, and one field per parameter (secret ones masked). With a machine picked it also calls `place` and queues the first release. Either way it lands on the app's screen. The "not wired yet" callout is gone.
 
-`bun run test` has five new tests. They cover what is copied and what is minted, that the typed password is in no column an app read returns and that the release resolves it, that a gone secret fails naming its variable, the refusals, and that a patch cannot write `blueprintId`. `verify:screens` deploys Redis from the card, checks the password field is masked, and reads the new app back through the API: its blueprint, its image, and a ref where the password would be. Two gaps are filed. Deleting the app leaves its secrets ([`FJS-1599`](../../ISSUES.md#fjs-1599)). An app's environment is still Json that the deploy reads into ([`FJS-1600`](../../ISSUES.md#fjs-1600)).
+`bun run test` has five new tests. They cover what is copied and what is minted, that the typed password is in no column an app read returns and that the release resolves it, that a gone secret fails naming its variable, the refusals, and that a patch cannot write `blueprintId`. `verify:screens` deploys Redis from the card, checks the password field is masked, and reads the new app back through the API: its blueprint, its image, and a ref where the password would be. Two gaps are filed. Deleting the app leaves its secrets ([`FJS-1599`](../../ISSUES_ARCHIVE.md#fjs-1599)). An app's environment is still Json that the deploy reads into ([`FJS-1600`](../../ISSUES_ARCHIVE.md#fjs-1600)).
 
 ## 2026-09-30 — Tier 4: snoozing an alert
 
@@ -384,7 +384,7 @@ Nobody below admin could leave a workspace, an owner could never leave or step d
 - **`workspaces.leave`** ends your own membership at any role. The only owner is refused with *Hand ownership to another member before you leave*. When one of several owners leaves and `ownerId` named them, it moves to the longest-standing owner who is left.
 - **`workspaces.transferOwnership({ userId })`** is owner only. The member becomes owner and you become admin, and `ownerId` follows. All three writes happen in one transaction, so there is never a moment with no owner or with two. Each membership is re-stamped with its role's grants. `setMemberRole` still refuses your own row, since stepping down is only safe inside the act that hands the workspace over.
 - **Settings** has *Leave <workspace>* beside your standing. After leaving, the shell moves to another workspace. **Admin** has *Hand over* on each other member's row when you are the owner. Both actions ask for confirmation first.
-- **The standing on `/settings/` always read *no membership here*** ([`FJS-1593`](../../ISSUES.md#fjs-1593)). The pill looked up `w.workspaceId` on rows that are `Workspace` rows, and no row carried a role at all. `workspaces.find` now answers each workspace with the caller's `role` in it, taken off the membership rows it already reads.
+- **The standing on `/settings/` always read *no membership here*** ([`FJS-1593`](../../ISSUES_ARCHIVE.md#fjs-1593)). The pill looked up `w.workspaceId` on rows that are `Workspace` rows, and no row carried a role at all. `workspaces.find` now answers each workspace with the caller's `role` in it, taken off the membership rows it already reads.
 
 `bun run test` 484/484, with seven new tests: a viewer leaves, the only owner cannot, one of two owners leaves and `ownerId` follows, leaving a workspace you are not in is a 404, a handover moves both roles and both grids and `ownerId`, an admin cannot hand over, and nobody can hand to a non-member. `verify:screens` 206/206. Its new section makes a workspace with a second member, reads *owner here* on settings, is refused leaving, hands over from admin and checks both roles through the API, reads *admin here*, and leaves. `verify:mcp` 15/15.
 
@@ -394,8 +394,8 @@ The Profile card on `/settings/` was read-only. It showed `client.auth.me()`, wh
 
 - **A `users` service** answers `get` and `patch` on `me`, and the caller's own id as its second spelling. Any other id is a 404. It takes no workspace, and it has no `find`: a list of people is a workspace's members or the hub's, and both read through `asSystem()`.
 - **The profile card is `User.mesa`'s default form**, narrowed to `displayName` and `username`. The address and the standing stay read-only beside it, since both come from the session.
-- **A viewer could not have used it** ([`FJS-1590`](../../ISSUES.md#fjs-1590)). `User` read and updated at 4, which is DEVELOPER on this ladder, for `FJS-1574`'s reason. The gate is now `1.8.1.5`. The read policy is your own row at any standing and everyone's at 4, so what developers could read before is unchanged. Create is SYSTEM, because every creator already went through `asSystem()`.
-- **Which columns a person may write is the schema's, and three were missing.** `email`, `accountId` and `scopes` had no field policy. With a write path open, a session holder could have changed the address, with `emailVerified` still true for an address nobody verified. All three now carry `@allow('write', auth().isSystemAdmin)`. The service names no columns, and a patch naming `email`, `deletedAt`, `id` or a graded column lands with those dropped. auth's own fragment has the same gap, filed as [`FJS-1591`](../../ISSUES.md#fjs-1591). The cross-workspace breadth of the read at 4 is [`FJS-1592`](../../ISSUES.md#fjs-1592), and it is still latent.
+- **A viewer could not have used it** ([`FJS-1590`](../../ISSUES_ARCHIVE.md#fjs-1590)). `User` read and updated at 4, which is DEVELOPER on this ladder, for `FJS-1574`'s reason. The gate is now `1.8.1.5`. The read policy is your own row at any standing and everyone's at 4, so what developers could read before is unchanged. Create is SYSTEM, because every creator already went through `asSystem()`.
+- **Which columns a person may write is the schema's, and three were missing.** `email`, `accountId` and `scopes` had no field policy. With a write path open, a session holder could have changed the address, with `emailVerified` still true for an address nobody verified. All three now carry `@allow('write', auth().isSystemAdmin)`. The service names no columns, and a patch naming `email`, `deletedAt`, `id` or a graded column lands with those dropped. auth's own fragment has the same gap, filed as [`FJS-1591`](../../ISSUES_ARCHIVE.md#fjs-1591). The cross-workspace breadth of the read at 4 is [`FJS-1592`](../../ISSUES.md#fjs-1592), and it is still latent.
 
 `bun run test` 477/477. There are two new db tests: a viewer and a visitor read and edit their own row and see no other, and a person cannot change their own address, organization or scopes. That second test fails with the `email` policy removed. There are six new `users` API tests. `verify:screens` 201/201: the form offers no address box, a save lands on the row as the API reads it, and the change survives a reload. `verify:mcp` 15/15.
 
@@ -404,10 +404,10 @@ The Profile card on `/settings/` was read-only. It showed `client.auth.me()`, wh
 Twelve models soft-delete, and nothing on any screen could bring a row back.
 
 - **`/trash/`** lists what this workspace deleted, newest first, with Restore on each row. It reads the new **`trash` service**, which has no model, for `infra`'s reason: it is assembled from the twelve tables. A kind the caller cannot read (a viewer and Secrets) is left out rather than failing the list.
-- **A cascade is one row.** A deleted project says *with 1 environment, 2 apps*, and its children are not listed separately, since none of them could be restored on its own. A row whose parent is deleted is hidden until the parent is back. A child deleted on its own before its parent then appears, because it stays deleted when the parent is restored (the litestone half is [`FJS-1583`](../../ISSUES.md#fjs-1583)).
+- **A cascade is one row.** A deleted project says *with 1 environment, 2 apps*, and its children are not listed separately, since none of them could be restored on its own. A row whose parent is deleted is hidden until the parent is back. A child deleted on its own before its parent then appears, because it stays deleted when the parent is restored (the litestone half is [`FJS-1583`](../../ISSUES_ARCHIVE.md#fjs-1583)).
 - **The trash only lists.** A restore goes to the row's own service, which knows what else its delete did. `secrets.restore` re-registers a cloud account that `remove` deregistered, and `channels.restore` brings back the credential its `remove` took. `recipes` and `dashboards` did not list `restore` among their methods, so they answered 405, and now they list it. `core/resource.ts` gains `restoreScoped` for a service that overrides `restore`. Apps come back stopped and jobs come back cancelled, and the row says so.
 - **Undo.** Every delete on a soft-deleting model now ends in a toast with Undo for eight seconds. That covers projects, environments, apps, hostnames, jobs, servers, networks, recipes, flags, channels, dashboards and secrets. The toast action is new in `@frontierjs/ui`. A list gets the row back from the `restored` push. The trash is the same restore with no timer on it.
-- **A by-id restore answered an array** ([`FJS-1584`](../../ISSUES.md#fjs-1584), fixed in junction). The Undo needed a row back, and an empty array for an id that was not deleted looked like a success.
+- **A by-id restore answered an array** ([`FJS-1584`](../../ISSUES_ARCHIVE.md#fjs-1584), fixed in junction). The Undo needed a row back, and an empty array for an id that was not deleted looked like a success.
 
 `bun run test` 469/469. Five new trash tests cover:
 - a deleted project is one item with its counts, and restoring it clears all of it from the trash.
@@ -422,7 +422,7 @@ Twelve models soft-delete, and nothing on any screen could bring a row back.
 
 - **`apps.find` takes `?serverId=`.** A placement is an `AppServer` row and not a column of `App`, so the key is reserved (`$.reserved.serverId`) and joined through `appServers: { some }`. The server screen has an *Apps on this machine* card, which is what an operator needs to see before draining or destroying a machine.
 - **`deployments.find` takes `?environmentId=`**, and the environment screen has *Recent releases*: the last ten releases that went to that environment, linked to the app and the release. A release records the environment it went to, so an app that has since moved still shows where its older releases landed.
-- **Those finds ignored most filters** ([`FJS-1577`](../../ISSUES.md#fjs-1577)). `apps`, `deployments` and `jobs` each read two or three query keys and silently dropped the rest, even though junction's `autoFilter` had already accepted those keys as columns. So `?branch=nope` returned every release, and the `/deployments/` filter bar only worked on app and status. All three now spread `parseWhere($.query)` into their `where`. A key that isn't a column is still refused by name. The other 24 hand-written finds are the open half of the issue.
+- **Those finds ignored most filters** ([`FJS-1577`](../../ISSUES_ARCHIVE.md#fjs-1577)). `apps`, `deployments` and `jobs` each read two or three query keys and silently dropped the rest, even though junction's `autoFilter` had already accepted those keys as columns. So `?branch=nope` returned every release, and the `/deployments/` filter bar only worked on app and status. All three now spread `parseWhere($.query)` into their `where`. A key that isn't a column is still refused by name. The other 24 hand-written finds are the open half of the issue.
 - **The unused aliases are gone:** `?service_id=` (from the Service→App rename) and `?environment_id=`. Nothing sent them.
 - **One status-to-tone table for releases.** The app screen, the deployment screen and the dashboard's deploy feed each had their own copy, and each colored `building` and `pending` differently. The table is now `DEPLOY_TONE` in `resources/Deployment.mesa`.
 
@@ -434,9 +434,9 @@ The first Tier 4 item from the UI audit. Seven kinds of notification were writte
 
 - **A `notifications` service** (`find`, `get`, `patch`, `readAll`). It takes no workspace, for the same reason notification-preferences doesn't: the row policy limits every read and write to the recipient. `patch` writes only `readAt`. An empty body marks the notification read, and an explicit `null` marks it unread. `readAll` marks every unread one read. A signed-out caller gets *Sign in to read your notifications*, not an empty inbox.
 - **A bell in the topbar.** It shows the unread count in its accessible name and lists the newest six unread. Opening one marks it read and goes to its action. It also has *Mark all read* and a link to the full list. **`/notifications/`** is that full list, with Unread and All filters, mark read or unread per row, and Mark all read. There is also a ⌘K entry. Settings now points to the list instead of saying no screen shows these.
-- **Nothing reached an open tab.** The connect handler never joined a connection to `notifications:user:<id>`, and the driver pushed a frame name the client does not route ([`FJS-1573`](../../ISSUES.md#fjs-1573), fixed in `@frontierjs/notifications`). Both are fixed. `services.test` now opens junction's real browser client over a socket and checks that a send arrives on `notifications`. That test fails without either fix.
-- **A viewer could not clear their own bell** ([`FJS-1574`](../../ISSUES.md#fjs-1574)). `Notification` updated at level 4, which is DEVELOPER on this ladder. The package's own ladder calls 4 USER. The gate is now `0.8.1.8`.
-- **Editing a blueprint after editing its parameters failed** ([`FJS-1575`](../../ISSUES.md#fjs-1575)). The edit form was given the composed row, so the patch sometimes carried `params`, and the service refuses that. This was the intermittent *a blueprint is edited* failure noted below. With the bell's store load in the shell it failed every run, which is how it was found. The form now gets the row without its params. The framework half is still open as [`FJS-1576`](../../ISSUES.md#fjs-1576).
+- **Nothing reached an open tab.** The connect handler never joined a connection to `notifications:user:<id>`, and the driver pushed a frame name the client does not route ([`FJS-1573`](../../ISSUES_ARCHIVE.md#fjs-1573), fixed in `@frontierjs/notifications`). Both are fixed. `services.test` now opens junction's real browser client over a socket and checks that a send arrives on `notifications`. That test fails without either fix.
+- **A viewer could not clear their own bell** ([`FJS-1574`](../../ISSUES_ARCHIVE.md#fjs-1574)). `Notification` updated at level 4, which is DEVELOPER on this ladder. The package's own ladder calls 4 USER. The gate is now `0.8.1.8`.
+- **Editing a blueprint after editing its parameters failed** ([`FJS-1575`](../../ISSUES_ARCHIVE.md#fjs-1575)). The edit form was given the composed row, so the patch sometimes carried `params`, and the service refuses that. This was the intermittent *a blueprint is edited* failure noted below. With the bell's store load in the shell it failed every run, which is how it was found. The form now gets the row without its params. The framework half is still open as [`FJS-1576`](../../ISSUES_ARCHIVE.md#fjs-1576).
 
 `bun run test` 458/458. There are eight new notification tests: owner-only reads, newest first, read and unread, the dropped fields, somebody else's row, `readAll`, the viewer, and the socket. `verify:screens` passed 180/180 twice. A new section covers the bell count and its accessible name, the menu (unread only), opening one, the Unread and All filters, and Mark all read, with the server checked afterwards. The rows come from `web/test/notification-fixture.mjs`, because the seed deliberately sends nothing.
 
@@ -485,7 +485,7 @@ The second and last batch of the UI audit's Tier 2. Most rows were a method the 
 - **Blueprints.** A system administrator can create and edit (new `Blueprint` form) and edit the ordered parameters, which are saved whole with `setParams`. The generator choices are read off `BlueprintParam`'s schema.
 - **Drives run beside a dev server.** `verify:screens` and `verify:provision`, and the vite config, take `API_PORT`/`UI_PORT` (the test slot is 7120/7020), in `example`'s shape.
 
-`verify:screens` 156/156 (was 104), with new sections for the account, flags/secrets/recipes/channels, workspace/bot key, the hub reset (another person enrols over HTTP, is reset from the hub, and signs in with a password alone) and dns/networks/dashboards/backups/blueprints. Each changes a value and reads it back through the API. `verify:provision` 70/70, which adds health after the first heartbeat, reconcile clean and then with a droplet planted at the stand-in, and the SSH edit. Also `verify:build` 8/8, `bun run test` 450 pass, typecheck at baseline. The main `verify` drive was not run. Filed: [`FJS-1558`](../../ISSUES.md#fjs-1558) (a `data-confirm` button in a `<form>` froze the page; worked around), [`FJS-1559`](../../ISSUES.md#fjs-1559) (auth's recovery floor failed open for a non-number level, closed with `FJS-D550`).
+`verify:screens` 156/156 (was 104), with new sections for the account, flags/secrets/recipes/channels, workspace/bot key, the hub reset (another person enrols over HTTP, is reset from the hub, and signs in with a password alone) and dns/networks/dashboards/backups/blueprints. Each changes a value and reads it back through the API. `verify:provision` 70/70, which adds health after the first heartbeat, reconcile clean and then with a droplet planted at the stand-in, and the SSH edit. Also `verify:build` 8/8, `bun run test` 450 pass, typecheck at baseline. The main `verify` drive was not run. Filed: [`FJS-1558`](../../ISSUES_ARCHIVE.md#fjs-1558) (a `data-confirm` button in a `<form>` froze the page; worked around), [`FJS-1559`](../../ISSUES_ARCHIVE.md#fjs-1559) (auth's recovery floor failed open for a non-number level, closed with `FJS-D550`).
 
 ## 2026-09-28 — edit and delete on App, Environment, Job and AlertRule; the schema says what a form may write
 
@@ -886,7 +886,7 @@ list, children first.
 **What is NOT seeded says why**, which is what `db/test/seed.test.ts` asks of every table: `run`,
 `run_step`, `wait` and `kv_entry` are engine output and a seed run starts no process — the line
 `alert_event` and `notification` already sit on — and `flow_layout` is where the builder drew each
-node, with no builder yet ([`FJS-1198`](../../ISSUES.md#fjs-1198)). That one stops being exempt the
+node, with no builder yet ([`FJS-1198`](../../ISSUES_ARCHIVE.md#fjs-1198)). That one stops being exempt the
 day something can write one, and the test's reverse control is what will say so.
 
 **Four schema-derived checks were red and three of them were the framework's**, not this app's.
@@ -1088,7 +1088,7 @@ that had removed it.
 
 ## 2026-09-09 — a refusal is not a fault, and a bad id is not a miss
 
-Two conflations behind [`FJS-1018`](../../ISSUES.md#fjs-1018), and the second is
+Two conflations behind [`FJS-1018`](../../ISSUES_ARCHIVE.md#fjs-1018), and the second is
 app-wide.
 
 **Every thrown service error was logged at ERROR.** The `error:` hook in
@@ -1305,7 +1305,7 @@ row fails that row's next write. `bun run db:reset` and reseed.
 reaches it, so without the marking a release could be walked to `success` by
 hand — a fabricated history on the surface that answers *what shipped*.
 `cancel` and `rollback` stay a person's. This is the third strand `FJS-517` said
-was waiting on the same decision (`IDEAS/permission-sets.md` step 7).
+was waiting on the same decision (`IDEAS/shipped/permission-sets.md` step 7).
 
 
 ## 2026-09-08 — a second cloud, and what it found in the boundary
@@ -2233,7 +2233,7 @@ gets skimmed past.
 
 ## 2026-08-26 — capabilities adopted, and the never-escalate guard grew its second axis
 
-`IDEAS/permission-sets.md` step 7 · `FJS-529` closed. Typecheck at baseline.
+`IDEAS/shipped/permission-sets.md` step 7 · `FJS-529` closed. Typecheck at baseline.
 
 `Server` and `Environment` declare `@@capabilities`, `Environment.variables`
 carries `@capability`, and `WorkspaceMember.capabilities` is the grant column —

@@ -13,7 +13,7 @@
 // the two commands below.
 //
 // A debug build loads FJS_DESKTOP_URL instead of the bundle when it is set —
-// fli desktop:dev points it at the screens' dev server. That page's origin is
+// fli dev:desktop points it at the screens' dev server. That page's origin is
 // the server's, not tauri://localhost, so an origin or CORS fault shows only
 // in the bundled build.
 //
