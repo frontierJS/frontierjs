@@ -40,6 +40,9 @@ src/
   terminal/tags.js     — the terminal target's table: which tags and DOM event
                          names it paints (FJS-D700, FJS-D692). Pure data; the
                          compiler refuses what is not in it, by file and line
+  terminal/emit.js     — the terminal emitter, the stage compile() runs for
+                         target: 'terminal' (FJS-D699): ctx.ir → calls on $$tui
+                         written into ctx.module.body. Refuses, never approximates
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
   runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
                          `$$tui`, a cell tree over @opentui/core (optional peer,
@@ -93,7 +96,11 @@ bench/
 scripts/
   corpus.mjs           — bun run corpus: every .mesa in the workspace, compiled
                          prod and dev, acorn-parsed; --save NAME / --diff NAME
-                         grade a change meant to move no byte
+                         grade a change meant to move no byte; --portability
+                         terminal tallies every node the terminal would refuse
+  portability.js       — the report's counting, pure: a file lowers only when
+                         every component it imports lowers. A tally change is
+                         graded by test/portability.test.js, not by eye
 ```
 
 **The Vite plugin is a subpath, not a package.** A `package.json` of its own
@@ -319,6 +326,11 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   Vite config — the ordinary case (`FJS-D16`) — each keep the compiler they
   asked for. A memo at module scope handed the second whichever compiler
   resolved first and dropped its `compilerPath` in silence (`FJS-880`).
+- **A script importing `@opentui/core` from OUTSIDE `packages/mesa` gets a
+  SECOND copy**, auto-installed by bun from its cache, and two copies fail
+  `instanceof BaseRenderable` inside the engine's `remove()` as `remove expects
+  a renderable child object` — which reads as the runtime being broken. Run
+  the terminal drive, and any probe of the engine, from `packages/mesa`.
 - **A running dev server never re-transforms.** Editing `compiler.js` invalidates
   nothing in a server that is already up — restart it, or the fix "does not work".
   In-repo consumers must import mesa by **relative path**, not `@frontierjs/mesa`:

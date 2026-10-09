@@ -61,7 +61,7 @@ site's, so `site-kit`'s rather than the kit's.
 
 ## Open questions
 
-- Does Tag Input replace `json` for every `String[]`, or only one that declares it?
+- ~~**Does Tag Input replace `json` for every `String[]`, or only one that declares it?**~~ **Answered 2026-10-09 (`FJS-D804`): A — every scalar list, with no new component: `case 'array'` answers a list with `items` as `MultiSelect` with `allowNew` and no options, and the Tag Input behaviors (comma, paste) are added to MultiSelect.**
   The `case 'array'` comment's reason — the schema stops describing the value — does
   not hold for an array of strings.
   - **A** — every scalar list, with no new component: `case 'array'` answers a
@@ -73,7 +73,7 @@ site's, so `site-kit`'s rather than the kit's.
     `case 'array'`, which already stopped answering `json` for a scalar list.
     What remains is MultiSelect learning comma and paste, not a second control
     for the same value.
-- Is Toggle Group a `RadioGroup` treatment rather than a component? Single-select
+- ~~**Is Toggle Group a `RadioGroup` treatment rather than a component?**~~ **Answered 2026-10-09 (`FJS-D805`): A — no component: a lone toggle is `Button` with `pressed` (`aria-pressed`), single-select is a segmented treatment of `RadioGroup`, and multi-select is the same treatment over a row of checkboxes.** Single-select
   Toggle Group is radio semantics; multi-select is not.
   - **A** — no component: a lone toggle is `Button` with `pressed`
     (`aria-pressed`), single-select is a segmented treatment of `RadioGroup`, and

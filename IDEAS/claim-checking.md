@@ -273,7 +273,7 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
 
 ## Open questions
 
-- **Is this a product or a phase of `fli check`?** Filed as an idea because the
+- ~~**Is this a product or a phase of `fli check`?**~~ **Answered 2026-10-09 (`FJS-D715`): A — a phase of `fli check`, which is where the in-repo half already runs: `packages/cli/core/doc-audit.js`, called from `checks.js`.** Filed as an idea because the
   answer is probably *both*, and because the interesting version is the one that
   runs in a repository that has never heard of FrontierJS.
   - **A** — a phase of `fli check`, which is where the in-repo half already runs:
@@ -284,7 +284,7 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
     draws its boundary. `FJS-D133` already refused a second registry answering
     *what is wrong here*, and an extraction drawn before anyone outside this repo
     uses it guesses the boundary the paper says has never been drawn.
-- **What is the relationship to `fli app:atlas`**, which is *the app model as a
+- ~~**What is the relationship to `fli app:atlas`**~~ **Answered 2026-10-09 (`FJS-D716`): A — none: two tools that share an instinct and no code.**, which is *the app model as a
   product*? Atlas describes an app from its seed. This describes
   any repository from its prose. They share the instinct and share no code.
   - **A** — none: two tools that share an instinct and no code.
@@ -294,7 +294,7 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
   - **Recommend A** — then B the first time a claim names a fact only atlas
     derives, so the resolver imports it rather than re-deriving it. C couples a
     repo-agnostic checker to one framework's seed.
-- **Does a claim need a stable id**, the way a defect does, so it can be cited,
+- ~~**Does a claim need a stable id**~~ **Answered 2026-10-09 (`FJS-D717`): A — no id: a claim is located by its file and its authority (the path, symbol or `exit:` command it names), and the ratchet is a count per check class, which is the shape `check-baseline.json` already has.**, the way a defect does, so it can be cited,
   retired, and allowed? The registers say yes for defects and rulings. A claim is
   cheaper and more numerous, and an id per claim may be the thing that makes it
   unusable.
@@ -307,7 +307,7 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
     restates it, and an id per sentence is the cost the paper names as what
     would make the tool unusable. A count per class is how this repo already
     ratchets fli check and typecheck.
-- **What is the honest false-positive budget?** A claim checker that cries wolf is
+- ~~**What is the honest false-positive budget?**~~ **Answered 2026-10-09 (`FJS-D718`): A — zero by construction: a claim the resolver cannot decide is `undecidable`, reported and never failed, and a class that fires wrong is narrowed rather than tuned.** A claim checker that cries wolf is
   a claim checker people baseline to zero and forget, which is the failure mode
   `check-baseline.json` was invented to survive.
   - **A** — zero by construction: a claim the resolver cannot decide is

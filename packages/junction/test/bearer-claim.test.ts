@@ -17,7 +17,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { createApp, createService, bearerClaim, BEARER, header, sessionGateLevel } from '../index.ts'
+import { createApp, createService, bearerClaim, BEARER, header, authorization, sessionGateLevel } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
 import { declaredCallHeaders } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
@@ -324,5 +324,70 @@ describe('a grant is found whoever else the holder is', () => {
 
   test('a member of the grant\'s own account resolves it', async () => {
     expect(await open({ userId: 'u1', accountId: 1 })).toEqual({ grantSurveyId: 9, grantAccountId: 1 })
+  })
+})
+
+// `Authorization: Bearer <token>` carries an API key AND a signed-in person's
+// session, so a source reading it raw fingerprinted the scheme along with the
+// key and refused every session the auth plugin had just accepted (`FJS-2150`).
+// Over a real port, because which of the two a header held is decided by the
+// transport's session read before the resolver runs.
+describe('a grant presented as Authorization: Bearer', () => {
+  const running: Array<{ stop: () => Promise<void> }> = []
+  const stopAll = async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) }
+
+  async function served(from: ReturnType<typeof header>) {
+    const db = await seeded()
+    const app: any = createApp({
+      db,
+      logLevel:  'silent',
+      config:    { port: 0, services: { dir: '/nonexistent' } },
+      principal: bearerClaim({ from, model: 'portalLink', column: 'tokenHash', key: KEY, claims: { portalClientId: 'clientId' } }),
+      auth: {
+        verifySession: async (token: string) => {
+          if (token !== 'session-ana') throw new Error('bad token')
+          return { userId: 'ana', userType: 'user', authMethod: 'session', verifiedAt: 'x', activatedAt: 'x' }
+        },
+      },
+    })
+    app.services.register(createService({
+      name: 'answers',
+      async find(ctx: ServiceContext) {
+        const rows = await (ctx.locals.db as any).formResponse.findMany({})
+        return [{ user: (ctx.auth.user as any)?.userId ?? null, rows: rows.length }]
+      },
+    }))
+    await app.start()
+    running.push(app)
+    return (authorization: string) => fetch(`http://localhost:${app.http.port}/answers`, { headers: { authorization } })
+  }
+
+  test('the key after the scheme resolves, and a session in the same header passes through', async () => {
+    try {
+      const get = await served(authorization())
+
+      const asKey = await get('Bearer live-one')
+      expect(asKey.status).toBe(200)
+      const keyBody: any = await asKey.json()
+      expect(keyBody.data[0]).toEqual({ user: null, rows: 1 })
+
+      // The pair: a session token is not a grant, so it is not refused as a dead one.
+      const asSession = await get('Bearer session-ana')
+      expect(asSession.status).toBe(200)
+      const sessionBody: any = await asSession.json()
+      expect(sessionBody.data[0]).toEqual({ user: 'ana', rows: 0 })
+
+      // A token that is neither is still the refusal a dead link gets.
+      expect((await get('Bearer never-minted')).status).toBe(401)
+    } finally { await stopAll() }
+  })
+
+  test('authorization() names its header for the allow-list', () => {
+    expect(authorization().headerName).toBe('authorization')
+  })
+
+  test('header(\'authorization\') is refused by name, pointing at authorization()', () => {
+    expect(() => header('Authorization')).toThrow(/authorization\(\)/)
+    expect(() => header('x-portal-link')).not.toThrow()
   })
 })

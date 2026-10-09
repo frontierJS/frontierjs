@@ -6,9 +6,12 @@ dated: 2026-09-25
 
 # Idea — Mesa's intermediate representation: one template tree, a backend per device
 
-**Status: PROPOSED. Nothing here is built.** Dated 2026-09-25. The counts in § 1
-were measured that day and are true for an afternoon (`PHILOSOPHY.md` § VII). Do
-not cite this file as behavior. See `VERIFYING.md`.
+**Status: IN PROGRESS — § 6 steps 1 and 3 have a first slice in the tree
+(2026-10-09); the rest is proposed.** Dated 2026-09-25. The counts in § 1 were
+measured that day and are true for an afternoon (`PHILOSOPHY.md` § VII). Cite
+`packages/mesa/src/ir.js`, `terminal/emit.js`, `runtime-terminal.js` and
+`test/terminal/` for what is built; nothing else here is behavior. See
+`VERIFYING.md`.
 
 **The question:** can all frontend code be written as `.mesa`, compiled to a
 neutral tree, and handed to a backend that converts it into whatever each device
@@ -194,13 +197,152 @@ with the terminal backend as its second consumer, not ahead of it.
    `packages/mesa` is that grade. It found 507 files and 1,014 compiles (prod
    and dev), 0 refused and 0 invalid JS, identical run to run. A moved byte is
    either a bug or a change to be named.
+   *First slice landed 2026-10-09:* `src/ir.js` lowers every compile into
+   `ctx.ir` (element, text with split parts, binding, handler, `if`, `each`;
+   everything else `unlowered` and named). Two DOM-path owners moved into the
+   seam and the corpus stayed identical: `parseEachHeader` / `eachFrame`
+   (shared with `makeEachBlock`) and `buildHead` (the target-free head
+   declarations, split out of `buildRuntime`). The DOM emitter itself still
+   reads the parse tree; it moves one node kind at a time from here, each move
+   graded by the corpus.
+   *Slot routing moved 2026-10-09:* `routeSlots(node, preserveComments)` in
+   `compiler.js` is the one answer to which slot each child of a component
+   call fills. `makeComponent` builds a block per entry and `lowerComponent`
+   lowers one, so the two targets cannot disagree. It touches no node, which
+   is what lets `lower` run first. The corpus stayed identical. Two DOM
+   defects went with the second copy (`FJS-2168`). Props are still
+   classified twice. The IR's copy is the stricter one (an attribute it
+   cannot place is a directive, and the terminal refuses it), so the two can
+   differ only toward a refusal.
+   *Props moved 2026-10-09:* `componentAttributes(node)`, beside
+   `routeSlots`, is the one answer to what each attribute on a component call
+   is (`prop`, `spread`, `bind`, `bind-this`, `island` or `refused` with its
+   message). `makeComponent` builds from it and `lowerComponent` lowers it,
+   and a refused attribute is reported by both targets in the same words and
+   passes nothing on either. The corpus stayed identical. Five shapes the DOM
+   path dropped or passed under a name no child reads went with the second
+   copy (`FJS-2169`). No component-call double is left between the two
+   targets; the value of each prop is still lowered per target, which is
+   lowering rather than classifying.
 2. **The portability report** (§ 3), per target, as a report rather than a
    refusal until a target exists. It runs over the same corpus and says how much
    of `example/` and `packages/ui` would lower to a terminal today.
+   *First report 2026-10-09:* `bun run corpus -- --portability terminal` in
+   `packages/mesa`. `terminalOffenses(ir)` in `src/terminal/emit.js` is the one
+   list of what the terminal refuses: the emitter throws its head and the report
+   tallies all of it. Of 508 files, 104 lower today (20%): `packages/ui` 0 of
+   135, `example/web` 26 of 69, `packages/basecamp` 24 of 114. A component tag
+   is in 264 files and is the only blocker in 128; a dynamic attribute is in
+   141. Lowering greedily, the order is component (+128, to 46%), `<output>`
+   (+40), dynamic attribute (+29), `on:submit` (+18), `<slot>` (+11), then
+   spreads, `style:`, `{@render}`, `{#snippet}` and `bind:`. The component
+   figure is an upper bound, because the report counts a tag as lowered
+   without following its import to the child's file, and `packages/ui` lowers
+   nothing yet. The events outside the table, which `FJS-D692`'s closed set is
+   read from, are `submit` (28 files), `change` (8), `close` and `cancel` (4),
+   then pointer and wheel events in one file each.
+   *Second report 2026-10-09, after components lowered (step 3):* the report
+   follows each component tag through its import to the child's file
+   (`scripts/portability.js`, counting pinned by `test/portability.test.js`),
+   so a file lowers only when every component it calls does. 125 of 510 lower
+   (25%); 42 more pass on their own and are held by a child. `packages/ui` is
+   still 0 of 135, so everything importing the kit is held. A tag with no
+   import (Sierra's `autoImport`) is its own shape, in 31 files. Greedily:
+   dynamic attribute (+23, to 29%), spread (+7), `style:` (+18), `{@render}`
+   (+7), `bind:` (+5), `<mesa:portal>`, `<mesa:window>`, `class:`. A dynamic
+   attribute is in 177 files, and alone unlocks only 23 because the kit files
+   that carry it carry three or four other shapes too.
+   *Third report 2026-10-09, after dynamic attributes lowered:* 149 of 511
+   (29%), as predicted. `packages/ui` is 1 of 135. Greedily next: spread
+   (+7), `style:` (+18), `{@render}` (+3), `bind:` (+5), `<mesa:portal>`,
+   `<mesa:window>`, `class:`. The two widest shapes unlock nothing alone:
+   `{#snippet}` (99 files) and `bind:` on a component (93).
+   *Fourth report 2026-10-09, after spreads lowered:* 160 of 513 (31%), +9 as
+   predicted; `packages/ui` is 7 of 135. A component spread unlocked no file
+   alone (it always sits beside an element spread or a `bind:`). Greedily
+   next: `style:` (+18), `{@render}` (+7), `bind:` (+5), `<mesa:portal>`
+   (+6), `<mesa:window>` (+7), `class:` (+5).
 3. **The terminal backend**: an emitter from the IR to a runtime over the
    bought engine (§ 8). The first slice is a fixture with static elements, a
    text binding, a handler, `{#if}` and `{#each}`, mounted in the engine's
    headless renderer and asserted by its captured frame after typed keys.
+   *First slice landed 2026-10-09:* `compile(src, { target: 'terminal' })`
+   runs `src/terminal/emit.js` over `ctx.ir` and the output imports
+   `@frontierjs/mesa/runtime/terminal.js` (`src/runtime-terminal.js`, over
+   `@opentui/core` — `FJS-D698`, `FJS-D699`). `src/terminal/tags.js` is the
+   per-target table (`FJS-D700`, `FJS-D692`): a tag or event not in it, any
+   directive (`bind:`, `class:`, spreads, `{@attach}`), a dynamic attribute
+   and every `unlowered` node is refused as `X at File.mesa:L:C has no
+   terminal lowering`. Proved by `bun run test:terminal` in `packages/mesa`:
+   `specs/runtime.spec.mjs` drives `$$tui` directly and `specs/counter.spec.mjs`
+   compiles the fixture and asserts the frame after Tab and Enter. Not in the
+   slice, refused by name until a later one: dynamic attributes, `bind:`,
+   `{#await}`, `{#key}`, snippets, scoped styles. The refusal shape is what
+   step 2 collects.
+   *Second slice 2026-10-09, components and `<slot>`:* the IR lowers
+   `<Child …>` to a `component` node (props, routed slots, and everything else
+   kept as a directive to refuse) and `<slot>` to a `slot` node with its
+   fallback. The terminal calls the child at a marker, which the child's own
+   `append(__anchor, …)` lands before, and pushes the whole props object when
+   any prop is live, the same two calls the DOM path makes. `<output>` joined
+   the tag table. Proved by `specs/component.spec.mjs` (a prop push, a callback
+   prop, default and named slots, fallbacks, a component inside `{#if}`).
+   Still refused: `bind:`, spreads, `on:` and `{@attach}` on a component,
+   `{#snippet}` children, and the dynamic `<component this>`.
+   *Third slice 2026-10-09, dynamic attributes:* a live attribute is a static
+   one that moves. `$$tui.set_attribute` is the one owner of both: `element()`
+   routes its static attributes through it, and a live one reaches it from a
+   guarded render effect, the shape a text binding has. `null` and `false`
+   remove the attribute, as on the DOM path. Three names mean something on a
+   terminal: `value` and `placeholder` on an input, and `disabled`, which
+   takes a control out of the Tab order and out of activation. Every other
+   name is kept and paints nothing, as a static `class` already did, and as
+   the scoped CSS it would select is already handed back unpainted. The
+   engine emits `input` when an input's value is written, which a browser's
+   program write never does, so that write is muted. Proved by
+   `specs/attributes.spec.mjs`. Breaking the mute fails 4 of its 6
+   assertions, and leaving a disabled button focusable fails 2.
+   *Fourth slice 2026-10-09, spreads:* on a component, a spread is merged
+   under the written props with `Object.assign`, the DOM path's object, and
+   pushed whole. On an element, `$$tui.spread` is the twin of
+   `spreadAttributes`: a value goes to `set_attribute`, a function under
+   `on<event>` to that event's handler, and a key the object stops carrying
+   is removed. The handler is wired once per event through a slot the spread
+   rewrites, because the engine cannot take a listener off a node, so a
+   replaced object would stack a second handler. A key with no terminal
+   meaning is inert, never refused: a spread's keys are data, so no compile
+   can refuse one, and a throw at runtime would take a render down over a kit
+   forwarding `onmouseenter`. Proved by `specs/spread.spec.mjs` and
+   `specs/spread-element.spec.mjs`. Stacking the handler fails 2 of 6, and
+   keeping a dropped key fails 2 of 6; merging the spread over the written
+   props fails 2 of 4.
+   *The nine for slice 4 and the props move, answered late:* (1) one fewer
+   origin. (2) none new. (3) the problem's. (4) an attribute that reaches no
+   child now says so, as `on:` and `class:` already did. (5) both targets
+   derive from `componentAttributes`. (6) it sits beside `routeSlots`, the
+   other half of the same call, and `$$tui.spread` is `spreadAttributes`'s
+   twin. (7) exported, its kinds documented. (8) a refused attribute is a
+   warning, the tier its siblings already had, and an inert spread key is
+   *ergonomics vs. strictness* again. (9) must stay true: both targets read
+   one attribute the same way, and a spread key acts as its written spelling.
+   What fails: the corpus diff, `terminal-emit.test.js` (identical warnings
+   from both targets) and the two spread specs. That an inert key paints
+   nothing is asserted by nothing (`none`). Tier: Assessment.
+   *The nine, answered late, after both cuts were green:* (1) origin: one
+   fewer, since slot routing has one owner. (2) concept: none new. (3)
+   complexity: the problem's. (4) predictability: a live attribute now acts as
+   its static spelling does. (5) derived: yes, `lowerComponent` reads
+   `routeSlots`. (6) owner: `routeSlots` sits beside `blockSlotTarget`, which
+   already owned half of it, and `set_attribute` is the terminal's twin of the
+   DOM's `set_attribute`. (7) boundary: `routeSlots` is exported and named.
+   (8) failure: an attribute with no terminal meaning is inert rather than
+   refused. *Ergonomics vs. strictness* decides it. The cost of an ignored
+   `class` is a style on a target that paints no CSS anyway, while refusing it
+   would refuse most of the corpus. (9) must stay true: the DOM output is
+   unchanged by the routing move, and a live attribute behaves as its static
+   spelling does. What fails: the corpus diff, `block-slot-routing.test.js`
+   and `attributes.spec.mjs`. That an inert name paints nothing is asserted by
+   nothing (`none`). Tier: Assessment.
 4. **Native**, after offline-first exists. `one-mental-model.md` § *The target
    set's missing member* already argues that mobile is refused until then,
    because store review, eviction and background execution make offline-first a
@@ -235,8 +377,12 @@ Answered before any code, for the proposal as written.
 9. **Wrong without anything saying so?** *What must stay true:* the DOM output
    is unchanged by the extraction, and a node with no lowering is named rather
    than dropped. *What fails:* the byte-identical corpus compile in step 1, and
-   the portability report in step 2. **Until step 1 runs, `none`**: this is a
-   proposal and grades nothing.
+   the portability report in step 2. *Since 2026-10-09, answered late and
+   named as late:* the corpus diff is `bun run corpus -- --diff before` in
+   `packages/mesa` against the saved baseline; the terminal frame is
+   `test/terminal/run.mjs`, in that package's `test` script; a node with no
+   lowering is a named refusal pinned by `test/terminal-emit.test.js`. The
+   report of step 2 is still `none`.
 
 **§ IV:** *coherence vs. convention*, the same adjudication `FJS-D38` turned on.
 Every platform's convention is its own component model or its own language, and

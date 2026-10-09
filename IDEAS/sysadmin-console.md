@@ -187,7 +187,7 @@ every app's catalog is spelled.
   - **Recommend A** — the console carries a model, a loader and screens, none of
     which an app that only wants sign-in should install; *batteries vs. smallness*
     says severable.
-- **Is a report tenant-aware?** Under `strategy database` a sysadmin report is
+- ~~**Is a report tenant-aware?**~~ **Answered 2026-10-09 (`FJS-D757`): B — the run carries it: `reports.run(name, params, { tenant })` resolves one tenant the way a Caravan dispatch does, and the file states nothing; a question across tenants is a caller looping, which basecamp's `/hub/` tier already is.** Under `strategy database` a sysadmin report is
   usually a question ACROSS tenants, which is basecamp's `/hub/` tier and
   `asSystem()` over the registry. Whether a `.report.ts` states `tenant: 'each' |
   'one'` or the service decides is unsettled.
@@ -195,7 +195,7 @@ every app's catalog is spelled.
   - **B** — the run carries it: `reports.run(name, params, { tenant })` resolves one tenant the way a Caravan dispatch does, and the file states nothing; a question across tenants is a caller looping, which basecamp's `/hub/` tier already is.
   - **C** — every report reads across tenants: the service always iterates the registry.
   - **Recommend B** — a `.job.ts` declares no tenant either; the dispatch carries one (`caravan/src/db.ts`, `tenant_id`), and `fli tinker`'s console context does the same. A file that declares `'each'` would be a second owner of a fan-out the `/hub/` tier already holds. A reopens when one report has to answer across database tenants in a single table.
-- **Is the console's first caller maid.tech or example?** maid.tech has the real
+- ~~**Is the console's first caller maid.tech or example?**~~ **Answered 2026-10-09 (`FJS-D758`): A — `example`: the drive in § *The shape* is written there, and CI runs it.** maid.tech has the real
   catalog to port; example has the drives.
   - **A** — `example`: the drive in § *The shape* is written there, and CI runs it.
   - **B** — maid.tech: the 72 stored reports are the real catalog, and porting them is the test of the `.report.ts` shape.

@@ -111,6 +111,16 @@ persistence, no dedupe, no principal. **Every replica runs every `app.scheduler`
 timer**, so scaling out multiplies that work by N silently. Anything on it that must
 happen once belongs on `app.jobs.schedule`.
 
+**Every socket answer is per node, and is ruled to stay so until one design moves all
+three** ([`FJS-D686`](../DECISIONS.md#fjs-d686)). `app.channels.localConnectionsOf(userId)`,
+`localPresenceOf(userId)` and `localPresence(channelId)` read this process's Maps, and
+a broadcast reaches only the sockets this process holds. Behind a balancer, "assign
+only agents who are online" misses everyone whose socket landed on the other instance.
+A shared connection table on its own was turned down (the ruling says why). The
+`local` prefix is the "on this node" the ruling asks for, Socket.IO's spelling for the
+same scope (`io.local`), and an app running more than one instance fans the question
+out itself ([FJS-2137](../ISSUES.md#fjs-2137)).
+
 **The connection pool is sized for one process and has no refcount.** `maxOpen`
 defaults to 100 and `LRUPool.set` evicts the oldest entry by calling `db.$close()` on
 it, with no check for whether a request still holds it. Single-threadedness keeps the
@@ -143,6 +153,11 @@ of that: `reusePort` on the serve call, a refcount on the pool, and the
 [FJS-365](../ISSUES_ARCHIVE.md#fjs-365) resolution — where the relay either sweeps the
 registry's open tenants or the outbox moves to a `database` block that is not
 per-tenant, and **whichever is chosen, the other shape refuses rather than no-ops.**
+
+Not small, and owed the day `reusePort` lands: **cross-node sockets as one design** —
+who is connected, presence and broadcast together, most likely a connection registry
+plus a pub/sub every node subscribes to. `FJS-D686` B (the registry alone) is
+reconsidered inside that design, not before it.
 
 ---
 

@@ -390,7 +390,7 @@ rather than assuming.
 
 ## Open questions
 
-- **Does `$.log` shadow `app.logger` badly?** A module-scope import of the app
+- ~~**Does `$.log` shadow `app.logger` badly?**~~ **Answered 2026-10-09 (`FJS-D772`): A — keep both and state the split in `api-hazards`: `$.log` inside a call, `app.logger` outside one, which is what the JSDoc on `log` in `junction/src/core/context.ts` already says.** A module-scope import of the app
   logger stays correct and unbound, and the two will coexist forever. Adonis has
   exactly this split (`logger` service against `ctx.logger`) and documents the
   recommendation rather than removing the choice. Probably fine; worth stating
@@ -407,7 +407,7 @@ rather than assuming.
     context. The wrong choice loses context fields, not data, so a documented
     hazard is proportional. C makes every module-scope logger consult the
     ambient call on each line, and leaves two names doing one job.
-- **Should `fileWriter` be deleted or kept?** Twelve-factor says delete. Against
+- ~~**Should `fileWriter` be deleted or kept?**~~ **Answered 2026-10-09 (`FJS-D773`): A — delete it from `junction/src/core/logger.ts` and the `index.ts` export, with its test.** Twelve-factor says delete. Against
   that: a CLI is not a twelve-factor process, and `fli` has somewhere it might
   legitimately write. Recommendation: keep it, document it as not for a served
   app, and never grow rotation onto it.
@@ -418,7 +418,7 @@ rather than assuming.
     Junction's logger, so the CLI case is hypothetical. An export with no caller
     is a road nobody takes and an invitation to grow rotation onto it. When `fli`
     needs a file sink it writes the four lines itself.
-- **What is the trail's tenant column under `strategy database`?** One file per
+- ~~**What is the trail's tenant column under `strategy database`?**~~ **Answered 2026-10-09 (`FJS-D774`): A — one fleet-shared logger file, its model unscoped, with a nullable `tenant` String column stamped from the call (`litestone/src/core/audit-log.js`).** One file per
   tenant makes it obvious; one fleet-shared logger database makes it a real
   question, and the answer decides whether phase 2's `logModel` is
   `@@tenant(none)` or scoped.
@@ -432,7 +432,7 @@ rather than assuming.
     the trail across the fleet is an operator act, and B would cost a second file
     per tenant and the cross-tenant query. C belongs to the day a tenant reads
     its own trail in the app.
-- **Does the bulk-write remainder belong here or in 4.13?** It is the same
+- ~~**Does the bulk-write remainder belong here or in 4.13?**~~ **Answered 2026-10-09 (`FJS-D775`): A — defer it to 4.13: `IDEAS/time-travel.md` owns it, and already prices it and proposes the per-model opt-in `@@log(audit, snapshots: all)`.** It is the same
   defect from two directions — this file wants contents for provenance, 4.13
   wants them for invertibility. Whoever gets there first should design for both.
   - **A** — defer it to 4.13: `IDEAS/time-travel.md` owns it, and already prices
@@ -443,7 +443,7 @@ rather than assuming.
     has lapsed. One argument with one owner, and the only consumer that needs
     contents is replay. B writes a million snapshots for a million-row update for
     provenance nobody has asked to read.
-- **Is the Outpost the right home for `/logs`?** It is where the machine is. The
+- ~~**Is the Outpost the right home for `/logs`?**~~ **Answered 2026-10-09 (`FJS-D776`): A — the Outpost, as a named `POST /logs` with a capped tail, which is what `packages/outpost/src/server.js` ships.** It is where the machine is. The
   argument against is that Outpost is deliberately narrow and `/exec` can already
   do it — but *the caller composes the docker command* is exactly the shape that
   makes `/exec` the route nobody should be reaching for.

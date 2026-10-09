@@ -30,6 +30,7 @@ Detail: `references/the-hook-pipeline.md`
 - **An `Idempotency-Key` on a mutating request executes once and replays the first answer**
   - **A custom method is a write until it declares `read: true`** (`FJS-D505`) — undeclared, a keyed search keeps its answer, query and all, for 24 hours, and the bus announces it; declared, a write inside it runs again on a keyed retry
 - **An irreversible effect belongs in `ctx.afterCommit(fn)`, not in an `after` hook.**
+- **Under `transactional:`, a result carrying a non-empty `errors` is a 422 and a rollback** (`FJS-2149`)
 - **A `mailer.send()` that answers `sent` sends everything the message declared — including `cc`, `bcc`, `attachments` and `headers`** (`FJS-895`)
 - **A recurring `app.scheduler` job does not overlap itself, and the tick it dropped is COUNTED** (`FJS-896`)
 - **The log level is a CELL shared down the whole tree, and `setLevel` moves all of it** (`FJS-897`)

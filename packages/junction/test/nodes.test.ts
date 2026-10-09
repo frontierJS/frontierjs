@@ -309,6 +309,102 @@ describe('resource().record(id)', () => {
   })
 })
 
+// A refusal and a missing row are different answers to a person, and `ready`
+// resolving `null` for both left a detail screen one vague sentence (`FJS-1063`,
+// `FJS-D695`). The reason rides the view beside `get()`; `ready` keeps resolving.
+describe('resource().record(id).error()', () => {
+  const refuse = (status: number, name: string) => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ name, message: name, code: status }), {
+        status, headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof fetch
+    return { restore: () => { globalThis.fetch = original } }
+  }
+
+  it('tells a refusal from a row that is not there', async () => {
+    const c = client()
+    const r = c.resource('orders', 'id', { model: 'Order' })
+
+    let m = refuse(403, 'Forbidden')
+    const denied = r.record(1)
+    expect(await denied.ready).toBeNull()
+    expect(denied.error()).toEqual({ status: 403, code: 'Forbidden' })
+    m.restore()
+
+    m = refuse(404, 'NotFound')
+    const missing = r.record(2)
+    expect(await missing.ready).toBeNull()
+    expect(missing.error()).toEqual({ status: 404, code: 'NotFound' })
+    m.restore()
+  })
+
+  it('says status 0 when nothing answered at all', async () => {
+    const c = client()
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
+    const r = c.resource('orders', 'id', { model: 'Order' })
+    const row = r.record(1)
+    expect(await row.ready).toBeNull()
+    expect(row.error()?.status).toBe(0)
+    globalThis.fetch = original
+  })
+
+  it('is null when the row was read, and clears when a later read succeeds', async () => {
+    const c = client()
+    const r = c.resource('orders', 'id', { model: 'Order' })
+    let m = refuse(500, 'InternalServerError')
+    const row = r.record(1)
+    await row.ready
+    expect(row.error()?.status).toBe(500)
+    m.restore()
+
+    const ok = mockRow({ id: 1, status: 'pending' })
+    await row.refresh()
+    ok.restore()
+    expect(row.error()).toBeNull()
+    expect(row.get()).toEqual({ id: 1, status: 'pending' })
+  })
+
+  it('reaches a subscriber when a later read is refused, and keeps the row it knew', async () => {
+    const c = client()
+    const r = c.resource('orders', 'id', { model: 'Order' })
+    const ok = mockRow({ id: 1, status: 'pending' })
+    const row = r.record(1)
+    await row.ready
+    ok.restore()
+
+    const seen: unknown[] = []
+    row.subscribe(() => seen.push(row.error()?.status ?? null))
+    const m = refuse(403, 'Forbidden')
+    await row.refresh()
+    m.restore()
+    expect(seen).toEqual([null, 403])
+    expect(row.get()).toEqual({ id: 1, status: 'pending' })
+  })
+
+  it('a removed row is not found', async () => {
+    const c = client()
+    const r = c.resource('orders', 'id', { model: 'Order' })
+    const ok = mockRow({ id: 1 })
+    const row = r.record(1)
+    await row.ready
+    ok.restore()
+    r.service._receive('removed', { id: 1 })
+    expect(row.error()).toEqual({ status: 404, code: 'NotFound' })
+  })
+
+  it('reports the reason on a composed view too', async () => {
+    const c = client()
+    const r = c.resource('apps', 'id', { model: 'App' })
+    const m = refuse(403, 'Forbidden')
+    const row = r.record(1, { composed: true })
+    expect(await row.ready).toBeNull()
+    expect(row.error()).toEqual({ status: 403, code: 'Forbidden' })
+    m.restore()
+  })
+})
+
 // ─── optimism ─────────────────────────────────────────────────────────────────
 // The overlay is the fourth thing `FJS-D138` names: a submitted mutation that
 // has not come back. It sits on the node, so every view of the row moves at

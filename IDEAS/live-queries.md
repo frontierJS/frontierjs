@@ -318,7 +318,7 @@ result deserves its own noun. It probably does not.
 
 ## Open questions
 
-- **Does `matchesQuery` need to handle relations?** `where` can name a related
+- ~~**Does `matchesQuery` need to handle relations?**~~ **Answered 2026-10-09 (`FJS-D734`): A — as built: the matcher answers `null` for a filter naming a relation and the store refetches, coalesced per burst.** `where` can name a related
   field server-side. The client has `x-relations` but not the related *rows*, so the
   honest answer is probably that a query touching a relation is not live-able and
   must say so, loudly, at subscribe time.
@@ -331,7 +331,7 @@ result deserves its own noun. It probably does not.
     (`verdict`, `refetch`), and it is correct, only slower. B would make a list that
     loads correctly refuse to stay live, and C widens every broadcast for one kind
     of query.
-- **What about a `select`?** A projected record may lack the columns the query
+- ~~**What about a `select`?**~~ **Answered 2026-10-09 (`FJS-D735`): A — as built: `null`, then a refetch.** A projected record may lack the columns the query
   filters on. Either live queries refuse a `select` that drops a filtered column, or
   the matcher reports "cannot decide" and the store refetches.
   - **A** — as built: `null`, then a refetch.
@@ -344,7 +344,7 @@ result deserves its own noun. It probably does not.
   above.** `unknown` → refetch is the default `before` hook; an app that can decide
   replaces it. Kept here because the reasoning matters: a matcher forced to return a
   boolean has to guess, and guessing wrong is silent.
-- **Does the inbound dispatch reuse `around`?** A push has no network call to wrap, so
+- ~~**Does the inbound dispatch reuse `around`?**~~ **Answered 2026-10-09 (`FJS-D736`): A — run all four phases inbound; `around` wraps the store-apply, which is the inner call in place of the network.** A push has no network call to wrap, so
   `around`'s stated purpose (loading state, retry, timing) does not apply — but
   excluding one phase from one direction breaks the "matches the API realm exactly"
   claim the pipeline currently earns. Probably run all four and let `around` be
@@ -363,7 +363,7 @@ result deserves its own noun. It probably does not.
   - **Recommend A** — FJS-D175 already answers this: every broadcast is graded per
     recipient at publish by the Data boundary, so there is no service whose policy a
     broadcast cannot satisfy, and `channel:` stays the one declaration.
-- **Custom method events are treated as upserts** (`client/index.ts:486-489`). Under
+- ~~**Custom method events are treated as upserts**~~ **Answered 2026-10-09 (`FJS-D737`): A — as built: a custom-method event goes through the same `apply` as `patched`, so it can insert, reposition, or drop the row.** (`client/index.ts:486-489`). Under
   a matcher they get the same treatment as `patched`, which is probably right and
   should be stated rather than inherited.
   - **A** — as built: a custom-method event goes through the same `apply` as

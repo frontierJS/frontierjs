@@ -1031,20 +1031,24 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
       return () => {}
     },
 
-    // ── Presence queries — server-side ──────────────────────────────────
-    presence(channelId: string): PresenceMember[] {
+    // ── Presence queries — server-side, on this node ─────────────────────
+    // Each reads this process's Maps (FJS-D686). Behind a balancer a person
+    // whose socket landed on another instance is absent from all three, so
+    // "assign only agents who are online" quietly skips them. An app running
+    // more than one instance fans the question out itself.
+    localPresence(channelId: string): PresenceMember[] {
       return presenceMembers(channelId)
     },
 
-    presenceOf(userId: string | number): Array<Omit<PresenceMember, 'channelId'> & { channelId: string }> {
+    localPresenceOf(userId: string | number): Array<Omit<PresenceMember, 'channelId'> & { channelId: string }> {
       return presenceByUser(userId)
     },
 
     // Who holds a live socket right now. Presence answers a different
     // question -- who announced themselves on a channel -- so a signed-in user
-    // with an open socket and no subscribe is `presenceOf() === []` but
-    // connected. This process's sockets only; a second instance has its own.
-    connectionsOf(userId: string | number): Connection[] {
+    // with an open socket and no subscribe is `localPresenceOf() === []` but
+    // connected.
+    localConnectionsOf(userId: string | number): Connection[] {
       const out: Connection[] = []
       for (const conn of connections.values()) {
         if (conn.user?.userId === userId && conn.socket.readyState === 1) out.push(conn)
@@ -1209,8 +1213,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
       // Convenience shortcuts
       ;(app as unknown as Record<string, unknown>).channel     = (name: string) => manager.channel(name)
-      ;(app as unknown as Record<string, unknown>).presence    = (channelId: string) => manager.presence(channelId)
-      ;(app as unknown as Record<string, unknown>).presenceOf  = (userId: string | number) => manager.presenceOf(userId)
+      ;(app as unknown as Record<string, unknown>).localPresence   = (channelId: string) => manager.localPresence(channelId)
+      ;(app as unknown as Record<string, unknown>).localPresenceOf = (userId: string | number) => manager.localPresenceOf(userId)
 
       const auth = app.auth
 
@@ -1308,8 +1312,20 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           // was plainly alive to send.
           lastSeen.set(connId, Date.now())
 
+          // A frame the server cannot act on is refused BY NAME, where it was
+          // dropped in silence: the sender's call then waited out its whole
+          // timeout and read 408, which names nothing. One small fixed frame
+          // per refused frame, and the transport's frame rate already bounds
+          // how many of those there can be (`FJS-2147`).
+          const refuse = (code: string, message: string, id?: string | number): void => {
+            ctx.send({ type: 'protocol_error', ...(id !== undefined ? { id } : {}), error: { code, message } })
+          }
+
           const parsed = manager.handleMessage(connId, msg)
-          if (!parsed) return
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            refuse('malformed_frame', 'Frame is not a JSON object')
+            return
+          }
 
           // ── Ping/pong keepalive ──────────────────────────────────
           // Either side may ping; the other answers. lastSeen is already
@@ -1338,6 +1354,12 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           // Auto-events fire after successful mutations exactly as with HTTP.
           if (parsed.type === 'service_call') {
             const { id: callId, service: serviceName, method, data } = parsed
+            // The call is answered by its id, so a call without one has no
+            // answer the client could match — and ran anyway.
+            if (typeof callId !== 'string' && typeof callId !== 'number') {
+              refuse('missing_id', 'A service_call frame needs an id, a string or a number')
+              return
+            }
             // WS frame carries caller extras (id, query, …) under `meta` —
             // that is what WSMessage declares.
             //
@@ -1352,6 +1374,14 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // because the client silently fell back to HTTP, where the id
             // travels in the URL.
             const extraParams = parsed.meta ?? parsed.params ?? {}
+
+            // `String({})` is `[object Object]`, which reached the service as a
+            // row id and came back as "id=[object Object] not found".
+            const metaId = (extraParams as Record<string, unknown>).id
+            if (metaId != null && typeof metaId !== 'string' && typeof metaId !== 'number') {
+              refuse('invalid_id', 'meta.id must be a string or a number', callId)
+              return
+            }
 
             app.telemetry?.emit('junction.ws.message', {
               connectionId: connId,
@@ -1579,6 +1609,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // Apps handle explicit unsubscribe via channels.on() if needed
             return
           }
+
+          refuse('unknown_frame', `Unknown frame type '${String(parsed.type).slice(0, 64)}'`)
         },
 
         close: async (ctx: WsContext) => {
@@ -1640,6 +1672,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     // are the case, and there is no later phase this can be asked from that a
     // test-mounted app also runs (`ready-hooks` is needsHost).
     boot(app: App): void {
+      reportAnnounceReach(app)
+
       if (!_manager?.defaultAnnouncer) return
 
       const undeclared = app.services.values()
@@ -1664,6 +1698,31 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       }
     }
   }
+}
+
+// ─── Announce reach ───────────────────────────────────────────────────────
+
+/**
+ * A database announces a write to ITS OWN process unless it declares
+ * `announce crossProcess` (`FJS-D173`), so a second replica on the same file
+ * puts nothing on the first replica's sockets and its live screens go stale
+ * with nothing marking it (`FJS-2146`). Junction cannot see how many processes
+ * the deploy runs, so this says what the default reaches, once, at the layer
+ * that fans events out to sockets.
+ */
+function reportAnnounceReach(app: App): void {
+  const databases = (app.db as { $schema?: { databases?: Array<{ name: string; driver?: string; announce?: string }> } } | undefined)
+    ?.$schema?.databases
+  const inProcess = (databases ?? [])
+    .filter(d => (!d.driver || d.driver === 'sqlite') && d.announce !== 'crossProcess')
+    .map(d => d.name)
+  if (inProcess.length === 0) return
+
+  console.warn(
+    `[Junction] channels() is mounted over database(s) that announce inProcess: ${inProcess.join(', ')}. ` +
+    `A write in another process on the same file reaches none of this process's sockets. ` +
+    `Running more than one process (a replica, a worker)? Declare \`announce crossProcess\` on the database.`
+  )
 }
 
 // ─── Per-call headers ─────────────────────────────────────────────────────

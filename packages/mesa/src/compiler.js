@@ -16,6 +16,8 @@
  */
 
 import * as acorn from 'acorn'
+import { lower } from './ir.js'
+import { buildTerminal } from './terminal/emit.js'
 
 /**
  * Names a component function may not take. Reserved words are a parse error;
@@ -286,7 +288,7 @@ export function parseModifiers(fullName) {
  * `ctx` is the compile context: the reactive arg of debounce/throttle is
  * rewritten against its accessors and registered as a dependency.
  */
-function applyEventModifiers(ctx, modifiers, event, handler) {
+export function applyEventModifiers(ctx, modifiers, event, handler) {
   const listenerOpts = {}   // once, passive, capture → addEventListener options
   const wrapMods = []       // debounce, throttle → wrap handler at runtime
   const guardMods = []      // preventDefault, stopPropagation, self, trusted → inline guards
@@ -2100,7 +2102,7 @@ export function parseHTML(source) {
                 `Place it on an element instead: <div {@attach ${expr}}>…</div>`
               )
             }
-            push({ type: 'systag', value: v })
+            push({ type: 'systag', value: v, start: bindStart })
             continue
           }
           if (v.startsWith('#virtual each ')) {
@@ -2485,6 +2487,7 @@ export const parseAttributes = (source, option = {}) => {
       continue
     }
     const start = r.index
+    const before = result.length
     if (r.probe('{@attach')) {
       // {@attach expr} — element/component attachment
       const { raw, value } = parseBinding(r)
@@ -2562,6 +2565,9 @@ export const parseAttributes = (source, option = {}) => {
         }
       }
     }
+    // Absolute when the reader is parseHTML's own, which is the one caller:
+    // a diagnostic on an attribute names the attribute's line, not the tag's.
+    for (let k = before; k < result.length; k++) result[k].start = start
   }
   return result
 }
@@ -2682,7 +2688,7 @@ function collectReactiveLabels(node, out = []) {
   return out
 }
 
-function templateSource(node, out = []) {
+export function templateSource(node, out = []) {
   if (Array.isArray(node)) { for (const n of node) templateSource(n, out); return out }
   if (!node || typeof node !== 'object') return out
   for (const k of Object.keys(node)) {
@@ -4744,7 +4750,13 @@ export function processCSS(ctx) {
 
 // ─── 6. BUILDER ───────────────────────────────────────────────────────────────
 
-export function buildRuntime() {
+/**
+ * The component-scope declarations every target emits ahead of its template
+ * block — the door, the builtins, `$$props`, `$$attributes` — pushed onto
+ * `ctx.module.head`. Nothing here names a DOM: the DOM builder and the
+ * terminal emitter both call it and then write their own `module.body`.
+ */
+export function buildHead() {
   const ctx = this
 
   // $delegate is emitted at module scope after the component function
@@ -4863,6 +4875,11 @@ export function buildRuntime() {
       if (ctx.inuse.$sugar_slots)      w.writeLine('const $slots = $$slots;')
     })
   )
+}
+
+export function buildRuntime() {
+  const ctx = this
+  buildHead.call(ctx)
 
   const runtime = xNode.block({ scope: true })
   ctx.module.body.push(runtime)
@@ -6207,15 +6224,20 @@ export function makeRenderTag(data, label) {
   })
 }
 
-export function makeEachBlock(data, option) {
-  this.require('rootCD')
-
-  const rx = data.value.match(/^#each\s+(.+)\s+as\s+(.+)$/s)
-  assert(rx, `Wrong #each expression '${data.value}'`)
+/**
+ * The `{#each}` header, taken apart: `#each ITEMS as ITEM[, INDEX] [(KEY)]`.
+ * One owner for the DOM builder and for `lower()` in ir.js, so the two cannot
+ * disagree on where the key ends or what a destructured item binds.
+ *
+ * `patNames` is what a destructuring pattern binds; `itemName` is `$$item`
+ * then, because the row receives the whole item and destructures it itself.
+ */
+export function parseEachHeader(value) {
+  const rx = value.match(/^#each\s+(.+)\s+as\s+(.+)$/s)
+  assert(rx, `Wrong #each expression '${value}'`)
   const arrayName = rx[1]
   let right = rx[2]
-  let keyName = null,
-    keyFunction = null
+  let keyName = null
 
   // Extract the key expression from the trailing (...) — supports nested parens
   // e.g. `item (item.id)` or `item (item.name + fn(item))`
@@ -6258,10 +6280,72 @@ export function makeEachBlock(data, option) {
     itemName = '$$item'
   } else {
     const rx2 = right.trim().split(/\s*,\s*/)
-    assert(rx2.length <= 2, `Wrong #each expression '${data.value}'`)
+    assert(rx2.length <= 2, `Wrong #each expression '${value}'`)
     itemName = rx2[0]
     indexName = rx2[1] || null
   }
+
+  let patNames = []
+  if (isDestructure) {
+    try {
+      const fn = acorn.parseExpressionAt(`(${destructurePattern}) => 0`, 0, { ecmaVersion: 'latest' })
+      patNames = patternBindingNames(fn.params)
+    } catch (e) {
+      assert(false, `Wrong #each pattern '${destructurePattern}' in '${value}': ${e.message}`)
+    }
+  }
+
+  return { arrayName, itemName, indexName, keyName, isDestructure, destructurePattern, patNames }
+}
+
+/**
+ * Enter the accessor frame a row's expressions are rewritten under: the item
+ * and the index become getters (`it` → `it()`), a destructured name a read off
+ * the row's pattern function, and the lift register is replaced for the row.
+ * Returns `patFn` (the `$$patN` a destructuring row declares, or null) and
+ * `restore()`, which puts the outer frame back. The DOM builder and `lower()`
+ * both enter it, so a row reads the same way on every target.
+ */
+export function eachFrame(ctx, header, rowSource) {
+  const { itemName, indexName, isDestructure, patNames } = header
+  let patFn = null
+  if (isDestructure) {
+    ctx._eachPatternSeq = (ctx._eachPatternSeq ?? 0) + 1
+    patFn = `$$pat${ctx._eachPatternSeq}`
+  }
+  const prevAccessors = ctx.accessors ? { ...ctx.accessors } : null
+  const outerLift = ctx.accessors?.[EACH_LIFT] ?? null
+  let lift = null
+  if (ctx.accessors) {
+    lift = eachLiftFrame(ctx, {
+      getters: isDestructure ? ['$$item', patFn, indexName] : [itemName, indexName],
+      rowSource,
+    })
+    Object.defineProperty(ctx.accessors, EACH_LIFT, { value: lift, configurable: true })
+    if (isDestructure) {
+      patNames.forEach(n => { ctx.accessors[n] = `${patFn}().${n}` })
+      ctx.accessors['$$item'] = '$$item()'
+    } else {
+      ctx.accessors[itemName] = `${itemName}()`
+    }
+    if (indexName) ctx.accessors[indexName] = `${indexName}()`
+  }
+  const restore = () => {
+    if (!prevAccessors) return
+    ctx.accessors = prevAccessors
+    // The copy is a spread, which drops a non-enumerable key: an `{#each}`
+    // nested in a row would otherwise end lifting for the rest of that row.
+    if (outerLift) Object.defineProperty(ctx.accessors, EACH_LIFT, { value: outerLift, configurable: true })
+  }
+  return { patFn, lift, restore }
+}
+
+export function makeEachBlock(data, option) {
+  this.require('rootCD')
+
+  const header = parseEachHeader(data.value)
+  const { arrayName, itemName, indexName, keyName, isDestructure, destructurePattern, patNames } = header
+  let keyFunction = null
 
   if (keyName) {
     if (!isDestructure && keyName === itemName) {
@@ -6291,40 +6375,10 @@ export function makeEachBlock(data, option) {
   // of the row — `{#each moves as [name, label]}` went on drawing the move it
   // was built with. Each pattern name is a read of `$$patN()`, which
   // destructures the current item, so every expression that names one tracks it.
-  let patNames = []
-  let patFn = null
-  if (isDestructure) {
-    try {
-      const fn = acorn.parseExpressionAt(`(${destructurePattern}) => 0`, 0, { ecmaVersion: 'latest' })
-      patNames = patternBindingNames(fn.params)
-    } catch (e) {
-      assert(false, `Wrong #each pattern '${destructurePattern}' in '${data.value}': ${e.message}`)
-    }
-    this._eachPatternSeq = (this._eachPatternSeq ?? 0) + 1
-    patFn = `$$pat${this._eachPatternSeq}`
-  }
-
   const rebind = null
 
-  // Temporarily register item/index as signal-getter accessors so template
-  // expressions inside the each block get rewritten correctly.
-  const prevAccessors = this.accessors ? { ...this.accessors } : null
-  const outerLift = this.accessors?.[EACH_LIFT] ?? null
-  let lift = null
-  if (this.accessors) {
-    lift = eachLiftFrame(this, {
-      getters: isDestructure ? ['$$item', patFn, indexName] : [itemName, indexName],
-      rowSource: templateSource(data.mainBlock),
-    })
-    Object.defineProperty(this.accessors, EACH_LIFT, { value: lift, configurable: true })
-    if (isDestructure) {
-      patNames.forEach(n => { this.accessors[n] = `${patFn}().${n}` })
-      this.accessors['$$item'] = '$$item()'
-    } else {
-      this.accessors[itemName] = `${itemName}()`
-    }
-    if (indexName) this.accessors[indexName] = `${indexName}()`
-  }
+  const frame = eachFrame(this, header, templateSource(data.mainBlock))
+  const { patFn, lift } = frame
 
   const blockEachOpts = isDestructure
     ? { rebind, itemName: '$$item', indexName,
@@ -6341,12 +6395,7 @@ export function makeEachBlock(data, option) {
     { allowSingleBlock: !false, each: blockEachOpts }
   )
 
-  if (prevAccessors) {
-    this.accessors = prevAccessors
-    // The copy is a spread, which drops a non-enumerable key: an `{#each}`
-    // nested in a row would otherwise end lifting for the rest of that row.
-    if (outerLift) Object.defineProperty(this.accessors, EACH_LIFT, { value: outerLift, configurable: true })
-  }
+  frame.restore()
 
   let elseBlock = null
   if (data.elseBlock) {
@@ -6613,7 +6662,7 @@ export function attachSlot(name, node) {
  *
  * @returns {{ name: string } | { mixed: 'unslotted' | 'names' } | null}
  */
-function blockSlotTarget(node, preserveComments) {
+export function blockSlotTarget(node, preserveComments) {
   const names = new Set()
   let unslotted = false
 
@@ -6657,20 +6706,169 @@ function blockSlotTarget(node, preserveComments) {
   return name === 'default' ? null : { name }
 }
 
-/** Drop `slot=` from every element inside a block being routed to that slot. */
-function stripInnerSlotAttrs(node) {
-  if (!node || typeof node !== 'object') return
-  if (Array.isArray(node)) { node.forEach(stripInnerSlotAttrs); return }
-  if (node.type === 'node' && node.attributes?.some((a) => a.name === 'slot')) {
-    node.attributes = node.attributes.filter((a) => a.name !== 'slot')
+/**
+ * A copy of a block being routed to one slot, with `slot=` dropped from each
+ * element `blockSlotTarget` read it from. It stops at an element, as that walk
+ * does: a `slot=` inside a child component's own content routes THAT call.
+ */
+function withoutSlotAttrs(node) {
+  if (!node || typeof node !== 'object') return node
+  if (Array.isArray(node)) return node.map(withoutSlotAttrs)
+  if (node.type === 'node') {
+    return node.attributes?.some((a) => a.name === 'slot')
+      ? { ...node, attributes: node.attributes.filter((a) => a.name !== 'slot') }
+      : node
   }
+  const copy = { ...node }
   for (const k of ['body', 'mainBlock', 'elseBlock', 'elsePart']) {
-    if (Array.isArray(node[k])) node[k].forEach(stripInnerSlotAttrs)
+    if (Array.isArray(node[k])) copy[k] = node[k].map(withoutSlotAttrs)
   }
-  if (Array.isArray(node.parts)) node.parts.forEach((p) => stripInnerSlotAttrs(p?.body))
-  else if (node.parts && typeof node.parts === 'object') {
-    for (const v of Object.values(node.parts)) stripInnerSlotAttrs(v)
+  if (Array.isArray(node.parts)) {
+    copy.parts = node.parts.map((p) => (Array.isArray(p?.body) ? { ...p, body: p.body.map(withoutSlotAttrs) } : p))
+  } else if (node.parts && typeof node.parts === 'object') {
+    copy.parts = { ...node.parts }
+    for (const [k, v] of Object.entries(node.parts)) if (Array.isArray(v)) copy.parts[k] = v.map(withoutSlotAttrs)
   }
+  return copy
+}
+
+/**
+ * Which slot each child of a component call fills. Every target reads this
+ * one answer: `makeComponent` builds a block per slot and `lowerComponent`
+ * (`ir.js`) lowers one, so the DOM and the terminal cannot route the same
+ * child to different holes.
+ *
+ * A child goes to the slot its `slot=` names, a block to the one slot every
+ * branch of it names (`blockSlotTarget`), and anything else to `default`, in
+ * document order. A `{#snippet}` child is a prop rather than content and comes
+ * back apart.
+ *
+ * `node` is not touched: `lower` reads the tree before the DOM builder does,
+ * so a routed child comes back as a copy without its `slot=`.
+ *
+ * A slot made only of comments is not content and is left out. Comments are
+ * dropped from the output unless `preserveComments` is on, so such a slot
+ * rendered nothing and still made `$slots.<name>` true — and `<Form>`, which
+ * generates its fields when the caller wrote no controls, lost every field to
+ * one HTML comment.
+ *
+ * @returns {{ slots: Map<string, object[]>, snippets: object[],
+ *             mixed: { child: object, target: object }[] }}
+ *   `slots` in first-seen order with `default` last, each list trimmed;
+ *   `mixed` the blocks left in `default` because their branches disagree,
+ *   for the caller to warn about.
+ */
+export function routeSlots(node, preserveComments) {
+  const routed = new Map([['default', []]])
+  const snippets = [], mixed = []
+  const into = (name, child) => {
+    if (!routed.has(name)) routed.set(name, [])
+    routed.get(name).push(child)
+  }
+  for (const child of node.body ?? []) {
+    if (child.type === 'snippet') { snippets.push(child); continue }
+    const slotAttr = child.type === 'node' && child.attributes?.find((a) => a.name === 'slot')
+    if (slotAttr) {
+      into(slotAttr.value?.replace(/^['"]|['"]$/g, '') || 'default',
+        { ...child, attributes: child.attributes.filter((a) => a.name !== 'slot') })
+      continue
+    }
+    const target = child.type !== 'text' && child.type !== 'comment'
+      ? blockSlotTarget(child, preserveComments)
+      : null
+    if (target?.name) { into(target.name, withoutSlotAttrs(child)); continue }
+    if (target?.mixed) mixed.push({ child, target })
+    into('default', child)
+  }
+
+  const slots = new Map()
+  const keep = (name) => {
+    const trimmed = trimEmptyNodes(routed.get(name))
+    if (trimmed.some((c) => c.type !== 'comment' || preserveComments)) slots.set(name, trimmed)
+  }
+  for (const name of routed.keys()) if (name !== 'default') keep(name)
+  keep('default')
+  return { slots, snippets, mixed }
+}
+
+/**
+ * What each attribute on a component call is. Every target reads this one
+ * answer, as it reads `routeSlots` for the children: `makeComponent` builds
+ * the DOM call from it and `lowerComponent` (`ir.js`) lowers it, so the two
+ * cannot pass a prop one way and the other differently.
+ *
+ * In attribute order, one entry per attribute that does anything:
+ *
+ * - `prop` — `name`, with `class` renamed `$class` (a reserved word), and the
+ *   parsed `attr`, whose value each target lowers itself
+ * - `spread` — `{...expr}`; `expr` is the source after the dots
+ * - `bind` — `bind:name={target}`; `target` defaults to the prop's own name
+ * - `bind-this` — `bind:this={target}`, the child's exported interface
+ * - `island` — `client:*`, a hint to a server render, never a prop
+ * - `refused` — `message` says why and what to write instead; a target
+ *   reports it and passes nothing
+ *
+ * `this` is the dynamic `<component this>`'s target, read by its own path,
+ * and has no entry. Nothing is refused by omission: an attribute that cannot
+ * reach a child used to be dropped or passed under a name no child declares,
+ * both silently.
+ */
+export function componentAttributes(node) {
+  const out = []
+  for (const attr of node.attributes ?? []) {
+    const name = attr.name
+    const refuse = (message) => out.push({ kind: 'refused', name, attr, message })
+    if (attr.type === 'attach' || name === '@attach') {
+      out.push({
+        kind: 'refused', name: '{@attach}', attr,
+        message: `{@attach} is not valid on <${node.name}>: an attachment runs on an element, and a ` +
+          `component has none of its own. Put it on an element inside the component, or pass the ` +
+          `function as a prop for the component to attach.`,
+      })
+    } else if (name === 'this') {
+      continue
+    } else if (name.startsWith('client:')) {
+      out.push({ kind: 'island', name, attr })
+    } else if (name[0] === '@' || name.startsWith('on:')) {
+      const spelled = name.startsWith('on:') ? name.slice(3) : name.slice(1)
+      // The prop this becomes is named after THIS event: a message naming
+      // `onclick` made the fix for `on:paid` a second wrong guess.
+      const event = spelled.split('|')[0]
+      const modifiers = spelled.slice(event.length)
+      refuse(
+        `on:${spelled} is not valid on a component. Use on${event}={fn} (a plain callback prop) instead.` +
+        // A modifier is a thing the compiler does to a DOM event before calling
+        // the handler; a component decides for itself what it passes.
+        (modifiers ? ` A modifier (${modifiers}) has no meaning on a component — the child decides what it passes, so handle it in the callback.` : '')
+      )
+    } else if (name.startsWith('{...') && name.endsWith('}')) {
+      out.push({ kind: 'spread', name, attr, expr: name.slice(4, -1) })
+    } else if (name[0] === '{' || name.startsWith('*{') || name[0] === '#') {
+      refuse(`<${node.name} ${name}> passes nothing: a component takes props, \`{...spread}\` and \`bind:\`. ` +
+        `For a reference to the child, use \`bind:this={ref}\`.`)
+    } else if (name === 'bind:this') {
+      out.push({ kind: 'bind-this', name, attr, target: attr.value ? unwrapExp(attr.value) : null })
+    } else if (name.startsWith('bind:')) {
+      const raw = name.slice(5)
+      out.push({
+        kind: 'bind', name: raw === 'class' ? '$class' : raw, attr,
+        target: attr.value ? unwrapExp(attr.value) : raw,
+      })
+    } else if (name.startsWith('class:') || name.startsWith('part:') || name.startsWith('style:')) {
+      // On an element `class:x={cond}` toggles a class; on a component it
+      // would be a prop literally named "class:x" that no child reads.
+      const prefix = name.split(':')[0]
+      refuse(
+        `<${node.name} ${name}> -- \`${prefix}:\` does not reach into a component, so the style would be dropped. ` +
+        (prefix === 'style'
+          ? `\`style="…"\` on the tag is an attribute the child forwards with \`{...$attributes}\`.`
+          : `\`class="…"\` on the tag passes through as the component's \`{class}\`; styling a child's part is planned (IDEAS/child-part-styling.md).`)
+      )
+    } else {
+      out.push({ kind: 'prop', name: name === 'class' ? '$class' : name, attr })
+    }
+  }
+  return out
 }
 
 /**
@@ -6730,113 +6928,54 @@ export function makeComponent(node, option = {}) {
     reactiveProps = [],
     twoWayProps = []          // bind:prop — child→parent, wired via bindProp
   const slotBlocks = [],
-    attachments = []
+    spreadProps = []          // {...expr} — merged via Object.assign
+  let bindThisSetter = null
 
-  // ── on:event on a component is a compiler error ────────────────────────────
-  // Use onclick={fn} / oninput={fn} etc. — plain callback props.
-  node.attributes
-    .filter((a) => (a.name[0] === '@' || a.name.startsWith('on:')) && a.type !== 'attach' && a.name !== '@attach')
-    .forEach((prop) => {
-      const spelled = prop.name.startsWith('on:') ? prop.name.slice(3) : prop.name.slice(1)
-      // The prop this becomes is named after THIS event, not after click. The
-      // message used to say `onclick={fn}` whatever the event was, so the fix
-      // for `on:paid` was a second wrong guess.
-      const event = spelled.split('|')[0]
-      const modifiers = spelled.slice(event.length)
-      ctx.analysis.errors.push(
-        `on:${spelled} is not valid on a component. Use on${event}={fn} (a plain callback prop) instead.` +
-        // A modifier is a thing the compiler does to a DOM event before calling
-        // the handler; a component decides for itself what it passes, so there
-        // is nothing to attach one to.
-        (modifiers ? ` A modifier (${modifiers}) has no meaning on a component — the child decides what it passes, so handle it in the callback.` : '')
-      )
-    })
-
-  // ── Attachments ───────────────────────────────────────────────────────────
-  node.attributes
-    .filter((a) => a.type === 'attach' || a.name === '@attach')
-    .forEach((prop) => {
-      const rawExp = prop.value
-      const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors) : rawExp
-      ctx.detectDependency(rawExp)
-      attachments.push(exp)
-    })
-
-  // ── bind:this — capture component instance into a let variable ───────────
-  const bindThisProp = node.attributes.find((a) => a.name === 'bind:this')
-  const bindThisVar = bindThisProp?.value ? unwrapExp(bindThisProp.value) : null
-  const bindThisSetter = bindThisVar ? ctx.setters?.[bindThisVar] : null
-
-  // ── Props — everything else (including onclick, oninput as plain props) ───
-  // client:* attributes are build-time island directives — not runtime props.
-  // {…spread} attributes are collected separately and merged via Object.assign.
-  const spreadProps = []
-  node.attributes
-    .filter((a) => a.name[0] !== '@' && !a.name.startsWith('on:') && !a.name.startsWith('client:') && a.name !== 'this' && a.type !== 'attach' && a.name !== 'bind:this')
-    .forEach((prop) => {
-      if (prop.name[0] === '#') return // reference capture — handled below
-
-      // {…expr} spread prop
-      if (prop.name.startsWith('{...') && prop.name.endsWith('}')) {
-        const rawExpr = prop.name.slice(1, -1)   // strip outer { }
-        const spreadExpr = rawExpr.slice(3)       // strip leading ...
-        const exp = ctx.accessors ? rewriteExpr(spreadExpr, ctx.accessors) : spreadExpr
-        ctx.detectDependency(spreadExpr)
+  const at = node.start != null ? ` — ${ctx.posOf(node.start)}` : ''
+  for (const a of componentAttributes(node)) {
+    switch (a.kind) {
+      case 'refused':
+        ctx.analysis.errors.push(a.message + at)
+        break
+      case 'spread': {
+        const exp = ctx.accessors ? rewriteExpr(a.expr, ctx.accessors) : a.expr
+        ctx.detectDependency(a.expr)
         spreadProps.push(exp)
-        return
+        break
       }
-
-      // bind:prop={x} on a COMPONENT — two-way. The prop name is what is left
-      // after the prefix; `bind:` itself never reaches the child.
-      //
-      // This used to fall through to inspectProp, which kept the raw attribute
-      // name, so the props object was emitted as `{bind:value: …}` — not
-      // parseable. The compiler reported nothing and the module threw at load.
-      // Nothing in the repo used the form, so it appears never to have worked,
-      // despite VISION §3.4 documenting it.
-      if (prop.name.startsWith('bind:') && prop.name !== 'bind:this') {
-        const rawName  = prop.name.slice(5)
-        const propName = rawName === 'class' ? '$class' : rawName
-        const varName  = prop.value ? unwrapExp(prop.value) : rawName
-        const setter   = ctx.setters?.[varName]
+      case 'bind-this':
+        bindThisSetter = a.target ? ctx.setters?.[a.target] : null
+        if (!bindThisSetter) {
+          ctx.analysis.errors.push(`bind:this={${a.target ?? ''}} — '${a.target ?? ''}' must be a top-level let variable` + at)
+        }
+        break
+      case 'bind': {
+        const setter = ctx.setters?.[a.target]
         if (!setter) {
           ctx.analysis.errors.push(
-            `bind:${rawName}={${varName}} — '${varName}' must be a writable top-level ` +
+            `bind:${a.attr.name.slice(5)}={${a.target}} — '${a.target}' must be a writable top-level ` +
             `\`let\` in this component to receive the child's changes.`
           )
-          return
+          break
         }
-        const readExpr = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
-        ctx.detectDependency(varName)
+        const readExpr = ctx.accessors ? rewriteExpr(a.target, ctx.accessors) : a.target
+        ctx.detectDependency(a.target)
         // Parent → child goes through the ordinary prop path…
-        allProps.push({ name: propName, value: readExpr, isStatic: false })
-        reactiveProps.push({ name: propName, value: readExpr })
+        allProps.push({ name: a.name, value: readExpr, isStatic: false })
+        reactiveProps.push({ name: a.name, value: readExpr })
         // …and child → parent through bindProp.
-        twoWayProps.push({ name: propName, setter })
-        return
+        twoWayProps.push({ name: a.name, setter })
+        break
       }
-
-      // On an element `class:x={cond}` toggles a class; on a component it
-      // would become a prop literally named "class:x" that no child reads, and
-      // the style vanished with no word. `part:x` has no compiler yet.
-      if (prop.name.startsWith('class:') || prop.name.startsWith('part:')) {
-        const at = node.start != null ? ctx.posOf(node.start) : null
-        ctx.analysis.errors.push(
-          `<${node.name} ${prop.name}> -- \`${prop.name.split(':')[0]}:\` does not reach into a component, so the style would be dropped. ` +
-          `\`class="…"\` on the tag passes through as the component's \`{class}\`; styling a child's part is planned (IDEAS/child-part-styling.md).` +
-          (at ? ` — ${at}` : '')
-        )
-        return
+      case 'prop': {
+        const ip = ctx.inspectProp(a.attr)
+        allProps.push({ name: a.name, value: ip.value, isStatic: ip.static })
+        // Non-static props need a $push effect to stay live when deps change.
+        if (!ip.static) reactiveProps.push({ name: a.name, value: ip.value })
+        break
       }
-
-      const ip = ctx.inspectProp(prop)
-      // `class` is a reserved word — auto-rename to `$class` so the child
-      // can use `export let $class = ''` or rely on the auto-declare.
-      const propName = ip.name === 'class' ? '$class' : ip.name
-      allProps.push({ name: propName, value: ip.value, isStatic: ip.static })
-      // Non-static props need a $push effect to stay live when deps change.
-      if (!ip.static) reactiveProps.push({ name: propName, value: ip.value })
-    })
+    }
+  }
 
   // ── Snippet children → same-name props ────────────────────────────────────
   //
@@ -6856,9 +6995,9 @@ export function makeComponent(node, option = {}) {
   // The definition is emitted in the calling scope (it closes over the parent's
   // reactive variables) under a unique name, so two components in one block can
   // each take a snippet called `row`.
-  const snippetChildren = (node.body ?? []).filter((n) => n.type === 'snippet')
+  const routing = routeSlots(node, ctx.config?.preserveComments)
   const snippetDefs = []
-  for (const s of snippetChildren) {
+  for (const s of routing.snippets) {
     const varName = `$$snip${ctx.uniqIndex++}_${s.name}`
     snippetDefs.push(ctx.makeSnippet({ ...s, varName }))
     // Static: a snippet definition is a stable function for the life of the
@@ -6868,111 +7007,34 @@ export function makeComponent(node, option = {}) {
   }
 
   // ── Slots ─────────────────────────────────────────────────────────────────
-  // Split child content by slot= attribute into named slot blocks.
-  // Elements/nodes with slot="name" → named slots.
-  // Everything else → default slot.
-  if (node.body?.length) {
-    // Separate named slots from default content
-    const namedSlotMap = {}  // slotName → [nodes]
-    const defaultNodes = []
-
-    for (const child of node.body) {
-      // Snippet children are props, handled above — never slot content.
-      if (child.type === 'snippet') continue
-
-      // Check for slot= attribute on element nodes (Mesa AST uses type='node')
-      const slotAttr = child.type === 'node' &&
-        child.attributes?.find(a => a.name === 'slot')
-      if (slotAttr) {
-        const slotName = slotAttr.value?.replace(/^['"]|['"]$/g, '') || 'default'
-        // Remove the slot= attribute from the node before building block
-        child.attributes = child.attributes.filter(a => a.name !== 'slot')
-        if (!namedSlotMap[slotName]) namedSlotMap[slotName] = []
-        namedSlotMap[slotName].push(child)
-      } else {
-        // A block whose every branch is slotted with one name belongs to that
-        // slot, not to the default one.
-        const target = child.type !== 'text' && child.type !== 'comment'
-          ? blockSlotTarget(child, ctx.config?.preserveComments)
-          : null
-        if (target?.name) {
-          stripInnerSlotAttrs(child)
-          if (!namedSlotMap[target.name]) namedSlotMap[target.name] = []
-          namedSlotMap[target.name].push(child)
-          continue
+  for (const { child, target } of routing.mixed) {
+    const where = `a {#${child.type}} inside <${node.name}>`
+    ctx.warning({
+      message: target.mixed === 'names'
+        ? `Warning: ${where} names more than one slot (${target.names.join(', ')}), so the ` +
+          `whole block goes to the default slot and every 'slot=' inside it is ignored. ` +
+          `A block belongs to one slot — split it, one per slot.`
+        : `Warning: ${where} mixes slotted and unslotted content, so the whole block goes ` +
+          `to the default slot and every 'slot=' inside it is ignored. Move the slotted ` +
+          `elements out of the block, or slot the block's own wrapper instead.`,
+    })
+  }
+  for (const [name, nodes] of routing.slots) {
+    const block = ctx.buildBlock({ body: nodes }, { inline: true })
+    slotBlocks.push(
+      xNode('slot-block', { block, name }, (w, n) => {
+        w.write(true, n.name === 'default' ? 'default: $$runtime.makeBlock(' : `'${n.name}': $$runtime.makeBlock(`)
+        w.add(n.block.template)
+        if (n.block.source) {
+          w.write(', ($$parentElement) => {')
+          w.indent++
+          w.add(n.block.source)
+          w.indent--
+          w.write(true, '}')
         }
-        if (target?.mixed) {
-          const where = `a {#${child.type}} inside <${node.name}>`
-          ctx.warning({
-            message: target.mixed === 'names'
-              ? `Warning: ${where} names more than one slot (${target.names.join(', ')}), so the ` +
-                `whole block goes to the default slot and every 'slot=' inside it is ignored. ` +
-                `A block belongs to one slot — split it, one per slot.`
-              : `Warning: ${where} mixes slotted and unslotted content, so the whole block goes ` +
-                `to the default slot and every 'slot=' inside it is ignored. Move the slotted ` +
-                `elements out of the block, or slot the block's own wrapper instead.`,
-          })
-        }
-        defaultNodes.push(child)
-      }
-    }
-
-    // Also check for <mesa:slot name="X"> wrappers (Sierra syntax)
-    // These are handled by slot-rewrite.js in Sierra, but handle here too for purity
-
-    // A slot made only of comments is not content.
-    //
-    // Comments are dropped from the output unless `preserveComments` is on, so
-    // such a block renders nothing and still makes `$$slots.<name>` true — and a
-    // component that BRANCHES on that turns itself off because somebody
-    // explained themselves above the buttons. `<Form>` generating its field
-    // list when the caller wrote no controls is the case that found this: one
-    // HTML comment inside the form and every field silently vanished.
-    const hasContent = (nodes) =>
-      nodes.some(n => n.type !== 'comment' || ctx.config?.preserveComments)
-
-    // Emit named slot blocks
-    for (const [slotName, nodes] of Object.entries(namedSlotMap)) {
-      const trimmed = trimEmptyNodes(nodes)
-      if (hasContent(trimmed)) {
-        const block = ctx.buildBlock({ body: trimmed }, { inline: true })
-        const name = slotName
-        slotBlocks.push(
-          xNode('named-slot', { block, name }, (w, n) => {
-            w.write(true, `'${n.name}': $$runtime.makeBlock(`)
-            w.add(n.block.template)
-            if (n.block.source) {
-              w.write(', ($$parentElement) => {')
-              w.indent++
-              w.add(n.block.source)
-              w.indent--
-              w.write(true, '}')
-            }
-            w.write(')')
-          })
-        )
-      }
-    }
-
-    // Emit default slot block
-    const trimmedDefault = trimEmptyNodes(defaultNodes)
-    if (hasContent(trimmedDefault)) {
-      const block = ctx.buildBlock({ body: trimmedDefault }, { inline: true })
-      slotBlocks.push(
-        xNode('default-slot', { block }, (w, n) => {
-          w.write(true, 'default: $$runtime.makeBlock(')
-          w.add(n.block.template)
-          if (n.block.source) {
-            w.write(', ($$parentElement) => {')
-            w.indent++
-            w.add(n.block.source)
-            w.indent--
-            w.write(true, '}')
-          }
-          w.write(')')
-        })
-      )
-    }
+        w.write(')')
+      })
+    )
   }
 
   // Build props object expression (static init)
@@ -10413,9 +10475,19 @@ export async function compile(source, config = {}) {
     emitTransforms(ctx)
   })
 
-  // ── Build runtime (DOM bindings) ──────────────────────────────────────────
+  // ── Lower the template to the IR ─────────────────────────────────────────
+  // Every target, every compile: a node with no lowering is named in the tree
+  // rather than dropped, which is what a portability report reads.
+  use_context(ctx, () => { ctx.ir = lower(ctx) })
+
+  // ── Build runtime (the template block, per target) ────────────────────────
   await hook('runtime:before')
-  use_context(ctx, () => buildRuntime.call(ctx))
+  use_context(ctx, () => {
+    if (config.target === 'terminal') {
+      buildHead.call(ctx)
+      buildTerminal(ctx)
+    } else buildRuntime.call(ctx)
+  })
   await hook('runtime')
 
   // ── Assemble output ───────────────────────────────────────────────────────
@@ -10441,6 +10513,8 @@ export async function compile(source, config = {}) {
 
     const root = xNode('root', (w) => {
       w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
+      if (config.target === 'terminal')
+        w.write(true, `import * as $$tui from '@frontierjs/mesa/runtime/terminal.js';`)
       w.add(ctx.module.top)
       // <script module> content — emitted at module scope, before component fn
       const moduleScript = ctx.scriptModuleNodes[0]?.content?.trim()

@@ -27,6 +27,18 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d783"></a>2026-10-09 · `FJS-D783` — The noun — None: if the next question lands on an ordinary column, there is no new thing to name.
+
+Asked in [`IDEAS/external-field-cache.md`](IDEAS/external-field-cache.md) § Open questions. **A** was picked over **B** (`@fetched(via: "stripe", ttl: 1d)`, a field attribute that says where the value comes from and how long it stays).
+
+The paper's recommendation, taken as written: it follows the next question's recommendation, and a noun coined before the mechanism is chosen enlarges the concept budget for nothing. B is the spelling to start from if the attribute route is ever taken.
+
+### <a id="fjs-d733"></a>2026-10-09 · `FJS-D733` — How does the catalog carry a word's axis — An axis per GROUP, with an `axis:` override on the about 26 rows that differ from their group, and none for `operate`. A test fails on a row with no axis and on a group with no default. `log`, `keepVersions` and `version` are ruled first.
+
+Asked in [`IDEAS/litestone-scope.md`](IDEAS/litestone-scope.md) § Open questions. **A** was picked over **B** (An `axis` column on every row. Same test, but 113 cells, and 87 of them repeat the group's answer), **C** (No column. D635's edge stays graded by directory and import, which `test/edge.test.ts` already does, and a new word's axis is a review question).
+
+The paper's recommendation, taken as written: the axis is mostly DERIVED from the group, so writing it on every row is a restatement that can drift from the group (§ V's fifth question). C leaves the ruling's third sentence (*a new `.lite` word names the axis it serves*) with no artefact, which is the `none` answer to § V's ninth question, and the sentence then reads as enforced when it is not.
+
 ### <a id="fjs-d693"></a>2026-10-09 · `FJS-D693` — A user journey takes **no noun**, and is not a Flow; *Checklist* is reserved for its first reader. Page and Layout take sierra's senses, and sierra's route is a *page route*
 
 Asked by wave 6 of the vocabulary atlas; the paper is [`IDEAS/in-app-guide.md`](IDEAS/in-app-guide.md) § *The journey*. The owner took the recommendation. On the way the owner asked whether a journey is a wizard and whether it is a Pipeline. It is neither, and both answers are recorded here.
@@ -1349,6 +1361,102 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d801"></a>2026-10-09 · `FJS-D801` — Does the redirect URI get scaffolded — Derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **B** was picked over **A** (not scaffolded: it is derived from `oauth.publicUrl` plus the mounted callback path, and `boot()` refuses when the mount and the derived path disagree), **C** (scaffolded per environment into config by `fli`, from `ports.js`).
+
+The paper's recommendation, taken as written: A is what ships in `packages/auth/plugin.ts`, and its one remaining silent failure is the console copy, which shows only on the provider's error page; printing the derived string closes it. C writes down a value that is derived from `publicUrl`, and the copy drifts the first time either moves.
+
+### <a id="fjs-d800"></a>2026-10-09 · `FJS-D800` — Where is the provider configured — In code: providers are `createLitestoneAuth({ oauthProviders })`, built with `defineProvider` beside `encryptionKey`, and only `publicUrl` and the failure page sit in the plugin's `oauth` block.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (in `junction.config.js`, an `auth.oauth` block read in `boot()`).
+
+The paper's recommendation, taken as written: A is what ships in `packages/auth/types.ts`. A `clientSecret` is credential material and belongs beside `encryptionKey`, and the transport block is the only part the route needs, which `boot()` already reads after config is loaded.
+
+### <a id="fjs-d799"></a>2026-10-09 · `FJS-D799` — Which surfaces are supported at v1 — `web/` only at v1, the surface `verify:oauth` drives.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (`web/` and `site/`, both of which can make a full-page navigation to the callback on the API's origin), **C** (all four, the extension through `chrome.identity.launchWebAuthFlow`).
+
+The paper's recommendation, taken as written: then B once a static site asks for sign-in, since it is the same redirect story with a different return page. A widget lives in somebody else's origin, where the session cookie is third-party, and the extension has no origin to redirect to; each is its own design, and nothing proves them today.
+
+### <a id="fjs-d798"></a>2026-10-09 · `FJS-D798` — Can a caller unlink their last credential and lock themselves out — No: `removeConnection` refuses with `LastCredentialError` when the connection is the only password or OAuth credential, and an API key does not count as a way in.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (yes, and the way back is a password reset by mail).
+
+The paper's recommendation, taken as written: A is what ships in `packages/auth/auth.ts`. B depends on the account having a verified, reachable address, which an OAuth-only account need not have.
+
+### <a id="fjs-d797"></a>2026-10-09 · `FJS-D797` — One OIDC engine plus per-provider normalizers, or a provider table — A preset table (`google`, `github`, `oidc`), each preset carrying its own `identify` normalizer, with endpoints stated rather than discovered.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (one OIDC engine reading `.well-known/openid-configuration`, with normalizers only for the providers discovery does not cover).
+
+The paper's recommendation, taken as written: A is what ships in `packages/auth/oauth.ts`. Discovery is a network call at boot, and a provider that cannot be constructed offline cannot be tested offline; the `oidc` preset already covers Entra, Okta and Auth0 with stated endpoints.
+
+### <a id="fjs-d796"></a>2026-10-09 · `FJS-D796` — Where do `state`, the PKCE verifier and the OIDC nonce live — Their own model, `OauthFlow`, keyed by `state` and bound to a cookie, swept by `cleanup.ts` on `@@expires`; no nonce, because v1 fetches userinfo rather than validating an `id_token`.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (`Verification` with a purpose, the identifier being the `state`), **C** (a signed cookie holding all three, with no row).
+
+The paper's recommendation, taken as written: A is what ships in `packages/auth/db/auth.lite`. An authorization in flight proves nothing and has no address, so B is two meanings in one table (the test `FJS-D261` cites this case for), and C cannot refuse a replayed code, which the drive does.
+
+### <a id="fjs-d795"></a>2026-10-09 · `FJS-D795` — Who notices a revocation at the provider's end, and how does the app find out before the next call fails — Nobody ahead of time: the first refresh or send that fails marks the row, and the app finds out then.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **A** was picked over **B** (the provider tells us where it offers to: Google's Cross-Account Protection (RISC) events and GitHub's authorization-revoked webhook arrive on the inbound leg and mark the row), **C** (a caravan probe calls each provider's token-info endpoint on an interval).
+
+The paper's recommendation, taken as written: then B per provider once an app needs to know before its next call. C spends a call per credential per interval to learn what the next send learns for nothing, and B's inbound leg already exists and is proven by `verify:pay`.
+
+### <a id="fjs-d781"></a>2026-10-09 · `FJS-D781` — Origin's `cross-process.js` sense — Rename to `writer` throughout `cross-process.js`: the column, the recorder's parameter, the decoded field. The events table is litestone's own file, so an existing one is deleted, not migrated.
+
+Asked in [`IDEAS/shipped/threat-model.md`](IDEAS/shipped/threat-model.md) § Open questions. **A** was picked over **B** (keep `origin`; the `VOCABULARY.md` row notes the litestone-internal sense beside the two live ones), **C** (rename to `process`, naming what the value is rather than its role).
+
+The paper's recommendation, taken as written: §4's table already makes the case: it is ours and leaves the module, so it is a third sense of a word kept for the browser's. *Writer* names its one use, skipping your own writes, where *process* would collide with the Node global. Out of scope here: `RequestMeta.origin` (`'internal'` in `packages/junction/src/testing/index.ts:430`) and the audit trail's `origin` column (`audit-log.js:201`) are a fourth sense the §4 sweep did not list. They want their own row before Origin is blessed.
+
+### <a id="fjs-d779"></a>2026-10-09 · `FJS-D779` — Multi-database and tenants — State it: when a tenant is open, the access panel says in one line that the surface comes from the schema and is the same for every tenant.
+
+Asked in [`IDEAS/shipped/studio-access-and-drift.md`](IDEAS/shipped/studio-access-and-drift.md) § Open questions. **A** was picked over **B** (Say nothing: the panel is derived from the schema, so it is already the same for every tenant), **C** (Show what does vary per tenant: drift A, schema against that tenant's database, since a tenant behind on migrations is where tenants actually differ).
+
+The paper's recommendation, taken as written: then C if tenants are seen to fall behind. The open tenant changes every other panel, so the natural reading is that it changes this one too, and nothing in `studio.html` says otherwise today. B leaves that wrong reading in place.
+
+### <a id="fjs-d778"></a>2026-10-09 · `FJS-D778` — Does the level view need a principal, or only a level — Level only: the matrix grades gates at a chosen level (`acVerdict` in `packages/litestone/src/tools/studio.html`), and policy predicates are shown as text.
+
+Asked in [`IDEAS/shipped/studio-access-and-drift.md`](IDEAS/shipped/studio-access-and-drift.md) § Open questions. **A** was picked over **B** (Principal-shaped: Studio boots as a person, as `fli tinker --as` does, takes the app's `getLevel` by path, and evaluates policies against real rows).
+
+The paper's recommendation, taken as written: A is what ships, and it states what it cannot judge rather than guessing. *What can Ada see* already has an owner in `fli tinker --as`, which takes the app's resolver, and B would be a second implementation of that inside a browser page that cannot import the gate module.
+
+### <a id="fjs-d754"></a>2026-10-09 · `FJS-D754` — Reads across a relation — As A, with a `no such table` naming a declared model rethrown as a refusal that names the model and its read level.
+
+Asked in [`IDEAS/scoped-sql.md`](IDEAS/scoped-sql.md) § Open questions. **C** was picked over **A** (state the property and pin it with a test: a join over two views carries both predicates, and a model below its read level does not resolve, so the join fails with SQLite's `no such table`), **B** (the same, but a model below its read level gets an empty view, so the join returns fewer rows instead of failing).
+
+The paper's recommendation, taken as written: B shows a missing permission as missing data, which is wrong without anything saying so. C is A plus the helpful failure § IV's *familiarity vs. precision* asks for, and needs no statement parse because the SQLite error already names the table.
+
+### <a id="fjs-d753"></a>2026-10-09 · `FJS-D753` — Does the view set follow `$scopedBy(...)` too — Yes: the binder's value joins the view predicates, from the same declaration the ORM path binds.
+
+Asked in [`IDEAS/scoped-sql.md`](IDEAS/scoped-sql.md) § Open questions. **A** was picked over **B** (no: scoped SQL reads through `$setAuth` only, and `$scopedBy(...).sql` keeps refusing).
+
+The paper's recommendation, taken as written: one declaration read two ways is the design's whole claim, and B leaves a proxy whose `sql` means something different from its `findMany`. If the first question picks D, the binder's value is one more column of the viewer row and the cache key does not grow.
+
+### <a id="fjs-d752"></a>2026-10-09 · `FJS-D752` — Does a sandbox appear in `db/access.snapshot.md` — Yes: one column per model in `access.snapshot.md` naming `copy`, `empty` or `sample`.
+
+Asked in [`IDEAS/sandboxes.md`](IDEAS/sandboxes.md) § Open questions. **B** was picked over **A** (No: `@@sandbox(...)` is visible in `db/schema.lite` and changes no declared access).
+
+The paper's recommendation, taken as written: a model marked `copy` puts its rows where a test credential reads them, which widens who can read them, and the access snapshot is where a reviewer checks who reads what. With `empty` the default, the column only says something when somebody typed `copy`.
+
+### <a id="fjs-d721"></a>2026-10-09 · `FJS-D721` — Does a Rig declare its own PII — On its own fields: the rig's imported `.lite` fragment carries `@pii` like any model, and the map reads the composed schema, so it flows with no new mechanism.
+
+Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md) § Open questions. **A** was picked over **B** (a rig manifest listing its personal data, which the map merges), **C** (the consuming app annotates the rig's fields itself, through `extend model X { … }`).
+
+The paper's recommendation, taken as written: then C for a field the rig left unmarked. The fragment is already imported rather than pasted (`IDEAS/rigs.md` § build item 1), so the annotation travels with the field it describes; B restates the schema in a second file that drifts from it.
+
+### <a id="fjs-d720"></a>2026-10-09 · `FJS-D720` — Does the map read a method's `input:` type — Split by `read: true`: a field reached through a `read: true` method is *processed, not stored*; one reached through any other method is *processed, may be stored*.
+
+Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md) § Open questions. **B** was picked over **A** (the rule as proposed: every field of a `type` reached through an `input:` is listed *processed, not stored*, citing `read: true` where the method has it), **C** (no: the map covers stored columns only, until `FJS-D505`'s deferred *never keep* word exists).
+
+The paper's recommendation, taken as written: `read: true` is the only evidence that no framework store keeps the value, so stating *not stored* for a write method's input is the map being wrong without saying so. B costs nothing over A: `isReadMethod` already answers.
+
+### <a id="fjs-d719"></a>2026-10-09 · `FJS-D719` — Does retention interact with `@@softDelete` — Retention ignores soft deletion: the sweep runs unfiltered from `createdAt`, so a soft-deleted row ages out like any other. This is what the database-level pass in `packages/litestone/src/tools/retention.js` does, with a raw `DELETE` that never reads `deletedAt`.
+
+Asked in [`IDEAS/compliance-from-the-seed.md`](IDEAS/compliance-from-the-seed.md) § Open questions. **A** was picked over **B** (soft deletion starts its own clock: a soft-deleted row is purged a declared period after `deletedAt`, on top of the `createdAt` window).
+
+The paper's recommendation, taken as written: A is what ships, and it closes the gap the question names: no row outlives its window by being hidden. B is a purge-after-delete policy, a second retention noun, and waits for a product that wants deleted rows gone sooner than live ones.
 
 ### <a id="fjs-d612"></a>2026-10-06 · `FJS-D612` — May an OAuth sign-in create an account on an address nobody proved — No account on an unproven address: it takes FJS-D611's path, a mail to the address, and the account is made on the click after the provider re-check. Branches 3 and 4 then answer an unproven address one way. A trusted provider with a verified claim still creates at once.
 
@@ -3476,6 +3584,60 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d789"></a>2026-10-09 · `FJS-D789` — Does the collision scope come from the column's `@@unique`, so nothing new is declared — Yes: the suffix probe reads against exactly the columns of the unique the slug sits in. A bare `@unique` means the table, and `@@unique([tenantId, slug])` means per tenant.
+
+Asked in [`IDEAS/slug-sourcing.md`](IDEAS/slug-sourcing.md) § Open questions. **A** was picked over **B** (An explicit scope argument, `@slug(scopeBy: [tenantId])`, declared beside the unique), **C** (No suffixing: a collision stays the refusal that ships (`Post: slug "hello-world" is already taken.`), and the app picks the next value).
+
+The paper's recommendation, taken as written: The scope is derivable, and the parser already refuses a scoped model's `@unique` that does not carry the tenant column, so tenancy is in the unique before the slug looks at it. B restates the unique and can disagree with it. The probe must count soft-deleted rows, since the unique index does.
+
+### <a id="fjs-d788"></a>2026-10-09 · `FJS-D788` — Is `source:` an argument to `@slug`, or is a sourced slug `@generated` plus the transform — one sentence the language already has — Neither: sourcing already ships twice. `slug String @default(title) @slug` stamps the slug once on create and leaves it alone when `title` changes; `slug String @slug(title)` is a STORED generated column that re-slugs on every change. The choice of spelling is the re-slug decision.
+
+Asked in [`IDEAS/slug-sourcing.md`](IDEAS/slug-sourcing.md) § Open questions. **A** was picked over **B** (Add `@slug(source: title)` as a write-time stamp, a third spelling that carries the collision suffix and a re-slug option), **C** (Retire the stamp form and make every sourced slug `@generated` plus the transform, so the slug always follows its source).
+
+The paper's recommendation, taken as written: A is what ships: a probe of `@default(title) @slug` and `@slug(title)` in `packages/litestone` shows the first keeps `hello-world` after a retitle and the second becomes `other-thing`. B adds a third spelling of a sentence the language already says. C cannot carry collisions, because a generated column cannot read other rows. The paper's open work is collision handling on the stamp form, not sourcing.
+
+### <a id="fjs-d777"></a>2026-10-09 · `FJS-D777` — Can a cardinality bound key on the relata pair rather than on a parent — No new spelling: where the relator has an ordinal discriminator, bound the discriminator. `replicaIndex Int @lte(7)` under the relator's unique over `[appId, serverId, replicaIndex]` already caps the pair at eight.
+
+Asked in [`IDEAS/shipped/relators.md`](IDEAS/shipped/relators.md) § Open questions. **C** was picked over **A** (On the relator, which already names the pair: `@@relator([appId, serverId], many: replicaIndex, max: 8)`, with the ledger keyed on the relator's own columns), **B** (On the relation field, with a qualifier: `placements AppServer[] @maxItems(8, per: server)` on `App`, so `@maxItems` stays the one spelling of a bound).
+
+The paper's recommendation, taken as written: then A once a `many` relator with no ordinal discriminator needs a bound. The one live case, `AppServer` in `packages/basecamp/db/schema.lite`, has `replicaIndex`, so C costs nothing new. When A is needed it beats B: the pair is already declared once on the relator, and B restates it from one side, and which side owns it is a choice B leaves open.
+
+### <a id="fjs-d771"></a>2026-10-09 · `FJS-D771` — What a HAND-WRITTEN `@@check` does about attribution — Derive it: the refusal is attributed to every column the expression names, so `startsAt < endsAt` puts its message under both controls, with no new spelling.
+
+Asked in [`IDEAS/shipped/declared-field-state.md`](IDEAS/shipped/declared-field-state.md) § Open questions. **B** was picked over **A** (A `field:` argument: `@@check("startsAt < endsAt", "an end must come after its start", field: endsAt)` puts the refusal on that control's path), **C** (Leave it form-level: a cross-column rule is about the row, and its message is what a person reads).
+
+The paper's recommendation, taken as written: The columns are already in the expression, so attribution can be derived rather than restated, and `client.js` already matches a CHECK by its source text to find `@required(where:)`'s field. A is a second statement of which field the rule concerns, and it can name a field the expression does not read. Add A as an override only if a derived blame proves wrong in a real form.
+
+### <a id="fjs-d770"></a>2026-10-09 · `FJS-D770` — Ordering against the stamps — Moot as built: `@required(where:)` expands to a table CHECK (`packages/litestone/src/core/ddl.js`), which SQLite evaluates on the row as inserted, after every stamp, so it never runs at `checkCreatePolicy`'s point.
+
+Asked in [`IDEAS/shipped/declared-field-state.md`](IDEAS/shipped/declared-field-state.md) § Open questions. **A** was picked over **B** (Also evaluate the predicate in JS for an earlier refusal, placed after `applyAuthDefaults` and stated as such), **C** (Refuse at parse a predicate that names a stamped column (an `auth()` default or the tenant column), so the browser affordance, which sees the record before the stamp, cannot disagree with the boundary).
+
+The paper's recommendation, taken as written: A is what ships, and the CHECK is the one place the rule is enforced, so it has no ordering to get wrong. B adds a second evaluation point whose order would have to be maintained by hand. C is owed only once a predicate on a stamped column appears, and none in the tree does.
+
+### <a id="fjs-d761"></a>2026-10-09 · `FJS-D761` — Does replay want to be one of Litestone's existing extension points — A tool module under `src/tools/` that the CLI drives: it reads the logger through the ORM and writes through `asSystem()`.
+
+Asked in [`IDEAS/time-travel.md`](IDEAS/time-travel.md) § Open questions. **B** was picked over **A** (a Litestone `Plugin`, installed on the client).
+
+The paper's recommendation, taken as written: replay runs over history after the fact and intercepts no query, which is the one thing a Plugin's `on*` surface is for. The premise has also closed: `FJS-D19` gave Plugin a `name` and kept the noun.
+
+### <a id="fjs-d760"></a>2026-10-09 · `FJS-D760` — Should the audit log gain an entry for a checkpoint itself — No: the registry row already holds the actor, the instant and the audit offset, and `db:log` interleaves registry rows at their offsets.
+
+Asked in [`IDEAS/time-travel.md`](IDEAS/time-travel.md) § Open questions. **B** was picked over **A** (yes: an entry with `operation: 'checkpoint'`, no records, and the checkpoint's id).
+
+The paper's recommendation, taken as written: the offset is the checkpoint's position in the narrative, so an audit entry would restate the registry and bend the entry shape to fit a non-row. One store holds it; the reader merges.
+
+### <a id="fjs-d759"></a>2026-10-09 · `FJS-D759` — Does a multi-database app checkpoint atomically — The set is the unit: capture every declared database, tenants and logger included, into one directory, and restore stages them all and swaps all or none, as `litestone restore` already does. Capture is not one instant; each file records its own.
+
+Asked in [`IDEAS/time-travel.md`](IDEAS/time-travel.md) § Open questions. **A** was picked over **B** (a true instant: hold the write lock on every database while the set is copied), **C** (per database: a checkpoint names one file, and the caller assembles a set).
+
+The paper's recommendation, taken as written: all-or-none restore ships in `cmdRestore`'s staging, so A adds nothing new to the failure model. B stalls every tenant for the length of the largest copy, to close a skew that only a cross-database read can see.
+
+### <a id="fjs-d732"></a>2026-10-09 · `FJS-D732` — What does the counterfactual cost on a large table — A capped count: the caller's query without its policy clause, as `SELECT count(*) FROM (SELECT 1 … LIMIT N)`, reported as *at least N* when it hits the cap.
+
+Asked in [`IDEAS/lantern.md`](IDEAS/lantern.md) § Open questions. **A** was picked over **B** (refused above a row count, estimated before the second query runs), **C** (unbounded, because it is a dev-only button somebody chose to press).
+
+The paper's recommendation, taken as written: the answer the pane needs is a number (*17 exist, the policy admitted 0*), so capping the count bounds the work without refusing the question. B needs an estimate SQLite only has after `ANALYZE`, which a fresh dev database has not run, so the refusal would be wrong without anything saying so.
 
 ### <a id="fjs-d663"></a>2026-10-08 · `FJS-D663` — Q2 — Does a non-relator row about the person get a word for *delete on forget*, and what is it — No word. The walk tombstones every non-relator row it reaches: `@personal` columns nulled, the row kept. A `Message` keeps its keys and timestamps and loses its `body`; §2's reports read the rows unchanged.
 
@@ -6302,6 +6464,24 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d786"></a>2026-10-09 · `FJS-D786` — Prior art in the JS ecosystem is worth one pass for the argument's sake, not for the design's — checked as a lead, not stated as a fact here — Done: § *The spelling* in the unique half made the pass (Prisma 7.4, Django, Rails, Ecto, Drizzle, EF Core, SQLAlchemy), and its findings apply to the `@@index` half unchanged.
+
+Asked in [`IDEAS/partial-indexes.md`](IDEAS/partial-indexes.md) § Open questions. **A** was picked over **B** (a second pass aimed at the plain `where:` on `@@index`).
+
+The paper's recommendation, taken as written: A is what the paper's own later text holds. A second pass would re-ask a spelling question already settled in the tree, and the bullet can be struck.
+
+### <a id="fjs-d785"></a>2026-10-09 · `FJS-D785` — Does an index predicate belong in `@@index` at all, or is the honest answer a `@@scope` the reads already carry — Keep `where:` on `@@index` as built: a predicate is reachable when it compiles to zero parameters.
+
+Asked in [`IDEAS/partial-indexes.md`](IDEAS/partial-indexes.md) § Open questions. **A** was picked over **B** (index a scope instead: `@@index([cols], scope: active)` takes its predicate from a declared `@@scope`, and `where:` goes), **C** (both: `where:` stays, and `scope:` is a second spelling that reads the predicate from a scope).
+
+The paper's recommendation, taken as written: the reachability B was meant to buy is already structural: the zero-parameter rule plus `FJS-578`'s boolean inlining construct it. `where:` is also the unique half's spelling, and a uniqueness constraint has no read-side scope to name, so B would split one predicate slot across two spellings. C is two names for one predicate.
+
+### <a id="fjs-d780"></a>2026-10-09 · `FJS-D780` — Is drift B worth showing when the repo has no committed snapshot — Show the absence as a warning: *no access snapshot is committed — nothing fails when access widens*.
+
+Asked in [`IDEAS/shipped/studio-access-and-drift.md`](IDEAS/shipped/studio-access-and-drift.md) § Open questions. **A** was picked over **B** (Hide drift B when no snapshot exists, since there is nothing to compare), **C** (Offer to write the snapshot from Studio).
+
+The paper's recommendation, taken as written: A is what ships in `packages/litestone/src/tools/studio.html`. B makes *I cannot judge this* look like *this is fine*. C is the regenerate button § *The rule that keeps this from doing harm* refuses.
+
 ### <a id="fjs-d603"></a>2026-10-06 · `FJS-D603` — How does an edit say what happens to the rows it reshapes — In the migration, never the seed. Litestone owns a short, fixed set of row-keeping operations (`rename`, `backfill`, `split`). `migrate create` takes them from a prompt, a flag or a document, and Oracle's answer emits the same document. Litestone writes their SQL into the `.sql` file and names each one in its header. A change that needs an operation nobody gave is created with a placeholder, and apply refuses it. The shadow shows the rows carried over before the file may apply.
 
 Raised by base44 PLAN § Phase 3, where a rename deleted 3 of 3 values, a new required link half-applied (`FJS-1785`), and a content split dropped 8 of 8 bodies (`FJS-1787`). **D** was picked over:
@@ -6736,6 +6916,186 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d686"></a>2026-10-09 · `FJS-D686` — Does "is this person connected" stay a per-process answer, or does a second API instance get a shared connection registry, and if shared, in whose store — Keep it per-process and say so in the contract: `connectionsOf` is named "on this node", the docs and `app.channels` type state it, and an app that runs more than one instance asks a service that fans the question out itself. No new mechanism; the answer stays honest but the help-desk case is not solved.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A shared registry in the app's own database: a junction-owned table (`connection { id, userId, node, seenAt }`) written on open, deleted on close and swept by `seenAt` after a node dies, with `connectionsOf` answering from it. Caravan's `job_owners` heartbeat is the precedent for an instance row swept on silence (`IDEAS/scaling.md`); costs a write per connect and a staleness window after a crash, and answers only `connectionsOf` — presence and broadcast stay per node).
+
+The paper's recommendation, taken as written: junction cannot run two instances on one port today (`Bun.serve` gets no `reusePort`, `IDEAS/scaling.md`) and a broadcast reaches only this node's sockets either way, so a shared registry would make one of three socket answers cross-node while the other two stay local. Name the answer per node now and rule B together with cross-node broadcast when multi-instance is taken up. `runtime-state-sqlite.md` does not carry that question: it proposes one `:memory:` database PER PROCESS, which is still a per-node answer.
+
+### <a id="fjs-d787"></a>2026-10-09 · `FJS-D787` — Does this wait for the content-collections half, or ship with a hand-read frontmatter first — Build the `example/` version now, against a Vite glob with hand-read frontmatter.
+
+Asked in [`IDEAS/release-notes.md`](IDEAS/release-notes.md) § Open questions. **B** was picked over **A** (wait for the collection half of `IDEAS/content-collections.md`, so frontmatter is validated against a declared `type` from the first note).
+
+The paper's recommendation, taken as written: the collection half has no concrete second reader yet, and this is the first one. Its frontmatter bugs are the evidence the collection half is argued with, and the smallest version needs no framework change.
+
+### <a id="fjs-d784"></a>2026-10-09 · `FJS-D784` — Where does the parse happen — the provider connector, which already holds the vendor's JSON shape, or one MIME parser shared by every provider — The provider connector normalizes the vendor's payload into one message shape, the same split `FJS-D153` draws for signatures.
+
+Asked in [`IDEAS/inbound-email.md`](IDEAS/inbound-email.md) § Open questions. **A** was picked over **B** (every connector hands over raw MIME, and one shared parser builds the message).
+
+The paper's recommendation, taken as written: then a shared MIME parser the first time a connected provider hands over only raw MIME (SES), called by that connector. The vendor's shape is the connector's by `FJS-D153`, and B throws away the parse Postmark and Mailgun already did while putting a MIME parser into every app on day one.
+
+### <a id="fjs-d782"></a>2026-10-09 · `FJS-D782` — Does this obsolete or complement the typed browser client — Complement: the projection is a third client over the same services, dispatching through `app.service(name)`, beside the browser client.
+
+Asked in [`IDEAS/agent-surface.md`](IDEAS/agent-surface.md) § Open questions. **A** was picked over **B** (obsolete: the browser client is generated from the tool list).
+
+The paper's recommendation, taken as written: A is what ships: `@frontierjs/mcp` and the browser client read the same `describe()` and `generateJsonSchema`, and `src/client/` is already a terminal client built off the tool list. A browser client generated from it would inherit the projection's narrowing, which is an affordance for an agent and wrong for a screen.
+
+### <a id="fjs-d776"></a>2026-10-09 · `FJS-D776` — Is the Outpost the right home for `/logs` — The Outpost, as a named `POST /logs` with a capped tail, which is what `packages/outpost/src/server.js` ships.
+
+Asked in [`IDEAS/shipped/logbook.md`](IDEAS/shipped/logbook.md) § Open questions. **A** was picked over **B** (no route: the caller composes `docker logs` over `/exec`).
+
+The paper's recommendation, taken as written: A is what ships. A named route with a cap states what the caller may ask for, and `/exec` would make every log read an arbitrary command.
+
+### <a id="fjs-d775"></a>2026-10-09 · `FJS-D775` — Does the bulk-write remainder belong here or in 4.13 — Defer it to 4.13: `IDEAS/time-travel.md` owns it, and already prices it and proposes the per-model opt-in `@@log(audit, snapshots: all)`.
+
+Asked in [`IDEAS/shipped/logbook.md`](IDEAS/shipped/logbook.md) § Open questions. **A** was picked over **B** (decide it here: every bulk write on a logged model records `before` and `after` per row).
+
+The paper's recommendation, taken as written: this paper shipped Phase 2 without it, so *decided here* has lapsed. One argument with one owner, and the only consumer that needs contents is replay. B writes a million snapshots for a million-row update for provenance nobody has asked to read.
+
+### <a id="fjs-d774"></a>2026-10-09 · `FJS-D774` — What is the trail's tenant column under `strategy database` — One fleet-shared logger file, its model unscoped, with a nullable `tenant` String column stamped from the call (`litestone/src/core/audit-log.js`).
+
+Asked in [`IDEAS/shipped/logbook.md`](IDEAS/shipped/logbook.md) § Open questions. **A** was picked over **B** (one logger file per tenant, redirected by `tenant.js` the way every sqlite database already is), **C** (fleet-shared file, the model scoped by the tenant column so a tenant reads only its own rows).
+
+The paper's recommendation, taken as written: A is what ships in `audit-log.js` and `tenant.js`. Reading the trail across the fleet is an operator act, and B would cost a second file per tenant and the cross-tenant query. C belongs to the day a tenant reads its own trail in the app.
+
+### <a id="fjs-d773"></a>2026-10-09 · `FJS-D773` — Should `fileWriter` be deleted or kept — Delete it from `junction/src/core/logger.ts` and the `index.ts` export, with its test.
+
+Asked in [`IDEAS/shipped/logbook.md`](IDEAS/shipped/logbook.md) § Open questions. **A** was picked over **B** (keep it, documented as not for a served app, never grown rotation).
+
+The paper's recommendation, taken as written: nothing in the tree calls it; `fli` does not import Junction's logger, so the CLI case is hypothetical. An export with no caller is a road nobody takes and an invitation to grow rotation onto it. When `fli` needs a file sink it writes the four lines itself.
+
+### <a id="fjs-d772"></a>2026-10-09 · `FJS-D772` — Does `$.log` shadow `app.logger` badly — Keep both and state the split in `api-hazards`: `$.log` inside a call, `app.logger` outside one, which is what the JSDoc on `log` in `junction/src/core/context.ts` already says.
+
+Asked in [`IDEAS/shipped/logbook.md`](IDEAS/shipped/logbook.md) § Open questions. **A** was picked over **B** (a `fli check` rule that names `app.logger` read inside a service method or hook body, where it drops the call's `correlationId`, user and tenant), **C** (make `app.logger` bind the current call itself, so both spellings write the same line).
+
+The paper's recommendation, taken as written: then B once a real app ships a line missing its call context. The wrong choice loses context fields, not data, so a documented hazard is proportional. C makes every module-scope logger consult the ambient call on each line, and leaves two names doing one job.
+
+### <a id="fjs-d765"></a>2026-10-09 · `FJS-D765` — Does `IObservability` absorb this or sit beside it — No interface: an Outpost capability read through `apps.analytics()`, the shape `apps.logs()` already has.
+
+Asked in [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Open questions. **C** was picked over **A** (through `IObservability`, adding an analytics read to it), **B** (a separate `IAnalytics` provider interface).
+
+The paper's recommendation, taken as written: the plan's own phase 1 and 2 already describe C. A provider interface in basecamp is for a third party it speaks to, and GoAccess on the target reached through the Outpost is not one; `apps.logs()` is the owner that exists, and C adds no interface nobody implements.
+
+### <a id="fjs-d764"></a>2026-10-09 · `FJS-D764` — Where the window comes from — Re-parse on each request, filtering lines by their timestamp to the window; the deepest history is whatever Caddy's roll keeps.
+
+Asked in [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Open questions. **A** was picked over **B** (GoAccess's persisted database on the target, restored and extended on each run).
+
+The paper's recommendation, taken as written: then B once a re-parse is measured too slow. The paper's own *a report is not a row* is the reason: a persisted database is a parsed report kept between runs, a cache with a staleness question and nothing to answer it.
+
+### <a id="fjs-d763"></a>2026-10-09 · `FJS-D763` — `site/` and `widgets/` are surfaces with their own origins — One log per route, as `packages/cli/core/edge.js` writes it, split at report time by the `request.host` every Caddy JSON line carries.
+
+Asked in [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Open questions. **A** was picked over **B** (a route and an access log per surface origin, the way `api` already gets `fli-<app>-api`), **C** (no split: one report per app, surfaces mixed).
+
+The paper's recommendation, taken as written: the hostname is already in every line, so the split derives at read time and a file per surface would restate it. The edge is Caddy now (`FJS-D598`), so the `access_log` and `location` mechanics this question was written against are gone either way.
+
+### <a id="fjs-d762"></a>2026-10-09 · `FJS-D762` — Does the fleet get a sum — No fleet sum: the report is per app per machine, which is what the topology gives.
+
+Asked in [`IDEAS/traffic-analysis.md`](IDEAS/traffic-analysis.md) § Open questions. **A** was picked over **B** (a fleet total in basecamp that fans out to every machine and says how many answered (*3 of 4 machines*) rather than presenting a partial sum as the whole), **C** (the fleet number from the edge, `IEdge.analytics()`).
+
+The paper's recommendation, taken as written: then B once an operator asks for the total. A has no failure mode the per-app report does not already have; B's only honest form names the machines that did not answer, which is a design of its own. C counts the CDN, not the machines, and is a stub.
+
+### <a id="fjs-d758"></a>2026-10-09 · `FJS-D758` — Is the console's first caller maid.tech or example — `example`: the drive in § *The shape* is written there, and CI runs it.
+
+Asked in [`IDEAS/sysadmin-console.md`](IDEAS/sysadmin-console.md) § Open questions. **A** was picked over **B** (maid.tech: the 72 stored reports are the real catalog, and porting them is the test of the `.report.ts` shape).
+
+The paper's recommendation, taken as written: then B as the acceptance once the drive passes. The proof has to live where CI can run it, and maid.tech sits outside this repo; its catalog is what tells the file shape whether it holds, so a handful of its reports port as the second step rather than the first.
+
+### <a id="fjs-d757"></a>2026-10-09 · `FJS-D757` — Is a report tenant-aware — The run carries it: `reports.run(name, params, { tenant })` resolves one tenant the way a Caravan dispatch does, and the file states nothing; a question across tenants is a caller looping, which basecamp's `/hub/` tier already is.
+
+Asked in [`IDEAS/sysadmin-console.md`](IDEAS/sysadmin-console.md) § Open questions. **B** was picked over **A** (the file declares it: `tenant: 'each' | 'one'`, and `'each'` fans out over the tenant registry and answers per tenant), **C** (every report reads across tenants: the service always iterates the registry).
+
+The paper's recommendation, taken as written: a `.job.ts` declares no tenant either; the dispatch carries one (`caravan/src/db.ts`, `tenant_id`), and `fli tinker`'s console context does the same. A file that declares `'each'` would be a second owner of a fan-out the `/hub/` tier already holds. A reopens when one report has to answer across database tenants in a single table.
+
+### <a id="fjs-d751"></a>2026-10-09 · `FJS-D751` — Does `fli tinker` reach a live process — No: `fli tinker` stays a console that boots at a standing over the app's database, and the runtime state of a running server is read in devtools.
+
+Asked in [`IDEAS/runtime-state-sqlite.md`](IDEAS/runtime-state-sqlite.md) § Open questions. **A** was picked over **B** (Yes, through devtools: `fli tinker --attach <url>` sends its query to the running server's devtools endpoint, under the devtools auth), **C** (Yes, through the file system: the runtime database is a WAL file under `.cache/`, and any process opens it read-only).
+
+The paper's recommendation, taken as written: then B once the runtime database exists and devtools has a query box. B reuses the one surface that already has a connection to the process, where a new channel would add a second owner. C writes in-memory state to disk on every change, which defeats the first question.
+
+### <a id="fjs-d750"></a>2026-10-09 · `FJS-D750` — One db or two — Two: the cache keeps its own `:memory:` database in `packages/junction/src/cache/index.ts`, and the runtime database holds transport state only.
+
+Asked in [`IDEAS/runtime-state-sqlite.md`](IDEAS/runtime-state-sqlite.md) § Open questions. **A** was picked over **B** (One: the cache and the idempotency claims move into the runtime database, so one connection answers everything the process holds).
+
+The paper's recommendation, taken as written: The paper names the runtime database as core rather than a battery, and *batteries vs. smallness* says core stays small. The cache already has an owner and its own eviction, and B buys a join nobody has asked for.
+
+### <a id="fjs-d749"></a>2026-10-09 · `FJS-D749` — Is the per-broadcast cost affordable — Measure first. A bench fans one broadcast out to a thousand sockets over today's maps and over tables, and adoption waits on a stated threshold.
+
+Asked in [`IDEAS/runtime-state-sqlite.md`](IDEAS/runtime-state-sqlite.md) § Open questions. **A** was picked over **B** (Keep the hot path in maps, and have devtools copy them into a `:memory:` database when someone asks. Broadcasts cost nothing extra, and the foreign-key claim is lost), **C** (Adopt presence alone without measuring, since presence is where the foreign key earns its place, and leave channel subscriptions in maps).
+
+The paper's recommendation, taken as written: then C if the fan-out regresses. Nothing in `packages/junction` measures broadcast cost today, so any answer without the bench is a guess. B is a second copy of the maps that can go stale, which is the scatter the paper exists to remove.
+
+### <a id="fjs-d748"></a>2026-10-09 · `FJS-D748` — Retention economics — Keep A's counts and measure them: `deploy:status` reports the bytes each retained Release holds (image, web release, backup), so a count is chosen from a number.
+
+Asked in [`IDEAS/release-transitions.md`](IDEAS/release-transitions.md) § Open questions. **B** was picked over **A** (Counts, as built: `keep_releases` (default 3) for web and `keep_backups` (default 5), with images pruned to what is in use, and the cost unmeasured), **C** (Retention by time: keep every Release for a stated window, as the question's *a week* assumes).
+
+The paper's recommendation, taken as written: the question is that the cost is unknown, and the cheapest answer is to report it where an operator already looks. Routing cost only exists once two Releases are served at once, which is phase 4. C keeps an unbounded number of Releases on a busy week.
+
+### <a id="fjs-d747"></a>2026-10-09 · `FJS-D747` — Where does the Release declaration live — It joins the deploy block in `frontier.config.js`: `configuration` (values) beside `secrets` (pinned references), and the pivot comes from `classifyPivot` over `release.snapshot.md` rather than being declared.
+
+Asked in [`IDEAS/release-transitions.md`](IDEAS/release-transitions.md) § Open questions. **A** was picked over **B** (Its own file beside `db/schema.lite`, such as `db/release.lite`).
+
+The paper's recommendation, taken as written: A is what `fli release:mint` reads today (1b). The terms that can be derived are derived (the schema hash off the committed snapshot, the digest off the build), so what remains declared is deploy configuration, and it already has one home. B adds a second file for the same block.
+
+### <a id="fjs-d746"></a>2026-10-09 · `FJS-D746` — Where the JOURNAL physically lives, which phase 1a cannot start without — On the target: its own Litestone client over `packages/cli/db/deploy.lite`, `main` at `.fli/deploy.db` under the deploy root, `fli` the only writer and Basecamp a reader through the Outpost.
+
+Asked in [`IDEAS/release-transitions.md`](IDEAS/release-transitions.md) § Open questions. **A** was picked over **B** (A second `database` block on the app's own client), **C** (Off the target: on the operator's machine, or in Basecamp).
+
+The paper's recommendation, taken as written: A is what ships (`deploy.lite`, and `journal.path` defaulting to `.fli/deploy.db` in `deploy/_module.md`). The negative control above measured B putting the lock in the app's `main` and the journal in the app's backup set, and C gives two operators two histories of one server.
+
+### <a id="fjs-d745"></a>2026-10-09 · `FJS-D745` — Tenancy — Notes are bundle-global and the seen-set lives on each tenant's `User`, proved in `example/`, which already runs `strategy database`.
+
+Asked in [`IDEAS/release-notes.md`](IDEAS/release-notes.md) § Open questions. **A** was picked over **B** (notes are per tenant, so one shop can carry a note the others do not).
+
+The paper's recommendation, taken as written: it follows from § 1: a note ships in the bundle and every tenant runs one bundle. A per-shop message is § 3's notice, which already lives in the tenant's database.
+
+### <a id="fjs-d744"></a>2026-10-09 · `FJS-D744` — A notice to every user — Fan out through `app.notify`, a row per person per notice.
+
+Asked in [`IDEAS/release-notes.md`](IDEAS/release-notes.md) § Open questions. **A** was picked over **B** (a broadcast shape in `@frontierjs/notifications`: one record addressed to everyone, with a per-person seen-set like § 2's).
+
+The paper's recommendation, taken as written: then B once a real app measures the row count as a cost. A is correct today through the existing owner and adds no noun; B is a second delivery model inside one package, priced before anyone has paid A's cost.
+
+### <a id="fjs-d737"></a>2026-10-09 · `FJS-D737` — Custom method events are treated as upserts — As built: a custom-method event goes through the same `apply` as `patched`, so it can insert, reposition, or drop the row.
+
+Asked in [`IDEAS/live-queries.md`](IDEAS/live-queries.md) § Open questions. **A** was picked over **B** (a custom-method event always refetches, since the client cannot know what the method did).
+
+The paper's recommendation, taken as written: A is what ships in `packages/junction/src/client/index.ts`, and it is now stated there: the server publishes the updated record, and a row leaves a filter through a custom method exactly as through a patch. `changed`, which carries a count rather than a row, is already excluded and refetches.
+
+### <a id="fjs-d736"></a>2026-10-09 · `FJS-D736` — Does the inbound dispatch reuse `around` — Run all four phases inbound; `around` wraps the store-apply, which is the inner call in place of the network.
+
+Asked in [`IDEAS/live-queries.md`](IDEAS/live-queries.md) § Open questions. **A** was picked over **B** (inbound runs `before`, `after` and `error`; `around` is outbound only).
+
+The paper's recommendation, taken as written: one pipeline with one rule is the claim the framing rests on, and B makes an `around.created` hook a declaration that never fires with nothing saying so. A hook that means only the network keys on the method it wraps, which is how a hook already avoids methods it does not mean.
+
+### <a id="fjs-d735"></a>2026-10-09 · `FJS-D735` — What about a `select` — As built: `null`, then a refetch.
+
+Asked in [`IDEAS/live-queries.md`](IDEAS/live-queries.md) § Open questions. **A** was picked over **B** (refuse at load a `select` that drops a filtered column), **C** (widen the `select` silently to include the filtered columns).
+
+The paper's recommendation, taken as written: A is what ships, and the cost is a round trip per burst, not a wrong list. C changes what the caller asked for, and B refuses a load that answers correctly.
+
+### <a id="fjs-d734"></a>2026-10-09 · `FJS-D734` — Does `matchesQuery` need to handle relations — As built: the matcher answers `null` for a filter naming a relation and the store refetches, coalesced per burst.
+
+Asked in [`IDEAS/live-queries.md`](IDEAS/live-queries.md) § Open questions. **A** was picked over **B** (refuse at load: a query touching a relation is not live-able, said at subscribe time), **C** (ship the related rows with the event so the client can decide).
+
+The paper's recommendation, taken as written: A is what ships in `packages/junction/src/client/index.ts` (`verdict`, `refetch`), and it is correct, only slower. B would make a list that loads correctly refuse to stay live, and C widens every broadcast for one kind of query.
+
+### <a id="fjs-d703"></a>2026-10-09 · `FJS-D703` — Rate limiting and cost — Junction's one rate limiter (`core/rate-limit.ts`) on the `/mcp` route, keyed by principal.
+
+Asked in [`IDEAS/agent-surface.md`](IDEAS/agent-surface.md) § Open questions. **A** was picked over **B** (a per-tool `maximum` on `limit` in the projection's `find` schema), **C** (nothing new: the Data boundary's own handling of `limit` is the cap).
+
+The paper's recommendation, taken as written: rate limiting already has one owner, and a loop is a rate problem, not a page-size one. B is a second rule over one schema that the boundary does not share, the same split the SDK's stricter validator already opened.
+
+### <a id="fjs-d702"></a>2026-10-09 · `FJS-D702` — Does the agent surface get its own audit trail — As built: `recordCall` writes `mcp.call` entries into the app's own logger database, read back at `GET {path}/calls` by an administrator.
+
+Asked in [`IDEAS/agent-surface.md`](IDEAS/agent-surface.md) § Open questions. **A** was picked over **B** (a separate store owned by `@frontierjs/mcp`), **C** (none here; wait for `IDEAS/compliance-from-the-seed.md`).
+
+The paper's recommendation, taken as written: A is what ships in `packages/mcp/src/plugin.ts`, and it is one trail rather than two: an agent's write still lands in the field entries the Data boundary logs, and `mcp.call` adds only who asked through which tool.
+
+### <a id="fjs-d617"></a>2026-10-09 · `FJS-D617` — Who sets `http.trustProxy` when `fli deploy` writes the nginx that appends `X-Forwarded-For` — The deploy that writes the proxy also writes `http.trustProxy` for it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the operator sets it, and the deploy says so).
+
+The paper's recommendation, taken as written: the one that adds the hop knows it is there. B leaves the scaffold broken by default.
 
 ### <a id="fjs-d695"></a>2026-10-09 · `FJS-D695` — Where does `record()` say WHY it has no row — `ready` rejecting, or an `error` on the view beside `get()` — The view carries `error: { status, code }` beside `get()`, and `ready` keeps resolving. The reason survives the push path as well as the first load.
 
@@ -10290,6 +10650,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d673"></a>2026-10-09 · `FJS-D673` — Does a plain multi-line String (an address, a note) get a schema word now, or wait for a sighting — `@syntax(txt)`: plain text's file extension beside `md`, the catalog's own rule for the argument; `x-syntax: txt` → `textarea` with plain display in `displayFor` (no Markdown rendering). No new attribute, and a natural language is a syntax too. It redefines an existing answer rather than adding one: probed 2026-10-09, `controlFor({ type: 'string', 'x-syntax': 'text' })` answers `{ control: 'code', language: 'text' }` today, an unhighlighted code editor that falls through rather than a designed answer.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (wait: close the row's residue until an app declares a column that needs it, then the sighting names the shape. No code, no noun), **C** (derive from `@length`: a `maxLength` above a threshold (say 200) is `textarea`. No new word, but a magic number, and a column that is long and one-line (a URL) is misdrawn).
+
+The case is already in the tree: example's note String @length(0, 500) draws one line and strips a pasted newline, so waiting buys nothing. txt is plain text's file extension, which is the catalog's rule for @syntax's argument, so prose gets the textarea md already gets without a new attribute or a magic length. The fall-through answer it replaces (an unhighlighted code editor) has no users; pre-alpha it is redefined, not preserved.
+
+### <a id="fjs-d726"></a>2026-10-09 · `FJS-D726` — Does the derivation want to be visible — A `--explain` listing what was placed where, the same reporting surface item 5 of `IDEAS/static-safety.md` wants.
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (silent).
+
+The paper's recommendation, taken as written: a compiler whose output differs from the source owes a report of the difference, and one reporting surface already wanted by `static-safety.md` costs less than a second. Moot unless derived placement is built.
+
+### <a id="fjs-d725"></a>2026-10-09 · `FJS-D725` — Interaction with `{#virtual each}` — Nothing special: a `{#virtual each}` over an awaited list is a region like any other, held by its boundary until the list settles, then it renders its first window; on the server the SSR answer awaits it.
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (the block is its own boundary, and before the list arrives it renders a window of placeholder rows sized from the row height).
+
+The paper's recommendation, taken as written: B is a skeleton derived from the markup, which the fallback question above turns down in favor of an authored `pending`. Under the SSR answer's B the server awaits the list and renders the first real window, which is the case `FJS-067` was about.
+
+### <a id="fjs-d724"></a>2026-10-09 · `FJS-D724` — Does a value read only in an attribute get its own boundary — Attribute reads bubble to the element's parent.
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (their own boundary).
+
+The paper's recommendation, taken as written: an image gated alone reads as a broken layout, and its parent is the smallest region a person reads as one thing.
+
+### <a id="fjs-d723"></a>2026-10-09 · `FJS-D723` — Where does a derived boundary's fallback come from — The nearest `pending` snippet in scope, walking up (build step 3).
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (a blank region), **C** (a skeleton derived from the gated markup).
+
+The paper's recommendation, taken as written: and read it as evidence for B in the first question. Once the fallback has to be authored, placing the snippet is placing the boundary in all but name, and the derivation saves one wrapper element.
+
 ### <a id="fjs-d700"></a>2026-10-09 · `FJS-D700` — Does the IR carry raw HTML tag names, or only the abstract vocabulary — Raw tags plus a per-target lowering table. Every existing component compiles, and portability is whatever the table covers.
 
 Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions. **A** was picked over **B** (abstract vocabulary only, with raw tags as a web-only escape node. Cleaner, but every raw `<div>` in the corpus becomes an escape).
@@ -11757,6 +12147,30 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d805"></a>2026-10-09 · `FJS-D805` — Is Toggle Group a `RadioGroup` treatment rather than a component — No component: a lone toggle is `Button` with `pressed` (`aria-pressed`), single-select is a segmented treatment of `RadioGroup`, and multi-select is the same treatment over a row of checkboxes.
+
+Asked in [`IDEAS/ui-kit-gaps.md`](IDEAS/ui-kit-gaps.md) § Open questions. **A** was picked over **B** (a `ToggleGroup` component of `aria-pressed` buttons with a `multiple` prop).
+
+The paper's recommendation, taken as written: native inputs bring the keyboard, the form value and the a11y with them, and the look is a treatment, which is how Invariant 13 says a variant is spelled. B rebuilds radio and checkbox semantics on buttons and adds a noun the kit does not need.
+
+### <a id="fjs-d804"></a>2026-10-09 · `FJS-D804` — Does Tag Input replace `json` for every `String[]`, or only one that declares it — Every scalar list, with no new component: `case 'array'` answers a list with `items` as `MultiSelect` with `allowNew` and no options, and the Tag Input behaviors (comma, paste) are added to MultiSelect.
+
+Asked in [`IDEAS/ui-kit-gaps.md`](IDEAS/ui-kit-gaps.md) § Open questions. **A** was picked over **B** (every `String[]` gets a new `TagInput` component), **C** (only a column that declares it gets one; the rest stay `json`).
+
+The paper's recommendation, taken as written: A is what ships in `sierra/src/resource/field-rules.js` `case 'array'`, which already stopped answering `json` for a scalar list. What remains is MultiSelect learning comma and paste, not a second control for the same value.
+
+### <a id="fjs-d802"></a>2026-10-09 · `FJS-D802` — Does `@frontierjs/ui` ship brand sign-in buttons, and under what exemption — A provider button whose color is the provider's official mark as an image, on a neutral tone and treatment, using the light or neutral variant Google's and GitHub's guidelines both offer.
+
+Asked in [`IDEAS/third-party-credentials.md`](IDEAS/third-party-credentials.md) § Open questions. **B** was picked over **A** (`@frontierjs/ui` ships none; an app styles its own provider buttons), **C** (brand-colored buttons in `@frontierjs/css`, under an exemption to Invariant 13 recorded in `DECISIONS.md`).
+
+The paper's recommendation, taken as written: the guidelines put the required color in the mark, so the button stays a tone and a treatment and Invariant 13 needs no exemption. A leaves every app to meet each provider's guidelines alone, and C opens the first color class in a system that has none.
+
+### <a id="fjs-d701"></a>2026-10-09 · `FJS-D701` — Where the WCAG level is stated — One `README.md` sentence per package naming the level its own drives assert (`css`, `ui`).
+
+Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. **A** was picked over **B** (one sentence in the root `README.md` for the whole framework), **C** (an app config key (`a11y.level`) that `fli check` grades against).
+
+The paper's recommendation, taken as written: the level is only as true as the drive behind it, and each package owns its own drive, so the claim sits with its evidence. B states a level for packages that test nothing, and C is a key nothing can keep true from a static read.
+
 ### <a id="fjs-d622"></a>2026-10-07 · `FJS-D622` — What is the full-width stripe called, and who owns reaching the viewport edge — Both: a `Band` term (a `<section>` over Surface owning the background slot, a photo under `--scrim`, and block padding from density, with a `.container` inside for width) and a `.bleed` utility for anything else that escapes its parent (an image in Prose, a Divider, an edge-to-edge table on a phone); the escape is ONE rule, `.bleed, .band`, the way `.kicker, .navlist-label` share one.
 
 Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **A** was picked over **B** (the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`), **C** (give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)).
@@ -12337,6 +12751,230 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d579"></a>2026-10-09 · `FJS-D579` — From a framework checkout, does `fli new` default `--source local`, refuse npm when a template needs a newer feature than the published package, or keep npm — Default `local` when `fliRoot` sits in a framework checkout (`<root>/packages/junction/package.json` beside the cli), npm otherwise. A published `fli` never has that sibling, so the person the comment protects still gets npm, and the dev cli writes templates against the code those templates were written for. `--source npm` still forces it; the plan summary already names the source.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep the npm default and refuse it when the template needs a newer feature: a `requires` stamp per template feature checked against the registry's latest. Names the real cause, but is a second list that must be updated with every plugin-protocol change, and "newer than published" is a network lookup in a scaffold), **C** (keep npm and publish before the template changes. No code, and a red scaffold from the tree is the normal state between publishes; the next unpublished feature does it again).
+
+The paper's recommendation, taken as written: the failure only exists from a checkout, where the cli and the packages are one version of one tree, so choosing the tree removes the gap instead of detecting it. The comment's reason for npm (a starting point for somebody else) is a published cli's case, and A leaves it untouched.
+
+**The probe is a checkout marker, not a sibling.** In an npm install `fliRoot/..` is `node_modules/@frontierjs/`, where `junction/package.json` is present whenever junction is installed beside the cli, so *junction beside the cli* reads an install as a checkout. A checkout is: the cli's parent directory is `packages/`, the directory above it holds a `package.json` declaring `workspaces`, and the resolved `fliRoot` passes through no `node_modules`. `fliRoot` is the cli's real path (`import.meta.url`), so a `bun link`ed global `fli` resolves to the checkout and a registry install does not. The test that proves it covers the npm layout with junction installed beside the cli.
+
+### <a id="fjs-d803"></a>2026-10-09 · `FJS-D803` — Do the `.lite` and `.mesa` diagnostics that exist in the VS Code extension belong in a terminal — Yes, through `fli check`: the `.mesa` errors already arrive there as `mesa-compiles`, and the `.lite` parser's errors and warnings join as a rule of the same shape, Mesa's warnings with them.
+
+Asked in [`IDEAS/tooling-decisions.md`](IDEAS/tooling-decisions.md) § Open questions. **A** was picked over **B** (one terminal command per language (`litestone check`, `mesa check`)), **C** (editor only; the build already stops on an error).
+
+The paper's recommendation, taken as written: `FJS-D133` makes `fli check` the one registry for *what is wrong with this app*, and the half for `.mesa` is built. The compiler stays the one owner of each diagnostic and the rule only relays it, so the editor and the terminal show the same list. C leaves every warning silent for anyone not in VS Code, including CI.
+
+### <a id="fjs-d794"></a>2026-10-09 · `FJS-D794` — Is `basecamp` the proving ground, ahead of `example` — `basecamp` first, then `example`.
+
+Asked in [`IDEAS/testing-realm.md`](IDEAS/testing-realm.md) § Open questions. **A** was picked over **B** (`example` first, since it is the kitchen sink across every surface).
+
+The paper's recommendation, taken as written: A is what was done and it paid on the first run. Basecamp gates every model, so it exercises the whole ladder, where `example` covers more surfaces but fewer gates.
+
+### <a id="fjs-d793"></a>2026-10-09 · `FJS-D793` — Per app or per model file — One per app, `db/access.snapshot.md` beside the schema.
+
+Asked in [`IDEAS/testing-realm.md`](IDEAS/testing-realm.md) § Open questions. **A** was picked over **B** (one per model file).
+
+The paper's recommendation, taken as written: A is what ships. One artefact lands in the same PR as the schema change that moved it, and a per-model split multiplies the files a reviewer has to open without adding a fact.
+
+### <a id="fjs-d792"></a>2026-10-09 · `FJS-D792` — How many of the ~30 entries in `CLAUDE.md` § *Bridge index* are boundaries in Rainsberger's sense — About eleven, ranked in § The triage, generated top-down.
+
+Asked in [`IDEAS/testing-realm.md`](IDEAS/testing-realm.md) § Open questions. **A** was picked over **B** (treat every Bridge index entry as a boundary and pair each one).
+
+The paper's recommendation, taken as written: A is the paper's own answer, and two of the eleven are built. Most entries are handoffs inside one owner, not two sides that can drift apart.
+
+### <a id="fjs-d791"></a>2026-10-09 · `FJS-D791` — Does an app want the ladder in the snapshot as well as the required level — The required level per operation only, as `db/access.snapshot.md` renders it today (`2 READER`).
+
+Asked in [`IDEAS/testing-realm.md`](IDEAS/testing-realm.md) § Open questions. **A** was picked over **B** (all nine levels per operation, allow or deny in each column).
+
+The paper's recommendation, taken as written: A is what ships, and the ladder is derived from the level by `levelPasses`, so B restates it at nine times the diff. The one thing the ladder showed that a single level hid, a delete easier than its update, is visible side by side in the existing row.
+
+### <a id="fjs-d790"></a>2026-10-09 · `FJS-D790` — Do generated tests get deleted by developers in practice — Close the file half as moot: Phase 1b derives at run time and emits no test file, so there is nothing to delete. What is left is an app dropping its `verifyGateLadder()` call or its `db/access.snapshot.md`, which a `fli check` rule over the app can name.
+
+Asked in [`IDEAS/testing-realm.md`](IDEAS/testing-realm.md) § Open questions. **B** was picked over **A** (keep it as research: repo archaeology over scaffold-generated tests (Rails, Django, Prisma) before Phase 4 claims the output is trusted), **C** (measure it from the escape hatch: count the excepted rows across apps, once the first question's `except` exists).
+
+The paper's recommendation, taken as written: then C once `except` ships. Repo archaeology answers a question about emitted files, and this framework does not emit them. The remaining failure, a suite or snapshot quietly removed, is silent today and § V's ninth question asks for the artefact that says so.
+
+### <a id="fjs-d769"></a>2026-10-09 · `FJS-D769` — Are `repo-report.snapshot.html`/`repo-atlas.snapshot.html` then redundant — Keep both: the snapshots are committed and reviewed in a diff, the page is live and never committed.
+
+Asked in [`IDEAS/shipped/control-surface.md`](IDEAS/shipped/control-surface.md) § Open questions. **A** was picked over **B** (retire the snapshots; the live page is the reading).
+
+The paper's recommendation, taken as written: A is what ships, and the question's own text argues it: a live page cannot show what changed in a commit, and a committed file cannot show what is running.
+
+### <a id="fjs-d768"></a>2026-10-09 · `FJS-D768` — Whose project — As built: whatever root `fli` resolved; `runnables()` walks it with `findApps`, so an app directory shows one app and the workspace root shows all.
+
+Asked in [`IDEAS/shipped/control-surface.md`](IDEAS/shipped/control-surface.md) § Open questions. **A** was picked over **B** (always one app, chosen with `--project`), **C** (always the workspace).
+
+The paper's recommendation, taken as written: A is what ships in `packages/cli/core/runnables.js`, and it derives the scope from where the command is typed rather than adding a flag.
+
+### <a id="fjs-d756"></a>2026-10-09 · `FJS-D756` — The comparison column cannot be derived, and it goes stale silently — The claims live in `website/comparisons.json`, which already names each system's version and a `graded` date, and one age check on `graded` covers them.
+
+Asked in [`IDEAS/stressor-questions.md`](IDEAS/stressor-questions.md) § Open questions. **B** was picked over **A** (every claim carries a source URL, the version it was read against and the date it was checked, and a check flags one older than a stated horizon), **C** (no comparison column: the catalog publishes FrontierJS's answer and status only).
+
+The paper's recommendation, taken as written: one owner for *FrontierJS beside other systems* already exists, and a second file stating Laravel's version is the restatement that drifts. Age is the only staleness a check can see without reading the other project's docs, so the check grades the date, not the claim. C is the fallback if a row there cannot hold a prose answer.
+
+### <a id="fjs-d755"></a>2026-10-09 · `FJS-D755` — The source is outside the repo — Commit a snapshot: the generator runs where the sibling exists and writes a committed file CI reads.
+
+Asked in [`IDEAS/stressor-questions.md`](IDEAS/stressor-questions.md) § Open questions. **A** was picked over **B** (move the plans into this repo), **C** (give each prototype a remote CI can clone).
+
+The paper's recommendation, taken as written: it is the `exports.snapshot.md` shape, a generated file committed and diffed. B and C publish the plans whole, and some of them are client engagements (maid.tech, ELA) whose plans name a live client's data; a snapshot carries only the extracted questions.
+
+### <a id="fjs-d743"></a>2026-10-09 · `FJS-D743` — Whether `ISSUES.md` survives as a file at all — It survives as the register: one table, the file-per-record migration not taken for issues.
+
+Asked in [`IDEAS/registers.md`](IDEAS/registers.md) § Open questions. **A** was picked over **B** (a file per record, with `ISSUES.md` a generated index the `snapshots` phase keeps fresh), **C** (a file per record and no `ISSUES.md`; `fli next`, `register:find` and `ws:atlas` are the reading surface).
+
+The paper's recommendation, taken as written: the migration's argument here was the prefix, and the declared prefix solved that without it. Every write verb (`file`, `close`, `archive`, `amend`, `decide`) writes the table today, and the file's size is a narrative problem (`IDEAS/changes-retirement.md` question 4), not a shape one. The header of `registers.js` that calls the migration declared is then the claim to amend.
+
+### <a id="fjs-d742"></a>2026-10-09 · `FJS-D742` — Whether closing a row is a verb or an edit — A verb: `fli close <id> --how`, which ships in `core/close.js` and moves the row with its date and How cell, and would set the frontmatter field under file-per-record.
+
+Asked in [`IDEAS/registers.md`](IDEAS/registers.md) § Open questions. **A** was picked over **B** (an edit by hand, graded afterwards by `register:check`).
+
+The paper's recommendation, taken as written: A is what ships. The verb writes the closing date and the How column the same way every time, so the shape cannot be wrong; a hand edit can, and is still graded when someone makes one.
+
+### <a id="fjs-d741"></a>2026-10-09 · `FJS-D741` — Where a prefix is declared — A `"registers": { "prefix", "dir" }` key in the project's `package.json`, read by `registerLayout()`.
+
+Asked in [`IDEAS/registers.md`](IDEAS/registers.md) § Open questions. **A** was picked over **B** (a `.fli.json` beside it), **C** (derived from the workspace name).
+
+The paper's recommendation, taken as written: A is what ships, and `elitelawncare/ela` runs on it. A second config file is a second origin for project settings, and a derived prefix changes every id the day the workspace is renamed.
+
+### <a id="fjs-d740"></a>2026-10-09 · `FJS-D740` — What it does about drift it cannot explain — Split it by Release id: a process reporting a different Release from the one the journal says is serving means the machine moved (stale image, half swap). The same Release with different enforcement means the build moved. Name the side, and fall back to A only where the ids cannot split it.
+
+Asked in [`IDEAS/production-grading.md`](IDEAS/production-grading.md) § Open questions. **B** was picked over **A** (Report both sides and name neither: the verdict is `unknown`, with the snapshot's claim and the process's answer printed side by side), **C** (Refuse to grade when the Release ids disagree).
+
+The paper's recommendation, taken as written: the Release id is content-addressed, so it separates the two causes without a guess, which is what `verify:studio:access` does for a schema. C is silent in exactly the case worth reporting.
+
+### <a id="fjs-d739"></a>2026-10-09 · `FJS-D739` — Whether a verdict is a metric — Yes, as a `gauge` of 1 or 0 per check through `registerMetricsSource`, with no new `MetricType` member.
+
+Asked in [`IDEAS/production-grading.md`](IDEAS/production-grading.md) § Open questions. **A** was picked over **B** (Yes, with a new `MetricType` member, `verdict`, holding pass, fail or unknown), **C** (No: its own record that stores only the changes in a verdict, kept forever).
+
+The paper's recommendation, taken as written: a 0/1 gauge is how Prometheus has always reported `up`, so retention and alerting come with no new type. *When did it stop* is answered within the metrics retention window. C is owed only if somebody needs a verdict older than that window.
+
+### <a id="fjs-d731"></a>2026-10-09 · `FJS-D731` — Is `example/` the right home for framework proof — `example/` stays the proof home. Its `verify*` drives in `DRIVES.md` are the end-to-end proof, and `FJS-D166` already put payroll there rather than in a fourth app so that one ledger proves one invariant.
+
+Asked in [`IDEAS/kernel-and-projections.md`](IDEAS/kernel-and-projections.md) § Open questions. **A** was picked over **B** (Capability fixtures move beside the packages, each package proves its own capability over a minimal schema, and `example/` becomes a demo that nothing depends on), **C** (Split by tier: generated conformance (migration step 2) runs over per-package fixtures for the Data and API tiers, and `example/` keeps only the drives that cross realms).
+
+The paper's recommendation, taken as written: then C once generated conformance exists. The cross-realm drives need a real app, and a kitchen sink is cheaper than a fixture per capability. B would rewrite 37 drives as fixtures before the generator that would replace them exists. When step 2 lands, a derived suite should replace a hand-written drive tier by tier rather than all at once.
+
+### <a id="fjs-d730"></a>2026-10-09 · `FJS-D730` — Where do the headings live once there are two readers — They stay as `PURPOSE_SECTIONS` in `packages/litestone/src/tools/assistant.js` until the recognizer actually reads `PURPOSE.md`.
+
+Asked in [`IDEAS/intent-recognizer.md`](IDEAS/intent-recognizer.md) § Open questions. **A** was picked over **B** (They move to `@frontierjs/toolbelt`, which litestone and the cli may both import), **C** (They move to the cli, and litestone's assistant is handed the headings).
+
+The paper's recommendation, taken as written: then B once `packages/cli/core/intent.js` reads the purpose file. Today there is one caller, so there is nothing to move yet. When the second arrives, toolbelt is where a fact two packages must agree on lives (`FJS-D26`), and `intent.js` deliberately takes no dependency on litestone. C makes a tooling package the owner of something litestone needs.
+
+### <a id="fjs-d729"></a>2026-10-09 · `FJS-D729` — Is a stretch its own verdict, or a qualifier on `needs us` — A qualifier: `needs us` carries `stretch` beside its cost class and cites the purpose file.
+
+Asked in [`IDEAS/intent-recognizer.md`](IDEAS/intent-recognizer.md) § Open questions. **A** was picked over **B** (Its own verdict: `stretch`, beside `exists`, `needs us` and `incident`).
+
+The paper's recommendation, taken as written: The cost class is unchanged by scope, so a separate verdict would be two answers to one question. § *What the app is FOR* already argues for a qualifier, and the next run with a `PURPOSE.md` is what tests it.
+
+### <a id="fjs-d728"></a>2026-10-09 · `FJS-D728` — Where does the request register live — In the app: a model in the app's own `db/schema.lite`, keyed by the identifier each request resolved to, as `FJS-D14` rules for an intake.
+
+Asked in [`IDEAS/intent-recognizer.md`](IDEAS/intent-recognizer.md) § Open questions. **A** was picked over **B** (Hosted one tier up: one service reads many apps' registers, which makes it a product rather than a feature), **C** (A committed file in the app's repo that `fli intent` appends to, read like the other snapshots).
+
+The paper's recommendation, taken as written: The intake is an app under `FJS-D14`, and a model gets the gate, the audit trail and *read it backwards* as a query for free. B is a product with no first customer yet. C is a register that is neither regenerated nor gated, so it can drift without anything saying so.
+
+### <a id="fjs-d727"></a>2026-10-09 · `FJS-D727` — Verdict only, or does it write — Verdict only: `packages/cli/core/intent.js` answers a verdict with a citation and a cost class, and writes nothing.
+
+Asked in [`IDEAS/intent-recognizer.md`](IDEAS/intent-recognizer.md) § Open questions. **A** was picked over **B** (Verdict plus a draft: a Data-realm `needs us` carries the `.lite` line `packages/oracle/src/emit.js` would write, shown for a developer to accept and never applied), **C** (A builder: the recognizer writes the schema line and runs the migration).
+
+The paper's recommendation, taken as written: then B once a real run, not the synthetic run 1, shows single-declaration Data verdicts are common enough to be worth drafting. A is what ships. B reuses the emitter `FJS-D601` already put in `oracle` rather than a second writer. C is the builder this paper says is a different machine.
+
+### <a id="fjs-d722"></a>2026-10-09 · `FJS-D722` — Whether the Outpost is an FJS application — Not an FJS application: plain Bun ESM with `@frontierjs/toolbelt` as its one dependency, no schema and no ORM.
+
+Asked in [`IDEAS/deploy-plane.md`](IDEAS/deploy-plane.md) § Open questions. **A** was picked over **B** (An FJS application with a schema of its own, so its routes are services and its state is Litestone rows), **C** (Junction without Litestone: services and the hook pipeline, no seed).
+
+The paper's recommendation, taken as written: A is what ships in `packages/outpost`, and its README states why: a schema, a migration runner and an ORM on every fleet server, to run argv arrays. Its state is Basecamp's rows, so the seed it would derive from is Basecamp's, and it already does.
+
+### <a id="fjs-d718"></a>2026-10-09 · `FJS-D718` — What is the honest false-positive budget — Zero by construction: a claim the resolver cannot decide is `undecidable`, reported and never failed, and a class that fires wrong is narrowed rather than tuned.
+
+Asked in [`IDEAS/claim-checking.md`](IDEAS/claim-checking.md) § Open questions. **A** was picked over **B** (a measured percentage per class, run on this repo before the class may fail anything), **C** (a class ships as a warning and is promoted to failing after a quiet period on this repo).
+
+The paper's recommendation, taken as written: the three verdicts already make the budget zero, and `doc-audit.js` holds the same line by grading only a claim with an authority. A percentage is a number nobody re-measures, which is the silence § V's ninth question asks about.
+
+### <a id="fjs-d717"></a>2026-10-09 · `FJS-D717` — Does a claim need a stable id — No id: a claim is located by its file and its authority (the path, symbol or `exit:` command it names), and the ratchet is a count per check class, which is the shape `check-baseline.json` already has.
+
+Asked in [`IDEAS/claim-checking.md`](IDEAS/claim-checking.md) § Open questions. **A** was picked over **B** (an id per claim in its `@claim` comment, citable and allowed one by one).
+
+The paper's recommendation, taken as written: the authority already identifies the claim, so an id restates it, and an id per sentence is the cost the paper names as what would make the tool unusable. A count per class is how this repo already ratchets fli check and typecheck.
+
+### <a id="fjs-d716"></a>2026-10-09 · `FJS-D716` — What is the relationship to `fli app:atlas` — None: two tools that share an instinct and no code.
+
+Asked in [`IDEAS/claim-checking.md`](IDEAS/claim-checking.md) § Open questions. **A** was picked over **B** (atlas is one resolver among several: a claim naming an app fact (a model, a route, a service) resolves against atlas's derived model), **C** (one tool: atlas becomes the claim checker's model of an app).
+
+The paper's recommendation, taken as written: then B the first time a claim names a fact only atlas derives, so the resolver imports it rather than re-deriving it. C couples a repo-agnostic checker to one framework's seed.
+
+### <a id="fjs-d715"></a>2026-10-09 · `FJS-D715` — Is this a product or a phase of `fli check` — A phase of `fli check`, which is where the in-repo half already runs: `packages/cli/core/doc-audit.js`, called from `checks.js`.
+
+Asked in [`IDEAS/claim-checking.md`](IDEAS/claim-checking.md) § Open questions. **A** was picked over **B** (a standalone product, extracted into its own package that runs in any repository).
+
+The paper's recommendation, taken as written: then B once a second repository runs the generic third and draws its boundary. `FJS-D133` already refused a second registry answering *what is wrong here*, and an extraction drawn before anyone outside this repo uses it guesses the boundary the paper says has never been drawn.
+
+### <a id="fjs-d714"></a>2026-10-09 · `FJS-D714` — `ISSUES.md` (2 MB) and `DECISIONS.md` (1 MB) — A separate pass, after the `CHANGES.md` extraction proves the method.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions. **A** was picked over **B** (the same pass, all three registers at once).
+
+The paper's recommendation, taken as written: the pilot on caravan exists to find what the classification table gets wrong, and the registers carry ids that other files cite, so a mistake there costs more than one in a file being deleted.
+
+### <a id="fjs-d713"></a>2026-10-09 · `FJS-D713` — `IDEAS/release-notes.md` — Amend `release-notes.md`'s claim in the retirement commit: the developer half is git plus `fli changelog`.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions. **A** was picked over **B** (keep `CHANGES.md` as release notes' developer half and narrow this retirement to the lesson extraction).
+
+The paper's recommendation, taken as written: `fli changelog` already derives that half from commits, and B keeps a hand copy of git alive for a consumer that does not exist pre-alpha.
+
+### <a id="fjs-d712"></a>2026-10-09 · `FJS-D712` — A lesson with no hazard-skill realm — The package's own `CLAUDE.md`, which loads on first read of the package.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions. **A** was picked over **B** (root `CLAUDE.md` § Live hazards → Repo, one line each), **C** (a fourth hazard skill for the tooling packages (cli, toolbelt, config)).
+
+The paper's recommendation, taken as written: it has the same reach a realm skill buys and an owner that already exists. B loads every lesson into every session, and C is a new noun for a handful of entries. A css trap is not in this set: `ui-hazards` already fires on `@frontierjs/css`.
+
+### <a id="fjs-d711"></a>2026-10-09 · `FJS-D711` — What `fli done` asks instead — Nothing; the diff is the record.
+
+Asked in [`IDEAS/changes-retirement.md`](IDEAS/changes-retirement.md) § Open questions. **A** was picked over **B** (a non-empty commit body per package touched).
+
+The paper's recommendation, taken as written: B grades a commit that `fli done` runs before, and a body written to satisfy a gate is the same padding this retires.
+
+### <a id="fjs-d710"></a>2026-10-09 · `FJS-D710` — Overlap with `atlas` and `project:map --json` — The lock is the four committed `*.snapshot.md` registers; `fli app:atlas` and `fli project:map` render them from one boot and commit nothing.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **A** was picked over **B** (a fifth file, `frontier.lock`, holding `project:map --json`, committed).
+
+The paper's recommendation, taken as written: A is what ships (`commands/app/atlas.md`: a fifth file derived from four gated ones would be a second origin). `frontier.lock` as a name is retired with it.
+
+### <a id="fjs-d709"></a>2026-10-09 · `FJS-D709` — Does the lock belong in version control — Committed, routes included, as the four `*.snapshot.md` registers are.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **A** was picked over **B** (committed but coarse: registrations and baselines only), **C** (never committed; generated on demand by `fli app:atlas`).
+
+The paper's recommendation, taken as written: that is what ships, and the noise is the point: a route that appears in a diff is a change a reviewer should see. Coarsening it would hide the routes, which are the claims most likely to be silently wrong.
+
+### <a id="fjs-d708"></a>2026-10-09 · `FJS-D708` — Directory or segment, not both as truth — As built: both are required (the junction loader globs `services/**/*.service.ts`, caravan `jobs/*.job.ts`), and `fli check` refuses a loaded segment outside its kind's folder by name.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **C** was picked over **A** (segment authoritative: a `*.service.ts` anywhere under `src/` loads), **B** (directory authoritative: every file in `services/` loads; the segment is decorative).
+
+The paper's recommendation, taken as written: `FJS-D625` already put every file in its kind's folder and made an unsuffixed file in a loader's folder a private helper, so the two answer different questions: the folder says where, the suffix says it registers. What is missing is the refusal, because a stray `*.service.ts` today is never loaded and nothing says so.
+
+### <a id="fjs-d707"></a>2026-10-09 · `FJS-D707` — Lowercase always — The segment is always lowercase and the stem takes the case of the name it registers: PascalCase for a type (`OrderPaid.notification.ts`, `Lead.mesa` per Invariant 19), kebab for a routed name (`user-profiles.service.ts`, `send-email.job.ts`); a `fli check` rule refuses two files that differ only in case.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **B** was picked over **A** (lowercase stem and segment always; `PaymentReceived.notification.ts` becomes `payment-received.notification.ts`).
+
+The paper's recommendation, taken as written: the tree already does B and two rules depend on it (notifications stamp the type from the stem; Invariant 19 names a resource file for its model). The real hazard is the case collision, and the check names it directly.
+
+### <a id="fjs-d706"></a>2026-10-09 · `FJS-D706` — Do not repurpose borrowed segments — A closed segment list, derived from the loaders (`.service.ts`, `.job.ts`, `.notification.ts`, …); a segment not on it means nothing to `fli`.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **A** was picked over **B** (a deny-list of borrowed segments that a `fli check` rule refuses).
+
+The paper's recommendation, taken as written: the list of loaders is the allow-list, so a borrowed segment can only be repurposed by adding a loader for it, which is a reviewed change. A deny-list is a second list that goes stale the day the ecosystem coins a segment.
+
+### <a id="fjs-d705"></a>2026-10-09 · `FJS-D705` — Lock merge conflicts — Regenerate on conflict, as the committed `*.snapshot.md` registers work today: the header names the generator and its flags, and the `snapshots` CI phase fails a stale one.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **A** was picked over **B** (A, plus a git merge driver (`.gitattributes` `merge=fli-snapshot`) that reruns the generator during the merge).
+
+The paper's recommendation, taken as written: the lock this paper describes already exists as `surface`/`jobs`/`notifications`/`principal.snapshot.md`, sorted and regenerated, and CI already refuses a hand-merged one. A merge driver is per-clone setup that a fresh clone silently lacks.
+
+### <a id="fjs-d704"></a>2026-10-09 · `FJS-D704` — Deploy config and shareability are enemies — As built: `frontier.config.js` IS the deploy file (`deploy.server`, `deploy.web.domain` inline, basecamp's copy), the app's own config is `junction.config.js`, and the shareable unit is `db/schema.lite` plus `junction.config.js`, never `frontier.config.js`.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **A** was picked over **B** (split `frontier.config.js` into an intent half (shareable) and a deploy file it references by path), **C** (keep `frontier.config.js` but move `server` and `domain` out to env or the per-run `--server` alias, so the file holds no infrastructure).
+
+The paper's recommendation, taken as written: the name already went to deploy, and most of the intent block this paper wanted is derivable or already lives in `junction.config.js` (`FJS-D158`'s split). Calling the deploy file unshareable costs nothing; B builds a third config file for keys that have no home yet.
 
 ### <a id="fjs-d691"></a>2026-10-09 · `FJS-D691` — `mobile/` is a surface, and Invariant 3 names it. It wraps `web/` the way `desktop/` does.
 
@@ -14611,6 +15249,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d767"></a>2026-10-09 · `FJS-D767` — Is `unknown` allowed to ship — Yes, with a warning: `unknown` ships and is printed in the release output beside the bump.
+
+Asked in [`IDEAS/version-compatibility.md`](IDEAS/version-compatibility.md) § Open questions. **B** was picked over **A** (No: as `release:check`, `unknown` counts as a contract and refuses a minor bump under `--strict`).
+
+The paper's recommendation, taken as written: strictness follows cost (§ IV *ergonomics vs. strictness*). A wrong verdict on a package is fixed by the next publish, while a database cannot be half-migrated. Level 1, the export surface, never answers `unknown`, so the warning only appears for the levels that cannot be decided.
+
+### <a id="fjs-d766"></a>2026-10-09 · `FJS-D766` — Should the peer ranges be generated rather than written — Generated at publish: each internal peer is written from the sibling's workspace version at pack time (the train's number under a train), and `exports.snapshot.md` records the result.
+
+Asked in [`IDEAS/version-compatibility.md`](IDEAS/version-compatibility.md) § Open questions. **B** was picked over **A** (Written by hand, as today: a floor typed once).
+
+The paper's recommendation, taken as written: a peer range is a fact about which sibling version a package was built and tested against, so it is derived. It holds under either answer to the train question, and the `snapshots` phase already shows the range moving.
+
+### <a id="fjs-d738"></a>2026-10-09 · `FJS-D738` — Is `FJS-D297`'s severability test worth promoting out of one ruling — A ruling of its own about packaging, holding § *The test*'s five outcomes and citing `FJS-D297` as where it came from.
+
+Asked in [`IDEAS/map-packages.md`](IDEAS/map-packages.md) § Open questions. **A** was picked over **B** (one sentence in `PHILOSOPHY.md` § IV, *batteries vs. smallness*: nothing that is the default is severable), **C** (this file stays its index).
+
+The paper's recommendation, taken as written: the five-outcome table names precedents (`warden`, `foundry`, `chronos`), which § VII keeps out of a guiding document, and C is what § VII forbids. A ruling is the register an assessment may cite, and § IV may cite the ruling in turn.
 
 ### <a id="fjs-d635"></a>2026-10-08 · `FJS-D635` — What is litestone's edge — The batteries stay in litestone behind a seam. Nothing under `src/core/` imports them, a test fails if anything does, and each one leaves the main entry for its own subpath (`./storage`, `./replicate`, `./transform`). Studio's server leaves `cli.js` for its own file, and its saved queries leave the app's database. A new `.lite` word, `$` method or `src/` directory names the axis it serves, or it is a battery.
 

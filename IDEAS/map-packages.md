@@ -259,7 +259,7 @@ afternoon, or V2.
   - **B** — lazy, at read, in junction. A miss derives and stores. Needs a route, so the Data realm's bytes serve through the API realm, and the set must be bounded or the miss path is the transform server this framework refuses.
   - **C** — deferred to a job. Same declared set as A, none of the upload latency. **It has an owner problem rather than a design problem**: dispatching means Caravan, which sits above litestone (Invariant 1), so litestone can only DECLARE what is missing and something above it does the work — `needsBackfill`'s shape, and the migration differ's.
   - **Recommend A** — v1, with C as its own question once a real upload latency is measured. The nine are answered against A in § media below; 7 and 9 pass conditionally and their conditions are part of the work, not follow-up.
-- **Is `FJS-D297`'s severability test worth promoting out of one ruling?** It decided
+- ~~**Is `FJS-D297`'s severability test worth promoting out of one ruling?**~~ **Answered 2026-10-09 (`FJS-D738`): A — a ruling of its own about packaging, holding § *The test*'s five outcomes and citing `FJS-D297` as where it came from.** It decided
   eight rows on this page and is currently findable only from the offline ruling.
   Either it becomes a ruling of its own about packaging, or this file stays its only
   index — and an assessment is not allowed to be the index for doctrine (§ VII).

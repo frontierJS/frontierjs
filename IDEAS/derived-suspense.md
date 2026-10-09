@@ -240,7 +240,7 @@ Open, and the reason this is a note rather than a proposal:
     recommends only later). A gives the pending region the data region's
     exact shape, and a page whose regions pop in one at a time, shifting layout at
     each arrival. That is right about correctness and wrong about what a person sees.
-- **Where does a derived boundary's fallback come from?**
+- ~~**Where does a derived boundary's fallback come from?**~~ **Answered 2026-10-09 (`FJS-D723`): A — the nearest `pending` snippet in scope, walking up (build step 3).**
   - **A** — the nearest `pending` snippet in scope, walking up (build step 3).
   - **B** — a blank region.
   - **C** — a skeleton derived from the gated markup.
@@ -358,13 +358,13 @@ Open, and the reason this is a note rather than a proposal:
     only where the author wrote one (Svelte).
   - **Recommend B** — a prerendered page of spinners publishes nothing, and B lets
     `IDEAS/static-safety.md`'s read tap see the reads it grades.
-- **Does a value read only in an attribute get its own boundary?** This matters
+- ~~**Does a value read only in an attribute get its own boundary?**~~ **Answered 2026-10-09 (`FJS-D724`): A — attribute reads bubble to the element's parent.** This matters
   only under derived placement. Gating `<img src={url}>` on its own is probably right
   and probably looks wrong.
   - **A** — attribute reads bubble to the element's parent.
   - **B** — their own boundary.
   - **Recommend A** — an image gated alone reads as a broken layout, and its parent is the smallest region a person reads as one thing.
-- **Interaction with `{#virtual each}`** — it renders its first window on the
+- ~~**Interaction with `{#virtual each}`**~~ **Answered 2026-10-09 (`FJS-D725`): A — nothing special: a `{#virtual each}` over an awaited list is a region like any other, held by its boundary until the list settles, then it renders its first window; on the server the SSR answer awaits it.** — it renders its first window on the
   server, computed from the row height because there is no viewport to measure
   (`FJS-067` recorded the opposite and was wrong). Same shape of question: what
   does a region render when its data is not there yet, and a window of rows is
@@ -378,7 +378,7 @@ Open, and the reason this is a note rather than a proposal:
     question above turns down in favor of an authored `pending`. Under the SSR
     answer's B the server awaits the list and renders the first real window,
     which is the case `FJS-067` was about.
-- **Does the derivation want to be visible?** A compiler that silently inserts
+- ~~**Does the derivation want to be visible?**~~ **Answered 2026-10-09 (`FJS-D726`): B — a `--explain` listing what was placed where, the same reporting surface item 5 of `IDEAS/static-safety.md` wants.** A compiler that silently inserts
   boundaries is a compiler whose output does not match the source.
   - **A** — silent.
   - **B** — a `--explain` listing what was placed where, the same reporting surface

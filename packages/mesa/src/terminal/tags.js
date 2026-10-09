@@ -47,6 +47,7 @@ export const TERMINAL_TAGS = {
   code:     { role: 'box', inline: true },
   small:    { role: 'box', inline: true, dim: true },
   a:        { role: 'box', inline: true, underline: true },
+  output:   { role: 'box', inline: true },
   button:   { role: 'button' },
   input:    { role: 'input' },
   textarea: { role: 'input' }

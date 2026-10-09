@@ -175,19 +175,19 @@ preservation vs. evolution: there is no spelling being defended.
 
 ## Open questions
 
-- **Is the per-broadcast cost affordable?** Measure before building. If a
+- ~~**Is the per-broadcast cost affordable?**~~ **Answered 2026-10-09 (`FJS-D749`): A — Measure first. A bench fans one broadcast out to a thousand sockets over today's maps and over tables, and adoption waits on a stated threshold.** Measure before building. If a
   thousand-socket fan-out regresses measurably, the answer is presence-only
   adoption or nothing.
   - **A** — Measure first. A bench fans one broadcast out to a thousand sockets over today's maps and over tables, and adoption waits on a stated threshold.
   - **B** — Keep the hot path in maps, and have devtools copy them into a `:memory:` database when someone asks. Broadcasts cost nothing extra, and the foreign-key claim is lost.
   - **C** — Adopt presence alone without measuring, since presence is where the foreign key earns its place, and leave channel subscriptions in maps.
   - **Recommend A** — then C if the fan-out regresses. Nothing in `packages/junction` measures broadcast cost today, so any answer without the bench is a guess. B is a second copy of the maps that can go stale, which is the scatter the paper exists to remove.
-- **One db or two?** Cache is already its own `:memory:` database with its own
+- ~~**One db or two?**~~ **Answered 2026-10-09 (`FJS-D750`): A — Two: the cache keeps its own `:memory:` database in `packages/junction/src/cache/index.ts`, and the runtime database holds transport state only.** Cache is already its own `:memory:` database with its own
   eviction. Folding it in buys a join nobody has asked for.
   - **A** — Two: the cache keeps its own `:memory:` database in `packages/junction/src/cache/index.ts`, and the runtime database holds transport state only.
   - **B** — One: the cache and the idempotency claims move into the runtime database, so one connection answers everything the process holds.
   - **Recommend A** — The paper names the runtime database as core rather than a battery, and *batteries vs. smallness* says core stays small. The cache already has an owner and its own eviction, and B buys a join nobody has asked for.
-- **Does `fli tinker` reach a live process?** It boots at a standing against the
+- ~~**Does `fli tinker` reach a live process?**~~ **Answered 2026-10-09 (`FJS-D751`): A — No: `fli tinker` stays a console that boots at a standing over the app's database, and the runtime state of a running server is read in devtools.** It boots at a standing against the
   app's own database; querying the runtime state of an already-running server is
   a different connection, and devtools is the surface that has one.
   - **A** — No: `fli tinker` stays a console that boots at a standing over the app's database, and the runtime state of a running server is read in devtools.

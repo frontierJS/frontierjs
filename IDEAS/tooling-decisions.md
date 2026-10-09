@@ -326,8 +326,8 @@ written down.
   - **Recommend A** — `FJS-D33` already answers this: the app lints itself, with a
     `biome.json` that extends `@frontierjs/config/biome` and a `lint` script running
     `biome check`, and its `bun run check` runs `fli check` first; there is no `fli lint`.
-- **Do the `.lite` and `.mesa` diagnostics that exist in the VS Code extension belong in
-  a terminal?** The compiler already emits them and only an editor listens. That is
+- ~~**Do the `.lite` and `.mesa` diagnostics that exist in the VS Code extension belong in a terminal?**~~ **Answered 2026-10-09 (`FJS-D803`): A — yes, through `fli check`: the `.mesa` errors already arrive there as `mesa-compiles`, and the `.lite` parser's errors and warnings join as a rule of the same shape, Mesa's warnings with them.**
+  The compiler already emits them and only an editor listens. That is
   either fine or a third of `fli doctor` already built.
   - **A** — yes, through `fli check`: the `.mesa` errors already arrive there as
     `mesa-compiles`, and the `.lite` parser's errors and warnings join as a rule

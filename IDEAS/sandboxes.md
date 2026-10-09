@@ -101,7 +101,7 @@ divertible at the same seam.
   - **Recommend A** — under `database` a sandbox is a file and a registry row, and
     under `row` it doubles the predicate on every read of every model. A refusal by
     name tells the developer which strategy to pick rather than costing every query.
-- **Does a sandbox appear in `db/access.snapshot.md`?** It changes no declared
+- ~~**Does a sandbox appear in `db/access.snapshot.md`?**~~ **Answered 2026-10-09 (`FJS-D752`): B — Yes: one column per model in `access.snapshot.md` naming `copy`, `empty` or `sample`.** It changes no declared
   access, so probably not — but *which models copy* is a disclosure decision and
   `compliance-from-the-seed.md` may want it.
   - **A** — No: `@@sandbox(...)` is visible in `db/schema.lite` and changes no

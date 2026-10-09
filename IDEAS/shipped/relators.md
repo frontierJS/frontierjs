@@ -407,7 +407,7 @@ because the argument is what the record cites.
     § IV warns about.
   - **Recommend A.** B is the better English and loses on predictability;
     `@@arc([col, col])` is the sibling this copies and it is a noun.
-- **Can a cardinality bound key on the relata pair rather than on a parent?**
+- ~~**Can a cardinality bound key on the relata pair rather than on a parent?**~~ **Answered 2026-10-09 (`FJS-D777`): C — No new spelling: where the relator has an ordinal discriminator, bound the discriminator. `replicaIndex Int @lte(7)` under the relator's unique over `[appId, serverId, replicaIndex]` already caps the pair at eight.**
   *At most eight replicas of this app on this server* is not
   `replicas AppServer[] @maxItems(8)`, which bounds the app across every
   server. The ledger in `core/cardinality.js` already keys and would take a

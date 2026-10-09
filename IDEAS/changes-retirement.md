@@ -148,12 +148,12 @@ stay written, in the place they are read.
 
 ## Open questions for the owner
 
-1. **What `fli done` asks instead.**
+1. ~~**What `fli done` asks instead.**~~ **Answered 2026-10-09 (`FJS-D711`): A — nothing; the diff is the record.**
    - **A** — nothing; the diff is the record.
    - **B** — a non-empty commit body per package touched.
    - **Recommend A** — B grades a commit that `fli done` runs before, and a body
      written to satisfy a gate is the same padding this retires.
-2. **A lesson with no hazard-skill realm** — a cli, css or toolbelt trap.
+2. ~~**A lesson with no hazard-skill realm**~~ **Answered 2026-10-09 (`FJS-D712`): A — the package's own `CLAUDE.md`, which loads on first read of the package.** — a cli, css or toolbelt trap.
    - **A** — the package's own `CLAUDE.md`, which loads on first read of the
      package.
    - **B** — root `CLAUDE.md` § Live hazards → Repo, one line each.
@@ -163,7 +163,7 @@ stay written, in the place they are read.
      already exists. B loads every lesson into every session, and C is a new noun
      for a handful of entries. A css trap is not in this set: `ui-hazards` already
      fires on `@frontierjs/css`.
-3. **`IDEAS/release-notes.md`** names `CHANGES.md` as the developer changelog
+3. ~~**`IDEAS/release-notes.md`**~~ **Answered 2026-10-09 (`FJS-D713`): A — amend `release-notes.md`'s claim in the retirement commit: the developer half is git plus `fli changelog`.** names `CHANGES.md` as the developer changelog
    half. It becomes git plus `fli changelog`, which already writes one from
    commits — the file's claim is amended, not its proposal.
    - **A** — amend `release-notes.md`'s claim in the retirement commit: the
@@ -173,7 +173,7 @@ stay written, in the place they are read.
    - **Recommend A** — `fli changelog` already derives that half from commits,
      and B keeps a hand copy of git alive for a consumer that does not exist
      pre-alpha.
-4. **`ISSUES.md` (2 MB) and `DECISIONS.md` (1 MB)** carry long narratives on
+4. ~~**`ISSUES.md` (2 MB) and `DECISIONS.md` (1 MB)**~~ **Answered 2026-10-09 (`FJS-D714`): A — a separate pass, after the `CHANGES.md` extraction proves the method.** carry long narratives on
    closed rows — the same disease. Out of scope here; a separate pass after this
    one proves the extraction method.
    - **A** — a separate pass, after the `CHANGES.md` extraction proves the method.

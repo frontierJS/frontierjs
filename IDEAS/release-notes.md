@@ -182,8 +182,8 @@ not.
 
 ## Open questions
 
-1. **Does this wait for the content-collections half, or ship with a hand-read
-   frontmatter first?** Recommendation: build the `example/` version against a
+1. ~~**Does this wait for the content-collections half, or ship with a hand-read frontmatter first?**~~ **Answered 2026-10-09 (`FJS-D787`): B — build the `example/` version now, against a Vite glob with hand-read frontmatter.**
+   Recommendation: build the `example/` version against a
    glob now, and let its frontmatter bugs be the evidence the collection half is
    argued with.
    - **A** — wait for the collection half of `IDEAS/content-collections.md`, so
@@ -205,7 +205,7 @@ not.
      folder is the unit Invariant 3 gives its own build and release. Notes are
      source both surfaces bundle, which is the `db/` relationship: one owner at
      the root, read outward.
-3. **A notice to every user**: a notification fanned out per person, or a
+3. ~~**A notice to every user**~~ **Answered 2026-10-09 (`FJS-D744`): A — fan out through `app.notify`, a row per person per notice.**: a notification fanned out per person, or a
    broadcast shape `@frontierjs/notifications` does not have? The fan-out is
    correct and costs a row per person per notice.
    - **A** — fan out through `app.notify`, a row per person per notice.
@@ -215,7 +215,7 @@ not.
      A is correct today through the existing owner and adds no noun; B is a
      second delivery model inside one package, priced before anyone has paid A's
      cost.
-4. **Tenancy.** Under `strategy database` every shop is its own database and its
+4. ~~**Tenancy.**~~ **Answered 2026-10-09 (`FJS-D745`): A — notes are bundle-global and the seen-set lives on each tenant's `User`, proved in `example/`, which already runs `strategy database`.** Under `strategy database` every shop is its own database and its
    own users; the notes are the app's and identical across shops, and the
    seen-set is per shop's user. That falls out of the column living on `User`,
    and should be checked in `example/` rather than assumed.

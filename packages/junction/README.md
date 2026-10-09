@@ -350,6 +350,11 @@ leaving a committed row behind a rejected response. `find`/`get` are never
 wrapped. Declaring it without a Litestone client on `ctx.locals.db` throws,
 naming the service.
 
+It also makes a bulk write all or nothing. A bulk create or filtered
+patch/remove that fails on any row writes none of them and answers 422, with
+the `{ data, error }` pairs in the error's `data.errors`. A partial-success
+envelope never leaves a transactional call.
+
 Two things it does not do, and both matter:
 
 - **It does not make side effects atomic.** A transaction rolls back rows, not
@@ -874,7 +879,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 - **`bulkMax` refuses before it writes.** One statement per row means an unbounded filter is unbounded work under SQLite's single write lock. Over the cap the call is a 400 naming the count.
 - **Only rows the caller can read are touched.** Selecting the targets applies the read policy; the write applies the update/delete one.
 - **A caller-supplied `@version` is refused** — one value cannot be right for N rows. Each row is written against the version selected with it, so a row that moved underneath lands in `errors` as a `VersionConflictError` instead of being overwritten.
-- **No atomicity**, the same trade bulk create makes. `transactional: true` on the service buys all-or-nothing back, at the cost of partial success.
+- **No atomicity**, the same trade bulk create makes. `transactional: true` on the service buys all-or-nothing back: one failed row is a 422 carrying the failures, and nothing is written.
 
 ---
 

@@ -126,7 +126,7 @@ is silent by construction today.
     HTTP has no attack surface to price, and the asker in A of the question above
     already runs commands in that container. A route can come later if something
     without a shell needs to ask.
-- **Whether a verdict is a metric.** Folding it into
+- ~~**Whether a verdict is a metric.**~~ **Answered 2026-10-09 (`FJS-D739`): A — Yes, as a `gauge` of 1 or 0 per check through `registerMetricsSource`, with no new `MetricType` member.** Folding it into
   `registerMetricsSource` gets retention, alerting and a history for free from
   work already specified. It also makes a boolean into a time series, which is
   what `MetricType` has no member for.
@@ -140,7 +140,7 @@ is silent by construction today.
     retention and alerting come with no new type. *When did it stop* is answered
     within the metrics retention window. C is owed only if somebody needs a verdict
     older than that window.
-- **What it does about drift it cannot explain.** `verify:studio:access` already
+- ~~**What it does about drift it cannot explain.**~~ **Answered 2026-10-09 (`FJS-D740`): B — Split it by Release id: a process reporting a different Release from the one the journal says is serving means the machine moved (stale image, half swap). The same Release with different enforcement means the build moved. Name the side, and fall back to A only where the ids cannot split it.** `verify:studio:access` already
   names which side moved when a schema and its snapshot disagree. The same
   answer is owed here and is harder: the two sides are a file and a machine.
   - **A** — Report both sides and name neither: the verdict is `unknown`, with the

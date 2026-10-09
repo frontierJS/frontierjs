@@ -273,7 +273,7 @@ is not already precedented in the tree.
   - **B** — every refusal also writes a `db.$audit()` event.
   - **C** — only write refusals (a create or post-update denial, a `@guarded` or `@system` write) go to the trail; read filters stay in the trace.
   - **Recommend A** — the pointer already exists: the logger auto-model carries an indexed `correlationId` (`litestone/src/core/audit-log.js`), and phase 1 seeds `traceId` from that same value. B grows the trail by a row per filtered read, which `traffic-analysis.md` refuses for the same reason. C is the narrow version worth reopening if a DSAR ever has to show refused attempts.
-- **What does the counterfactual cost on a large table?** It is a second query
+- ~~**What does the counterfactual cost on a large table?**~~ **Answered 2026-10-09 (`FJS-D732`): A — a capped count: the caller's query without its policy clause, as `SELECT count(*) FROM (SELECT 1 … LIMIT N)`, reported as *at least N* when it hits the cap.** It is a second query
   with the policy filter removed. Bounded by a limit, or refused above a row
   count; unbounded it is a way to make a debugger the slowest thing in the app.
   - **A** — a capped count: the caller's query without its policy clause, as `SELECT count(*) FROM (SELECT 1 … LIMIT N)`, reported as *at least N* when it hits the cap.

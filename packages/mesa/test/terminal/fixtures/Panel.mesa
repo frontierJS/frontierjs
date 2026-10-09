@@ -1,0 +1,19 @@
+<script>
+  import Card from './Card.mesa'
+  let n = 0
+  let picked = 'none'
+  let show = true
+</script>
+<div>
+  <Card title="Alpha" count={n} onpick={(v) => { picked = 'alpha ' + v; n++ }}>
+    <p>body {n}</p>
+    <span slot="actions">act</span>
+  </Card>
+  <Card title="Beta" />
+  <p>picked: {picked}</p>
+  <button on:click={() => show = !show}>Toggle</button>
+  {#if show}
+    <Card title="Gamma" count={n} />
+  {/if}
+  <p>end</p>
+</div>

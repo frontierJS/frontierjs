@@ -2886,7 +2886,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
  * both are typos with an obvious intent, and guessing at one produces an empty
  * list where the author expected rows.
  */
-function eachItems(v) {
+export function eachItems(v) {
   if (Array.isArray(v)) return v
   if (v == null) return []
   if (typeof v === 'object' || typeof v === 'string') {

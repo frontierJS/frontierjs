@@ -211,6 +211,25 @@ describe('the pick', () => {
     } finally { cleanup() }
   })
 
+  test('a question with no bold lead is struck by the sentence the reader queued it by', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- Does the cache key grow with the view set? Nobody has',
+      '  measured it.',
+      '  - **A** — no', '  - **B** — yes', '  - **Recommend A** — the key is the name',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const id  = 'views:does-the-cache-key-grow-with-the-view-set'
+      const out = decide({ root, id, pick: 'A', section: 'Naming & vocabulary', today: TODAY })
+      expect(out.ok).toBe(true)
+      expect(readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')).toContain(
+        `- ~~**Does the cache key grow with the view set?**~~ **Answered 2026-09-14 (\`${out.ruling}\`): A — no.** Nobody has\n`)
+      expect(readDecisions(root).filter(q => q.paper?.id === 'views').map(q => q.state)).toEqual(['ruled'])
+    } finally { cleanup() }
+  })
+
   test('the next id is past every one issued anywhere, a paper included', () => {
     const { root, cleanup } = fixture()
     try {

@@ -183,15 +183,18 @@ function closeRow(root, row, how, today) {
 
 // The paper's own convention for an answered question: the bold lead struck and
 // the answer, with its id, beside it. The argument under it stays, because it is
-// why the question was hard.
+// why the question was hard. A bullet in plainer prose has no bold lead, and the
+// reader queues it by its first sentence, so that sentence is what gets struck —
+// emboldened, or the reader would not see it as ruled.
 function strikeQuestion(src, q, { date, ruling, answer }) {
   const lines = src.split('\n')
   const i     = q.line - 1
-  const lead  = `**${q.question}**`
+  const bold  = `**${q.question}**`
+  const lead  = lines[i]?.includes(bold) ? bold : q.question
   const at    = lines[i]?.indexOf(lead) ?? -1
   if (at < 0) return null
   lines[i] = lines[i].slice(0, at) +
-    `~~${lead}~~ **Answered ${date} (\`${ruling}\`): ${answer}.**` +
+    `~~${bold}~~ **Answered ${date} (\`${ruling}\`): ${answer}.**` +
     lines[i].slice(at + lead.length)
   return lines.join('\n')
 }

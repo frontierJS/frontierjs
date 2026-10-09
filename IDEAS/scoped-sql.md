@@ -210,7 +210,7 @@ around is worse than the current honest raw one.
   - **B** — expose the ciphertext as it is stored
   - **Recommend A** — ciphertext in a result is useless to a reader and looks like
     data, while a reported omission says exactly what was withheld and why
-- **Does the view set follow `$scopedBy(...)` too?** It should — same declarations,
+- ~~**Does the view set follow `$scopedBy(...)` too?**~~ **Answered 2026-10-09 (`FJS-D753`): A — yes: the binder's value joins the view predicates, from the same declaration the ORM path binds.** It should — same declarations,
   same binding — but that multiplies the cache key.
   - **A** — yes: the binder's value joins the view predicates, from the same
     declaration the ORM path binds.
@@ -220,7 +220,7 @@ around is worse than the current honest raw one.
     B leaves a proxy whose `sql` means something different from its `findMany`. If
     the first question picks D, the binder's value is one more column of the viewer
     row and the cache key does not grow.
-- **Reads across a relation.** A join between two scoped views is correct by
+- ~~**Reads across a relation.**~~ **Answered 2026-10-09 (`FJS-D754`): C — as A, with a `no such table` naming a declared model rethrown as a refusal that names the model and its read level.** A join between two scoped views is correct by
   construction, which is a nice property worth stating explicitly rather than
   discovering.
   - **A** — state the property and pin it with a test: a join over two views carries

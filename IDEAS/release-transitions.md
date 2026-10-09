@@ -1374,7 +1374,7 @@ Compose has no traffic layer at all and stops the old container before starting 
   a contract WITH its expands listed beside it rather than as a flat refusal. What
   is still unmeasured is whether *required → optional* (a contract, because this
   release may write a NULL N-1 has no case for) is the one that annoys in real use.
-- **Where the JOURNAL physically lives, which phase 1a cannot start without.** Two
+- ~~**Where the JOURNAL physically lives, which phase 1a cannot start without.**~~ **Answered 2026-10-09 (`FJS-D746`): A — On the target: its own Litestone client over `packages/cli/db/deploy.lite`, `main` at `.fli/deploy.db` under the deploy root, `fli` the only writer and Basecamp a reader through the Outpost.** Two
   sentences in this record pull apart: the journal is *in a Litestone database* so the
   framework's own tools inspect it, and it *lives with the app* so basecamp vanishing
   changes nothing. **Recommended answer below, probed against the tree 2026-08-26 and
@@ -1465,7 +1465,7 @@ Compose has no traffic layer at all and stops the old container before starting 
     `.fli/deploy.db` in `deploy/_module.md`). The negative control above measured B
     putting the lock in the app's `main` and the journal in the app's backup set,
     and C gives two operators two histories of one server.
-- **Where does the Release declaration live** — its own file beside `db/schema.lite`,
+- ~~**Where does the Release declaration live**~~ **Answered 2026-10-09 (`FJS-D747`): A — It joins the deploy block in `frontier.config.js`: `configuration` (values) beside `secrets` (pinned references), and the pivot comes from `classifyPivot` over `release.snapshot.md` rather than being declared.** — its own file beside `db/schema.lite`,
   or `frontier.config.js`, which `IDEAS/app-manifest.md` is already shaping. If the
   former, whether *everything derives from the schema* holds literally here or by
   analogy. **The audit narrows this**: `frontier.config.js` already carries the deploy
@@ -1520,7 +1520,7 @@ Compose has no traffic layer at all and stops the old container before starting 
     generating a compose file means inventing all three, which is the line toward
     managing the service that phase 2 refused. The `.env.example` is derived from
     a declaration that already exists. C grades a file whose shape we do not own.
-- **Retention economics.** Nobody publishes the storage and routing cost of keeping N
+- ~~**Retention economics.**~~ **Answered 2026-10-09 (`FJS-D748`): B — Keep A's counts and measure them: `deploy:status` reports the bytes each retained Release holds (image, web release, backup), so a count is chosen from a number.** Nobody publishes the storage and routing cost of keeping N
   Releases addressable for a week. We would be finding out.
   - **A** — Counts, as built: `keep_releases` (default 3) for web and
     `keep_backups` (default 5), with images pruned to what is in use, and the cost

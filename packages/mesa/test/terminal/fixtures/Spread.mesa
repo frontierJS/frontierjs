@@ -1,0 +1,10 @@
+<script>
+  import Card from './Card.mesa'
+  let card = { title: 'Spread', count: 1 }
+  const bump = () => { card = { ...card, count: card.count + 1 } }
+</script>
+<div>
+  <Card {...card} />
+  <Card title="Written" {...card} />
+  <button on:click={bump}>Bump</button>
+</div>

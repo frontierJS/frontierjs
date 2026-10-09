@@ -310,8 +310,9 @@ export interface App {
   // Real-time channels — available after app.configure(channels(...))
   channels?:    ReturnType<typeof import('../transport/channels.ts').createChannelManager>
   channel?:     (name: string) => import('../transport/channels.ts').Channel
-  presence?:        (channelId: string) => import('../transport/channels.ts').PresenceMember[]
-  presenceOf?:      (userId: string | number) => import('../transport/channels.ts').PresenceMember[]
+  // On this node only: a socket held by another instance is absent (FJS-D686).
+  localPresence?:   (channelId: string) => import('../transport/channels.ts').PresenceMember[]
+  localPresenceOf?: (userId: string | number) => import('../transport/channels.ts').PresenceMember[]
   addOpenApiPaths?: (paths: Record<string, unknown>) => void
 
   // Webhooks manager — available after app.configure(webhooks(...)).

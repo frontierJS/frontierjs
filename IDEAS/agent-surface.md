@@ -363,7 +363,7 @@ are in the ruling rather than restated here.
     the service and `X-Service-Method` is only its HTTP wire spelling, so the
     projection names it directly (`toolName`); the grading half is `FJS-D408`'s
     declared `gate:` plus the move floor, both built.
-- **Does the agent surface get its own audit trail?** Almost certainly yes, and
+- ~~**Does the agent surface get its own audit trail?**~~ **Answered 2026-10-09 (`FJS-D702`): A — as built: `recordCall` writes `mcp.call` entries into the app's own logger database, read back at `GET {path}/calls` by an administrator.** Almost certainly yes, and
   `IDEAS/compliance-from-the-seed.md` is where it should land rather than here.
   - **A** — as built: `recordCall` writes `mcp.call` entries into the app's own
     logger database, read back at `GET {path}/calls` by an administrator.
@@ -372,7 +372,7 @@ are in the ruling rather than restated here.
   - **Recommend A** — A is what ships in `packages/mcp/src/plugin.ts`, and it is one
     trail rather than two: an agent's write still lands in the field entries the
     Data boundary logs, and `mcp.call` adds only who asked through which tool.
-- **Rate limiting and cost.** An agent will call `find` in a loop. `ctx.directives`
+- ~~**Rate limiting and cost.**~~ **Answered 2026-10-09 (`FJS-D703`): A — junction's one rate limiter (`core/rate-limit.ts`) on the `/mcp` route, keyed by principal.** An agent will call `find` in a loop. `ctx.directives`
   already carries `limit`; a maximum per tool is probably a projection concern.
   - **A** — junction's one rate limiter (`core/rate-limit.ts`) on the `/mcp` route,
     keyed by principal.
@@ -382,7 +382,7 @@ are in the ruling rather than restated here.
     problem, not a page-size one. B is a second rule over one schema that the
     boundary does not share, the same split the SDK's stricter validator already
     opened.
-- Does this obsolete or complement the typed browser client? They are the same
+- ~~**Does this obsolete or complement the typed browser client?**~~ **Answered 2026-10-09 (`FJS-D782`): A — complement: the projection is a third client over the same services, dispatching through `app.service(name)`, beside the browser client.** They are the same
   services with different consumers, which suggests the projection is a third
   client generator, not a special case.
   - **A** — complement: the projection is a third client over the same services,

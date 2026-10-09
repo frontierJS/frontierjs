@@ -252,7 +252,7 @@ returns must be declared in `db/schema.lite` (litestone's AGENTS.md, *Claims*).
 import { createApp, bearerClaim, cookie } from '@frontierjs/junction'
 
 createApp({ auth, db, principal: bearerClaim({
-  from:    cookie('portal'),                 // or header('x-cart-token')
+  from:    cookie('portal'),                 // or header('x-cart-token'), or authorization()
   model:   'portalGrant',                    // the accessor of the grant model
   column:  'tokenHash',                      // holds the DIGEST, never the token
   key:     env.LINK_KEY,
@@ -266,7 +266,11 @@ createApp({ auth, db, principal: bearerClaim({
 `@frontierjs/toolbelt/bearer`, where the purpose defaults to `<model>.<column>` and
 must match on both sides. The token itself exists only in the link or header that
 carries it. A grant with a past `expiresAt` or a set `revokedAt` is no
-claim, and so is no row. The grant model is `@@gate("8")`, and a policy compares
+claim, and so is no row. **An API key sent as `Authorization: Bearer <key>` is
+`authorization()`**, never `header('authorization')`, which throws: that header
+also carries every signed-in person's session, and `authorization()` passes on a
+token the request already signed in with rather than refusing it as a dead link.
+The grant model is `@@gate("8")`, and a policy compares
 ids, never the token: `@@allow('read', clientId == auth().portalClientId)`.
 
 **A claim decides rows, never standing: a bearer is still STRANGER(0).** A model

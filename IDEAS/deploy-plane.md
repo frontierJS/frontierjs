@@ -419,7 +419,7 @@ was written to apply.
     from something an operator discovers mid-click into something the edge says.
     C runs two writers on one SQLite file, which is the reason `06-swap` stops
     before it starts.
-- **Whether the Outpost is an FJS application.** If it is, it inherits the whole stack
+- ~~**Whether the Outpost is an FJS application.**~~ **Answered 2026-10-09 (`FJS-D722`): A — Not an FJS application: plain Bun ESM with `@frontierjs/toolbelt` as its one dependency, no schema and no ORM.** If it is, it inherits the whole stack
   on every fleet server, which is heavy for something whose job is to run Docker
   commands and report health. If it is not, it is the first thing in the repo that
   does not derive from a seed.

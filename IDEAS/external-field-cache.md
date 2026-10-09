@@ -30,7 +30,7 @@ model User {
 
 ## Open questions
 
-- The noun.
+- ~~**The noun.**~~ **Answered 2026-10-09 (`FJS-D783`): A — none: if the next question lands on an ordinary column, there is no new thing to name.**
   - **A** — none: if the next question lands on an ordinary column, there is no new
     thing to name.
   - **B** — `@fetched(via: "stripe", ttl: 1d)`, a field attribute that says where the

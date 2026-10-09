@@ -186,3 +186,48 @@ describe('the derived hook installs once', () => {
     expect(await db.asSystem().post.count()).toBe(1)
   })
 })
+
+describe('transactional: makes a bulk write all or nothing (FJS-2149)', () => {
+
+  // A bulk write catches each row's failure to report it, so without this the
+  // transaction around the call saw no throw and committed the rows that
+  // succeeded — partial success under the one declaration that trades it away
+  // (`FJS-D11`).
+  const UNIQUE = `model Event { id Int @id @default(autoincrement())  key String @unique }`
+  const events = (over: Record<string, unknown> = {}) =>
+    createService({ name: 'events', model: 'Event', allowBulk: true, ...over } as never)
+
+  test('one failing row in a bulk create rolls back the rest and answers the failures', async () => {
+    const db = await createClient({ db: ':memory:', schema: UNIQUE }) as any
+    await db.event.create({ data: { key: 'dup' } })
+
+    const err = await callService(events({ transactional: ['create'] }),
+      ctx(db, { service: 'events', data: [{ key: 'a' }, { key: 'dup' }, { key: 'b' }] }))
+      .then(() => null, (e: unknown) => e) as { code: number; data: { errors: { data: unknown }[] } } | null
+
+    expect(err?.code).toBe(422)
+    expect(err!.data.errors.map(e => e.data)).toEqual([{ key: 'dup' }])
+    expect(await db.asSystem().event.count()).toBe(1)
+  })
+
+  test('a filtered bulk patch rolls back the same way', async () => {
+    const db = await createClient({ db: ':memory:', schema: UNIQUE }) as any
+    await db.event.create({ data: { key: 'a' } })
+    await db.event.create({ data: { key: 'b' } })
+
+    // Every row targeted takes the same key, so the second write breaks @unique.
+    await expect(callService(events({ transactional: true }),
+      ctx(db, { service: 'events', method: 'patch', data: { key: 'same' }, query: { key: { in: ['a', 'b'] } }, directives: {} })))
+      .rejects.toMatchObject({ code: 422 })
+    const keys = (await db.asSystem().event.findMany({ orderBy: { id: 'asc' } })).map((r: { key: string }) => r.key)
+    expect(keys).toEqual(['a', 'b'])
+  })
+
+  test('without the declaration the same bulk create is partial success', async () => {
+    const db = await createClient({ db: ':memory:', schema: UNIQUE }) as any
+    await db.event.create({ data: { key: 'dup' } })
+
+    await callService(events(), ctx(db, { service: 'events', data: [{ key: 'a' }, { key: 'dup' }, { key: 'b' }] }))
+    expect(await db.asSystem().event.count()).toBe(3)
+  })
+})

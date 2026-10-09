@@ -294,7 +294,7 @@ has copied it. `--check` matches the precedent already set by
   - **Recommend B** — the closed table is the teeth: a key nothing reads is a typo
     or a restated fact, and both are silent today. C is a heuristic over values and
     would grade on guesses, so it waits until a real restated key shows up.
-- **Deploy config and shareability are enemies.** The moment `deploy: { host, domain,
+- ~~**Deploy config and shareability are enemies.**~~ **Answered 2026-10-09 (`FJS-D704`): A — as built: `frontier.config.js` IS the deploy file (`deploy.server`, `deploy.web.domain` inline, basecamp's copy), the app's own config is `junction.config.js`, and the shareable unit is `db/schema.lite` plus `junction.config.js`, never `frontier.config.js`.** The moment `deploy: { host, domain,
   tenant }` lands inline, "pass this file around" becomes "leak your infrastructure."
   Reference it; do not inline it.
   - **A** — as built: `frontier.config.js` IS the deploy file (`deploy.server`,
@@ -309,7 +309,7 @@ has copied it. `--check` matches the precedent already set by
     this paper wanted is derivable or already lives in `junction.config.js`
     (`FJS-D158`'s split). Calling the deploy file unshareable costs nothing; B builds
     a third config file for keys that have no home yet.
-- **Lock merge conflicts.** `package-lock.json` is the most-hated file in the JS
+- ~~**Lock merge conflicts.**~~ **Answered 2026-10-09 (`FJS-D705`): A — regenerate on conflict, as the committed `*.snapshot.md` registers work today: the header names the generator and its flags, and the `snapshots` CI phase fails a stale one.** `package-lock.json` is the most-hated file in the JS
   ecosystem for this reason alone. Stable key order, sorted arrays, one fact per line,
   and regenerate-on-conflict must always be correct — nobody hand-merges a lock.
   - **A** — regenerate on conflict, as the committed `*.snapshot.md` registers work
@@ -321,7 +321,7 @@ has copied it. `--check` matches the precedent already set by
     `surface`/`jobs`/`notifications`/`principal.snapshot.md`, sorted and regenerated,
     and CI already refuses a hand-merged one. A merge driver is per-clone setup that
     a fresh clone silently lacks.
-- **Do not repurpose borrowed segments.** `.server`/`.client` mean bundle-side
+- ~~**Do not repurpose borrowed segments.**~~ **Answered 2026-10-09 (`FJS-D706`): A — a closed segment list, derived from the loaders (`.service.ts`, `.job.ts`, `.notification.ts`, …); a segment not on it means nothing to `fli`.** `.server`/`.client` mean bundle-side
   everywhere (Remix, Vite, SvelteKit); `.test`/`.spec` are owned by runner globs;
   `.d.ts` by TypeScript; `.config.js` is already used 15× here.
   - **A** — a closed segment list, derived from the loaders (`.service.ts`,
@@ -330,7 +330,7 @@ has copied it. `--check` matches the precedent already set by
   - **Recommend A** — the list of loaders is the allow-list, so a borrowed segment
     can only be repurposed by adding a loader for it, which is a reviewed change. A
     deny-list is a second list that goes stale the day the ecosystem coins a segment.
-- **Lowercase always.** macOS and Windows filesystems are case-insensitive, so
+- ~~**Lowercase always.**~~ **Answered 2026-10-09 (`FJS-D707`): B — the segment is always lowercase and the stem takes the case of the name it registers: PascalCase for a type (`OrderPaid.notification.ts`, `Lead.mesa` per Invariant 19), kebab for a routed name (`user-profiles.service.ts`, `send-email.job.ts`); a `fli check` rule refuses two files that differ only in case.** macOS and Windows filesystems are case-insensitive, so
   `Users.Service.ts` and `users.service.ts` are the same file.
   - **A** — lowercase stem and segment always; `PaymentReceived.notification.ts`
     becomes `payment-received.notification.ts`.
@@ -343,7 +343,7 @@ has copied it. `--check` matches the precedent already set by
     (notifications stamp the type from the stem; Invariant 19 names a resource file
     for its model). The real hazard is the case collision, and the check names it
     directly.
-- **Directory or segment, not both as truth.** `src/services/users.service.ts` is fine,
+- ~~**Directory or segment, not both as truth.**~~ **Answered 2026-10-09 (`FJS-D708`): C — as built: both are required (the junction loader globs `services/**/*.service.ts`, caravan `jobs/*.job.ts`), and `fli check` refuses a loaded segment outside its kind's folder by name.** `src/services/users.service.ts` is fine,
   but one of them has to be authoritative when they disagree. Segment is the better
   candidate; Invariant 18 currently locates `.mesa` resources by directory, so this
   needs settling rather than assuming.
@@ -358,7 +358,7 @@ has copied it. `--check` matches the precedent already set by
     different questions: the folder says where, the suffix says it registers. What
     is missing is the refusal, because a stray `*.service.ts` today is never loaded
     and nothing says so.
-- **Does the lock belong in version control?** Everything about the analogy says yes,
+- ~~**Does the lock belong in version control?**~~ **Answered 2026-10-09 (`FJS-D709`): A — committed, routes included, as the four `*.snapshot.md` registers are.** Everything about the analogy says yes,
   and everything about "it is produced by booting" says it will be noisy. Possibly
   committed but coarse — registrations and baselines, not routes.
   - **A** — committed, routes included, as the four `*.snapshot.md` registers are.
@@ -367,7 +367,7 @@ has copied it. `--check` matches the precedent already set by
   - **Recommend A** — that is what ships, and the noise is the point: a route that
     appears in a diff is a change a reviewer should see. Coarsening it would hide the
     routes, which are the claims most likely to be silently wrong.
-- **Overlap with `atlas` and `project:map --json`.** Same substrate as
+- ~~**Overlap with `atlas` and `project:map --json`.**~~ **Answered 2026-10-09 (`FJS-D710`): A — the lock is the four committed `*.snapshot.md` registers; `fli app:atlas` and `fli project:map` render them from one boot and commit nothing.** Same substrate as
   the diagnostics record's open question (since deleted). The lock may simply *be* `project:map`'s
   output, committed.
   - **A** — the lock is the four committed `*.snapshot.md` registers; `fli app:atlas`

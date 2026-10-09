@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, existsSync, mkdirSync, rmSync, accessSync, constants } from 'fs'
-import { join, resolve } from 'path'
+import { join, resolve, basename } from 'path'
 import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
 import { createHash } from 'crypto'
@@ -296,6 +296,24 @@ export function findWorkspaceRoot(start) {
     if (parent === dir) return null
     dir = parent
   }
+}
+
+// ─── isFrameworkCheckout ──────────────────────────────────────────────────────
+// Whether `fliRoot` is the cli of a framework checkout rather than an install.
+// The marker is the layout, never a sibling: in an npm install `fliRoot/..` is
+// `node_modules/@frontierjs/`, where `junction/package.json` is present
+// whenever junction is installed beside the cli, so a sibling probe reads an
+// install as a checkout and `fli new` would link packages that are not there.
+// `fliRoot` is the cli's real path, so a `bun link`ed `fli` resolves into the
+// checkout and a registry install resolves through `node_modules`.
+export function isFrameworkCheckout(fliRoot) {
+  const root = resolve(fliRoot)
+  if (root.split(/[\\/]/).includes('node_modules')) return false
+  const packages = resolve(root, '..')
+  if (basename(packages) !== 'packages') return false
+  try {
+    return Boolean(JSON.parse(readFileSync(resolve(packages, '..', 'package.json'), 'utf8')).workspaces)
+  } catch { return false }
 }
 
 // ─── findProjectRoot ──────────────────────────────────────────────────────────

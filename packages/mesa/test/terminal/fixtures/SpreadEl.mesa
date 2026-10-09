@@ -1,0 +1,16 @@
+<script>
+  let n = 0
+  let field = { value: 'ada', placeholder: 'who' }
+  const inc = () => { n++ }
+  const dec = () => { n-- }
+  let btn = { onclick: inc }
+  const swap = () => { btn = { onclick: dec }; field = { placeholder: 'gone' } }
+  const lock = () => { btn = { ...btn, disabled: true } }
+</script>
+<div>
+  <input {...field} />
+  <button {...btn}>Go</button>
+  <button on:click={swap}>Swap</button>
+  <button on:click={lock}>Lock</button>
+  <p>n: {n}</p>
+</div>

@@ -448,10 +448,16 @@ ${idFieldLine(o.res)}${watch}
   unwatch = row.subscribe(v => { record = v })
 
   // ready RESOLVES with null for a refusal and for a row that is not there —
-  // record() swallows the response so a .catch alone never fires. The reason is
-  // gone by the time it gets here, which is why one sentence covers both.
+  // record() swallows the response so a .catch alone never fires. row.error()
+  // holds the reason: 404 is a row that is not there, 403 a refusal, 0 no answer.
   row.ready
-    .then(v => { if (v == null && !failed) failed = 'Could not load ' + id + ' — it may not exist, or you may not have access to it.' })
+    .then(v => {
+      if (v != null || failed) return
+      const why = row.error()?.status
+      failed = why === 404 ? id + ' was not found.'
+        : why === 403 || why === 401 ? 'You do not have access to ' + id + '.'
+        : 'Could not load ' + id + '.'
+    })
     .catch(e => { failed = e.message })
     .finally(() => { loaded = true })
 

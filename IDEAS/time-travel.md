@@ -315,7 +315,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
   - **Recommend A** — a duplicate mail, webhook or charge cannot be undone, so
     *strictness follows cost* calls for a hold rather than a warning. A is also the one
     option that still holds when no live file survives, which is when most restores happen.
-- **Does a multi-database app checkpoint atomically?** Tenants are db-per-tenant, and
+- ~~**Does a multi-database app checkpoint atomically?**~~ **Answered 2026-10-09 (`FJS-D759`): A — the set is the unit: capture every declared database, tenants and logger included, into one directory, and restore stages them all and swaps all or none, as `litestone restore` already does. Capture is not one instant; each file records its own.** Tenants are db-per-tenant, and
   a logger database is a database. A checkpoint of "the app" is a set of files, and a
   partial restore across them is a new failure mode.
   - **A** — the set is the unit: capture every declared database, tenants and
@@ -328,7 +328,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
   - **Recommend A** — all-or-none restore ships in `cmdRestore`'s staging, so A adds
     nothing new to the failure model. B stalls every tenant for the length of the
     largest copy, to close a skew that only a cross-database read can see.
-- **Should the audit log gain an entry for a checkpoint itself?** It is a write, it
+- ~~**Should the audit log gain an entry for a checkpoint itself?**~~ **Answered 2026-10-09 (`FJS-D760`): B — no: the registry row already holds the actor, the instant and the audit offset, and `db:log` interleaves registry rows at their offsets.** It is a write, it
   has an actor, and it wants to appear in the same narrative — but it is not a row
   change and the entry shape assumes a model.
   - **A** — yes: an entry with `operation: 'checkpoint'`, no records, and the
@@ -338,7 +338,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
   - **Recommend B** — the offset is the checkpoint's position in the narrative, so an
     audit entry would restate the registry and bend the entry shape to fit a
     non-row. One store holds it; the reader merges.
-- **Does replay want to be one of Litestone's existing extension points?** It is a
+- ~~**Does replay want to be one of Litestone's existing extension points?**~~ **Answered 2026-10-09 (`FJS-D761`): B — a tool module under `src/tools/` that the CLI drives: it reads the logger through the ORM and writes through `asSystem()`.** It is a
   plugin-shaped thing, and `ISSUES.md` `FJS-D19` is already reconsidering what a
   Litestone Plugin is called and whether it has a name.
   - **A** — a Litestone `Plugin`, installed on the client.

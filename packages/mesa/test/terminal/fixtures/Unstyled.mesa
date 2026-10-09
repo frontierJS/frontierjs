@@ -1,0 +1,9 @@
+<script>
+  let hidden = true
+  const flip = () => { hidden = !hidden }
+</script>
+<div>
+  <p>Shown</p>
+  <button on:click={flip}>Flip</button>
+  <p>hidden: {hidden}</p>
+</div>

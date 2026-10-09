@@ -317,8 +317,7 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
   - **B** — `auth_failed` stays, and the `Credential` row is marked dead, so `connections.find` reports *reconnect Google* to a screen.
   - **C** — both: the send fails with the named code, and the refresh that found the credential dead marks the row.
   - **Recommend C** — the caller of `send()` cannot tell *this person must reconnect* from *our key is wrong* without the code, and a screen cannot show the state before the next failing send without the row. The row is the one truth; the code is the send reporting it, so neither restates the other.
-- Who notices a revocation at the provider's end, and how does the app find out
-  before the next call fails?
+- ~~**Who notices a revocation at the provider's end, and how does the app find out before the next call fails?**~~ **Answered 2026-10-09 (`FJS-D795`): A — nobody ahead of time: the first refresh or send that fails marks the row, and the app finds out then.**
   - **A** — nobody ahead of time: the first refresh or send that fails marks the row, and the app finds out then.
   - **B** — the provider tells us where it offers to: Google's Cross-Account Protection (RISC) events and GitHub's authorization-revoked webhook arrive on the inbound leg and mark the row.
   - **C** — a caravan probe calls each provider's token-info endpoint on an interval.
@@ -347,36 +346,36 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
   - **B** — a service starts it: `connections.connect(provider)` records the caller on the `OauthFlow` row and returns the authorize URL, and the existing callback route finishes by attaching to that caller instead of issuing a session.
   - **C** — no signed-in link: `FJS-D611`'s mailed invitation stays the only way to attach a provider.
   - **Recommend B** — `FJS-D20`'s line is whether a call can be refused for want of a session, and starting a link can; the callback must stay a route because the provider redirects a browser there, and it already exists. A makes a sign-in link's meaning depend on an ambient cookie, so a forged link attaches an attacker's provider account to a signed-in victim.
-- Where do `state`, the PKCE verifier and the OIDC nonce live? `Verification` is
+- ~~**Where do `state`, the PKCE verifier and the OIDC nonce live?**~~ **Answered 2026-10-09 (`FJS-D796`): A — their own model, `OauthFlow`, keyed by `state` and bound to a cookie, swept by `cleanup.ts` on `@@expires`; no nonce, because v1 fetches userinfo rather than validating an `id_token`.** `Verification` is
   already *identifier, guarded value, expiry* with a sweep in `cleanup.ts`. What is
   the identifier before a user exists?
   - **A** — their own model, `OauthFlow`, keyed by `state` and bound to a cookie, swept by `cleanup.ts` on `@@expires`; no nonce, because v1 fetches userinfo rather than validating an `id_token`.
   - **B** — `Verification` with a purpose, the identifier being the `state`.
   - **C** — a signed cookie holding all three, with no row.
   - **Recommend A** — A is what ships in `packages/auth/db/auth.lite`. An authorization in flight proves nothing and has no address, so B is two meanings in one table (the test `FJS-D261` cites this case for), and C cannot refuse a replayed code, which the drive does.
-- One OIDC engine plus per-provider normalizers, or a provider table? Discovery
+- ~~**One OIDC engine plus per-provider normalizers, or a provider table?**~~ **Answered 2026-10-09 (`FJS-D797`): A — a preset table (`google`, `github`, `oidc`), each preset carrying its own `identify` normalizer, with endpoints stated rather than discovered.** Discovery
   covers Google, Microsoft, Okta and Auth0 generically; GitHub and Apple do not.
   - **A** — a preset table (`google`, `github`, `oidc`), each preset carrying its own `identify` normalizer, with endpoints stated rather than discovered.
   - **B** — one OIDC engine reading `.well-known/openid-configuration`, with normalizers only for the providers discovery does not cover.
   - **Recommend A** — A is what ships in `packages/auth/oauth.ts`. Discovery is a network call at boot, and a provider that cannot be constructed offline cannot be tested offline; the `oidc` preset already covers Entra, Okta and Auth0 with stated endpoints.
-- Can a caller unlink their last credential and lock themselves out?
+- ~~**Can a caller unlink their last credential and lock themselves out?**~~ **Answered 2026-10-09 (`FJS-D798`): A — no: `removeConnection` refuses with `LastCredentialError` when the connection is the only password or OAuth credential, and an API key does not count as a way in.**
   - **A** — no: `removeConnection` refuses with `LastCredentialError` when the connection is the only password or OAuth credential, and an API key does not count as a way in.
   - **B** — yes, and the way back is a password reset by mail.
   - **Recommend A** — A is what ships in `packages/auth/auth.ts`. B depends on the account having a verified, reachable address, which an OAuth-only account need not have.
-- Which surfaces are supported at v1 — `web/` certainly, but `site/`, `widgets/` and
-  `extension/` each have a different redirect story and the extension has no origin
-  at all.
+- ~~**Which surfaces are supported at v1?**~~ **Answered 2026-10-09 (`FJS-D799`): A — `web/` only at v1, the surface `verify:oauth` drives.**
+  `web/` certainly, but `site/`, `widgets/` and `extension/` each have a different
+  redirect story and the extension has no origin at all.
   - **A** — `web/` only at v1, the surface `verify:oauth` drives.
   - **B** — `web/` and `site/`, both of which can make a full-page navigation to the callback on the API's origin.
   - **C** — all four, the extension through `chrome.identity.launchWebAuthFlow`.
   - **Recommend A** — then B once a static site asks for sign-in, since it is the same redirect story with a different return page. A widget lives in somebody else's origin, where the session cookie is third-party, and the extension has no origin to redirect to; each is its own design, and nothing proves them today.
-- Where is the provider configured? `junction.config.js` is nicer, and the hazard is
+- ~~**Where is the provider configured?**~~ **Answered 2026-10-09 (`FJS-D800`): A — in code: providers are `createLitestoneAuth({ oauthProviders })`, built with `defineProvider` beside `encryptionKey`, and only `publicUrl` and the failure page sit in the plugin's `oauth` block.** `junction.config.js` is nicer, and the hazard is
   known: a plugin must read config in `boot()` and never `register()`, which made
   caravan's entire config section unreachable (`FJS-431`).
   - **A** — in code: providers are `createLitestoneAuth({ oauthProviders })`, built with `defineProvider` beside `encryptionKey`, and only `publicUrl` and the failure page sit in the plugin's `oauth` block.
   - **B** — in `junction.config.js`, an `auth.oauth` block read in `boot()`.
   - **Recommend A** — A is what ships in `packages/auth/types.ts`. A `clientSecret` is credential material and belongs beside `encryptionKey`, and the transport block is the only part the route needs, which `boot()` already reads after config is loaded.
-- Does the redirect URI get scaffolded? It must match the provider console exactly
+- ~~**Does the redirect URI get scaffolded?**~~ **Answered 2026-10-09 (`FJS-D801`): B — derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.** It must match the provider console exactly
   and differs per environment and port (8000, 8010, production).
   - **A** — not scaffolded: it is derived from `oauth.publicUrl` plus the mounted callback path, and `boot()` refuses when the mount and the derived path disagree.
   - **B** — derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
@@ -385,9 +384,10 @@ Descope, Okta and Semperis on nOAuth · Auth0 on OAuth CSRF · Supabase identity
 
 **The kit**
 
-- Brand sign-in buttons need brand colors, and Invariant 13 says style with a tone
+- ~~**Does `@frontierjs/ui` ship brand sign-in buttons, and under what exemption?**~~ **Answered 2026-10-09 (`FJS-D802`): B — a provider button whose color is the provider's official mark as an image, on a neutral tone and treatment, using the light or neutral variant Google's and GitHub's guidelines both offer.**
+  Brand sign-in buttons need brand colors, and Invariant 13 says style with a tone
   and a treatment, never a color. This is the one case where the color is the
-  requirement. Does `@frontierjs/ui` ship them, and under what exemption?
+  requirement.
   - **A** — `@frontierjs/ui` ships none; an app styles its own provider buttons.
   - **B** — a provider button whose color is the provider's official mark as an image, on a neutral tone and treatment, using the light or neutral variant Google's and GitHub's guidelines both offer.
   - **C** — brand-colored buttons in `@frontierjs/css`, under an exemption to Invariant 13 recorded in `DECISIONS.md`.

@@ -245,7 +245,7 @@ and evaluable by piece 2.
   Salesforce answers it explicitly with `PRIORVALUE` and `ISCHANGED`. Probably:
   the MERGED row for `required`, the STORED row for `readOnly` — which is what
   `compileFieldPredicate` already does — stated rather than inferred.
-- **Ordering against the stamps.** `checkCreatePolicy` runs BEFORE
+- ~~**Ordering against the stamps.**~~ **Answered 2026-10-09 (`FJS-D770`): A — Moot as built: `@required(where:)` expands to a table CHECK (`packages/litestone/src/core/ddl.js`), which SQLite evaluates on the row as inserted, after every stamp, so it never runs at `checkCreatePolicy`'s point.** `checkCreatePolicy` runs BEFORE
   `applyAuthDefaults`, which is already a documented trap: a tenant column is
   legitimately absent on create because the stamp has not happened yet
   (`packages/litestone/docs/multi-tenancy.md`). A `@requiredWhen` evaluated at the
@@ -254,7 +254,7 @@ and evaluable by piece 2.
   - **B** — Also evaluate the predicate in JS for an earlier refusal, placed after `applyAuthDefaults` and stated as such.
   - **C** — Refuse at parse a predicate that names a stamped column (an `auth()` default or the tenant column), so the browser affordance, which sees the record before the stamp, cannot disagree with the boundary.
   - **Recommend A** — A is what ships, and the CHECK is the one place the rule is enforced, so it has no ordering to get wrong. B adds a second evaluation point whose order would have to be maintained by hand. C is owed only once a predicate on a stamped column appears, and none in the tree does.
-- **What a HAND-WRITTEN `@@check` does about attribution.** The expansion knows
+- ~~**What a HAND-WRITTEN `@@check` does about attribution.**~~ **Answered 2026-10-09 (`FJS-D771`): B — Derive it: the refusal is attributed to every column the expression names, so `startsAt < endsAt` puts its message under both controls, with no new spelling.** The expansion knows
   its field and carries it, so `@required(where:)` renders beside its control.
   A `@@check` somebody wrote still cannot, and two of them on one model produce
   two unattributed form-level errors. A `field:` argument is the obvious answer

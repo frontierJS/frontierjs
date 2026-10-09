@@ -253,7 +253,8 @@ describe('the moves a row may make', () => {
   test('the template names no move, state or column', () => {
     for (const [what, source] of pages) {
       expect(source, what).not.toMatch(/invoke\('/)
-      expect(source, what).not.toMatch(/\bstatus\b/)
+      // `.status` as a property is the HTTP status on record().error(), not a column.
+      expect(source, what).not.toMatch(/(?<!\.)\bstatus\b/)
     }
   })
 })

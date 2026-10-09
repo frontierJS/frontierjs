@@ -2877,6 +2877,7 @@ function _emptyResource(name) {
       id: null,
       ready: Promise.resolve(null),
       get: () => null,
+      error: () => null,
       subscribe: fn => { fn(null); return () => {} },
       refresh: async () => null,
       release: () => {},

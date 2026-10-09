@@ -874,7 +874,7 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
     month three. C puts a test noun into the Data language for a case not yet
     seen once. B keeps every opt-out in the result with its reason, so the count
     of them measures the road.
-- Do generated tests get deleted by developers in practice? Researched and **not
+- ~~**Do generated tests get deleted by developers in practice?**~~ **Answered 2026-10-09 (`FJS-D790`): B — close the file half as moot: Phase 1b derives at run time and emits no test file, so there is nothing to delete. What is left is an app dropping its `verifyGateLadder()` call or its `db/access.snapshot.md`, which a `fli check` rule over the app can name.** Researched and **not
   answered** — web search found nothing usable, and the question needs repo
   archaeology rather than search. It matters, because it is the empirical test of
   whether Phase 1's output is trusted or tolerated. The snapshot is the first
@@ -892,7 +892,7 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
     question about emitted files, and this framework does not emit them. The
     remaining failure, a suite or snapshot quietly removed, is silent today and
     § V's ninth question asks for the artefact that says so.
-- Does an app want the ladder in the snapshot as well as the required level? Today
+- ~~**Does an app want the ladder in the snapshot as well as the required level?**~~ **Answered 2026-10-09 (`FJS-D791`): A — the required level per operation only, as `db/access.snapshot.md` renders it today (`2 READER`).** Today
   it renders `2 READER` per operation and the ladder is derivable from that.
   Rendering all nine columns would be the same information at nine times the diff.
   - **A** — the required level per operation only, as `db/access.snapshot.md`
@@ -905,8 +905,8 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
 
 **Answered by Phase 5:**
 
-- ~~How many of the ~30 entries in `CLAUDE.md` § *Bridge index* are boundaries in
-  Rainsberger's sense?~~ **About eleven**, two of them now built. See § The
+- ~~**How many of the ~30 entries in `CLAUDE.md` § *Bridge index* are boundaries in Rainsberger's sense?**~~ **Answered 2026-10-09 (`FJS-D792`): A — about eleven, ranked in § The triage, generated top-down.**
+  Two of them are now built. See § The
   triage; the ranking is the useful part, and the top four are hand copies or
   lookup tables, which are the cheapest pairs to generate.
   - **A** — about eleven, ranked in § The triage, generated top-down.
@@ -917,15 +917,15 @@ concern. If they write only hook logic, actions and flows, the realm is earned. 
 
 **Answered by Phase 1a:**
 
-- ~~Per app or per model file?~~ **Per app**, beside the schema
-  (`db/access.snapshot.md`) — one reviewable artefact, landing in the same PR as
+- ~~**Per app or per model file?**~~ **Answered 2026-10-09 (`FJS-D793`): A — one per app, `db/access.snapshot.md` beside the schema.**
+  One reviewable artefact, landing in the same PR as
   the schema change that moved it.
   - **A** — one per app, `db/access.snapshot.md` beside the schema.
   - **B** — one per model file.
   - **Recommend A** — A is what ships. One artefact lands in the same PR as the
     schema change that moved it, and a per-model split multiplies the files a
     reviewer has to open without adding a fact.
-- ~~Is `basecamp` the proving ground, ahead of `example`?~~ **Yes**, and it paid
+- ~~**Is `basecamp` the proving ground, ahead of `example`?**~~ **Answered 2026-10-09 (`FJS-D794`): A — `basecamp` first, then `example`.** It paid off
   immediately: 37 models all gated, and the first run surfaced `Volume`
   (`@@gate("2.8.8.5")`) where delete is *easier* than update. `validateGate`
   permits it because 8 is a sentinel that does not advance the non-decreasing

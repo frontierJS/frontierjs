@@ -143,7 +143,7 @@ and pretending otherwise would be a check that fails open.
     component (Dialog's focus trap and labelled title) the `<Form>` way first and
     price the kit against what remains; *cut one level simpler* says not to
     tabulate the kind that already derives.
-- **Where the WCAG level is stated.** A conformance target is a claim a project
+- ~~**Where the WCAG level is stated.**~~ **Answered 2026-10-09 (`FJS-D701`): A — one `README.md` sentence per package naming the level its own drives assert (`css`, `ui`).** A conformance target is a claim a project
   makes, and the framework shipping one for its consumers is a claim it cannot
   keep. Probably a `README` sentence per package and never a config key.
   - **A** — one `README.md` sentence per package naming the level its own drives

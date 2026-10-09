@@ -85,4 +85,21 @@ describe('what must not change', () => {
     expect(call).toContain(`'actions':`)
     expect(call).toContain('default:')
   })
+
+  it('slot="default" joins the default content instead of being a second default key', async () => {
+    const ctx = await compileSource(
+      `<script>import Child from './Child.mesa'</script>\n<div><Child><b slot="default">A</b><p>P</p></Child></div>`,
+      { filename: '/P.mesa' })
+    expect(ctx.result.match(/default'?:/g)).toHaveLength(1)
+    expect(ctx.result).toContain('`<b>A</b><p>P</p>`')
+  })
+
+  it('a block routed to a slot leaves a nested call\'s own slot= to that call', async () => {
+    const ctx = await compileSource(
+      `<script>import Child from './Child.mesa'\nlet c = true</script>\n` +
+      `<div><Child>{#if c}<div slot="a"><Child><b slot="x">X</b></Child></div>{/if}</Child></div>`,
+      { filename: '/P.mesa' })
+    expect(ctx.result).toContain(`'a':`)
+    expect(ctx.result).toContain(`'x':`)
+  })
 })

@@ -89,8 +89,7 @@ notifications and jobs already follow (`OrderPaid.notification.ts`,
    - **B** — it expires, and an expired token's reply goes to the fallback handler, unattributed, as a message whose `From` is a claim.
    - **C** — it expires, and an expired token's reply is answered with a mailed bounce.
    - **Recommend B** — the expiry bounds how long a token forwarded or cc'd onward can speak as the person it names, and B takes away the attribution without losing the message, which on a support thread is usually still a real customer. C is not a bounce behind a webhook, where the message is already accepted; it is an outbound mail sent to whatever `From` claims, which is backscatter.
-3. Where does the parse happen — the provider connector, which already holds the
-   vendor's JSON shape, or one MIME parser shared by every provider?
+3. ~~**Where does the parse happen — the provider connector, which already holds the vendor's JSON shape, or one MIME parser shared by every provider?**~~ **Answered 2026-10-09 (`FJS-D784`): A — the provider connector normalizes the vendor's payload into one message shape, the same split `FJS-D153` draws for signatures.**
    - **A** — the provider connector normalizes the vendor's payload into one message shape, the same split `FJS-D153` draws for signatures.
    - **B** — every connector hands over raw MIME, and one shared parser builds the message.
    - **Recommend A** — then a shared MIME parser the first time a connected provider hands over only raw MIME (SES), called by that connector. The vendor's shape is the connector's by `FJS-D153`, and B throws away the parse Postmark and Mailgun already did while putting a MIME parser into every app on day one.

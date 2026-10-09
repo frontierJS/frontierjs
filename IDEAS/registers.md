@@ -176,7 +176,7 @@ and gives the write verbs something to write.
 
 ## Open questions
 
-- **Where a prefix is declared**, if the migration does not remove the need —
+- ~~**Where a prefix is declared**~~ **Answered 2026-10-09 (`FJS-D741`): A — a `"registers": { "prefix", "dir" }` key in the project's `package.json`, read by `registerLayout()`.**, if the migration does not remove the need —
   `.fli.json`, a `fli` key in `package.json`, or derived from the workspace name.
   - **A** — a `"registers": { "prefix", "dir" }` key in the project's
     `package.json`, read by `registerLayout()`.
@@ -185,7 +185,7 @@ and gives the write verbs something to write.
   - **Recommend A** — A is what ships, and `elitelawncare/ela` runs on it. A
     second config file is a second origin for project settings, and a derived
     prefix changes every id the day the workspace is renamed.
-- **Whether closing a row is a verb or an edit.** Today it is a move between two
+- ~~**Whether closing a row is a verb or an edit.**~~ **Answered 2026-10-09 (`FJS-D742`): A — a verb: `fli close <id> --how`, which ships in `core/close.js` and moves the row with its date and How cell, and would set the frontmatter field under file-per-record.** Today it is a move between two
   sections of one file; file-per-record makes it a frontmatter field, and then
   `ISSUES.md` is a generated index rather than the register.
   - **A** — a verb: `fli close <id> --how`, which ships in `core/close.js` and
@@ -195,7 +195,7 @@ and gives the write verbs something to write.
   - **Recommend A** — A is what ships. The verb writes the closing date and the
     How column the same way every time, so the shape cannot be wrong; a hand
     edit can, and is still graded when someone makes one.
-- **Whether `ISSUES.md` survives as a file at all** under that migration, or
+- ~~**Whether `ISSUES.md` survives as a file at all**~~ **Answered 2026-10-09 (`FJS-D743`): A — it survives as the register: one table, the file-per-record migration not taken for issues.** under that migration, or
   becomes what `IDEAS/overview.md` already is: derived, ranked, authoritative over
   nothing.
   - **A** — it survives as the register: one table, the file-per-record migration

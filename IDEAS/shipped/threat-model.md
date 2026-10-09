@@ -116,7 +116,7 @@ all at seams between packages.
   table says so in one row, so no audit spends a run on it.
 - ~~**`FJS-D618` decides B6's promise**~~ Ruled A 2026-10-08: a host that names an app is that app's origin.
 - ~~**Does the agent (B5) ever see more than the human at the same level?**~~ No: `FJS-D656`, `narrow` only removes.
-- **Origin's `cross-process.js` sense** — rename to *writer* in the same
+- ~~**Origin's `cross-process.js` sense**~~ **Answered 2026-10-09 (`FJS-D781`): A — rename to `writer` throughout `cross-process.js`: the column, the recorder's parameter, the decoded field. The events table is litestone's own file, so an existing one is deleted, not migrated.** — rename to *writer* in the same
   change that blesses Origin, or leave it? The field is not internal:
   `decode()` (`packages/litestone/src/core/cross-process.js:231`) hands it to
   every `onEvent` observer, and the value is `${pid}:${random}`

@@ -46,7 +46,7 @@ export function createPresenceTracker(deps: PresenceDeps) {
   // This module owns the `presence` Map, so every read of it lives here.
   // channels.ts used to reach for a bare `presence` identifier in its own
   // scope — which does not exist there (the tracker is `_presence`, and its
-  // Map is private). Both `presenceOf()` and `_presenceGet()` threw
+  // Map is private). Both `localPresenceOf()` and `_presenceGet()` threw
   // `ReferenceError: presence is not defined` on every call, so presence
   // never worked at all and the WS `subscribe` handler crashed on the line
   // that looked up the member. Delegating instead of re-reaching keeps that

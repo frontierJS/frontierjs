@@ -151,7 +151,7 @@ written about 87 more times.
     failing test (§ V's ninth question), and A stays open as a later move with
     nothing to untangle first. C makes "done" unreachable, which is the question
     this paper set out to answer.
-- **How does the catalog carry a word's axis?** § 3's fifth item, priced there.
+- ~~**How does the catalog carry a word's axis?**~~ **Answered 2026-10-09 (`FJS-D733`): A — An axis per GROUP, with an `axis:` override on the about 26 rows that differ from their group, and none for `operate`. A test fails on a row with no axis and on a group with no default. `log`, `keepVersions` and `version` are ruled first.** § 3's fifth item, priced there.
   - **A** — An axis per GROUP, with an `axis:` override on the about 26 rows that differ from
     their group, and none for `operate`. A test fails on a row with no axis and on a group with no
     default. `log`, `keepVersions` and `version` are ruled first.

@@ -415,8 +415,8 @@ missed the index it had just declared, with nothing anywhere reporting it.
 
 ## Open questions
 
-- **Does an index predicate belong in `@@index` at all, or is the honest answer
-  a `@@scope` the reads already carry?** A named scope is a predicate litestone
+- ~~**Does an index predicate belong in `@@index` at all, or is the honest answer a `@@scope` the reads already carry?**~~ **Answered 2026-10-09 (`FJS-D785`): A — keep `where:` on `@@index` as built: a predicate is reachable when it compiles to zero parameters.**
+  A named scope is a predicate litestone
   *knows* callers use, which is the exact thing missing in § Reachability. If a
   declared partial index were expressed as *index this scope*, reachability
   would be a property of the design rather than a check bolted beside it. This
@@ -441,8 +441,7 @@ missed the index it had just declared, with nothing anywhere reporting it.
   `FJS-586`, closed: the parse steps over the table name, counts depth, and an
   expression member is reported rather than emitted as a column that does not
   exist. `parseIndexColumns` is one owner for all three readers now.
-- Prior art in the JS ecosystem is worth one pass for the argument's sake, not
-  for the design's — checked as a lead, not stated as a fact here.
+- ~~**Prior art in the JS ecosystem is worth one pass for the argument's sake, not for the design's — checked as a lead, not stated as a fact here.**~~ **Answered 2026-10-09 (`FJS-D786`): A — done: § *The spelling* in the unique half made the pass (Prisma 7.4, Django, Rails, Ecto, Drizzle, EF Core, SQLAlchemy), and its findings apply to the `@@index` half unchanged.**
   - **A** — done: § *The spelling* in the unique half made the pass (Prisma 7.4,
     Django, Rails, Ecto, Drizzle, EF Core, SQLAlchemy), and its findings apply to
     the `@@index` half unchanged.

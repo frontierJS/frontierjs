@@ -1887,6 +1887,20 @@ export class JunctionClient extends EventEmitter {
 
       const value = (): T | null => (gone ? null : composed ? own : node.get())
 
+      // WHY there is no row, beside the row (`FJS-D695`). `null` from `get()` is
+      // one answer for a 403 and a 404, and a screen that cannot tell them apart
+      // can only say "it may not exist, or you may not have access to it". It
+      // lives on the view rather than on `ready` because a view outlives its
+      // first read: a refresh or a `changed` re-read can be refused later.
+      let failure: RecordError | null = null
+      const reasonOf = (e: unknown): RecordError => {
+        const err = e as { code?: unknown; status?: unknown; name?: unknown; data?: { name?: unknown } } | null
+        const status = [err?.status, err?.code].find((n): n is number => typeof n === 'number')
+        const code = err?.data?.name ?? err?.name
+        return { status: status ?? 0, code: typeof code === 'string' ? code : 'Error' }
+      }
+      const fail = (e: unknown): void => { failure = reasonOf(e) }
+
       const readComposed = async (): Promise<T | null> => {
         if (running) { dirty = true; return running }
         running = (async () => {
@@ -1897,10 +1911,12 @@ export class JunctionClient extends EventEmitter {
                 ? await ropts.load()
                 : await svc.get(id as string | number)
               own = row ?? null
+              failure = null
             } while (dirty)
-          } catch {
+          } catch (e) {
             // A refused or missing row is not a crash: this answers whatever it
-            // last knew, exactly as the node-backed path does.
+            // last knew, exactly as the node-backed path does, and says why.
+            fail(e)
           } finally {
             running = null
           }
@@ -1924,6 +1940,7 @@ export class JunctionClient extends EventEmitter {
         // number.
         if (nodeKey(unwrap(raw)?.[key]) !== nodeKey(id)) return
         gone = true
+        failure = { status: 404, code: 'NotFound' }
         emit(null)
       })
 
@@ -1941,10 +1958,15 @@ export class JunctionClient extends EventEmitter {
             ? await ropts.load()
             : await svc.get(id as string | number)
           if (row != null) registry.write(model, row, key)
+          failure = null
           return row ?? null
-        } catch {
+        } catch (e) {
           // A refused or missing row is not a crash here: the view answers
-          // whatever it last knew, and the caller awaiting `ready` sees null.
+          // whatever it last knew, and the caller awaiting `ready` sees null
+          // with `error()` saying why. Subscribers hear it too, since a push
+          // cannot.
+          fail(e)
+          if (!gone) emit(value())
           return null
         }
       }
@@ -1955,6 +1977,7 @@ export class JunctionClient extends EventEmitter {
         // alone, which is not what this view answers.
         ready:     !composed && node.get() != null ? Promise.resolve(node.get()) : fetch(),
         get:       value,
+        error:     () => failure,
         subscribe: (fn) => {
           subs.add(fn)
           fn(value())
@@ -3005,12 +3028,24 @@ export interface RecordOptions<T extends Record<string, unknown> = Record<string
   composed?: boolean
 }
 
+export interface RecordError {
+  /** The HTTP status the read was answered with; `0` when nothing answered. */
+  status: number
+  code:   string
+}
+
 export interface RecordResult<T extends Record<string, unknown> = Record<string, unknown>>
   extends NodeView<T> {
   /** The id this view is of. */
   id: unknown
-  /** The first read — resolves with the row, or `null` if it could not be had. */
+  /** The first read — resolves with the row, or `null` if it could not be had. `error()` says why. */
   ready: Promise<T | null>
+  /**
+   * Why there is no row: `{ status: 403 }` is a refusal, `{ status: 404 }` is a
+   * row that is not there, `{ status: 0 }` is no answer at all. `null` while
+   * the last read succeeded. `code` is the server's error name (`Forbidden`).
+   */
+  error: () => RecordError | null
   /** Ask the server again. */
   refresh: () => Promise<T | null>
   /** Stop watching. The node lingers for the client's TTL, then goes. */

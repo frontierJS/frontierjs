@@ -1,0 +1,16 @@
+<script>
+  let name = 'ada'
+  let locked = false
+  let log = []
+  const shout = () => { name = name.toUpperCase() }
+  const hit = () => { log = [...log, 'hit'] }
+  const lock = () => { locked = !locked }
+</script>
+<div>
+  <input value={name} placeholder="who" oninput={(e) => { log = [...log, 'in:' + e.value] }} />
+  <button on:click={shout}>Shout</button>
+  <button on:click={hit} disabled={locked}>Hit</button>
+  <button on:click={lock}>Lock</button>
+  <p class="row {locked}">Locked: {locked}</p>
+  <p>Log: {log.join(',')}</p>
+</div>

@@ -1279,8 +1279,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         // Two deliberate trade-offs against table.createMany():
         //   • N statements instead of one, and no all-or-nothing rollback.
         //     That IS the feature — atomicity and partial success are
-        //     mutually exclusive. Callers who want all-or-nothing should wrap
-        //     the call in a transaction.
+        //     mutually exclusive. `transactional:` on the service turns any
+        //     row's failure into a rollback of the whole call.
         //   • It fixes a documented wart in passing: createMany returns
         //     { count } and no records, so bulk create could never echo
         //     stamped fields (ids, defaults, @slug). Now it can.
@@ -3649,8 +3649,8 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
 // auth().portalClientId)` compares an id to an id, so the secret stops at this
 // function and never reaches a policy, a query or a log line.
 
-/** Where the token is on the request. `header()` and `cookie()` are the two
- *  shipped readers; a path segment is deliberately not one (`FJS-D340`). */
+/** Where the token is on the request. `header()`, `authorization()` and
+ *  `cookie()` are the shipped readers; a path segment is not one (`FJS-D340`). */
 export type BearerSource = ((ctx: ServiceContext) => string | null) & {
   /** The request header this source reads, where it reads one. The CORS
    *  preflight and the socket frame allow-list both need it, and without it the
@@ -3681,6 +3681,13 @@ function requestHeaders(ctx: ServiceContext): Record<string, string> {
 /** Read the token from a request header. */
 export function header(name: string): BearerSource {
   const lower = name.toLowerCase()
+  // Read whole, `Authorization` is the scheme and the token together, and it is
+  // also where a signed-in person's session rides, so every session the auth
+  // plugin accepted was fingerprinted, found no grant and refused (`FJS-2150`).
+  if (lower === 'authorization') throw new Error(
+    `bearerClaim: header('${name}') reads the scheme along with the token, and the same header carries ` +
+    `every signed-in person's session. Use authorization(), which takes the token after 'Bearer ' ` +
+    `and passes on one the request already signed in with.`)
   const source = (ctx: ServiceContext) => {
     const headers = requestHeaders(ctx)
     // A header name is case-insensitive on the wire and two transports
@@ -3690,6 +3697,27 @@ export function header(name: string): BearerSource {
     return typeof raw === 'string' && raw ? raw : null
   }
   return Object.assign(source, { headerName: name })
+}
+
+/** Read the token from `Authorization: Bearer <token>` — where an API key
+ *  travels for every SDK that calls a metered API. */
+export function authorization(): BearerSource {
+  const raw = (ctx: ServiceContext) => {
+    const headers = requestHeaders(ctx)
+    return headers.authorization ?? headers.Authorization ?? headers.AUTHORIZATION
+  }
+  const source = (ctx: ServiceContext) => {
+    // The transport reads a Bearer as a session before any resolver runs, and
+    // ahead of the cookie and `x-api-key`, so a caller who is signed in on this
+    // request was signed in BY this token: it is a session, not a grant, and
+    // fingerprinting it would refuse the person as a dead link.
+    if (ctx.auth?.user) return null
+    const value = raw(ctx)
+    if (typeof value !== 'string' || !value.startsWith('Bearer ')) return null
+    const token = value.slice(7).trim()
+    return token || null
+  }
+  return Object.assign(source, { headerName: 'authorization' })
 }
 
 /** Read the token from a cookie — what a redeemed link leaves behind. */

@@ -19,7 +19,7 @@ import {
   type HookMap,
   type ResolvedPipeline
 } from './hooks.ts'
-import { NotFound, BadRequest, MethodNotAllowed, toFrameworkError } from './errors.ts'
+import { NotFound, BadRequest, MethodNotAllowed, Unprocessable, toFrameworkError } from './errors.ts'
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
 import { wrapResult, isServiceResult, resultData, refuseStream } from './envelope.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
@@ -1411,6 +1411,16 @@ function transactionScopeHook(serviceName: string, decl: TransactionalDeclaratio
           // commit outside it, and every test still passes.
           ctx.locals.db = tx
           await next()
+          // A bulk write catches each row's failure to report it, so the method
+          // returns normally and the rows that succeeded would commit beside the
+          // ones that did not — the partial success this declaration is how a
+          // caller trades away (`FJS-D11`). Throwing here is the rollback.
+          const errors = (ctx.result as { errors?: unknown } | null)?.errors
+          if (Array.isArray(errors) && errors.length)
+            throw new Unprocessable(
+              `${serviceName}.${method}: ${errors.length} row(s) failed, so none were written — ` +
+              `the service declares transactional:, which makes a bulk write all or nothing.`,
+              { errors })
         })
 
         if (!ownership) return

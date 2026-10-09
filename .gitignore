@@ -88,6 +88,9 @@ repo-work.html
 
 # mesa
 _tmp_slots_*/
+# sourcemap.test.js compiles into a scratch dir beside the package; a `git add`
+# racing a test run dies on a file deleted between scan and stat.
+_sm_*/
 # renderComponent writes a temp module beside the mesa package so the compiled
 # output's `import '@frontierjs/mesa/runtime.js'` resolves; it unlinks them in a
 # finally, so these only survive a hard-killed run. Nine reached a commit once.

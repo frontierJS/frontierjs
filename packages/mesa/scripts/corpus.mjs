@@ -6,6 +6,9 @@
  *   bun run corpus -- --diff before      compile all, name every file whose output differs from that save,
  *                                        and write this run beside it as before.now to diff against
  *   bun run corpus                       compile all, report refusals and invalid JS only
+ *   bun run corpus -- --portability terminal
+ *                                        also say how much of the corpus a target lowers today,
+ *                                        and what stops the rest (`IDEAS/mesa-ir.md` § 3, § 6 step 2)
  *
  * This is the grade for a compiler change meant to change NOTHING — the IR
  * extraction (`IDEAS/mesa-ir.md` § 6 step 1) above all. Invariant 12 makes the
@@ -22,6 +25,15 @@
  * Every output is parsed with acorn (Invariant 15): a compile that returns is
  * not a compile that produced JavaScript.
  *
+ * The portability report reads `ctx.ir` off the production compile and asks
+ * the target's own `terminalOffenses` what it would refuse — every offender,
+ * not the first the emitter throws. A file lowers when nothing in its own
+ * template is refused AND every component it calls lowers, so a component
+ * tag is followed through its import to the child's file. A tag whose import
+ * does not resolve to a corpus file is an offender of its own: the report
+ * cannot say whether it lowers. A shape's *unlocks* is how many more files
+ * would lower if that shape alone lowered next, children included.
+ *
  * ── What it does not see ─────────────────────────────────────────────
  *
  * The files are compiled raw. Sierra rewrites a page before handing it over
@@ -30,12 +42,14 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import * as acorn from 'acorn'
 import { compile } from '../src/compiler.js'
+import { terminalOffenses } from '../src/terminal/emit.js'
+import { callsOf, follow, lowering, plan } from './portability.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '../../..')
@@ -53,6 +67,15 @@ const flag = (name) => {
 }
 const saveAs = flag('--save')
 const diffAgainst = flag('--diff')
+const portability = flag('--portability')
+const OFFENSES = { terminal: terminalOffenses }
+if (portability && !OFFENSES[portability]) {
+  console.error(`no portability report for target ${portability} — one of: ${Object.keys(OFFENSES).join(', ')}`)
+  process.exit(2)
+}
+
+// What an `@frontierjs/<name>/…` import resolves to, for the report's walk to a child's file.
+const PACKAGES = new Set(readdirSync(join(ROOT, 'packages')))
 
 // rg skips node_modules and gitignored build output, which is the corpus: a
 // built copy of a component under dist/ is not a second source file.
@@ -62,6 +85,7 @@ const files = execFileSync('rg', ['--files', '-g', '*.mesa'], { cwd: ROOT, encod
   .sort()
 
 const results = []
+const portable = []
 const warningsOff = () => {}
 
 for (const file of files) {
@@ -72,6 +96,7 @@ for (const file of files) {
     try {
       const ctx = await compile(source, { ...configFor(file), warning: warningsOff })
       out = ctx.result
+      if (portability && mode === 'prod') portable.push({ file, offenses: OFFENSES[portability](ctx.ir), calls: callsOf(file, source, ctx.ir, PACKAGES) })
     } catch (err) {
       refused = String(err?.message ?? err)
       out = `/* refused */\n${refused}\n`
@@ -92,6 +117,8 @@ const refusedCount = results.filter((r) => r.refused).length
 const invalid = results.filter((r) => r.invalid)
 console.log(`${files.length} files · ${results.length} compiles · ${refusedCount} refused · ${invalid.length} invalid JS`)
 for (const r of invalid) console.log(`  invalid  ${r.file} [${r.mode}]  ${r.invalid}`)
+
+if (portability) reportPortability(portability)
 
 if (saveAs) console.log(`saved ${relative(ROOT, save(saveAs))}`)
 
@@ -143,4 +170,39 @@ function sha(text) {
 
 function manifestOf(rs) {
   return Object.fromEntries(rs.map((r) => [`${r.mode}:${r.file}`, r.hash]))
+}
+
+function reportPortability(target) {
+  const files = follow(portable)
+  const pct = (n, of) => `${of ? Math.round((n / of) * 100) : 0}%`
+  const now = lowering(files)
+  const held = files.filter((f) => f.offenses.length === 0 && !now.has(f.file)).length
+  console.log(`\n${target}: ${now.size} of ${files.length} files lower today (${pct(now.size, files.length)}); ` +
+    `${held} more pass on their own and are held by a component they call`)
+
+  // An area is the first two path segments: packages/ui, example/web.
+  const areas = new Map()
+  for (const f of files) {
+    const area = f.file.split('/').slice(0, 2).join('/')
+    const a = areas.get(area) ?? { files: 0, lower: 0 }
+    a.files++
+    if (now.has(f.file)) a.lower++
+    areas.set(area, a)
+  }
+  console.log('\n  area                          lower / files')
+  for (const [area, a] of [...areas].sort((x, y) => y[1].files - x[1].files)) {
+    console.log(`  ${area.padEnd(30)}${String(a.lower).padStart(5)} / ${String(a.files).padEnd(5)} ${pct(a.lower, a.files)}`)
+  }
+
+  const { rows, order } = plan(files)
+  console.log('\n  shape                                files  unlocks   uses')
+  for (const r of rows) {
+    console.log(`  ${r.shape.padEnd(35)}${String(r.files).padStart(7)}${String(r.unlocks).padStart(9)}${String(r.uses).padStart(7)}`)
+  }
+  console.log(`\n  lower next: ${order.map((o) => `${o.shape} +${o.gain} (${pct(o.lower, files.length)})`).join(' → ')}`)
+
+  const path = join(CACHE, `portability-${target}.json`)
+  mkdirSync(CACHE, { recursive: true })
+  writeFileSync(path, JSON.stringify(files, null, 1))
+  console.log(`\n  every offender, by file: ${relative(ROOT, path)}`)
 }

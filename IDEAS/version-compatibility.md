@@ -194,7 +194,7 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
     on the number, so the renumbering is free, and tying 1.0 to a graded diff gives
     the number something that checks it. B splits one framework's maturity by
     package, and C leaves a semver reader misled.
-- **Should the peer ranges be generated rather than written?** They are facts
+- ~~**Should the peer ranges be generated rather than written?**~~ **Answered 2026-10-09 (`FJS-D766`): B — Generated at publish: each internal peer is written from the sibling's workspace version at pack time (the train's number under a train), and `exports.snapshot.md` records the result.** They are facts
   about what a package calls, and every other fact of that shape in this repo is
   derived and committed. A hand-typed floor that nobody moves is the same failure
   as a hand-copied gate ladder (`FJS-520`), one layer out.
@@ -205,7 +205,7 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
   - **Recommend B** — a peer range is a fact about which sibling version a package
     was built and tested against, so it is derived. It holds under either answer to
     the train question, and the `snapshots` phase already shows the range moving.
-- **Is `unknown` allowed to ship?** `release:check` treats unknown as contract,
+- ~~**Is `unknown` allowed to ship?**~~ **Answered 2026-10-09 (`FJS-D767`): B — Yes, with a warning: `unknown` ships and is printed in the release output beside the bump.** `release:check` treats unknown as contract,
   fail-closed, because a database cannot be half-migrated. A package surface is
   more forgiving and the same rule may be too strict.
   - **A** — No: as `release:check`, `unknown` counts as a contract and refuses a

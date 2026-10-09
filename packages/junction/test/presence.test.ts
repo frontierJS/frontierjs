@@ -1,7 +1,7 @@
 // test/presence.test.ts
 //
 // Presence had ZERO coverage, and the untested code was broken: both
-// `manager.presenceOf()` and `manager._presenceGet()` referenced a bare
+// `manager.localPresenceOf()` and `manager._presenceGet()` referenced a bare
 // `presence` identifier that does not exist in channels.ts (the tracker is
 // `_presence` and its Map is private to presence.ts). Every call threw
 // `ReferenceError: presence is not defined`.
@@ -106,9 +106,9 @@ beforeAll(async () => {
 afterAll(async () => { await app?.stop() })
 
 describe('presence — regression: the functions must not throw', () => {
-  it('presenceOf() returns a list instead of throwing ReferenceError', () => {
-    expect(() => app.presenceOf('nobody')).not.toThrow()
-    expect(app.presenceOf('nobody')).toEqual([])
+  it('localPresenceOf() returns a list instead of throwing ReferenceError', () => {
+    expect(() => app.localPresenceOf('nobody')).not.toThrow()
+    expect(app.localPresenceOf('nobody')).toEqual([])
   })
 
   it('_presenceGet() returns undefined for an unknown member instead of throwing', () => {
@@ -120,7 +120,7 @@ describe('presence — regression: the functions must not throw', () => {
   it('a lookup for an unjoined channel does not allocate a channel map', () => {
     const mgr = app.channels
     mgr._presenceGet('channel:never-joined', 'x')
-    expect(app.presence('channel:never-joined')).toEqual([])
+    expect(app.localPresence('channel:never-joined')).toEqual([])
   })
 })
 
@@ -155,23 +155,23 @@ describe('presence — join and sync', () => {
     alice.close(); bob.close()
   })
 
-  it('app.presence(channel) lists current members server-side', async () => {
+  it('app.localPresence(channel) lists current members server-side', async () => {
     const alice = client('tok-alice')
     await alice.ready
     await alice.waitFor('presence:sync')
 
-    const members = app.presence(ROOM)
+    const members = app.localPresence(ROOM)
     expect(members.map((m: any) => m.userId)).toContain('alice')
 
     alice.close()
   })
 
-  it('app.presenceOf(userId) finds the membership across channels', async () => {
+  it('app.localPresenceOf(userId) finds the membership across channels', async () => {
     const alice = client('tok-alice')
     await alice.ready
     await alice.waitFor('presence:sync')
 
-    const mine = app.presenceOf('alice')
+    const mine = app.localPresenceOf('alice')
     expect(mine.length).toBeGreaterThan(0)
     expect(mine[0].channelId).toBe(ROOM)
     expect(mine[0].userId).toBe('alice')
@@ -185,7 +185,7 @@ describe('presence — join and sync', () => {
     await new Promise(r => setTimeout(r, 200))
 
     expect(anon.has('presence:sync')).toBe(false)
-    expect(app.presence(ROOM).some((m: any) => m.userId == null)).toBe(false)
+    expect(app.localPresence(ROOM).some((m: any) => m.userId == null)).toBe(false)
 
     anon.close()
   })
@@ -242,8 +242,8 @@ describe('presence — leave', () => {
     const leave = await alice.waitFor('presence:leave')
     expect(leave.data.member.userId).toBe('bob')
 
-    expect(app.presenceOf('bob')).toEqual([])
-    expect(app.presence(ROOM).map((m: any) => m.userId)).not.toContain('bob')
+    expect(app.localPresenceOf('bob')).toEqual([])
+    expect(app.localPresence(ROOM).map((m: any) => m.userId)).not.toContain('bob')
 
     alice.close()
   })
@@ -251,24 +251,24 @@ describe('presence — leave', () => {
 
 // FJS-2001: presence is what a connection announced on a channel; whether a
 // person holds a socket is a different question and has its own answer.
-describe('connectionsOf — is this person connected', () => {
+describe('localConnectionsOf — is this person connected', () => {
   it('answers for a user whose socket joined no channel, and drops on close', async () => {
     const alice = client('tok-alice')
     await alice.ready
     await alice.waitFor('presence:sync')
 
     // Leave every channel: presence is now empty, the socket is still open.
-    const conn = app.channels.connectionsOf('alice')[0]
+    const conn = app.channels.localConnectionsOf('alice')[0]
     app.channel(ROOM).leave(conn)
-    expect(app.presenceOf('alice')).toEqual([])
-    expect(app.channels.connectionsOf('alice').map((c: any) => c.id)).toEqual([conn.id])
-    expect(app.channels.connectionsOf('bob')).toEqual([])
+    expect(app.localPresenceOf('alice')).toEqual([])
+    expect(app.channels.localConnectionsOf('alice').map((c: any) => c.id)).toEqual([conn.id])
+    expect(app.channels.localConnectionsOf('bob')).toEqual([])
 
     alice.close()
     const deadline = Date.now() + 2000
-    while (app.channels.connectionsOf('alice').length && Date.now() < deadline) {
+    while (app.channels.localConnectionsOf('alice').length && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 15))
     }
-    expect(app.channels.connectionsOf('alice')).toEqual([])
+    expect(app.channels.localConnectionsOf('alice')).toEqual([])
   })
 })

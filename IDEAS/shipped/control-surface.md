@@ -412,7 +412,7 @@ up is not a fact about the app this page maps.
 
 ## 9. Open questions
 
-- **Whose project?** This workspace has eight apps with assigned ports; a client app
+- ~~**Whose project?**~~ **Answered 2026-10-09 (`FJS-D768`): A — as built: whatever root `fli` resolved; `runnables()` walks it with `findApps`, so an app directory shows one app and the workspace root shows all.** This workspace has eight apps with assigned ports; a client app
   has one. `project:map` takes `--project`. Does the dashboard show one app or the
   workspace? Probably: one app by default, the workspace when `fli` is run from its
   root, which is a distinction `context.wsRoot()` already makes.
@@ -448,7 +448,7 @@ up is not a fact about the app this page maps.
   - **Recommend B** — it answers for a static origin as well as an API, using the
     one owner of *what holds this port* that `fli kill` and `ports:status` already
     share. C needs every server, Vite's included, to grow an endpoint.
-- **Are `repo-report.snapshot.html`/`repo-atlas.snapshot.html` then redundant?** No, and the split is worth stating:
+- ~~**Are `repo-report.snapshot.html`/`repo-atlas.snapshot.html` then redundant?**~~ **Answered 2026-10-09 (`FJS-D769`): A — keep both: the snapshots are committed and reviewed in a diff, the page is live and never committed.** No, and the split is worth stating:
   the snapshot is a **committed artefact reviewable in a diff**, the dashboard is
   **live and never committed**, the same split `fli ws:atlas` and `ws:atlas --live`
   already make.

@@ -246,7 +246,7 @@ doctrine rather than the reverse.
 
 - ~~**Does `.lite` survive Wasp's lesson?**~~ **Closed by `FJS-D266`** — both stay languages.
 - ~~**Does `.mesa` need to be a language?**~~ **Closed by `FJS-D266`.**
-- **Is `example/` the right home for framework proof**, or should capability fixtures move beside the packages and `example/` stop being load-bearing?
+- ~~**Is `example/` the right home for framework proof**~~ **Answered 2026-10-09 (`FJS-D731`): A — `example/` stays the proof home. Its `verify*` drives in `DRIVES.md` are the end-to-end proof, and `FJS-D166` already put payroll there rather than in a fourth app so that one ledger proves one invariant.**, or should capability fixtures move beside the packages and `example/` stop being load-bearing?
   - **A** — `example/` stays the proof home. Its `verify*` drives in `DRIVES.md` are the end-to-end proof, and `FJS-D166` already put payroll there rather than in a fourth app so that one ledger proves one invariant.
   - **B** — Capability fixtures move beside the packages, each package proves its own capability over a minimal schema, and `example/` becomes a demo that nothing depends on.
   - **C** — Split by tier: generated conformance (migration step 2) runs over per-package fixtures for the Data and API tiers, and `example/` keeps only the drives that cross realms.

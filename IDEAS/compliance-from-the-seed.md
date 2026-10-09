@@ -203,7 +203,7 @@ work (`IDEAS/map-packages.md`).
   - **Recommend B** — one attribute with an optional argument, not two spellings. The
     bare form is what people write first, and the map naming every uncategorized
     field keeps the gap from being silent; a later `fli check` can grade it.
-- **Does retention interact with `@@softDelete`?** A soft-deleted row still holds the
+- ~~**Does retention interact with `@@softDelete`?**~~ **Answered 2026-10-09 (`FJS-D719`): A — retention ignores soft deletion: the sweep runs unfiltered from `createdAt`, so a soft-deleted row ages out like any other. This is what the database-level pass in `packages/litestone/src/tools/retention.js` does, with a raw `DELETE` that never reads `deletedAt`.** A soft-deleted row still holds the
   data. This is exactly the kind of thing that is obvious in hindsight and missed in
   every hand-rolled implementation.
   - **A** — retention ignores soft deletion: the sweep runs unfiltered from
@@ -229,7 +229,7 @@ work (`IDEAS/map-packages.md`).
     seed, and a sidecar the map validates against the schema cannot drift silently
     the way C's exported copy does. The map also lists every `@pii` field no purpose
     covers.
-- **Does the map read a method's `input:` type?** A value that is processed and
+- ~~**Does the map read a method's `input:` type?**~~ **Answered 2026-10-09 (`FJS-D720`): B — split by `read: true`: a field reached through a `read: true` method is *processed, not stored*; one reached through any other method is *processed, may be stored*.** A value that is processed and
   never kept already has a noun in the seed: a `type`, which has no table, named
   by a custom method's `input:` and enforced there by `validateInput`. Portal's
   search query is `type SearchQuery`, the input of all four search methods. The
@@ -265,7 +265,7 @@ work (`IDEAS/map-packages.md`).
   - **Recommend A** — with B as its test: § 4's diff grades a new `receives` as a
     widening, and a drive that records a send carrying a field its target never
     declared turns A's silent case red.
-- **Does a Rig declare its own PII?** It must — a billing rig contributes
+- ~~**Does a Rig declare its own PII?**~~ **Answered 2026-10-09 (`FJS-D721`): A — on its own fields: the rig's imported `.lite` fragment carries `@pii` like any model, and the map reads the composed schema, so it flows with no new mechanism.** It must — a billing rig contributes
   personal data to the consuming app's data map, and if that does not flow through,
   the map is wrong the moment anyone installs anything (`IDEAS/rigs.md`).
   - **A** — on its own fields: the rig's imported `.lite` fragment carries `@pii`

@@ -1,0 +1,20 @@
+<script>
+  let count = 0
+  let items = ['a', 'b']
+  const inc = () => { count++; items = [...items, 'x' + count] }
+</script>
+<div class="box">
+  <h1>Counter</h1>
+  <p>Count: {count}</p>
+  <button on:click={inc}>Add</button>
+  {#if count > 2}
+    <p>Many</p>
+  {:else}
+    <p>Few</p>
+  {/if}
+  <ul>
+    {#each items as it, i (it)}
+      <li>{i}: {it}</li>
+    {/each}
+  </ul>
+</div>

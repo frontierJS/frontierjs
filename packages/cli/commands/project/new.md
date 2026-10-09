@@ -111,7 +111,7 @@ flags:
     defaultValue: ''
   source:
     type: string
-    description: "Where @frontierjs packages install from: npm (published, default) | local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE or npm"
+    description: "Where @frontierjs packages install from: npm (published) | local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE, else local from a framework checkout and npm from an install"
     defaultValue: ''
 ---
 
@@ -2361,10 +2361,16 @@ if (useWorkspace) {
 }
 
 // ─── 6.5 FJS package source — npm (published) or local (symlink) ──────────────
-// Default resolves from $FJS_SOURCE (set once during buildout), else 'npm'.
-// GitHub is not supported yet.
+// Default resolves from the flag, then $FJS_SOURCE, then the cli's own layout:
+// local from a framework checkout, npm from an install. GitHub is not
+// supported yet.
 //
-// npm is the default because published packages are what a starting point
+// A checkout's templates are written against the checkout's packages, and the
+// published ones can be behind them: the scaffold's `work()` hook typechecked
+// against the tree and failed `bun run check` on day one against npm's junction
+// (FJS-1637, FJS-D579). A published cli has no such tree, so it keeps npm.
+//
+// npm is the default elsewhere because published packages are what a starting point
 // should be made of, not because a local scaffold cannot ship. It could not, for
 // a while: a `link:` spec resolves to the workspace on the machine that made it
 // and to nothing inside a container, so `bun install` failed on every linked
@@ -2376,7 +2382,8 @@ if (useWorkspace) {
 // FJS-241), so a local scaffold containerizes; what it still installs is one
 // machine's working tree, which is the right thing while testing a change to a
 // package and the wrong thing to hand somebody as a starting point.
-const fjsSource = (flag.source || process.env.FJS_SOURCE || 'npm').toLowerCase()
+const { isFrameworkCheckout } = await import(resolve(global.fliRoot, 'core/utils.js'))
+const fjsSource = (flag.source || process.env.FJS_SOURCE || (isFrameworkCheckout(global.fliRoot) ? 'local' : 'npm')).toLowerCase()
 
 if (fjsSource !== 'local' && fjsSource !== 'npm') {
   const hint = fjsSource === 'github'

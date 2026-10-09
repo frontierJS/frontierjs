@@ -84,7 +84,7 @@ describe('presence is opt-in (FJS-703)', () => {
     expect(b.events('presence:join')).toEqual([])
     // And the server-side view is empty too — the wrap never ran, so nothing
     // is being kept either.
-    expect(app.presence('room:a')).toEqual([])
+    expect(app.localPresence('room:a')).toEqual([])
     a.close(); b.close()
   })
 
@@ -95,7 +95,7 @@ describe('presence is opt-in (FJS-703)', () => {
     await settle()
 
     expect(a.events('presence:sync').length).toBeGreaterThan(0)
-    expect(app.presence('room:a').length).toBe(2)
+    expect(app.localPresence('room:a').length).toBe(2)
     a.close(); b.close()
   })
 
@@ -112,7 +112,7 @@ describe('presence is opt-in (FJS-703)', () => {
     const c2 = client(3401, 'tok-0')
     await c2.ready; await settle()
     expect(c2.events('presence:sync')).toEqual([])
-    expect(off.presence('orders')).toEqual([])
+    expect(off.localPresence('orders')).toEqual([])
     c2.close()
     void on
   })
