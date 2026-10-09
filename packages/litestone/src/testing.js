@@ -1964,190 +1964,202 @@ export function generateFactory(schema, modelName, options = {}) {
         continue
       }
       if (_shouldSkipField(field, model)) continue
-
-      const name  = field.name
-      const type  = field.type
-      const attrs = field.attributes
-      const opt   = type.optional
-
-      // Array types — honor @minItems, else [] for required / null for optional
-      if (type.array) {
-        const minItems = attrs.find(a => a.kind === 'minItems')?.value ?? 0
-        if (minItems > 0) {
-          out[name] = Array.from({ length: minItems }, (_, i) =>
-            _scalarSample(type.name, name, seq + i))
-        } else {
-          out[name] = opt ? null : []
-        }
-        continue
-      }
-
-      // @id on String → '{modelName}-{seq}'
-      const isId = attrs.some(a => a.kind === 'id')
-      if (isId && type.name === 'String') {
-        out[name] = rng ? `${modelName}-${rng.str(6)}` : `${modelName}-${seq}`
-        continue
-      }
-
-      // @default — check before type-based rules
-      const defAttr = attrs.find(a => a.kind === 'default')
-      if (defAttr) {
-        const v = defAttr.value
-        if (v.kind === 'string')  { out[name] = v.value;    continue }
-        if (v.kind === 'number')  { out[name] = v.value;    continue }
-        if (v.kind === 'boolean') { out[name] = v.value;    continue }
-        if (v.kind === 'enum')    { out[name] = v.value;    continue }
-        if (v.kind === 'call') {
-          // auth().field → emit 1 (FK sentinel, caller must seed parent)
-          // NOTE: ensure a row with id=1 exists in the referenced table,
-          //       or override this field via .state() / fkDefaults.
-          if (v.fn === 'auth') { out[name] = fkDefaults[name] ?? 1; continue }
-          // now(), uuid(), ulid(), cuid(), nanoid() → skip (db or client generates)
-          continue
-        }
-      }
-
-      // Enum type — first value unseeded (stable), rng.pick when seeded (variety)
-      if (type.kind === 'enum' || (type.kind === 'scalar' && type.name !== 'String' && type.name !== 'Int' &&
-          type.name !== 'Float' && type.name !== 'Boolean' && type.name !== 'DateTime' &&
-          type.name !== 'Json' && type.name !== 'Bytes')) {
-        const enumDef = schema.enums.find(e => e.name === type.name)
-        if (enumDef) {
-          if (!enumDef.values.length) throw new Error(`generateFactory: enum "${type.name}" has no values`)
-          out[name] = rng ? rng.pick(enumDef.values).name : enumDef.values[0].name
-          continue
-        }
-      }
-
-      switch (type.name) {
-        case 'String': {
-          if (opt && !_hasTextConstraint(attrs) && !attrs.some(a => a.kind === 'phone')) {
-            out[name] = null
-            break
-          }
-          const token   = rng ? rng.str(4) : String(seq)   // uniqueness carrier
-          const lenAttr = attrs.find(a => a.kind === 'length')
-          const min     = lenAttr?.min ?? null
-          const max     = lenAttr?.max ?? null
-          let value
-
-          const regexAttr = attrs.find(a => a.kind === 'regex')
-          if (attrs.some(a => a.kind === 'email')) {
-            // Keep it inside @length(max) when one is declared — a truncated
-            // address would fail @email, which is the rule we are serving.
-            const natural = fakeEmail(rng, seq) ?? `${modelName}${token}@test.com`
-            value = max != null && max < natural.length
-              ? _fitLength(`${token}@t.co`, min, max)
-              : natural
-          } else if (attrs.some(a => a.kind === 'url')) {
-            value = `https://example.com/${modelName}/${token}`
-          } else if (regexAttr) {
-            // A pattern cannot be inverted in general. Generate a candidate for the
-            // common subset, then CHECK it — an unsatisfiable pattern warns loudly
-            // instead of writing data the schema will reject on every create.
-            value = _sampleFromRegex(regexAttr.pattern, seq)
-            if (value == null) {
-              value = rng ? `${name}-${token}` : `${name}-${seq}`
-              if (!_matchesRegex(regexAttr.pattern, value)) {
-                console.warn(`generateFactory: cannot generate a value matching @regex("${regexAttr.pattern}") ` +
-                  `for ${modelName}.${name} — override it with .state({ ${name}: … })`)
-              }
-            }
-          } else if (attrs.some(a => a.kind === 'phone')) {
-            value = _phoneSample(seq)
-          } else if (attrs.some(a => a.kind === 'time')) {
-            // These three are string FORMATS, not column types — `day String
-            // @date` is a TEXT column the validator holds to a shape. Without
-            // them the field fell through to the generic `Name 1` string, so
-            // `cases.valid` was itself invalid and EVERY generated case for the
-            // model failed naming this field rather than the rule under test.
-            value = _timeSample(seq, attrs.find(a => a.kind === 'time').seconds === true)
-          } else if (attrs.some(a => a.kind === 'date')) {
-            value = _dateSample(seq)
-          } else if (attrs.some(a => a.kind === 'datetime')) {
-            value = `${_dateSample(seq)}T${_timeSample(seq, true)}Z`
-          } else {
-            const starts   = attrs.find(a => a.kind === 'startsWith')?.text ?? ''
-            const ends     = attrs.find(a => a.kind === 'endsWith')?.text   ?? ''
-            const contains = attrs.find(a => a.kind === 'contains')?.text
-            if (contains != null) {
-              value = `${starts}${contains}-${token}${ends}`
-            } else if (starts || ends) {
-              value = `${starts}${token}${ends}`
-            } else {
-              // A well-known field name gets a catalog value when seeded, so a
-              // generated row reads like a row. Unseeded output is unchanged —
-              // schema-derived test CASES must stay stable.
-              const fake = fakeFor(name, rng)
-              if (fake != null) {
-                // The catalog is a small pool — two rows CAN draw the same name.
-                // A @unique column carries the seq token so it still cannot collide.
-                value = attrs.some(a => a.kind === 'unique') ? `${fake} ${token}` : fake
-              } else {
-                // Plain text — capitalize field name
-                const label = name.charAt(0).toUpperCase() + name.slice(1)
-                value = rng ? `${label} ${token}` : `${label} ${seq}`
-              }
-            }
-          }
-
-          // @length is a hard boundary. Fitting keeps the seq/token, so a @unique
-          // column still gets a distinct value per row — 'x'.repeat(min) did not,
-          // and the second insert hit the UNIQUE constraint.
-          out[name] = _fitLength(value, min, max, token)
-          break
-        }
-
-        case 'Int': {
-          if (opt) { out[name] = null; break }
-          if (fkFields.has(name) || name.endsWith('Id')) {
-            out[name] = fkDefaults[name] ?? 1
-            break
-          }
-          const { low, high } = _numericBounds(attrs, 1)
-          out[name] = _pickInRange(low, high, seq, true)
-          break
-        }
-
-        case 'Float': {
-          if (opt) { out[name] = null; break }
-          const { low, high } = _numericBounds(attrs, 1)
-          out[name] = _pickInRange(low, high, seq, false)
-          break
-        }
-
-        case 'Boolean':
-          out[name] = false
-          break
-
-        case 'DateTime': {
-          if (opt) { out[name] = null; break }
-          // Derived from seq, not the wall clock — the same seed must produce the
-          // same row, and `new Date()` broke that for every DateTime column.
-          out[name] = new Date(FACTORY_EPOCH + (seq % 3650) * 86_400_000).toISOString()
-          break
-        }
-
-        case 'Json': {
-          // A required column cannot take null — the write fails validation, which
-          // made autoFactories unusable for any model carrying a required Json.
-          out[name] = opt ? null : {}
-          break
-        }
-
-        case 'Bytes': {
-          out[name] = opt ? null : new Uint8Array([seq % 256])
-          break
-        }
-
-        default:
-          out[name] = null
-          break
-      }
+      const v = _fieldValue(schema, modelName, field, seq, rng, { fkFields, fkDefaults })
+      if (v !== undefined) out[field.name] = v
     }
-    _orderByChecks(model, out)
+    _satisfyChecks(schema, model, out, { fkFields, seq })
     return out
   }
+}
+
+// One field's generated value, or `undefined` for a column the database or the
+// client fills. Shared by a model's columns and a `type`'s members, which is
+// what lets a `Json @type(Address)` carry an Address rather than `{}`.
+function _fieldValue(schema, ownerName, field, seq, rng, { fkFields = new Set(), fkDefaults = {}, depth = 0 } = {}) {
+  const name  = field.name
+  const type  = field.type
+  const attrs = field.attributes
+  // `@required(where:)` is read as required: a value is legal when the
+  // condition does not hold and the row is refused when it does and the
+  // column is null, so filling it is the one answer that is right both ways.
+  const opt   = type.optional && !attrs.some(a => a.kind === 'required')
+  const typeAttr = attrs.find(a => a.kind === 'type')
+
+  // Array types — honor @minItems, else [] for required / null for optional
+  if (type.array) {
+    const minItems = attrs.find(a => a.kind === 'minItems')?.value ?? 0
+    if (minItems > 0) {
+      const enumDef = schema.enums.find(e => e.name === type.name)
+      return Array.from({ length: minItems }, (_, i) =>
+        typeAttr ? _typeValue(schema, typeAttr.name, seq + i, rng, depth + 1)
+        : enumDef ? enumDef.values[i % enumDef.values.length].name
+        : _scalarSample(type.name, name, seq + i))
+    }
+    return opt ? null : []
+  }
+
+  // @id on String → '{modelName}-{seq}'
+  const isId = attrs.some(a => a.kind === 'id')
+  if (isId && type.name === 'String') return rng ? `${ownerName}-${rng.str(6)}` : `${ownerName}-${seq}`
+
+  // @default — check before type-based rules
+  const defAttr = attrs.find(a => a.kind === 'default')
+  if (defAttr) {
+    const v = defAttr.value
+    if (v.kind === 'string')  return v.value
+    if (v.kind === 'number')  return v.value
+    if (v.kind === 'boolean') return v.value
+    if (v.kind === 'enum')    return v.value
+    if (v.kind === 'call') {
+      // auth().field → emit 1 (FK sentinel, caller must seed parent)
+      // NOTE: ensure a row with id=1 exists in the referenced table,
+      //       or override this field via .state() / fkDefaults.
+      if (v.fn === 'auth') return fkDefaults[name] ?? 1
+      // now(), uuid(), ulid(), cuid(), nanoid() → skip (db or client generates)
+      return undefined
+    }
+  }
+
+  // Enum type — first value unseeded (stable), rng.pick when seeded (variety)
+  if (type.kind === 'enum' || (type.kind === 'scalar' && type.name !== 'String' && type.name !== 'Int' &&
+      type.name !== 'Float' && type.name !== 'Boolean' && type.name !== 'DateTime' &&
+      type.name !== 'Json' && type.name !== 'Bytes')) {
+    const enumDef = schema.enums.find(e => e.name === type.name)
+    if (enumDef) {
+      if (!enumDef.values.length) throw new Error(`generateFactory: enum "${type.name}" has no values`)
+      return rng ? rng.pick(enumDef.values).name : enumDef.values[0].name
+    }
+  }
+
+  switch (type.name) {
+    case 'String': {
+      if (opt && !_hasTextConstraint(attrs) && !attrs.some(a => a.kind === 'phone')) return null
+      const token   = rng ? rng.str(4) : String(seq)   // uniqueness carrier
+      const lenAttr = attrs.find(a => a.kind === 'length')
+      const min     = lenAttr?.min ?? null
+      const max     = lenAttr?.max ?? null
+      let value
+
+      const regexAttr = attrs.find(a => a.kind === 'regex')
+      if (attrs.some(a => a.kind === 'email')) {
+        // Keep it inside @length(max) when one is declared — a truncated
+        // address would fail @email, which is the rule we are serving.
+        const natural = fakeEmail(rng, seq) ?? `${ownerName}${token}@test.com`
+        value = max != null && max < natural.length
+          ? _fitLength(`${token}@t.co`, min, max)
+          : natural
+      } else if (attrs.some(a => a.kind === 'url')) {
+        value = `https://example.com/${ownerName}/${token}`
+      } else if (regexAttr) {
+        // A pattern cannot be inverted in general. Generate a candidate for the
+        // common subset, then CHECK it — an unsatisfiable pattern warns loudly
+        // instead of writing data the schema will reject on every create.
+        value = _sampleFromRegex(regexAttr.pattern, seq)
+        if (value == null) {
+          value = rng ? `${name}-${token}` : `${name}-${seq}`
+          if (!_matchesRegex(regexAttr.pattern, value)) {
+            console.warn(`generateFactory: cannot generate a value matching @regex("${regexAttr.pattern}") ` +
+              `for ${ownerName}.${name} — override it with .state({ ${name}: … })`)
+          }
+        }
+      } else if (attrs.some(a => a.kind === 'phone')) {
+        value = _phoneSample(seq)
+      } else if (attrs.some(a => a.kind === 'time')) {
+        // These three are string FORMATS, not column types — `day String
+        // @date` is a TEXT column the validator holds to a shape. Without
+        // them the field fell through to the generic `Name 1` string, so
+        // `cases.valid` was itself invalid and EVERY generated case for the
+        // model failed naming this field rather than the rule under test.
+        value = _timeSample(seq, attrs.find(a => a.kind === 'time').seconds === true)
+      } else if (attrs.some(a => a.kind === 'date')) {
+        value = _dateSample(seq)
+      } else if (attrs.some(a => a.kind === 'datetime')) {
+        value = `${_dateSample(seq)}T${_timeSample(seq, true)}Z`
+      } else {
+        const starts   = attrs.find(a => a.kind === 'startsWith')?.text ?? ''
+        const ends     = attrs.find(a => a.kind === 'endsWith')?.text   ?? ''
+        const contains = attrs.find(a => a.kind === 'contains')?.text
+        if (contains != null) {
+          value = `${starts}${contains}-${token}${ends}`
+        } else if (starts || ends) {
+          value = `${starts}${token}${ends}`
+        } else {
+          // A well-known field name gets a catalog value when seeded, so a
+          // generated row reads like a row. Unseeded output is unchanged —
+          // schema-derived test CASES must stay stable.
+          const fake = fakeFor(name, rng)
+          if (fake != null) {
+            // The catalog is a small pool — two rows CAN draw the same name.
+            // A @unique column carries the seq token so it still cannot collide.
+            value = attrs.some(a => a.kind === 'unique') ? `${fake} ${token}` : fake
+          } else {
+            // Plain text — capitalize field name
+            const label = name.charAt(0).toUpperCase() + name.slice(1)
+            value = rng ? `${label} ${token}` : `${label} ${seq}`
+          }
+        }
+      }
+
+      // @length is a hard boundary. Fitting keeps the seq/token, so a @unique
+      // column still gets a distinct value per row — 'x'.repeat(min) did not,
+      // and the second insert hit the UNIQUE constraint.
+      return _fitLength(value, min, max, token)
+    }
+
+    case 'Int': {
+      if (opt) return null
+      if (fkFields.has(name) || name.endsWith('Id')) return fkDefaults[name] ?? 1
+      const { low, high } = _numericBounds(attrs, 1)
+      return _pickInRange(low, high, seq, true)
+    }
+
+    case 'Float': {
+      if (opt) return null
+      const { low, high } = _numericBounds(attrs, 1)
+      return _pickInRange(low, high, seq, false)
+    }
+
+    case 'Boolean':
+      return false
+
+    case 'DateTime': {
+      if (opt) return null
+      // `DateTime @date` is held to YYYY-MM-DD by the validator, which refuses
+      // the timestamp the column type alone would get.
+      if (attrs.some(a => a.kind === 'date')) return _dateSample(seq)
+      // Derived from seq, not the wall clock — the same seed must produce the
+      // same row, and `new Date()` broke that for every DateTime column.
+      return new Date(FACTORY_EPOCH + (seq % 3650) * 86_400_000).toISOString()
+    }
+
+    case 'Json': {
+      // A required column cannot take null — the write fails validation, which
+      // made autoFactories unusable for any model carrying a required Json. A
+      // `@type`d one is validated member by member, so `{}` is refused the
+      // same way and the type's own fields are what it gets.
+      if (opt) return null
+      return typeAttr ? _typeValue(schema, typeAttr.name, seq, rng, depth) : {}
+    }
+
+    case 'Bytes':
+      return opt ? null : new Uint8Array([seq % 256])
+
+    default:
+      return null
+  }
+}
+
+// A value for `Json @type(Name)`: the type's members, each generated as a column
+// would be. A type nesting itself is cut at a depth no schema reaches honestly.
+function _typeValue(schema, typeName, seq, rng, depth = 0) {
+  const type = schema.types?.find(t => t.name === typeName)
+  if (!type || depth > 4) return {}
+  const out = {}
+  for (const field of type.fields) {
+    const v = _fieldValue(schema, typeName, field, seq, rng, { depth: depth + 1 })
+    if (v !== undefined) out[field.name] = v
+  }
+  return out
 }
 
 // ─── generateGateMatrix ───────────────────────────────────────────────────────
@@ -3430,6 +3442,9 @@ function _shouldSkipField(field, model) {
 
   if (type.kind === 'relation' || type.kind === 'implicitM2M') return true   // virtual
   if (type.name === 'File')     return true   // file upload concern
+  // A per-principal mark kept in its own table — the model has no such column,
+  // and a value here is `table page has no column named starred`.
+  if (field.edge || attrs.some(a => a.kind === 'edge' || a.kind === 'scoped')) return true
 
   if (attrs.some(a => a.kind === 'computed')) return true
   if (attrs.some(a => a.kind === 'transient')) return true  // no column — the API lifts it off the payload
@@ -3583,34 +3598,365 @@ function _matchesRegex(pattern, value) {
   try { return new RegExp(pattern).test(String(value)) } catch { return false }
 }
 
-/**
- * Make a row satisfy a `@@check("endAt > startAt")` between two of its own
- * columns. Every DateTime (and every Int) in a row is drawn from the same seq,
- * so an interval check refused every row the factory invented and the model
- * could not be given a fixture at all. Only the plain `<column> <op> <column>`
- * form is read; anything richer is the caller's `factories` override.
- */
-function _orderByChecks(model, out) {
-  const ORDERED = { DateTime: 86_400_000, Int: 1, Float: 1 }
-  const column  = n => {
-    const f = model.fields.find(x => x.name === n)
-    return f && !f.type.array && f.type.kind === 'scalar' && f.type.name in ORDERED && out[n] != null ? f : null
+// ─── _satisfyChecks ──────────────────────────────────────────────────────────
+//
+// Make a row pass the model's `@@check` rules. Every DateTime and every Int in a
+// row is drawn from the same seq, so `endAt > startAt` refused every row the
+// factory invented; a column held to a literal list, a disjunction over nullable
+// columns and an arithmetic identity failed the same way, and the model had no
+// fixture at all. The expression is SQL and is read as SQL — the subset a schema
+// writes: AND / OR / NOT, the six comparisons, IS [NOT] NULL, [NOT] IN (…),
+// + - * /, parentheses, literals and this row's columns. A CHECK passes on NULL,
+// so only a row the rule answers FALSE for is moved. A rule outside the subset,
+// or one no move satisfies, is left to the table to refuse with the declared
+// message — as before, and the caller's `factories` override is the answer.
+
+function _satisfyChecks(schema, model, out, { fkFields = new Set(), seq = 1 } = {}) {
+  // A column under `@default(now())` is left to SQLite, so a rule comparing
+  // against it is read with the clock the database will stamp — the one value
+  // here that is not derived from seq, because nothing else can be.
+  const stamped = {}
+  for (const f of model.fields) {
+    if (f.type.name !== 'DateTime' || f.name in out) continue
+    if (f.attributes.some(a => a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'now'))
+      stamped[f.name] = new Date().toISOString()
   }
+  const c = { schema, model, out, fkFields, seq, view: () => ({ ...stamped, ...out }) }
   for (const attr of model.attributes ?? []) {
     if (attr.kind !== 'check') continue
-    const m = /^\s*([A-Za-z_]\w*)\s*(>=|<=|>|<)\s*([A-Za-z_]\w*)\s*$/.exec(attr.expr)
-    if (!m) continue
-    const [, a, op, b] = m
-    const [hi, lo] = op[0] === '>' ? [a, b] : [b, a]
-    const fh = column(hi), fl = column(lo)
-    if (!fh || !fl || fh.type.name !== fl.type.name) continue
-    const date = fh.type.name === 'DateTime'
-    const val  = v => date ? new Date(v).getTime() : v
-    const ok   = op.length === 2 ? val(out[hi]) >= val(out[lo]) : val(out[hi]) > val(out[lo])
-    if (ok) continue
-    const next = val(out[lo]) + ORDERED[fh.type.name]
-    out[hi] = date ? new Date(next).toISOString() : next
+    let ast
+    try { ast = _parseSql(attr.expr) } catch { continue }
+    _solve(ast, c)
   }
+}
+
+const _passes = v => v !== 0
+
+function _solve(n, c) {
+  if (_passes(_evalSql(n, c.view()))) return true
+  switch (n.t) {
+    case 'and':
+      _solve(n.a, c); _solve(n.b, c)
+      break
+    case 'or': {
+      // Try the first branch, and only on failure the second from the row as it was.
+      const before = { ...c.out }
+      if (!_solve(n.a, c)) { Object.assign(c.out, before); _solve(n.b, c) }
+      break
+    }
+    case 'cmp':
+      _solveCmp(n, c)
+      break
+    case 'in': {
+      const f = n.not ? null : _settable(n.a, c)
+      const first = f && n.list.find(x => x.t !== 'null')
+      if (first) c.out[f.name] = _coerce(f, _evalSql(first, c.view()))
+      break
+    }
+    case 'isnull': {
+      const f = _settable(n.a, c)
+      if (!f) break
+      if (n.not) c.out[f.name] = _fillValue(f, c)
+      else if (f.type.optional && !f.attributes.some(a => a.kind === 'required')) c.out[f.name] = null
+      break
+    }
+  }
+  return _passes(_evalSql(n, c.view()))
+}
+
+function _solveCmp(n, c) {
+  const { op, a, b } = n
+  const fa = _settable(a, c), fb = _settable(b, c)
+  const row = c.view()
+  const va = _evalSql(a, row), vb = _evalSql(b, row)
+  if (op === '=') {
+    if (fa && vb != null)      c.out[fa.name] = _coerce(fa, vb)
+    else if (fb && va != null) c.out[fb.name] = _coerce(fb, va)
+    // `(type = 'album') = (albumId IS NOT NULL)` — two predicates that must
+    // agree. The false one is made true where a move can, else the true one
+    // is made false.
+    else if (va != null && vb != null && va !== vb) {
+      const [yes, no] = va ? [a, b] : [b, a]
+      if (!_solve(no, c)) _negate(yes, c)
+    }
+    return
+  }
+  if (op === '<>' || op === '!=') {
+    const f = fa ?? fb
+    if (f && c.out[f.name] != null) c.out[f.name] = _step(f, c.out[f.name], 1)
+    return
+  }
+  // An ordering. The larger side is moved up to the smaller, or the smaller
+  // down to the larger; by a day, a unit, or an hour, as the column's type says.
+  const strict   = op.length === 1
+  const [lo, hi] = op[0] === '>' ? [b, a] : [a, b]
+  const vlo = lo === a ? va : vb, vhi = hi === a ? va : vb
+  const flo = lo === a ? fa : fb, fhi = hi === a ? fa : fb
+  // A stamped sibling is written by SQLite a moment after this clock read, so
+  // equality with it is a loss on the table; against one the step is a full unit.
+  const stamped = n => n.t === 'col' && !(n.name in c.out)
+  if (fhi && vlo != null)      c.out[fhi.name] = _step(fhi, vlo, strict || stamped(lo) ? 1 : 0)
+  else if (flo && vhi != null) c.out[flo.name] = _step(flo, vhi, strict || stamped(hi) ? -1 : 0)
+}
+
+// Make a predicate FALSE: a column equal to a literal takes another value of
+// its enum, the other boolean, or the next step; a null test is inverted.
+function _negate(n, c) {
+  if (n.t === 'cmp' && n.op === '=') {
+    const f = _settable(n.a, c) ?? _settable(n.b, c)
+    if (!f) return false
+    const lit  = _evalSql(_settable(n.a, c) ? n.b : n.a, c.view())
+    const enumDef = c.schema.enums.find(e => e.name === f.type.name)
+    if (enumDef) {
+      const other = enumDef.values.find(v => v.name !== String(lit))
+      if (other) c.out[f.name] = other.name
+    } else if (lit != null) {
+      c.out[f.name] = _step(f, lit, 1)
+    }
+  } else if (n.t === 'isnull') {
+    const f = _settable(n.a, c)
+    if (!f) return false
+    if (n.not) { if (f.type.optional && !f.attributes.some(a => a.kind === 'required')) c.out[f.name] = null }
+    else c.out[f.name] = _fillValue(f, c)
+  }
+  return !_passes(_evalSql(n, c.view())) || _evalSql(n, c.view()) == null
+}
+
+// The column a node names, when a move on it is honest: this model's own
+// scalar, generated by the factory, and not a key — a foreign key points at a
+// row and is wired by withParents(), so moving it would point at nothing.
+function _settable(n, { model, fkFields }) {
+  if (n.t !== 'col') return null
+  const f = model.fields.find(x => x.name === n.name)
+  if (!f || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') return null
+  if (fkFields.has(f.name) || f.attributes.some(a => a.kind === 'id')) return null
+  if (_shouldSkipField(f, model)) return null
+  return f
+}
+
+function _fillValue(f, { schema, model, seq }) {
+  const required = { ...f, type: { ...f.type, optional: false } }
+  return _fieldValue(schema, model.name, required, seq, null) ?? null
+}
+
+function _coerce(f, v) {
+  switch (f.type.name) {
+    case 'Boolean':  return Boolean(v)
+    case 'Int':      return Math.trunc(Number(v))
+    case 'Float':    return Number(v)
+    default:         return typeof v === 'number' ? v : String(v)
+  }
+}
+
+// `value` moved by `delta` units in the column's own scale; 0 copies it.
+function _step(f, value, delta) {
+  const attrs = f.attributes
+  switch (f.type.name) {
+    case 'Int':      return Math.trunc(Number(value)) + delta
+    case 'Float':    return Number(value) + delta
+    case 'Boolean':  return delta === 0 ? Boolean(value) : !value
+    case 'DateTime':
+      if (attrs.some(a => a.kind === 'date')) return _shiftDate(String(value), delta)
+      return new Date(new Date(value).getTime() + delta * 86_400_000).toISOString()
+    case 'String': {
+      const v = String(value)
+      if (attrs.some(a => a.kind === 'date')) return _shiftDate(v, delta)
+      if (attrs.some(a => a.kind === 'time')) return _shiftTime(v, delta)
+      if (delta === 0) return v
+      return delta > 0 ? `${v}a` : v.slice(0, -1)
+    }
+    default: return value
+  }
+}
+
+function _shiftDate(ymd, days) {
+  const t = Date.parse(`${ymd}T00:00:00Z`)
+  return Number.isNaN(t) ? ymd : new Date(t + days * 86_400_000).toISOString().slice(0, 10)
+}
+
+// An hour per step, held inside the day: a clock has no tomorrow to wrap into.
+function _shiftTime(hms, hours) {
+  const parts = hms.split(':').map(Number)
+  if (parts.some(Number.isNaN)) return hms
+  const secs    = parts[2] != null
+  const minutes = Math.min(23 * 60 + 59, Math.max(0, parts[0] * 60 + parts[1] + hours * 60))
+  const pad     = n => String(n).padStart(2, '0')
+  const out     = `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`
+  return secs ? `${out}:${pad(parts[2])}` : out
+}
+
+// The SQL subset, as a tree. Booleans are 1/0 and NULL is null, as SQLite has them.
+function _parseSql(src) {
+  const re = /\s*(?:("[^"]*")|('(?:[^']|'')*')|(\d+(?:\.\d+)?)|([A-Za-z_]\w*)|(<>|!=|<=|>=|[=<>+\-*\/(),]))/y
+  const toks = []
+  let m
+  while (re.lastIndex < src.length && (m = re.exec(src))) {
+    if (m[1]) toks.push({ k: 'col', v: m[1].slice(1, -1) })
+    else if (m[2]) toks.push({ k: 'str', v: m[2].slice(1, -1).replace(/''/g, "'") })
+    else if (m[3]) toks.push({ k: 'num', v: Number(m[3]) })
+    else if (m[4]) toks.push({ k: 'word', v: m[4] })
+    else toks.push({ k: 'op', v: m[5] })
+  }
+  if (re.lastIndex < src.length && src.slice(re.lastIndex).trim()) throw new Error('unsupported SQL')
+
+  let i = 0
+  const peek = () => toks[i]
+  const word = w => peek()?.k === 'word' && peek().v.toUpperCase() === w
+  const op   = o => peek()?.k === 'op' && peek().v === o
+  const eat  = () => toks[i++]
+  const need = o => { if (!op(o)) throw new Error(`expected ${o}`); i++ }
+
+  const orExpr = () => {
+    let a = andExpr()
+    while (word('OR')) { eat(); a = { t: 'or', a, b: andExpr() } }
+    return a
+  }
+  const andExpr = () => {
+    let a = notExpr()
+    while (word('AND')) { eat(); a = { t: 'and', a, b: notExpr() } }
+    return a
+  }
+  const notExpr = () => {
+    if (word('NOT')) { eat(); return { t: 'not', a: notExpr() } }
+    return cmpExpr()
+  }
+  const cmpExpr = () => {
+    const a = addExpr()
+    if (word('IS')) {
+      eat()
+      const not = word('NOT') && (eat(), true)
+      if (!word('NULL')) throw new Error('expected NULL')
+      eat()
+      return { t: 'isnull', a, not }
+    }
+    const not = word('NOT') && (eat(), true)
+    if (word('IN')) {
+      eat(); need('(')
+      const list = [addExpr()]
+      while (op(',')) { eat(); list.push(addExpr()) }
+      need(')')
+      return { t: 'in', a, list, not }
+    }
+    if (not) throw new Error('unsupported NOT')
+    const t = peek()
+    if (t?.k === 'op' && ['=', '<>', '!=', '<', '<=', '>', '>='].includes(t.v)) {
+      eat()
+      return { t: 'cmp', op: t.v, a, b: addExpr() }
+    }
+    return a
+  }
+  const addExpr = () => {
+    let a = mulExpr()
+    while (op('+') || op('-')) { const o = eat().v; a = { t: 'bin', op: o, a, b: mulExpr() } }
+    return a
+  }
+  const mulExpr = () => {
+    let a = unary()
+    while (op('*') || op('/')) { const o = eat().v; a = { t: 'bin', op: o, a, b: unary() } }
+    return a
+  }
+  const unary = () => {
+    if (op('-')) { eat(); return { t: 'neg', a: unary() } }
+    return primary()
+  }
+  const primary = () => {
+    const t = eat()
+    if (!t) throw new Error('unexpected end')
+    if (t.k === 'num' || t.k === 'str' || t.k === 'col') return { t: t.k, v: t.v, name: t.v }
+    if (t.k === 'op' && t.v === '(') { const e = orExpr(); need(')'); return e }
+    if (t.k === 'word') {
+      const u = t.v.toUpperCase()
+      if (u === 'NULL')  return { t: 'null' }
+      if (u === 'TRUE')  return { t: 'num', v: 1 }
+      if (u === 'FALSE') return { t: 'num', v: 0 }
+      if (op('(')) throw new Error('unsupported function')
+      return { t: 'col', name: t.v }
+    }
+    throw new Error(`unexpected ${t.v}`)
+  }
+
+  const ast = orExpr()
+  if (i < toks.length) throw new Error('trailing input')
+  return ast
+}
+
+function _sqlCompare(a, b) {
+  const na = typeof a === 'number', nb = typeof b === 'number'
+  if (na && nb) return a < b ? -1 : a > b ? 1 : 0
+  if (na) return -1          // SQLite orders every number before every text
+  if (nb) return 1
+  const x = String(a), y = String(b)
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
+function _evalSql(n, row) {
+  const T = v => v != null && v !== 0
+  switch (n.t) {
+    case 'num':  return n.v
+    case 'str':  return n.v
+    case 'null': return null
+    case 'col': {
+      const v = row[n.name]
+      if (v === undefined || v === null) return null
+      if (typeof v === 'boolean') return v ? 1 : 0
+      if (typeof v === 'object') return null
+      return v
+    }
+    case 'neg': { const v = _evalSql(n.a, row); return v == null ? null : -Number(v) }
+    case 'bin': {
+      const a = _evalSql(n.a, row), b = _evalSql(n.b, row)
+      if (a == null || b == null) return null
+      const x = Number(a), y = Number(b)
+      if (Number.isNaN(x) || Number.isNaN(y)) return null
+      const ints = Number.isInteger(x) && Number.isInteger(y)
+      switch (n.op) {
+        case '+': return x + y
+        case '-': return x - y
+        case '*': return x * y
+        case '/': return y === 0 ? null : ints ? Math.trunc(x / y) : x / y
+      }
+      return null
+    }
+    case 'cmp': {
+      const a = _evalSql(n.a, row), b = _evalSql(n.b, row)
+      if (a == null || b == null) return null
+      const c = _sqlCompare(a, b)
+      switch (n.op) {
+        case '=':  return c === 0 ? 1 : 0
+        case '<>': case '!=': return c !== 0 ? 1 : 0
+        case '<':  return c < 0 ? 1 : 0
+        case '<=': return c <= 0 ? 1 : 0
+        case '>':  return c > 0 ? 1 : 0
+        case '>=': return c >= 0 ? 1 : 0
+      }
+      return null
+    }
+    case 'isnull': { const v = _evalSql(n.a, row); return (v == null) !== n.not ? 1 : 0 }
+    case 'in': {
+      const v = _evalSql(n.a, row)
+      if (v == null) return null
+      let hit = false, sawNull = false
+      for (const item of n.list) {
+        const x = _evalSql(item, row)
+        if (x == null) sawNull = true
+        else if (_sqlCompare(v, x) === 0) hit = true
+      }
+      const r = hit ? 1 : sawNull ? null : 0
+      return n.not && r != null ? 1 - r : r
+    }
+    case 'not': { const v = _evalSql(n.a, row); return v == null ? null : T(v) ? 0 : 1 }
+    case 'and': {
+      const a = _evalSql(n.a, row), b = _evalSql(n.b, row)
+      if ((a != null && !T(a)) || (b != null && !T(b))) return 0
+      return a == null || b == null ? null : 1
+    }
+    case 'or': {
+      const a = _evalSql(n.a, row), b = _evalSql(n.b, row)
+      if (T(a) || T(b)) return 1
+      return a == null || b == null ? null : 0
+    }
+  }
+  return null
 }
 
 /** One element for an array field, typed by the element's scalar type. */
@@ -3642,12 +3988,25 @@ function _sampleFromRegex(pattern, seq) {
   return _matchesRegex(pattern, out) ? out : null
 }
 
+// Every class draws one base-N digit of seq, so two rows differ in the string
+// and not only in which of N characters it opens with: `^[a-z0-9][a-z0-9-]{0,62}$`
+// gave every row of every factory the one letter *g* (`FJS-1779`). An open
+// quantifier takes REGEX_REPEATS characters where the pattern allows, which is
+// what gives the digits room.
+const REGEX_REPEATS = 6
+
 function _regexGen(pattern, seq) {
   let src = pattern
   if (src.startsWith('^')) src = src.slice(1)
   if (src.endsWith('$') && !src.endsWith('\\$')) src = src.slice(0, -1)
 
   let i = 0
+  let digit = 0
+  const draw = (pool) => {
+    const k = digit++
+    return pool[Math.floor(seq / pool.length ** k) % pool.length]
+  }
+
   const parseAlternation = (stop) => {
     const branches = [parseSequence(stop)]
     while (i < src.length && src[i] === '|') { i++; branches.push(parseSequence(stop)) }
@@ -3655,28 +4014,32 @@ function _regexGen(pattern, seq) {
   }
 
   const parseSequence = (stop) => {
-    let out = ''
+    const parts = []
     while (i < src.length && src[i] !== '|' && !(stop && src[i] === stop)) {
-      out += parseQuantified()
+      parts.push(parseQuantified())
     }
-    return out
+    return () => parts.map(p => p()).join('')
   }
 
   const parseQuantified = () => {
     const atom = parseAtom()
-    let min = 1
+    let reps = 1
     if (src[i] === '{') {
       const close = src.indexOf('}', i)
       if (close === -1) throw new Error('unbalanced {')
       const body = src.slice(i + 1, close)
       i = close + 1
-      min = parseInt(body.split(',')[0], 10)
+      const [lo, hi] = body.split(',')
+      const min = parseInt(lo, 10)
       if (Number.isNaN(min)) throw new Error('bad quantifier')
-    } else if (src[i] === '?') { i++; min = 0 }
-    else if (src[i] === '*')   { i++; min = 0 }
-    else if (src[i] === '+')   { i++; min = 1 }
+      if (hi === undefined)      reps = min                                     // {n}
+      else if (hi.trim() === '') reps = Math.max(min, REGEX_REPEATS)            // {n,}
+      else                       reps = Math.min(parseInt(hi, 10), Math.max(min, REGEX_REPEATS))  // {n,m}
+    } else if (src[i] === '?') { i++; reps = 0 }
+    else if (src[i] === '*')   { i++; reps = REGEX_REPEATS }
+    else if (src[i] === '+')   { i++; reps = REGEX_REPEATS }
     if (src[i] === '?') i++    // lazy modifier — same output
-    return atom.repeat(min)
+    return () => Array.from({ length: reps }, () => atom()).join('')
   }
 
   const parseAtom = () => {
@@ -3709,22 +4072,22 @@ function _regexGen(pattern, seq) {
       i++
       const pool = neg ? 'abcdefghijklmnopqrstuvwxyz0123456789'.split('').filter(c => !members.includes(c)) : members
       if (!pool.length) throw new Error('empty class')
-      return pool[seq % pool.length]
+      return () => draw(pool)
     }
     if (ch === '\\') {
       i++
       const chars = _escapeChars(src[i]); i++
-      return chars[seq % chars.length]
+      return () => draw(chars)
     }
-    if (ch === '.') { i++; return 'a' }
+    if (ch === '.') { i++; return () => 'a' }
     if (ch === undefined) throw new Error('unexpected end')
     i++
-    return ch
+    return () => ch
   }
 
   const out = parseAlternation(null)
   if (i < src.length) throw new Error('trailing input')
-  return out
+  return out()
 }
 
 function _escapeChars(c) {

@@ -13,7 +13,7 @@ const ir = async (source, filename) => (await compile(source, { ...quiet, filena
 
 const stat = (value) => ({ kind: 'static', value })
 const el = (tag, loc, children, extra = {}) => ({
-  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], children, selfClosing: false, ...extra,
+  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], ref: null, children, selfClosing: false, ...extra,
 })
 const text = (...parts) => ({ kind: 'text', parts, static: parts.every((p) => p.kind === 'static') })
 
@@ -112,7 +112,7 @@ describe('lower()', () => {
     ])
   })
 
-  it('lowers a component call: props, directives, refusals, slots routed as the DOM path routes them', async () => {
+  it('lowers a component call: props, binds, refusals, slots routed as the DOM path routes them', async () => {
     const tree = await ir(`<script>
   import Card from './Card.mesa'
   let n = 0
@@ -135,8 +135,11 @@ describe('lower()', () => {
       ['$class', 'x'],
       ['label', '`n is ${$$runtime.get($$sig_n)}`'],
       ['onpick', '() => $$runtime.postUpdate($$sig_n, $$set_n, +1)'],
+      ['open', '$$runtime.get($$sig_n)'],
     ])
-    expect(card.directives.map((d) => d.name)).toEqual(['bind:open'])
+    // bind: is the prop down plus the setter the child's changes come back through.
+    expect(card.binds).toEqual([{ name: 'open', setter: '$$set_n' }])
+    expect(card.ref).toBe(null)
     // Refused for every target by componentAttributes: reported, never passed.
     expect(tree.diagnostics).toEqual([expect.stringMatching(/^on:close is not valid on a component\..* — C\.mesa:5:1$/)])
     expect(Object.keys(card.slots)).toEqual(['actions', 'aside', 'default'])

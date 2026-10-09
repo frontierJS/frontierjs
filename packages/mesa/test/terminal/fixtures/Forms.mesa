@@ -1,0 +1,42 @@
+<script>
+  let formEl = undefined
+  let mounted = 'no'
+  let heard = '-'
+  let left = '-'
+  let changed = '-'
+  let submits = 0
+  let by = '-'
+  let cancels = 0
+  let once = 0
+  let quick = 0
+  let pair = 0
+  let draft = { a: '' }
+  let watched = '-'
+
+  $: draft.a, () => { watched = draft.a }
+
+  $.onMount(() => { mounted = formEl ? 'yes' : 'no ref' })
+
+  const onInput  = (e) => { heard = `${e.target.name}=${e.target.value}`; if (e.target.name === 'a') draft.a = e.target.value }
+  const onChange = (e) => { changed = `${e.target.name}=${e.target.value}` }
+  const onLeave  = (e) => { left = e.target.name }
+  const onSubmit = (e) => { submits++; by = e.submitter ? 'button' : 'none' }
+</script>
+
+<p>mounted {mounted} watched {watched}</p>
+<p>heard {heard} left {left} changed {changed}</p>
+<p>submits {submits} by {by} cancels {cancels} once {once}</p>
+<p>quick {quick} pair {pair}</p>
+<form bind:this={formEl} on:submit|preventDefault={onSubmit} on:input={onInput} on:change={onChange} on:blur|capture={onLeave}>
+  <input name="a" />
+  <input name="b" />
+  <button type="button" on:click={() => cancels++}>Cancel</button>
+  <button on:click|once={() => once++}>Save</button>
+</form>
+<form on:submit|preventDefault={() => quick++}>
+  <input name="q" />
+</form>
+<form on:submit|preventDefault={() => pair++}>
+  <input name="x" />
+  <input name="y" />
+</form>

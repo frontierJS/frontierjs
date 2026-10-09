@@ -128,6 +128,9 @@ export function compare(L, op, R, affL = null, affR = null) {
   // Every comparison with an absent operand is UNKNOWN, `IS NULL` included —
   // the presence test is a branch of its own above, and this is a comparison.
   if (L === null || L === undefined || R === null || R === undefined) return null
+  // SQLite binds a NaN as NULL, and `c` below would rank NaN equal to every
+  // number — a policy that fails open on the JS side only.
+  if (Number.isNaN(L) || Number.isNaN(R)) return null
 
   L = toStorage(L)
   R = toStorage(R)

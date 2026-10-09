@@ -1,0 +1,14 @@
+<script>
+  import Stepper from './Stepper.mesa'
+  let n = 5
+  let value = 1
+  let ref = null
+</script>
+<div>
+  <Stepper label="A" bind:value={n} bind:this={ref} />
+  <Stepper label="B" bind:value />
+  <p>Parent: {n} {value}</p>
+  <button on:click={() => n = 10}>Ten</button>
+  <button on:click={() => ref.reset()}>Reset</button>
+  <button on:click={() => ref.value = 3}>Three</button>
+</div>

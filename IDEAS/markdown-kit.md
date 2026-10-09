@@ -39,7 +39,7 @@ Patched there with `white-space: pre-line` so the line breaks survive.
     the substrate runs on the server and in the browser, which answers the next
     question too. Page `.md` keeps remark, since it needs Mesa components
     inside the markup and its author is trusted.
-- Server-side render for prerendered pages vs. client-only.
+- ~~**Server-side render for prerendered pages vs.**~~ **Answered 2026-10-09 (`FJS-D821`): B — the same function at prerender and in the browser.** client-only.
   - **A** — client-only: `Cell` renders the markdown in the browser.
   - **B** — the same function at prerender and in the browser.
   - **Recommend B** — a prerendered careers page that shows `## About the role`

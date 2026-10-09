@@ -93,7 +93,7 @@ with routes and moves. A guide that answers *where is the column for Y* does.
     each half's words sit on the thing they describe, and the method's words
     reach the MCP tool list through `describe()` at no cost. C is the
     hand-written third copy tier 2 exists to remove.
-- **Is a miss logged?** Logging every unmatched query is free, and it is the only
+- ~~**Is a miss logged?**~~ **Answered 2026-10-09 (`FJS-D820`): A — yes, as a log line through `$.log`.** Logging every unmatched query is free, and it is the only
   corpus that says what people actually type. It decides whether tier 3 is worth
   building at all.
   - **A** — yes, as a log line through `$.log`.

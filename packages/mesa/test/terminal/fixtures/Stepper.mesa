@@ -1,0 +1,9 @@
+<script>
+  export let value = 0
+  export let label = 'Step'
+  export function reset() { value = 0 }
+</script>
+<div>
+  <p>{label}: {value}</p>
+  <button on:click={() => value++}>{label}+</button>
+</div>

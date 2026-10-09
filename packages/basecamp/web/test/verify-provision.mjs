@@ -981,7 +981,7 @@ try {
   await until(`${card}.querySelector('.workbench-now')?.textContent ?? ''`, t => /Bash bun test/.test(t),
     'the card never showed the tool call in progress')
   check('and it shows what the run is doing now', true)
-  check('the dot pulses while it works', await evaluate(`!!${card}.querySelector('.pulse, [class*="pulse"]')`),
+  check('the dot pulses while it works', await evaluate(`!!${card}.querySelector('.fjs-dot-ping')`),
     await evaluate(`${card}.querySelector('h2').innerHTML.slice(0, 200)`))
   check('and the tab title counts it', /^● 1/.test(await evaluate('document.title')), await evaluate('document.title'))
 
@@ -1011,6 +1011,27 @@ try {
   await until(`${card}.dataset.state`, s => s === 'error', 'stop did not end the run')
   check('Stop ends a run and the chat says it was stopped',
     /Stopped\./.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`)))
+
+  // Two messages sent, so two notches; a fold clamps one side and leaves the
+  // other open, and a click on one message flips it against the mode.
+  const notches = await until(`${card}.querySelectorAll('.workbench-notch').length`, n => n === 2,
+    'the jump rail never drew a notch per message')
+  check('the rail has a notch per message sent', notches === 2)
+  const foldState = `[...${card}.querySelectorAll('.workbench-msg')].map(m =>
+    (m.classList.contains('workbench-you') ? 'you' : 'ai') + ':' + (m.querySelector('.clamp-2') ? 'folded' : 'open')).join(' ')`
+  const foldButton = label => `[...${card}.querySelectorAll('.workbench-folds button')].find(b => b.textContent.trim() === '${label}').click()`
+  await evaluate(foldButton('Mine'))
+  const mine = await until(foldState, s => /you:folded/.test(s), 'Mine folded nothing')
+  check('Mine folds your messages and leaves Claude\'s open', !/you:open|ai:folded/.test(mine), mine)
+  await evaluate(`${card}.querySelector('.workbench-you .workbench-msg-head').click()`)
+  const flipped = await until(foldState, s => /you:open/.test(s), 'clicking a folded message did not open it')
+  check('a click opens one folded message and no other', (flipped.match(/you:folded/g) ?? []).length === 1, flipped)
+  await evaluate(foldButton('Both'))
+  const both = await until(foldState, s => !/open/.test(s), 'Both left a message open')
+  check('Both folds every message and the tool calls collapse to a count',
+    /› \d+ tool calls?/.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`)), both)
+  await evaluate(foldButton('None'))
+  await until(foldState, s => !/folded/.test(s), 'None left a message folded')
 
   // ─── The other act ─────────────────────────────────────────────────────
   // The screen this one was split from. Asserted because the split is only a

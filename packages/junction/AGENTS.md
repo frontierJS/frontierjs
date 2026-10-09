@@ -237,15 +237,18 @@ In the browser: `client.service('orders').invoke('pay', id, data)`.
 ## Who the caller is — sessions, claims, bearers
 
 **A session says who; a claim says what they hold for THIS request.** The session
-comes from the auth plugin. Claims come from one resolver, `createApp({ principal })`,
-which runs on every request — for a guest too — before the Data boundary scopes
-`$.db`. Whatever it returns is what a policy reads as `auth().x`, and every name it
-returns must be declared in `db/schema.lite` (litestone's AGENTS.md, *Claims*).
+comes from the auth plugin. Claims come from `createApp({ principal })` — one
+resolver, or a LIST of them run in order and merged — on every request, for a
+guest too, before the Data boundary scopes `$.db`. Whatever they return is what a
+policy reads as `auth().x`, and every name must be declared in `db/schema.lite`
+(litestone's AGENTS.md, *Claims*).
 
 | The caller holds | Resolver |
 |---|---|
 | a session, and a role that differs per account | `membershipClaim({ … })` — reads the membership row |
 | no session, only a token — a cart, an emailed link, a portal | `bearerClaim({ … })` |
+| two of the above, with disjoint claims | `principal: [a, b]` — a claim name both emit is refused by name (`FJS-D522`) |
+| two sources where one WINS a shared claim | `async (ctx, user) => …` applying the precedence, with `describe: () => [a.describe(), b.describe()]` (`FJS-D694`) |
 | something else | `async (ctx, user) => ({ … })` — returns `{}` for no standing |
 
 ```ts
@@ -261,24 +264,41 @@ createApp({ auth, db, principal: bearerClaim({
 }) })
 ```
 
-**The row is stored with the token's digest** —
-`fingerprint(token, { key, purpose: 'portalGrant.tokenHash' })` from
-`@frontierjs/toolbelt/bearer`, where the purpose defaults to `<model>.<column>` and
-must match on both sides. The token itself exists only in the link or header that
-carries it. A grant with a past `expiresAt` or a set `revokedAt` is no
-claim, and so is no row. **An API key sent as `Authorization: Bearer <key>` is
+**The grant model is the shipped trait** —
+`import "@frontierjs/litestone/references/Grant.lite"` then `@@trait(Grant)` on the
+host model, which declares its own `@@gate` and `@@allow('create', …)`: who may
+issue a link is the host's declaration, at the Data boundary. **The row is minted
+by the resolver, never by hand**: `portal.mint($.db, { clientId })` is the
+caller's own create with the digest written by naming the column
+(`system: ['tokenHash']`, `FJS-D819`) and answers `{ token, row }` once;
+`svc.hooks(portal.mintOnCreate())` makes the model's `create` the mint, with the
+token in the answer and out of the broadcast. A grant with a past `expiresAt` or a
+set `revokedAt` is no claim, and so is no row.
+
+**A link is redeemed once for the cookie** (`FJS-D340`):
+`app.post('/portal/redeem', portal.redeem(db, { maxAge }))`. The page posts the
+token from the URL fragment, the grant's digest is rotated to a fresh token's
+under the resolver's purpose, that token is set as the httpOnly
+`SameSite=Strict` cookie `from: cookie()` reads, and `{ subject }` comes back so
+the page knows what the link opens. The emailed link is dead from that moment.
+Only a `cookie()` bearer has a `redeem()`; a `header()` or `authorization()`
+bearer is handed its token directly. Over the socket the cookie is the one the
+UPGRADE carried, so a page that redeems after its socket opened reloads
+(`FJS-1503`, `FJS-D548` open). **An API key sent as `Authorization: Bearer <key>` is
 `authorization()`**, never `header('authorization')`, which throws: that header
 also carries every signed-in person's session, and `authorization()` passes on a
 token the request already signed in with rather than refusing it as a dead link.
-The grant model is `@@gate("8")`, and a policy compares
-ids, never the token: `@@allow('read', clientId == auth().portalClientId)`.
+A policy compares ids, never the token:
+`@@allow('read', clientId == auth().portalClientId)`. Two grants on one request
+each keep their row: `$.locals[BEARER]` is the first in the list's order and
+`bearerOf($, 'csatLink')` reads the other.
 
 **A claim decides rows, never standing: a bearer is still STRANGER(0).** A model
 it reads is gated at 0 for that operation and its `@@allow` does the scoping; a
 custom method it calls states `gate: 0` and `claims: ['portalClientId']`
 (*Services*, above). A resolver may not set `id` or `userId`.
 
-Pinned by `test/principal-claims.test.ts` and `test/bearer-claim.test.ts`.
+Pinned by `test/principal-claims.test.ts`, `test/principal-list.test.ts` and `test/bearer-claim.test.ts`.
 
 ---
 

@@ -22,7 +22,8 @@ Detail: `references/data-api.md`
 - `needsBackfill` — the middle step of an expand/contract split, found in the app's source by `fli release:check` — `cli/core/backfills.js`
 - `sessionGateLevel(user)` — a session → the 0–7 scale, via `toolbelt/gate`'s `gradeStanding` — `junction/src/core/litestone.ts`
 - `toDataPrincipal(user)` — a session → the principal `auth()` reads (`userId` → `id`) — `junction/src/core/litestone.ts`
-- `bearerClaim({ from, model, column, claims, key, subject })` / `BEARER` — the resolver for a caller with no session who still owns rows — `junction/src/core/litestone.ts`
+- `bearerClaim({ from, model, column, claims, key, subject })` / `BEARER` / `bearerOf(ctx, model)` — the resolver for a caller with no session who still owns rows; `ctx.locals[BEARER]` is the first grant resolved in the app's stated order and `bearerOf` reads any — `junction/src/core/litestone.ts`
+- `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` — a grant minted by the caller's own create (the digest named in `system:`, `FJS-D819`) and a link redeemed for the httpOnly cookie `from: cookie()` reads (`FJS-D340`); the one place the key, purpose, model and column are stated — `junction/src/core/litestone.ts`
 - `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` — the one reading of `tenancy { }` — `litestone/src/core/tenancy.js`
 - `accessorCandidates()` — `model Post` ⇄ service `posts` ⇄ `db.post` — `junction/src/core/litestone.ts`
 - `db.$checkWhere(accessor, where)` — is this a valid filter key; throws — `litestone/src/core/client.js`

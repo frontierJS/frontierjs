@@ -8,7 +8,7 @@ import { bridge, errorResponse, refuseUnknownDirectives } from '../transport/bri
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { declaredCallHeaders, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
+import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -713,8 +713,12 @@ export interface AppOptions {
    * are. `membershipClaim()` is the shipped resolver for a session and
    * `bearerClaim()` for a token with no session; neither can emit a claim it
    * did not verify.
+   *
+   * A LIST runs each in order and merges, refusing a claim name two of them
+   * emit (`FJS-D522`); a precedence between two sources is a plain function
+   * carrying a `describe()` list of what it composes (`FJS-D694`).
    */
-  principal?:   import('./litestone.ts').PrincipalResolver
+  principal?:   import('./litestone.ts').PrincipalSetting
 
   /**
    * This tenant's configuration, resolved per tenant and memoized (`FJS-D126`).
@@ -1717,6 +1721,7 @@ export function createApp(opts: AppOptions = {}): App {
   // A tenant registry takes the same slot: the client is per REQUEST rather
   // than per app, so `withTenantDb` resolves it and assigns the same
   // `ctx.locals.db`. Installing both would leave the assignment to hook order.
+  checkPrincipalSetting(opts.principal)
   if (opts.tenants) {
     dataHook = withTenantDb(opts.tenants, opts.principal)
     app.hooks({ around: { all: [dataHook] } })

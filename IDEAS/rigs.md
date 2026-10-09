@@ -300,7 +300,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
     hook that strips a field, a gate the app tightened), and an on-demand check is
     one nobody runs until the break has shipped. `@frontierjs/testing` now gives it
     an app to run in.
-- Does a rig get an `upgrade/` part — codemods it ships to move a consumer across
+- ~~**Does a rig get an `upgrade/` part — codemods it ships to move a consumer across**~~ **Answered 2026-10-09 (`FJS-D822`): B — no codemods: linked parts move through npm and the rig's own migrations; ejected files get the drift report from the eject question above, and the commit says what broke.**
   its own breaking changes? A rig that renames a model or changes a service key has
   the framework-upgrade problem in miniature, and the ejected `resource/` part makes
   it worse: linked parts upgrade through npm, but ejected files are the consumer's
@@ -328,7 +328,7 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
     and parsing it answers that directly where a range only restates it and can be
     wrong without anything saying so. A range becomes worth requiring once a
     rig's `service/` part imports litestone API, which none does yet.
-- Deployment (Release) is unrepresented above. Does a rig contribute ports,
+- ~~**Deployment (Release) is unrepresented above.**~~ **Answered 2026-10-09 (`FJS-D824`): B — A, plus an external service the rig needs is declared as an `attachments` entry (`FJS-D158`) the installer adds to `junction.config.js`.** Does a rig contribute ports,
   secrets, or migration ordering to `fli deploy`?
   - **A** — nothing beyond what already flows: the rig's schema joins the app's,
     so there is one migration stream, and its `.env.example` lines join the app's,

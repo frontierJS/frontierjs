@@ -39,9 +39,15 @@
  *   seeing it — which is how Tab cycles focus without typing a tab into an
  *   input.
  */
-import { createRoot, createEffect, createSignal, onCleanup, eachItems } from './runtime.js'
+import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment } from './runtime.js'
 import { missingPeer } from './optional-peer.js'
 import { TERMINAL_TAGS, TERMINAL_EVENTS } from './terminal/tags.js'
+
+// A terminal is a running client with no DOM: `$.onMount` runs and a watch is
+// live, where `runtime.js` left to itself takes a process with no `document`
+// for a server render and makes both no-ops. Set as this module loads, which
+// is before any component that imports it evaluates.
+setRenderEnvironment(false, true)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
 const { BoxRenderable, TextRenderable, InputRenderable, TextAttributes } = core
@@ -162,9 +168,16 @@ export function element(tag, attrs = {}) {
     default:
       throw new Error(`[Mesa] <${tag}> has terminal role '${spec.role}', which this runtime does not build`)
   }
+  node.__tag = tag
   node.__bits = bits
   node.__attrs = {}
   node.__canFocus = spec.role === 'button' || spec.role === 'input'
+  // A handler written for the DOM reads `e.target.name`, and the engine has
+  // no `name` of its own; `value` it already has on an input.
+  Object.defineProperty(node, 'name', { get: () => node.__attrs.name, configurable: true })
+  if (spec.role === 'input') inputSource(node)
+  if (spec.role === 'button') activatable(node)
+  else if (node.__canFocus) focusSource(node)
   for (const name in attrs) set_attribute(node, name, attrs[name])
   return node
 }
@@ -209,9 +222,8 @@ export function set_attribute(node, name, value) {
  * `style`, a function under any other name) is inert, as an inert attribute
  * is.
  *
- * A handler is wired once per event, through a slot the spread rewrites,
- * because the engine has no way to take a listener back off a node: a
- * replaced spread object would otherwise stack a second handler on the first.
+ * A handler is wired once per event, through a slot the spread rewrites, so
+ * a replaced spread object does not stack a second handler on the first.
  */
 export function spread(node, fn) {
   const live = {}
@@ -259,60 +271,154 @@ const DOM_KEY = {
   pageup: 'PageUp', pagedown: 'PageDown',
 }
 
-function keyEvent(node, event, k) {
-  return domEvent(node, event, {
-    key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 ? k.sequence : k.name),
-    code:     k.name,
-    shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.meta,
-    raw:      k,
-  })
+const keyFields = (k) => ({
+  key:      DOM_KEY[k.name] ?? (k.sequence?.length === 1 ? k.sequence : k.name),
+  code:     k.name,
+  shiftKey: !!k.shift, ctrlKey: !!k.ctrl, altKey: !!(k.option || k.meta), metaKey: !!k.meta,
+  raw:      k,
+})
+
+const ACTIVATE_KEYS = new Set(['return', 'enter', 'space'])
+
+const disabled = (node) => 'disabled' in node.__attrs
+
+/**
+ * `on:event` on a terminal node. The listener goes into a list of the
+ * runtime's own rather than onto the engine, which wires one key slot per
+ * node and keeps no way to take a listener back off; `dispatch` reads the
+ * list. `capture` and `once` are the DOM's listener options.
+ */
+export function on(node, event, handler, { capture = false, once = false } = {}) {
+  if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  ;((node.__listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
+  if (event === 'click') activatable(node)
 }
 
-function domEvent(node, type, extra) {
-  return { type, target: node, currentTarget: node, preventDefault() {}, stopPropagation() {}, ...extra }
-}
-
-/** The engine exposes one `onKeyDown` / `onMouseDown` slot per node; several
- *  handlers on one element share it through a list. */
-function addKey(node, fn) {
-  if (!node.__keys) { node.__keys = []; node.onKeyDown = (k) => { for (const f of node.__keys.slice()) f(k) } }
-  node.__keys.push(fn)
-}
-
-function addMouseDown(node, fn) {
-  if (!node.__mouse) { node.__mouse = []; node.onMouseDown = (e) => { for (const f of node.__mouse.slice()) f(e) } }
-  node.__mouse.push(fn)
-}
-
-export function on(node, event, handler) {
-  const kind = TERMINAL_EVENTS[event]
-  if (!kind) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
-  switch (kind) {
-    case 'activate':
-      node.__canFocus = true
-      node.focusable = !('disabled' in node.__attrs)
-      addMouseDown(node, (e) => { if (!('disabled' in node.__attrs)) handler(domEvent(node, event, { button: 0, raw: e })) })
-      addKey(node, (k) => {
-        if (k.name !== 'return' && k.name !== 'space' && k.name !== 'enter') return
-        k.preventDefault()
-        if (!('disabled' in node.__attrs)) handler(keyEvent(node, event, k))
-      })
-      break
-    case 'input':
-      node.on('input', (value) => { if (!node.__muted) handler(domEvent(node, event, { value })) })
-      break
-    case 'keydown':
-      addKey(node, (k) => handler(keyEvent(node, event, k)))
-      break
-    case 'focus':
-      node.on('focused', () => handler(domEvent(node, event, {})))
-      break
-    case 'blur':
-      node.on('blurred', () => handler(domEvent(node, event, {})))
-      break
-    default:
-      throw new Error(`[Mesa] on:${event} lowers to '${kind}', which this runtime does not wire`)
+function fire(node, e, phase) {
+  const list = node.__listeners?.[e.type]
+  if (!list) return
+  e.currentTarget = node
+  for (const l of list.slice()) {
+    if (phase === 'capture' && !l.capture) continue
+    if (phase === 'bubble' && l.capture) continue
+    if (l.once) list.splice(list.indexOf(l), 1)
+    l.fn(e)
+    if (e.__stopNow) return
   }
+}
+
+/**
+ * Deliver `type` at `target` the way a browser does: capture listeners from
+ * the root down, every listener on the target, then the bubble listeners back
+ * up when the event bubbles. The path crosses component boundaries, since a
+ * child's nodes sit under its caller's. Answers the event, so a source can see
+ * whether its default was prevented.
+ */
+function dispatch(target, type, extra = {}) {
+  const path = []
+  for (let n = target.parent; n; n = n.parent) path.push(n)
+  let stopped = false
+  const e = {
+    type, target, currentTarget: null, isTrusted: true, defaultPrevented: false,
+    bubbles: TERMINAL_EVENTS[type].bubbles,
+    preventDefault() { this.defaultPrevented = true },
+    stopPropagation() { stopped = true },
+    stopImmediatePropagation() { stopped = true; this.__stopNow = true },
+    ...extra,
+  }
+  for (let i = path.length - 1; i >= 0 && !stopped; i--) fire(path[i], e, 'capture')
+  if (!stopped) { fire(target, e, 'capture'); if (!e.__stopNow) fire(target, e, 'bubble') }
+  if (e.bubbles) for (let i = 0; i < path.length && !stopped; i++) fire(path[i], e, 'bubble')
+  e.currentTarget = null
+  return e
+}
+
+// ─── event sources ────────────────────────────────────────────────────
+//
+// What the engine reports, turned into DOM events at the node it happened
+// to. Every focusable node is a source whether or not a listener is on it,
+// because the listener may be on an ancestor.
+
+/** Focus, blur and keys, from a node that can hold focus. A key whose
+ *  `keydown` was prevented is withheld from the engine, as a prevented key is
+ *  never typed in a browser. */
+function focusSource(node) {
+  if (node.__focusSource) return
+  node.__focusSource = true
+  node.on('focused', () => dispatch(node, 'focus'))
+  // `destroy` blurs a node it has already marked destroyed; a browser fires
+  // nothing at an element removed while focused.
+  node.on('blurred', () => { if (!node.isDestroyed) dispatch(node, 'blur') })
+  node.onKeyDown = (k) => {
+    if (dispatch(node, 'keydown', keyFields(k)).defaultPrevented) { k.preventDefault(); return }
+    if (!node.__activatable || node instanceof InputRenderable || !ACTIVATE_KEYS.has(k.name)) return
+    k.preventDefault()
+    activate(node, keyFields(k))
+  }
+}
+
+/** A node that fires `click` on Enter, Space or a press: every button, and a
+ *  box something listens to `click` on, which this makes focusable since a
+ *  terminal has no other way to reach it. */
+function activatable(node) {
+  if (node.__activatable) return
+  node.__activatable = true
+  node.__canFocus = true
+  node.focusable = !disabled(node)
+  focusSource(node)
+  node.onMouseDown = (e) => {
+    // The engine bubbles a press through every ancestor's slot; `dispatch`
+    // carries the click up instead, so an activatable ancestor hears it once.
+    e.stopPropagation()
+    activate(node, { button: 0, raw: e })
+  }
+}
+
+/** `click`, and then a button's default: submitting its form. */
+function activate(node, extra) {
+  if (disabled(node)) return
+  if (dispatch(node, 'click', extra).defaultPrevented) return
+  if (node.__tag !== 'button' || !submits(node)) return
+  const form = formOf(node)
+  if (form) dispatch(form, 'submit', { submitter: node })
+}
+
+/** A `<button>` with no `type` is a submit button, as in HTML. */
+const submits = (node) => String(node.__attrs.type ?? 'submit').toLowerCase() === 'submit'
+
+function formOf(node) {
+  for (let n = node.parent; n; n = n.parent) if (n.__tag === 'form') return n
+  return null
+}
+
+function descendants(node, pick, out = []) {
+  for (const c of node.getChildren?.() ?? []) {
+    if (pick(c)) out.push(c)
+    descendants(c, pick, out)
+  }
+  return out
+}
+
+/** `input`, `change` and Enter from a text field. */
+function inputSource(node) {
+  node.on('input', () => { if (!node.__muted) dispatch(node, 'input') })
+  node.on('change', () => dispatch(node, 'change'))
+  node.on('enter', () => implicitSubmit(node))
+}
+
+/**
+ * Enter in a single-line field submits its form by HTML's rule: through the
+ * form's first submit button when it has one, which a disabled button blocks,
+ * and otherwise only when the field is the form's one field. A `<textarea>`
+ * never submits, since Enter there is a new line.
+ */
+function implicitSubmit(field) {
+  if (field.__tag !== 'input') return
+  const form = formOf(field)
+  if (!form) return
+  const [button] = descendants(form, (n) => n.__tag === 'button' && submits(n))
+  if (button) { activate(button, {}); return }
+  if (descendants(form, (n) => n.__tag === 'input').length === 1) dispatch(form, 'submit', { submitter: null })
 }
 
 // ─── blocks ───────────────────────────────────────────────────────────

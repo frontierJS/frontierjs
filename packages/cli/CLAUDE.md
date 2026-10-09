@@ -120,7 +120,10 @@ core/
                 rest rather than prompting) and hooks OFF — this repo's Stop hook
                 would keep a one-question session chasing `fli done`, and it
                 records items as shown for the person's own session too. Not
-                `ask.js`, which resolves a question against the registers
+                `ask.js`, which resolves a question against the registers.
+                WORK mode is the other end — every permission, a budget, hooks
+                optional — for basecamp's workbench (`core/workbench.ts` there),
+                which reads this file's argv and event reader by import
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
                 which run `ask-claude.js` in EDIT mode scoped to the Vite root,

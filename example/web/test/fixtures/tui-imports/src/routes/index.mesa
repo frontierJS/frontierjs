@@ -1,0 +1,4 @@
+<script>
+  import { things } from '../resources/Thing.mesa'
+</script>
+<p>Things: {things.length}</p>

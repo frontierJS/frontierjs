@@ -22,8 +22,7 @@
 // (`FJS-D340`) because there the link arrives in an email and must not stay in
 // a URL; a basket's token is never in one.
 
-import { fingerprint } from '@frontierjs/toolbelt/bearer'
-import { generateCuid } from '@frontierjs/toolbelt/ids'
+import { bearerClaim, header } from '@frontierjs/junction'
 
 /** The header the browser client sends. Also what `carts.open` answers with,
  *  so there is one spelling of it. */
@@ -40,25 +39,28 @@ export const CART_PURPOSE = 'cartGrant.tokenHash'
 export const cartKey = () => process.env.ENCRYPTION_KEY ?? 'dev-encryption-key-change-me-0001'
 
 /**
- * Mint a way into a basket and answer the token, which is the only moment it
- * exists outside the holder's browser.
+ * Who the caller is FOR THIS REQUEST, beyond who they are — and how a way into
+ * a basket is minted. One declaration: the resolver reads the grant row this
+ * mints, so the key, the purpose, the model and the column are stated here and
+ * nowhere else.
  *
- * Takes the SYSTEM client because `CartGrant` is `@@gate("8")`: a shopper never
- * reads their own grant — they hold the only half that matters — and the row is
- * written before any principal exists to be graded.
+ * The token is read off the header, digested, and looked up — what reaches the
+ * Data boundary is the BASKET'S ID, so the shopper's secret stops here
+ * (`FJS-D343`). `CartGrant` declares neither `expiresAt` nor `revokedAt`, which
+ * is how it says a basket's grant lives as long as the basket.
+ *
+ * `cartClaim.mint(system, { cartId })` takes the SYSTEM client because
+ * `CartGrant` is `@@gate("8")`: a shopper never reads their own grant — they
+ * hold the only half that matters — and the row is written before any
+ * principal exists to be graded.
  */
-export async function mintCartGrant(
-  system: { cartGrant: { create: (a: { data: Record<string, unknown> }) => Promise<unknown> } },
-  cartId: number,
-): Promise<string> {
-  // A cuid for the same reason every id here is one: minted without a round
-  // trip, sortable enough to page, and wide enough that guessing is not a
-  // strategy. The SHAPE is not asserted anywhere downstream — a token that
-  // does not match a stored digest is simply not a grant, which is the only
-  // answer a bearer may have.
-  const token = generateCuid()
-  await system.cartGrant.create({
-    data: { cartId, tokenHash: await fingerprint(token, { key: cartKey(), purpose: CART_PURPOSE }) },
-  })
-  return token
-}
+export const cartClaim = bearerClaim({
+  from:    header(CART_HEADER),
+  model:   'cartGrant',
+  column:  'tokenHash',
+  subject: 'cartId',
+  purpose: CART_PURPOSE,
+  key:     cartKey,
+  claims:  { cartId: 'cartId' },
+  namedBy: `the ${CART_HEADER} header`,
+})

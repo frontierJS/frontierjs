@@ -27,27 +27,27 @@ claim's VALUE is a caller.
 Under `strategy database` the tenant is a file, so **the resolution is
 the whole mechanism** — no query can reach two tenants because no connection holds two.
 
-## Resolver — `createApp({ principal })`
+## Resolvers — `createApp({ principal })`
 
 | | |
 | --- | --- |
 | Kind | `bearer` |
 | Function | `bearerClaim` |
-| Membership proved by | `cartGrant` |
+| Grant read from | `cartGrant` |
 | Caller column | `cartId` |
 | Tenant column | — |
 | Standing column | — (no standing on the row) |
 | Capability grants | — (the grid grades nobody, or grades them from elsewhere) |
 | Read alongside | — |
+| Named by header | `x-cart-token` |
 
-**No row is no claim.** A caller naming a tenant they do not belong to comes out
-holding nothing — an empty screen and a gate that grades them a stranger — rather
-than a full principal belonging to somebody else. That is the one line the whole
-arrangement rests on.
+**The grant decides which rows, never the standing.** A bearer is STRANGER(0);
+the row a token digests to is read, and a dead one is a 401 — forged, expired,
+revoked and already redeemed are one sentence (`FJS-D696`).
 
 ## Claims
 
-What this resolver may merge onto the principal, by name.
+What the resolvers may merge onto the principal, by name.
 
 | Claim | |
 | --- | --- |

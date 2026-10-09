@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-20 publishable package(s) · 0 problem(s)
+21 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -190,7 +190,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · ships `AGENTS.md` `LICENSE` `README.md` `catalog.snapshot.md` `package.json` `src/`
+`packages/litestone` · ships `AGENTS.md` `LICENSE` `README.md` `catalog.snapshot.md` `package.json` `references/` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -218,6 +218,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./transform (import)` | `src/transform/framework.js` | yes |
 | exports | `./transform (types)` | `src/transform/framework.d.ts` | yes |
 | exports | `./external-ref (import)` | `src/plugins/external-ref.js` | yes |
+| exports | `./references/*` | `references/*` | 11 files |
 | bin | `litestone` | `src/tools/cli.js` | yes |
 | main | `main` | `src/index.js` | yes |
 | types | `types` | `src/index.d.ts` | yes |
@@ -303,6 +304,19 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./vitals` | `src/vitals.js` | yes |
 | exports | `./cert` | `src/cert.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
+
+## `@frontierjs/print-kit`
+
+`packages/print-kit` · ships `README.md` `index.d.ts` `index.js` `package.json` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `. (types)` | `index.d.ts` | yes |
+| exports | `. (import)` | `index.js` | yes |
+| exports | `./print.css` | `src/print.css` | yes |
+| exports | `./package.json` | `package.json` | yes |
+
+- peers — `@frontierjs/mesa`: `^0.1.0`
 
 ## `@frontierjs/sierra`
 

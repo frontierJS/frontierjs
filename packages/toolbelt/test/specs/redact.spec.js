@@ -167,12 +167,29 @@ test('redact: redactValue takes either kind', function () {
   assert.equal(redactValue(null), null)
 })
 
-// FJS-2183: junction runs omitBy over every response of a model with a
-// protected field, so one stored Json value deeper than the stack is a 500 on
-// every later read of that model. JSON.parse and JSON.stringify take the depth.
-test.failing('redact: omitBy walks a value nested deeper than the call stack', function () {
-  let deep = []
+// Junction runs omitBy over every response of a model with a protected field,
+// so one stored Json value deeper than the stack was a 500 on every later read
+// of that model. Bun's JSON.parse and JSON.stringify take the depth; node's
+// stringify does not, so the value is built here rather than round-tripped.
+test('redact: omitBy walks a value nested deeper than the call stack', function () {
+  let deep = [{ token: 't', keep: 1 }]
   for (let i = 0; i < 20000; i++) deep = [deep]
-  const value = JSON.parse(JSON.stringify({ data: deep }))
-  omitBy(value, () => false)
+  const value = { data: deep }
+
+  const isToken = k => k === 'token'
+  let out = omitBy(value, isToken).data
+  let red = redactBy(value, isToken).data
+  for (let i = 0; i < 20000; i++) { out = out[0]; red = red[0] }
+  assert.deepEqual(out, [{ keep: 1 }])
+  assert.deepEqual(red, [{ token: REDACTED, keep: 1 }])
+})
+
+test('redact: a sparse array keeps its holes and a sibling is not a cycle', function () {
+  const shared = { a: 1 }
+  const sparse = [1, , 3]
+  const out = omitBy({ sparse, x: shared, y: shared }, () => false)
+  assert.equal(out.sparse.length, 3)
+  assert.equal(1 in out.sparse, false)
+  assert.deepEqual(out.x, { a: 1 })
+  assert.deepEqual(out.y, { a: 1 })
 })

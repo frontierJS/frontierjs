@@ -1,7 +1,7 @@
 # @frontierjs/print-kit — project state
 
 State as of **2026-10-09**. Moved in from `fjs-prototypes/transit/packages/print-kit`
-today under `FJS-D811`; three prototypes (transit, lago, serpgrid) reach for
+today under `FJS-D816`; three prototypes (transit, lago, serpgrid) reach for
 it and `example` does not, which is the signal the ruling amended the
 exit trigger to.
 

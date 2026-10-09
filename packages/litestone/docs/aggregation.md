@@ -147,8 +147,9 @@ await db.order.groupBy({
 ```
 
 SQLite has no zone database, so the zone reaches it as the fixed offsets it keeps across the
-rows the call reads — toolbelt's `offsetSpans`, one `CASE` arm per summer-time change, found by
-one extra `MIN`/`MAX` over the same `where`. A gap fill's bounds become that zone's calendar
+rows the call reads — toolbelt's `offsetSpans`, one `CASE` arm per summer-time change, over
+only the UTC years that hold rows, named by one extra `DISTINCT` read over the same `where`. A
+`9999-12-31` "never" date costs its own year, not the eight thousand between. A gap fill's bounds become that zone's calendar
 dates. An `hour` bucket on the night the clock goes back holds both 01:00 hours. `timeZone`
 without `interval` is refused.
 

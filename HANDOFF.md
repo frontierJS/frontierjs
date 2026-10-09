@@ -14,6 +14,76 @@ finished.
 
 ---
 
+# Handoff — 2026-10-09 (the fixture that reads the schema's rules)
+
+> **Started from FJS-1779 — a quarter of a generated schema's models could not be
+> seeded, so the access drive graded nothing about them — and ended with the
+> auto-factory reading the rules on a row rather than the types alone.** The
+> through-line: every cause in the row was one declaration the generator never
+> looked at, and the five became eleven once the reproducing schemas were run.
+
+**What is recorded where.** `FJS-1779` is closed in `ISSUES.md` with the causes
+and the measurement; `FJS-1213` carries the amendment that its fixture half is
+done and names what stays open there (the channel split, `@immutable` on update,
+the tenancy claim, the ignored explicit factories). The pin and `@@check` rules
+are in `docs/testing.md` § Relations and § Generated values. The test is
+`test/factory-schema-rules.test.ts`, one case per cause.
+
+**The order.** The 2026-10-06 run predated the interval fix (`_orderByChecks`),
+so the simple `a < b` was already gone; what the reproducing schemas showed was
+`AND`-joined checks, `IN (…)`, `(type = 'album') = (albumId IS NOT NULL)`, an
+identity over `@system` columns, and orderings against a `@default(now())`
+sibling — which is why the solver reads the SQL subset rather than one shape.
+The slug collision turned out to be two things: a regex sampler drawing one
+letter, and every clone of a factory restarting the sequence at 1. The pin rule
+(one relation per model) came from the base44 drive pinning every parent it had
+made, which handed `IssueRelation` the same Issue twice.
+
+**Measured** by a ladder sweep over the 21 base44 freehand schemas, run from the
+scratchpad: 323 of 323 models seed, against 139 of 176 in the drive. The base44
+apps have drifted from the tree on `driver logger` → `driver trail` and `@@log` →
+`@@trail`; the sweep rewrote them in memory, and quo's and chatwoot's
+`access.test.ts` fail to parse for the same reason, so their exclusion lists could
+not be removed from here. **Next:** regenerate or rename in those apps, drop the
+`OpenWindow` / `@@arc` / either-or exclusions, and rerun Q3's Phase 2 freehand.
+
+---
+
+# Handoff — 2026-10-09 (the principal list, and a grant the caller mints)
+
+> **Started from the stressor audit's ranking — eight apps composed two claim
+> sources by hand, nine wrote the same grant-and-redeem — and ended with both
+> rows built as one design.** The through-line: `bearerClaim` already held the
+> four facts the mint and the redeem need (model, column, key, purpose), so the
+> paved road was to put the two acts on its answer rather than coin anything.
+
+**What is recorded where.** `FJS-D819` (Access control) is the ruling: `system:
+['col']` admits a `@guarded` column's write half, the Grant trait is imported and
+declares no gate, `bearerClaim(...).mint()` / `.mintOnCreate()` / `.redeem()`
+exist, and a principal list keeps every grant (`ctx.locals[BEARER]` first-in-order,
+`bearerOf(ctx, model)` any). `FJS-1450`, `FJS-1749`, `FJS-2176` are closed with the
+pins named. `FJS-D522` and `FJS-D694` are built as ruled, `kind: 'signature'`
+included. The `example` basket now mints through `cartClaim.mint()` and
+`mintCartGrant` is gone.
+
+**How it moved.** The litestone half came first because it decides the shape of
+the junction half: FJS-1749's *a generator the schema names* was priced and
+dropped — a `@default` has one output and the mint needs two (the digest stored,
+the token answered) — in favor of `system:` admitting the column, which is
+`FJS-D575`'s rule extended one kind. The trait's `@@gate("8")` was the second
+half of the same trap. On the junction side the `validated` stage, not `around`,
+is where the digest joins the payload: a `@guarded` column is absent from the
+client's schema and a digest added before validation is an unknown key.
+
+**Left open, in order.** `FJS-D664` (session + grant on one request) is unchanged
+and now has a stated sibling — two grants on one request, first-in-order is the
+trail's actor. `FJS-D548` / `FJS-1503` (the socket keeps the upgrade's cookie)
+is what every redeem-then-navigate page still hits; AGENTS.md says reload. The
+stressor copies this retires are not yet retired: chatwoot `visitor.ts`, ela and
+sstime `principal.ts`, notion/lago/jazzhr redeem routes and nullable digests —
+each is a re-drive, and `fli proves` names `example verify:cart` for the
+principal area, which needs the dev servers on 8110/7010.
+
 # Handoff — 2026-10-06 (shapes consolidate, models do not)
 
 > **Started as "where did we leave Oracle" and ended with eight reference files one rung below the catalog Oracle was, that same morning, rebuilt on.** The through-line: the references folder's own rule — write a file only from a real instance — was blocked on *no instance in this tree*, and the eight `fjs-prototypes` schemas plus basecamp, example and the nine fixture corpora are now instances for every unwritten row.

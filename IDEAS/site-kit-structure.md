@@ -162,7 +162,7 @@ stay site-kit blocks built from Bar and Nav until a second consumer wants them.
    - **B** — the `.bleed` modifier only, no noun: `<section class="surface bleed primary">`
    - **C** — give css's existing `Section` term a class (today it is the bare element inside a Screen, so every app's sections would change)
    - **Recommend A** — a page stripe is a thing an author names, and the escape is a mechanism other things need too; one rule keeps the escape single-owner. `50vw` counts a classic scrollbar, so the spec asserts no horizontal overflow at 360px
-5. **The remaining nouns** — Grid, the template names, the role names and `align` go through `decision-rules` before any code. *Grid and `align` passed it and shipped in css on 2026-10-06 (`.grid`, `.align-start`/`-center`/`-end`); the template and role names wait for `Block.mesa`'s move.*
+5. ~~**The remaining nouns**~~ **Answered 2026-10-09 (`FJS-D823`): B — the `template` key takes the Layout helper's own word (`stack`, `split`, `grid`), and roles get no author-facing names, since position is the only way an author states one.** — Grid, the template names, the role names and `align` go through `decision-rules` before any code. *Grid and `align` passed it and shipped in css on 2026-10-06 (`.grid`, `.align-start`/`-center`/`-end`); the template and role names wait for `Block.mesa`'s move.*
    - **A** — the names in § *The proposed shape*: templates `content`, `media`,
      `columns`, `grid`, and roles `header`, `body`, `media`, `card`.
    - **B** — the `template` key takes the Layout helper's own word (`stack`,

@@ -92,7 +92,9 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
   /** `null` when `path` and every `.mesa` it imports lowers; otherwise the
    *  first refusal, `{ file, error }`, in import order. A file whose markup
    *  is refused but whose `<script module>` compiled holds back only an
-   *  importer that takes its default — the component — or the namespace. */
+   *  importer that takes its default — the component — or the namespace.
+   *  Only a mounted file mounts what it imports: a file taken for its named
+   *  exports never runs its default, so its own imports need only load. */
   const lowers = async (path, seen = new Set(), component = true) => {
     const key = `${component}:${path}`
     if (seen.has(key)) return null
@@ -103,7 +105,7 @@ export async function installTerminalLoader({ root, autoImportMap = null }) {
     for (const m of entry.code.matchAll(MESA_IMPORT)) {
       let dep
       try { dep = resolveFrom(m[2], path) } catch (e) { return { file: relative(root, path), error: `cannot resolve ${m[2]}` } }
-      const refused = await lowers(dep, seen, takesComponent(m[1]))
+      const refused = await lowers(dep, seen, component && takesComponent(m[1]))
       if (refused) return refused
     }
     return null

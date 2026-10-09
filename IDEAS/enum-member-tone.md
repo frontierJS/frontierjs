@@ -1,6 +1,6 @@
 ---
 id: enum-member-tone
-status: proposed
+status: withdrawn
 dated: 2026-10-05
 ---
 
@@ -103,7 +103,7 @@ and is never enforced.
 
 ## Open questions
 
-1. **Who validates the tone name.** Litestone cannot import `@frontierjs/css`.
+1. ~~**Who validates the tone name.**~~ **Moot 2026-10-09 (`FJS-D817`): the proposal is refused.** Litestone cannot import `@frontierjs/css`.
    **A**: litestone accepts any identifier and sierra's `buildFieldRules()` refuses an
    unknown one at build time. **B**: the tone list moves into `@frontierjs/toolbelt`,
    which both litestone and css may import, and the parser refuses an unknown tone.
@@ -113,7 +113,7 @@ and is never enforced.
    - **A** — Litestone accepts any identifier, and sierra's `buildFieldRules()` refuses an unknown tone at build time.
    - **B** — The tone list moves from `packages/css/vocabulary.js` into `@frontierjs/toolbelt`, which both litestone and css may import, and the parser refuses an unknown tone.
    - **Recommend B** — It is the "one fact that must have one answer" that toolbelt's import license exists for (`FJS-D26`), and the error lands in the `.lite` file where the typo is. Under A, a schema that never passes through a sierra build is never checked.
-2. **Treatment as well as tone?** No call site in the corpus asked for one. Leave it out
+2. ~~**Treatment as well as tone?**~~ **Answered 2026-10-09 (`FJS-D817`): refused — no `@tone` at all; a `.lite` file names no UI word.** No call site in the corpus asked for one. Leave it out
    until one does.
    - **A** — Tone only: `@tone(danger)`, and a treatment stays the template's choice.
    - **B** — Both: `@tone(danger, outlined)`, carried as a second keyword beside `x-tones`.

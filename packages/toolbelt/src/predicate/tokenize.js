@@ -187,7 +187,11 @@ export function tokenize(src) {
       let num = ''
       if (src[i] === '-') { num += '-'; advance() }
       while (i < src.length && /[0-9.]/.test(src[i])) { num += src[i]; advance() }
-      tokens.push({ type: TK.NUMBER, value: Number(num), ...pos })
+      // `1.000.000` is NaN, and a NaN literal in a policy compared equal to
+      // every number on the JS side while SQL hid the row (FJS-2185).
+      const value = Number(num)
+      if (Number.isNaN(value)) throw new ParseError(`Malformed number '${num}'`, pos)
+      tokens.push({ type: TK.NUMBER, value, ...pos })
       continue
     }
 

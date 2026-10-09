@@ -41,7 +41,7 @@ import { notificationsPlugin }  from '@frontierjs/notifications'
 import { basecampAuditLog, basecampAuditPreImage, outpostCredential, outpostScope, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
-import { apiKeyGuard, apiKeyUsage, narrowToKey } from './services/api-keys/scopes.ts'
+import { agentGuard, apiKeyGuard, apiKeyUsage, narrowForAgent } from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './core/automations.ts'
@@ -413,8 +413,9 @@ export async function buildBasecampApp(
   // five seconds before the frame that would have held it open.
   //
   // `narrow`: a key is offered what its scopes reach, not everything its bot's
-  // role does — the same reading apiKeyGuard refuses a call by (`FJS-1349`).
-  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowToKey }))
+  // role does — the same reading apiKeyGuard refuses a call by (`FJS-1349`) —
+  // and nobody is offered the workbench, which agentGuard refuses.
+  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowForAgent }))
 
   // ── Devtools console ──────────────────────────────────────────────────
   // AFTER health and the queue: the console reads what plugins contributed, so
@@ -520,6 +521,8 @@ export async function buildBasecampApp(
       // App level, not per service: a key that is scoped on fifteen services
       // and unscoped on the sixteenth is not scoped. A session passes through
       // untouched — this only has an opinion about authMethod 'apiKey'.
+      // agentGuard is the same shape for a call arriving over /mcp, whatever
+      // credential the agent holds.
       //
       // refuseSuspended is the second door on the same rule: login refuses a
       // suspended account, this refuses a token issued before the suspension —
@@ -527,7 +530,7 @@ export async function buildBasecampApp(
       // Session row deleted. It costs no query, because `status` is on the
       // session already (sessionFields above).
       all: [
-        apiKeyGuard(app), refuseSuspended(),
+        apiKeyGuard(app), agentGuard(), refuseSuspended(),
         // The three endpoints a machine calls are exempted from sessionScope
         // because an outpost holds no session. The signature is the credential
         // that replaces one (`credentials` below); this is the grade on the

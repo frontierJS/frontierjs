@@ -245,9 +245,12 @@ Four words, and they are not a ladder. This table is the whole decision.
 - **`@system`** — the application writes it, the caller does not. A tracking
   code, a computed total. Readable by anyone. Fill it by naming the column on
   the write: `db.order.update({ where, data, system: ['trackingCode'] })`.
-- **`@guarded`** — locked both directions, `asSystem()` only. Not a level:
+- **`@guarded`** — locked both directions. The read half is `asSystem()` only;
+  the write half opens for a call that names the column, `system: ['tokenHash']`,
+  which keeps the gate, the policies and the audit actor and is how a grant's
+  digest is written by the caller's own create (`FJS-D819`). Not a level:
   `@guarded(5)` does not parse. A **required** `@guarded` column makes the
-  model uncreatable below level 8.
+  model uncreatable below level 8 unless the application fills it that way.
 - **`@secret`** — exactly `@encrypted @guarded`. Writing both by hand is
   this word spelled out.
 
@@ -802,7 +805,7 @@ notes String @omit
 
 tier: **essential** · legal in: on a model's field, on a trait's field · see also: `system`, `encrypted`, `secret`, `omit`, `allow`
 
-A system-context lock, BOTH directions: absent from reads and refused on writes outside asSystem(), by name. Takes no argument — not a level (@guarded(5) does not parse) and not a scope (@guarded(all) was accepted for a while and did nothing). An explicit select does not unlock it; @omit(all) is the word for a column a caller may read by naming it, and the two stack. A required @guarded column makes the model uncreatable below level 8. It is not exclusive with @encrypted — @secret expands into exactly that pair — but writing both by hand is @secret spelled out.
+A system-context lock, BOTH directions: absent from reads and refused on writes by name, unless the call names the column in system: [...] or runs asSystem(). Takes no argument — not a level (@guarded(5) does not parse) and not a scope (@guarded(all) was accepted for a while and did nothing). An explicit select does not unlock it; @omit(all) is the word for a column a caller may read by naming it, and the two stack. A required @guarded column makes the model uncreatable below level 8 unless the application fills it: naming the column in system: [...] on the create keeps the gate, the policies and the audit actor and writes that one column — the digest on a grant row is the shape. It is not exclusive with @encrypted — @secret expands into exactly that pair — but writing both by hand is @secret spelled out.
 
 ```lite
 internalScore Int @guarded

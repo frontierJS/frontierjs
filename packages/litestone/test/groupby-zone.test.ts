@@ -153,3 +153,21 @@ describe('a SELECT-list value is bound before the WHERE\'s', () => {
     expect(whole._stringAgg).toEqual({ ref: 'a|b' })
   })
 })
+
+// FJS-2184: the zone was spanned from the column's MIN to its MAX, so one
+// open-ended "never" row read the zone every twelve hours for eight thousand
+// years, on every call. Only the years holding rows are spanned now.
+describe('groupBy timeZone over a column holding a sentinel date', () => {
+  it('spans the years in use, and still cuts each at its own offset', async () => {
+    const db = await seeded([
+      [1, '0001-01-01T12:00:00.000Z', 1],
+      [2, '2024-03-10T04:30:00.000Z', 1],   // 23:30 EST on the 9th
+      [3, '2024-03-11T04:30:00.000Z', 1],   // 00:30 EDT on the 11th
+      [4, '9999-12-31T03:00:00.000Z', 1],   // 22:00 EST on the 30th
+    ])
+    const started = performance.now()
+    const got = await db.order.groupBy({ by: ['placedAt'], interval: { placedAt: 'day' }, timeZone: 'America/New_York', fillGaps: false, _count: true })
+    expect(performance.now() - started).toBeLessThan(2000)
+    expect(months(got)).toEqual({ '0001-01-01': 1, '2024-03-09': 1, '2024-03-11': 1, '9999-12-30': 1 })
+  })
+})

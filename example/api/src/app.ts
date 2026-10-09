@@ -13,8 +13,6 @@
 import {
   createApp,
   channels,
-  bearerClaim,
-  header,
   type App,
 } from '@frontierjs/junction'
 import { manifestPlugin } from '@frontierjs/junction/manifest'
@@ -38,7 +36,7 @@ import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
 import { commitmentHooks }                      from './core/commitments.ts'
-import { CART_HEADER, CART_PURPOSE, cartKey }  from './domain/shop'
+import { cartClaim, CART_HEADER }              from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
 import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, verifyWebhook } from './providers/psp/index.ts'
@@ -250,22 +248,9 @@ const app = createApp({
 
   // Who the caller is FOR THIS REQUEST, beyond who they are. The basket is the
   // one thing here owned by a stranger, so the claim that scopes it has to be
-  // resolved for a caller with no session at all.
-  //
-  // The token is read off the header, digested, and looked up — what reaches
-  // the Data boundary is the BASKET'S ID, so the shopper's secret stops here
-  // (`FJS-D343`). `CartGrant` declares neither `expiresAt` nor `revokedAt`,
-  // which is how it says a basket's grant lives as long as the basket.
-  principal: bearerClaim({
-    from:    header(CART_HEADER),
-    model:   'cartGrant',
-    column:  'tokenHash',
-    subject: 'cartId',
-    purpose: CART_PURPOSE,
-    key:     cartKey,
-    claims:  { cartId: 'cartId' },
-    namedBy: `the ${CART_HEADER} header`,
-  }),
+  // resolved for a caller with no session at all — `domain/shop/cart-grant.ts`
+  // declares the resolver beside the mint that writes the rows it reads.
+  principal: cartClaim,
 
   // ── Each shop is a business, and a business has a name ──────────────────
   //

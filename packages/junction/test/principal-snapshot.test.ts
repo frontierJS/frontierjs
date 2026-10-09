@@ -152,7 +152,7 @@ describe('the rendered page', () => {
     })
     const page = render(describePrincipalRealm(appWith(wrong), db))
     // The schema's tenancy claim is `workspaceId`; the resolver emits `orgId`.
-    expect(page).toContain('The resolver emits no `workspaceId`')
+    expect(page).toContain('No resolver emits `workspaceId`')
     expect(page).toContain('result with a 200 on every screen')
   })
 

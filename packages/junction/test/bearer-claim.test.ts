@@ -447,3 +447,139 @@ describe('a grant presented as a cookie', () => {
     } finally { await stopAll() }
   })
 })
+
+// ─── Minting a grant, redeeming a link ────────────────────────────────────────
+//
+// Nine apps wrote the same two acts by hand: a create that fills a `@guarded`
+// digest it is not allowed to write, and a raw route that trades an emailed
+// link for an httpOnly cookie (`FJS-D340`). Every copy either created the row
+// as asSystem() — losing the create policy that says who may issue a link — or
+// left the digest nullable so the caller's create could run (`FJS-1749`).
+describe('a grant is minted by the caller and a link redeemed for the cookie', () => {
+  const GRANTS = `
+    model Customer {
+      id   Int    @id @default(autoincrement())
+      name String
+      @@gate("0")
+      @@allow('read', id == auth().portalCustomerId)
+    }
+    model PortalLink {
+      id         Int       @id @default(autoincrement())
+      customerId Int
+      tokenHash  String    @unique @guarded
+      expiresAt  DateTime?
+      revokedAt  DateTime?
+      lastUsedAt DateTime? @system
+      @@gate("4")
+      @@allow('create', customerId == auth().customerId)
+    }
+  `
+  const link = bearerClaim({
+    from: cookie('portal'), model: 'portalLink', column: 'tokenHash', key: KEY,
+    claims: { portalCustomerId: 'customerId' }, subject: 'customerId',
+  })
+  const SELLER = { id: 7, userId: 'ana', role: 'member', customerId: 1 }
+
+  async function grants() {
+    const db: any = await createClient({ db: ':memory:', schema: GRANTS, claims: ['customerId', 'portalCustomerId'] })
+    await db.asSystem().customer.create({ data: { name: 'Acme' } })
+    await db.asSystem().customer.create({ data: { name: 'Other' } })
+    return db
+  }
+  /** A raw route's context, the three members the redeem touches. */
+  function routeCtx(body: unknown) {
+    const cookies: Array<[string, string, Record<string, unknown>]> = []
+    const ctx = {
+      body,
+      setCookie: (name: string, value: string, opts: Record<string, unknown> = {}) => { cookies.push([name, value, opts]) },
+      json: (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } }),
+    }
+    return { ctx, cookies }
+  }
+  const asCookie = <T>(value: string | null, fn: () => Promise<T>) =>
+    enterRequest({ origin: 'http', headers: value ? { cookie: `portal=${value}` } : {}, caller: { headers: value ? { cookie: `portal=${value}` } : {} } } as never, fn)
+
+  test('mint() runs the caller\'s own create — the policy decides who issues, the digest is written by name', async () => {
+    const db = await grants()
+    const me = db.$setAuth(SELLER)
+
+    const { token, row } = await link.mint(me, { customerId: 1, expiresAt: new Date(Date.now() + 86_400_000).toISOString() })
+    expect(typeof token).toBe('string')
+    expect(row.customerId).toBe(1)
+    expect('tokenHash' in row).toBe(false)
+    // A cookie bearer's token is a LINK token: stored under the link purpose,
+    // so presented as the cookie it matches nothing.
+    const stored = await db.asSystem().portalLink.findFirst({ where: { tokenHash: await fingerprint(token, { key: KEY, purpose: 'portalLink.tokenHash.link' }) } })
+    expect(stored?.id).toBe(row.id)
+
+    // The pair: the same caller may not issue a link to somebody else's customer.
+    await expect(link.mint(me, { customerId: 2 })).rejects.toThrow()
+    expect(await db.asSystem().portalLink.count()).toBe(1)
+  })
+
+  test('redeem() rotates the digest, sets the httpOnly cookie, answers the subject, and the link dies', async () => {
+    const db = await grants()
+    const { token, row } = await link.mint(db.$setAuth(SELLER), { customerId: 1 })
+    const app = createApp({ db, principal: link })
+    app.services.register(createService({
+      name: 'customers',
+      async find(ctx: ServiceContext) { return (ctx.locals.db as any).customer.findMany({}) },
+    }))
+
+    // The unredeemed link is not a cookie.
+    await expect(asCookie(token, () => app.service('customers').find({}))).rejects.toThrow(/does not work/)
+
+    const redeem = link.redeem(db, { maxAge: 3600 })
+    const { ctx, cookies } = routeCtx({ token })
+    const res = await redeem(ctx as never)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ subject: 1 })
+    expect(cookies).toHaveLength(1)
+    const [name, fresh, opts] = cookies[0]
+    expect(name).toBe('portal')
+    expect(fresh).not.toBe(token)
+    expect(opts).toMatchObject({ httpOnly: true, sameSite: 'strict', path: '/', maxAge: 3600 })
+
+    // The cookie's token resolves the grant's claims; the row records the use.
+    const rows = rowsOf(await asCookie(fresh, () => app.service('customers').find({})))
+    expect(rows.map(r => r.name)).toEqual(['Acme'])
+    expect((await db.asSystem().portalLink.findUnique({ where: { id: row.id } })).lastUsedAt).not.toBeNull()
+
+    // A clicked link forwarded on answers as one that never existed (FJS-D696's one sentence).
+    const again = await redeem(routeCtx({ token }).ctx as never)
+    expect(again.status).toBe(401)
+    expect(((await again.json()) as any).message).toBe('This link does not work. It may have expired or been withdrawn.')
+    expect((await redeem(routeCtx({}).ctx as never)).status).toBe(400)
+  })
+
+  test('redeem() is refused on a bearer that reads no cookie', () => {
+    expect(() => resolver.redeem({})).toThrow(/reads the x-portal-link header/)
+    expect(cookie('portal').cookieName).toBe('portal')
+  })
+
+  test('mintOnCreate(): the create is the mint, the answer carries the token once and the broadcast does not', async () => {
+    const db = await grants()
+    const app = createApp({ db, principal: link })
+    const svc = createService({
+      name:  'portalLinks',
+      model: 'PortalLink',
+      async create(ctx: ServiceContext) {
+        return (ctx.locals.db as any).portalLink.create({ data: ctx.data, system: [...ctx.system] })
+      },
+    })
+    svc.hooks(link.mintOnCreate())
+    app.services.register(svc)
+    let announced: unknown = undefined
+    app.events.on('portalLinks:created', (p: unknown) => { announced = p })
+
+    const made: any = await app.service('portalLinks').create({ customerId: 1 }, { auth: { user: SELLER as never } })
+    expect(typeof made.token).toBe('string')
+    expect(made.customerId).toBe(1)
+    expect('tokenHash' in made).toBe(false)
+    expect(announced).toMatchObject({ customerId: 1 })
+    expect('token' in (announced as object)).toBe(false)
+    // The row the create wrote holds the link digest of the token the caller was handed.
+    const digest = await fingerprint(made.token, { key: KEY, purpose: 'portalLink.tokenHash.link' })
+    expect((await db.asSystem().portalLink.findFirst({ where: { tokenHash: digest } }))?.id).toBe(made.id)
+  })
+})

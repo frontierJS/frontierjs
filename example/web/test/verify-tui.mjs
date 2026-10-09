@@ -5,7 +5,8 @@
  *
  * Three runs of Sierra's shell (`@frontierjs/sierra/tui`) from `web/`:
  * `--list`, which says per route whether it lowers and names the first
- * blocker; `--frame /reports/`, the one route that lowers today, painted; and
+ * blocker, run again over `fixtures/tui-imports/` for which import mounts a
+ * file; `--frame /reports/`, the one route that lowers today, painted; and
  * the interactive shell under a pty, opened, left with Esc and quit with
  * Ctrl+C, which must exit 0 with the terminal given back.
  *
@@ -42,15 +43,25 @@ const rows = list.stdout.split('\n')
 check(list.status === 0, '--list exits 0', list.stderr)
 check(rows.some((l) => /^✓ \/reports\/\s*$/.test(l)), '/reports/ lowers', list.stdout)
 check(rows.some((l) => /^✗ \/plans\/:id\/\s+takes :id/.test(l)), 'a route taking a param says so', list.stdout)
-check(rows.some((l) => /^✗ \/plans\/\s+\S.* at src\/routes\/plans\/index\.mesa:\d+:\d+$/.test(l)),
+check(rows.some((l) => /^✗ \/plans\/\s+\S.* at \S+\.mesa:\d+:\d+$/.test(l)),
   'a route that does not lower names its blocker by file and line', list.stdout)
-// `/` imports only `orders` from Order.mesa and `/orders/create/` mounts its
-// form, so the file's markup refuses the second and not the first (FJS-2182).
-check(rows.some((l) => /^✗ \/orders\/create\/\s+.* at src\/resources\/Order\.mesa:\d+:\d+$/.test(l)),
-  'a route mounting a resource file\'s form is refused for it', list.stdout)
-check(rows.some((l) => /^. \/\s/.test(l) && !l.includes('Order.mesa')),
-  'and a route taking only its data half is not', list.stdout)
 check(/\d+ of \d+ routes lower for the terminal/.test(list.stdout), 'and a count closes it', list.stdout)
+
+// ─── which import mounts ──────────────────────────────────────────────
+
+// `fixtures/tui-imports/`, a root of its own because no file in this app
+// pins it: Thing.mesa's markup refuses and its <script module> compiles
+// (FJS-2182), `/` takes only its data, `/make/` mounts it, and `/deep/` takes
+// only the data of Wrap.mesa, which mounts Thing -- a default that never runs.
+const IMPORTS = join(HERE, 'fixtures/tui-imports')
+const imports = spawnSync('bun', [TUI, '--list'], { cwd: IMPORTS, encoding: 'utf8' })
+const irows = imports.stdout.split('\n')
+check(irows.some((l) => /^✓ \/\s*$/.test(l)), 'a route taking only a refused file\'s data lowers', imports.stdout + imports.stderr)
+check(irows.some((l) => /^✗ \/make\/\s+<svg> at src\/resources\/Thing\.mesa:4:1$/.test(l)),
+  'a route mounting it is refused for it', imports.stdout)
+check(irows.some((l) => /^✓ \/deep\/\s*$/.test(l)), 'and a file taken for its data mounts nothing it imports', imports.stdout)
+const deep = spawnSync('bun', [TUI, '--frame', '/deep/'], { cwd: IMPORTS, encoding: 'utf8' })
+check(deep.status === 0 && deep.stdout.includes('Wraps: 3'), 'which loads and paints', deep.stdout + deep.stderr)
 
 // ─── --frame ──────────────────────────────────────────────────────────
 

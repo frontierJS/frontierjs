@@ -42,6 +42,8 @@ import type { App }                                         from '../src/core/ap
 
 // ─── rendering ────────────────────────────────────────────────────────────────
 
+const allDescribed = (p: PrincipalRealm) => (p.resolvers ?? []).flatMap(r => r.described)
+
 export function renderPrincipalSnapshot(
   p: PrincipalRealm | null,
   meta: { source: string; command: string },
@@ -91,8 +93,8 @@ export function renderPrincipalSnapshot(
     // under `strategy row` nothing consults it and the resolver decides.
     const named = p.tenancy.strategy === 'database'
       ? (p.tenancy.resolve ?? '**nothing declared** — no `resolve` in the block')
-      : (p.resolver?.described?.namedBy
-          ?? (p.resolver ? `the resolver's \`tenantFrom\` — a function, so not committed here` : null)
+      : (allDescribed(p).find(d => d.namedBy)?.namedBy
+          ?? (p.resolvers ? `the resolver's \`tenantFrom\` — a function, so not committed here` : null)
           ?? '**nothing** — the claim must already be on the session (`sessionFields`)')
     out.push(`| A request names its tenant by | ${named} |`)
     out.push('')
@@ -106,59 +108,86 @@ export function renderPrincipalSnapshot(
   }
   out.push('')
 
-  // ── 2. resolver ──
-  out.push('## Resolver — `createApp({ principal })`')
+  // ── 2. resolvers ──
+  out.push('## Resolvers — `createApp({ principal })`')
   out.push('')
-  if (!p.resolver) {
+  if (!p.resolvers) {
     out.push('**None installed.** Every claim on the principal comes from the session, which')
     out.push('is `sessionFields` at sign-in — one tenant for the life of that session. An app')
     out.push('whose people belong to several tenants cannot express that here.')
-  } else if (!p.resolver.described) {
-    out.push(`\`${p.resolver.name}\` — a hand-written resolver, which describes nothing about`)
-    out.push('itself. The name is the whole of what is committed, so a change to which model')
-    out.push('proves membership is invisible in this diff. Give it a `describe()` returning')
-    out.push('`{ kind, model, subject, tenant, standing, claims, include }` and the rows below')
-    out.push('fill in.')
-  } else {
-    const d = p.resolver.described
-    out.push('| | |')
-    out.push('| --- | --- |')
-    out.push(`| Kind | \`${d.kind}\` |`)
-    out.push(`| Function | \`${p.resolver.name}\` |`)
-    if (d.model) {
-      out.push(`| Membership proved by | \`${d.model}\` |`)
-      out.push(`| Caller column | ${d.subject ? `\`${d.subject}\`` : '—'} |`)
-      out.push(`| Tenant column | ${d.tenant ? `\`${d.tenant}\`` : '—'} |`)
-      out.push(`| Standing column | ${d.standing ? `\`${d.standing}\`` : '— (no standing on the row)'} |`)
-      out.push(`| Capability grants | ${d.capabilities ? `\`${d.capabilities}\`` : '— (the grid grades nobody, or grades them from elsewhere)'} |`)
-      out.push(`| Read alongside | ${d.include.length ? d.include.map(i => `\`${i}\``).join(', ') : '—'} |`)
-    }
     out.push('')
+  } else {
+    if (p.resolvers.length > 1) {
+      out.push(`A list of ${p.resolvers.length}, run in this order and merged. A claim name two of them emit`)
+      out.push('is refused on the request, so every claim below has one origin (`FJS-D522`).')
+      out.push('')
+    }
+    for (const r of p.resolvers) {
+      if (!r.described.length) {
+        out.push(`\`${r.name}\` — a hand-written resolver, which describes nothing about`)
+        out.push('itself. The name is the whole of what is committed, so a change to which model')
+        out.push('proves membership is invisible in this diff. Give it a `describe()` returning')
+        out.push('`{ kind, model, subject, tenant, standing, claims, include }` — or a LIST of them,')
+        out.push('one per source it composes (`FJS-D694`) — and the rows below fill in.')
+        out.push('')
+        continue
+      }
+      if (r.described.length > 1) {
+        out.push(`\`${r.name}\` composes ${r.described.length} sources and applies a precedence between them that`)
+        out.push('only the function states; each source is described below (`FJS-D694`).')
+        out.push('')
+      }
+      for (const d of r.described) {
+        out.push('| | |')
+        out.push('| --- | --- |')
+        out.push(`| Kind | \`${d.kind}\` |`)
+        out.push(`| Function | \`${r.name}\` |`)
+        if (d.model) {
+          out.push(`| ${d.kind === 'bearer' ? 'Grant read from' : 'Membership proved by'} | \`${d.model}\` |`)
+          out.push(`| Caller column | ${d.subject ? `\`${d.subject}\`` : '—'} |`)
+          out.push(`| Tenant column | ${d.tenant ? `\`${d.tenant}\`` : '—'} |`)
+          out.push(`| Standing column | ${d.standing ? `\`${d.standing}\`` : '— (no standing on the row)'} |`)
+          out.push(`| Capability grants | ${d.capabilities ? `\`${d.capabilities}\`` : '— (the grid grades nobody, or grades them from elsewhere)'} |`)
+          out.push(`| Read alongside | ${d.include.length ? d.include.map(i => `\`${i}\``).join(', ') : '—'} |`)
+        }
+        if (d.headers?.length) out.push(`| Named by header | ${d.headers.map(h => `\`${h}\``).join(', ')} |`)
+        out.push('')
 
-    // The rows above are membership's, and their absence is the substance for
-    // any other kind rather than a gap: a resolver that reads no row is making
-    // a different promise, and five empty cells say the opposite.
-    if (d.model) {
-      out.push('**No row is no claim.** A caller naming a tenant they do not belong to comes out')
-      out.push('holding nothing — an empty screen and a gate that grades them a stranger — rather')
-      out.push('than a full principal belonging to somebody else. That is the one line the whole')
-      out.push('arrangement rests on.')
-    } else {
-      out.push('**This resolver reads no row**, so it verifies nothing and does not claim to.')
-      out.push('That is correct for a capability the REQUEST already proves — a bearer token')
-      out.push('matches the rows carrying it, and a token nobody issued matches none. It would')
-      out.push('be a hole for a tenancy claim, which scopes a stranger INTO a tenant when')
-      out.push('asserted without proof. Which of the two this is, is the `Kind` row above.')
+        // The rows above are a row-reading resolver's, and their absence is the
+        // substance for any other kind rather than a gap: a resolver that reads
+        // no row is making a different promise, and five empty cells say the
+        // opposite.
+        if (d.model && d.kind === 'bearer') {
+          out.push('**The grant decides which rows, never the standing.** A bearer is STRANGER(0);')
+          out.push('the row a token digests to is read, and a dead one is a 401 — forged, expired,')
+          out.push('revoked and already redeemed are one sentence (`FJS-D696`).')
+        } else if (d.model) {
+          out.push('**No row is no claim.** A caller naming a tenant they do not belong to comes out')
+          out.push('holding nothing — an empty screen and a gate that grades them a stranger — rather')
+          out.push('than a full principal belonging to somebody else. That is the one line the whole')
+          out.push('arrangement rests on.')
+        } else if (d.kind === 'signature') {
+          out.push('**This resolver reads no row: the request carries its own proof.** A signature')
+          out.push('is verified and a claim issued from what it attests; a change to WHAT it')
+          out.push('attests is invisible in this diff, so the verifier is the thing to review.')
+        } else {
+          out.push('**This resolver reads no row**, so it verifies nothing and does not claim to.')
+          out.push('That is correct for a capability the REQUEST already proves — a bearer token')
+          out.push('matches the rows carrying it, and a token nobody issued matches none. It would')
+          out.push('be a hole for a tenancy claim, which scopes a stranger INTO a tenant when')
+          out.push('asserted without proof. Which of the two this is, is the `Kind` row above.')
+        }
+        out.push('')
+      }
     }
   }
-  out.push('')
 
   // ── 3. claims ──
   out.push('## Claims')
   out.push('')
-  out.push('What this resolver may merge onto the principal, by name.')
+  out.push('What the resolvers may merge onto the principal, by name.')
   out.push('')
-  const claims = p.resolver?.described?.claims ?? []
+  const claims = [...new Set(allDescribed(p).flatMap(d => d.claims))]
   if (!claims.length) {
     out.push('None described.')
   } else {
@@ -178,7 +207,7 @@ export function renderPrincipalSnapshot(
     }
     out.push('')
     if (p.tenancy?.claim && !claims.includes(p.tenancy.claim)) {
-      out.push(`**The resolver emits no \`${p.tenancy.claim}\`, and the schema's tenancy rules read that name.**`)
+      out.push(`**No resolver emits \`${p.tenancy.claim}\`, and the schema's tenancy rules read that name.**`)
       out.push('Every scoped model will filter against a claim nothing sets, which is an empty')
       out.push('result with a 200 on every screen.')
       out.push('')

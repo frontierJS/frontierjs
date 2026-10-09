@@ -217,9 +217,10 @@ test('parse: an ordering against a literal null is refused, == and != are not', 
   assert.equal(parseExpression(q(T.NEQ)).op, '!=')
 })
 
-// FJS-2185: a NUMBER token valued NaN compares equal to every number, so
-// @@allow('create', qty <= 1.000.000) admits any qty on create while the SQL
-// half hides the row.
-test.failing('parse: a malformed number literal is refused rather than lexed as NaN', function () {
-  for (const src of ['1.000.000', '1.5.0', '1..']) assert.throws(() => tokenize(src))
+test('parse: a malformed number literal is refused rather than lexed as NaN', function () {
+  // A NaN literal compared equal to every number on the JS side, so
+  // @@allow('create', qty <= 1.000.000) admitted any qty while SQL hid the row.
+  for (const src of ['1.000.000', '1.5.0', '1..', '-1.2.3']) assert.throws(() => tokenize(src), /Malformed number/)
+  assert.equal(tokenize('1.5')[0].value, 1.5)
+  assert.equal(tokenize('-2')[0].value, -2)
 })

@@ -1,0 +1,4 @@
+<script>
+  import { wraps } from '../../resources/Wrap.mesa'
+</script>
+<p>Wraps: {wraps}</p>

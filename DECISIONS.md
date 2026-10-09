@@ -27,6 +27,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d823"></a>2026-10-09 · `FJS-D823` — The remaining nouns — The `template` key takes the Layout helper's own word (`stack`, `split`, `grid`), and roles get no author-facing names, since position is the only way an author states one.
+
+Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **B** was picked over **A** (the names in § *The proposed shape*: templates `content`, `media`, `columns`, `grid`, and roles `header`, `body`, `media`, `card`), **C** (adopt ksite's six `block-with-*` names unchanged).
+
+The paper's recommendation, taken as written: under `FJS-D621` a template emits `band` plus one helper, so a second word per arrangement is a restatement of the helper's, and under `FJS-D614` a role is never written, only emitted as the element it lands on. That leaves no new noun to coin. C is the set the proposal already cut.
+
 ### <a id="fjs-d783"></a>2026-10-09 · `FJS-D783` — The noun — None: if the next question lands on an ordinary column, there is no new thing to name.
 
 Asked in [`IDEAS/external-field-cache.md`](IDEAS/external-field-cache.md) § Open questions. **A** was picked over **B** (`@fetched(via: "stripe", ttl: 1d)`, a field attribute that says where the value comes from and how long it stays).
@@ -1361,6 +1367,22 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d819"></a>2026-10-09 · `FJS-D819` — A `@guarded` column is written by naming it in `system:`, so a grant is minted by the caller's own policy-graded create; the Grant trait is imported and declares no gate; `bearerClaim` carries the mint and the `FJS-D340` redeem.
+
+Decided while building `FJS-1450` and `FJS-1749` together, the two gaps most apps had rewritten (8 and 9 of 17 stressors). Four moves, one ruling.
+
+**`system: ['col']` admits a `@guarded` column.** `@guarded` was *refused on writes outside `asSystem()`*, so a required digest made the grant model uncreatable below 8 and every app chose between `asSystem()` — dropping the create policy that says who may issue a link — and a nullable digest filled in a second write. `system:` already means *this call writes the column as the application* for `@system` and for the gate (`FJS-D575`); the write half of `@guarded` is the same statement, and the read half stays locked. `refuseSystemEntries` and `refuseGuardedWrite` in litestone's `client.js` are the one owner.
+
+**The trait declares no `@@gate`.** A trait's attribute is the one in force and a host's second is refused, so a shipped `@@gate("8")` made the host's `@@allow('create', …)` unreachable. Who may mint is the host's to declare, on the host model. `references/*` is exported: a model reference is copied because it names a key the host wires; a trait is imported because a copy is only drift.
+
+**The mint and the redeem live on `bearerClaim`'s answer**, because the resolver already holds the four facts both need — model, column, key, purpose — and a second declaration of them is the drift `FJS-1749` measured (`COOKIE_PURPOSE` named in two files so the minter agrees with the reader). A `cookie()` bearer's minted token is a LINK token under `<purpose>.link`; `redeem()` rotates it to the cookie's own, so a clicked link is dead (D340's *once*). `mintOnCreate()` runs in the `validated` stage, since a `@guarded` column is not in the client's schema and a digest added before validation is an unknown key; the token leaves in the answer and `ctx.dispatch` keeps it out of the broadcast.
+
+**The list keeps every grant.** `ctx.locals[BEARER]` is the first grant in the app's stated order — the trail's actor — and `bearerOf(ctx, model)` reads any; two live grants on one request is `FJS-D664`'s sibling and is stated here, not ruled.
+
+The nine (§ V): one origin — key, purpose, model and column stated once and read by the resolver, the mint and the redeem; no new noun — *mint* and *redeem* are the verbs nine apps and `FJS-D340` already use, `signature` the kind `FJS-D522` asked for; the complexity is the problem's (a clicked link must die); predictable — `system:` admits a third column kind by the rule the first two follow; derived — the cookie name from `from: cookie()`, the link purpose from the purpose; the owners already exist (litestone's write refusals, junction's resolver); typed and tested at both boundaries; a dead link is one sentence (`FJS-D696`) and a misnamed column is refused by name; silence — a token in a broadcast is asserted absent, and a stale `exports.snapshot.md` fails CI. Adjudication: *paved road vs. the workaround* — the same workaround in nine places is a measurement of the road. Tier: Register.
+
+*Lives in:* `packages/litestone/src/core/client.js` (`refuseGuardedWrite`, `refuseSystemEntries`) · `packages/litestone/references/Grant.lite` · `packages/junction/src/core/litestone.ts` (`bearerClaim`, `bearerOf`, `checkPrincipalSetting`, `describedOf`) · `packages/junction/test/bearer-claim.test.ts` · `packages/junction/test/principal-list.test.ts` · `packages/litestone/test/references.test.ts`.
 
 ### <a id="fjs-d801"></a>2026-10-09 · `FJS-D801` — Does the redirect URI get scaffolded — Derived as in A, and also printed: boot states each provider's exact redirect URI, so the string pasted into the provider console is the one the app sends.
 
@@ -3584,6 +3606,16 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d818"></a>2026-10-09 · `FJS-D818` — Whether this is a litestone attribute at all, or a conduit target writing an — No language change: a Caravan job calls a conduit target and writes an ordinary column on a schedule.
+
+Asked in [`IDEAS/external-field-cache.md`](IDEAS/external-field-cache.md) § Open questions. **B** was picked over **A** (a litestone attribute: litestone owns the cached column, its TTL and its invalidation, and a conduit target does the fetch), **C** (an `ExternalRefPlugin` subclass the app writes, which ships: a field type resolved on read, with `cacheKey` caching the answer).
+
+The paper's recommendation, taken as written: every piece already has its owner: Caravan the clock (`FJS-D36`), conduit the third party (`FJS-D153`), litestone the column. The value lands stored, so it is queryable locally, which is the point of the idea; C resolves on read and is not. A is worth pricing only once several apps write the same job by hand.
+
+### <a id="fjs-d817"></a>2026-10-09 · `FJS-D817` — Does an enum member carry a tone (and a treatment) in `.lite` — No: `@tone` is refused for now. A `.lite` file names no UI word, so a status badge's tone stays the template's choice.
+
+Asked in [`IDEAS/enum-member-tone.md`](IDEAS/enum-member-tone.md) § Open questions. The owner answered neither **A** (tone only) nor **B** (tone and treatment): the proposal itself is refused, which also moots its first question (who validates the tone name). The `@label` precedent is not extended to tone. The hand-written maps the paper counted (81 ternaries, 54 lookups) and the drift between them are the cost accepted, and [`FJS-1980`](ISSUES.md#fjs-1980) is the sighting that reopens it.
 
 ### <a id="fjs-d813"></a>2026-10-09 · `FJS-D813` — What does it do about `@@fts` — Nothing in v1; content is not searchable.
 
@@ -6928,6 +6960,12 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d820"></a>2026-10-09 · `FJS-D820` — Is a miss logged — Yes, as a log line through `$.log`.
+
+Asked in [`IDEAS/in-app-guide.md`](IDEAS/in-app-guide.md) § Open questions. **A** was picked over **B** (yes, as a row in a model the app's box owns, with the query, the caller's standing and the nearest entries offered), **C** (no).
+
+Owner wants a log line through $.log for now; the box and its miss log are the app's, and a model-backed corpus can follow once a rotated log proves too thin to count from.
 
 ### <a id="fjs-d686"></a>2026-10-09 · `FJS-D686` — Does "is this person connected" stay a per-process answer, or does a second API instance get a shared connection registry, and if shared, in whose store — Keep it per-process and say so in the contract: `connectionsOf` is named "on this node", the docs and `app.channels` type state it, and an app that runs more than one instance asks a service that fans the question out itself. No new mechanism; the answer stays honest but the help-desk case is not solved.
 
@@ -10662,6 +10700,20 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d821"></a>2026-10-09 · `FJS-D821` — Server-side render for prerendered pages vs — The same function at prerender and in the browser.
+
+Asked in [`IDEAS/markdown-kit.md`](IDEAS/markdown-kit.md) § Open questions. **B** was picked over **A** (client-only: `Cell` renders the markdown in the browser).
+
+The paper's recommendation, taken as written: a prerendered careers page that shows `## About the role` until hydration is the defect that found this. B costs nothing once the renderer is the pure function the first question recommends.
+
+### <a id="fjs-d816"></a>2026-10-09 · `FJS-D816` — Where does the incubating print-kit land, what is it called, and what should have moved it — `packages/print-kit` as `@frontierjs/print-kit`, now; and an incubating piece exits when a SECOND app imports it, not when a first-party app does.
+
+Asked by `fjs-prototypes/transit/PLAN.md` § Scope, which reserved the name for `decision-rules` at move time. **A** (`print-kit`, the `<output>-kit` spelling beside `email-kit`, npm name matching the directory as `FJS-D15` set) was picked over **B** (`pdf-kit` — the kit also answers a PNG, so the narrower name lies) and **C** (`printer` — collides with `app.printer`, the claim, and names the object rather than the kit).
+
+**The trigger was the wrong proxy.** It named a first-party consumer (`example` or `basecamp` sends a PDF) as the sign a piece is framework; neither did, and meanwhile lago imported the kit by relative path across two prototype trees, serpgrid Q9 planned on it and sstime deferred a PDF export. Three outside consumers is the signal; *a first-party app uses it* is one kind of that signal and not the only one. The rule, for every piece incubating in a prototype from here: **it moves when a second app imports it**, whichever app that is, and a path import across `fjs-prototypes/` trees is the defect that forces the move the same day ([`FJS-2229`](ISSUES.md#fjs-2229)). Invariant 1 holds: the kit imports `@frontierjs/mesa/drive` and nothing from junction; it is not a battery, as Q7 ruled.
+
+*Lives in:* `packages/print-kit/`. *Resolves:* transit PLAN Q7's exit. *Adjudication:* batteries vs. smallness (§ IV). *Enforced by:* none — no rule yet refuses a path import across `fjs-prototypes/` trees; the hearing ran after the edit.
+
 ### <a id="fjs-d815"></a>2026-10-09 · `FJS-D815` — How fine is a derived boundary — The lowest node, but boundaries in one component reveal together.
 
 Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (the lowest node per value, as § *The idea* states), **C** (the component root: derive the watch set, never the placement).
@@ -12793,6 +12845,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d824"></a>2026-10-09 · `FJS-D824` — Deployment (Release) is unrepresented above — A, plus an external service the rig needs is declared as an `attachments` entry (`FJS-D158`) the installer adds to `junction.config.js`.
+
+Asked in [`IDEAS/rigs.md`](IDEAS/rigs.md) § Open questions. **B** was picked over **A** (nothing beyond what already flows: the rig's schema joins the app's, so there is one migration stream, and its `.env.example` lines join the app's, which `envCheck` already grades), **C** (a rig may contribute processes and ports to `fli deploy`).
+
+The paper's recommendation, taken as written: a rig that needs a mail server has exactly the half-bound-at-3am problem `FJS-D158` solved, and the declaration already has an owner. Ports are moot: the API part is a plugin inside the running API and owns no process.
+
+### <a id="fjs-d822"></a>2026-10-09 · `FJS-D822` — Does a rig get an `upgrade/` part — codemods it ships to move a consumer across — No codemods: linked parts move through npm and the rig's own migrations; ejected files get the drift report from the eject question above, and the commit says what broke.
+
+Asked in [`IDEAS/rigs.md`](IDEAS/rigs.md) § Open questions. **B** was picked over **A** (yes: `upgrade/<version>.ts` codemods, run by the installer on upgrade, over linked references and ejected files alike).
+
+The paper's recommendation, taken as written: a codemod over an ejected file edits a file the rig promised never to touch, and over a linked part it is redundant with npm plus a migration. B costs nothing beyond the eject record already recommended.
 
 ### <a id="fjs-d814"></a>2026-10-09 · `FJS-D814` — Where the artefact store lives when there is no registry — Nowhere: the builder ships the bytes with `docker save | docker load`, as `deploy.builder` does today, and each target's own image store is the store.
 

@@ -13,7 +13,8 @@
  *
  * `role` is what the runtime constructs: a `box` holds children, `text` is a
  * run of characters, `button` is a focusable box that fires `click` on
- * activation, `input` is a text field, `rule` is a line across the parent's
+ * activation and submits its `<form>` unless its `type` says otherwise,
+ * `input` is a text field, `rule` is a line across the parent's
  * width. The optional style hints are terminal cell attributes, never colors
  * (Invariant 13).
  *
@@ -76,11 +77,18 @@ export const TERMINAL_TAGS = {
   textarea: { role: 'input' }
 }
 
-/** DOM event names with a terminal meaning. The value is what the runtime wires. */
+/**
+ * DOM event names with a terminal meaning, and whether each bubbles as it
+ * does in a browser. A listener on an ancestor hears a descendant's event by
+ * that rule: `<form on:input>` sees every field under it, and `focus`/`blur`
+ * reach an ancestor only through a `|capture` listener.
+ */
 export const TERMINAL_EVENTS = {
-  click:   'activate',
-  input:   'input',
-  keydown: 'keydown',
-  focus:   'focus',
-  blur:    'blur'
+  click:   { bubbles: true },
+  input:   { bubbles: true },
+  change:  { bubbles: true },
+  submit:  { bubbles: true },
+  keydown: { bubbles: true },
+  focus:   { bubbles: false },
+  blur:    { bubbles: false }
 }

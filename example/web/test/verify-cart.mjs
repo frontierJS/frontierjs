@@ -204,11 +204,14 @@ const again = await (await call('addLine', cartId, { variantId: 1, quantity: 1 }
 check('the same variant is a quantity, not a second line',
       [again.lines.length, again.lines[0].quantity, again.count], [1, 3, 3])
 
-// The whole security model in two requests. A policy FILTERS, so the wrong
-// token is not a refusal — there is simply no such row, and 404 is the honest
-// answer to "get this basket".
+// The whole security model in two requests. A PRESENTED token that matches no
+// grant is refused, not filtered to nothing: a stranger's list is 200 of
+// nothing and their write a 403, so the holder of a dead token could never be
+// told it is dead (`FJS-1999`). No token at all is a stranger, and a policy
+// FILTERS — there is simply no such row, and 404 is the honest answer to "get
+// this basket".
 const stranger = await api(`/carts/${cartId}`, { headers: { 'x-cart-token': 'c' + 'z'.repeat(24) } })
-check("another stranger's token finds nothing", stranger.status, 404)
+check("another stranger's token is refused as a dead one", stranger.status, 401)
 const bare = await api(`/carts/${cartId}`)
 check('no token at all finds nothing',            bare.status, 404)
 const held = await api(`/carts/${cartId}`, { headers: { 'x-cart-token': token } })

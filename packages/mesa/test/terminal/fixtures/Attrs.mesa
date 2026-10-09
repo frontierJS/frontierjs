@@ -7,7 +7,7 @@
   const lock = () => { locked = !locked }
 </script>
 <div>
-  <input value={name} placeholder="who" oninput={(e) => { log = [...log, 'in:' + e.value] }} />
+  <input value={name} placeholder="who" oninput={(e) => { log = [...log, 'in:' + e.target.value] }} />
   <button on:click={shout}>Shout</button>
   <button on:click={hit} disabled={locked}>Hit</button>
   <button on:click={lock}>Lock</button>

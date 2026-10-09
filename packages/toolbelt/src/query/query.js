@@ -183,7 +183,9 @@ function assignPath(root, path, value) {
     }
 
     const existing = node[seg]
-    const ok = wantArray ? Array.isArray(existing) : (existing !== null && typeof existing === 'object')
+    // A named key never descends into an array: `last in node` and `node[seg]`
+    // would read `length` or `map` off Array.prototype and throw (FJS-2186).
+    const ok = wantArray ? Array.isArray(existing) : (existing !== null && typeof existing === 'object' && !Array.isArray(existing))
     if (!ok) node[seg] = wantArray ? [] : bag()
     node = node[seg]
   }

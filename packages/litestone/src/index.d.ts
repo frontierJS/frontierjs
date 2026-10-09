@@ -1289,16 +1289,16 @@ export declare class Factory {
    * Auto-create a parent row and inject its PK as `fk` (default `<name>Id`).
    * One parent is shared across a `createMany` unless `{ fresh: true }`.
    */
-  withRelation(name: string, factory: Factory, fk?: string, pk?: string, opts?: { fresh?: boolean }): this
+  withRelation(name: string, factory: Factory, fk?: string | string[], pk?: string | string[], opts?: { fresh?: boolean }): this
   /** Use an existing parent row — no auto-create. */
-  for(name: string, row: FactoryRow, fk?: string, pk?: string): this
+  for(name: string, row: FactoryRow, fk?: string | string[], pk?: string | string[]): this
 
   /**
    * Auto-create a parent for every REQUIRED belongsTo the schema declares,
    * recursively. Needs the schema + registry from `makeTestClient({ autoFactories: true })`
    * or `factoryFrom()`. Relation cycles are skipped, not followed.
    */
-  withParents(opts?: { depth?: number; optional?: boolean; fresh?: boolean }): this
+  withParents(opts?: { depth?: number; optional?: boolean; fresh?: boolean; pins?: Record<string, FactoryRow> }): this
 
   /** Create hasMany children after the row, FK pointed back at it. */
   has(name: string, count?: number, opts?: {

@@ -466,6 +466,119 @@ with the terminal backend as its second consumer, not ahead of it.
    listed as lowering mounts, and Ctrl+C exits. What fails: `verify:tui`. A
    route whose non-`.mesa` import throws under Bun is listed as lowering and
    fails only when opened (`none`). Tier: Assessment.
+   *A resource file's data half, 2026-10-09 (`FJS-2182`):* a terminal
+   compile of a file whose markup is refused keeps its `<script module>`
+   when it has one, and the default export throws the refusal when mounted.
+   `ctx.terminalRefusal` carries it, and `lowers()` in Sierra's loader reads
+   each `.mesa` import clause, holding an importer back only when it can
+   reach the default (a default, a namespace or `export *`). `/` moved from
+   `Order.mesa:72` to its next blocker, `<img>` in `Avatar.mesa`.
+   `/orders/create/` stays refused, correctly: it mounts `<Order>`, so the
+   issue overstated it. Still 1 of 34. *The nine, answered late, after the
+   code was green:* (1) origin: none new, the
+   refusal is still `terminalOffenses`' head. (2) concept: none. (3)
+   complexity: the problem's, a file holding two halves that one importer
+   needs and another does not. (4) predictability: a terminal import of a
+   resource's data now behaves as the DOM's does. (5) derived: the clause read
+   is the import statement itself. (6) owner: the compiler keeps the module
+   half because only it knows where that half ends; the loader decides what a
+   route needs. (7) boundary: `ctx.terminalRefusal`, beside `ctx.result`.
+   (8) failure: the refusal moves from compile to mount, by the same message,
+   and *ergonomics vs. strictness* is decided by cost: a mount that throws
+   destroys nothing, and the shell sends it back to the list. The portability report already
+   counted only component calls, so it agreed with this before the loader
+   did. (9) must stay true: a route listed as lowering mounts, and a file with
+   no module half still refuses at compile. What fails: the three cases in
+   `terminal-emit.test.js` and two `verify:tui` checks; forcing the clause
+   read to *takes the default* fails the second. A `<script module>` reading
+   a name the instance script imported is a `ReferenceError` at import rather
+   than a refusal (`none`). Tier: Assessment.
+   *Eighth slice 2026-10-09, `bind:` on a component:* the DOM path's two
+   halves, both on the anchor registry the terminal already used for prop
+   pushes. `bind:name={x}` lowers to a live prop reading `x` (parent to child)
+   and a `binds` entry whose setter `$$runtime.bindProp` calls with the
+   child's writes (child to parent). `bind:this` lowers to `ref`, the setter
+   handed `$$runtime.componentApi(anchor)`. The component node's `directives`
+   is gone, since these were the only two kinds it held. The missing-setter
+   check and its message moved into `componentBindSetter`, beside
+   `componentAttributes`; both targets call it, so a bind with nothing to
+   write back to is reported in the same words and wires nothing. The DOM
+   message for `bind:x` gained the position its `bind:this` sibling already
+   carried. The corpus stayed identical. Proved by `specs/bind.spec.mjs`
+   (`Bound.mesa` over `Stepper.mesa`): mount value, a child write coming back,
+   the shorthand, a parent write going down, and `ref.reset()` /
+   `ref.value = 3` through the interface. Not emitting `bindProp` fails 5 of
+   its 6 assertions, and not emitting `ref` fails 2. Report: 245 of 523 (47%),
+   +2 alone as predicted, and the files that pass on their own but are held
+   by a child went from 58 to 111. `bind:` on a component was in 94 files.
+   `example`'s routes stay at 1 of 34. Eleven now stop at `bind:this` on
+   `Form.mesa`'s `<form>`, an element directive. Every resource file in
+   `example` lowers on its own now, so `/` and `/orders/create/` are both held
+   by `Form.mesa`: Order.mesa keeps its `import Form`, and Form has no module
+   half to load. That exposed a loader defect (`FJS-2239`): `lowers()` walked
+   the imports of a file taken only for its named data as if its default
+   would mount. It now passes the mounted flag down. `verify:tui` pins it over
+   a root of its own, `web/test/fixtures/tui-imports/`, because nothing in
+   the app exercised FJS-2182's clause read any more. *The nine, answered
+   late, after the code was green:* (1) origin: one fewer. The setter check
+   had two copies-to-be, and it is now one. (2) concept: none, since `binds`
+   and `ref` are the DOM path's `twoWayProps` and `bindThisSetter`. (3)
+   complexity: the problem's, with no new runtime member. (4) predictability:
+   a bound prop moves both ways on both targets. (5) derived: from
+   `componentAttributes`. (6) owner: the registry in `runtime.js`. (7)
+   boundary: none new. (8) failure: no setter means reported and dropped, as
+   on the DOM. (9) must stay true: a child's write reaches the parent, and a
+   route listed as lowering loads. What fails: `bind.spec` for the first, and
+   for the second the four `tui-imports` checks in `verify:tui`, `--frame
+   /deep/` among them. The loader fix creates no new owner: `lowers()` is
+   still the one walk, and only what it passes down changed. No § IV
+   adjudication is in tension. Tier: Assessment.
+   *Ninth slice 2026-10-09, the directives on `Form.mesa`'s `<form>`:*
+   `bind:this` on an element lowers to the element node's `ref`, handed the
+   target's node, and its missing-setter check is the component one, renamed
+   `bindSetter`, which the DOM element path now calls too. The four
+   listeners showed the terminal had no event propagation: `on:input` on a
+   box wired the box's own engine `input`, which a box never emits, so it
+   lowered and never fired (`FJS-2243`). `$$tui.on` now keeps its own
+   listener list and `dispatch` delivers capture, target and bubble over
+   `.parent`, crossing component boundaries, by the bubbles column
+   `TERMINAL_EVENTS` now holds. The engine's events are sources at the node
+   they happen to. `e.target` is the node, and a handler reads `value` and
+   `name` there as in a browser; the terminal's own `e.value` is gone. The
+   defaults are HTML's: a `<button>` with no `type` submits its form, and
+   Enter in an `<input>` clicks the form's first submit button, or submits a
+   form whose only field it is. `change`, `submit`, `|capture` and `|once`
+   lower. `|passive` is accepted and ignored. Proving it found a second
+   defect (`FJS-2242`): `runtime.js` reads "client" as `typeof document`, so
+   a terminal ran under the server guards, with `$.onMount` and every watch
+   a no-op. The terminal runtime now declares a DOM-less client as it loads.
+   That moved `Form.mesa`'s two DOM-only onMount calls onto a terminal, and
+   both are guarded. The corpus stayed identical apart from the edited
+   sources. Proved by `specs/forms.spec.mjs` (`Forms.mesa`, three forms):
+   bubbling, capture, `e.target`, `change` on leaving, implicit submission
+   both ways, `type="button"`, `|once`, `bind:this`, onMount and a local
+   watch, 8/8. Seven runtime mutations each fail 1 to 3 of its assertions.
+   Report: 253 of 529 (48%), and the files held by a child went from 111 to
+   137. `example`'s routes stay at 1 of 34. `Form.mesa` lowers. Every route
+   without a param now stops in a field control, 18 of them at `{@attach
+   nativeValidationGuard}` in `Checkbox.mesa` or `Input.mesa`, `/cart/` and
+   `/products/` at `<img>`, `/invoices/` at `<mark>` in `Json.mesa` and
+   `/automations/runs/` at `<select>`. *The nine, answered late, after the
+   code was green:* (1) origin: one fewer, since the element and component
+   `bind:this` checks are one function. (2) concept: none new. Dispatch is
+   the DOM's, and the bubbles column is a fact about each DOM event. (3)
+   complexity: the problem's, because a listener on an ancestor needs a path
+   to walk. (4) predictability: a handler written for the browser reads the
+   same fields and hears the same events. (5) derived: the defaults follow
+   HTML's rules, not new ones. (6) owner: `dispatch` is the one deliverer,
+   and the engine's mouse bubble is stopped so a click arrives once. (7)
+   boundary: none new. (8) failure: an event with no terminal meaning is
+   still refused by name, and a handler in `$.onMount` that reaches for a
+   DOM API now throws on a terminal where it used to be skipped. (9) must
+   stay true: a form hears its fields. What fails: `forms.spec`. A
+   component's `$.onMount` reaching for a DOM API on a terminal throws when
+   it runs, and nothing finds it before then (`none`). No § IV
+   adjudication is in tension. Tier: Assessment.
    *The nine for slice 4 and the props move, answered late:* (1) one fewer
    origin. (2) none new. (3) the problem's. (4) an attribute that reaches no
    child now says so, as `on:` and `class:` already did. (5) both targets

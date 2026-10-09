@@ -23,5 +23,5 @@ export type { MovementKind } from './inventory.ts'
 export { settleOrder, refundOrder } from './settle.ts'
 
 // ─── the two credentials a caller with no session carries ─────────────────
-export { CART_HEADER, CART_PURPOSE, cartKey, mintCartGrant } from './cart-grant.ts'
+export { CART_HEADER, CART_PURPOSE, cartKey, cartClaim } from './cart-grant.ts'
 export { checkoutCodeFor, orderIdFromCheckoutCode }  from './checkout-code.ts'

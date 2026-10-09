@@ -237,10 +237,13 @@ test('query: a distance ordering survives the round trip', function () {
   assert.deepEqual(parseQueryString(encodeQueryString(d)), d)
 })
 
-// FJS-2186: a bracket key naming an Array.prototype member reached `length`
-// and `map` on a real Array, and junction answered the query string with a 500
-// and a stack trace before any gate ran.
-test.failing('query: a bracket key named for an Array.prototype member does not throw', function () {
-  parseQueryString('?a[]=1&a[length]=5')
-  parseQueryString('?a[]=1&a[map]=x')
+// A bracket key naming an Array.prototype member reached `length` and `map` on
+// a real Array, and junction answered the query string with a 500 and a stack
+// trace before any gate ran. A named key after an append is a shape conflict,
+// so the last write wins, the same as `?a=1&a[b]=2`.
+test('query: a bracket key named for an Array.prototype member does not throw', function () {
+  assert.deepEqual(parseQueryString('?a[]=1&a[length]=5'), { a: { length: 5 } })
+  assert.deepEqual(parseQueryString('?a[]=1&a[map]=x'), { a: { map: 'x' } })
+  assert.deepEqual(parseQueryString('?a[]=1&a[b]=2'), { a: { b: 2 } })
+  assert.deepEqual(parseQueryString('?a[length]=5&a[]=1'), { a: [1] })
 })

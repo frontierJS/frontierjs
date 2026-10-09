@@ -96,8 +96,10 @@ describe('litestone edge (FJS-D635)', () => {
   })
 
   it('every battery has a subpath', () => {
-    const pkg = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8')) as { exports: Record<string, { import: string }> }
-    const targets = Object.values(pkg.exports).map(t => relative(SRC, resolve(import.meta.dir, '..', t.import)))
+    const pkg = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8')) as { exports: Record<string, string | { import: string }> }
+    // A string export is a file served as itself — `./references/*` is the
+    // shipped trait catalog, not a battery.
+    const targets = Object.values(pkg.exports).map(t => relative(SRC, resolve(import.meta.dir, '..', typeof t === 'string' ? t : t.import)))
     const batteries = [...Object.keys(BATTERIES), 'tools/replicate.js']
     const without = batteries.filter(b => !targets.some(t => t === b || t.startsWith(b + '/')))
     expect(without).toEqual([])

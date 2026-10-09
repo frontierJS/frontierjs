@@ -14,11 +14,12 @@ lookup) · `FJS-D344` (graduating to an account is the app's act, and revokes
 the grant). Built on 2026-09-20: `@frontierjs/toolbelt/bearer`, junction's `bearerClaim`,
 the trail naming a grant, and `example`'s basket re-modelled onto all three
 (`verify:cart` 32 · `verify:money` 107 · `verify:stock` 41 · `verify:widget` 40
-· `verify:pay` 24). NOT built: the portal schema below, which is maid.tech's own
-app; the cookie redemption (`FJS-D340`) — the basket carries a header and no
-link, so nothing here has needed it yet; the emailed one-time code
-(`FJS-D341`); and `lastUsedAt`, which is a write per request and wants a
-measurement first. **The portal half was first built by the jazzhr
+· `verify:pay` 24). Built 2026-10-09 (`FJS-D819`): the cookie redemption (`FJS-D340`) as
+`bearerClaim(...).redeem()`, the mint as `.mint()` / `.mintOnCreate()` over a
+`@guarded` digest named in `system:`, `lastUsedAt` stamped once per redeem rather
+than per request, and the `Grant` trait imported from litestone (`FJS-2176`).
+NOT built: the portal schema below, which is maid.tech's own app, and the
+emailed one-time code (`FJS-D341`). **The portal half was first built by the jazzhr
 stressor's Phase 3 (2026-09-29), in app code** (`fjs-prototypes/jazzhr/api/src/lib/portal.ts`,
 `app.ts`): D340's redemption as a raw route that rotates the grant row's digest
 from a link purpose to a cookie purpose, the token in the URL fragment, driven

@@ -115,12 +115,14 @@ export function terminalDropped(ir) {
 
 const elementOffenses = (n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
-  for (const h of n.handlers) {
-    if (!TERMINAL_EVENTS[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
-    // `once` changes what the handler does and the terminal wires no
-    // listener options; `capture`/`passive` are meaningless here and ignored.
-    else if (h.modifiers.some((m) => m.name === 'once')) add(`on:${h.event}|once`, 'on:…|once', h.loc)
-  }
+  for (const h of n.handlers) if (!TERMINAL_EVENTS[h.event]) add(`on:${h.event}`, `on:${h.event}`, h.loc)
+}
+
+// `passive` promises a browser the handler never prevents a scroll; a
+// terminal scrolls nothing, so it has no listener option to become.
+const listenerOptions = (h) => {
+  const opts = h.modifiers.filter((m) => m.name === 'capture' || m.name === 'once').map((m) => `${m.name}: true`)
+  return opts.length ? `, { ${opts.join(', ')} }` : ''
 }
 
 export function terminalOffenses(ir) {
@@ -159,13 +161,11 @@ export function terminalOffenses(ir) {
       case 'text':
         for (const p of n.parts) if (p.kind === 'unlowered') add(spelling(p), spelling(p), p.loc)
         return
-      case 'component':
-        for (const d of n.directives) add(`${d.name} on <${n.name}>`, `${directiveShape(d.name)} on a component`, d.loc)
-        return
       case 'slot':
         for (const d of n.directives) add(`${d.name} on <slot>`, 'attribute on <slot>', d.loc)
         return
       case 'comment':
+      case 'component':
       case 'if':
       case 'each':
       case 'snippet':
@@ -270,8 +270,9 @@ export function buildTerminal(ctx) {
     emitChildren(n.children, el, ind)
     for (const h of n.handlers) {
       dep(h.expr)
-      line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code});`)
+      line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
+    if (n.ref) line(ind, `${n.ref}(${el});`)
   }
 
   const emitText = (n, parent, ind) => {
@@ -387,12 +388,15 @@ export function buildTerminal(ctx) {
       })
       line(ind, '});')
     }
+    // The child's registry is found by its anchor, so every call below needs
+    // it registered first; the order is the DOM path's.
+    const live = n.spreads.length || n.props.some((p) => typeof p.value === 'object')
+    if (live || n.binds.length || n.ref) line(ind, `$$runtime.registerComponentAnchor(${m});`)
+    for (const b of n.binds) line(ind, `$$runtime.bindProp(${m}, ${q1(b.name)}, (v) => ${b.setter}(v));`)
+    if (n.ref) line(ind, `${n.ref}($$runtime.componentApi(${m}));`)
     // The whole object, as the DOM path pushes it: an undeclared key is the
     // child's `$attributes`, rebuilt from each push.
-    if (n.spreads.length || n.props.some((p) => typeof p.value === 'object')) {
-      line(ind, `$$runtime.registerComponentAnchor(${m});`)
-      line(ind, `$$runtime.createEffect(() => { $$runtime.pushProps(${m}, ${obj}); });`)
-    }
+    if (live) line(ind, `$$runtime.createEffect(() => { $$runtime.pushProps(${m}, ${obj}); });`)
   }
 
   const emitSlot = (n, parent, ind) => {

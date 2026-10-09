@@ -6915,17 +6915,27 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // call reads (toolbelt's offsetSpans) and a CASE picks each row's:
       // DATETIME(t, '+32400 seconds') is Tokyo's wall clock for t. Everything
       // inlined is a number this code computed; nothing the caller sent.
-      // One extra MIN/MAX over the same WHERE bounds the spans: a summer-time
-      // zone is two per year read, one per year of rows rather than a century.
+      // One extra read over the same WHERE names the UTC years holding rows,
+      // and the spans cover those years only: a MIN/MAX range read the zone
+      // across every empty year between, so one 9999-12-31 "never" date cost
+      // eight thousand years of reads per call (FJS-2184). A gap between two
+      // years holds no row, so whichever arm covers it picks nothing.
       if (timeZone != null) {
         const rawCol = `"${tableName}"."${col(intervalField)}"`
         const parts = [whereSql, policyResult?.sql].filter(Boolean)
-        const range = readDb.query(
-          `SELECT MIN(julianday(${rawCol})) AS lo, MAX(julianday(${rawCol})) AS hi FROM "${tableName}"` +
-          (parts.length ? ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}` : ''),
-        ).get(...params, ...(policyResult?.params ?? []))
-        const msOf = jd => Math.round((jd - 2440587.5) * 86400000)
-        const spans = range?.lo != null ? offsetSpans(msOf(range.lo), msOf(range.hi), timeZone) : [{ offset: 0 }]
+        const years = readDb.query(
+          `SELECT DISTINCT CAST(strftime('%Y', ${rawCol}) AS INTEGER) AS y FROM "${tableName}"` +
+          ` WHERE ${[`${rawCol} IS NOT NULL`, ...parts].map(p => `(${p})`).join(' AND ')} ORDER BY y`,
+        ).all(...params, ...(policyResult?.params ?? [])).map(r => r.y).filter(y => y != null)
+        // Date.UTC reads a year below 100 as 19xx; setUTCFullYear does not.
+        const yearStart = y => new Date(0).setUTCFullYear(y, 0, 1)
+        const spans = []
+        for (const y of years) {
+          for (const sp of offsetSpans(yearStart(y), yearStart(y + 1), timeZone)) {
+            if (spans.at(-1)?.offset !== sp.offset) spans.push(sp)
+          }
+        }
+        if (!spans.length) spans.push({ offset: 0 })
         const mod = offset => `'${offset >= 0 ? '+' : ''}${offset / 1000} seconds'`
         zoneShift = spans.length === 1
           ? mod(spans[0].offset)

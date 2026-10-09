@@ -6897,6 +6897,26 @@ export function componentAttributes(node) {
 }
 
 /**
+ * The setter a `bind:` or `bind:this` writes back through, or null once the
+ * reason is reported: a component's entry from `componentAttributes`, or
+ * `{ kind: 'bind-this', target }` for `bind:this` on an element. Both targets
+ * ask, so a binding with no setter to call reports the same words and is
+ * dropped the same way on each. `at` is the position suffix the caller's other
+ * errors carry.
+ */
+export function bindSetter(ctx, a, at) {
+  const setter = a.target ? ctx.setters?.[a.target] : null
+  if (setter) return setter
+  ctx.analysis?.errors.push(a.kind === 'bind-this'
+    ? (a.target
+        ? `bind:this={${a.target}} — '${a.target}' must be a top-level let variable`
+        : 'bind:this requires a variable: bind:this={myRef}') + at
+    : `bind:${a.attr.name.slice(5)}={${a.target}} — '${a.target}' must be a writable top-level ` +
+      `\`let\` in this component to receive the child's changes.` + at)
+  return null
+}
+
+/**
  * A PascalCase tag that names nothing in the file is a component call against
  * an undeclared identifier: it compiled clean, threw a ReferenceError in a
  * browser, and failed a prerender with a hint written for a browser global
@@ -6969,20 +6989,11 @@ export function makeComponent(node, option = {}) {
         break
       }
       case 'bind-this':
-        bindThisSetter = a.target ? ctx.setters?.[a.target] : null
-        if (!bindThisSetter) {
-          ctx.analysis.errors.push(`bind:this={${a.target ?? ''}} — '${a.target ?? ''}' must be a top-level let variable` + at)
-        }
+        bindThisSetter = bindSetter(ctx, a, at)
         break
       case 'bind': {
-        const setter = ctx.setters?.[a.target]
-        if (!setter) {
-          ctx.analysis.errors.push(
-            `bind:${a.attr.name.slice(5)}={${a.target}} — '${a.target}' must be a writable top-level ` +
-            `\`let\` in this component to receive the child's changes.`
-          )
-          break
-        }
+        const setter = bindSetter(ctx, a, at)
+        if (!setter) break
         const readExpr = ctx.accessors ? rewriteExpr(a.target, ctx.accessors) : a.target
         ctx.detectDependency(a.target)
         // Parent → child goes through the ordinary prop path…
@@ -7227,16 +7238,8 @@ export function bindProp(prop, node, element) {
 
   // bind:this={varName} — capture the raw DOM element reference into a reactive var
   if (name === 'bind:this') {
-    const varName = prop.value ? unwrapExp(prop.value) : null
-    if (!varName) {
-      ctx.analysis.errors.push('bind:this requires a variable: bind:this={myRef}')
-      return null
-    }
-    const setter = ctx.setters?.[varName]
-    if (!setter) {
-      ctx.analysis.errors.push(`bind:this={${varName}} — '${varName}' must be a top-level let variable`)
-      return null
-    }
+    const setter = bindSetter(ctx, { kind: 'bind-this', target: prop.value ? unwrapExp(prop.value) : null }, '')
+    if (!setter) return null
     return {
       bind: xNode('bindThis', { el: element.bindName(), setter }, (w, n) => {
         w.writeLine(`${n.setter}(${n.el});`)

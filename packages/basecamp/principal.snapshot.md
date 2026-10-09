@@ -27,7 +27,7 @@ claim's VALUE is a caller.
 Under `strategy row` the tenant is a value on the principal, so **the claim is
 the whole mechanism** — a caller holding none reads nothing, with a 200.
 
-## Resolver — `createApp({ principal })`
+## Resolvers — `createApp({ principal })`
 
 | | |
 | --- | --- |
@@ -47,7 +47,7 @@ arrangement rests on.
 
 ## Claims
 
-What this resolver may merge onto the principal, by name.
+What the resolvers may merge onto the principal, by name.
 
 | Claim | |
 | --- | --- |

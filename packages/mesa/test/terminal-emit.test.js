@@ -145,11 +145,6 @@ describe('terminal target', () => {
         '{#await} at E.mesa:2:1 has no terminal lowering')
     })
 
-    it('bind: on a component', async () => {
-      await refusal(`<script>import Foo from './Foo.mesa'\nlet v = 1</script>\n<div>\n  <Foo bind:value={v} />\n</div>\n`, 'F.mesa',
-        'bind:value on <Foo> at F.mesa:4:8 has no terminal lowering')
-    })
-
     it('a dynamic <component>', async () => {
       await refusal(`<script>import Foo from './Foo.mesa'</script>\n<component this={Foo} />\n`, 'F.mesa',
         '<component> at F.mesa:2:1 has no terminal lowering')
@@ -167,11 +162,11 @@ describe('terminal target', () => {
   // A resource file carries its model's default form (Invariant 18), and a
   // route importing only the data half must not inherit the form's refusal.
   describe('a refused file with a <script module> keeps its data half (FJS-2182)', () => {
-    const RESOURCE = `<script module>\n  export const things = { name: 'things' }\n</script>\n<script>\n  import Form from './Form.mesa'\n  let record\n</script>\n<Form bind:record={record} />\n`
+    const RESOURCE = `<script module>\n  export const things = { name: 'things' }\n</script>\n<script>\n  import Form from './Form.mesa'\n  let record\n</script>\n<Form bind:record={record} />\n<svg></svg>\n`
 
     it('exports the module half, and a default that throws the refusal when mounted', async () => {
       const ctx = await terminal(RESOURCE, 'Thing.mesa')
-      const message = 'bind:record on <Form> at Thing.mesa:8:7 has no terminal lowering'
+      const message = '<svg> at Thing.mesa:9:1 has no terminal lowering'
       expect(ctx.terminalRefusal).toBe(message)
       acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })
       // The instance script's imports go with it: Form.mesa is never loaded.
@@ -189,7 +184,7 @@ describe('terminal target', () => {
 
     it('without a <script module> there is nothing to keep, and the compile throws', async () => {
       await expect(terminal(RESOURCE.replace(/<script module>[\s\S]*?<\/script>\n/, ''), 'Thing.mesa'))
-        .rejects.toThrow('bind:record on <Form> at Thing.mesa:5:7 has no terminal lowering')
+        .rejects.toThrow('<svg> at Thing.mesa:6:1 has no terminal lowering')
     })
   })
 
@@ -260,6 +255,76 @@ describe('terminal target', () => {
     expect(dom.result).toContain("Card($$el0, {title: `A`}, null);")
   })
 
+  // Both halves the DOM path wires, in its order: the bound value is a live
+  // prop pushed down, bindProp takes the child's writes back up, and bind:this
+  // is handed the child's exported interface.
+  it('wires bind: and bind:this on a component through the anchor registry', async () => {
+    const { result } = await terminal(`<script>import Foo from './Foo.mesa'\nlet v = 1\nlet value = 2\nlet r = null</script>
+<Foo bind:value={v} bind:this={r} />
+<Foo bind:value />
+`, 'F.mesa')
+    const m0 = [
+      "Foo($$m0, {value: $$runtime.get($$sig_v)}, null);",
+      '$$runtime.registerComponentAnchor($$m0);',
+      "$$runtime.bindProp($$m0, 'value', (v) => $$set_v(v));",
+      '$$set_r($$runtime.componentApi($$m0));',
+      '$$runtime.createEffect(() => { $$runtime.pushProps($$m0, {value: $$runtime.get($$sig_v)}); });',
+    ]
+    expect(result).toContain(m0.join('\n    '))
+    expect(result).toContain("$$runtime.bindProp($$m1, 'value', (v) => $$set_value(v));")
+  })
+
+  it('reports a component bind: with no setter in the same words on both targets, and wires nothing', async () => {
+    const source = `<script>import Foo from './Foo.mesa'\nconst c = 1</script>\n<Foo bind:value={c} bind:this={c} />\n`
+    const said = async (target) => {
+      const out = []
+      const { result } = await compile(source, { target, filename: 'P.mesa', dev: false, warning: (w) => out.push(w.message) })
+      return { out, result }
+    }
+    const dom = await said(undefined)
+    const tui = await said('terminal')
+    expect(tui.out).toEqual(dom.out)
+    expect(tui.out).toEqual([
+      expect.stringMatching(/^bind:value=\{c\} — 'c' must be a writable top-level `let`.* — P\.mesa:3:1$/),
+      expect.stringMatching(/^bind:this=\{c\} — 'c' must be a top-level let variable — P\.mesa:3:1$/),
+    ])
+    expect(tui.result).toContain('Foo($$m0, {}, null);')
+    expect(tui.result).not.toMatch(/bindProp|componentApi|registerComponentAnchor/)
+  })
+
+  // The node goes to the setter once its handlers are on, and a listener's
+  // options are the DOM's: `capture` and `once`, never `passive`.
+  it('hands an element to bind:this and passes capture and once as listener options', async () => {
+    const { result } = await terminal(`<script>let el = null\nconst f = () => {}</script>
+<form bind:this={el} on:submit|preventDefault={f} on:blur|capture={f} on:input|once|passive={f}></form>
+`, 'E.mesa')
+    expect(result).toContain([
+      "const $$el0 = $$tui.element('form');",
+      '$$tui.append($$parentElement, $$el0);',
+      "$$tui.on($$el0, 'submit', ($$e) => { $$e.preventDefault(); (f)($$e); });",
+      "$$tui.on($$el0, 'blur', f, { capture: true });",
+      "$$tui.on($$el0, 'input', f, { once: true });",
+      '$$set_el($$el0);',
+    ].join('\n    '))
+  })
+
+  it('reports an element bind:this with no setter in the same words on both targets, and wires nothing', async () => {
+    const source = `<script>const c = 1</script>\n<div bind:this={c}></div>\n<p bind:this></p>\n`
+    const said = async (target) => {
+      const out = []
+      const { result } = await compile(source, { target, filename: 'P.mesa', dev: false, warning: (w) => out.push(w.message) })
+      return { out, result }
+    }
+    const dom = await said(undefined)
+    const tui = await said('terminal')
+    expect(tui.out).toEqual(dom.out)
+    expect(tui.out).toEqual([
+      "bind:this={c} — 'c' must be a top-level let variable",
+      'bind:this requires a variable: bind:this={myRef}',
+    ])
+    expect(tui.result).not.toMatch(/\$\$set_c/)
+  })
+
   it('reports a component bind:this whose target is not a let, which the DOM path dropped', async () => {
     const out = []
     await compile(`<script>import Card from './Card.mesa'; const r = null</script>\n<Card bind:this={r} />\n`,
@@ -323,7 +388,7 @@ describe('terminal target', () => {
 </script>
 <table><tr><td class={x} colspan={x}>{v}</td><td>z</td></tr></table>
 <input bind:value={v} bind:checked={v} />
-{#if v}<button on:click|once={() => {}} on:submit={() => {}}>b</button>{/if}
+{#if v}<button on:click|once={() => {}} on:mouseenter={() => {}}>b</button>{/if}
 {#each [1] as n}<Foo {...v} bind:x={v} on:pick={() => {}}><svg>{#snippet s()}x{/snippet}</svg></Foo>{/each}
 <slot name="a" title="t" />
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
@@ -331,9 +396,7 @@ describe('terminal target', () => {
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
       ['bind:value',   'bind:',             'H.mesa:6:8'],
       ['bind:checked', 'bind:',             'H.mesa:6:23'],
-      ['on:click|once', 'on:…|once',        'H.mesa:7:16'],
-      ['on:submit',    'on:submit',         'H.mesa:7:41'],
-      ['bind:x on <Foo>', 'bind: on a component', 'H.mesa:8:29'],
+      ['on:mouseenter', 'on:mouseenter',    'H.mesa:7:41'],
       ['<svg>',        '<svg>',             'H.mesa:8:59'],
       ['title on <slot>', 'attribute on <slot>', 'H.mesa:9:16'],
     ])

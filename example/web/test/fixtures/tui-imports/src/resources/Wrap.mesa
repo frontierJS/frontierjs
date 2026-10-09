@@ -1,0 +1,7 @@
+<script module>
+  export const wraps = 3
+</script>
+<script>
+  import Thing from './Thing.mesa'
+</script>
+<Thing />

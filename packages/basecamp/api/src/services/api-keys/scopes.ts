@@ -1,5 +1,6 @@
 // src/services/api-keys/scopes.ts
-// What an API key is allowed to do, and the two hooks that hold it to that.
+// What an API key and an agent are allowed to do, and the hooks that hold them
+// to it.
 //
 // Separate from the service because these run at APP level — before any
 // service hook, on every request — while the service only serves /api-keys.
@@ -27,7 +28,20 @@ const OFF_LIMITS = new Set([
   'api-keys',
   // Conduit's own management service — operational, not a workspace resource.
   'conduit-targets',
+  // A key acts unattended, and a send here runs Claude Code on the operator's
+  // machine with every permission bypassed.
+  'workbench',
 ])
+
+/**
+ * Services an agent over `/mcp` is never handed, whoever it acts for.
+ *
+ * The workbench: a send is `claude -p` with permissions bypassed in a checkout
+ * on this machine, so an agent holding the tool reaches the operator's shell,
+ * which no level in a workspace describes. `agentGuard` refuses the call and
+ * `narrowForAgent` withholds the tool, off this one set.
+ */
+const NOT_FOR_AGENTS = new Set(['workbench'])
 
 const READ_METHODS = new Set(['find', 'get'])
 
@@ -80,11 +94,25 @@ export function keyAllows(user: KeyPrincipal | null | undefined, service: string
 
 /**
  * `mcpPlugin({ narrow })`: a key's tool list is its scopes', not its bot's
- * role's (`FJS-1349`, `FJS-D407`). The record checks — revoked, another
- * workspace — stay the guard's, at the call.
+ * role's (`FJS-1349`, `FJS-D407`), and no caller's list holds a service in
+ * `NOT_FOR_AGENTS`. The record checks — revoked, another workspace — stay the
+ * guard's, at the call.
  */
-export function narrowToKey(tool: { service: string; method: string }, principal: unknown): boolean {
+export function narrowForAgent(tool: { service: string; method: string }, principal: unknown): boolean {
+  if (NOT_FOR_AGENTS.has(tool.service)) return false
   return keyAllows(principal as KeyPrincipal | null, tool.service, tool.method)
+}
+
+// ─── agentGuard ──────────────────────────────────────────────────────────
+// App-level before hook. `narrowForAgent` only withholds the tool, and a
+// withheld tool is an affordance (Invariant 6); this is the refusal. Read off
+// `ctx.transport`, which mcp sets on every call (`FJS-D609`).
+
+export function agentGuard(): Hook {
+  return function agentGuard(ctx: ServiceContext): void {
+    if (ctx.transport === 'mcp' && NOT_FOR_AGENTS.has($.service))
+      throw new Forbidden(`${$.service} is not offered to an agent`)
+  }
 }
 
 // ─── apiKeyGuard ─────────────────────────────────────────────────────────

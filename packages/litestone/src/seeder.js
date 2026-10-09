@@ -32,6 +32,12 @@ class SeededRng {
 /** Rebuild-and-retry budget for a UNIQUE collision on a generated value. */
 const UNIQUE_RETRIES = 5
 
+/** `fk`/`pk` as given to withRelation()/for(), paired by position. */
+function _keyPairs(fk, pk) {
+  const fks = [].concat(fk), pks = [].concat(pk)
+  return fks.map((f, i) => [f, pks[i] ?? 'id'])
+}
+
 function _isUniqueViolation(e) {
   const msg = String(e?.message ?? '')
   // The client translates a live conflict before it gets here and the new
@@ -98,7 +104,10 @@ export class Factory {
     this._db          = db
     this._states      = []
     this._rng         = null
-    this._seq         = 0
+    // A box, shared by every clone of this factory, so one model has ONE counter:
+    // a Customer built inside withParents() and one built at the top otherwise
+    // both drew seq 1 and collided on every @unique column (`FJS-1779`).
+    this._seq         = { n: 0 }
     this._relations   = {}
     this._children    = []    // hasMany — created AFTER the row, FK pointed back
     this._attachments = []    // implicit m2m — connected AFTER the row
@@ -216,7 +225,7 @@ export class Factory {
   seed(n) {
     const clone = this._clone()
     clone._rng  = new SeededRng(n)
-    clone._seq  = 0
+    clone._seq  = { n: 0 }
     return clone
   }
 
@@ -247,7 +256,9 @@ export class Factory {
    * factory.withRelation('author', userFactory.admin(), 'authorId')
    *
    * One parent is shared by every row of a createMany. Pass { fresh: true } for a
-   * new parent per row.
+   * new parent per row. `fk` and `pk` are arrays for a composite relation —
+   * `@relation(fields: [projectId, teamId], references: [id, teamId])` — paired
+   * by position.
    */
   withRelation(name, factory, fk, pk = 'id', opts = {}) {
     const clone = this._clone()
@@ -300,43 +311,75 @@ export class Factory {
     let clone = this
     const seen = new Set([..._seen, this.model])
 
+    // A composite relation sets every column of its key, so a single-column
+    // relation over one of those columns — Deployment.team beside
+    // Deployment.project over [projectId, teamId] — would point the column at a
+    // second, unrelated parent. Composites are wired first and claim their columns.
+    const rels = []
     for (const field of def.fields) {
       if (field.type.kind !== 'relation' || field.type.array) continue
       const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
       if (!rel) continue
-      const fk     = rel.fields[0]
-      const fkDef  = def.fields.find(f => f.name === fk)
-      if (!optional && fkDef?.type.optional) continue
-      const pk = rel.references?.[0] ?? 'id'
+      rels.push({ field, fks: rel.fields, pks: rel.fields.map((_, i) => rel.references?.[i] ?? 'id') })
+    }
+    rels.sort((a, b) => b.fks.length - a.fks.length)
+
+    // `@@arc([a, b])` wants exactly one of two nullable columns set, and the
+    // nullable skip below would leave both null. The first named is the one wired.
+    const arcFirst = new Set((def.attributes ?? [])
+      .filter(a => a.kind === 'arc' && !a.optional)
+      .map(a => a.fields[0]))
+
+    const claimed  = new Set()
+    const pinnedTo = new Set()
+    for (const { field, fks, pks } of rels) {
+      const fkDefs   = fks.map(fk => def.fields.find(f => f.name === fk))
+      const nullable = fkDefs.some(f => f?.type.optional)
+      // A nullable FK the schema still insists on — the arc's first column, or
+      // one under `@required(where:)` — gets a parent whatever `optional` says.
+      const insisted = arcFirst.has(fks[0]) ||
+        fkDefs.some(f => f?.attributes.some(a => a.kind === 'required'))
+      if (nullable && !optional && !insisted) continue
+      if (fks.some(fk => claimed.has(fk))) continue
+      if (clone._relations[field.name]) {           // already wired explicitly
+        for (const fk of fks) claimed.add(fk)
+        continue
+      }
 
       // Both of these must be checked BEFORE the cycle guard, because both are
-      // the cure the guard's own message recommends. Ordered above it, .for()
-      // now works as advertised — it did not, and following the advice threw
-      // the identical error.
-      if (clone._relations[field.name]) continue   // already wired explicitly
+      // the cure the guard's own message recommends.
+      //
+      // A pin satisfies ONE relation to its model. Two relations to the same
+      // parent given one pinned row are the same row twice, which
+      // `@@check("issueId <> relatedIssueId")` refuses, so the second gets a
+      // parent of its own — unless only the pin can break a cycle.
       const pinned = pins[field.type.name]
-      if (pinned) {
-        clone = clone.for(field.name, pinned, fk, pk)
+      const cyclic = seen.has(field.type.name)
+      if (pinned && (!pinnedTo.has(field.type.name) || cyclic)) {
+        pinnedTo.add(field.type.name)
+        clone = clone.for(field.name, pinned, fks, pks)
+        for (const fk of fks) claimed.add(fk)
         continue
       }
 
       // A cycle (self-reference, or A→B→A) cannot be satisfied by creating more
       // rows — each new parent needs a parent. Say so, rather than skipping
       // silently and letting it surface as an opaque FOREIGN KEY failure.
-      if (seen.has(field.type.name)) {
+      if (cyclic) {
         throw new Error(
           `Factory(${this.model}): "${field.name}" is a required relation to ` +
           `"${field.type.name}", which is already in this parent chain ` +
           `(${[...seen].join(' → ')}). A cycle cannot be satisfied by creating more rows — ` +
-          `create the root first and pass it: .for('${field.name}', rootRow, '${fk}'), ` +
+          `create the root first and pass it: .for('${field.name}', rootRow, '${fks[0]}'), ` +
           `pin it for the whole chain: withParents({ pins: { ${field.type.name}: rootRow } }), ` +
-          `or make ${fk} optional.`
+          `or make ${fks[0]} optional.`
         )
       }
 
       const parent = this._factoryFor(field.type.name)
         .withParents({ ...opts, depth: depth - 1, _seen: seen })
-      clone = clone.withRelation(field.name, parent, fk, pk, { fresh })
+      clone = clone.withRelation(field.name, parent, fks, pks, { fresh })
+      for (const fk of fks) claimed.add(fk)
     }
     return clone
   }
@@ -383,11 +426,11 @@ export class Factory {
   // ── Build (no DB) ────────────────────────────────────────────────────────────
 
   buildOne(overrides = {}) {
-    this._seq++
+    const seq     = ++this._seq.n
     const rng     = this._rng ?? null
     // When a seed is set, derive a per-call offset from the rng so that
     // different seeds produce different seq-based values (e.g. emails).
-    const seqKey  = rng ? this._seq + Math.floor(rng.next() * 1000) * 1000 : this._seq
+    const seqKey  = rng ? seq + Math.floor(rng.next() * 1000) * 1000 : seq
     let data  = { ...this.definition(seqKey, rng) }
     for (const s of this._states)
       Object.assign(data, typeof s === 'function' ? s(seqKey, rng) : s)
@@ -414,11 +457,11 @@ export class Factory {
         if (!rel.fresh) rel.row = parentRow
         else            rel.row = parentRow   // still exposed on the returned row
       }
-      if (parentRow) fkOverrides[rel.fk] = parentRow[rel.pk]
+      if (parentRow) for (const [fk, pk] of _keyPairs(rel.fk, rel.pk)) fkOverrides[fk] = parentRow[pk]
     }
 
     const resolvedOverrides = typeof overrides === 'function'
-      ? overrides(this._seq + 1, this._rng)
+      ? overrides(this._seq.n + 1, this._rng)
       : overrides
 
     // Generated values carry a short seq token, so a @unique column is unique by

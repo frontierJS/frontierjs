@@ -38,7 +38,7 @@ model User {
   - **Recommend A** — it follows the next question's recommendation, and a noun
     coined before the mechanism is chosen enlarges the concept budget for nothing.
     B is the spelling to start from if the attribute route is ever taken.
-- Whether this is a litestone attribute at all, or a conduit target writing an
+- ~~**Whether this is a litestone attribute at all, or a conduit target writing an**~~ **Answered 2026-10-09 (`FJS-D818`): B — no language change: a Caravan job calls a conduit target and writes an ordinary column on a schedule.**
   ordinary column on a schedule — which needs no language change.
   - **A** — a litestone attribute: litestone owns the cached column, its TTL and its
     invalidation, and a conduit target does the fetch.

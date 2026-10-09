@@ -123,6 +123,15 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           always handed `-F` with the file that was listed, because ssh finds ~
           through passwd and Bun through $HOME; git is always handed
           `core.fsmonitor=false`, because a status runs that command
+          core/workbench.ts is a Claude Code chat per PINNED checkout
+          (`workbench` service, /workbench/), behind the same refusal: each
+          message is a detached `claude -p` with permissions bypassed, writing
+          its own log under WORKBENCH_DIR (~/.config/basecamp/workbench), so a
+          `bun --watch` restart neither kills a run nor loses its status. Not in
+          the database — a pin is a folder on this machine. verify:provision
+          drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
+          or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
+          services/api-keys/scopes.ts, proved by verify:mcp
           jobs/ is what runs unattended — a file per job, autoloaded by
           caravan (`jobsDir`), and the default export is the dispatch handle
           jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —

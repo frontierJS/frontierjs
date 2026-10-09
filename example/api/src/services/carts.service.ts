@@ -2,7 +2,7 @@ import { createBaseService, $ } from '@frontierjs/junction'
 import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../domain/shop'
 import { priceBasket, contextFor, discountByCode, discountProblem } from '../domain/shop'
 import type { CustomField } from '../domain/shop/custom-fields.ts'
-import { checkoutCodeFor, mintCartGrant } from '../domain/shop'
+import { checkoutCodeFor, cartClaim } from '../domain/shop'
 import { postJournal, saleJournal } from '../domain/ledger.ts'
 
 // The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
@@ -155,7 +155,7 @@ export function createCartsService() {
       // digest, so there is no second chance to read it — which is the same
       // promise `@guarded` used to make about the column, kept by not storing
       // the secret at all.
-      return { ...await view(cart), token: await mintCartGrant(sys(), cart.id) }
+      return { ...await view(cart), token: (await cartClaim.mint(sys(), { cartId: cart.id })).token }
     },
 
     /** The basket and its lines. Both reads go through the CALLER's client, so
@@ -432,7 +432,7 @@ export function createCartsService() {
       // if it wanted to. The proof it is owed to this caller is the code:
       // single use, two minutes, issued to whoever was already holding this
       // basket — the same evidence the token would have been.
-      return { ...await view(cart, system), token: await mintCartGrant(system, cart.id) }
+      return { ...await view(cart, system), token: (await cartClaim.mint(system, { cartId: cart.id })).token }
     },
 
     /**

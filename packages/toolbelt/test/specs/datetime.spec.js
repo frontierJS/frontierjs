@@ -402,11 +402,9 @@ test('createDatetime: the zone and the clock are required up front', function ()
   assert.throws(() => createDatetime({ timeZone: 'UTC', now: () => 'yesterday' }).relativeToNow(NOW), /now\(\) "yesterday" is not an instant/)
 })
 
-// FJS-2184: litestone's zoned groupBy hands offsetSpans the MIN and MAX of a
-// column, so one row dated 9999 makes a request read the zone every twelve
-// hours for eight thousand years. A refusal by name passes; a read count
-// that grows with the range does not.
-test.failing('datetime: offsetSpans reads the zone a bounded number of times over any range', function () {
+// A caller handing offsetSpans the MIN and MAX of a column, one row dated
+// 9999, would read the zone every twelve hours for eight thousand years.
+test('datetime: offsetSpans reads the zone a bounded number of times over any range', function () {
   const real = Intl.DateTimeFormat.prototype.formatToParts
   let reads = 0
   Intl.DateTimeFormat.prototype.formatToParts = function (...a) {
@@ -414,10 +412,27 @@ test.failing('datetime: offsetSpans reads the zone a bounded number of times ove
     return real.apply(this, a)
   }
   try {
-    offsetSpans('2020-01-01T00:00:00Z', '9999-12-31T00:00:00Z', 'America/Denver')
-  } catch (e) {
-    if (/5000 times/.test(e.message)) throw e
+    assert.throws(() => offsetSpans('2020-01-01T00:00:00Z', '9999-12-31T00:00:00Z', 'America/Denver'), /at most 100 years/)
+    assert.equal(offsetSpans('9999-01-01T00:00:00Z', '9999-12-31T00:00:00Z', 'America/Denver').length, 3)
   } finally {
     Intl.DateTimeFormat.prototype.formatToParts = real
+  }
+})
+
+// FJS-2074: a formatter costs ~1 ms to build, so a zone read per row over a
+// list is seconds when each read builds one.
+test('datetime: a zone read reuses its formatter instead of building one per call', function () {
+  const Real = Intl.DateTimeFormat
+  let built = 0
+  Intl.DateTimeFormat = function (...a) { built++; return new Real(...a) }
+  Intl.DateTimeFormat.prototype = Real.prototype
+  try {
+    for (let i = 0; i < 50; i++) {
+      startOfDay('2020-09-06', 'America/Chicago')
+      format(NOW + i * 1000, 'DDDD, MMMM D YYYY hh:mm:ss', { timeZone: 'America/Chicago' })
+    }
+    assert.ok(built < 20, `built ${built} formatters for 100 calls`)
+  } finally {
+    Intl.DateTimeFormat = Real
   }
 })

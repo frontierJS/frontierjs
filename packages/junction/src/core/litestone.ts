@@ -35,7 +35,9 @@ import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
 import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
-import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
+import { toBulkFailure, partitionBulk, BULK_FAILURES, list, resultData, isServiceResult, type BulkFailure } from './envelope.ts'
+import type { TransportContext } from '../transport/types.ts'
+import { generateCuid } from '@frontierjs/toolbelt/ids'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
@@ -3537,7 +3539,7 @@ function asCapabilityList(v: unknown): string[] {
     `and emitting it as auth().capabilities would grade every capability check against it`)
 }
 
-export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver {
+export function membershipClaim(opts: MembershipClaimOptions): SelfDescribedResolver {
   const claimName    = opts.as ?? opts.tenant
   const standingName = opts.standingAs ?? opts.standing
 
@@ -3635,7 +3637,7 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
   // tenant*, which the tenancy declaration's own `resolve` stops answering.
   // A hand-written resolver may carry a `describe` of its own; one that does not
   // is reported by name, which is honest and is what it is.
-  const described = resolver as DescribedResolver
+  const described = resolver as SelfDescribedResolver
   described.describe = () => ({
     kind:       'membership',
     model:      opts.model,
@@ -3839,8 +3841,72 @@ export function bearerOf(ctx: ServiceContext, model: string): ResolvedBearer | n
   return (ctx.locals?.[`${BEARER}:${model}`] as ResolvedBearer | undefined) ?? null
 }
 
-export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
+/** What `mint()` answers: the token, which exists in this answer and wherever
+ *  the app sends it, and the row as the caller may read it. */
+export interface MintedGrant { token: string; row: Record<string, unknown> }
+
+export interface RedeemOptions {
+  /** The cookie's life in seconds. Default: until the grant's `expiresAt`, or
+   *  the browser session where the grant declares none. */
+  maxAge?:   number
+  path?:     string
+  sameSite?: 'strict' | 'lax' | 'none'
+  secure?:   boolean
+}
+
+/** The slice of a raw route's context the redeem reads and answers through. */
+export type RedeemContext = Pick<TransportContext, 'body' | 'json' | 'setCookie'>
+
+/**
+ * `bearerClaim()`'s answer: the resolver, and the two acts that go with a grant
+ * — issuing one and, for a link, trading it for the cookie the resolver reads.
+ */
+export interface BearerResolver extends SelfDescribedResolver {
+  /**
+   * Create a grant row on `db`, as whoever `db` is scoped to. The digest is
+   * written by naming the column in `system:`, so the model's own `@@gate` and
+   * create policy decide who may issue a link, and the trail names the caller.
+   * For a `cookie()` bearer the token is a LINK token: `redeem()` trades it for
+   * the cookie's own and it is dead from then on (`FJS-D340`).
+   */
+  mint(db: unknown, data: Record<string, unknown>, extra?: { system?: string[] }): Promise<MintedGrant>
+  /**
+   * Hooks for the grant model's own `create`, installed with `svc.hooks(...)`:
+   * the caller's create is the mint, the answer carries `token` once, and the
+   * broadcast carries the row without it.
+   */
+  mintOnCreate(): HookMap
+  /**
+   * A raw-route handler for the redeem (`FJS-D340`): `{ token }` in the body,
+   * the grant's digest rotated to a fresh token's, that token set as the
+   * httpOnly cookie `from` reads, and `{ subject }` answered so the page can
+   * open what the link was for. Only a `cookie()` bearer has one.
+   */
+  redeem(db: unknown, opts?: RedeemOptions): (ctx: RedeemContext) => Promise<Response>
+}
+
+export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
   const purpose = opts.purpose ?? `${opts.model}.${opts.column}`
+  // A link and the cookie it is redeemed for digest under different purposes,
+  // so an unredeemed link presented as the cookie matches nothing and a
+  // redeemed link is dead the moment it was used — a forwarded email that
+  // was already clicked answers as one that never existed.
+  const linkPurpose = `${purpose}.link`
+  const isLink      = !!opts.from.cookieName
+
+  const keyFor = (ctx: ServiceContext | undefined): string => {
+    if (typeof opts.key !== 'function') return opts.key
+    if (!ctx) throw new Error(
+      `bearerClaim: \`key\` is a function and there is no call in progress to hand it. ` +
+      `Mint inside a service method, or pass the key as a string.`)
+    return opts.key(ctx)
+  }
+  const systemTable = (db: unknown) => {
+    const client = db as LitestoneClient | undefined
+    const bare = typeof client?.$setAuth === 'function' ? client.$setAuth(null) : client
+    const sys  = typeof bare?.asSystem === 'function' ? bare.asSystem() : bare
+    return sys?.[opts.model] as Record<string, (a: Record<string, unknown>) => Promise<unknown>> | undefined
+  }
 
   const resolver = async function bearerClaim(ctx: ServiceContext, _user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
     // A token this request does not carry is not a refusal to report: most
@@ -3923,7 +3989,87 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     )
   }
 
-  const described = resolver as DescribedResolver
+  async function mint(db: unknown, data: Record<string, unknown>, extra: { system?: string[] } = {}): Promise<MintedGrant> {
+    const table = (db as Record<string, { create?: (a: Record<string, unknown>) => Promise<unknown> }> | undefined)?.[opts.model]
+    if (typeof table?.create !== 'function') throw new BadRequest(
+      `bearerClaim: no accessor '${opts.model}' on the client handed to mint(). ` +
+      `A model's accessor is its name with a lower first letter.`)
+    const token  = generateCuid()
+    const digest = await fingerprint(token, { key: keyFor(currentCall()), purpose: isLink ? linkPurpose : purpose })
+    const row = await table.create({
+      data:   { ...data, [opts.column]: digest },
+      system: [...new Set([...(extra.system ?? []), opts.column])],
+    }) as Record<string, unknown>
+    return { token, row }
+  }
+
+  function mintOnCreate(): HookMap {
+    const MINTED = `${BEARER}.minted:${opts.model}`
+    return {
+      // After validation, because a @guarded column is not in the client's
+      // schema and a digest added before it is refused as an unknown key.
+      validated: { create: [async (ctx) => {
+        const token = generateCuid()
+        const data  = ctx.data as Record<string, unknown> | null
+        ctx.data = { ...data, [opts.column]: await fingerprint(token, { key: keyFor(ctx), purpose: isLink ? linkPurpose : purpose }) }
+        ctx.system.add(opts.column)
+        ctx.locals[MINTED] = token
+      }] },
+      after: { create: [(ctx) => {
+        const token = ctx.locals[MINTED]
+        if (typeof token !== 'string') return
+        const row = resultData(ctx.result) as Record<string, unknown> | null
+        // The row goes out to every subscriber; the token goes to the caller.
+        ctx.dispatch = row
+        ctx.result   = isServiceResult(ctx.result)
+          ? { ...ctx.result, data: { ...row, token } }
+          : { ...row, token }
+      }] },
+    }
+  }
+
+  function redeem(db: unknown, ro: RedeemOptions = {}) {
+    if (!isLink) throw new Error(
+      `bearerClaim: redeem() sets the cookie \`from\` reads, and this bearer reads ` +
+      `${opts.from.headerName ? `the ${opts.from.headerName} header` : 'no cookie'}. ` +
+      `A header bearer is handed its token directly; the redeem is for a link that arrives by email (FJS-D340).`)
+    const name = opts.from.cookieName as string
+    return async (ctx: RedeemContext): Promise<Response> => {
+      const token = (ctx.body as { token?: unknown } | null)?.token
+      if (typeof token !== 'string' || !token) return ctx.json({ message: 'A link token is required' }, 400)
+
+      const table = systemTable(db)
+      if (typeof table?.findFirst !== 'function') throw new Error(
+        `bearerClaim: no accessor '${opts.model}' on the client handed to redeem().`)
+      // The key function reads the tenant off the request, and a raw route's
+      // context carries the same headers a call's does.
+      const key   = keyFor(ctx as unknown as ServiceContext)
+      const clock = (db as { $now?: () => Date } | undefined)?.$now ?? (() => new Date())
+      const row   = await table.findFirst({ where: { [opts.column]: await fingerprint(token, { key, purpose: linkPurpose }) } }) as Record<string, unknown> | null
+      // One sentence for forged, expired, revoked and already redeemed, the
+      // resolver's own (`FJS-D696`).
+      if (!row || !isLive(row, clock)) return ctx.json({ message: 'This link does not work. It may have expired or been withdrawn.' }, 401)
+
+      const fresh = generateCuid()
+      await table.update({
+        where: { id: row.id },
+        data:  { [opts.column]: await fingerprint(fresh, { key, purpose }),
+                 ...('lastUsedAt' in row ? { lastUsedAt: clock().toISOString() } : {}) },
+      })
+
+      const maxAge = ro.maxAge ?? (row.expiresAt != null
+        ? Math.max(0, Math.floor((new Date(row.expiresAt as string).getTime() - clock().getTime()) / 1000))
+        : undefined)
+      ctx.setCookie(name, fresh, {
+        httpOnly: true, sameSite: ro.sameSite ?? 'strict', path: ro.path ?? '/',
+        ...(ro.secure !== undefined ? { secure: ro.secure } : {}),
+        ...(maxAge !== undefined ? { maxAge } : {}),
+      })
+      return ctx.json({ subject: opts.subject ? row[opts.subject] ?? null : null }, 200)
+    }
+  }
+
+  const described = resolver as BearerResolver
   described.describe = () => ({
     kind:     'bearer',
     model:    opts.model,
@@ -3935,6 +4081,9 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     namedBy:  opts.namedBy ?? null,
     headers:  opts.from.headerName ? [opts.from.headerName] : [],
   })
+  described.mint         = mint
+  described.mintOnCreate = mintOnCreate
+  described.redeem       = redeem
 
   return described
 }
@@ -3973,6 +4122,9 @@ function isLive(row: Record<string, unknown>, clock?: () => Date): boolean {
  *  composes (`FJS-D694`). */
 export type DescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription | PrincipalDescription[] }
 
+/** A shipped resolver is ONE source and describes itself as one. */
+export type SelfDescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription }
+
 /** Every description an installed principal carries: each element of a list,
  *  and each entry a plain function's own `describe()` answers. A function with
  *  none describes nothing, which is reported rather than invented. */
@@ -3996,14 +4148,17 @@ export function checkPrincipalSetting(principal: PrincipalSetting | undefined): 
   for (const fn of list) if (typeof fn !== 'function') throw new Error(
     `createApp({ principal }) takes a resolver or a list of resolvers, and an element is ${typeof fn}.`)
   if (!Array.isArray(principal)) return
-  const origin = new Map<string, string>()
-  for (const { name, described } of describedOf(principal))
+  // By position, not by name: two bearerClaims are both called bearerClaim.
+  const origin = new Map<string, { at: number; name: string }>()
+  for (const [at, { name, described }] of describedOf(principal).entries())
     for (const d of described) for (const claim of d.claims) {
-      if (origin.has(claim) && origin.get(claim) !== name) throw new Error(
-        `createApp({ principal: [...] }): '${claim}' is described by both ${origin.get(claim)} and ${name}. ` +
-        `A claim name emitted by two resolvers is refused on the request (FJS-D522); a precedence between ` +
-        `them is a plain function that applies it and carries its own describe() list (FJS-D694).`)
-      origin.set(claim, name)
+      const seen = origin.get(claim)
+      if (seen && seen.at !== at) throw new Error(
+        `createApp({ principal: [...] }): '${claim}' is described by both #${seen.at + 1} ${seen.name} and ` +
+        `#${at + 1} ${name}. A claim name emitted by two resolvers is refused on the request (FJS-D522); ` +
+        `a precedence between them is a plain function that applies it and carries its own describe() ` +
+        `list (FJS-D694).`)
+      origin.set(claim, { at, name })
     }
 }
 

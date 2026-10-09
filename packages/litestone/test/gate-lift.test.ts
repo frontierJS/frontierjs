@@ -213,7 +213,7 @@ describe('an entry that lifts nothing is refused by name', () => {
   it('a @guarded column is named the same way, and only its write half opens', async () => {
     // A required @guarded digest left a grant model uncreatable below 8, so
     // every app minted it as asSystem() in a second write and lost the create
-    // policy that says who may issue a link (FJS-1749, FJS-D814).
+    // policy that says who may issue a link (FJS-1749, FJS-D819).
     const db = await client()
     await expect(db.$setAuth(USER).invoice.create({ data: { ownerId: 1, number: 'G-1', token: 'by-hand' }, system: ['@@gate'] }))
       .rejects.toThrow(/"token" is @guarded/)

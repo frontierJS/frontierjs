@@ -112,9 +112,12 @@ Four words, and they are not a ladder. This table is the whole decision.
 - **`@system`** — the application writes it, the caller does not. A tracking
   code, a computed total. Readable by anyone. Fill it by naming the column on
   the write: `db.order.update({ where, data, system: ['trackingCode'] })`.
-- **`@guarded`** — locked both directions, `asSystem()` only. Not a level:
+- **`@guarded`** — locked both directions. The read half is `asSystem()` only;
+  the write half opens for a call that names the column, `system: ['tokenHash']`,
+  which keeps the gate, the policies and the audit actor and is how a grant's
+  digest is written by the caller's own create (`FJS-D819`). Not a level:
   `@guarded(5)` does not parse. A **required** `@guarded` column makes the
-  model uncreatable below level 8.
+  model uncreatable below level 8 unless the application fills it that way.
 - **`@secret`** — exactly `@encrypted @guarded`. Writing both by hand is
   this word spelled out.
 

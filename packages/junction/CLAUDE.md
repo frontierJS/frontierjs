@@ -65,6 +65,12 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
 - **A claim resolver runs inside the data hook, for a guest as well as a
   session, and a guest's claims never become `ctx.auth.user`** (`FJS-D113`,
   `test/principal-claims.test.ts`).
+- **`principal` may be a list, run in order and merged; a claim name two
+  elements emit is refused by name, and every element's `describe()` is read**
+  (`FJS-D522`, `FJS-D694`, `test/principal-list.test.ts`). **A grant is minted by
+  the caller's own create and a link redeemed for a cookie through `bearerClaim`'s
+  `mint`/`redeem`**, never a second write below the boundary (`FJS-D819`,
+  `test/bearer-claim.test.ts`).
 - **A test names no port** — `port: 0`, then read `app.http.port` (`FJS-900`,
   `test/test-ports.test.ts`).
 - **The whole package typechecks to zero, `test/` included** — junction has no

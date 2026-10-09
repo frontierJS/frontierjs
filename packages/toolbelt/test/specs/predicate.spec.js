@@ -127,6 +127,15 @@ test('predicate: NUMERIC affinity leaves text that is not a number alone', funct
   assert.equal(compare(5, '<', 'abc', 'NUMERIC', null), true)
 })
 
+test('predicate: a NaN operand is unknown, as SQLite binds it NULL', function () {
+  // Ranked by value, NaN is neither less nor greater than anything, so it read
+  // as EQUAL to every number and `qty <= NaN` admitted any qty (FJS-2185).
+  for (const op of ['==', '<=', '>=', '<', '>', '!=']) {
+    assert.equal(compare(7, op, NaN), null)
+    assert.equal(compare(NaN, op, 7, 'NUMERIC', null), null)
+  }
+})
+
 test('predicate: TEXT affinity pushes an unaffinitied operand to text', function () {
   assert.equal(compare('5', '==', 5, 'TEXT', null), true)
 })

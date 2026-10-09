@@ -99,7 +99,7 @@ job:
 - `update({ …, system: ['col'] })` writes one `@system` column. It keeps the gate, the
   policies, soft-delete and the audit actor (`FJS-D22`). A `@guarded` column is named the
   same way: the write half opens for that call and the read half stays locked, which is
-  how a grant's digest is written by the caller's own policy-graded create (`FJS-D814`).
+  how a grant's digest is written by the caller's own policy-graded create (`FJS-D819`).
 - `create({ …, system: ['@@gate'] })` grades that one call SYSTEM against the model's own
   `@@gate`, for a row the application makes on a caller's behalf. It keeps the policies,
   redaction and the audit actor, and the trail entry carries `meta.lifted`. Nested

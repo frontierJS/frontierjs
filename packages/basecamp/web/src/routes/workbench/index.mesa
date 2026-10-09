@@ -60,23 +60,30 @@ title: Workbench
     await Promise.all(pins.map(p => refreshTranscript(p.id)))
   }
 
-  async function refreshTranscript(id) {
-    const size = status[id]?.size ?? 0
+  async function refreshTranscript(id, size = status[id]?.size ?? 0) {
     if (fetchedAt[id] === size && transcripts[id]) return
     fetchedAt[id] = size
     try {
+      // Read before the redraw: a reader who scrolled up to an earlier turn is
+      // not yanked to the bottom by every log line a working run adds.
+      const log   = document.getElementById(`chat-log-${id}`)
+      const stuck = !log || log.scrollHeight - log.scrollTop - log.clientHeight < 48
       const t = await workbench.service.invoke('transcript', id)
       transcripts = { ...transcripts, [id]: t }
-      scrollToEnd(id)
+      if (stuck) scrollToEnd(id)
+      else measure(id)
     } catch {}
   }
 
   function scrollToEnd(id) {
-    queueMicrotask(() => requestAnimationFrame(() => {
+    afterDraw(() => {
       const log = document.getElementById(`chat-log-${id}`)
       if (log) log.scrollTop = log.scrollHeight
-    }))
+      measure(id)
+    })
   }
+
+  const afterDraw = (fn) => queueMicrotask(() => requestAnimationFrame(fn))
 
   // ─── the poll ────────────────────────────────────────────────────────
 
@@ -90,9 +97,11 @@ title: Workbench
         if (lastState[s.id] === 'working' && s.state !== 'working') { ended = true; announce(s) }
         lastState[s.id] = s.state
       }
+      // The chat first: a card that says done before its answer is drawn reads
+      // as a run that finished with nothing to say.
+      await Promise.all(answer.status.map(s => refreshTranscript(s.id, s.size)))
       status = next
       retitle()
-      await Promise.all(answer.status.map(s => refreshTranscript(s.id)))
       // A finished run changed the tree; the branch and dirty count follow.
       if (ended) loadPins()
     } catch {}
@@ -150,11 +159,23 @@ title: Workbench
     const prompt = (drafts[p.id] ?? '').trim()
     if (!prompt) return
     drafts = { ...drafts, [p.id]: '' }
+    document.getElementById(`workbench-draft-${p.id}`)?.style.removeProperty('block-size')
+    scrollToEnd(p.id)
     if (await act('send', p, { prompt })) {
       lastState[p.id] = 'working'
       status = { ...status, [p.id]: { ...status[p.id], state: 'working' } }
     }
     askNotifications()
+  }
+
+  // textarea.field grows with its text through field-sizing; a browser
+  // without it (Firefox) holds a long prompt in a four-line box. The CSS
+  // max-height still caps what this sets.
+  const SIZES_ITSELF = typeof CSS === 'undefined' || CSS.supports('field-sizing', 'content')
+  function fit(el) {
+    if (SIZES_ITSELF) return
+    el.style.blockSize = 'auto'
+    el.style.blockSize = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
   }
 
   function keydown(p, e) {
@@ -207,6 +228,87 @@ title: Workbench
   }
 
   const money = (n) => n == null ? '' : `$${n.toFixed(2)}`
+
+  // ─── folding ─────────────────────────────────────────────────────────
+  // The card's mode folds a side; a click on one message flips it against
+  // the mode, and changing the mode forgets the flips.
+
+  const FOLDS = [
+    { key: 'none', label: 'None'   },
+    { key: 'you',  label: 'Mine'   },
+    { key: 'ai',   label: 'Claude' },
+    { key: 'both', label: 'Both'   },
+  ]
+  let folds = {}
+  let flips = {}
+
+  const foldOf = (id) => folds[id] ?? 'none'
+  const side   = (it) => it.kind === 'you' ? 'you' : 'ai'
+  function folded(id, it, i) {
+    const mode = foldOf(id)
+    return (mode === 'both' || mode === side(it)) !== !!flips[id]?.[i]
+  }
+  function setFold(id, key) {
+    folds = { ...folds, [id]: key }
+    flips = { ...flips, [id]: {} }
+    measure(id)
+  }
+  function flip(id, i) {
+    flips = { ...flips, [id]: { ...flips[id], [i]: !flips[id]?.[i] } }
+    measure(id)
+  }
+
+  // ─── the jump rail ───────────────────────────────────────────────────
+  // A notch per message you sent, placed where it sits in the log, so a fold
+  // that shortens the log moves the notches with it. The thumb is the part of
+  // the log on screen.
+
+  let rails = {}
+
+  function measure(id) {
+    afterDraw(() => {
+      const log = document.getElementById(`chat-log-${id}`)
+      if (!log) return
+      const h = log.scrollHeight || 1
+      const notches = [...log.querySelectorAll('[data-turn]')].map(el => ({
+        i:     Number(el.dataset.turn),
+        top:   (el.offsetTop / h) * 100,
+        label: el.querySelector('.workbench-text')?.textContent.slice(0, 80) ?? '',
+      }))
+      rails = { ...rails, [id]: { notches, ...view(log) } }
+    })
+  }
+
+  const view = (log) => ({
+    thumbTop: (log.scrollTop / (log.scrollHeight || 1)) * 100,
+    thumbH:   (log.clientHeight / (log.scrollHeight || 1)) * 100,
+  })
+
+  let spying = false
+  function spy(id, log) {
+    if (spying) return
+    spying = true
+    requestAnimationFrame(() => {
+      spying = false
+      if (rails[id]) rails = { ...rails, [id]: { ...rails[id], ...view(log) } }
+    })
+  }
+
+  // The turn being read: the last one starting above the upper third of
+  // what is on screen.
+  function current(id) {
+    const r = rails[id]
+    if (!r) return -1
+    let at = -1
+    for (const n of r.notches) if (n.top <= r.thumbTop + r.thumbH / 3) at = n.i
+    return at
+  }
+
+  function jump(id, i) {
+    const log = document.getElementById(`chat-log-${id}`)
+    const el  = document.getElementById(`chat-${id}-${i}`)
+    if (log && el) log.scrollTo({ top: el.offsetTop - 8, behavior: 'smooth' })
+  }
 </script>
 
 <div class="section-header">
@@ -286,23 +388,72 @@ title: Workbench
               {/if}
             </div>
 
-            <div class="workbench-log stack" id={`chat-log-${p.id}`}>
-              {#each grouped(transcripts[p.id]?.items) as it}
-                {#if it.kind === 'you'}
-                  <div class="workbench-you"><strong>You</strong> <span class="text-muted text-sm">{it.at ? ago(it.at) : ''}</span><div class="workbench-text">{it.text}</div></div>
-                {:else if it.kind === 'text'}
-                  <div class="workbench-text">{it.text}</div>
-                {:else if it.kind === 'tools'}
-                  <div class="text-sm text-muted workbench-tools">
-                    {#if it.calls.length > SHOW_TOOLS}<div>… {it.calls.length - SHOW_TOOLS} more</div>{/if}
-                    {#each it.calls.slice(-SHOW_TOOLS) as call}<div><code>› {call}</code></div>{/each}
-                  </div>
-                {:else if it.kind === 'result'}
-                  <div class="text-sm text-muted">{it.ok ? '✓' : '✗'} {it.stop ?? ''} {money(it.cost)}{it.turns ? ` · ${it.turns} turns` : ''}</div>
-                {:else if it.kind === 'error'}
-                  <div class="alert danger"><div class="alert-content text-sm">{it.text}</div></div>
-                {/if}
-              {/each}
+            {#if transcripts[p.id]?.items?.length}
+              <div class="cluster text-sm workbench-folds" role="group" aria-label={`Collapse messages in ${p.name}`}>
+                <span class="text-muted">Collapse</span>
+                {#each FOLDS as f}
+                  <Button size="xs" variant={foldOf(p.id) === f.key ? 'outlined' : 'ghost'}
+                          aria-pressed={foldOf(p.id) === f.key ? 'true' : 'false'}
+                          onclick={() => setFold(p.id, f.key)}>{f.label}</Button>
+                {/each}
+              </div>
+            {/if}
+
+            <div class="workbench-chat">
+              <div class="workbench-log" id={`chat-log-${p.id}`} on:scroll={(e) => spy(p.id, e.target)}>
+                {#each grouped(transcripts[p.id]?.items) as it, i}
+                  {#if it.kind === 'you'}
+                    <div class="workbench-msg workbench-you info" id={`chat-${p.id}-${i}`} data-turn={i}>
+                      <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
+                              on:click={() => flip(p.id, i)}>
+                        <strong>You</strong>
+                        <span class="text-muted">{it.at ? ago(it.at) : ''}</span>
+                        <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
+                      </button>
+                      <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
+                    </div>
+                  {:else if it.kind === 'text'}
+                    <div class="workbench-msg workbench-ai muted" id={`chat-${p.id}-${i}`}>
+                      <button type="button" class="workbench-msg-head text-sm" aria-expanded={folded(p.id, it, i) ? 'false' : 'true'}
+                              on:click={() => flip(p.id, i)}>
+                        <strong>Claude</strong>
+                        <span class="workbench-chevron" aria-hidden="true">{folded(p.id, it, i) ? '▸' : '▾'}</span>
+                      </button>
+                      <div class={`workbench-text${folded(p.id, it, i) ? ' clamp-2' : ''}`}>{it.text}</div>
+                    </div>
+                  {:else if it.kind === 'tools'}
+                    <div class="text-sm text-muted workbench-tools" id={`chat-${p.id}-${i}`}>
+                      {#if folded(p.id, it, i)}
+                        <button type="button" class="workbench-msg-head" aria-expanded="false" on:click={() => flip(p.id, i)}>
+                          <code>› {it.calls.length} tool call{it.calls.length === 1 ? '' : 's'}</code>
+                        </button>
+                      {:else}
+                        {#if it.calls.length > SHOW_TOOLS}<div>… {it.calls.length - SHOW_TOOLS} more</div>{/if}
+                        {#each it.calls.slice(-SHOW_TOOLS) as call}<div><code>› {call}</code></div>{/each}
+                      {/if}
+                    </div>
+                  {:else if it.kind === 'result'}
+                    <div class="text-sm text-muted workbench-result">{it.ok ? '✓' : '✗'} {it.stop ?? ''} {money(it.cost)}{it.turns ? ` · ${it.turns} turns` : ''}</div>
+                  {:else if it.kind === 'error'}
+                    <div class="alert danger"><div class="alert-content text-sm">{it.text}</div></div>
+                  {/if}
+                {/each}
+              </div>
+
+              {#if rails[p.id]?.notches.length}
+                <nav class="workbench-rail" aria-label={`Jump to a message in ${p.name}`}>
+                  {#if rails[p.id].thumbH < 99}
+                    <span class="workbench-rail-thumb" aria-hidden="true"
+                          style:top={`${rails[p.id].thumbTop}%`} style:height={`${rails[p.id].thumbH}%`}></span>
+                  {/if}
+                  {#each rails[p.id].notches as n, k}
+                    <button type="button" class="workbench-notch info" style:top={`${n.top}%`}
+                            title={n.label} aria-label={`Message ${k + 1}: ${n.label}`}
+                            aria-current={current(p.id) === n.i ? 'true' : null}
+                            on:click={() => jump(p.id, n.i)}></button>
+                  {/each}
+                </nav>
+              {/if}
             </div>
 
             <form class="stack" on:submit={(e) => send(p, e)}>
@@ -310,7 +461,7 @@ title: Workbench
               <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
                         placeholder={status[p.id]?.state === 'working' ? 'Queue a follow-up…' : 'Ask Claude to do something… (Ctrl+Enter)'}
                         value={drafts[p.id] ?? ''}
-                        on:input={(e) => drafts = { ...drafts, [p.id]: e.target.value }}
+                        on:input={(e) => { drafts = { ...drafts, [p.id]: e.target.value }; fit(e.target) }}
                         on:keydown={(e) => keydown(p, e)}></textarea>
               <div class="cluster">
                 <Button type="submit" disabled={!(drafts[p.id] ?? '').trim()}>
@@ -350,14 +501,77 @@ title: Workbench
   .workbench-grid { --grid-min: 28rem; gap: var(--space-lg); }
   /* A long run would otherwise grow the card past the screen and push the
      input out of reach. */
+  .workbench-chat {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-xs);
+  }
   .workbench-log {
-    max-block-size: 26rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-block-size: min(70vh, 40rem);
     min-block-size: 6rem;
     overflow-y: auto;
     overscroll-behavior: contain;
+    padding-inline-end: var(--space-xs);
   }
+
+  .workbench-msg {
+    max-inline-size: 88%;
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+  }
+  .workbench-you { align-self: flex-end; border-end-end-radius: 2px; }
+  .workbench-ai  { align-self: flex-start; border-end-start-radius: 2px; }
+  .workbench-msg-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-family: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-chevron { margin-inline-start: auto; color: var(--ink-mute); }
+  .workbench-tools, .workbench-result { align-self: flex-start; padding-inline: var(--space-sm); }
   .workbench-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .workbench-tools code { overflow-wrap: anywhere; }
+
+  .workbench-rail {
+    position: relative;
+    inline-size: 0.75rem;
+    border-radius: var(--pill-radius);
+    background: var(--surface-sunken);
+  }
+  .workbench-rail-thumb {
+    position: absolute;
+    inset-inline: 0;
+    border-radius: var(--pill-radius);
+    background: var(--rule-strong);
+    pointer-events: none;
+  }
+  .workbench-notch {
+    position: absolute;
+    inset-inline: -2px;
+    block-size: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--pill-radius);
+    background: var(--tint-rule);
+    cursor: pointer;
+  }
+  /* A 4px notch is too thin to hit; the hit area is taller than the mark. */
+  .workbench-notch::before { content: ''; position: absolute; inset: -5px 0; }
+  .workbench-notch:hover,
+  .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: 6px; }
   .workbench-now { min-block-size: 1.5em; overflow-wrap: anywhere; }
   .workbench-card textarea { resize: vertical; inline-size: 100%; }
 </style>

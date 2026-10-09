@@ -124,25 +124,43 @@ export function omitBy(value, isSecret, seen = new WeakSet()) {
   return walk(value, isSecret, false, seen)
 }
 
+// An explicit stack, not recursion: junction runs this over every response of
+// a model with a protected field, and a stored Json value nested deeper than
+// the call stack made every later read of that model a 500 (FJS-2183).
 function walk(value, isSecret, replace, ancestors) {
-  if (!value || typeof value !== 'object') return value
-  if (ancestors.has(value)) return '[circular]'
-
-  const proto = Object.getPrototypeOf(value)
-  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value
-
-  ancestors.add(value)
-  try {
-    if (Array.isArray(value)) return value.map(v => walk(v, isSecret, replace, ancestors))
-    const out = {}
-    for (const [k, v] of Object.entries(value)) {
-      if (!isSecret(k))  out[k] = walk(v, isSecret, replace, ancestors)
-      else if (replace)  out[k] = REDACTED
-    }
+  const stack = []
+  const enter = (v) => {
+    if (!v || typeof v !== 'object') return v
+    if (ancestors.has(v)) return '[circular]'
+    const isArray = Array.isArray(v)
+    const proto = Object.getPrototypeOf(v)
+    if (!isArray && proto !== Object.prototype && proto !== null) return v
+    ancestors.add(v)
+    const out = isArray ? new Array(v.length) : {}
+    stack.push({ src: v, out, keys: isArray ? null : Object.keys(v), i: 0 })
     return out
-  } finally {
-    ancestors.delete(value)
   }
+
+  const result = enter(value)
+  try {
+    while (stack.length) {
+      const frame = stack[stack.length - 1]
+      const { src, out, keys } = frame
+      if (frame.i === (keys ? keys.length : src.length)) {
+        ancestors.delete(src)
+        stack.pop()
+        continue
+      }
+      const k = keys ? keys[frame.i] : frame.i
+      frame.i++
+      if (!keys) { if (k in src) out[k] = enter(src[k]) }
+      else if (!isSecret(k)) out[k] = enter(src[k])
+      else if (replace)      out[k] = REDACTED
+    }
+  } finally {
+    for (const frame of stack) ancestors.delete(frame.src)
+  }
+  return result
 }
 
 /** `redactBy` with the credential name list. The common case. */

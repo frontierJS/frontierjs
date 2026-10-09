@@ -64,6 +64,17 @@ function toEpoch(value, name = 'value') {
 
 // ─── zones ────────────────────────────────────────────────────────────────
 
+// Building a formatter costs about a millisecond, so one per (locale, options)
+// is kept: a zone read per row over a list is otherwise seconds.
+const formatters = new Map()
+
+function formatterFor(locale, options) {
+  const key = locale + '|' + JSON.stringify(options)
+  let f = formatters.get(key)
+  if (!f) formatters.set(key, f = new Intl.DateTimeFormat(locale, options))
+  return f
+}
+
 function requireZone(timeZone) {
   if (typeof timeZone !== 'string' || timeZone === '') {
     throw new TypeError(
@@ -72,7 +83,7 @@ function requireZone(timeZone) {
     )
   }
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone })
+    formatterFor('en-US', { timeZone })
   } catch {
     throw new RangeError(
       `datetime: unknown time zone "${timeZone}". The list is the host's ICU table ` +
@@ -91,7 +102,7 @@ const PARTS = {
 // offsets with seconds in them, so rounding to the minute here would misplace them.
 function wallOf(ms, timeZone) {
   const f = {}
-  for (const { type, value } of new Intl.DateTimeFormat('en-US', { ...PARTS, timeZone }).formatToParts(ms)) {
+  for (const { type, value } of formatterFor('en-US', { ...PARTS, timeZone }).formatToParts(ms)) {
     if (type in PARTS) f[type] = Number(value)
   }
   f.hour %= 24
@@ -184,12 +195,17 @@ export function partsIn(instant, timeZone) {
  * The zone is read every twelve hours and each change is found to the
  * millisecond by halving. A zone that changed twice inside twelve hours would
  * be missed; none has.
+ *
+ * So the cost is the RANGE, not the changes, and a column whose MIN/MAX reach
+ * a 9999 "never" date asked for eight thousand years of reads. A range past a
+ * century is refused; a caller over sparse years asks once per year in use.
  */
 export function offsetSpans(from, to, timeZone) {
   let lo = toEpoch(from, 'from')
   const end = toEpoch(to, 'to')
   requireZone(timeZone)
   if (end < lo) throw new RangeError('datetime: offsetSpans wants from <= to')
+  if (end - lo > 100 * YEAR) throw new RangeError('datetime: offsetSpans covers at most 100 years; ask for the years in use one at a time')
   const STEP = 12 * HOUR
   const spans = [{ from: lo, offset: offsetMsAt(lo, timeZone) }]
   for (let t = lo; t < end; ) {
@@ -415,7 +431,7 @@ export function dueAt(commitment, row) {
 const pad = (n, width = 2) => String(n).padStart(width, '0')
 
 function named(c, options, type) {
-  const part = new Intl.DateTimeFormat(c.locale, { timeZone: c.timeZone, ...options })
+  const part = formatterFor(c.locale, { timeZone: c.timeZone, ...options })
     .formatToParts(c.ms)
     .find((p) => p.type === type)
   return part ? part.value : ''

@@ -523,6 +523,13 @@ does the same for that parent, down the chain. Relation cycles (self-references,
 `A → B → A`) are refused by name rather than followed — no number of rows satisfies
 them, and the error states both cures.
 
+A nullable key the schema still insists on gets a parent too: the first column of
+an `@@arc([a, b])` (the other stays null, so exactly one is set), and a key under
+`@required(where:)`. A composite relation — `@relation(fields: [projectId, teamId],
+references: [id, teamId])` — fills every column of its key from the one parent, and
+a single-column relation over one of those columns (`team` beside `project`) is not
+wired separately, because it would point the column at a second, unrelated row.
+
 ```js
 withParents({ optional: true })   // nullable relations get parents too (default: skipped)
 withParents({ fresh: true })      // a new parent per row instead of one shared
@@ -551,6 +558,12 @@ its factory does nothing while `withParents()` builds a fresh one five hops down
 Precedence: an explicit `.for()` wins over a pin for the same relation. A pin for a
 model that is not in the chain is unused rather than an error, so one pin map can be
 reused across factories.
+
+**A pin satisfies one relation to its model.** Two relations to the same parent on
+one model (`IssueRelation.issue` and `.relatedIssue`) given one pinned Issue would
+be the same row twice, which `@@check("issueId <> relatedIssueId")` refuses — so the
+first takes the pin and the second gets a parent of its own, unless only the pin can
+break a cycle.
 
 A pin is also the cure for a **required** cyclic relation, which is why pins are
 consulted before the cycle check:
@@ -682,6 +695,23 @@ covers the common subset (anchors, literals, `\d`/`\w`/`\s`, character classes w
 ranges, groups, alternation, `{n}` `{n,m}` `?` `+` `*`) and then *checks its own
 output against the pattern*. If it cannot produce a match it warns and tells you to
 override the field — it never silently emits a value the validator will reject.
+An open quantifier takes six characters where the pattern allows, and each class
+draws a digit of the row's sequence, so a `@unique` slug differs per row rather than
+per alphabet.
+
+**The rules on a row are read, not only the types.** A `Json @type(Address)` carries
+an Address, each member generated as a column would be; an optional column under
+`@required(where:)` is filled, because a value is legal whether or not the
+condition holds; `DateTime @date` draws a calendar date. A model-level `@@check` is
+read as the SQL it is — `AND`/`OR`/`NOT`, the six comparisons, `IS [NOT] NULL`,
+`[NOT] IN (…)`, arithmetic and parentheses over this row's columns — and the row is
+moved until it passes: the later side of an ordering is pushed a day, a unit or an
+hour past the earlier; a column held to a literal list takes the first; an identity
+such as `total = subtotal + shippingTotal` is computed; a column compared against a
+`@default(now())` sibling is placed relative to the clock. A rule outside that
+subset, or one no move satisfies, is left to the table to refuse with its declared
+message, and the `factories` override is the answer. `@scoped`/`@edge` marks are
+not columns and are never written.
 
 **FK columns are not resolved by the generator.** An `Int` FK defaults to `1`; a
 `String` FK (uuid primary keys) gets placeholder text that will not satisfy a

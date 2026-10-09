@@ -33,4 +33,4 @@ app's own: page groups, break rules, margin boxes.
 ## Where it came from
 
 Incubated in the Transit prototype as `@transit/print-kit` (its `PLAN.md`
-Q7) and moved here under `FJS-D811` once a second app imported it.
+Q7) and moved here under `FJS-D816` once a second app imported it.

@@ -26,7 +26,7 @@
 import {
   rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource,
-  snippetParam, parseRenderTag,
+  bindSetter, snippetParam, parseRenderTag,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -73,8 +73,11 @@ function styleValue(ctx, p, prop) {
   return src.template ? interpolated(ctx, src.raw) : read(ctx, src.raw)
 }
 
+/** An element's attributes by what each is. `ref` is `bind:this`'s setter,
+ *  handed the target's own node — a DOM element or a terminal renderable. */
 function lowerAttributes(ctx, n) {
   const attrs = [], handlers = [], directives = [], styles = []
+  let ref = null
   for (const p of n.attributes) {
     let name = p.name
     const loc = ctx.posOf(p.start ?? n.start)
@@ -98,6 +101,10 @@ function lowerAttributes(ctx, n) {
       handlers.push({ event, modifiers, expr: expr(ctx, rawHand, code), loc })
       continue
     }
+    if (name === 'bind:this') {
+      ref = bindSetter(ctx, { kind: 'bind-this', target: p.value ? unwrapExp(p.value) : null }, '')
+      continue
+    }
     if (name.startsWith('style:')) {
       const prop = name.slice(6)
       styles.push({ prop, expr: styleValue(ctx, p, prop), loc })
@@ -117,7 +124,7 @@ function lowerAttributes(ctx, n) {
     }
     attrs.push({ name, value: p.type === 'attribute' ? true : p.value })
   }
-  return { attrs, handlers, directives, styles }
+  return { attrs, handlers, directives, styles, ref }
 }
 
 // ─── components and slots ─────────────────────────────────────────────────────
@@ -126,10 +133,13 @@ function lowerAttributes(ctx, n) {
  * `<Child …>`: the call `makeComponent` emits on the DOM path, as data, read
  * off `componentAttributes` — the one answer to what each attribute is. A
  * prop is `{ name, value }` where `value` is `true` (a bare attribute), a
- * string, or a binding; a spread is a read. `bind:` and `bind:this` are kept
- * as directives, so a target that cannot wire them refuses them by name. An
- * attribute `componentAttributes` refuses is reported, as the DOM path
- * reports it, and passes nothing on either target. `client:` is a hint to a
+ * string, or a binding; a spread is a read. `bind:name={x}` is both halves
+ * the DOM path wires: a live prop reading `x` down, and a `binds` entry whose
+ * `setter` takes the child's changes back up. `ref` is `bind:this`'s setter,
+ * handed the child's exported interface. A bind with no setter to call is
+ * reported and dropped (`bindSetter`). An attribute
+ * `componentAttributes` refuses is reported, as the DOM path reports it, and
+ * passes nothing on either target. `client:` is a hint to a
  * server render and is dropped, as the DOM path drops it without `islands`.
  *
  * `slots` maps a slot name to its lowered children, routed by `routeSlots`,
@@ -139,11 +149,11 @@ function lowerAttributes(ctx, n) {
  * its own name.
  */
 function lowerComponent(ctx, n) {
-  const props = [], spreads = [], directives = []
+  const props = [], spreads = [], binds = []
+  let ref = null
   const at = ctx.posOf(n.start)
   for (const a of componentAttributes(n)) {
     const p = a.attr
-    const loc = ctx.posOf(p.start ?? n.start)
     switch (a.kind) {
       case 'refused':
         ctx.analysis?.errors.push(`${a.message} — ${at}`)
@@ -151,9 +161,15 @@ function lowerComponent(ctx, n) {
       case 'spread':
         spreads.push(read(ctx, a.expr))
         break
-      case 'bind':
+      case 'bind': {
+        const setter = bindSetter(ctx, a, ` — ${at}`)
+        if (!setter) break
+        props.push({ name: a.name, value: { kind: 'binding', expr: read(ctx, a.target), to: 'prop' } })
+        binds.push({ name: a.name, setter })
+        break
+      }
       case 'bind-this':
-        directives.push({ name: p.name, loc })
+        ref = bindSetter(ctx, a, ` — ${at}`)
         break
       case 'prop': {
         let value
@@ -180,7 +196,8 @@ function lowerComponent(ctx, n) {
     loc: ctx.posOf(n.start),
     props,
     spreads,
-    directives,
+    binds,
+    ref,
     slots,
     snippets,
   }
@@ -337,7 +354,7 @@ function lowerEach(ctx, n) {
  */
 function lowerDynamicElement(ctx, n) {
   const at = n.attributes.find((a) => a.name === 'this')
-  const { attrs, handlers, directives, styles } = lowerAttributes(ctx, n)
+  const { attrs, handlers, directives, styles, ref } = lowerAttributes(ctx, n)
   const tag = !at ? null : at.type === 'exp' ? read(ctx, unwrapExp(at.value)) : expr(ctx, at.value, JSON.stringify(at.value))
   return {
     kind: 'dynamic-element',
@@ -347,6 +364,7 @@ function lowerDynamicElement(ctx, n) {
     handlers,
     directives: directives.filter((d) => d.name !== 'this'),
     styles,
+    ref,
     children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
   }
 }
@@ -372,7 +390,7 @@ function lowerNode(ctx, n) {
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
       if (n.name === 'slot') return lowerSlot(ctx, n)
-      const { attrs, handlers, directives, styles } = lowerAttributes(ctx, n)
+      const { attrs, handlers, directives, styles, ref } = lowerAttributes(ctx, n)
       return {
         kind: 'element',
         tag: n.name,
@@ -381,6 +399,7 @@ function lowerNode(ctx, n) {
         handlers,
         directives,
         styles,
+        ref,
         children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
         selfClosing: !!n.closedTag,
       }

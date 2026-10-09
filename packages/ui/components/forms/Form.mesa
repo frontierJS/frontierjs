@@ -843,7 +843,7 @@
     // The one thing a quiet window owes the person: a tab closing over an edit
     // that has not been sent yet. It cannot be awaited from here — an unload
     // handler has no await — so it asks rather than promises.
-    if (autosave) window.addEventListener('beforeunload', _unloadGuard)
+    if (autosave && typeof window !== 'undefined') window.addEventListener('beforeunload', _unloadGuard)
 
     // ── a form with nothing to fill in ───────────────────────────────────
     //
@@ -863,8 +863,9 @@
     //
     // Asked of the DOM because it is the only place the answer is: children
     // arrive as opaque content, so counting them says nothing about whether any
-    // of them is a control.
-    if (!rendered.length) {
+    // of them is a control. A terminal node takes no selector, so a terminal
+    // does not ask.
+    if (!rendered.length && formEl?.querySelectorAll) {
       const controls = formEl?.querySelectorAll('input, select, textarea, [contenteditable="true"]')
       const offered  = resource?.formFields?.({ only, except })?.filter(f => f.control) ?? []
       if (!controls?.length && offered.length) {

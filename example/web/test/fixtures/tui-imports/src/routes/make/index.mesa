@@ -1,0 +1,4 @@
+<script>
+  import Thing from '../../resources/Thing.mesa'
+</script>
+<Thing />

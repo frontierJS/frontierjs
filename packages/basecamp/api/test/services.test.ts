@@ -29,6 +29,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
 import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
+import { keyAllows, narrowForAgent } from '../src/services/api-keys/scopes.ts'
 import { MEMBERSHIP }             from '@frontierjs/junction'
 import { SERVER_READINGS, readingOf } from '../src/core/server-metrics.ts'
 import { NOTIFICATION_KINDS }     from '../src/services/notification-preferences/kinds.ts'
@@ -3273,5 +3274,23 @@ describe('the workbench', () => {
       .rejects.toThrow(/LOCAL_MACHINE=1/)
     await expect(env.as(owner).service('workbench').call('pin', undefined, { path: '~' }))
       .rejects.toThrow(/LOCAL_MACHINE=1/)
+  })
+
+  // A send is `claude -p` with every permission bypassed, on the operator's
+  // machine. Asserted before the LOCAL_MACHINE refusal is reached, so a test
+  // env with no LOCAL_MACHINE cannot pass this by refusing for the other reason.
+  test('an agent is refused it at any standing, over /mcp', async () => {
+    for (const method of ['pins', 'send', 'transcript'])
+      await expect(env.as(owner).service('workbench').call(method, 'abc', { prompt: 'hi' }, { transport: 'mcp' }))
+        .rejects.toThrow(/not offered to an agent/)
+  })
+
+  test('and is never listed to one, nor reachable by any key', () => {
+    const owns = { authMethod: 'session' }
+    const key  = { authMethod: 'apiKey', scopes: ['admin', 'workbench:write', 'workbench:read'] }
+    expect(narrowForAgent({ service: 'workbench', method: 'send' }, owns)).toBe(false)
+    expect(narrowForAgent({ service: 'servers',   method: 'find' }, owns)).toBe(true)
+    expect(keyAllows(key, 'workbench', 'send')).toBe(false)
+    expect(keyAllows(key, 'workbench', 'pins')).toBe(false)
   })
 })
