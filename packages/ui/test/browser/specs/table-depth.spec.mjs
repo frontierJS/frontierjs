@@ -235,4 +235,43 @@ export async function run(t) {
     'a column that is not sortable has no control at all')
   t.is(await t.evaluate(`return ${headers}[1].getAttribute('aria-sort');`), null,
     'and says nothing about sorting')
+
+  /* ── a header that holds a control (FJS-1625) ─────────────────────────── */
+
+  // The `header` snippet is drawn INSIDE the <th> the component writes, beside
+  // the label and the sort button, so aria-sort and the width stay the
+  // component's and a select-all can sit in the column it governs.
+  const hc = `[...document.querySelectorAll('#header-controls thead th')]`
+  t.is(await t.evaluate(`return ${hc}.map(th => th.querySelectorAll('input, button').length).join(',');`),
+    '1,2,1', 'the snippet is rendered in every header cell it answers for, and in none it does not')
+  t.is(await t.evaluate(`return ${hc}[0].querySelector('#pick-all') !== null && ${hc}[0].style.width;`), '3rem',
+    'the control sits in the <th> that keeps its declared width')
+  t.is(await t.evaluate(`return ${hc}[1].getAttribute('aria-sort');`), 'ascending',
+    'a sortable column keeps aria-sort with a control beside its sort button')
+  t.is(await t.evaluate(`return ${hc}[0].querySelector('.visually-hidden')?.textContent;`), 'Select',
+    'a hideLabel column is still announced')
+  await t.clickAt('#freeze-ref')
+  await t.eventually(`document.getElementById('acted').textContent`, 'freeze ref',
+    'the snippet is handed the column')
+  await t.clickAt('#remove-who')
+  await t.eventually(`document.getElementById('acted').textContent`, 'remove who',
+    'and a control in a plain header works')
+
+  /* ── a row keeps its own state (FJS-1622) ─────────────────────────────── */
+
+  // The checkbox is uncontrolled, so which record it sits beside after a
+  // removal is decided by the key alone. Tick Grace (row 2 of 3), drop Ada:
+  // keyed, the tick stays with Grace; by index it stays at position 2 and lands
+  // on Alan.
+  const ticked = (id) => `
+    return [...document.querySelectorAll('#${id} tbody tr')]
+      .filter(tr => tr.querySelector('input').checked).map(tr => tr.textContent.trim()).join(',');`
+  for (const id of ['byField', 'byFn', 'byIndex']) {
+    await t.clickAt(`#${id} tbody tr:nth-child(2) input`)
+  }
+  await t.clickAt('#drop-first')
+  await t.eventually(`document.querySelectorAll('#byField tbody tr').length`, 2, 'a row was dropped')
+  t.is(await t.evaluate(ticked('byField')), 'Grace', 'rowKey as a field name keeps the tick with its record')
+  t.is(await t.evaluate(ticked('byFn')), 'Grace', 'rowKey as a function keeps the tick with its record')
+  t.is(await t.evaluate(ticked('byIndex')), 'Alan', 'no rowKey keys by position, as it always did')
 }

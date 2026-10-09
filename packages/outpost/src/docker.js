@@ -101,6 +101,19 @@ export function createDocker({
     return result.stdout.trim()
   }
 
+  /** Run git, or throw with what it said. A clone that failed and was ignored
+   *  built whatever the work directory last held, or nothing, and reported the
+   *  release as built. */
+  async function git(args) {
+    const result = await run(['git', ...args], { timeoutMs: 600_000 })
+    if (result.exitCode !== 0) {
+      const said = (result.stderr || result.stdout || '').trim().split('\n').slice(-3).join(' ')
+      const verb = args[0] === '-C' ? args[2] : args[0]
+      throw new Error(`git ${verb} failed (exit ${result.exitCode}): ${said}`)
+    }
+    return result.stdout
+  }
+
   /** How to name the bytes on the command line.
    *
    *  `name@sha256:…` is a REPO digest — what a registry answered when the image
@@ -255,13 +268,14 @@ export function createDocker({
       // process's working directory.
       const exists = await run(['test', '-d', `${dir}/.git`])
       if (exists.exitCode === 0) {
-        await run(['git', '-C', dir, 'fetch', '--depth', '1', 'origin', source.branch ?? 'main'])
-        await run(['git', '-C', dir, 'reset', '--hard', 'FETCH_HEAD'])
+        await git(['-C', dir, 'fetch', '--depth', '1', 'origin', source.branch ?? 'main'])
+        await git(['-C', dir, 'reset', '--hard', 'FETCH_HEAD'])
       } else {
-        await run(['git', 'clone', '--depth', '1', '--branch', source.branch ?? 'main', source.repo, dir])
+        // `--` so a repo that begins with a dash is a repository and never an option.
+        await git(['clone', '--depth', '1', '--branch', source.branch ?? 'main', '--', source.repo, dir])
       }
 
-      const sha = (await run(['git', '-C', dir, 'rev-parse', 'HEAD'])).stdout.trim()
+      const sha = (await git(['-C', dir, 'rev-parse', 'HEAD'])).trim()
       await docker(['build', '-t', image, dir], { timeoutMs: 1_800_000 })
       return { digest: await digestOf(image), commitSha: sha }
     },

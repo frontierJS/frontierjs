@@ -309,7 +309,7 @@ title: App
     }
   }
 
-  /** A container app points at an image; nothing builds one yet (FJS-1496). */
+  /** This form points a container app at a prebuilt image; a git source is set through the API. */
   async function saveImage({ ship } = {}) {
     error = null; busy = ship ? 'deploy' : 'save'
     try {

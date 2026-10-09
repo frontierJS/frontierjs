@@ -1,5 +1,41 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-08 — `{@const [a, b] = expr}` binds each name (`FJS-1675`)
+
+`{@const}` split its source at the first `=` and used the left side as a name, so an array or object pattern emitted `const $$_const_[bg, fg] = …`: `compile()` reported nothing and the module failed to parse on import. A source starting with `[` or `{` is now parsed with acorn to split pattern from value (a default inside the pattern holds `=` too). One memo evaluates the destructure and returns the names it binds, and each name reads its own key (`$$_const_bg_fg().bg`), so it stays reactive; a value that reads no signal emits a plain `const [..] = ..`. The each-pattern name walker is now `patternBindingNames`, shared with the `{#each}` header. A pattern that does not parse reports the existing `expected assignment form` error.
+
+Proof: `test/emission.test.js` — array and object (rename, nested default) patterns inside `{#each}`, red before the fix, the array case re-derived after a signal write; full `bun run test` 2216 pass plus the three browser drives.
+
+## 2026-10-08 — an object-literal prop default is an object (`FJS-2122`)
+
+`export let r = { a: 1, b: 2 }` registered its fallback as `() => { a: 1, b: 2 }`, a block body: a SyntaxError at load for two keys, and for one key a label statement returning `undefined`, so a prop reset to `undefined` lost its default. The fallback now parenthesizes the expression at all three emit sites (`makeExternalProperty` in both prop paths and the deferred `propDefault`). `FilterBar`'s `export let value = {}` was one of the silent cases.
+
+Proof: `test/object-literal-prop-default.test.js` — red on the one-key fallback and the deferred literal before the fix; full vitest 2214 pass.
+
+## 2026-10-08 — `$: ({ a, b } = obj)` declares its names (`FJS-1676`)
+
+A destructuring `$:` compiled to a bare effect writing names nothing declared, so the render died with "a is not defined" and a hint blaming the browser. Svelte 4 declares every name such a statement writes, and `const { a, b } = obj` already expands to one binding per name here, so `analyzeScript` now sends an undeclared pattern through `expandPattern` and marks each result a writable derived. Names already declared keep the effect they were; a mix of declared and undeclared is refused naming the one that is declared; a rest element, a computed key or a pattern with a default of its own is refused with the one-`$:`-per-name spelling.
+
+Proof: `test/reactive-destructure.test.js` — five of seven red before the fix, rendering and re-deriving after; full vitest 2211 pass.
+
+## 2026-10-08 — a top-level binding named `valueOf`, `toString` or `constructor` compiles (`FJS-1677`)
+
+`topoSort` read `extraDeps[v.name]` and `nameMap[dep]` off plain objects, so a binding named for an `Object.prototype` member got the inherited function back and `[...fn]` threw "Spread syntax requires ...iterable" from inside the compiler, with no line. The sort's name map and the class-ordering edge map (`classEdges`, also read by the declaration-order check and `flushDecl`) are now `Map`s.
+
+Proof: `test/proto-name-binding.test.js` — red before the fix for five prototype names, green after; full vitest 2204 pass.
+
+## 2026-10-08 — a `$:` assignment reading a plain `const` declared below it is refused by name (`FJS-1679`)
+
+`$: doubled = twice(n)` computes where it is written, so `const twice = (x) => x * 2` below it was still in its TDZ and the render died with "Cannot access 'twice' before initialization", naming neither line. Svelte 4 hoists every `$:` after the whole script; Mesa keeps source order (owner ruling) and the compiler now says it: `'$: doubled = ...' reads 'twice', which is declared below it`, with the two fixes, move the const up or write a function declaration. Only a plain `const` can throw — a derived const is read through a memo, a `let` through a signal, a function declaration is hoisted — and a callback handed to a call is followed (`.map(x => k + x)` runs at once) where a stored arrow is not. The `$:` side-effect forms were not affected.
+
+Proof: `test/const-promotion.test.js` "FJS-1679" — red with the check stubbed out; the four shapes that do not throw stay clean. All 507 `.mesa` files in the workspace compile without the new error.
+
+## 2026-10-08 — raw HTML in Markdown prose carries its own file line in `data-fjs-loc` (`FJS-2117`)
+
+Only hast elements were stamped, so a `<span>` or a block `<div>` written in prose reached the Mesa compiler as a `raw` node's text and got the template's line. The same rehype plugin now stamps each lowercase opening tag inside a `raw` node with its own `line:column` (scanning past quoted values, `{}` expressions and comments); the compiler already keeps a tag that arrives stamped. A component tag makes no element, so it has nothing to stamp.
+
+Proof: `test/md-loc.test.js` "raw HTML in Markdown" — `span x.md:3:6`, `div x.md:5:1`, `em x.md:7:3`, and `b` past frontmatter and a script block; red with the raw branch stubbed out.
+
 ## 2026-10-08 — a `.md` file's `data-fjs-loc` names a line of the file (`FJS-1711`)
 
 An 11-line `x.md` was stamped `x.md:12:1`: the stamp is the position in the Mesa template the Markdown compiles to, which has frontmatter, the script block and remark's own newlines in front of it. `compileMd` now adds a last rehype plugin when `loc` is on that stamps each element with `line:column` from its hast position, offset by the lines ahead of the body; the compiler sees an element that arrives already stamped, prefixes the file name (`ctx.locIn`) and does not stamp it again, or drops the stamp when `loc` is off. Raw inline HTML and component tags in prose are not hast elements and still carry the template position.

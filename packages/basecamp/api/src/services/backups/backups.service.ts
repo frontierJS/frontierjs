@@ -1,5 +1,6 @@
 // src/services/backups/backups.service.ts
-// Archives of the application database — the hub tier's own safety net.
+// Archives of everything the application keeps (every declared database and the
+// job queue) — the hub tier's own safety net.
 //
 // Mounted at /backups, behind `requireSystemAdmin()` like /hub and /hub-config.
 // `Backup` is `@@tenant(none)`: an archive is of the whole installation, every

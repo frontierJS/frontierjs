@@ -1503,3 +1503,38 @@ describe('a component may not declare the calling convention', () => {
     expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
   })
 })
+
+describe('{@const} with a destructuring pattern', () => {
+  // `{@const [bg, fg] = heat(x)}` emitted `const $$_const_[bg, fg] = …`, a
+  // module that failed to parse on import while compile() reported no error
+  // (FJS-1675).
+  it('binds each array name, reactively', async () => {
+    const C = await build(
+      `<script>let n = 1</script>
+{#each [10, 20] as base}
+  {@const [lo, hi] = [base + n, base * 2 + n]}
+  <p data-lo={lo}>{lo}-{hi}</p>
+{/each}
+<button on:click={() => n = 2}>go</button>`, 'ArrConst.mesa')
+    const c = mount(C)
+    const text = () => [...c.querySelectorAll('p')].map(p => p.textContent)
+    expect(text()).toEqual(['11-21', '21-41'])
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(text()).toEqual(['12-22', '22-42'])
+    expect([...c.querySelectorAll('p')].map(p => p.getAttribute('data-lo'))).toEqual(['12', '22'])
+    c.remove()
+  })
+
+  it('binds each object name, defaults and renames included', async () => {
+    const C = await build(
+      `<script>let rows = [{ a: 1, b: { c: 2 } }, { a: 3, b: {} }]</script>
+{#each rows as r}
+  {@const { a, b: { c = 9 }, d = 'x' } = r}
+  <p>{a}-{c}-{d}</p>
+{/each}`, 'ObjConst.mesa')
+    const c = mount(C)
+    expect([...c.querySelectorAll('p')].map(p => p.textContent)).toEqual(['1-2-x', '3-9-x'])
+    c.remove()
+  })
+})

@@ -608,6 +608,20 @@ describe('load() integration', () => {
     expect(page.icon).toBe('👥')
   })
 
+  test('a frontmatter key the next route does not declare leaves page', async () => {
+    const tree = makeTree()
+    const leadsNode = tree.children.find(n => n.id === 'leads')
+    leadsNode.meta = { ...leadsNode.meta, frame: 'bare' }
+
+    initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
+    await waitForNav()
+    await goto('/leads/')
+    expect(page.frame).toBe('bare')
+    await goto('/blog/')
+    expect('frame' in page).toBe(false)
+    expect(page.title).toBe('Blog')
+  })
+
     test('load() result is committed to data signal', async () => {
     const tree = makeTree()
     const loaders = {

@@ -51,7 +51,7 @@ describe('data-fjs-loc on raw HTML in Markdown', () => {
     expect(locs(ctx)).toEqual([
       'h1 x.md:1:1',
       'p x.md:3:1',
-      'span x.md:3:11',
+      'span x.md:3:6',
       'div x.md:5:1',
       'em x.md:7:3',
     ])

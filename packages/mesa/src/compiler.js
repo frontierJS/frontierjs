@@ -1066,6 +1066,23 @@ export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
   return lift ? liftKeyedEquals(result, lift) : result
 }
 
+// ─── Names bound by a destructuring pattern ─────────────────────────────────
+
+/** Every identifier an acorn binding pattern declares, in source order. */
+function patternBindingNames(patterns) {
+  const names = new Set()
+  const add = (p) => {
+    if (!p) return
+    if (p.type === 'Identifier') names.add(p.name)
+    else if (p.type === 'AssignmentPattern') add(p.left)
+    else if (p.type === 'RestElement') add(p.argument)
+    else if (p.type === 'ArrayPattern') p.elements.forEach(add)
+    else if (p.type === 'ObjectPattern') p.properties.forEach((prop) => add(prop.value || prop.argument || prop.key))
+  }
+  patterns.forEach(add)
+  return [...names]
+}
+
 // ─── {#each} keyed-equality lift ────────────────────────────────────────────
 //
 // `selected === row.id` in a row reads `selected`, so one write re-runs that
@@ -3380,6 +3397,39 @@ export function analyzeScript(raw, ast) {
     return true
   }
 
+  /**
+   * The names a destructuring pattern binds, and whether `expandPattern` can
+   * express all of it (`flat`): a rest element, a computed key or a pattern
+   * with a default of its own cannot be written as one member read per name.
+   */
+  const patternBindings = (pattern) => {
+    const names = []
+    let flat = true
+    const walk = (p) => {
+      if (!p) return
+      if (p.type === 'Identifier') names.push(p.name)
+      else if (p.type === 'AssignmentPattern') {
+        if (p.left.type === 'Identifier') names.push(p.left.name)
+        else flat = false
+      } else if (p.type === 'ObjectPattern') {
+        for (const prop of p.properties) {
+          if (prop.type === 'RestElement') { flat = false; walk(prop.argument) }
+          else {
+            if (prop.computed) flat = false
+            walk(prop.value)
+          }
+        }
+      } else if (p.type === 'ArrayPattern') {
+        for (const el of p.elements) {
+          if (el?.type === 'RestElement') { flat = false; walk(el.argument) }
+          else walk(el)
+        }
+      } else flat = false
+    }
+    walk(pattern)
+    return { names, flat }
+  }
+
   // ── Pass 1: classify declarations ──────────────────────────────────────────
   const contextProvides = []   // { key, initRaw, nodeStart }
   const exportedMembers = []   // { name } — `export function` on the instance API
@@ -3872,6 +3922,42 @@ export function analyzeScript(raw, ast) {
         continue
       }
 
+      // Shape 5b: $: ({ a, b } = obj) / $: ([a, b] = pair) — the pattern's names
+      // are the declaration, one writable derived each, expanded the way
+      // `const { a, b } = obj` is. Names that are all declared already keep
+      // the plain effect they always were.
+      if (
+        expr.type === 'AssignmentExpression' &&
+        expr.operator === '=' &&
+        (expr.left.type === 'ObjectPattern' || expr.left.type === 'ArrayPattern')
+      ) {
+        const { names, flat } = patternBindings(expr.left)
+        const declared = names.filter((n) => vars[n])
+        if (declared.length < names.length) {
+          const first = names.find((n) => !vars[n])
+          const rhs = raw.slice(expr.right.start, expr.right.end)
+          if (declared.length) {
+            errors.push(
+              `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' — '${declared[0]}' is already declared ` +
+              `but '${first}' is not. A '$:' pattern declares all of its names or none of them: ` +
+              `declare all with let, or remove the let for '${declared[0]}'.`
+            )
+          } else if (!flat) {
+            errors.push(
+              `'$: ${raw.slice(expr.left.start, expr.left.end)} = ...' cannot declare a rest element or a ` +
+              `computed key. Write one '$:' per name: '$: ${first} = ${rhs}.${first}'.`
+            )
+          } else {
+            const before = new Set(Object.keys(vars))
+            const rhsExpr = ['Identifier', 'MemberExpression'].includes(expr.right.type) ? rhs : `(${rhs})`
+            if (expandPattern(expr.left, rhsExpr, 'let', node)) {
+              for (const n of names) if (!before.has(n) && vars[n]) vars[n].isWritableDerived = true
+            }
+          }
+          continue
+        }
+      }
+
       // Anything else (call expression, assignment, template literal, etc.)
       // is a $: auto-tracked side effect expression. Dependencies are detected
       // from the reactive variables referenced in the expression body.
@@ -4085,6 +4171,23 @@ export function analyzeScript(raw, ast) {
       `'${v.name}' reads itself in its own initializer, before it has a value. ` +
       `Read it inside a callback the initializer hands out, which runs once '${v.name}' exists.`
     )
+  }
+
+  // A `$: x = expr` computes expr where it is written, and a plain `const`
+  // below it is still in its TDZ there. A derived const is read through a memo
+  // and a `let` through a signal, so neither throws; a callback handed to a
+  // call is followed since `.map(...)` runs it at once.
+  for (const v of Object.values(vars)) {
+    if (!v.isWritableDerived || !v.initNode) continue
+    for (const c of Object.values(vars)) {
+      if (c.kind !== 'const' || c.isDerived || c.isProp || c.nodeStart <= v.nodeStart) continue
+      if (!readsName(v.initNode, c.name, (_fn, call) => !!call)) continue
+      errors.push(
+        `'$: ${v.name} = ...' reads '${c.name}', which is declared below it. A '$:' assignment ` +
+        `runs where it is written, so '${c.name}' has no value yet. Move 'const ${c.name}' above the '$:' ` +
+        `line, or make it a function declaration, which is available from the top of the script.`
+      )
+    }
   }
 
   // ── Pass 3: annotate handlers and effects ──────────────────────────────────
@@ -5519,8 +5622,42 @@ export function buildBlock(data, option = {}) {
           // Usage: {@const total = price * qty}
           const constExpr = n.value.slice('@const '.length).trim()
           const eqIdx = constExpr.indexOf('=')
-          if (eqIdx === -1) {
+          // A pattern is split by the parser: its own defaults hold `=`, so the
+          // first one is not the assignment.
+          let pattern = null
+          if (/^[[{]/.test(constExpr)) {
+            try {
+              const decl = acorn.parse(`const ${constExpr}`, { ecmaVersion: 'latest' }).body[0].declarations[0]
+              if (decl.init) {
+                pattern = {
+                  names: patternBindingNames([decl.id]),
+                  source: constExpr.slice(0, decl.id.end - 6),
+                  value: constExpr.slice(decl.init.start - 6, decl.init.end - 6),
+                }
+              }
+            } catch {}
+          }
+          if (eqIdx === -1 || (!pattern && /^[[{]/.test(constExpr))) {
             ctx.analysis.errors.push(`{@const}: expected assignment form: {@const name = expr}`)
+          } else if (pattern) {
+            // One memo holds the values the pattern names; each name reads its
+            // own key, so a name that is not used wakes nothing.
+            const rewritten = ctx.accessors ? rewriteExpr(pattern.value, ctx.accessors) : pattern.value
+            ctx.detectDependency(pattern.value)
+            const isReactive = rewritten !== pattern.value
+            const memoName = `$$_const_${pattern.names.join('_')}`
+            const { names, source } = pattern
+            if (isReactive) {
+              if (ctx.accessors) names.forEach(nm => { ctx.accessors[nm] = `${memoName}().${nm}` })
+              binds.push(xNode('constTag', { memoName, names, source, rewritten }, (w, nd) => {
+                w.writeLine(`const ${nd.memoName} = $$runtime.createMemo(() => { const ${nd.source} = ${nd.rewritten}; return { ${nd.names.join(', ')} }; });`)
+                w.writeLine(`const { ${nd.names.join(', ')} } = ${nd.memoName}();`)
+              }))
+            } else {
+              binds.push(xNode('constTag', { source, rewritten }, (w, nd) => {
+                w.writeLine(`const ${nd.source} = ${nd.rewritten};`)
+              }))
+            }
           } else {
             const constName = constExpr.slice(0, eqIdx).trim()
             const constVal  = constExpr.slice(eqIdx + 1).trim()
@@ -6127,17 +6264,7 @@ export function makeEachBlock(data, option) {
   if (isDestructure) {
     try {
       const fn = acorn.parseExpressionAt(`(${destructurePattern}) => 0`, 0, { ecmaVersion: 'latest' })
-      const names = new Set()
-      const add = (p) => {
-        if (!p) return
-        if (p.type === 'Identifier') names.add(p.name)
-        else if (p.type === 'AssignmentPattern') add(p.left)
-        else if (p.type === 'RestElement') add(p.argument)
-        else if (p.type === 'ArrayPattern') p.elements.forEach(add)
-        else if (p.type === 'ObjectPattern') p.properties.forEach((prop) => add(prop.value || prop.argument || prop.key))
-      }
-      fn.params.forEach(add)
-      patNames = [...names]
+      patNames = patternBindingNames(fn.params)
     } catch (e) {
       assert(false, `Wrong #each pattern '${destructurePattern}' in '${data.value}': ${e.message}`)
     }
@@ -8240,7 +8367,7 @@ export function emitScript(ctx) {
     // The fallback is what a later `undefined` from the parent resolves to; a
     // default that reads the script's own declarations is registered in step 5b.
     const fallback = v.initRaw && !hasReactiveDeps
-      ? `, () => ${rewriteExpr(v.initRaw, ctx.accessors)}`
+      ? `, () => (${rewriteExpr(v.initRaw, ctx.accessors)})`
       : ''
     mod.head.push(xNode.raw(`$$runtime.makeExternalProperty('${v.name}', ${sigR}, ${sigW}${fallback});`))
     if (ctx.config?.dev) {
@@ -8280,7 +8407,7 @@ export function emitScript(ctx) {
     )
     }
     const fallback = v.initRaw && !defaultNeedsDeferring(v, ctx)
-      ? `, () => ${rewriteExpr(v.initRaw, ctx.accessors)}`
+      ? `, () => (${rewriteExpr(v.initRaw, ctx.accessors)})`
       : ''
     mod.head.push(
       xNode.raw(
@@ -8355,13 +8482,13 @@ export function emitScript(ctx) {
   // Ordering-only edges. `v.deps` carries the REACTIVE names a memo subscribes
   // to and is read as such further down, so a class name may not be added to
   // it — the extra map is handed to the sort and goes no further.
-  const classEdges = {}
+  const classEdges = new Map()
   if (classNames.size) {
-    for (const c of classDecls) classEdges[c.name] = c.deps
+    for (const c of classDecls) classEdges.set(c.name, c.deps)
     for (const v of nonPropVars) {
       const refs = v.initNode ? collectRefs(v.initNode) : new Set()
       const named = [...refs].filter((r) => classNames.has(r))
-      if (named.length) classEdges[v.name] = named
+      if (named.length) classEdges.set(v.name, named)
     }
   }
 
@@ -8373,7 +8500,7 @@ export function emitScript(ctx) {
     const declared = new Set(sorted.map((e) => e.name))
     const seen = new Set()
     for (const entry of sorted) {
-      for (const dep of classEdges[entry.name] || []) {
+      for (const dep of classEdges.get(entry.name) || []) {
         if (declared.has(dep) && !seen.has(dep)) {
           ctx.analysis.errors.push(
             `'${entry.name}' is evaluated before '${dep}', which it needs — a class declaration ` +
@@ -8607,7 +8734,7 @@ export function emitScript(ctx) {
   const flushDecl = (v) => {
     if (!v || _flushed.has(v)) return
     _flushed.add(v)  // before recursing: a cycle is already reported above
-    for (const dep of (classEdges[v.name] || [])) flushDecl(_byName.get(dep))
+    for (const dep of (classEdges.get(v.name) || [])) flushDecl(_byName.get(dep))
     for (const dep of (v.deps || [])) flushDecl(_byName.get(dep))
     for (const n of declBuckets.get(v) || []) mod.code.push(n)
   }
@@ -8783,7 +8910,7 @@ export function emitScript(ctx) {
     mod.code.push(
       xNode.raw(`if ($$option.props?.${name} === undefined) ${write};`)
     )
-    if (!varName) mod.code.push(xNode.raw(`$$runtime.propDefault('${name}', () => ${defaultExpr});`))
+    if (!varName) mod.code.push(xNode.raw(`$$runtime.propDefault('${name}', () => (${defaultExpr}));`))
   })
 
   // ── 5c. Context provides ─────────────────────────────────────────────────
@@ -9071,15 +9198,18 @@ function classDeclTimeRefs(node) {
 }
 
 function topoSort(vars, extraDeps) {
-  const nameMap = Object.fromEntries(vars.map((v) => [v.name, v]))
+  // Maps, not objects: a binding may be named `valueOf`, and a plain object
+  // answers that lookup with the inherited function.
+  const nameMap = new Map(vars.map((v) => [v.name, v]))
   const visited = new Set(),
     result = []
   const visit = (v) => {
     if (visited.has(v.name)) return
     visited.add(v.name)
-    const deps = extraDeps?.[v.name] ? [...v.deps, ...extraDeps[v.name]] : v.deps
+    const extra = extraDeps?.get(v.name)
+    const deps = extra ? [...v.deps, ...extra] : v.deps
     deps.forEach((dep) => {
-      if (nameMap[dep]) visit(nameMap[dep])
+      if (nameMap.has(dep)) visit(nameMap.get(dep))
     })
     result.push(v)
   }

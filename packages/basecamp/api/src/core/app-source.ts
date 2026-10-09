@@ -166,6 +166,10 @@ export function isInline(raw: unknown): boolean {
   return sourceKindOf(raw) === 'inline'
 }
 
+export function isGit(raw: unknown): boolean {
+  return sourceKindOf(raw) === 'git'
+}
+
 /** The image a release of this source pulls, or null for a source that names
  *  none. A release created with only `{ appId }` records this as its `toImage`,
  *  or the runner falls back to the app's NAME and asks the daemon for an image

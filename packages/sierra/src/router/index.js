@@ -992,6 +992,12 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   // therefore win. PAGE_RESERVED lists them, and the scanner warns when a route
   // declares one.
   const _meta = toNode.meta ?? {}
+  // A key the route before declared and this one does not is dropped first,
+  // or it outlives its route: one page's `frame: bare` reached every page a
+  // person went to next, and only a reload cleared it.
+  for (const k of Object.keys(page.meta ?? {})) {
+    if (!PAGE_RESERVED.includes(k) && !(k in _meta)) delete _w()[k]
+  }
   for (const [k, v] of Object.entries(_meta)) {
     if (PAGE_RESERVED.includes(k)) continue
     if (page[k] !== v) _w()[k] = v

@@ -2,7 +2,7 @@
 title: Hub backups
 ---
 <script>
-  // The mock's HubBackupView — archives of the application database.
+  // The mock's HubBackupView — archives of the application's databases.
   //
   // The mock simulated this: a two-second timer, a fabricated size, and a
   // download of a JSON file with `{hub_backup:true}` in it. This one asks the
@@ -159,10 +159,11 @@ title: Hub backups
 {/if}
 
 <Callout tone="warning" title="Taking one is here. Restoring one is not.">
-  A backup is <code>VACUUM INTO</code> — SQLite's own consistent copy of a live database, taken
-  without locking out writers. Restoring means replacing the file this process is reading from
-  while it serves, which is an operator's job with the process stopped. There is no download
-  either: the archive is a path on the machine and nothing serves it.
+  A backup is a folder holding every database the app keeps — the main database, the audit trail
+  and the job queue. Each SQLite file is <code>VACUUM INTO</code>, SQLite's own consistent copy of
+  a live database, taken without locking out writers. Restoring means replacing the files this
+  process is reading from while it serves, which is an operator's job with the process stopped.
+  There is no download either: the archive is a path on the machine and nothing serves it.
 </Callout>
 
 {#if config}

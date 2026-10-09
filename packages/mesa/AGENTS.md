@@ -90,6 +90,7 @@ title: Orders
 | `$: id, (id, prev) => load(id)` | effect on change — does **not** run on mount |
 | `$: { save(draft) }` | effect, auto-tracked — runs on mount and whenever what it reads changes |
 | `$: sel = options[0]` | writable derived: re-derives, but `bind:` may override until the next change |
+| `$: ({ a, b } = obj)` | declares `a` and `b`, one writable derived each (`$: a = obj.a`); rest and computed keys are refused |
 
 ```mesa
 <script>

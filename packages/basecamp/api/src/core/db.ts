@@ -67,6 +67,13 @@ import type { LitestoneClient } from '../../../db/schema.d.ts'
 // client with the schema's own shapes on it.
 export type BasecampDb = LitestoneClient
 
+/** Where Caravan's queue lives: beside the main database, named for it. The
+ *  backup job reads the same answer, so the queue is archived from the file the
+ *  app opened rather than from a second spelling of its path. */
+export function jobsDatabasePath(dbPath: string): string {
+  return dbPath.replace('.db', '-jobs.db')
+}
+
 const SCHEMA_PATH = new URL('../../../db/schema.lite', import.meta.url).pathname
 
 export async function createBasecampDb(): Promise<BasecampDb> {

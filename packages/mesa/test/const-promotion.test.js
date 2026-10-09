@@ -404,3 +404,38 @@ const list = r.list()
 const out = String(list)`)).toEqual([])
   })
 })
+
+// ─── a `$:` assignment over a const declared below it ────────────────────────
+
+// `$: doubled = twice(n)` computes where it is written, so `const twice` below
+// it is in its TDZ and the page died with "Cannot access 'twice' before
+// initialization" (FJS-1679). Svelte hoists every `$:` to run after the whole
+// script; mesa keeps source order and names the line instead.
+describe('FJS-1679: a $: assignment reading a later const', () => {
+  const errorsOf = async (script) =>
+    (await compile(`<script>\n${script}\n</script><p>{doubled}</p>`, { debug: false, css: false })).analysis.errors.join('\n')
+
+  it('names the $: line and the const, with the fix', async () => {
+    const e = await errorsOf(`export let n = 2
+$: doubled = twice(n)
+const twice = (x) => x * 2`)
+    expect(e).toMatch(/'\$: doubled = \.\.\.' reads 'twice', which is declared below it/)
+    expect(e).toMatch(/function declaration/)
+  })
+
+  it('follows a callback handed to a call, which runs at once', async () => {
+    const e = await errorsOf(`export let n = 2
+$: doubled = [1].map((x) => k + x)
+const k = 5`)
+    expect(e).toMatch(/reads 'k'/)
+  })
+
+  it.each([
+    ['a const above it', `export let n = 2\nconst twice = (x) => x * 2\n$: doubled = twice(n)`],
+    ['a function declaration below it', `export let n = 2\n$: doubled = twice(n)\nfunction twice(x) { return x * 2 }`],
+    ['a derived const below it', `export let n = 2\n$: doubled = tw + 1\nconst tw = n * 2`],
+    ['a lazy function that reads it', `export let n = 2\n$: doubled = () => k + n\nconst k = 5`],
+  ])('leaves %s alone', async (_, script) => {
+    expect(await errorsOf(script)).toBe('')
+  })
+})

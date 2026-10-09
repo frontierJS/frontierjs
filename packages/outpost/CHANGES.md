@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-09 — `POST /build` builds a git source on its own, and a failed clone fails the build (`FJS-1496`)
+
+Basecamp's `Build image` step needs the build apart from the start, so a build that fails does so before the live container is touched. `/build` takes `app_id`, `source` and `image` and answers `{ digest, commit_sha }`; `/deploy` given a `digest` starts those bytes and no longer builds from a git source. `docker.build` ignored the exit code of `git clone`, `fetch` and `reset`, so a clone that failed built whatever the work directory last held. It throws now with git's own words, and the clone passes `--` before the repo so a repo beginning with a dash is not an option.
+
 ## 2026-10-08 — three audit holes closed (`FJS-1856`, `FJS-1857`, `FJS-1858`)
 
 A malformed percent-escape on 8181 is a 400, not a `URIError` out of `handle()`. `/exec` with `timeout_s` of `0`, `null` or `NaN` runs under the 300s default, and `spawnRun` no longer treats a non-positive bound as no timer. The heartbeat and reports sign their `x-service-method` (toolbelt's canonical string has a seventh line). `FJS-1834` closed under `FJS-D618` (A): a host label that names an app answers only from that app; a label that names none still tries the path.

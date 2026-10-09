@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-10-08 — `<Table>` takes a `rowKey`, so a row's own state follows its record (`FJS-1622`)
+
+Rows were keyed by position and no prop reached the key, so state a row snippet held — an open `<Json>` tree, a focused or uncontrolled input — stayed at the index when a row was removed: dropping row 0 handed every block its neighbour's record. `rowKey` is a field name or `(row, i) => key`; unstated, the position, as before. `table-depth.spec.mjs` ticks the second of three rows, drops the first, and asserts the tick stays with its record under both forms and with the position without one.
+
+## 2026-10-08 — `<Table>` takes a `header` snippet, so a column header can hold a control (`FJS-1625`)
+
+A `<th>` was drawn from `col.label` alone, so a select-all checkbox, a freeze or remove button, or a resize handle could not sit in the column it governs. `header(col)` is now rendered inside the `<th>` after the label or sort button, and never in place of them: `aria-sort` and `width` stay the component's, and a column that wants a control and no visible text declares `hideLabel`, so the cell is still announced. `table-depth.spec.mjs` holds it against a real browser.
+
 ## 2026-10-08 — `AGENTS.md` says what `stated()` does with `null` (`FJS-1441`)
 
 `AGENTS.md` and the `utils.js` comment said only `undefined` means *not stated*; the function treats `null` the same, and 57 call sites rely on it so a nullable column handed to a prop falls back to the schema. The documents now say that, and that `optionsError=""` is how a caller states *no error* over a control's own fetch. `test/form.mjs` pins the contract.

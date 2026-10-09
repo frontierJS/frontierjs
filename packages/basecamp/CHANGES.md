@@ -1,5 +1,13 @@
 # Changes — Basecamp
 
+## 2026-10-09 — a backup archives every database the app keeps (`FJS-1766`)
+
+`backup:run` ran `VACUUM INTO` over the main database and nothing else, while the schema declares `database audit` (a trail, a directory) and `app.ts` opens a second SQLite file for the job queue — so an archive restored every row and none of the audit trail or the pending jobs, and the screen called it a backup of the application. An archive is now a directory, `backups/basecamp-<stamp>/`, holding `<name>.db` for every SQLite database in the client's `$databases`, a copy of each directory-driven one (`audit/`), and `jobs.db`. The set is read from the client rather than listed, so a database added to the schema is archived without an edit; `jobsDatabasePath()` in `core/db.ts` is the one spelling of the queue's file, shared by `app.ts` and the job. `Backup.location` is the directory and `sizeBytes` its total. `api/test/backup-run.test.ts` is the proof; the hub backups callout says what a backup now holds.
+
+## 2026-10-09 — a git container app builds on its machine and starts what it built (`FJS-1496`)
+
+A git-sourced container or function app now gets `Validate`, `Build image`, `Start container`, `Health check`, and `deployments.create` accepts it. The build step calls Outpost's new `/build` with a per-release tag (`fjs-<app>:<deployment>`) and records the digest it answers; the start step sends that digest, so `/deploy` builds nothing a second time. There is no `Push image`: nothing sits between the machine that builds and the one that runs. A rollback to a built release gets `Validate`, `Start container`, `Health check` and starts the digest the target recorded, since a rebuild would ship the branch as it is now. An app with no source, or a database with a git source, is still refused. Proved by `api/test/inline-app.test.ts` and `@frontierjs/outpost`'s `/build` tests.
+
 ## 2026-10-08 — `compute.test.ts` pauses the `fleet` queue (`FJS-1173`, `FJS-1612`)
 
 The file drives every provision and destroy step by hand, but `servers.provision` and `servers.destroy` also dispatched the real jobs onto a running queue. They raced the assertions, and a provision asleep in its 5 s poll at `env.close` outran both caravan's shutdown grace and bun's hook timeout, which is the unnamed `afterAll` failure. `beforeAll` now pauses `fleet`, so no job runs in this file. The file passes 101/101 three times at load 10–14 and logs no job lines.

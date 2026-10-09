@@ -11,7 +11,8 @@ import { $ } from '@frontierjs/junction'
 // Outpost protocol (Conduit → outpost:<server-id>). Every reply may carry a
 // `digest`, and that is the whole of what makes a release addressable:
 //   POST /pull         { image }                          → { digest }
-//   POST /deploy       { deployment_id, image, digest, hosts, … } → { digest }, once healthy;
+//   POST /build        { app_id, source, image }          → { digest, commit_sha }; a git source, built on the machine that runs it
+//   POST /deploy      { deployment_id, image, digest, hosts, … } → { digest }, once healthy;
 //                      a release that fails puts the previous container back (FJS-1765)
 //   POST /stop         { app_id }                          → container and route gone (sent by apps.remove, never by a release)
 //   POST /route        { app_id, hosts }                   → Caddy re-routed, no restart (sent by domain:dns)
@@ -38,12 +39,12 @@ import { $ } from '@frontierjs/junction'
 // A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
 
 import { defineJob }       from '@frontierjs/caravan'
-import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
+import { resolveExecutor, isExecutor, PULL_TIMEOUT_MS, BUILD_TIMEOUT_MS, DEPLOY_TIMEOUT_MS } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
 import domainDns                from './domain-dns.job.ts'
-import { isInline, inlineFilesFor } from '../core/app-source.ts'
+import { isInline, isGit, inlineFilesFor } from '../core/app-source.ts'
 import { releaseEnv } from '../core/variables.ts'
 import { runtimeOf, routedHosts, markRunning, type Runtime } from '../core/runtime.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
@@ -268,7 +269,10 @@ function runner(app: BasecampApp) {
     if (isInline(source)) return runInlineStep(step, { ...ctx, source })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
-    const image = deploy.toImage ?? service.name
+    // A git release is named for itself: two builds of one app share nothing
+    // but the repository, and a tag both write is a tag the older one loses.
+    const image = deploy.toImage
+      ?? (isGit(source) ? `fjs-${deploy.appId}:${deploy.id}`.toLowerCase() : service.name)
 
     // Said on every step of a stubbed release rather than once on the row: a
     // step list where each line reads 'no /deploy was issued' cannot be mistaken
@@ -276,7 +280,19 @@ function runner(app: BasecampApp) {
     const note = (reply: { data?: Record<string, unknown> }) =>
       reply.data?.stubbed ? String(reply.data.note ?? 'stub executor — nothing was issued') : undefined
 
-    if (name.includes('pull')) {
+    if (name.includes('build')) {
+      const reply = await executor.call('/build', {
+        app_id: deploy.appId, source, image,
+      }, { timeoutMs: BUILD_TIMEOUT_MS })
+      if (reply.error) throw new Error(`Build failed: ${reply.error.message}`)
+      const built = asDigest(reply.data?.digest)
+      // A built image that cannot be named by its bytes cannot be started by
+      // them, and /deploy would build a second time.
+      if (!built && !reply.data?.stubbed) throw new Error('Build failed: the machine reported no image digest')
+      const sha = typeof reply.data?.commit_sha === 'string' ? reply.data.commit_sha.slice(0, 7) : null
+      return { output: note(reply) ?? (sha ? `built ${sha}` : undefined), digest: built ?? digest }
+
+    } else if (name.includes('pull')) {
       const reply = await executor.call('/pull', { image, digest }, { timeoutMs: PULL_TIMEOUT_MS })
       if (reply.error) throw new Error(`Pull failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }

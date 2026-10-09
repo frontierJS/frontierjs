@@ -153,7 +153,7 @@ describe('what the machine is asked to do', () => {
     expect(body.commit_sha).toBe('c0ffee')
 
     const argv = fake.calls.map(c => c.join(' '))
-    expect(argv.some(c => c.startsWith('git clone --depth 1 --branch main https://git.test/acme/web.git'))).toBe(true)
+    expect(argv.some(c => c.startsWith('git clone --depth 1 --branch main -- https://git.test/acme/web.git'))).toBe(true)
     expect(argv.some(c => c.startsWith('docker build -t acme-web'))).toBe(true)
     // Started by the BYTES, and for an image built here that is the id on its
     // own. `acme-web@<id>` is what this used to send, and it is a reference no
@@ -170,6 +170,57 @@ describe('what the machine is asked to do', () => {
     expect(argv.findIndex(c => c.startsWith('docker run'))).toBeGreaterThan(at('docker stop -t 10 fjs-app-1_replaced'))
     expect(argv.lastIndexOf('docker rm -f fjs-app-1_replaced')).toBeGreaterThan(argv.findIndex(c => c.startsWith('docker run')))
     expect(argv).not.toContain('docker rm -f fjs-app-1')
+  })
+
+  // A build of its own, so a failing one is a red "Build image" step and the
+  // live container is never touched (FJS-1496).
+  describe('a build on its own', () => {
+    const GIT = { kind: 'git', repo: 'https://git.test/acme/web.git', branch: 'main' }
+    const serverFor = (answers) => {
+      const fake = fakeRunner({ 'docker image inspect': { stdout: DIGEST + '\n' }, 'test -d': { exitCode: 1 }, ...answers })
+      const server = createOutpostServer(CONFIG, {
+        docker: createDocker({ run: fake.run, workDir: CONFIG.workDir }), inspector: createInspector({ run: fake.run }),
+        log: { warn() {}, error() {} },
+      })
+      return { fake, server, argv: () => fake.calls.map(c => c.join(' ')) }
+    }
+
+    test('/build answers the digest and the commit, and starts nothing', async () => {
+      const { server, argv } = serverFor({ 'git -C': { stdout: 'c0ffee\n' } })
+      const body = await (await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'fjs-app-1:dep-1' })).json()
+
+      expect(body.digest).toBe(DIGEST)
+      expect(body.commit_sha).toBe('c0ffee')
+      expect(argv().some(c => c.startsWith('docker build -t fjs-app-1:dep-1'))).toBe(true)
+      expect(argv().some(c => c.startsWith('docker run') || c.startsWith('docker rename'))).toBe(false)
+    })
+
+    test('a clone that fails is the build failing, with git\'s words', async () => {
+      // Ignored, the build ran over an empty directory or the last checkout.
+      const { server, argv } = serverFor({ 'git clone': { exitCode: 128, stderr: 'fatal: repository not found\n' } })
+      const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: GIT, image: 'x' })
+
+      expect(res.status).toBe(500)
+      expect((await res.json()).error).toContain('repository not found')
+      expect(argv().some(c => c.startsWith('docker build'))).toBe(false)
+    })
+
+    test('a source that is not git is refused', async () => {
+      const { server } = serverFor({})
+      const res = await send(server, 'POST', '/build', { app_id: 'app-1', source: { kind: 'image', image: 'nginx' } })
+      expect(res.status).toBe(500)
+    })
+
+    test('/deploy given the digest of a build starts those bytes and builds nothing', async () => {
+      const { server, argv } = serverFor({ 'docker run': { stdout: 'container-1\n' } })
+      const res = await send(server, 'POST', '/deploy', {
+        deployment_id: 'dep-1', app_id: 'app-1', image: 'fjs-app-1:dep-1', digest: DIGEST, source: GIT, config: { port: 3000 },
+      })
+
+      expect(res.status).toBe(200)
+      expect(argv().some(c => c.startsWith('git ') || c.startsWith('docker build'))).toBe(false)
+      expect(argv().find(c => c.startsWith('docker run'))).toContain(DIGEST)
+    })
   })
 
   describe('a release that fails puts the old container back (FJS-1765)', () => {

@@ -18,7 +18,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
-import { isInline, imageOf } from '../../core/app-source.ts'
+import { isInline, isGit, imageOf } from '../../core/app-source.ts'
 import { snapshotVariables } from '../../core/variables.ts'
 import { runtimeOf } from '../../core/runtime.ts'
 
@@ -46,18 +46,24 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
  * container itself, after every check it can refuse on, so a refused release
  * leaves the live one serving; a stop sent first had already taken it down by
  * the time the refusal arrived (`FJS-1682`).
+ *
+ * A git release builds on the machine that runs it, so it has a build and no
+ * push: there is no registry between the two. `built` is a release putting back
+ * bytes an earlier one already built (a rollback) — building again would ship
+ * the branch as it is now, which is neither release.
  */
-function buildInitialSteps(target: { type: string; source?: unknown }): string[] {
+function buildInitialSteps(target: { type: string; source?: unknown }, built = false): string[] {
   if (isInline(target.source))
     return ['Validate', 'Upload files', 'Activate', 'Health check']
-  // An image somebody else built has nothing to build or push, and every
-  // container word but those two still applies: a build list here sends no
-  // /pull at all and reports the build as done.
-  if ((target.type === 'container' || target.type === 'function') && !imageOf(target.source))
-    return ['Validate', 'Build image', 'Push image', 'Start container', 'Health check']
-  // A database is a container too: a blueprint app carries an image source, and
-  // a list of its own reached Outpost as command-less /exec calls, acknowledged
-  // with nothing started and the App marked running (`FJS-1764`).
+  if ((target.type === 'container' || target.type === 'function') && isGit(target.source))
+    return built
+      ? ['Validate', 'Start container', 'Health check']
+      : ['Validate', 'Build image', 'Start container', 'Health check']
+  // An image somebody else built has nothing to build, and a list that says
+  // otherwise sends no /pull at all and reports the build as done. A database is
+  // a container too: a blueprint app carries an image source, and a list of its
+  // own reached Outpost as command-less /exec calls, acknowledged with nothing
+  // started and the App marked running (`FJS-1764`).
   return ['Validate', 'Pull image', 'Start container', 'Health check']
 }
 
@@ -153,15 +159,16 @@ export function createDeploymentsService(app: BasecampApp) {
       const executor = await resolveExecutor(app, appId)
       if (!isExecutor(executor)) throw new BadRequest(executor.reason)
 
-      // Nothing builds an image yet: the build and push steps reach outpost as a
-      // command-less `/exec`, which acknowledges and does nothing, and the start
-      // step then asks docker to pull the app's NAME from a public registry.
-      // Two green steps and a pull-access error is the release that bought.
+      // A source that is neither an image nor something that builds one leaves
+      // the start step asking docker to pull the app's NAME from a public
+      // registry. Only a git container is built, here on the machine; a
+      // database is an image or nothing.
+      const builds = isGit(target.source) && target.type !== 'database'
       if ((target.type === 'container' || target.type === 'function' || target.type === 'database')
-          && !isInline(target.source) && !imageOf(target.source) && !data.toImage)
+          && !isInline(target.source) && !builds && !imageOf(target.source) && !data.toImage)
         throw new BadRequest(
-          `App '${target.name}' names no image, and nothing builds one yet — ` +
-          `set its source to an image (e.g. nginx:alpine) or to inline files`)
+          `App '${target.name}' names no image — ` +
+          `set its source to an image (e.g. nginx:alpine), a git repository or inline files`)
 
       // What the app looked like at release time: how its container starts
       // (`core/runtime.ts`) and its variables — plain values copied, secrets by
@@ -359,7 +366,7 @@ export function createDeploymentsService(app: BasecampApp) {
         // The step list the TARGET's source needs, not the app's current one.
         // An app switched from inline to a container since that release would
         // otherwise be rolled back through a pipeline its old bytes cannot run.
-        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }).map((name, position) => ({
+        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }, true).map((name, position) => ({
           deploymentId: replacement.id, position, name, status: 'pending',
         })),
       })

@@ -42,10 +42,22 @@
 
   // An actions column: announced, not shown. `#plain` is asserted column by
   // column, so this one gets its own table rather than a fourth entry there.
+  let acted = ''
+  const headerColumns = [
+    { name: 'pick', label: 'Select', hideLabel: true, width: '3rem' },
+    { name: 'ref',  label: 'Reference', sortable: true },
+    { name: 'who',  label: 'Customer' },
+  ]
+
   const actionColumns = [
     { name: 'ref', label: 'Reference' },
     { name: 'act', label: 'Actions', hideLabel: true },
   ]
+
+  // FJS-1622 below.
+  const keyColumns = [{ name: 'who', label: 'Who' }]
+  let people = [{ id: 'a', who: 'Ada' }, { id: 'b', who: 'Grace' }, { id: 'c', who: 'Alan' }]
+  function dropFirst() { people = people.slice(1) }
 </script>
 
 <div id="reported">
@@ -67,6 +79,30 @@
     {/snippet}
   </Table>
 </div>
+
+<!--
+  FJS-1625: a header that holds a control. `pick` is hideLabel -- the cell
+  still announces -- and carries the select-all; `ref` is sortable and gains a
+  freeze toggle, so aria-sort has to survive the snippet sitting beside the
+  sort button; `who` is plain text with a remove button.
+-->
+<div id="header-controls">
+  <Table columns={headerColumns} {rows} orderBy="ref">
+    {#snippet header(col)}
+      {#if col.name === 'pick'}
+        <input type="checkbox" id="pick-all" aria-label="Select all" on:change={() => { acted = 'all' }} />
+      {:else if col.name === 'ref'}
+        <button type="button" id="freeze-ref" on:click={() => { acted = 'freeze ' + col.name }}>Freeze</button>
+      {:else if col.name === 'who'}
+        <button type="button" id="remove-who" on:click={() => { acted = 'remove ' + col.name }}>Remove</button>
+      {/if}
+    {/snippet}
+    {#snippet row(r)}
+      <tr><td></td><td>{r.ref}</td><td>{r.who}</td></tr>
+    {/snippet}
+  </Table>
+</div>
+<output id="acted">{acted}</output>
 
 <div id="plain">
   <Table {columns} {rows} bind:orderBy>
@@ -123,3 +159,26 @@
 <button type="button" id="push-indexed" on:click={() => { pushedOrder = { 0: { ref: 'asc' } } }}>push indexed</button>
 
 <output id="sort">{orderBy}</output>
+
+<!--
+  FJS-1622: rows that hold state of their own. The checkbox is uncontrolled, so
+  where it sits after a removal is the key's doing alone. `byField` keys on a
+  field name, `byFn` on a function of the row, `byIndex` states nothing.
+-->
+<button type="button" id="drop-first" on:click={dropFirst}>drop first</button>
+
+<div id="byField">
+  <Table columns={keyColumns} rows={people} rowKey="id">
+    {#snippet row(r)}<tr><td><input type="checkbox" aria-label={r.who} /> {r.who}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="byFn">
+  <Table columns={keyColumns} rows={people} rowKey={(r, i) => r.id}>
+    {#snippet row(r)}<tr><td><input type="checkbox" aria-label={r.who} /> {r.who}</td></tr>{/snippet}
+  </Table>
+</div>
+<div id="byIndex">
+  <Table columns={keyColumns} rows={people}>
+    {#snippet row(r)}<tr><td><input type="checkbox" aria-label={r.who} /> {r.who}</td></tr>{/snippet}
+  </Table>
+</div>

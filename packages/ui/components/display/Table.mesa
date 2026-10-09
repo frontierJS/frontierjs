@@ -18,6 +18,12 @@
   // tells a reader the line is ABOUT the rows rather than one of them, and it
   // is drawn only over rows: a total of nothing, or of skeletons, says nothing.
   //
+  // `header` is handed each column and drawn INSIDE the <th> after the label or
+  // sort button, never in place of them: a cell holding only a checkbox would
+  // be announced as nothing, and the <th> is where `aria-sort` and `width` live.
+  // A column that wants a control and no visible text declares `hideLabel`; a
+  // column the snippet has nothing for renders nothing from it.
+  //
   // `name` is the FIELD, which is what `resource.columns()` already calls it and
   // what `<FilterBar>` already reads off the same list — this component said
   // `key` and every caller carried a `.map` to translate, which is a shape
@@ -81,6 +87,20 @@
   export let empty   = null        // optional override for the empty state
   export let actions = null        // optional toolbar above the table
   export let footer  = null        // optional — (rows) => the <tfoot>'s own <tr>s
+  export let header  = null        // optional — (col) => controls inside each column's <th>
+
+  // What identifies a row across a change to `rows`. A field name, or
+  // `(row, i) => key`; unstated, the row's position. A row snippet that holds
+  // state of its own -- an open tree, a focused or uncontrolled input -- keeps
+  // it at the position when the rows are keyed by position, so removing row 0
+  // hands every block its neighbour's record and leaves the open state behind.
+  // Keys must be unique: a duplicate is reported by mesa and corrupts the list.
+  export let rowKey  = null
+
+  function keyOf(r, i) {
+    if (rowKey == null) return i
+    return typeof rowKey === 'function' ? rowKey(r, i) : r?.[rowKey]
+  }
 
   // Skeleton row count while loading
   export var skeletonRows = 5
@@ -150,6 +170,7 @@
               {:else}
                 {col.label}
               {/if}
+              {@render header?.(col)}
             </th>
           {/each}
         </tr>
@@ -191,7 +212,7 @@
 
         {:else}
           <!-- Data rows — the snippet supplies its own <tr>. -->
-          {#each rows as r, i (i)}
+          {#each rows as r, i (keyOf(r, i))}
             {@render row?.(r, i)}
           {/each}
         {/if}

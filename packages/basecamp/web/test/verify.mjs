@@ -1126,7 +1126,7 @@ check('an app can be placed on a machine',
 
 // An image to ship, and the port a hostname routes to. The app was created
 // with a name alone, and a container app naming no image is refused at create,
-// since nothing builds one yet. Without this the Deploy below never left the
+// since there is nothing to pull or build. Without this the Deploy below never left the
 // environment screen (FJS-1602).
 await apiCall(`/apps/${appDetailPath.split('/')[2]}`, {
   method: 'PATCH', workspace: secondWs.id,

@@ -30,7 +30,7 @@ import { buildProviders }            from './providers/index.ts'
 import { apply, LEVELS }                         from '@frontierjs/litestone'
 import type { WriteEvent }                       from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
-import { createBasecampDb }              from './core/db.ts'
+import { createBasecampDb, jobsDatabasePath } from './core/db.ts'
 import { openSqlite }                    from './core/sqlite.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
@@ -328,7 +328,7 @@ export async function buildBasecampApp(
   // above, so a test that redirects the main database takes the queue with it
   // rather than writing jobs into the developer's own.
   const queue = createCaravan({
-    db: dbPath.replace('.db', '-jobs.db'),
+    db: jobsDatabasePath(dbPath),
   })
   app.configure(queue)
 

@@ -222,12 +222,42 @@ describe('the release pipeline an inline app runs', () => {
     expect(release.toImage).toBe('nginx:alpine')
   })
 
-  test('a git app is refused until something builds its image', async () => {
-    // The build steps were a command-less /exec that reported success, and the
-    // start step then pulled the app's NAME from Docker Hub.
+  // The build steps were a command-less /exec that reported success, and the
+  // start step then pulled the app's NAME from Docker Hub (FJS-1496).
+  test('a git app BUILDS on the machine and starts what it built — no push, there is no registry', async () => {
     const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' })
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
+
+    expect(await stepNames(release.id)).toEqual(
+      ['Validate', 'Build image', 'Start container', 'Health check'])
+  })
+
+  test('an app naming no source at all is still refused: there is nothing to build', async () => {
+    const target = await aContainerApp({})
     await expect(deployments().create({ appId: target.id, workspaceId: ws.id }))
       .rejects.toThrow(/names no image/)
+  })
+
+  test('a rollback to a built release starts the bytes it recorded and does not build again', async () => {
+    const sys    = env.system as any
+    const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' })
+    const git    = { kind: 'git', repo: 'git@host:a/b.git' }
+
+    const shipped = async (data: Record<string, unknown>) => {
+      const row = await sys.deployment.create({ data: {
+        appId: target.id, workspaceId: ws.id, finishedAt: new Date().toISOString(), ...data } })
+      await sys.deployment.transition(row.id, 'build')
+      return sys.deployment.transition(row.id, 'succeed')
+    }
+    const first   = await shipped({
+      builtImage: 'sha256:' + 'a'.repeat(64), configSnapshot: { source: git, runtime: {} } })
+    const current = await shipped({
+      builtImage: 'sha256:' + 'b'.repeat(64), previousDeploymentId: first.id,
+      configSnapshot: { source: git, runtime: {} } })
+
+    // Building again would ship the branch as it is NOW, which is neither release.
+    const replacement: any = await deployments().call('rollback', current.id, {})
+    expect(await stepNames(replacement.id)).toEqual(['Validate', 'Start container', 'Health check'])
   })
 
   // A database had a list of its own, three names the runner sent as

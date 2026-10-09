@@ -57,6 +57,16 @@ export function createOutpostServer(config, {
     // called `fjs-undefined`, which exists on no machine and reports healthy
     // nowhere.
     'POST /pull':          (body) => docker.pull({ image: body.image }),
+    // The build alone, so a failing one is its own step and happens before the
+    // old container is touched. `/deploy` given the digest this answers starts
+    // those bytes and builds nothing.
+    'POST /build': async (body) => {
+      if (body.source?.kind !== 'git' || !body.source.repo) throw new Error('a build needs a git source with a repo')
+      const built = await docker.build({
+        appId: body.app_id, source: body.source, image: body.image ?? `fjs-${body.app_id}`,
+      })
+      return { digest: built.digest, commit_sha: built.commitSha }
+    },
     // The route goes with the container: left behind, Caddy answers the app's
     // hostnames with a 502 from a port nothing holds. A redeploy's own stop
     // takes it too, and its `/deploy` puts it back.
@@ -91,7 +101,7 @@ export function createOutpostServer(config, {
 
       const image = body.image ?? `fjs-${body.deployment_id}`
       let built   = { digest: body.digest ?? null }
-      if (body.source?.kind === 'git' && body.source.repo)
+      if (body.source?.kind === 'git' && body.source.repo && !body.digest)
         built = await docker.build({ appId, source: body.source, image })
 
       // A release that dropped its last hostname drops its route too.

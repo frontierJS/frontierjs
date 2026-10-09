@@ -32,6 +32,7 @@ import type { BasecampApp } from '../basecamp.types.ts'
  * conduit's 10s default, a deploy that was still working read as a failed one.
  */
 export const PULL_TIMEOUT_MS   = 15 * 60_000 + 30_000
+export const BUILD_TIMEOUT_MS  = 30 * 60_000 + 30_000
 export const DEPLOY_TIMEOUT_MS = 32 * 60_000
 
 /** Set to '1' to allow the stub. Refused under NODE_ENV=production regardless. */
