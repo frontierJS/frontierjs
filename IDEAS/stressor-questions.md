@@ -54,7 +54,7 @@ ids without a second copy.
 
 ## Open questions
 
-- **Where does it live?** `docs/` (a reference), a generated section of
+- ~~**Where does it live?**~~ **Answered 2026-10-09 (`FJS-D826`): C — `website/`, beside `comparisons.json` and the comparisons page.** `docs/` (a reference), a generated section of
   `stressors.md` (the existing owner of the list), or the `website/` (the
   audience is outside the project).
   - **A** — `docs/`, a reference page.

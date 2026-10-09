@@ -305,6 +305,10 @@ export function createDocker({
       // framework package. Two copies of three constants, and the alternative
       // is a dependency edge from a machine agent to the CLI.
       argv.push(...logArgs(config.logs))
+      // A loopback app answers only through Caddy, one hop the app must be told
+      // about or every caller shares Caddy's address in its rate limiter
+      // (`FJS-D617`, `FJS-1841`). Before the caller's env, so a stated value wins.
+      if (loopback) argv.push('-e', 'FJS_TRUST_PROXY=1')
       for (const [key, value] of Object.entries(config.env ?? {})) argv.push('-e', `${key}=${value}`)
       // An app Caddy fronts answers only through Caddy (`FJS-D565`): its port
       // on every interface is the same app over plain HTTP, around the

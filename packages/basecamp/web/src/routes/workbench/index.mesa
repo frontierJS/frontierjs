@@ -26,7 +26,7 @@ title: Workbench
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
 
-  const POLL_MS   = 1500
+  const POLL_MS   = 2000
   const SHOW_TOOLS = 4
 
   let pins        = []
@@ -87,7 +87,11 @@ title: Workbench
 
   // ─── the poll ────────────────────────────────────────────────────────
 
+  // A poll in flight when the page goes outlives clearTimeout and would
+  // reschedule itself forever -- one zombie loop per navigation or HMR swap.
   let timer = null
+  let destroyed = false
+  function schedule() { if (!destroyed) timer = setTimeout(poll, POLL_MS) }
   async function poll() {
     try {
       const answer = await workbench.service.invoke('status', null)
@@ -105,7 +109,7 @@ title: Workbench
       // A finished run changed the tree; the branch and dirty count follow.
       if (ended) loadPins()
     } catch {}
-    timer = setTimeout(poll, POLL_MS)
+    schedule()
   }
 
   function announce(s) {
@@ -120,8 +124,8 @@ title: Workbench
     } catch {}
   }
 
-  loadPins().then(() => { timer = setTimeout(poll, POLL_MS) })
-  $.onDestroy(() => { clearTimeout(timer); document.title = baseTitle })
+  loadPins().then(schedule)
+  $.onDestroy(() => { destroyed = true; clearTimeout(timer); document.title = baseTitle })
 
   // The tab says how many are working and how many finished unread, so it
   // reads from another tab.

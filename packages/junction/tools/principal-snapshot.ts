@@ -151,6 +151,9 @@ export function renderPrincipalSnapshot(
           out.push(`| Read alongside | ${d.include.length ? d.include.map(i => `\`${i}\``).join(', ') : '—'} |`)
         }
         if (d.headers?.length) out.push(`| Named by header | ${d.headers.map(h => `\`${h}\``).join(', ')} |`)
+        if (d.session) out.push(`| Beside a session | ${d.session === 'merge'
+          ? 'merged onto the person, who is the trail\'s actor (`session: \'merge\'`)'
+          : 'refused, 400 — one caller per request (`FJS-D831`)'} |`)
         out.push('')
 
         // The rows above are a row-reading resolver's, and their absence is the

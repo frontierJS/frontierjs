@@ -1368,6 +1368,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d830"></a>2026-10-09 · `FJS-D830` — Should `capabilities { }` also NARROW — No: the block carries labels only, and the grantable set narrows by derivation. A move marked `@system` or `@gate(8)` is already left out by `packages/litestone/src/core/capabilities.js`.
+
+Asked in [`IDEAS/shipped/permission-sets.md`](IDEAS/shipped/permission-sets.md) § Open questions. **A** was picked over **B** (Yes, as an allow-list: `capabilities { }` names the grantable ones, everything unnamed is ungrantable, and a `fli check` rule beside `gate-unreachable` compares the block against the derived set), **C** (Yes, as an exclusion list: `capabilities { exclude: [...] }` names the ungrantable ones, with the same `fli check` rule. The list is shorter, and a forgotten entry stays grantable rather than unreachable).
+
+The paper's recommendation, taken as written: The one narrowing the tree has needed so far, engine-only moves, is already derived from the schema, so nothing has to be restated. B fails silently when an entry is forgotten, which is the cost this paper refuses. If a role editor proves 153 too many, C is the next step, because its forgotten entry fails open to the grant and stays visible.
+
 ### <a id="fjs-d819"></a>2026-10-09 · `FJS-D819` — A `@guarded` column is written by naming it in `system:`, so a grant is minted by the caller's own policy-graded create; the Grant trait is imported and declares no gate; `bearerClaim` carries the mint and the `FJS-D340` redeem.
 
 Decided while building `FJS-1450` and `FJS-1749` together, the two gaps most apps had rewritten (8 and 9 of 17 stressors). Four moves, one ruling.
@@ -3606,6 +3612,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d831"></a>2026-10-09 · `FJS-D831` — **Still open, and now live — does the absence of the word come to mean — A narrow opportunity in `packages/litestone/src/core/opportunities.js`: it fires only where a hand-written `@@unique` over two required cascading foreign keys is the DDL `@@relator(…, once)` would emit. It names the word and carries confidence, never severity.
+
+Asked in [`IDEAS/shipped/relators.md`](IDEAS/shipped/relators.md) § Open questions. **B** was picked over **A** (Absence means nothing: a model without `@@relator` is a model, and nothing grades it), **C** (A `fli check` rule with severity on every model with two cascading required relations and no declaration).
+
+The paper's recommendation, taken as written: It follows `FJS-D539`: fire on a narrow shape the word would generate, never on every unmarked pair, which is how it avoids the `FreeRole` failure that C walks into. Hold it as `FJS-D539` held its rule until a probe of `example/` and `packages/basecamp/` finds a true positive, because a recognizer whose first firing is hypothetical is one nobody trusts.
 
 ### <a id="fjs-d818"></a>2026-10-09 · `FJS-D818` — Whether this is a litestone attribute at all, or a conduit target writing an — No language change: a Caravan job calls a conduit target and writes an ordinary column on a schedule.
 
@@ -12845,6 +12857,30 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d828"></a>2026-10-09 · `FJS-D828` — How does a tile know a port is *its* — Ask who holds the port (`pidsOnPort` in `core/ports.js`) and match the holder to the tile: inside the GUI child's process group, else a working directory under the row's `dir`.
+
+Asked in [`IDEAS/shipped/control-surface.md`](IDEAS/shipped/control-surface.md) § Open questions. **B** was picked over **A** (as built: port busy, plus the health shape (`status` and `checks`) for an API; a static origin reads `up` unverified), **C** (every surface answers an identity probe (`x-fjs-build` or a manifest naming its app), and the tile compares names).
+
+The paper's recommendation, taken as written: it answers for a static origin as well as an API, using the one owner of *what holds this port* that `fli kill` and `ports:status` already share. C needs every server, Vite's included, to grow an endpoint.
+
+### <a id="fjs-d827"></a>2026-10-09 · `FJS-D827` — Does a started server outlive the GUI — As built: children die with the GUI (`killAll` on SIGINT/SIGTERM in `core/server.js`).
+
+Asked in [`IDEAS/shipped/control-surface.md`](IDEAS/shipped/control-surface.md) § Open questions. **A** was picked over **B** (detach, and record the pid so a restarted GUI re-adopts the child and can still stop it), **C** (detach, and a restarted GUI shows the server up but refuses to stop it, as it refuses anything it did not start).
+
+The paper's recommendation, taken as written: a server meant to outlive a session is what `fli dev` is for, and it already records its session. B would build a second record of running processes beside that one; C leaves a server running that no page can stop.
+
+### <a id="fjs-d826"></a>2026-10-09 · `FJS-D826` — Where does it live — `website/`, beside `comparisons.json` and the comparisons page.
+
+Asked in [`IDEAS/stressor-questions.md`](IDEAS/stressor-questions.md) § Open questions. **C** was picked over **A** (`docs/`, a reference page), **B** (a generated section of `IDEAS/stressors.md`, the existing owner of the list).
+
+The paper's recommendation, taken as written: the audience is outside the project, and `website/` already holds the one other place this repo sets itself beside other stacks. B puts answers with a *declared* or *ruled* status into an assessment, which is never cited as behavior.
+
+### <a id="fjs-d825"></a>2026-10-09 · `FJS-D825` — Q2 — `PatchRun` model, or widen `CleanupRun` into a maintenance run — Widen `CleanupRun` into a `MaintenanceRun` with a `kind` and both payloads.
+
+Asked in [`IDEAS/server-posture.md`](IDEAS/server-posture.md) § Open questions. **B** was picked over **A** (Its own `PatchRun` model, shaped like `CleanupRun` and recording package, from-version and to-version).
+
+Owner wants one maintenance table so a run of any kind is one history; the discriminator is a column named type (the paper says kind), and a later kind adds a value rather than a model.
 
 ### <a id="fjs-d824"></a>2026-10-09 · `FJS-D824` — Deployment (Release) is unrepresented above — A, plus an external service the rig needs is declared as an `attachments` entry (`FJS-D158`) the installer adds to `junction.config.js`.
 

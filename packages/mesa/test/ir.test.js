@@ -13,7 +13,7 @@ const ir = async (source, filename) => (await compile(source, { ...quiet, filena
 
 const stat = (value) => ({ kind: 'static', value })
 const el = (tag, loc, children, extra = {}) => ({
-  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], ref: null, children, selfClosing: false, ...extra,
+  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], classes: [], ref: null, attachments: [], children, selfClosing: false, ...extra,
 })
 const text = (...parts) => ({ kind: 'text', parts, static: parts.every((p) => p.kind === 'static') })
 
@@ -215,6 +215,21 @@ describe('lower()', () => {
       { prop: 'font-size', loc: 'S.mesa:4:4', expr: { raw: 'fontSize', code: '$$runtime.get($$sig_fontSize)', reads: ['fontSize'] } },
       { prop: 'gap', loc: 'S.mesa:4:20', expr: { raw: 'w', code: '$$runtime.get($$sig_w)', reads: ['w'] } },
       { prop: 'width', loc: 'S.mesa:4:34', expr: { raw: '{w}ch', code: '`${$$runtime.get($$sig_w)}ch`', reads: ['w'] } },
+    ])
+  })
+
+  it('lowers class: bare and as an expression, apart from the directives', async () => {
+    const tree = await ir(`<script>
+  let on = true, n = 1
+</script>
+<p class:on class:wide={n > 1} class="x">t</p>
+`, 'C.mesa')
+    const p = tree.children[0]
+    expect(p.attrs).toEqual([{ name: 'class', value: 'x' }])
+    expect(p.directives).toEqual([])
+    expect(p.classes).toEqual([
+      { name: 'on', loc: 'C.mesa:4:4', expr: { raw: 'on', code: '$$runtime.get($$sig_on)', reads: ['on'] } },
+      { name: 'wide', loc: 'C.mesa:4:13', expr: { raw: 'n > 1', code: '$$runtime.get($$sig_n) > 1', reads: ['n'] } },
     ])
   })
 

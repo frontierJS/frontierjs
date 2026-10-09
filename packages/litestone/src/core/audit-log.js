@@ -194,8 +194,10 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     // is the subject, which is the only way *which link wrote this* survives a
     // revocation. Both arrive down the provenance closure because neither is
     // on the principal — one is deliberately hidden from it, the other is a
-    // row this package never read.
-    actorId:   from?.operatorId ?? from?.bearerId ?? ctx.auth?.id ?? null,
+    // row this package never read. A person holding a grant as well is the
+    // actor over it: the grant is a thing they held, and `actorType` already
+    // files the row as a user (`FJS-D831`).
+    actorId:   from?.operatorId ?? ctx.auth?.id ?? from?.bearerId ?? null,
     actorType: from?.operatorId ? (from.operatorType ?? 'support') : actorTypeOf(ctx),
     subjectId: from?.operatorId ? (ctx.auth?.id ?? null)
              : from?.bearerId  ? (from?.bearerSubject ?? null)

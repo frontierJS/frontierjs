@@ -557,6 +557,20 @@ describe('the ingress — Caddy, through its admin API', () => {
     }])
   })
 
+  test('an app behind Caddy is told the one hop, and an app with no hostname is not (FJS-1841)', async () => {
+    // Untold, the app keys every caller on Caddy's address, so one caller's
+    // failed logins lock out the site; told with no proxy in front, a caller
+    // picks their own key with X-Forwarded-For.
+    const fronted = serverWith(fakeCaddy())
+    await deploy(fronted.server, { hosts: ['shop.example.com'] })
+    expect(runArgv(fronted.fake)).toContain('-e FJS_TRUST_PROXY=1')
+
+    const bare = serverWith(fakeCaddy())
+    await deploy(bare.server)
+    expect(runArgv(bare.fake)).toContain('-p 7300:80')
+    expect(runArgv(bare.fake)).not.toContain('FJS_TRUST_PROXY')
+  })
+
   test('a redeploy replaces the route rather than adding a second', async () => {
     const caddy = fakeCaddy()
     const { server } = serverWith(caddy)

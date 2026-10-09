@@ -659,7 +659,7 @@ minimum bar and spending everything else on `only`.**
   kernel is missing and every leaf it found is a register row (`FJS-1578`…`FJS-1582`);
   kept for its method, since only driving an app's copy against the owner found the
   bypass that reading both missed
-- `IDEAS/shipped/fable-audit-plan.md` — a queue of Fable 5 audit runs over what no audit has
+- `IDEAS/fable-audit-plan.md` — a queue of Fable 5 audit runs over what no audit has
   read yet (auth, mcp, outpost, fli's guards), plus the preamble each run is given.
   Ranked nowhere because its output is register rows, not a feature
 - `DECISIONS.md` — where 5.1, 5.3, and the `Rig` vocabulary ruling land

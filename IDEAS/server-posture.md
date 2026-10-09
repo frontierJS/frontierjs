@@ -267,7 +267,7 @@ two routes, which stays severable inside the one file that already runs commands
   - **Recommend A** — the grader reads one layer, not two, and `DOCKER-USER` is
     plain iptables-nft whichever is chosen, so ufw adds a translation the pairing
     test would have to grade as well.
-- **Q2 — `PatchRun` model, or widen `CleanupRun` into a maintenance run?**
+- ~~**Q2 — `PatchRun` model, or widen `CleanupRun` into a maintenance run?**~~ **Answered 2026-10-09 (`FJS-D825`): B — Widen `CleanupRun` into a `MaintenanceRun` with a `kind` and both payloads.**
   **Recommend its own model**: a cleanup records bytes freed and a patch records
   package versions, so one row type would carry two half-empty shapes.
   - **A** — Its own `PatchRun` model, shaped like `CleanupRun` and recording

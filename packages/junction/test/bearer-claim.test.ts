@@ -583,3 +583,64 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
     expect((await db.asSystem().portalLink.findFirst({ where: { tokenHash: digest } }))?.id).toBe(made.id)
   })
 })
+
+// A request is one caller. A person who also presents a grant is two standings
+// under one name, and merged they put the grant's ids on rows the person's own
+// rule admitted — an agent of one org opened a thread in their inbox naming
+// another org's contact, which naming by hand is a 422 (`FJS-1987`). The
+// default refuses; an app whose signed-in callers still hold a grant says so
+// (`FJS-D831`).
+describe('a session beside a grant', () => {
+  const SESSION = { auth: { user: { userId: 'u1', id: 'u1', role: 'user' } as never } }
+
+  test('is refused 400 by default, before the grant is read', async () => {
+    const db = await seeded()
+    const { app, seen } = await appWith(db)
+
+    await expect(holding('live-one', () => app.service('answers').find({}, SESSION)))
+      .rejects.toMatchObject({ code: 400 })
+    // A dead token beside a session is the same 400: the refusal is about the
+    // request's shape and says nothing about whether the token works.
+    await expect(holding('never-minted', () => app.service('answers').find({}, SESSION)))
+      .rejects.toMatchObject({ code: 400 })
+    expect(seen.grant).toBeUndefined()
+
+    // The pair: the same token with no session resolves.
+    expect(rowsOf(await holding('live-one', () => app.service('answers').find({}))).map(r => r.answer)).toEqual(['one'])
+    // And a session carrying no token is an ordinary signed-in caller.
+    expect(rowsOf(await holding(null, () => app.service('answers').find({}, SESSION)))).toEqual([])
+  })
+
+  test('session: \'merge\' joins the grant\'s claims to the person', async () => {
+    const db = await seeded()
+    const merging = bearerClaim({
+      from: header('x-portal-link'), model: 'portalLink', column: 'tokenHash', subject: 'clientId',
+      key: KEY, claims: { portalClientId: 'clientId', portalScope: 'scope' }, session: 'merge',
+    })
+    const seen: { user?: any; grant?: unknown } = {}
+    const app = createApp({ db, principal: merging })
+    app.services.register(createService({
+      name: 'answers',
+      async find(ctx: ServiceContext) {
+        seen.user  = ctx.auth.user
+        seen.grant = ctx.locals[BEARER]
+        return (ctx.locals.db as any).formResponse.findMany({})
+      },
+    }))
+
+    const rows = rowsOf(await holding('live-one', () => app.service('answers').find({}, SESSION)))
+    expect(rows.map(r => r.answer)).toEqual(['one'])
+    expect(seen.user.userId).toBe('u1')
+    expect(seen.user.portalClientId).toBe(1)
+    expect((seen.grant as any).subject).toBe(1)
+    // A dead token is still a dead token under merge.
+    await expect(holding('revoked', () => app.service('answers').find({}, SESSION)))
+      .rejects.toMatchObject({ code: 401 })
+  })
+
+  test('describe() states which, so the snapshot shows a merge where a reviewer reads it', () => {
+    expect((resolver as any).describe().session).toBe('refuse')
+    const merging = bearerClaim({ from: header('x'), model: 'portalLink', column: 'tokenHash', key: KEY, claims: {}, session: 'merge' })
+    expect((merging as any).describe().session).toBe('merge')
+  })
+})

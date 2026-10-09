@@ -89,6 +89,7 @@ export const TERMINAL_EVENTS = {
   change:  { bubbles: true },
   submit:  { bubbles: true },
   keydown: { bubbles: true },
+  keypress: { bubbles: true },
   focus:   { bubbles: false },
   blur:    { bubbles: false }
 }

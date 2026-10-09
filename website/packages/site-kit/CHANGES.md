@@ -1,5 +1,13 @@
 # Changes — @frontierjs/site-kit
 
+## 2026-10-09 — `layout: Block` is site-kit's (`FJS-D654`, `FJS-D823`)
+
+`src/layouts/Block.mesa` moved here from `@kobami/ksite`, under its own name. A top-level block is css's Band, `<section class="band">` holding a `.container`; a nested one is an `<article>`; one with a `url` is an `<a>`; a stated `tag` is that element, or none with `tag={false}`. Its look is six typed keys: `template` (a Layout helper), `tone`, `treatment`, `density`, `align` and `background`. The allowed values are read from `@frontierjs/css/vocabulary.json`, so a value css does not ship stops the build naming the key and its choices. `classes:` stops it as well, naming the block's class as the place for a look the keys cannot state.
+
+`markdownLayouts` is now site-kit's: its own `src/layouts`, then the preset's, then the site's `content/layouts` when it exists. The package exports `./layouts/*.mesa`.
+
+ksite moved onto it with no visible change. Its four routes are identical to the pixel against the build before the change, at 390, 768, 960, 1024, 1280 and 1536 px, in build and dev, from the workspace and from a tarball install. The one exception is one heading's antialiasing on `/services/` at 960 and 1024 px (0.045%), where the Band starts at x = −4.5px. That exact diff is the grade, not ksite's Playwright baselines, which pass with a stripe's fill removed (Playwright's default color threshold cannot see `#F0F4F8` against white). `test/blocks.mjs` covers each position and each refusal.
+
 ## 2026-10-08 — analytics is `analytics:` in `content/settings/site.js` (`FJS-D608`, `FJS-D658`)
 
 The site-kit side needs no new code. The site's settings are spread over the Sierra config, and Sierra's static build now writes the vendor's tag into every page (`FJS-2058`). The README names the key. A probe copy of the website with `analytics: { provider: 'plausible', domain }` tagged 51/51 pages.

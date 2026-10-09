@@ -34,7 +34,10 @@ what they mean in any app.
   plain data. Without one, `_configPath` is `config/no-settings.js` (`{}`);
   unnamed, Sierra would look for `config/sierra.config.js` (FJS-1709). Order:
   site-kit's keys, then the preset's `sierra`, then the site's, then
-  `routesDir` and `_configPath`, which neither a preset nor a site can move.
+  `routesDir`, `markdownLayouts` and `_configPath`, which neither a preset nor
+  a site can move. `markdownLayouts` is site-kit's `src/layouts`, then the
+  preset's, then the site's `content/layouts` when it exists; a later
+  directory wins a name.
 - `config/preset.js` — `loadPreset(name, site)`: the default export's `preset`
   key names a package whose `./preset` export returns `{ sierra, plugins,
   shell }` (FJS-D648). It resolves from the site, and every way of failing to
@@ -50,12 +53,22 @@ what they mean in any app.
 - `index.html`, `src/main.js` — the dev shell and the dev entry. The entry is
   `/@site-kit/main.js`: a package name in a script `src` 404s in dev, and an
   inline module script needs an `index.html` on disk.
+- `src/layouts/Block.mesa` — what `layout: Block` names (FJS-D654), exported
+  as `@frontierjs/site-kit/layouts/Block.mesa`. The element follows position:
+  a Band with a `.container` at the top, an `<article>` nested, an `<a>` with
+  a `url`, the stated `tag` otherwise. Six typed keys, each checked against
+  `@frontierjs/css/vocabulary.json` at render, so the list of good values is
+  css's, never a copy (FJS-D823); `classes:` is refused. A consumer that runs
+  without css's reset must clip `overflow-x` on the root, because a Band is
+  `100vw` and a classic scrollbar makes that wider than the page.
 - `src/blocks/` — content blocks, one `.mesa` each, exported as
   `@frontierjs/site-kit/blocks/<Name>.mesa`.
   - `Marquee.mesa` — a row sliding sideways forever, CSS only so a static page
     needs no script. The slot renders twice; the second copy is `aria-hidden`.
-- `test/blocks.mjs` — every block compiles to parseable JS, plus each block's
-  render assertions.
+- `test/blocks.mjs` — every block and layout compiles to parseable JS, plus
+  each one's render assertions. Renders pass `tmpDir: test/`, because Mesa
+  otherwise writes its temp module inside mesa's own package, where
+  `@frontierjs/css` does not resolve.
 - `test/preset.mjs` — a named preset is loaded, or `siteKit()` refuses by name.
 
 ## Proving a change
@@ -63,6 +76,9 @@ what they mean in any app.
 `bun run test` here for the blocks, then `website/`'s own `bun run test` — the build and the verify drive over the site
 that consumes it. A change to the preset seam is proved by ksite as well:
 `bun run build` in `fjs-prototypes/ksite`, graded with
-`baseline/playwright.port.config.ts`. A linked workspace never puts a file
+`baseline/playwright.port.config.ts`. Those baselines use Playwright's
+default color threshold, which passes a page whose light stripe went white,
+so a change to what a block emits also needs an exact pixel diff of the
+build before against the build after. A linked workspace never puts a file
 under `node_modules/`, so a defect that only a published engine has
 (`FJS-1552`) shows only from a tarball install of both packages.

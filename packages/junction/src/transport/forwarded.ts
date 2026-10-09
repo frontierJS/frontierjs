@@ -31,6 +31,27 @@
 export type TrustProxy = boolean | number | string[]
 
 /**
+ * The trust this process runs with: what the app declared, else the hop count
+ * a deploy states in `FJS_TRUST_PROXY`.
+ *
+ * The deploy that puts a proxy in front of the app is the one that knows it is
+ * there (`FJS-D617`), and an app scaffolded with no `trustProxy` keyed every
+ * caller on the proxy's address, so one caller's failed logins locked out the
+ * whole site (`FJS-1841`). A declaration still wins: a list of trusted proxies
+ * is a statement the operator made, and a hop count must not overwrite it.
+ */
+export function resolveTrustProxy(declared: TrustProxy | undefined, env: string | undefined): TrustProxy | undefined {
+  if (declared !== undefined) return declared
+  if (env === undefined || env.trim() === '') return undefined
+  // Refused rather than ignored: a value nobody can read leaves the limiter
+  // keyed on the proxy, which is the failure this variable exists to end.
+  if (!/^\d+$/.test(env.trim())) {
+    throw new Error(`[Junction] FJS_TRUST_PROXY must be a hop count (a whole number), got '${env}'`)
+  }
+  return Number(env.trim())
+}
+
+/**
  * The address to key rate limiting, DDoS protection and audit rows on.
  *
  * `remoteAddr` is the only value in here the client cannot forge; everything

@@ -579,6 +579,79 @@ with the terminal backend as its second consumer, not ahead of it.
    component's `$.onMount` reaching for a DOM API on a terminal throws when
    it runs, and nothing finds it before then (`none`). No § IV
    adjudication is in tension. Tier: Assessment.
+   *Tenth slice 2026-10-09, `{@attach}` on an element:* the IR lowers it to
+   the element's `attachments`, each an expression lowered as a write, which
+   is the DOM path's rewrite (an attachment's options often carry a callback
+   that writes state, `FJS-1958`). The terminal emits the DOM path's own
+   `$$runtime.attach(el, () => (expr))`, handed the renderable, so there is
+   no terminal copy of the lifecycle. Under slice 9's client declaration that
+   owner runs it a microtask after the build, the queue `$.onMount` uses,
+   since a renderable has no `isConnected`. It re-runs when the expression
+   changes and its cleanup runs when the block goes. A cleanup's Promise,
+   which holds a DOM node for an exit animation, holds nothing here.
+   `nativeValidationGuard` reads `el?.form`, which a renderable lacks, so it
+   returns without a word. `{@attach}` on a component is still refused, as
+   on the DOM path. Proved by `specs/attach.spec.mjs` (`Attach.mesa`), 7/7:
+   one run on a node already in the tree, the renderable handed over, a
+   callback argument writing state, null running the cleanup and a re-arm
+   not, and a block's removal running its attachment's cleanup. Dropping the
+   emitted call fails 6 of 7, and lowering the expression as a read fails
+   the spec at compile. The corpus stayed identical apart from sources
+   edited since the baseline. Report: 261 of 531 (49%), with 137 held by a
+   child. `example`'s routes stay at 1 of 34, and the 18 now stop at
+   `class:numbered` in `CodeInput.mesa` or `on:keypress` in `Input.mesa`.
+   *The nine, answered before the first edit:* (1) origin: none new, since
+   the expression goes through the DOM path's `rewriteExpr` and the
+   lifecycle is `attach()`. (2) concept: none. (3) complexity: the
+   problem's. An attachment is code over a node, and a terminal has nodes.
+   (4) predictability: `{@attach}` receives what `bind:this` receives on the
+   same target, when `$.onMount` runs. (5) derived: the IR carries it as it
+   carries a handler. (6) owner: `attach()` in `runtime.js`, already there.
+   (7) boundary: the attachment receives the target's node, and one written
+   for the DOM checks what it was handed, as `nativeValidationGuard` does.
+   (8) failure: an attachment that uses DOM-only APIs throws on a terminal when it runs,
+   the same gap `FJS-2242` left for `$.onMount`. Refusing every attachment
+   would hold 18 routes on a guard that does nothing here. (9) must stay
+   true: an attachment runs after mount with the node, re-runs on change and
+   cleans up with its block. What fails: `attach.spec`. Nothing reports a
+   DOM-only attachment before it runs (`none`). No § IV adjudication is in
+   tension. Tier: Assessment.
+   *Eleventh slice 2026-10-09, `class:` and `on:keypress`:* the IR lowers
+   `class:name` to the element's `classes` (`{ name, expr, loc }`), apart
+   from the directives as `styles` is, and the terminal paints none of them,
+   by slice 5's ruling. `classSource(attr, name)`, beside `styleSource`, is
+   the one reading of its two spellings (bare reads the variable of that
+   name), and `bindProp` now calls it too. `keypress` joins
+   `TERMINAL_EVENTS` and bubbles. It is dispatched after a `keydown` nobody
+   prevented, for a key that types a character or Enter with no Ctrl, Alt or
+   Meta held, and preventing it withholds the key from the engine, which in a
+   field means no character and on Enter no implicit submission, as in a
+   browser. On the way, `FJS-2264`: `$$tui.on` stored an unset handler and
+   threw on its event, which every kit `<Input>` would have hit on its first
+   key. It now skips a nullish one, as `addEvent` does. Proved by
+   `specs/keys.spec.mjs` (`Keys.mesa`), 5/5, and by `Styled.mesa` gaining
+   three `class:` against its unchanged twin. Not dispatching `keypress`
+   fails 4 of 5, ignoring its prevention fails 2, storing the unset handler
+   1, and `class:` kept as a directive fails `style.spec` at compile. The
+   corpus stayed identical apart from sources edited since the baseline.
+   Report: 269 of 532 (51%), ui 46 of 135. `example`'s routes stay at 1 of
+   34: 13 now stop at `on:scroll` (`CodeInput.mesa:242`) and 5 at
+   `on:mousedown` (`Input.mesa:229`, the reveal button's focus hold).
+   *The nine, decided before the first edit and written after:* (1) origin:
+   one fewer, since `class:`'s reading had a copy in waiting. (2) concept:
+   none; `classes` is a field. (3) complexity: the problem's. (4)
+   predictability: CSS is inert on a terminal in every spelling, and
+   `keypress` arrives when and where a browser sends it. (5) derived: both
+   targets read `classSource`; the event's bubbling is read from the table.
+   (6) owner: `focusSource` already turns engine keys into DOM events.
+   (7) boundary: `types()` is the one test of which keys type. (8) failure:
+   a live `class:hidden` shows its content here, as `style:display` does,
+   named in `style.spec`. (9) must stay true: `keypress` never fires for a
+   prevented `keydown` or a Ctrl chord, and preventing it types nothing.
+   What fails: `keys.spec`, `style.spec`, the `classes` case in
+   `ir.test.js`. *Ergonomics vs. strictness* decides `class:` by cost, as it
+   decided `style:`; none is in tension for `keypress` or the unset handler,
+   both of which follow the DOM path. Tier: Assessment.
    *The nine for slice 4 and the props move, answered late:* (1) one fewer
    origin. (2) none new. (3) the problem's. (4) an attribute that reaches no
    child now says so, as `on:` and `class:` already did. (5) both targets

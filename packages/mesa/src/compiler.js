@@ -6816,6 +6816,10 @@ export function styleSource(attr, prop) {
   return { raw: attr.value, template: true }
 }
 
+/** What `class:name` reads: bare reads the variable of that name, otherwise
+ *  the expression. `bindProp` and `lowerAttributes` (`ir.js`) both read it. */
+export const classSource = (attr, name) => attr.value ? unwrapExp(attr.value) : name
+
 /**
  * What each attribute on a component call is. Every target reads this one
  * answer, as it reads `routeSlots` for the children: `makeComponent` builds
@@ -7444,7 +7448,7 @@ export function bindProp(prop, node, element) {
   // class:name={expr}
   if (name.startsWith('class:')) {
     const className = name.slice(6)
-    const rawExp = prop.value ? unwrapExp(prop.value) : className
+    const rawExp = classSource(prop, className)
     const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors) : rawExp
     this.detectDependency(rawExp)
     return {

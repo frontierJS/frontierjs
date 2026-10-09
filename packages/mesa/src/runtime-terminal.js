@@ -290,6 +290,9 @@ const disabled = (node) => 'disabled' in node.__attrs
  */
 export function on(node, event, handler, { capture = false, once = false } = {}) {
   if (!TERMINAL_EVENTS[event]) throw new Error(`[Mesa] on:${event} has no terminal lowering`)
+  // A kit forwards its caller's handler props, most of them unset; `addEvent`
+  // skips those on the DOM path, and a stored `undefined` throws on the event.
+  if (!handler) return
   ;((node.__listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
   if (event === 'click') activatable(node)
 }
@@ -341,7 +344,9 @@ function dispatch(target, type, extra = {}) {
 
 /** Focus, blur and keys, from a node that can hold focus. A key whose
  *  `keydown` was prevented is withheld from the engine, as a prevented key is
- *  never typed in a browser. */
+ *  never typed in a browser, and so is one whose `keypress` was: that event
+ *  follows an unprevented `keydown` for a key that types a character, or
+ *  Enter, with no Ctrl, Alt or Meta held. */
 function focusSource(node) {
   if (node.__focusSource) return
   node.__focusSource = true
@@ -350,12 +355,16 @@ function focusSource(node) {
   // nothing at an element removed while focused.
   node.on('blurred', () => { if (!node.isDestroyed) dispatch(node, 'blur') })
   node.onKeyDown = (k) => {
-    if (dispatch(node, 'keydown', keyFields(k)).defaultPrevented) { k.preventDefault(); return }
+    const fields = keyFields(k)
+    if (dispatch(node, 'keydown', fields).defaultPrevented) { k.preventDefault(); return }
+    if (types(fields) && dispatch(node, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
     if (!node.__activatable || node instanceof InputRenderable || !ACTIVATE_KEYS.has(k.name)) return
     k.preventDefault()
-    activate(node, keyFields(k))
+    activate(node, fields)
   }
 }
+
+const types = (f) => (f.key.length === 1 || f.key === 'Enter') && !f.ctrlKey && !f.altKey && !f.metaKey
 
 /** A node that fires `click` on Enter, Space or a press: every button, and a
  *  box something listens to `click` on, which this makes focusable since a

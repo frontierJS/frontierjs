@@ -1,0 +1,91 @@
+<!--
+  Block — the wrapper a content block names with `layout: Block`. Every key of
+  the block's front-matter arrives as a prop, and its Markdown is the slot.
+
+  The element follows where the block sits, never its name (FJS-D654): a
+  top-level block is a Band, `<section class="band">` holding a `.container`;
+  a nested one is an `<article>`; one with a `url` is an `<a>`; and a caller
+  that states `tag` gets that element, or none with `tag={false}`.
+
+  Its look is six typed keys, each a word @frontierjs/css already ships
+  (FJS-D621, FJS-D823): `template` is a Layout helper, `tone`, `treatment` and
+  `density` are the css axes, `align` the align axis, and `background` a photo
+  under the Band's scrim. A value css does not ship fails the build naming the
+  key, because a misspelt class is a block that renders unstyled and says
+  nothing. `classes:` is refused for the same reason: nothing checks a free
+  string. A look the six cannot state belongs in the site's own stylesheet,
+  keyed on the block's `name`.
+-->
+<script module>
+  import vocabulary from '@frontierjs/css/vocabulary.json' with { type: 'json' }
+
+  // Every Layout helper but Container, which the Band already holds.
+  const AXES = {
+    template:  vocabulary.terms.filter((t) => t.tier === 'Layout' && t.class !== 'container').map((t) => t.class),
+    tone:      vocabulary.notATerm.tone,
+    treatment: vocabulary.notATerm.treatment,
+    density:   vocabulary.notATerm.density,
+    align:     ['start', 'center', 'end'],
+  }
+
+  const kebab = (s) => s?.match(/[A-Z]{2,}(?=[A-Z][a-z]+[0-9]*|\b)|[A-Z]?[a-z]+[0-9]*|[A-Z]|[0-9]+/g)
+    ?.map((x) => x.toLowerCase()).join('-')
+
+  function refuse(name, message) {
+    throw new Error(`[site-kit] Block${name ? ` "${name}"` : ''}: ${message}`)
+  }
+
+  function checkAxes(name, values) {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined || value === null || value === '') continue
+      if (!AXES[key].includes(value)) {
+        refuse(name, `${key}: "${value}" is not one of ${AXES[key].join(', ')}`)
+      }
+    }
+  }
+</script>
+
+<script>
+  export let name = undefined
+  export let nested = false
+  export let url = undefined
+  export let tag = undefined
+  export let id = undefined
+  export let template = undefined
+  export let tone = undefined
+  export let treatment = undefined
+  export let density = undefined
+  export let align = undefined
+  export let background = undefined
+  export let classes = undefined
+
+  if (classes) {
+    refuse(name, `classes: "${classes}" is not read — state template, tone, treatment, density, align or background, and put anything else in the site's stylesheet under .${kebab(name) ?? 'the-block-name'}`)
+  }
+  checkAxes(name, { template, tone, treatment, density, align })
+
+  const kind = kebab(name)
+  const element = tag !== undefined ? tag : url ? 'a' : nested ? 'article' : 'section'
+  const band = element === 'section' && tag === undefined
+  const skin = [tone, treatment, density, align && `align-${align}`]
+  const own = band
+    ? ['band', kind, ...skin]
+    : [kind, template, ...skin]
+  const blockClass = own.filter(Boolean).join(' ')
+  const innerClass = ['container', template].filter(Boolean).join(' ')
+</script>
+
+{#if element}
+  <mesa:element this={element} class={blockClass} {class} {id} href={url} data-track={kind}>
+    {#if band}
+      {#if background}
+        <img class="band-media" src={background} alt="" />
+      {/if}
+      <div class={innerClass}><slot /></div>
+    {:else}
+      <slot />
+    {/if}
+  </mesa:element>
+{:else}
+  <slot />
+{/if}

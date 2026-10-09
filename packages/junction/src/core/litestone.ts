@@ -3809,6 +3809,14 @@ export interface BearerClaimOptions {
    *  same reason `membershipClaim` carries it: once installed this is the only
    *  static answer to *how does a request name its grant*. */
   namedBy?: string
+  /** What a request carrying a SESSION as well as this grant is (`FJS-D831`).
+   *  `refuse`, the default: a 400 before the grant is read — one caller per
+   *  request, because a merged principal is two standings under one name and
+   *  a `@default(auth().x)` then stamps the grant's value on a row the
+   *  person's own rule admitted (`FJS-1987`). `merge`: the grant's claims join
+   *  the session's and the person is the trail's actor — a basket a signed-in
+   *  shopper still holds. */
+  session?: 'refuse' | 'merge'
 }
 
 /** Where this call's resolved grant row is parked, so a service can read the
@@ -3908,13 +3916,24 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     return sys?.[opts.model] as Record<string, (a: Record<string, unknown>) => Promise<unknown>> | undefined
   }
 
-  const resolver = async function bearerClaim(ctx: ServiceContext, _user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
+  const resolver = async function bearerClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
     // A token this request does not carry is not a refusal to report: most
     // callers are ordinary signed-in people, and a resolver that recorded
     // *refused* for every one of them would make `NO_CLAIM` meaningless for
     // the requests that really were turned away.
     const token = opts.from(ctx)
     if (!token) return {}
+
+    // Before the lookup, so the refusal says nothing about whether the token
+    // works. A request is one caller: a person who also presents a grant is
+    // two standings, and merged they put the grant's ids on rows the person's
+    // own rule admitted (`FJS-1987`). An app whose signed-in callers still
+    // hold a grant states `session: 'merge'` (`FJS-D831`).
+    if (user && (opts.session ?? 'refuse') !== 'merge') throw new BadRequest(
+      opts.from.headerName === 'authorization'
+        ? `This request is signed in and also carries a key. Send one or the other.`
+        : `This request is signed in and also carries a link. Sign out to use the link, or drop it.`,
+    )
 
     const db  = ctx.locals.db as LitestoneClient | undefined
     // `$setAuth(null)` first: `$setAuth(u).asSystem()` keeps `u` (`FJS-519`),
@@ -4080,6 +4099,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     include:  [],
     namedBy:  opts.namedBy ?? null,
     headers:  opts.from.headerName ? [opts.from.headerName] : [],
+    session:  opts.session ?? 'refuse',
   })
   described.mint         = mint
   described.mintOnCreate = mintOnCreate
@@ -4187,6 +4207,10 @@ export interface PrincipalDescription {
   namedBy:  string | null
   /** The request headers a caller names this principal with. */
   headers?: string[]
+  /** A bearer: what a request carrying a session as well is — refused, or
+   *  merged onto the person (`FJS-D831`). Stated so the snapshot shows a
+   *  `merge` where a reviewer reads it. */
+  session?: 'refuse' | 'merge'
 }
 
 /**

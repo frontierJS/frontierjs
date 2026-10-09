@@ -1,0 +1,24 @@
+<script>
+  let downs = 0
+  let presses = 0
+  let heard = 0
+  let last = '-'
+  let value = ''
+  let submits = 0
+  let held = 0
+  let other = ''
+  let unset = undefined
+
+  const press = (e) => { presses++; last = e.key; if (e.key === 'x') e.preventDefault() }
+  const holdEnter = (e) => { if (e.key === 'Enter') e.preventDefault() }
+</script>
+
+<p>downs {downs} presses {presses} heard {heard} last {last}</p>
+<p>value {value} submits {submits} held {held} other {other}</p>
+<form on:submit|preventDefault={() => submits++} on:keypress={() => heard++}>
+  <input name="a" on:keydown={() => downs++} on:keypress={press} on:input={(e) => value = e.target.value} />
+</form>
+<form on:submit|preventDefault={() => held++}>
+  <input name="h" on:keypress={holdEnter} />
+</form>
+<input name="o" on:keydown={unset} on:keypress={unset} on:focus={unset} on:blur={unset} on:change={unset} on:input={(e) => other = e.target.value} />

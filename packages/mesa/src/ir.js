@@ -25,7 +25,7 @@
 
 import {
   rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
-  unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource,
+  unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource, classSource,
   bindSetter, snippetParam, parseRenderTag,
 } from './compiler.js'
 
@@ -65,7 +65,7 @@ function interpolated(ctx, raw) {
 // here is kept as a directive so a target can refuse it BY NAME; a name with
 // a colon that is not here (`xlink:href`) is an attribute.
 const DIRECTIVE_PREFIXES = [
-  'bind:', 'class:', 'use:', 'transition:', 'in:', 'out:', 'animate:', 'client:',
+  'bind:', 'use:', 'transition:', 'in:', 'out:', 'animate:', 'client:',
 ]
 
 function styleValue(ctx, p, prop) {
@@ -73,16 +73,18 @@ function styleValue(ctx, p, prop) {
   return src.template ? interpolated(ctx, src.raw) : read(ctx, src.raw)
 }
 
-/** An element's attributes by what each is. `ref` is `bind:this`'s setter,
- *  handed the target's own node — a DOM element or a terminal renderable. */
+/** An element's attributes by what each is. `ref` is `bind:this`'s setter
+ *  and `attachments` the `{@attach}` expressions, both handed the target's own
+ *  node — a DOM element or a terminal renderable. An attachment may write
+ *  state through a callback in its options, so it is lowered as a write. */
 function lowerAttributes(ctx, n) {
-  const attrs = [], handlers = [], directives = [], styles = []
+  const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = []
   let ref = null
   for (const p of n.attributes) {
     let name = p.name
     const loc = ctx.posOf(p.start ?? n.start)
     const raw = p.content ?? p.raw ?? name
-    if (p.type === 'attach' || name === '@attach') { directives.push({ name: '{@attach}', raw, loc }); continue }
+    if (p.type === 'attach' || name === '@attach') { attachments.push({ expr: write(ctx, p.value), loc }); continue }
     // `{...spread}`, `{*raw}` and `*{raw}` carry their whole text as the name.
     // A spread stays among the attributes because their order is the order
     // the DOM path applies them in, and a later one wins.
@@ -110,6 +112,11 @@ function lowerAttributes(ctx, n) {
       styles.push({ prop, expr: styleValue(ctx, p, prop), loc })
       continue
     }
+    if (name.startsWith('class:')) {
+      const cls = name.slice(6)
+      classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc })
+      continue
+    }
     if (name === 'this' || name[0] === ':' || DIRECTIVE_PREFIXES.some((pre) => name.startsWith(pre))) {
       directives.push({ name, raw, loc })
       continue
@@ -124,7 +131,7 @@ function lowerAttributes(ctx, n) {
     }
     attrs.push({ name, value: p.type === 'attribute' ? true : p.value })
   }
-  return { attrs, handlers, directives, styles, ref }
+  return { attrs, handlers, directives, styles, classes, ref, attachments }
 }
 
 // ─── components and slots ─────────────────────────────────────────────────────
@@ -354,7 +361,7 @@ function lowerEach(ctx, n) {
  */
 function lowerDynamicElement(ctx, n) {
   const at = n.attributes.find((a) => a.name === 'this')
-  const { attrs, handlers, directives, styles, ref } = lowerAttributes(ctx, n)
+  const { attrs, handlers, directives, styles, classes, ref, attachments } = lowerAttributes(ctx, n)
   const tag = !at ? null : at.type === 'exp' ? read(ctx, unwrapExp(at.value)) : expr(ctx, at.value, JSON.stringify(at.value))
   return {
     kind: 'dynamic-element',
@@ -364,7 +371,9 @@ function lowerDynamicElement(ctx, n) {
     handlers,
     directives: directives.filter((d) => d.name !== 'this'),
     styles,
+    classes,
     ref,
+    attachments,
     children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
   }
 }
@@ -390,7 +399,7 @@ function lowerNode(ctx, n) {
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
       if (n.name === 'slot') return lowerSlot(ctx, n)
-      const { attrs, handlers, directives, styles, ref } = lowerAttributes(ctx, n)
+      const { attrs, handlers, directives, styles, classes, ref, attachments } = lowerAttributes(ctx, n)
       return {
         kind: 'element',
         tag: n.name,
@@ -399,7 +408,9 @@ function lowerNode(ctx, n) {
         handlers,
         directives,
         styles,
+        classes,
         ref,
+        attachments,
         children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
         selfClosing: !!n.closedTag,
       }

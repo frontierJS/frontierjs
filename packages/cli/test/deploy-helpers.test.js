@@ -442,6 +442,13 @@ describe('swapContainer', () => {
     expect(drive({ deployConf: {} }).runCmd).not.toContain('FJS_BUILD')
   })
 
+  test('the app is told the one proxy the edge puts in front of it (FJS-1841)', async () => {
+    // Untold, every caller arrives from Caddy's address and shares one
+    // rate-limit bucket, so one caller's failed logins lock out the site.
+    const { EDGE_HOPS } = await import('../core/edge.js')
+    expect(drive({ deployConf: {} }).runCmd).toContain(`--env FJS_TRUST_PROXY=${EDGE_HOPS}`)
+  })
+
   test('PORT is forced after the env file, so .env.production cannot move it', () => {
     const { runCmd } = drive({ deployConf: {} })
 

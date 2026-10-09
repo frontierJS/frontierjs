@@ -7,7 +7,7 @@
 // satisfy the first half alone (`FJS-744`).
 
 import { describe, it, expect } from 'bun:test'
-import { clientAddress } from '../src/transport/forwarded.ts'
+import { clientAddress, resolveTrustProxy } from '../src/transport/forwarded.ts'
 
 // What the wire really looks like behind the shipped template: the client
 // sent one entry, nginx appended what it observed, and our socket sees nginx.
@@ -222,5 +222,41 @@ describe('an app can actually declare it', () => {
       // The socket, which is the only thing that observed this request.
       expect(ip).toBe('127.0.0.1')
     } finally { await app.stop() }
+  })
+})
+
+// What `fli deploy` and outpost pass a container they put Caddy in front of
+// (`FJS-D617`). Read when the transport is built, which is inside createApp.
+async function appSeeingWithEnv(env: string, trustProxy: unknown) {
+  const before = process.env.FJS_TRUST_PROXY
+  process.env.FJS_TRUST_PROXY = env
+  try { return await appSeeing(trustProxy) }
+  finally {
+    if (before === undefined) delete process.env.FJS_TRUST_PROXY
+    else process.env.FJS_TRUST_PROXY = before
+  }
+}
+
+describe('a deploy can state the hop for an app that declared nothing', () => {
+  it('reads the chain from the right when FJS_TRUST_PROXY says one hop', async () => {
+    const app = await appSeeingWithEnv('1', undefined)
+    try {
+      expect(await app.ask('198.51.100.7')).toBe('198.51.100.7')
+      expect(await app.ask('6.6.6.6, 198.51.100.7')).toBe('198.51.100.7')
+    } finally { await app.stop() }
+  })
+
+  it('leaves a declared trustProxy alone, so a hop count cannot overwrite the operator', async () => {
+    const app = await appSeeingWithEnv('1', false)
+    try {
+      expect(await app.ask('6.6.6.6, 198.51.100.7')).toBe('127.0.0.1')
+    } finally { await app.stop() }
+  })
+
+  it('refuses a value that is not a hop count, rather than keying on the proxy', () => {
+    expect(() => resolveTrustProxy(undefined, 'yes')).toThrow('FJS_TRUST_PROXY')
+    expect(() => resolveTrustProxy(undefined, '-1')).toThrow('FJS_TRUST_PROXY')
+    expect(resolveTrustProxy(undefined, ' 2 ')).toBe(2)
+    expect(resolveTrustProxy(undefined, '')).toBeUndefined()
   })
 })

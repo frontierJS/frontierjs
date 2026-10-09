@@ -50,8 +50,8 @@ src/
                          `$$tui`, a cell tree over @opentui/core (optional peer,
                          pinned exact while 0.x — FJS-D698). Bun only. Events
                          dispatch as a browser's (capture, target, bubble) and
-                         it is a CLIENT: `$.onMount` runs, so a DOM API reached
-                         there throws on a terminal (FJS-2242). Also the
+                         it is a CLIENT: `$.onMount` and `{@attach}` run, so a DOM API
+                         reached there throws on a terminal (FJS-2242). Also the
                          one place another package gets a renderer from
                          (`createRenderer`, `createHeadlessRenderer`) — its own
                          engine import would be a second copy

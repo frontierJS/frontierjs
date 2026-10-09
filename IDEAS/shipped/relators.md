@@ -417,7 +417,7 @@ because the argument is what the record cites.
   - **B** — On the relation field, with a qualifier: `placements AppServer[] @maxItems(8, per: server)` on `App`, so `@maxItems` stays the one spelling of a bound.
   - **C** — No new spelling: where the relator has an ordinal discriminator, bound the discriminator. `replicaIndex Int @lte(7)` under the relator's unique over `[appId, serverId, replicaIndex]` already caps the pair at eight.
   - **Recommend C** — then A once a `many` relator with no ordinal discriminator needs a bound. The one live case, `AppServer` in `packages/basecamp/db/schema.lite`, has `replicaIndex`, so C costs nothing new. When A is needed it beats B: the pair is already declared once on the relator, and B restates it from one side, and which side owns it is a choice B leaves open.
-- **Still open, and now live — does the absence of the word come to mean
+- ~~****Still open, and now live — does the absence of the word come to mean**~~ **Answered 2026-10-09 (`FJS-D831`): B — A narrow opportunity in `packages/litestone/src/core/opportunities.js`: it fires only where a hand-written `@@unique` over two required cascading foreign keys is the DDL `@@relator(…, once)` would emit. It names the word and carries confidence, never severity.**
   something, and does anything grade it?** `@@relator` exists as of
   [`FJS-D350`](../../DECISIONS.md#fjs-d350) and nothing was built for this, so a model with two cascading required
   relations and no declaration is either deliberate or forgotten. An

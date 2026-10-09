@@ -1,0 +1,25 @@
+<script>
+  let runs = 0
+  let placed = '-'
+  let cleanups = 0
+  let armed = true
+  let show = true
+  let seen = '-'
+
+  const count = (el) => {
+    runs++
+    placed = el.parent ? 'placed' : 'detached'
+    return () => { cleanups++ }
+  }
+  const tag = () => () => { cleanups++ }
+  const report = (cb) => (el) => { cb(el.constructor.name) }
+</script>
+
+<p>runs {runs} {placed} cleanups {cleanups}</p>
+<p>seen {seen}</p>
+<p {@attach count}>counted</p>
+<p {@attach armed ? tag : null}>armed {armed}</p>
+{#if show}<p {@attach tag}>shown</p>{/if}
+<p {@attach report((v) => seen = v)}>reported</p>
+<button on:click={() => armed = !armed}>Arm</button>
+<button on:click={() => show = !show}>Show</button>

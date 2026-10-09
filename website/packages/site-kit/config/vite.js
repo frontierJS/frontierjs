@@ -64,6 +64,14 @@ export async function siteKit({ root, port, host = false }) {
     // a settings file it is an empty module, never Sierra's guess at
     // config/sierra.config.js (FJS-1709).
     routesDir: 'content/routes',
+    // What `layout:` can name: the kit's own (Block), then the preset's, then
+    // the site's content/layouts. A later directory wins a name, so a preset
+    // or a site replaces a kit layout without copying the rest.
+    markdownLayouts: [
+      resolve(KIT, 'src/layouts'),
+      ...(preset.sierra?.markdownLayouts ?? []),
+      ...(settings.markdownLayouts ?? (existsSync(resolve(content, 'layouts')) ? ['content/layouts'] : [])),
+    ],
     _configPath: existsSync(settingsPath) ? settingsPath : resolve(KIT, 'config/no-settings.js'),
   })
 

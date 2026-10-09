@@ -53,6 +53,10 @@ export const cartKey = () => process.env.ENCRYPTION_KEY ?? 'dev-encryption-key-c
  * `CartGrant` is `@@gate("8")`: a shopper never reads their own grant — they
  * hold the only half that matters — and the row is written before any
  * principal exists to be graded.
+ *
+ * `session: 'merge'`: the store sends the header on every call, signed in or
+ * not, so a shopper who signs in mid-basket is one person still holding their
+ * basket. The default would 400 every one of them (`FJS-D831`).
  */
 export const cartClaim = bearerClaim({
   from:    header(CART_HEADER),
@@ -63,4 +67,5 @@ export const cartClaim = bearerClaim({
   key:     cartKey,
   claims:  { cartId: 'cartId' },
   namedBy: `the ${CART_HEADER} header`,
+  session: 'merge',
 })

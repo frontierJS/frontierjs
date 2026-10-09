@@ -28,7 +28,7 @@ siteName: Basecamp
     from '../resources/Notification.mesa'
   import { computeNotices } from '../notices.js'
 
-  $: (page.siteName, page.route)
+  $: (page.siteName, page.route, page.pathname, page.title)
   $: (status.connected, session.user, session.workspaceId, session.workspaces)
   $: commandPalette.open
 
@@ -83,6 +83,40 @@ siteName: Basecamp
     await markRead(n).catch(() => {})
     const url = actionOf(n)?.url
     goto(url || '/notifications/')
+  }
+
+  // ── Recent ───────────────────────────────────────────────────────────────
+  // The screens this browser visited, newest first, so ⌘K then Enter is
+  // "back to where I was" — across a reload, which the Back button is not.
+  // Keyed on the pathname alone: a `?new=1` is an open dialog, not a place.
+  // An id in a path belongs to one workspace, so each entry carries the one
+  // it was visited in and the palette offers only the current workspace's.
+  // Above ⌘K, whose `$:` list reads it while the component is being built.
+  const RECENT_KEY = 'basecamp.recent'
+  const RECENT_MAX = 8
+  let recent = []
+  try { recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch {}
+  if (!Array.isArray(recent)) recent = []
+
+  // `page.meta` is committed before `page.pathname`, so the title read here
+  // is the new screen's.
+  function remember() {
+    const path = page.pathname
+    if (!session.user || !session.workspaceId || path === '/login/') return
+    const entry = { path, label: page.title ?? path, ws: session.workspaceId }
+    recent = [entry, ...recent.filter(r => !(r.path === path && r.ws === entry.ws))].slice(0, RECENT_MAX * 2)
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)) } catch {}
+  }
+  // The workspace too: a reload restores the session after the first screen
+  // has already mounted, and that screen is the one to come back to.
+  remember()
+  $: page.pathname, session.workspaceId, () => remember()
+
+  // The screen on show is not somewhere to go back to.
+  function recentHere() {
+    return recent
+      .filter(r => r.ws === session.workspaceId && r.path !== page.pathname)
+      .slice(0, RECENT_MAX)
   }
 
   // ── ⌘K ───────────────────────────────────────────────────────────────────
@@ -165,6 +199,13 @@ siteName: Basecamp
         action: () => switchWorkspace(w.id),
       })),
 
+    ...recentHere().map((r, i) => ({
+      id: `recent-${r.path}`, group: 'Recent',
+      label: i === 0 ? `Go back to ${r.label}` : r.label, sub: r.path,
+      action: () => goto(r.path),
+    })),
+
+    { id: 'focus',    group: 'Session', label: focus ? 'Leave focus mode' : 'Focus mode', sub: 'Ctrl+.', action: toggleFocus },
     { id: 'sign-out', group: 'Session', label: 'Sign out', action: out },
   ]
 
@@ -261,6 +302,17 @@ siteName: Basecamp
   // to. The router's own route signal is the event; there is no per-link
   // handler to hang this on.
   $: page.route, () => { navOpen = false }
+
+  // Focus mode drops the sidebar and the notice rail; the shell's grid closes
+  // their columns once they are out of the DOM. Remembered per browser, and a
+  // storage that throws (a private window) just means it starts off.
+  const FOCUS_KEY = 'basecamp.focus'
+  let focus = false
+  try { focus = localStorage.getItem(FOCUS_KEY) === '1' } catch {}
+  function toggleFocus() {
+    focus = !focus
+    try { localStorage.setItem(FOCUS_KEY, focus ? '1' : '0') } catch {}
+  }
 </script>
 
 <!--
@@ -329,6 +381,11 @@ siteName: Basecamp
       {/if}
       <strong>{page.siteName}</strong>
       <Badge tone="muted">alpha</Badge>
+      {#if session.user}
+        <Button variant={focus ? 'outlined' : 'ghost'} size="sm" id="focus-toggle"
+                aria-pressed={focus ? 'true' : 'false'} title="Hide the side panels (Ctrl+.)"
+                onclick={toggleFocus}>Focus</Button>
+      {/if}
     </span>
 
     <!-- The few screens opened all day. Hidden with the rest of the nav's
@@ -431,7 +488,7 @@ siteName: Basecamp
        a 56px row wrapped to two lines and spilled out of it at every width
        down from 1920px, so the topbar holds PRIMARY only.
        Hidden below 767px by the package; the drawer below covers that. -->
-  {#if session.user}
+  {#if session.user && !focus}
     <nav class="sidebar" aria-label="Main">
       {@render navlists()}
     </nav>
@@ -445,7 +502,7 @@ siteName: Basecamp
            screen's ActionQueue — same notices, same rules, two presentations.
            First in source order either way, so a screen reader meets it
            before the content wherever it is drawn. -->
-      {#if session.user}
+      {#if session.user && !focus}
         <aside class="notice-rail">
           <NoticeBar notices={notices} max={2} />
         </aside>
@@ -463,12 +520,13 @@ siteName: Basecamp
 -->
 <mesa:window on:keydown={(e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); commandPalette.toggle() }
+  if ((e.metaKey || e.ctrlKey) && e.key === '.' && session.user) { e.preventDefault(); toggleFocus() }
 }} />
 
 {#if commandPalette.open}
   <CommandPalette
     items={COMMANDS}
-    groupOrder={['Navigate', 'Create', 'Servers', 'Workspace', 'Session']}
+    groupOrder={['Recent', 'Navigate', 'Create', 'Servers', 'Workspace', 'Session']}
     placeholder="Search commands, servers, workspaces…"
     onclose={() => commandPalette.hide()}
   />

@@ -1,13 +1,13 @@
 /*
  * style — `fixtures/Styled.mesa` against its twin `fixtures/Unstyled.mesa`,
- * the same markup with every `style:` taken off. A terminal paints no CSS,
- * so `style:` is inert, as a static `style` attribute and the scoped rules
- * are: the two frames must be the same characters, before and after a
- * click moves the live ones.
+ * the same markup with every `style:` and `class:` taken off. A terminal
+ * paints no CSS, so both are inert, as a static `style` or `class` and the
+ * scoped rules are: the two frames must be the same characters, before and
+ * after a click moves the live ones.
  *
  * A green run pins what the slice decided rather than what it built — a
  * `style:display` of `none` still shows its content here, where a browser
- * hides it. Mapping any property onto the engine (`gap`, `flex-direction`,
+ * hides it, and so does a live `class:hidden`. Mapping any property onto the engine (`gap`, `flex-direction`,
  * `padding`, hiding on `display`/`visibility`) changes a frame and fails it.
  */
 export const name = 'style'

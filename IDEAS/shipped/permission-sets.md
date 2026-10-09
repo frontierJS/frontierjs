@@ -1090,7 +1090,7 @@ language stops being reviewable.
   and moves by default, `@@capabilities(all)` for read, chosen by which refusal is
   silent and backed by the 1-of-20 measurement. The token is recoverable — it is
   syntax, not stored data.
-- **Should `capabilities { }` also NARROW?** Argued in § *The `capabilities { }` block*
+- ~~**Should `capabilities { }` also NARROW?**~~ **Answered 2026-10-09 (`FJS-D830`): A — No: the block carries labels only, and the grantable set narrows by derivation. A move marked `@system` or `@gate(8)` is already left out by `packages/litestone/src/core/capabilities.js`.** Argued in § *The `capabilities { }` block*
   and deferred: cheap, compatible with `FJS-D139`, and unable to ship without a
   `fli check` rule because a forgotten entry makes an action reachable by nobody in
   silence. Exclusion must mean *ungrantable*, never *ungraded*. Revisit once a role

@@ -51,6 +51,14 @@ export const INGRESS_SERVER = 'ingress'
 /** Where the routes are written, from ON the target. Caddy binds it to loopback. */
 export const CADDY_ADMIN = 'http://127.0.0.1:2019'
 
+/**
+ * How many proxies these routes put in front of the API: Caddy, and nothing
+ * else. The deploy hands the count to the container as `FJS_TRUST_PROXY`
+ * (`FJS-D617`), so a route that added a second hop without raising this would
+ * key every caller on Caddy's address again.
+ */
+export const EDGE_HOPS = 1
+
 // A hostname, and nothing a shell or a config could read as syntax: the value
 // is interpolated into both.
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/i
@@ -128,9 +136,8 @@ const route = ({ id, host, inner }) => ({
 const apiRoute = (apiPort, paths = null) => ({
   ...(paths ? { match: [{ path: paths }] } : {}),
   // X-Forwarded-For carries the address Caddy observed and nothing a caller
-  // sent, since no proxy in front of it is trusted. The app still has to be
-  // told there is one proxy -- http.trustProxy: true in junction.config.js --
-  // or it keys every caller on this machine's address.
+  // sent, since no proxy in front of it is trusted. EDGE_HOPS is what tells
+  // the app this one hop is there.
   handle:   [{ handler: 'reverse_proxy', upstreams: [{ dial: `127.0.0.1:${apiPort}` }] }],
   terminal: true,
 })

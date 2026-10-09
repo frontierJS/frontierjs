@@ -96,6 +96,25 @@ describe('actorType grades the principal it was handed', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  test('a person holding a grant as well is the actor, and the grant\'s subject is the subject', async () => {
+    // Junction's `session: 'merge'` (`FJS-D831`): the grant is a thing the
+    // person held, not who acted. Filed as a user under the person's id, with
+    // what the grant was for kept as the subject.
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-actor-'))
+    try {
+      const db: any = await createClient({ schema: SCHEMA(dir), resolveFrom: dir })
+      db.$logContext(() => ({ bearerId: 'link-7', bearerSubject: 'client-3' }))
+      await db.$setAuth({ id: 'person-1', type: 'user', portalClientId: 'client-3' }).thing.create({ data: { name: 'x' } })
+      await tick()
+      const row = (await db.asSystem().auditTrail.findMany({}))[0]
+      db.$close()
+
+      expect(row.actorType).toBe('user')
+      expect(row.actorId).toBe('person-1')
+      expect(row.subjectId).toBe('client-3')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   test('an operator still wins over a bearer, and keeps the principal as subject', async () => {
     // The negative control for the row above. Both arrive down one closure, so
     // a reader that took whichever it saw first would file a support write

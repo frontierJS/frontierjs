@@ -265,14 +265,21 @@ export function buildTerminal(ctx) {
       line(ind + 1, `if (__prev.a !== __a) $$tui.set_attribute(${el}, ${q1(a.name)}, __prev.a = __a);`)
       line(ind, '}, { a: undefined });')
     }
-    // `n.styles` is inline CSS, and a terminal paints no CSS: it is inert
-    // here as a static `style` attribute and the scoped rules are.
+    // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
+    // are inert here as a static `style` or `class` and the scoped rules are.
     emitChildren(n.children, el, ind)
     for (const h of n.handlers) {
       dep(h.expr)
       line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
     if (n.ref) line(ind, `${n.ref}(${el});`)
+    // The DOM path's owner, handed the renderable: it waits for mount the
+    // way `$.onMount` does, so an attachment written for the DOM throws when
+    // it runs here rather than at compile.
+    for (const a of n.attachments) {
+      dep(a.expr)
+      line(ind, `$$runtime.attach(${el}, () => (${a.expr.code}));`)
+    }
   }
 
   const emitText = (n, parent, ind) => {

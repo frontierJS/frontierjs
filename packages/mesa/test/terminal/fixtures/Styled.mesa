@@ -3,8 +3,8 @@
   let gap = 1
   const flip = () => { hidden = !hidden; gap++ }
 </script>
-<div style:gap={gap} style:flex-direction="row">
-  <p style:display={hidden ? 'none' : null} style:visibility="hidden">Shown</p>
-  <button on:click={flip} style:padding="{gap}ch">Flip</button>
+<div style:gap={gap} style:flex-direction="row" class:row={hidden}>
+  <p style:display={hidden ? 'none' : null} style:visibility="hidden" class:hidden>Shown</p>
+  <button on:click={flip} style:padding="{gap}ch" class:wide={gap > 1}>Flip</button>
   <p>hidden: {hidden}</p>
 </div>

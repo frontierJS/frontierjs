@@ -28,15 +28,22 @@ describe('login limiter keying', () => {
     expect((await attempt(app, '10.0.0.99')).status).toBe(429)
   })
 
-  // FJS-1841: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('scaffold shape — trustProxy absent behind the shipped nginx: one caller\'s failures lock every other caller out', async () => {
-    // What `fli new` writes has no trustProxy, and `fli deploy`'s nginx appends
-    // X-Forwarded-For. Every request then arrives from the proxy's socket, and
-    // with trustProxy unset that socket is the whole key.
-    const app = await appWith(h.auth, { loginRateLimit: { max: 3, window: '15 minutes' } })
-    for (let i = 0; i < 3; i++) expect((await attempt(app, `203.0.113.7, 127.0.0.1`)).status).toBe(401)
-    // A DIFFERENT client, through the same proxy. Secure: graded on its own.
-    expect((await attempt(app, `198.51.100.9, 127.0.0.1`)).status).toBe(401)
+  test('deployed shape — FJS_TRUST_PROXY from the deploy, Caddy in front: one caller\'s failures do not lock out another (FJS-1841)', async () => {
+    // `fli new` writes no trustProxy, and the deploy that puts Caddy in front
+    // passes FJS_TRUST_PROXY=1 instead (FJS-D617). Caddy's X-Forwarded-For is
+    // the address it observed and nothing a caller sent.
+    const before = process.env.FJS_TRUST_PROXY
+    process.env.FJS_TRUST_PROXY = '1'
+    let app: any
+    try { app = await appWith(h.auth, { loginRateLimit: { max: 3, window: '15 minutes' } }) }
+    finally {
+      if (before === undefined) delete process.env.FJS_TRUST_PROXY
+      else process.env.FJS_TRUST_PROXY = before
+    }
+    for (let i = 0; i < 3; i++) expect((await attempt(app, '203.0.113.7')).status).toBe(401)
+    expect((await attempt(app, '203.0.113.7')).status).toBe(429)
+    // A DIFFERENT client, through the same proxy, graded on its own.
+    expect((await attempt(app, '198.51.100.9')).status).toBe(401)
   })
 })
 

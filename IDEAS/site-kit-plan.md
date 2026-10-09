@@ -109,6 +109,16 @@ to its run before the phase. FJS-1554 is moot, confirmed: `fli check` reports
 1. `Block.mesa`, keeping its name (`FJS-D654`): typed keys replace
    `classes:`, and a top-level block emits `band` plus one Layout helper, per
    `site-kit-structure.md`.
+   **Done 2026-10-09.** site-kit ships `src/layouts/Block.mesa` and owns
+   `markdownLayouts`. ksite loads the parts of `@frontierjs/css` a Block emits
+   into (tokens, tones, Surface, Layout, Band), and its theme states css's
+   tokens in its own values. Its content says `template: split` and
+   `tone: muted`, and what the keys cannot state (three breakpoint rules) went
+   to the site's `styles.scss`. ksite's Uno preset gave up the six tone words
+   it defined and nothing used. Graded by an exact pixel diff against the
+   build before, since the baselines pass a stripe gone white: identical at
+   six widths, in build and dev, from the workspace and a tarball install, but
+   for one heading's antialiasing on `/services/` (ksite's Port ledger).
 2. The markdown dialect: `===`, and the use-site classes FJS-1502 unblocked.
 3. Collections, and menus and settings back to `.md`, which FJS-D549 unblocked.
 4. The head: what `config/site-scripts.js` rewrites after the build moves into
@@ -123,7 +133,9 @@ block replacing an engine block) is measured here.
 **Phase 5 — an upgrade with no copy** (ksite step 3). Change the engine, bump
 it, and both clients take it with no file copied. Then delete `fli ksite:*`,
 and ship the codemod (or alias) for every client `theme.scss` that imports
-`@/themes/blocks.scss`. Moving site-kit out of `website/` and publishing it is
+`@/themes/blocks.scss`. Publishing site-kit is also when `@kobami/ksite`
+declares it as a peer: bun fetches a peer's metadata from the registry, so a
+peer on an unpublished package fails every `bun install`, workspace included. Moving site-kit out of `website/` and publishing it is
 decided here, once a published engine has been proved.
 
 **Phase 6 — the backlog, on demand.** A block moves when a site that is

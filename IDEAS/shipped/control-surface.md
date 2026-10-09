@@ -422,7 +422,7 @@ up is not a fact about the app this page maps.
   - **C** — always the workspace.
   - **Recommend A** — A is what ships in `packages/cli/core/runnables.js`, and it
     derives the scope from where the command is typed rather than adding a flag.
-- **Does a started server outlive the GUI?** A child of the GUI process dies with it,
+- ~~**Does a started server outlive the GUI?**~~ **Answered 2026-10-09 (`FJS-D827`): A — as built: children die with the GUI (`killAll` on SIGINT/SIGTERM in `core/server.js`).** A child of the GUI process dies with it,
   which is tidy and is not what somebody who just started `api` expects. Detaching
   buys the expectation and costs the stop button.
   - **A** — as built: children die with the GUI (`killAll` on SIGINT/SIGTERM in
@@ -434,7 +434,7 @@ up is not a fact about the app this page maps.
   - **Recommend A** — a server meant to outlive a session is what `fli dev` is for,
     and it already records its session. B would build a second record of running
     processes beside that one; C leaves a server running that no page can stop.
-- **How does a tile know a port is *its*?** A port answering is not proof it is the
+- ~~**How does a tile know a port is *its*?**~~ **Answered 2026-10-09 (`FJS-D828`): B — ask who holds the port (`pidsOnPort` in `core/ports.js`) and match the holder to the tile: inside the GUI child's process group, else a working directory under the row's `dir`.** A port answering is not proof it is the
   thing the tile names — this is exactly the failure `strictPort` exists for. A probe
   of `/health` or `/manifest` narrows it for an API and answers nothing for a static
   origin.

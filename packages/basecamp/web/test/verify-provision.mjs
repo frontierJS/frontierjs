@@ -1033,6 +1033,39 @@ try {
   await evaluate(foldButton('None'))
   await until(foldState, s => !/folded/.test(s), 'None left a message folded')
 
+  // Focus mode, on the screen it was asked for. A sidebar left in the DOM
+  // would keep its grid column, so the screen's left edge is the proof.
+  const panels = `[!!document.querySelector('.shell > .sidebar'), !!document.querySelector('.notice-rail')]`
+  check('the sidebar is drawn before focus', (await evaluate(panels))[0])
+  await click('#focus-toggle')
+  await until(panels, ([s, r]) => !s && !r, 'Focus left a side panel drawn')
+  check('Focus hides the sidebar and the notice rail', true)
+  check('…and the screen takes the sidebar\'s column',
+    (await evaluate(`document.getElementById('screen').getBoundingClientRect().left`)) < 1)
+  await goto('/workbench/')
+  await until(panels, ([s, r]) => !s && !r, 'a reload came back unfocused')
+  check('…and a reload stays focused', true)
+  await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: '.', ctrlKey: true, bubbles: true }))`)
+  await until(panels, ([s]) => s, 'Ctrl+. did not bring the sidebar back')
+  check('Ctrl+. brings them back', true)
+
+  // ⌘K's Recent group. Both visits are full page loads, so the entry it
+  // offers has to have come back out of storage.
+  const firstRow = `document.querySelector('.fjs-cp-row')?.textContent.trim() ?? ''`
+  const palette = () => evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))`)
+  await goto('/servers/')
+  await goto('/workbench/')
+  await palette()
+  const back = await until(firstRow, t => t.length > 0, 'the palette opened with no rows')
+  check('⌘K opens on "Go back to" the screen before, across a reload', /^Go back to Servers/.test(back), back)
+  await click('.fjs-cp-row')
+  await until(`location.pathname`, p => p === '/servers/', 'Go back went nowhere')
+  check('…and choosing it goes there', true)
+  await palette()
+  const again = await until(firstRow, t => t.length > 0, 'the palette reopened with no rows')
+  check('…after which it offers the screen just left', /^Go back to Workbench/.test(again), again)
+  await evaluate(`document.querySelector('.fjs-cp-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+
   // ─── The other act ─────────────────────────────────────────────────────
   // The screen this one was split from. Asserted because the split is only a
   // gain if BOTH halves still work: a rename that left importing broken would

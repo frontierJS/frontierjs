@@ -1,12 +1,12 @@
 ---
 id: fable-audit-plan
-status: shipped
+status: partial
 dated: 2026-10-05
 ---
 
 # Idea — The Fable 5 audit plan: what is still unread, and how each run reports
 
-**Status: SHIPPED — every run reported.** Findings filed as `FJS-1816`–`1820` and `FJS-1831`–`1876`; rulings `FJS-D615`–`D619`. Dated 2026-10-05. A queue of audits to run
+**Status: 6 of 17 runs reported** (1.1, 1.2, 1.3, 2.2, 3.1, 4.1, all on 2026-10-05). Open: 1.4, 1.5, 2.1, 2.3, 2.4, 3.2, 4.2–4.4, 5.1, 5.2. Findings so far are `FJS-1816`–`1820` and `FJS-1831`–`1876`; questions `FJS-D615`–`D619`. Which run filed a row is in the row (*Fable audit 2026-10-05, run N.N*). Dated 2026-10-05. A queue of audits to run
 on Fable 5 (`claude-fable-5-1`), ordered by unaudited risk first and judgment-heavy
 work second. A finding lands in `ISSUES.md` with an id. This file stays the plan, and
 it is not a register.
@@ -23,9 +23,10 @@ their fixes:
 - **mesa**: audit 2026-09, `FJS-829`…`888`
 - **invariants**: `invariants.snapshot.md` § The gap. 16 is the only one left.
 
-`mcp`, `outpost`, `jetty`, `notifications`, `orion`, `toolbelt`, `css`, `testing` and
-`email-kit` have no audit on record. `auth` has had its routes read only in passing,
-through the seams it shares with litestone.
+Since then, runs 1.1–1.3 read `auth`, `mcp` and `outpost`, and a separate toolbelt
+audit (2026-10-09) filed `FJS-2183`–`2228`. `jetty`, `notifications`, `orion`, `css`,
+`testing` and `email-kit` have no audit on record. Of those six, only the first three are
+in this plan (run 1.5).
 
 ## What every run is told
 

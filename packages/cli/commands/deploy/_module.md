@@ -15,6 +15,7 @@ const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new 
 const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
 const { dockerLogArgs } = await import(new URL('file://' + global.fliRoot + '/core/docker-logging.js'))
 const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '/core/ports.js'))
+const { EDGE_HOPS } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 
 // The container this deploy's API runs in. One reading of the name, shared by
 // the pipeline and by every standalone command that has to find it again —
@@ -536,6 +537,11 @@ fi`)
     // health step then reports as a sick application.
     `--env PORT=3000`,
     `--env NODE_ENV=production`,
+    // The proxy this deploy wrote into Caddy. Absent, every caller arrives from
+    // the proxy's address and shares one rate-limit bucket, so one caller's
+    // failed logins lock out the site (`FJS-1841`). A trustProxy the app
+    // declares still wins.
+    `--env FJS_TRUST_PROXY=${EDGE_HOPS}`,
     // Docker's default json-file driver caps nothing, so a chatty container
     // fills the disk and the database stops writing before anybody reads a log.
     // `deploy.logs` is the escape for a daemon already pointed somewhere.
