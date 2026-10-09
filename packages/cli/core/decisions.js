@@ -32,7 +32,7 @@
 // frontmatter kit, through `compiler.js` — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, relative }                        from 'node:path'
+import { basename, join, relative }              from 'node:path'
 
 import { readRegisters, registerLayout } from './registers.js'
 import { extractFrontmatter }             from './compiler.js'
@@ -114,15 +114,21 @@ export function rulingSections(root) {
 // ─── IDEAS ────────────────────────────────────────────────────────────────────
 
 function ideaQuestions(root) {
-  const dir = join(registerLayout(root).dir, 'IDEAS')
-  if (!existsSync(dir)) return []
+  const ideas = join(registerLayout(root).dir, 'IDEAS')
+
+  // A paper that shipped can still hold a question nobody ruled, and moving the
+  // file must not drop it from the queue.
+  const papers = [ideas, join(ideas, 'shipped')]
+    .filter(d => existsSync(d))
+    .flatMap(d => readdirSync(d).filter(n => n.endsWith('.md')).sort().map(n => join(d, n)))
 
   const out = []
-  for (const name of readdirSync(dir).filter(n => n.endsWith('.md')).sort()) {
-    const rel   = relative(root, join(dir, name))
-    const text  = readFileSync(join(dir, name), 'utf8')
+  for (const path of papers) {
+    const name  = basename(path)
+    const rel   = relative(root, path)
+    const text  = readFileSync(path, 'utf8')
     const lines = text.split('\n')
-    const meta  = extractFrontmatter(text, join(dir, name))
+    const meta  = extractFrontmatter(text, path)
     if (MOOT_STATUS.has(meta.status)) continue
 
     const paper = { id: meta.id || name.replace(/\.md$/, ''), status: meta.status || '', file: rel }

@@ -32,7 +32,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 9 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 9 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 7 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 8 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 6 |
@@ -136,7 +136,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `announce()` | `packages/junction/src/transport/channels.ts` | yes | 8 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | — |
-| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 7 |
+| `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 8 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |

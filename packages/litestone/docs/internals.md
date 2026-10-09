@@ -920,3 +920,45 @@ so a read under `$setAuth` is graded by that principal's policies and one under
 
 A `@@gate` lives in a plugin's `beforeRead`, so a read path that skips the plugin
 runner skips the gate — `aggregate`, `groupBy` and `search` did (`FJS-262`).
+
+
+## Architecture notes
+
+### Naming
+
+- Model name: `PascalCase` singular (`User`, `ServiceAgreement`)
+- Accessor: `camelCase` singular (`db.user`, `db.serviceAgreement`)
+- SQL table name: `snake_case` of model name by default (`user`, `service_agreement`)
+- `pluralize: true` in createClient/config → table names pluralized
+- `@@map("custom")` always wins
+- Type name: `PascalCase` (matches models). `interface T` in TS output.
+- Trait name: `PascalCase`. Erased at parse time.
+
+### Per-model maps (post-fix)
+
+All maps in `ctx.*` (policyMap, transitionMap, validationMap, relationMap, computedSets, autoIdMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, selfRelationMap, modelDbMap, sequenceMap, computedFns, models, **typeMap**) are keyed by PascalCase model/type name. SQL identifiers are derived via `modelToTableName(model, pluralize)` at the emission site.
+
+### Three-proxy client
+
+- Main proxy — unscoped, default identity
+- `$setAuth(user)` proxy — sets `ctx.auth`, runs through scoped tables
+- `asSystem()` proxy — sets `ctx.isSystem = true`, bypasses policies/gate/guarded
+
+Each proxy has its own `query` closure that resolves spec accessors against its own tables. Without this, a batched `query()` from the auth proxy would silently strip auth context when nested through `$transaction`.
+
+### Trait & type pipeline
+
+Both are parser-stage transformations, erased before validation runs. `resolveTraits(schema)` mutates `schema.models` with spliced fields/attributes. `validateTypes(schema)` walks `schema.types` and every `Json @type(T)` reference for shape errors. The `typeMap` (Map<typeName, typeDecl>) is built once in `createClient()`, threaded through `ctx`, used by both `validate()` (for write-time typed-JSON validation) and `buildWhere()` (for path filter pushdown).
+
+### Fast paths
+
+- `findUnique({ where: { <pk>: v }})` — precomputed prepared statement at table-build time. ~2.5 µs/op. Conditions: no encryption, no policies, no global filter, no plugins, no `@from` fields. Try-guarded for `@@external` tables.
+- `findMany({})` on soft-delete tables with no policies/filters/plugins — same pattern.
+
+### Statement cache
+
+LRU-bounded (default 500 entries). Move-to-end on hit (cheap O(1) Map.delete + Map.set), evict oldest on overflow with `finalize()` to release native handles. Bounded memory in long-lived processes building many distinct WHERE shapes.
+
+### Auto-ANALYZE
+
+`migrate apply` + `autoMigrate` run `ANALYZE` after success. SQLite-specific edge that Postgres handles via autovacuum.

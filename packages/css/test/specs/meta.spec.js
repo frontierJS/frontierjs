@@ -1,7 +1,7 @@
 /*
  * meta.spec.js — tests for the harness, not for the CSS.
  *
- * PROJECT_STATE.md records that roughly a third of the v0.6 failures were
+ * docs/picking-up-cold.md records that roughly a third of the v0.6 failures were
  * bugs in the assertions rather than in the stylesheet, and that when a
  * result contradicts the spec you should suspect the ruler first. These
  * tests are the ruler's calibration marks: if the CSS specs go green while

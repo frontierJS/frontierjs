@@ -6830,7 +6830,7 @@ describe('onLog callback', () => {
     expect(row.operation).toBe('login.failed')
     expect(row.actorId).toBe('u1')
 
-    const rows = await (db as any).auditTrail.findMany({})
+    const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.some((r: any) => r.operation === 'login.failed' && r.actorId === 'u1')).toBe(true)
     db.$close()
   })
@@ -6854,7 +6854,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb()
     await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout' })
     await flush()
-    const rows = await (db as any).auditTrail.findMany({})
+    const rows = await (db as any).asSystem().auditTrail.findMany({})
     const row  = rows.find((r: any) => r.operation === 'logout')
     expect(row.actorId).toBe(7)
     expect(row.actorType).toBe('user')
@@ -6868,7 +6868,7 @@ describe('onLog callback', () => {
     await (db as any).asSystem().$audit({ operation: 'a' })
     await (db as any).asSystem().$audit({ operation: 'b', actorId: 'u9' })
     await flush()
-    const rows = await (db as any).auditTrail.findMany({})
+    const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'a').actorId).toBe(null)
     expect(rows.find((r: any) => r.operation === 'b').actorId).toBe('u9')
     db.$close()
@@ -6881,7 +6881,7 @@ describe('onLog callback', () => {
     await (db as any).$audit({ operation: 'x', actorId: 'stated' })
     await (db as any).$audit({ operation: 'y' })
     await flush()
-    const rows = await (db as any).auditTrail.findMany({})
+    const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.find((r: any) => r.operation === 'x').actorId).toBe('stated')
     expect(rows.find((r: any) => r.operation === 'y').actorId).toBe('from-onlog')
     db.$close()
@@ -6942,7 +6942,7 @@ describe('onLog callback', () => {
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
     // Verify the written log rows reflect the overridden actor
-    const auditRows = await (db as any).auditTrail.findMany({})
+    const auditRows = await (db as any).asSystem().auditTrail.findMany({})
     expect(auditRows.some((r: any) => r.actorId === 999 && r.actorType === 'service')).toBe(true)
     db.$close()
   })
@@ -6961,7 +6961,7 @@ describe('onLog callback', () => {
     const db = await makeLogDb(() => ({ actorId: uuid, actorType: 'user' }))
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const auditRows = await (db as any).auditTrail.findMany({})
+    const auditRows = await (db as any).asSystem().auditTrail.findMany({})
     expect(auditRows.some((r: any) => r.actorId === uuid)).toBe(true)
     db.$close()
   })
@@ -6977,7 +6977,7 @@ describe('onLog callback', () => {
     await db.post.create({ data: { title: 'C', body: 'D' } })
     await flush()
 
-    const rows = await (db as any).auditTrail.findMany({})
+    const rows = await (db as any).asSystem().auditTrail.findMany({})
     expect(rows.some((r: any) => r.actorId === 42)).toBe(true)
     expect(rows.some((r: any) => r.actorId === 'usr_abc')).toBe(true)
     db.$close()
@@ -7040,7 +7040,7 @@ describe('onLog callback', () => {
     })
     await db.post.create({ data: { title: 'T', body: 'B' } })
     await flush()
-    const auditRows = await (db as any).auditTrail.findMany({})
+    const auditRows = await (db as any).asSystem().auditTrail.findMany({})
     const withMeta  = auditRows.find((r: any) => r.meta != null)
     expect(withMeta).toBeDefined()
     const meta = typeof withMeta.meta === 'string' ? JSON.parse(withMeta.meta) : withMeta.meta
@@ -7390,7 +7390,7 @@ describe('audit trail covers bulk writes', () => {
   // Model-level entries only — a @trail field would double every row below.
   async function entries(db: any) {
     await flush()
-    const rows = await db.auditTrail.findMany({})
+    const rows = await db.asSystem().auditTrail.findMany({})
     return rows.map((r: any) => ({
       operation: r.operation,
       records:   typeof r.records === 'string' ? JSON.parse(r.records) : r.records,
@@ -7491,7 +7491,7 @@ describe('audit trail covers bulk writes', () => {
     await db.note.createMany({ data: [{ text: 'x' }, { text: 'y' }] })
     expect((await db.note.updateMany({ where: { text: 'x' }, data: { text: 'z' } })).count).toBe(1)
     expect((await db.note.deleteMany({ where: {} })).count).toBe(2)
-    expect(await (db as any).auditTrail.findMany({})).toEqual([])
+    expect(await (db as any).asSystem().auditTrail.findMany({})).toEqual([])
     db.$close()
   })
 })

@@ -414,7 +414,9 @@ prerequisite rather than a companion.
 So the honest position is probably: **`desktop` becomes a named entry on the target
 axis once jetty is folded in — because by then the only new work is the shell — and
 `mobile` is refused until offline-first exists**, stated as a refusal with that
-trigger rather than left as an "and later". Whichever way it goes, the outcome
+trigger rather than left as an "and later". *Narrowed 2026-10-09 by
+[`FJS-D689`](../DECISIONS.md#fjs-d689): mobile work starts now, and offline-first
+gates store release only.* Whichever way it goes, the outcome
 belongs in `DECISIONS.md`; an unwritten maybe is the thing to remove.
 
 ---

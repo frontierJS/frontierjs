@@ -308,6 +308,85 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
 
 ---
 
+## The lifecycle — wave 6 of the vocabulary atlas
+
+**Ruled 2026-10-09 as [`FJS-D687`](../DECISIONS.md#fjs-d687): A.**
+
+*Added 2026-10-09. The atlas's thin-area card says: draft, review, publish and
+revision have no word, and "probably a Transition set plus a Run — check before
+coining". Checked here. Counts are `rg` over `*.lite` in this tree and
+`../fjs-prototypes` on this date.*
+
+### The check: every step already has an owner
+
+| Step | Owner today | Built? |
+| --- | --- | --- |
+| draft → review → published → archived | `@@transitions`, one named edge each | yes |
+| frozen once published | `@seals` on the edge, `@immutable` on the columns — ordinary while a draft, frozen at the seal (`FJS-D167`, `Invoice.issue`) | yes |
+| publish at a set time | `@@commitment(publish, on: publishAt, while: …)` — the clock causing the write | yes |
+| someone owes the review | a transition with an owed-by party (`FJS-D634`) | ruled, **no syntax yet** |
+| *publish* as the verb | left to content and packages when the channel hook became `announce()` (`FJS-D631`) | yes |
+
+The recipe, parsed clean by `packages/litestone/src/core/parser.js` on this date:
+
+```
+enum PostStatus { draft review published archived }
+
+model Post {
+  id          Int        @id
+  title       String     @immutable
+  body        String     @immutable
+  status      PostStatus @default(draft)
+  publishAt   DateTime?
+  publishedAt DateTime?  @system
+
+  @@transitions(status,
+    submit:  draft     -> review,
+    reject:  review    -> draft,
+    publish: review    -> published @seals,
+    archive: published -> archived)
+  @@commitment(publish, on: publishAt, while: status == 'review')
+}
+```
+
+**The atlas's guess was half right.** A Transition set, yes. A **Run**, no: a
+lifecycle belongs to one row and the clock already drives its one timed edge.
+A Run appears only for a *bulk* publish (re-sealing a thousand posts), which is
+a backfill and already has that name.
+
+**The corpus is thin.** `draft` opens a status enum four times — `Invoice`,
+`PayRun`, jazzhr's `Job`/`Offer`, connectteam's `Shift` — and only `Shift`
+says `published`. None of them is content. The shape recurs; the CMS case has
+no instance yet, since § *Open questions* still says files.
+
+### Two words that must not be coined
+
+- **Revision** is spent: it is a row's `@version` value (`FJS-D659`). A kept
+  history of published bodies is a different thing — *edition*, *version
+  history* — and belongs to `time-travel.md`'s checkpoints over the trail,
+  not to the lifecycle.
+- **Workflow** is refused (`FJS-D634`), and *Publication* would be a noun for a
+  state value.
+
+### Options
+
+- **A** — no noun and no artifact. The recipe above goes in this paper, and
+  VOCABULARY's *publish* stays a verb with no row of its own.
+- **B** — A, plus `packages/litestone/references/Publishable.lite`: the enum,
+  the four edges, the seal and the commitment as a `trait`, graded by
+  `references.test.ts` like `Window`.
+- **C** — coin a lifecycle noun (`@@lifecycle(content)`) that expands to the
+  recipe.
+- **Recommend A** — every step has an owner, so a noun names nothing new
+  (`the nine`: amend, don't add). B fails the references bar: a reference is
+  lifted from instances the corpus spelled several ways, and content has zero
+  instances here. Take B when the files-or-rows question lands on rows (its B or
+  C) and two apps have written the model. C is a second spelling of four
+  declarations that already exist. **Owed either way**: the owed-by syntax from
+  `FJS-D634`, which review needs and nothing else here lacks.
+
+---
+
 ## See also
 
 - `packages/mesa/src/compiler-md.js` — the compiler, built

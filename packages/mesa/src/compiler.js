@@ -3402,6 +3402,34 @@ export function analyzeScript(raw, ast) {
   }
 
   /**
+   * What a pattern's names read from. An init that is not a plain path is bound
+   * once to a synthetic var of its own, because pasting it into each member
+   * read ran `f()` once per name and the names came from different results —
+   * two list handles from one `r.list()`, two subscriptions from `useStore()`
+   * with `unsubscribe` freeing only the second (`FJS-2138`).
+   */
+  const patternSource = (init, extra, node) => {
+    const src = raw.slice(init.start, init.end)
+    if (init.type === 'Identifier' || memberPath(init)) return src
+    const name = `$$pattern_${init.start}`
+    vars[name] = {
+      name,
+      kind: 'const',
+      initRaw: src,
+      initNode: init,
+      deps: [],
+      isExport: false,
+      isDerived: false,
+      isAsync: false,
+      isProp: false,
+      ...extra,
+      nodeStart: node.start,
+      nodeEnd: node.end
+    }
+    return name
+  }
+
+  /**
    * The names a destructuring pattern binds, and whether `expandPattern` can
    * express all of it (`flat`): a rest element, a computed key or a pattern
    * with a default of its own cannot be written as one member read per name.
@@ -3589,7 +3617,7 @@ export function analyzeScript(raw, ast) {
         if (!name) {
           // Pattern declarator — attempt to expand into flat identifier vars.
           if (d.id.type === 'ObjectPattern' || d.id.type === 'ArrayPattern') {
-            const initExpr = d.init ? raw.slice(d.init.start, d.init.end) : 'undefined'
+            const initExpr = d.init ? patternSource(d.init, {}, node) : 'undefined'
             expandPattern(d.id, initExpr, node.kind, node)
           } else {
             passthroughDeclStarts.add(node.start)
@@ -3953,7 +3981,7 @@ export function analyzeScript(raw, ast) {
             )
           } else {
             const before = new Set(Object.keys(vars))
-            const rhsExpr = ['Identifier', 'MemberExpression'].includes(expr.right.type) ? rhs : `(${rhs})`
+            const rhsExpr = patternSource(expr.right, { kind: 'let', isWritableDerived: true }, node)
             if (expandPattern(expr.left, rhsExpr, 'let', node)) {
               for (const n of names) if (!before.has(n) && vars[n]) vars[n].isWritableDerived = true
             }

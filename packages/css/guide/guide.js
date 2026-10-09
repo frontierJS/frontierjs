@@ -12116,7 +12116,7 @@ function topbar() {
  * active state carried by aria-current rather than an .active class.
  *
  * That is not a cosmetic swap. `aria-current="page"` is what a screen reader
- * announces, and PROJECT_STATE.md § "Style interactive state from ARIA, not
+ * announces, and docs/conventions.md § "Style interactive state from ARIA, not
  * a class" is the convention the package documents — so the guide's own nav
  * was demonstrating the opposite of it on the most-read page in the repo.
  * nav.css styles the attribute directly, so there is nothing else to set.

@@ -257,8 +257,8 @@ schema because the UI sits one level down in `web/`.
 Three directories at the app root, one per realm, all orbiting the shared schema —
 and beside them a surface for each of the other shapes a UI takes: `site/` for a
 public prerendered site, `widgets/` for embeddable scripts, `extension/` for a
-browser extension, `desktop/` for a native app with its screens bundled in, and
-`cli/` for the app on a command line:
+browser extension, `desktop/` for a native app with its screens bundled in,
+`mobile/` for the same on a phone, and `cli/` for the app on a command line:
 
 ```
 my-app/
@@ -404,6 +404,9 @@ are a different set of answers from the SPA's. The five optional ones are:
 desktop app that IS the console needs no second copy of it; the build still writes its
 own `dist/`, because it inlines a different API origin and `vite build` empties
 `outDir`. Omit `wraps` and `desktop/src/` is the screens, which is a desktop-only app.
+
+**`mobile/` is named and not built yet** (`FJS-D691`). It wraps `web/` the way `desktop/`
+does and has its own release: store signing and review. No generator writes it.
 
 Each generator creates the surface the first time and tops it up after, so the app a
 scaffold wrote is the app the next command extends.

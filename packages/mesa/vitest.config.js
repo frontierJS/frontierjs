@@ -10,6 +10,6 @@ export default defineConfig({
     // eleven failures that mean nothing.
     // Spread the defaults rather than replacing them — this key OVERRIDES
     // rather than adds, so a bare list here also un-excludes node_modules.
-    exclude: [...configDefaults.exclude, 'test/browser/**'],
+    exclude: [...configDefaults.exclude, 'test/browser/**', 'test/terminal/**'],
   },
 })

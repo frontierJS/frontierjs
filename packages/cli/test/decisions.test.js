@@ -135,6 +135,21 @@ describe('the read', () => {
     } finally { cleanup() }
   })
 
+  test('a paper that shipped still queues the question it left open', () => {
+    const { root, cleanup } = fixture()
+    try {
+      mkdirSync(join(root, 'IDEAS', 'shipped'))
+      writeFileSync(join(root, 'IDEAS', 'shipped', 'built.md'), [
+        '---', 'id: built', 'status: shipped', '---', '', '## Open questions', '',
+        '- **Keyed per parent row too?** Built without it.',
+        '  - **A** — no', '  - **B** — yes', '  - **Recommend B** — both sightings need it', '',
+      ].join('\n'))
+      const q = readDecisions(root).find(d => d.paper?.id === 'built')
+      expect(q.state).toBe('decidable')
+      expect(q.file).toBe(join('IDEAS', 'shipped', 'built.md'))
+    } finally { cleanup() }
+  })
+
   test('a bullet under any other heading is not a question', () => {
     const { root, cleanup } = fixture()
     try {
@@ -347,13 +362,15 @@ describe('over this repo', () => {
     // became holds answers, and is named here rather than matched.
     const answers = new Set(['## What the open questions became'])
     const missed  = []
-    for (const name of readdirSync(join(REPO, 'IDEAS')).filter(n => n.endsWith('.md'))) {
-      readFileSync(join(REPO, 'IDEAS', name), 'utf8').split('\n').forEach((line, i) => {
-        if (answers.has(line.trim())) return
-        if (/^##\s/.test(line) && /\bopen questions?\b/i.test(line) && !QUESTIONS_HEADING.test(line)) {
-          missed.push(`IDEAS/${name}:${i + 1} ${line}`)
-        }
-      })
+    for (const dir of ['IDEAS', join('IDEAS', 'shipped')]) {
+      for (const name of readdirSync(join(REPO, dir)).filter(n => n.endsWith('.md'))) {
+        readFileSync(join(REPO, dir, name), 'utf8').split('\n').forEach((line, i) => {
+          if (answers.has(line.trim())) return
+          if (/^##\s/.test(line) && /\bopen questions?\b/i.test(line) && !QUESTIONS_HEADING.test(line)) {
+            missed.push(`${dir}/${name}:${i + 1} ${line}`)
+          }
+        })
+      }
     }
     expect(missed).toEqual([])
   })

@@ -292,6 +292,35 @@ describe('the slot a declaration takes', () => {
     expect(row.slot).toBe(null)
   })
 
+  // `model String @default("Page")` is the natural spelling where the pool has
+  // one extended model, and the pool is chosen from the payload (`FJS-1755`).
+  test('a model and a type left to the declarer’s @default still take a slot', async () => {
+    const c = await createClient({ db: ':memory:', schema: `
+      enum FieldKind { text number }
+      model Property {
+        id    Int    @id
+        model String @default("Customer")
+        key   String
+        type  FieldKind @default(text)
+        slot  String?
+        @@unique([model, key])
+      }
+      model Customer {
+        id     Int  @id
+        fields Json @default("{}")
+        @@extensible(fields, declaredBy: Property, max: { text: 8, number: 4 })
+      }
+      database main { path ":memory:" }` })
+    const db  = c.asSystem()
+    const row = await db.property.create({ data: { key: 'tier' } })
+    expect(row.model).toBe('Customer')
+    expect(row.slot).toBe('t1')
+    const n = await db.property.create({ data: { key: 'ltv', type: 'number' } })
+    expect(n.slot).toBe('n1')
+    await db.customer.create({ data: { id: 1, fields: { tier: 'gold' } } })
+    expect(await db.customer.count({ where: { fields: { tier: 'gold' } } })).toBe(1)
+  })
+
   test('the kind decides which queue it comes out of', async () => {
     const db = await decl()
     const t = await db.customField.create({ data: { model: 'Customer', key: 'tier', type: 'text' } })
@@ -616,6 +645,30 @@ describe('under tenancy { strategy row }', () => {
     expect(await sys.sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: null }, { id: 2, t1: 'sev1' }])
     await expect(sys.issue.update({ where: { id: 2 }, data: { fields: { severity: 'sev2' } } }))
       .rejects.toThrow(/names none — state 'workspaceId'/)
+  })
+
+  // The filter's pinned tenant is the third place a pool read looks (`FJS-1756`).
+  test('a system read pins the workspace in its where, and is refused naming none otherwise', async () => {
+    const { db, a } = await tenants()
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    await a.issue.create({ data: { id: 1, title: 'x', fields: { severity: 'sev1' } } })
+    const sys = db.asSystem()
+    expect(await sys.issue.count({ where: { workspaceId: 10, fields: { severity: 'sev1' } } })).toBe(1)
+    expect((await sys.issue.findMany({ where: { workspaceId: 10, fields: { severity: 'sev1' } } })).map((r: any) => r.id)).toEqual([1])
+    expect((await sys.issue.findMany({ where: { AND: [{ workspaceId: 10 }, { fields: { severity: 'sev1' } }] } })).map((r: any) => r.id)).toEqual([1])
+    await expect(sys.issue.count({ where: { fields: { severity: 'sev1' } } })).rejects.toThrow(/names none/)
+  })
+
+  // @@softDelete folds the caller's where under an AND, so the pin is no longer
+  // a top-level key by the time the pool read looks for it.
+  test('a pin survives the read rules folding the where under an AND', async () => {
+    const schema = ROW.replace('title       String', 'title       String\n      deletedAt   DateTime?')
+                      .replace('@@extensible(', '@@softDelete\n      @@extensible(')
+    const db = await createClient({ schema, db: ':memory:' })
+    const a = db.$setAuth({ id: 1, workspaceId: 10 })
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    await a.issue.create({ data: { id: 1, title: 'x', fields: { severity: 'sev1' } } })
+    expect(await db.asSystem().issue.count({ where: { workspaceId: 10, fields: { severity: 'sev1' } } })).toBe(1)
   })
 
   // The pool is per workspace, so emptying a slot for one workspace's new key

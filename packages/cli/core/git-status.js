@@ -20,7 +20,7 @@
 // and neither needs to be told which it is in. `packages/` is held whole —
 // basecamp's `web/` is one package's, and splitting it would scatter auth,
 // litestone and six others into `<pkg>/db` rows.
-const SURFACES = new Set(['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'cli', 'tests'])
+const SURFACES = new Set(['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'mobile', 'cli', 'tests'])
 
 export const zoneOf = (path) => {
   // An untracked directory arrives as `web/`. Counted with its trailing slash it

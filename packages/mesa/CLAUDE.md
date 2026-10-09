@@ -7,7 +7,8 @@ than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
 Run tests with **`bun run test`** — vitest, then the three gating **browser
-drives**, which need Chrome on PATH or `$FJS_CHROME`. `bun test` reports ~35 failures
+drives**, which need Chrome on PATH or `$FJS_CHROME`, then the **terminal drive**
+(`test:terminal`), which needs no Chrome and no TTY. `bun test` reports ~35 failures
 that are runner artifacts, not defects.
 
 `test:browser` is the three, `test:browser:runtime`, `test:browser:vite` and
@@ -33,7 +34,16 @@ a ratio to the hand-written floor measured in the same browser.
 ```
 src/
   compiler.js          — the compiler. ~290 KB, one file: parse → analyze → emit
+  ir.js                — lower(ctx): the parse tree plus analysis as one target-free
+                         tree, ctx.ir, built on every compile; a kind it does not
+                         translate is `unlowered` and named, never dropped
+  terminal/tags.js     — the terminal target's table: which tags and DOM event
+                         names it paints (FJS-D700, FJS-D692). Pure data; the
+                         compiler refuses what is not in it, by file and line
   runtime.js           — the signal runtime the emitted code calls. ~174 KB
+  runtime-terminal.js  — the terminal runtime, @frontierjs/mesa/runtime/terminal.js:
+                         `$$tui`, a cell tree over @opentui/core (optional peer,
+                         pinned exact while 0.x — FJS-D698). Bun only
   render-component.js  — renderComponent(): a component → HTML, at build time
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
@@ -59,6 +69,13 @@ mesa-vite/
 docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
 docs/STATIC_RENDERING.md — server rendering: what runs, islands, tmpDir, globals
 
+test/terminal/
+  run.mjs              — bun test/terminal/run.mjs: the terminal target in
+                         OpenTUI's headless renderer — fixtures compiled with
+                         target: 'terminal', specs asserting the captured frame
+                         after typed keys. Bun only: node 22 cannot load the engine,
+                         so vitest excludes this directory
+
 test/browser/
   drive.mjs            — the spec runner over src/drive.js. SHARED, unpublished:
                          @frontierjs/ui and the cli read it by relative path
@@ -72,6 +89,11 @@ bench/
   baseline.json        — the gated numbers. Ratchets down: --update, --adopt
   fixtures/            — rows (Mesa) · vanilla (the floor) · floor (the smallest
                          component) · shared/data.js (the workload both tables run)
+
+scripts/
+  corpus.mjs           — bun run corpus: every .mesa in the workspace, compiled
+                         prod and dev, acorn-parsed; --save NAME / --diff NAME
+                         grade a change meant to move no byte
 ```
 
 **The Vite plugin is a subpath, not a package.** A `package.json` of its own

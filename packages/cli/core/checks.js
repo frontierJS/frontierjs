@@ -3447,7 +3447,7 @@ const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
 // surfaces are the ones whose source runs in a browser, a webview or an
 // extension. One list, because a surface missing from one rule's copy is source
 // that rule never reads, and nothing says so.
-const CLIENT_SURFACES = ['web', 'widgets', 'site', 'extension', 'desktop']
+const CLIENT_SURFACES = ['web', 'widgets', 'site', 'extension', 'desktop', 'mobile']
 const SURFACES        = ['api', ...CLIENT_SURFACES]
 
 /**

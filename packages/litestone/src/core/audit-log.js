@@ -78,6 +78,11 @@ export function makeLoggerAutoModel(dbName) {
     ],
     attributes: [
       { kind: 'db',    name: dbName },
+      // SYSTEM, as the auth models are. A row here carries the before- and
+      // after-image of every trailed write, every tenant's included, so an
+      // ungated trail hands a caller with no principal what every model it
+      // records refuses them. The trail's own writes do not pass the gate.
+      { kind: 'gate',  value: '8' },
       { kind: 'index', fields: ['actorId'] },
       { kind: 'index', fields: ['model'] },
       // *Everything that happened in this request* is the question a trail is

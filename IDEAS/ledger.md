@@ -332,6 +332,29 @@ behavior, when built, to `packages/litestone/docs/schema.md`.
     seed and `fli tinker` already break it without a sound. C puts two different
     answers to *can this refuse* behind one word, so reading `@from` would no
     longer tell a developer whether a write can fail.
+  - **Evidence, 2026-10-09 — the Lago stressor, a second domain (prepaid credit).**
+    `fjs-prototypes/lago` § Q2 graded a hand-kept `Account.balance` under
+    `@@check("kind <> 'prepaid' OR balance <= 0")` against Σ `Posting.amount`
+    read at the spend, two $7 spends of $10, in one process and in two
+    (`api/test/journal.test.ts`). The kept column refused the second spend in
+    every arrangement, `asSystem()` included. The sum refused it only when read
+    inside the spending transaction (`$transaction`'s FIFO lock and `BEGIN
+    IMMEDIATE` serialize it, across processes too); read before the transaction,
+    both guards passed and only the column's CHECK stopped $14 leaving $10. The
+    sum costs 230 µs at 1k postings, 3.3 ms at 10k and 37 ms at 100k on one
+    account, inside the write lock, against 15–35 µs for the column. And a direct
+    write moved the column with no posting, the drift A's triggers would close.
+    Two things A's spelling must answer that inventory did not ask. **The floor
+    is per row, not per column:** a receivable goes either way and a prepaid
+    account may not, so `@balance(Posting, sum: amount) @gte(0)` on `Account`
+    floors every kind; Lago's own wallet validates `balance_cents >= 0` only
+    `if: :traceable?`. **The sign:** debit-positive postings put credit-normal
+    accounts (prepaid, payable, revenue) below zero, so the floor is `<= 0` or a
+    negation. TigerBeetle ships two flags, `debits_must_not_exceed_credits` and
+    `credits_must_not_exceed_debits`, for this reason. Lago itself keeps
+    `wallets.balance_cents` at write under a per-customer advisory lock and
+    `lock_version` (`credits/applied_prepaid_credits_service.rb:23-42`), which is
+    spelling (a) plus a lock.
 
 - **Q2 — How is a direct write to the balance refused?**
   The literal guard (re-sum the tape) is linear and measured at 774 µs a post at

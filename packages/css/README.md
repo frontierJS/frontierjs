@@ -600,8 +600,9 @@ a deliberate measurement: every rule in that file is a gap in this package.
 ## Docs
 
 - **`demo/`** — a realistic app, and the findings from building it
-- **`PROJECT_STATE.md`** — architecture, the two halves, the class taxonomy,
-  design decisions, known constraints, and what's worth doing next
+- **`PROJECT_STATE.md`** — current state and what's worth doing next
+- **`docs/`** — architecture (the two halves, the class taxonomy), file map,
+  conventions, known constraints, and picking this up cold
 - **`guide/`** — the interactive reference: 54 pages, every component
   live, theme switching, and `⌘K` search over every term, heading and class
   name in it. Plain HTML + plain `.js`, no build step — open

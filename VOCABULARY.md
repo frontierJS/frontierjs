@@ -136,7 +136,9 @@ before you meet it.
 | Button | open | UI | | | |
 | Code | open | | | | |
 | Access | open | Data | Gate | | |
-| Page | open | UI | | | |
+| Page | blessed | UI | Component | a Component under `src/routes/` that sierra renders at a URL; its URL binding is a *page route* | [`FJS-D693`](DECISIONS.md#fjs-d693). Not css's Page tier, which keeps its qualifier |
+| Journey | refused | UI | | say which of four: navigation (sierra's router), a row's progress (`@@transitions`), a checklist (a projection), or a wizard (one form over several panes, the screen's own state) | [`FJS-D693`](DECISIONS.md#fjs-d693). UX research's word for a narrative someone draws. Not a Flow, and not *Pipeline* (junction's hook pipeline; the CRM sense is a row's stages) |
+| Checklist | open | UI | | reserved: a declared, ordered list of checks over the data, each naming the page that satisfies it, progress derived and never stored | [`FJS-D693`](DECISIONS.md#fjs-d693). Coined when `IDEAS/in-app-guide.md` tier 2 reads it and a second app writes an onboarding |
 | Row | open | Data | Model | | |
 | Block | open | | | | |
 | Question | open | | | | |
@@ -153,7 +155,7 @@ before you meet it.
 | DatePicker | open | UI | Quantify task | | |
 | Input | open | UI | Text task | | |
 | Progress | open | UI | | | |
-| Layout | open | UI | | | |
+| Layout | blessed | UI | Component | a `_module.mesa` that wraps every page beneath it; layouts nest | [`FJS-D693`](DECISIONS.md#fjs-d693). Not css's Layout tier (Stack, Cluster), which keeps its qualifier |
 | Select | open | UI | Select task | | |
 | Server | open | Operations | | | |
 | CommandPalette | open | UI | Overlay tier | | |
@@ -198,7 +200,7 @@ before you meet it.
 | Call | blessed | API | Service | one run of a service method through the pipeline — what `$` is inside, from the first hook to the announcement | `FJS-D391`. Not a Request: one request can make several Calls, and a Job makes one with none |
 | Envelope | blessed | API | Call | the result shape `{ kind, object, data, errors, total?, limit?, offset? }` a Call answers in | `FJS-D391`. One owner, `junction/src/core/envelope.ts` (Invariant 4) |
 | Directive | blessed | API | Call | a per-call instruction about the answer rather than a filter on it — `limit`, `offset`, `orderBy`, `select`, read into `ctx.directives` | `FJS-D391`. `$limit` is how one travels, and the `$` is transport syntax only (Invariant 10). The table is `@frontierjs/toolbelt/directives` |
-| Route | blessed | API | | an HTTP handler registered with `app.get`/`app.post`/…, outside the pipeline — no hooks, no gate, no Envelope | `FJS-D391`. A Route establishes a session and everything after is a Service (`FJS-D20`) |
+| Route | blessed | API | | an HTTP handler registered with `app.get`/`app.post`/…, outside the pipeline — no hooks, no gate, no Envelope | `FJS-D391`. A Route establishes a session and everything after is a Service (`FJS-D20`). Sierra's URL-to-page binding is a *page route* wherever the two could meet, unchecked ([`FJS-D693`](DECISIONS.md#fjs-d693)) |
 | Interaction task | blessed | UI | | what a control is FOR — a control is a technique for one task, and one task has many techniques | Foley, Wallace & Chan 1984: select · position · orient · path · quantify · text. `controlFor` answers four of them as `task` (sierra `INTERACTION_TASKS`), plus `bytes`, which is not Foley's and which a `File` column answers; path and orient have no column. `FJS-D384`, `FJS-D387` |
 | Select task | open | UI | Interaction task | choose among values the field already knows — an enum, `x-values`, a relation, a boolean | Placement from `IDEAS/ui-ontology.md` |
 | Quantify task | open | UI | Interaction task | enter an amount on a scale — a number, a date, `@money`, `@scale` | `@money` and `@scale` have no built-in technique. Placement from `IDEAS/ui-ontology.md` |

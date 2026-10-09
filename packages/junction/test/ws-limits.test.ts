@@ -151,8 +151,10 @@ describe('too many frames (FJS-705)', () => {
   it('a flood is throttled, told once, and the socket stays open', async () => {
     const c = client()
     await c.ready
+    // Not service calls: a call is answered by its id (FJS-1882), and this is
+    // the frame that has no id to answer.
     for (let i = 0; i < 200; i++)
-      c.send({ type: 'service_call', id: String(i), service: 'probe', method: 'find' })
+      c.send({ type: 'noop', id: String(i) })
 
     expect(await c.wait(() => c.errors().length > 0)).toBe(true)
     expect(c.errors()[0].error.code).toBe('rate_limited')
@@ -301,8 +303,9 @@ describe('too much work outstanding (FJS-705, FJS-1836)', () => {
     for (let i = 0; i < 4; i++)
       c.send({ type: 'service_call', id: String(i), service: 'slow', method: 'find' })
 
-    expect(await c.wait(() => c.errors().length > 0, 1000)).toBe(true)
-    expect(c.errors()[0].error.code).toBe('too_many_in_flight')
+    const refused = () => c.frames.filter(f => f?.type === 'service_error')
+    expect(await c.wait(() => refused().length > 0, 1000)).toBe(true)
+    expect(refused()[0].error.data.code).toBe('too_many_in_flight')
     expect(await c.wait(() => c.frames.filter(f => f?.type === 'service_result').length === 2)).toBe(true)
     expect(c.closed).toBeNull()
     c.close()
@@ -316,6 +319,40 @@ describe('too much work outstanding (FJS-705, FJS-1836)', () => {
 
     expect(await c.wait(() => c.frames.filter(f => f?.type === 'service_result').length === 2)).toBe(true)
     expect(c.errors()).toEqual([])
+    c.close()
+  })
+})
+
+// FJS-1882: a refusal the caller cannot attribute is a refusal it waits out.
+// The client settles a call only by the id on a service_result/service_error,
+// so a bare error frame left every refused call pending for its whole timeout
+// and rejected 408 — the cap worked and the caller was told nothing.
+describe('a refused call is answered by its id (FJS-1882)', () => {
+
+  it('a call over the in-flight cap gets a 429 service_error carrying its id', async () => {
+    const c = client()
+    await c.ready
+    for (let i = 0; i < 4; i++)
+      c.send({ type: 'service_call', id: `c${i}`, service: 'slow', method: 'find' })
+
+    expect(await c.wait(() => c.frames.some(f => f?.type === 'service_error' && f.id === 'c2'), 1000)).toBe(true)
+    const refused = c.frames.filter(f => f?.type === 'service_error')
+    expect(refused.map(f => f.id).sort()).toEqual(['c2', 'c3'])
+    expect(refused[0].error.code).toBe(429)
+    expect(refused[0].error.data.code).toBe('too_many_in_flight')
+    c.close()
+  })
+
+  it('every call over the rate gets its own answer, not one per second', async () => {
+    const c = client()
+    await c.ready
+    for (let i = 0; i < 200; i++)
+      c.send({ type: 'service_call', id: String(i), service: 'probe', method: 'find' })
+
+    await c.wait(() => c.frames.filter(f => f?.type === 'service_result' || f?.type === 'service_error').length >= 200, 3000)
+    const ids = new Set(c.frames.filter(f => f?.type === 'service_result' || f?.type === 'service_error').map(f => f.id))
+    expect(ids.size).toBe(200)
+    expect(c.frames.some(f => f?.type === 'service_error' && f.error.data?.code === 'rate_limited')).toBe(true)
     c.close()
   })
 })

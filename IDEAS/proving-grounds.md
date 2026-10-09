@@ -431,7 +431,7 @@ having a person in front of it.
   work, and why the answer is one realm down
 - `IDEAS/rigs.md` — what candidate C would be the first real consumer of
 - `IDEAS/testing-realm.md` — the executed checks candidate B would extend
-- `example/PROJECT_STATE.md` and its README's *Found by building this* — the ledger
+- `docs/changes-archive/example.md` and `example/README.md`'s *Found by building this* — the ledger
   this record is arguing to extend
 - `ISSUES.md` `FJS-561` (composite `@@id`, now closed) — the gap § The corpus found on the day
   this record was written, invisible to every rule `fli check` could carry. Its sibling

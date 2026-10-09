@@ -491,11 +491,15 @@ export function createAuthPlugin(
           const provider = String(ctx.route?.provider ?? '')
           const state    = ctx.query?.state ? String(ctx.query.state) : ''
           const code     = ctx.query?.code  ? String(ctx.query.code)  : ''
-          const cookiePath = callbackPath(app, prefix, provider)
 
           // However this ends, the flow is over: the cookie is single use, and
           // leaving it set means the next visit carries a state with no row.
-          ctx.setCookie?.(OAUTH_STATE_COOKIE, '', { maxAge: 0, path: cookiePath })
+          // Only for a provider the app configured: the begin route set it on
+          // that path alone, and the segment here is whatever the URL said --
+          // `%3B` would end the Path attribute and start one of the sender's.
+          if (oauthAuth.oauthProviderNames?.().includes(provider)) {
+            ctx.setCookie?.(OAUTH_STATE_COOKIE, '', { maxAge: 0, path: callbackPath(app, prefix, provider) })
+          }
 
           // The person clicked Deny, or the provider refused. Not an error on
           // our side, and the most common non-happy path there is.

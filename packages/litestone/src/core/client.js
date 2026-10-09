@@ -2801,6 +2801,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return decl?.fields?.some(f => f.name === t.column) ? t.column : null
   })()
 
+  // The value a where pins `col` to, looking through AND only: the read rules
+  // fold the caller's where under an AND with the filter, soft-delete and
+  // policy clauses, so the pin is rarely at the top. An OR or NOT pins nothing.
+  function pinnedIn(where, col) {
+    if (!where || typeof where !== 'object') return null
+    if (Array.isArray(where)) {
+      for (const w of where) { const p = pinnedIn(w, col); if (p != null) return p }
+      return null
+    }
+    const own = where[col]
+    if (own != null && typeof own !== 'object') return own
+    return where.AND ? pinnedIn(where.AND, col) : null
+  }
+
   // Which tenant a pool read is for: the one the payload states, else the
   // caller's claim, else the one a filter pins. A system call naming none is
   // refused rather than read across every tenant, because the wrong tenant's
@@ -2810,8 +2824,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (data && data[col] != null) return data[col]
     const claim = ctx.auth?.[ctx.schema.tenancy.claim]
     if (claim != null) return claim
-    const pinned = where?.[col]
-    if (pinned != null && typeof pinned !== 'object') return pinned
+    const pinned = pinnedIn(where, col)
+    if (pinned != null) return pinned
     throw new ValidationError([{ path: [col], message:
       `${modelName}: @@extensible under row tenancy reads declarations per tenant, and this call names none — ` +
       `state '${col}' on it, or make it as the tenant` }])
@@ -2843,7 +2857,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // writeData, so what these cost is a call on the rare path only.
 
   function allocateExtSlot(data, stamped) {
-    const pool = extPoolFor(String(data.model ?? ''))
+    // Allocation runs before the INSERT, where a literal @default is still the
+    // DDL's to fill. A model or type left to it is read from the default here,
+    // or the row lands with a model and no slot and reads as a full pool.
+    const stated = f => data[f] ?? shape.literalDefaults.find(d => d.field === f)?.value
+    const model  = String(stated('model') ?? '')
+    const type   = String(stated('type'))
+    const pool   = extPoolFor(model)
     let slot = null
     if (pool) {
       // Raw, and narrowed by model, for the reason `_extDeclarations` is:
@@ -2852,14 +2872,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // serves every extensible model and `t1` on a customer is not `t1` on a
       // product.
       const taken = new Set((_extTenantCol
-        ? readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL AND "${_extTenantCol}" = ?`).all(String(data.model), extTenant(data))
-        : readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`).all(String(data.model))
+        ? readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL AND "${_extTenantCol}" = ?`).all(model, extTenant(data))
+        : readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`).all(model)
       ).map(r => r.slot))
       // First free of the matching kind, in INDEX order — so the field a
       // tenant declares first lands leftmost, where a one-term query reaches
       // it. A full pool answers null, which is the ordinary end of a pool and
       // not a failure: the field still stores and still renders.
-      slot = pool.order.find(s => pool.kind[s] === String(data.type) && !taken.has(s)) ?? null
+      slot = pool.order.find(s => pool.kind[s] === type && !taken.has(s)) ?? null
       // A free slot can still hold the values of the declaration that freed
       // it: a delete leaves every row's mirror as it was, and only that row's
       // next write rewrites it. Handed on as it stands, the new key filters
@@ -9889,13 +9909,30 @@ function makeLockPrimitive(rawWriteDb) {
     return table
   }
 
+  // The jsonl table is one object shared by every flavor and by the trail's own
+  // writes, so it grades nobody itself. A caller reaching a TRAIL through an
+  // accessor is graded here as `makeTable` grades one, or the trail's `@@gate`
+  // admits every caller to every tenant's before- and after-images (FJS-2139).
+  // A `driver jsonl` model is refused a gate by the parser (FJS-1920) and is
+  // left alone. The trail's writes take `ctx.jsonlTableCache` and never pass this.
+  function withTrailPlugins(table, modelName, ctx) {
+    if (!pluginRunner.hasPlugins) return table
+    const out = { ...table }
+    for (const key of ['findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow', 'count', 'findManyCursor'])
+      out[key] = async (args = {}) => { await pluginRunner.beforeRead(modelName, args, ctx); return table[key](args) }
+    for (const key of ['create', 'createMany'])
+      out[key] = async (args = {}) => { await pluginRunner.beforeCreate(modelName, args, ctx); return table[key](args) }
+    return out
+  }
+
   // Per-model database routing. One call per model for the life of the client
   // since `FJS-722` — a flavor gets a wrapper, not a build.
   function buildTableForModel(model, ctx) {
     const conn      = dbRegistry[shapes[model.name].db] ?? dbRegistry.main
 
     if (conn.driver === 'jsonl' || conn.driver === 'trail') {
-      return withArgValidation(jsonlTableCache[model.name], model, ctx)
+      const table = jsonlTableCache[model.name]
+      return withArgValidation(conn.driver === 'trail' ? withTrailPlugins(table, model.name, ctx) : table, model, ctx)
     }
     return withArgValidation(makeTable(conn.readDb, conn.writeDb, shapes[model.name], ctx), model, ctx)
   }
@@ -11163,8 +11200,9 @@ function makeLockPrimitive(rawWriteDb) {
   }
 
   // Computed once. A schema with no access declarations has nothing for raw SQL
-  // to bypass, so `db.sql` there is unchanged.
-  const _hasAccessRules = schemaDeclaresAccessRules(schema)
+  // to bypass, so `db.sql` there is unchanged. The synthesized trail's gate is
+  // not one: its rows are a jsonl file no SQL statement reaches.
+  const _hasAccessRules = schemaDeclaresAccessRules({ models: schema.models.filter(m => !autoLogModels.includes(m)) })
 
   // Statements that are unambiguously reads. Everything else — including WITH,
   // because `WITH x AS (…) DELETE FROM …` is legal SQLite — goes to the write

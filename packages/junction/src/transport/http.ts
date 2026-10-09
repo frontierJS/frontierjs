@@ -17,7 +17,7 @@ import { REFUSE, resolvePrincipal, type CredentialVerifier } from '../auth/crede
 // 'StaticOptions'". Bun transpiles fully so it never noticed.
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, bridge, jsonResponse, errorResponse } from './bridge.ts'
-import { toFrameworkError }               from '../core/errors.ts'
+import { toFrameworkError, TooManyRequests } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
@@ -44,8 +44,12 @@ function serializeSetCookie(
   value: string,
   opts:  { httpOnly?: boolean; sameSite?: string; secure?: boolean; maxAge?: number; path?: string } = {}
 ): string {
+  const path = opts.path ?? '/'
+  // `Path` is the one attribute written raw. A `;` ends it and starts an
+  // attribute of the caller's choosing; a control character is a header split.
+  if (/[;\x00-\x1f\x7f]/.test(path)) throw new TypeError(`Cookie path ${JSON.stringify(path)} holds a ';' or control character`)
   const parts = [`${encodeURIComponent(name)}=${encodeURIComponent(value)}`]
-  parts.push(`Path=${opts.path ?? '/'}`)
+  parts.push(`Path=${path}`)
   if (opts.maxAge   !== undefined) parts.push(`Max-Age=${opts.maxAge}`)
   if (opts.httpOnly)               parts.push('HttpOnly')
   if (opts.secure)                 parts.push('Secure')
@@ -1345,17 +1349,38 @@ export class HttpTransport {
   }
 
   /**
-   * Tell the client why a frame was dropped, at most once a second.
+   * Tell the client why a frame was dropped.
    *
-   * Throttled because an error per dropped frame is the amplifier the limit
-   * exists to remove: 20 000 refusals is the same egress as 20 000 answers.
+   * A `service_call` is answered by its id, every time: the client settles a
+   * call only on a result or error carrying that id, so a refusal it cannot
+   * attribute leaves the call pending for its whole timeout to reject 408 —
+   * the cap worked and the caller was told nothing (`FJS-1882`). The answer is
+   * one fixed small frame to a frame the sender had to send, which is not the
+   * amplifier. Anything else gets the bare error, at most once a second:
+   * an unattributable error per dropped frame is egress with no reader.
    */
-  private _wsRefuse(ws: Bun.ServerWebSocket<WsData>, code: string, message: string): void {
+  private _wsRefuse(ws: Bun.ServerWebSocket<WsData>, code: string, message: string, frame?: string | Buffer): void {
+    const callId = typeof frame === 'string' ? this._wsCallId(frame) : undefined
+    if (callId !== undefined) {
+      const error = new TooManyRequests(message, { code }).toJSON()
+      wsSend(ws, JSON.stringify({ type: 'service_error', id: callId, error }))
+      return
+    }
     const l = ws.data.limits!
     const now = Date.now()
     if (now - l.told < 1000) return
     l.told = now
     wsSend(ws, JSON.stringify({ type: 'error', error: { code, message } }))
+  }
+
+  /** The id of a `service_call` frame, or `undefined` for any other frame. */
+  private _wsCallId(frame: string): string | number | undefined {
+    if (!frame.includes('"service_call"')) return undefined
+    try {
+      const p = JSON.parse(frame)
+      if (p?.type === 'service_call' && (typeof p.id === 'string' || typeof p.id === 'number')) return p.id
+    } catch {}
+    return undefined
   }
 
   private async _wsMessage(ws: Bun.ServerWebSocket<WsData>, message: string | Buffer): Promise<void> {
@@ -1387,7 +1412,7 @@ export class HttpTransport {
       l.tokens  = Math.min(rate * 2, l.tokens + ((now - l.refilled) / 1000) * rate)
       l.refilled = now
       if (l.tokens < 1) {
-        this._wsRefuse(ws, 'rate_limited', `More than ${rate} frames per second`)
+        this._wsRefuse(ws, 'rate_limited', `More than ${rate} frames per second`, message)
         return
       }
       l.tokens -= 1
@@ -1399,7 +1424,7 @@ export class HttpTransport {
     // each is 100 concurrent calls, which is the shape that took a victim's
     // latency to a second.
     if (lim.maxInFlight > 0 && l.inFlight >= lim.maxInFlight) {
-      this._wsRefuse(ws, 'too_many_in_flight', `More than ${lim.maxInFlight} frames in flight`)
+      this._wsRefuse(ws, 'too_many_in_flight', `More than ${lim.maxInFlight} frames in flight`, message)
       return
     }
 

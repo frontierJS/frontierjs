@@ -42,8 +42,7 @@ const setCookies = (res: any): string[] => {
 
 describe('GET /auth/oauth/{provider}/callback with a hostile provider segment', () => {
 
-  // FJS-1840: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a `;` in the segment does not become a second cookie attribute', async () => {
+  test('a `;` in the segment does not become a second cookie attribute', async () => {
     const segment = encodeURIComponent('x; Domain=evil.test; Path=/')
     const res = await request(app).get(`/auth/oauth/${segment}/callback?error=access_denied`)
 
@@ -56,10 +55,17 @@ describe('GET /auth/oauth/{provider}/callback with a hostile provider segment', 
     }
   })
 
-  // FJS-1840: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a line break in the segment is not a 500', async () => {
+  test('a line break in the segment is not a 500', async () => {
     const segment = encodeURIComponent('x\r\nSet-Cookie: session=stolen')
     const res = await request(app).get(`/auth/oauth/${segment}/callback?error=access_denied`)
     expect(res.status).toBe(302)
+  })
+
+  test('an unconfigured provider clears nothing; a configured one still clears its state cookie', async () => {
+    const unknown = await request(app).get('/auth/oauth/nobody/callback?error=access_denied')
+    expect(setCookies(unknown)).toEqual([])
+
+    const known = await request(app).get('/auth/oauth/google/callback?error=access_denied')
+    expect(setCookies(known).some(c => c.startsWith('fjs_oauth_state=;') && c.includes('Max-Age=0'))).toBe(true)
   })
 })

@@ -183,23 +183,29 @@ backend's runtime: Fabric's and Lynx's shape, emitted from Mesa's IR.
 
 ## 6. Sequencing, and what proves each step
 
-0. **Nothing before core leaves alpha**, on `FJS-D14`'s reasoning, which
-   `FJS-D37` § 6 and `FJS-D38` both inherit. What this paper settles now is where
-   the seam goes, so no compiler change made in the meantime forecloses it.
-1. **Extract the IR with the DOM backend as its only consumer.** The check is
-   exact, because Invariant 12 makes compiler output reproducible: every `.mesa`
-   file in the workspace (461 on the day this was written) compiles
-   **byte-identically** before and after, and Invariant 15's parse-the-output
-   tests still pass. A difference is either a bug or a change to be named.
+**Started 2026-10-09.** `FJS-D689` scheduled it as the mobile plan's third
+rung, and `FJS-D545` makes steps 1 and 3 one piece of work: the IR is cut
+with the terminal backend as its second consumer, not ahead of it.
+
+1. **Extract the IR, with the terminal backend reading it from the first
+   commit.** The DOM backend moves onto it one node kind at a time, and each
+   move is graded **byte-identically** over the whole corpus, which Invariant 12
+   makes exact. `bun run corpus -- --save before` / `--diff before` in
+   `packages/mesa` is that grade. It found 507 files and 1,014 compiles (prod
+   and dev), 0 refused and 0 invalid JS, identical run to run. A moved byte is
+   either a bug or a change to be named.
 2. **The portability report** (§ 3), per target, as a report rather than a
-   refusal until a target exists. It runs over the corpus from step 1 and says
-   how much of `example/` and `packages/ui` would lower to a terminal today.
-3. **The terminal backend**, the first non-markup consumer. `FJS-D37` bought the
-   engine, and `terminal-surface.md` is its paper.
+   refusal until a target exists. It runs over the same corpus and says how much
+   of `example/` and `packages/ui` would lower to a terminal today.
+3. **The terminal backend**: an emitter from the IR to a runtime over the
+   bought engine (§ 8). The first slice is a fixture with static elements, a
+   text binding, a handler, `{#if}` and `{#each}`, mounted in the engine's
+   headless renderer and asserted by its captured frame after typed keys.
 4. **Native**, after offline-first exists. `one-mental-model.md` § *The target
    set's missing member* already argues that mobile is refused until then,
    because store review, eviction and background execution make offline-first a
-   prerequisite. The IR does not change that argument.
+   prerequisite. The IR does not change that argument. *Narrowed 2026-10-09 by
+   [`FJS-D689`](../DECISIONS.md#fjs-d689): offline-first gates store release only.*
 
 ---
 
@@ -241,9 +247,61 @@ built.
 
 ---
 
+## 8. The engine, measured 2026-10-09
+
+`FJS-D37` § 5 ruled that a TUI buys its engine and named no engine. **OpenTUI's
+core (`@opentui/core` 0.5.17) was run on this machine under Bun 1.4.2**, in a
+scratch directory and not in the tree. It is a Zig cell renderer reached over
+Bun FFI, with yoga layout and a Node build beside the Bun one, and its React and
+Solid bindings are separate packages that Mesa would not import.
+
+- **The node operations a Mesa runtime needs are all there**: `add`,
+  `insertBefore`, `remove` and `destroyRecursively` on every renderable;
+  property setters that repaint (`text.content = …`); `focus` / `blur`; and
+  events on an input (`input`, `enter`). That is the same list `{#if}` and
+  `{#each}` already call on the DOM.
+- **It ships a headless renderer** (`@opentui/core/testing`):
+  `createTestRenderer({ width, height })` with `captureCharFrame()` and mock
+  keys (`typeText`, `pressEnter`, `pressTab`). A terminal spec therefore needs
+  no TTY and no Chrome, and it asserts the frame a person would see.
+- **A box with a title, a text and an input, typed into and submitted,** painted
+  correctly at each step, and an `insertBefore` followed by a `remove` repainted
+  correctly. Renderer boot took 12 ms and the whole script 41 ms.
+
+Ink was not measured, because it is React, and the paper's question is whether
+Mesa reaches a terminal without a second component model.
+
+---
+
 ## Open questions
 
-- **Does the IR carry raw HTML tag names, or only the abstract vocabulary?**
+- ~~**Which engine does the terminal runtime drive?**~~ **Answered 2026-10-09 (`FJS-D698`): A — OpenTUI's core alone, pinned to an exact version while it is 0.x, and never its React or Solid binding.**
+  - **A** — OpenTUI's core alone, pinned to an exact version while it is 0.x,
+    and never its React or Solid binding.
+  - **B** — Ink. Mature, but it ships React under the runtime.
+  - **C** — write the cell buffer, layout and input ourselves. `FJS-D37` § 5
+    refuses this by name.
+  - **Recommend A** — § 8 measured it doing every operation the runtime needs.
+    Its core is a renderer with no component model, which is the seam a Mesa
+    backend plugs into. *Batteries vs. smallness*: it is severable as an
+    optional peer behind one runtime file, and the IR and the emitter never name
+    it, the same rule `FJS-D690` sets for Lynx. *What must stay true:* a
+    terminal fixture paints the frame it should. *What fails:* the headless
+    frame specs from step 3. A missing install fails through `missingPeer`.
+- ~~**Where do the terminal emitter and its runtime live?**~~ **Answered 2026-10-09 (`FJS-D699`): A — in `@frontierjs/mesa`: the emitter is a stage of `compiler.js` selected by a target option, the runtime is a sibling of `runtime.js` exported at a subpath, and the engine is an optional peer, as happy-dom already is.**
+  - **A** — in `@frontierjs/mesa`: the emitter is a stage of `compiler.js`
+    selected by a target option, the runtime is a sibling of `runtime.js`
+    exported at a subpath, and the engine is an optional peer, as happy-dom
+    already is.
+  - **B** — a new package, `@frontierjs/mesa-terminal`, that imports the
+    compiler's IR and holds the emitter and runtime.
+  - **Recommend A** — § 7's sixth answer already places lowering inside the one
+    compiler, and B would make the IR a published interface before it has two
+    consumers. Mesa stays the leaf, since an optional peer is not a framework
+    dependency. The `cli/` surface (Invariant 3) is where an app would run the
+    output, and that is a separate question for after the first slice.
+
+- ~~**Does the IR carry raw HTML tag names, or only the abstract vocabulary?**~~ **Answered 2026-10-09 (`FJS-D700`): A — raw tags plus a per-target lowering table. Every existing component compiles, and portability is whatever the table covers.**
   - **A** — raw tags plus a per-target lowering table. Every existing component
     compiles, and portability is whatever the table covers.
   - **B** — abstract vocabulary only, with raw tags as a web-only escape node.
@@ -257,7 +315,9 @@ built.
   - **Recommend B** — an IR with one consumer is a guess about where the second
     one needs the cut (`cut-one-level-simpler`). The byte-identical check is just
     as available when the terminal backend starts.
-- **Is a handler's event name a DOM event or a Gesture?** `on:click` and
+- **Is a handler's event name a DOM event or a Gesture?** *Ruled 2026-10-09,
+  [`FJS-D692`](../DECISIONS.md#fjs-d692): A, then B read off the terminal's table
+  and the phone's.* `on:click` and
   `onclick` both appear today (104 and 112 uses across `packages/ui` and `example/web`). A terminal has
   no click, but it has an activation. Whether `FJS-D385`'s Gesture becomes a
   small closed set the IR carries, with `click` lowering to `activate`, is owed

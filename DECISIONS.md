@@ -27,6 +27,30 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d693"></a>2026-10-09 · `FJS-D693` — A user journey takes **no noun**, and is not a Flow; *Checklist* is reserved for its first reader. Page and Layout take sierra's senses, and sierra's route is a *page route*
+
+Asked by wave 6 of the vocabulary atlas; the paper is [`IDEAS/in-app-guide.md`](IDEAS/in-app-guide.md) § *The journey*. The owner took the recommendation. On the way the owner asked whether a journey is a wizard and whether it is a Pipeline. It is neither, and both answers are recorded here.
+
+**"Journey" is five things and four have an owner.** Moving between pages is sierra's router. A row's progress is `@@transitions`, drawn by `<Steps>`. A setup checklist is a projection a service method returns: basecamp's `/onboarding/` reads six counts, and its ruling refused a stored `done`. A **wizard** is one form over several panes on one page with one submit, and its state is the screen's own (`FJS-D390` stands). A goal across pages and sessions is the fifth thing, and it is unbuilt. **It is not a Flow.** A Flow is executed by a Run, and a Run per person per goal would be the stored `done` that basecamp refused, because every step's completion is already in the data.
+
+**Checklist is reserved, not coined.** It means *a declared, ordered list of checks over the data, each naming the page that satisfies it, with progress derived and never stored*. It is coined when its first reader is built (`IDEAS/in-app-guide.md` tier 2, the *step 2 of 4*) and a second app writes an onboarding. A name nothing reads is a row that drifts.
+
+Refused: *journey*, UX research's word for a narrative someone draws (zero files). *Pipeline* in this sense: junction's hook pipeline already holds the word (`svc.pipelines()`), and the CRM sense (ELA's *Sales Pipeline* board) is a record moving through stages, which is `@@transitions`. A journey follows a person across records. *Flow* in a UI sense: IFML's *navigation flow* would be a third meaning. *Tour* and *walkthrough* belong to the app (`FJS-D14`).
+
+**Page** is a Component under `src/routes/` that sierra renders at a URL, and **Layout** is a `_module.mesa` that wraps every page beneath it. These are the senses `FJS-D382` already leans on, and css's Page tier and Layout tier keep their qualifiers. **Route** stays junction's raw handler (`FJS-D391`). Sierra's is a *page route* wherever the two could meet. Nothing checks that, the same terms `FJS-D678` gave Origin and Domain.
+
+Found and not ruled: `example`'s order and subscription screens each filter `cancelled`/`refunded` out of the enum by hand to draw the main path, because the schema does not say which states are exits. ELA's intake wizard commits through three browser-side creates, and a failure on the third orphans a lead. That is the app's defect: a wizard should commit through one service method.
+
+*Lives in:* `VOCABULARY.md` (Page, Layout, Route, Journey, Checklist).
+
+### <a id="fjs-d687"></a>2026-10-09 · `FJS-D687` — A content lifecycle takes **no noun**: draft, review, publish and archive are a `@@transitions` set with a `@seals` edge and a `@@commitment` for the timed publish
+
+Asked by wave 6 of the vocabulary atlas; the paper is [`IDEAS/content-collections.md`](IDEAS/content-collections.md) § *The lifecycle*. The owner took the recommendation.
+
+Every step already has an owner: the edges are `@@transitions`, freezing on publish is `@seals` over `@immutable` columns (`FJS-D167`), a scheduled publish is `@@commitment`, and a review someone owes is a transition with an owed-by party (`FJS-D634`). The atlas guessed *Transition set plus Run*; the Run half does not hold, because a lifecycle belongs to one row. A bulk re-publish is a backfill.
+
+*Revision* stays the `@version` value (`FJS-D659`); a kept history of published bodies is `IDEAS/time-travel.md`'s question, not this one. Refused: B, a `references/Publishable.lite` trait, because the corpus holds no content instance to lift it from (take it once two apps write the model as rows); C, `@@lifecycle(content)`, a second spelling of four declarations. Owed: the owed-by syntax `FJS-D634` ruled, which review needs. The paper's recipe is not graded by anything.
+
 ### <a id="fjs-d681"></a>2026-10-09 · `FJS-D681` — The inbound end of a Provider is a **Receiver**; Provider is the relationship, Target narrows to where we send, and a broker stays a Target
 
 Asked by wave 6 of the vocabulary atlas; the paper is [`IDEAS/inbound-integrations.md`](IDEAS/inbound-integrations.md) § *The noun*. The owner took both recommendations.
@@ -4731,7 +4755,7 @@ policy it cannot decide and at a boundary that must refuse — but a call with n
 Data boundary on its context (a raw route, a test harness) is ungraded rather
 than refused, because grading was never applicable there. Conflating the two is
 how a fail-closed check becomes fail-open at the first odd shape. A LIST payload
-is likewise not graded: a bulk write announces a COUNT (`FJS-D34`), which names
+is likewise not graded: a bulk write announces a COUNT ([`FJS-D34`](ISSUES_ARCHIVE.md#fjs-d34)), which names
 no row and leaks none.
 
 **The principal has to be translated and that is the defect this nearly
@@ -4846,7 +4870,7 @@ or a second replica beside the API.
 default `inProcess`, which is what every existing schema already means. The
 mechanism costs a recorded row per announced write — **+14 µs on a 25 µs
 single-row insert, and nothing on a bulk one**, because `changed` already
-carries a count rather than a row (`FJS-D34`). An app that runs one process must
+carries a count rather than a row ([`FJS-D34`](ISSUES_ARCHIVE.md#fjs-d34)). An app that runs one process must
 pay none of that and carry no table, and an app that runs a worker is the one
 that knows it does. Refused on a `jsonl` or `logger` driver by name: those are
 files, so there is no table to record into and no transaction to record with.
@@ -6054,7 +6078,7 @@ one fact: a `select: false` write is row-scoped and has no row, and treating tha
 as *no rows* is exactly what dropped it a layer up. Every write method announces;
 seven did not, and a write matching no rows announces nothing.
 
-### <a id="fjs-d56"></a>2026-08-16 · `FJS-D56` — `announce` is per CALL, with a client-level floor (`FJS-D34`).
+### <a id="fjs-d56"></a>2026-08-16 · `FJS-D56` — `announce` is per CALL, with a client-level floor ([`FJS-D34`](ISSUES_ARCHIVE.md#fjs-d34)).
 `collection` (default) · `rows` · `none`; precedence option → `createClient({
 announce })` → `collection`. **Not per model**, and not adaptive on size. Per
 model was the tempting one — it is where `@@log` and `@@softDelete` live, and
@@ -6713,6 +6737,32 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d695"></a>2026-10-09 · `FJS-D695` — Where does `record()` say WHY it has no row — `ready` rejecting, or an `error` on the view beside `get()` — The view carries `error: { status, code }` beside `get()`, and `ready` keeps resolving. The reason survives the push path as well as the first load.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`ready` rejects with the error and callers catch, as `find` and `get` do. It covers the first load only: a row that becomes unreadable on a later push still has nowhere to say so).
+
+The paper's recommendation, taken as written: a live view outlives its first load, so the reason belongs on the view, not the promise. (The row's other argument for B, that it moves no documented contract, carries no weight pre-alpha.).
+
+### <a id="fjs-d697"></a>2026-10-09 · `FJS-D697` — Is an open socket by person its own read, `app.channels.connectionsOf(userId)`, beside `presenceOf` — Keep `connectionsOf` beside `presenceOf`: two facts, two names.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (fold it into `presenceOf(userId)` with no channel answering the open connections. One name for two facts).
+
+The paper's recommendation, taken as written: a connection and a channel's presence differ (a help desk assigns by the first, a room shows the second), and the name says which one this is.
+
+### <a id="fjs-d696"></a>2026-10-09 · `FJS-D696` — Does a dead bearer answer one 401 for forged, expired and revoked, or does an expired link say so — Keep one message for all three. A page says *this link is no longer valid*, which names what the holder does next, ask for a new link.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (an expired link carries its own `code: 'expired'`; forged and revoked stay one message. It tells the holder that the token was once real).
+
+The paper's recommendation, taken as written: the three answers lead to the same next step, and one message tells an attacker nothing about which tokens existed.
+
+### <a id="fjs-d694"></a>2026-10-09 · `FJS-D694` — How does a principal resolver that applies PRECEDENCE between two claim sources stay described, when `FJS-D522`'s array refuses a claim name emitted by two — The precedence stays a plain function, and a plain function may carry its own `describe()` returning a LIST of the claim descriptions it composes; the snapshot prints each. The `FJS-D522` array is built as ruled for the merge case, and `describe()` gains a kind for a claim proved by a signature rather than a row (`FJS-D522` already names that gap).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (an array element may be marked as a fallback or an override, so the array states *B only when A yields nothing*. It cannot state *a session on THIS roster*, which is the measured rule), **C** (loosen `FJS-D522`: a claim name emitted by two resolvers goes to the later one. Simplest, and a claim collision made by a typo then wins in silence).
+
+The paper's recommendation, taken as written: precedence is conditional app logic a marker cannot express, and what the row costs is the review surface, which a described list repairs with no new noun; the merge case keeps `FJS-D522` unchanged.
+
+Unenforced: a hand-written `describe()` list can name claims the function does not emit, and nothing fails when it does (§ V's ninth question, answered `none`).
+
 ### <a id="fjs-d662"></a>2026-10-08 · `FJS-D662` — The one door from the four streams to the outside is junction's `otlp({ endpoint, headers })` plugin: OTLP/JSON over `fetch`, spans for calls, hooks and queries, the log, and metric sources as gauges. It samples nothing itself, never exports the trail, and a failed export costs telemetry, never a request.
 
 Asked by [`IDEAS/shipped/observability.md`](IDEAS/shipped/observability.md) § 6 as option **B**, the step after `FJS-D660`. Four owner picks, each the paper's recommendation: a junction plugin over its own package, no `sample` option, a fake receiver in the suite plus a real collector as a drive, and `otlp()` over the paper's `telemetry()`.
@@ -6950,6 +7000,8 @@ The paper's recommendation, taken as written: it is the Feathers `registration` 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a named combinator `composeClaims(...resolvers)` returning a `DescribedResolver` whose `describe()` is a list; `principal` stays one slot).
 
 The paper's recommendation, taken as written: no new noun; the slot already is the one seam (`FJS-D113`), and a list is its plural. Either way `describe()` needs a kind for a claim proved by a signature rather than a row.
+
+Amended by [`FJS-D694`](#fjs-d694): a plain function may carry its own `describe()` returning a list, so a precedence the array cannot state is no longer *describes nothing*.
 
 ### <a id="fjs-d541"></a>2026-09-29 · `FJS-D541` — Does the transcript belong to the framework or to the app — The app's own models, with only the streaming seam and the column type in the framework.
 
@@ -10238,6 +10290,35 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d700"></a>2026-10-09 · `FJS-D700` — Does the IR carry raw HTML tag names, or only the abstract vocabulary — Raw tags plus a per-target lowering table. Every existing component compiles, and portability is whatever the table covers.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions. **A** was picked over **B** (abstract vocabulary only, with raw tags as a web-only escape node. Cleaner, but every raw `<div>` in the corpus becomes an escape).
+
+The paper's recommendation, taken as written: the portability report makes the gap visible without rewriting 461 files first, and B can be reached later by shrinking the table.
+
+### <a id="fjs-d699"></a>2026-10-09 · `FJS-D699` — Where do the terminal emitter and its runtime live — In `@frontierjs/mesa`: the emitter is a stage of `compiler.js` selected by a target option, the runtime is a sibling of `runtime.js` exported at a subpath, and the engine is an optional peer, as happy-dom already is.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions. **A** was picked over **B** (a new package, `@frontierjs/mesa-terminal`, that imports the compiler's IR and holds the emitter and runtime).
+
+The paper's recommendation, taken as written: § 7's sixth answer already places lowering inside the one compiler, and B would make the IR a published interface before it has two consumers. Mesa stays the leaf, since an optional peer is not a framework dependency. The `cli/` surface (Invariant 3) is where an app would run the output, and that is a separate question for after the first slice.
+
+### <a id="fjs-d698"></a>2026-10-09 · `FJS-D698` — Which engine does the terminal runtime drive — OpenTUI's core alone, pinned to an exact version while it is 0.x, and never its React or Solid binding.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions. **A** was picked over **B** (Ink. Mature, but it ships React under the runtime), **C** (write the cell buffer, layout and input ourselves. `FJS-D37` § 5 refuses this by name).
+
+The paper's recommendation, taken as written: § 8 measured it doing every operation the runtime needs. Its core is a renderer with no component model, which is the seam a Mesa backend plugs into. *Batteries vs. smallness*: it is severable as an optional peer behind one runtime file, and the IR and the emitter never name it, the same rule `FJS-D690` sets for Lynx. *What must stay true:* a terminal fixture paints the frame it should. *What fails:* the headless frame specs from step 3. A missing install fails through `missingPeer`.
+
+### <a id="fjs-d692"></a>2026-10-09 · `FJS-D692` — A handler's event name passes through the IR as a DOM name and each non-DOM backend lowers it through its own table. The closed set of Gestures is read off the terminal's table and the phone's, never guessed before them.
+
+Asked in [`IDEAS/mesa-ir.md`](IDEAS/mesa-ir.md) § Open questions (*a DOM event or a Gesture*). The paper's **A, then B** is taken, and the FJS Mobile report (artifact `5a2362a8`) adds the phone as the second input. Touch has gestures a terminal does not, like long-press and swipe. A closed set read off one backend's table would be missing them, so `FJS-D385`'s Gesture set is cut only once both tables exist. **C** (authors write `on:activate`) stays refused: it rewrites 216 handlers to fit a set nobody has measured.
+
+### <a id="fjs-d690"></a>2026-10-09 · `FJS-D690` — The first native host is BORROWED: a Mesa node-ops emitter aimed at Lynx's Element PAPI, run as a measured spike. Whether FJS owns Swift and Kotlin hosts is decided from its numbers.
+
+Asked in the FJS Mobile report (artifact `5a2362a8`) § *Risks and rulings owed* 2. **A** (borrow Lynx, option C) was picked over **B** (build FJS hosts in Swift and Kotlin, option D).
+
+The spike answers two questions: which part of `@frontierjs/css` Lynx accepts, and whether Mesa's synchronous DOM habits (focus, measuring) survive Lynx's two threads. It costs one emitter, and a later D reuses that emitter whole. **The emitter stays host-neutral.** Lynx is ByteDance's project, and only ReactLynx is official, so nothing above the host may name Lynx. The spike is a measurement, not a commitment, and it lands after the IR, which `FJS-D545` cuts with the terminal backend. Generating Swift or Kotlin source stays refused under `FJS-D38`.
+— `IDEAS/mesa-ir.md` § 6 step 4.
+
 ### <a id="fjs-d676"></a>2026-10-08 · `FJS-D676` — A component's instance script and its `$:` statements run in source order. Mesa does not hoist them the way Svelte 4 does.
 
 Ruled by the owner during `FJS-846` and `FJS-1679` and recorded only in the mesa change log; written here when that log was retired (`FJS-D675`). In source order, what the file says first runs first, so reading the file top to bottom predicts what runs. A Svelte 4 author expects a `$:` to be moved after the declarations it reads. That habit is the ecosystem's, and § IV *familiarity vs. precision* is settled for precision.
@@ -12257,6 +12338,22 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d691"></a>2026-10-09 · `FJS-D691` — `mobile/` is a surface, and Invariant 3 names it. It wraps `web/` the way `desktop/` does.
+
+Asked in the FJS Mobile report (artifact `5a2362a8`) § *Risks and rulings owed* 3, which tied it to ruling 1; `FJS-D689` answered that one by staging mobile. **It is not a target of `desktop/`**, even though one Tauri 2 project can build both. README's test for a surface is a different set of answers for config, tests and release. Mobile has its own: store signing and review, a device rather than a window, and push credentials. So it gets its own directory, the way `desktop/` got one beside `web/`.
+
+`fli`'s runtime already reserved `mobile` (`MOBILE_DIR`) and nothing read it. Every surface list now carries it, so a rule that reads surfaces sees `mobile/` once it exists. No generator writes `mobile/` yet, and no port is assigned to it. A wrapped surface serves nothing in dev, the same as `desktop/` with `wraps`.
+— `CLAUDE.md` Invariant 3 · `README.md` § Project Structure · `packages/cli/core/{checks,repo-map,git-status}.js`.
+
+### <a id="fjs-d689"></a>2026-10-09 · `FJS-D689` — Mobile work starts now. It does not wait for core to leave alpha.
+
+Ruled by the owner in chat while reviewing the FJS Mobile report (artifact `5a2362a8`). This amends `FJS-D38`'s *nothing is scheduled before core leaves alpha*, for mobile only. Orion and oracle stay deferred under `FJS-D14`'s reasoning.
+
+The report's order is the plan of record: (1) wrap `web/` in the Tauri shell `desktop/` already uses (`FJS-D263`); (2) native navigation built from Sierra's route table; (3) the Mesa IR, built alongside the terminal backend (`FJS-D545`); (4) a native spike on Lynx; (5) decide whether FJS owns a Swift and Kotlin layer. Compiling `.mesa` straight to Swift or Kotlin is still ruled out. Under `FJS-D38`, the authoring model stays `.mesa` whatever the backend is.
+
+**Offline-first (4.8) gates store release, not the work.** `IDEAS/one-mental-model.md` refused mobile until offline-first existed. That refusal is narrowed: steps 1–5 build and run on a device without it. Submitting an app to a store waits for offline-first, because store review, OS storage eviction and background execution are the costs that make it a prerequisite.
+— `IDEAS/overview.md` row 5.18 · `IDEAS/one-mental-model.md` § *The target set's missing member* · `IDEAS/mesa-ir.md` § 6 step 4.
+
 ### <a id="fjs-d618"></a>2026-10-09 · `FJS-D618` — Does `FJS-D345`'s *a port is an origin* mean each app on 8181 is its own origin, so the path fallback runs only when the host label names no app — Yes: when the host label names an app, the path reading is not tried.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no: slugs on 8181 share one origin, and this is documented).
@@ -13184,7 +13281,8 @@ forks the runtime instead has taken the cheap answer with the expensive answer's
 name on it.
 
 **Nothing is scheduled and `FJS-D37` §6 is unchanged** — no interface target is
-built before core leaves alpha, on `FJS-D14`'s reasoning. What is settled is the
+built before core leaves alpha, on `FJS-D14`'s reasoning. *Amended 2026-10-09 by
+[`FJS-D689`](#fjs-d689): mobile starts now and is not gated on alpha.* What is settled is the
 shape, so that the tone table, the two output owners and every surface decision
 after them are made against one answer rather than against an open question.
 

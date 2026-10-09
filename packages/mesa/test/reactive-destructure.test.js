@@ -5,7 +5,7 @@
  * the render died with 'a is not defined' plus a hint blaming the browser.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { compile } from '../src/compiler.js'
 import * as runtime from '../src/runtime.js'
 
@@ -95,5 +95,39 @@ describe('a destructuring $: declares its names (FJS-1676)', () => {
     expect(rest.join('\n')).toContain('$: a = r.a')
     const computed = await errorsOf(`export let r = { a: 1 }\nconst k = 'a'\n$: ({ [k]: v } = r)`)
     expect(computed.join('\n')).toContain('$: v = ')
+  })
+})
+
+describe('a destructure of a call evaluates the call once (FJS-2138)', () => {
+  // Each name read its own `f().key`, so a side-effecting init ran once per
+  // name and the names came from different results. The count lives outside
+  // the component: a `let` counter is a signal, and a derivation writing one
+  // it reads re-runs itself.
+  beforeEach(() => { globalThis.__fjs2138 = 0 })
+  const counted = (pattern, extra = '') => `<script>
+  function f(seed = 0) { const n = ++globalThis.__fjs2138; return { a: n + seed, b: n + seed, 0: n, 1: n } }
+  ${extra}
+  ${pattern}
+</script>`
+
+  it('binds an object pattern over one call', async () => {
+    const m = await mount(`${counted('const { a, b, c = 9 } = f()')}\n<p>{a}|{b}|{c}</p>`)
+    expect(m.text()).toBe('1|1|9')
+    expect(globalThis.__fjs2138).toBe(1)
+  })
+
+  it('binds an array pattern over one call', async () => {
+    const m = await mount(`${counted('let [x, y] = f()')}\n<p>{x}|{y}</p>`)
+    expect(m.text()).toBe('1|1')
+    expect(globalThis.__fjs2138).toBe(1)
+  })
+
+  it('re-derives a $: pattern over a call once per change', async () => {
+    const m = await mount(`${counted('$: ({ a, b } = f(seed))', 'export let seed')}\n<p>{a}|{b}</p>`, { seed: 10 })
+    expect(m.text()).toBe('11|11')
+    expect(globalThis.__fjs2138).toBe(1)
+    m.push({ seed: 20 })
+    expect(m.text()).toBe('22|22')
+    expect(globalThis.__fjs2138).toBe(2)
   })
 })

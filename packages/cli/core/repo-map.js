@@ -612,7 +612,7 @@ function apps(root) {
 
 // Invariant 3's surfaces, in the order a request travels them: the seed, the
 // API that serves it, then each surface a person opens.
-const APP_SURFACES = ['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'cli']
+const APP_SURFACES = ['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'mobile', 'cli']
 
 /**
  * The surfaces an app has, each with the directories under its source and how

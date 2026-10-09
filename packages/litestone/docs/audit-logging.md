@@ -148,23 +148,30 @@ The return value is merged into the log entry. Fires asynchronously via `setImme
 
 ## Querying logs
 
-Log entries are queryable through the standard ORM API:
+Log entries are queryable through the standard ORM API, at SYSTEM only: the
+synthesized model is `@@gate("8")`, as the auth models are, because a row holds
+the before- and after-image of a write in any tenant. A service that shows a
+caller their own history reads through `asSystem()` and narrows the `where`
+itself. A trail model the schema declares (`driver trail model AuditRow`)
+carries whatever `@@gate` it declares.
 
 ```js
+const trail = db.asSystem().auditTrail
+
 // All writes to users table
-const writes = await db.auditTrail.findMany({
+const writes = await trail.findMany({
   where:   { model: 'users' },
   orderBy: { createdAt: 'desc' },
   limit:   50,
 })
 
 // Writes by a specific actor
-const actorWrites = await db.auditTrail.findMany({
+const actorWrites = await trail.findMany({
   where: { actorId: 'user_abc', operation: { in: ['create', 'update', 'delete'] } }
 })
 
 // All changes to a specific record
-const history = await db.auditTrail.findMany({
+const history = await trail.findMany({
   where: {
     model:   'users',
     records: { $raw: sql`json_extract(records, '$[0]') = ${userId}` }

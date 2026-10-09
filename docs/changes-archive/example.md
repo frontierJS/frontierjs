@@ -1263,3 +1263,68 @@ on it (`FJS-103`).
 Out of scope by design: jetty (a different container) and the VS Code extension.
 
 ---
+
+## Framework changes this app forced (through 2026-08-06; moved from PROJECT_STATE.md 2026-10-09)
+
+It found thirty-two real defects. All fixed, all with tests, and only one of
+them in the example itself — which is the point of it.
+
+The fourth wave came from prerendering the public catalog and giving it two
+islands:
+
+| package | what |
+| --- | --- |
+| **mesa** | **A `.mesa` file with frontmatter was compiled as MARKDOWN.** `compileSource` routed any source beginning with `---` to the Markdown compiler whatever its extension — and a `---` block is how every Sierra route states its title and render mode. Markdown escapes what it does not recognize, so `<CatalogList client:load products={…} />` came out as a paragraph of escaped text with the props stringified into it, while `<LiveStock />` beside it compiled as a component. Only callers handing the compiler a raw file were affected, so dev and the SPA build were right and the PRERENDERER was wrong for the same file |
+| **mesa** | **Every server-rendered `<input>` carried `formaction="http://localhost/"` and `formmethod=""`.** happy-dom's `cloneNode` re-derives an input's attributes from default properties, and absolutises an authored relative `formaction`. `formaction` overrides its form's action, so a prerendered form would post to whatever machine built the site — with that machine's localhost URL in a public file |
+| **mesa** | **`{@attach}` ran on a DETACHED element, so every kit overlay was invisible.** VISION §10.6 says an attachment runs when the element mounts; it ran when the element was built. `el.animate(…, { fill: 'forwards' })` on a disconnected node returns an animation that never starts — the element paints at keyframe 0 for good. CommandPalette is a full-screen fixed backdrop, so **⌘K put an invisible sheet over the app that swallowed every click**. Found by the owner clicking the button; `verify:ui` was green against it because presence, not visibility, was the claim |
+| **sierra** | **A prerendered page linked no stylesheet and carried no body class.** A static document is assembled by Sierra, not by Vite's HTML transform, so the CSS asset the same build emitted had no way in and the theme class stated in `index.html` had none either. The page shipped every `@frontierjs/css` class name and not one rule behind it |
+
+The third wave came from the live-updates drive, from giving the app a queue,
+and from giving it an outbound boundary:
+
+| package | what |
+| --- | --- |
+| **junction** | **A session reached the Data boundary with no `id`, so every `@@allow` row policy matched nothing.** `SessionContext` says `userId`; Litestone's policy language reads `auth().id`. Nothing bridged them, so `@@allow('read', userId == auth().id)` compared a column to `undefined` — an empty list, no error. Gates were unaffected (`sessionGateLevel` was written to Junction's shape), so the translated half worked and the untranslated half failed in silence. Fixed with `toDataPrincipal()`, one owner, both call sites |
+| **litestone** | **The audit log could not record a String actor id.** `actorId` was declared `Int` and the jsonl index is a STRICT table, so the first audited write with a known actor threw `cannot store TEXT value in INTEGER column` and took the request with it — and `@frontierjs/auth` issues uuid ids, so every FJS app was exposed. Masked by the defect above: with no `id` on the principal, `actorId` was always null, and NULL fits an INTEGER column. Now `Any`, with the index rebuilt from the `.jsonl` rather than abandoned |
+| **junction** | **`methods:` was silently ignored by `createBaseService`.** The allow-list that makes a service append-only was read by `createService` and neither read nor forwarded by the factory the loader is built around. Same `methods: 'readOnly'`, two factories, one of them a no-op — and the only symptom was a write that succeeded |
+| **junction** | **A PATCH applied the model's defaults to fields the caller did not send.** `mode: 'update'` dropped required-ness and kept every `default`, and `validate()` fills a default in for any absent key — so `PATCH {"note":"x"}` reached the model as a full record. On an ordinary column it silently reset it; on a column under `@@transitions` it answered `409 Cannot transition order.status from 'shipped' to 'pending'`, which reads as a broken state machine. Found by the courier job trying to write a tracking code |
+| **caravan** | **`unique` disagreed with its own schema, in both directions.** The lookup said "a pending job with this key" while the column said `UNIQUE` forever: the second dispatch after the first finished walked into the constraint and 500'd an HTTP request. Making the lookup match any status fixed that and broke the other half — a key built from a row id matched a job belonging to a DELETED order whose id SQLite had reused, and the work silently never ran. Now a partial unique index over live jobs, with the guard reading the same set. Old databases are migrated on open |
+| **caravan** | **A cron could be scheduled and never run.** The admin routes could retry and cancel a job but not start one, so the only way to reach a nightly sweep was to wait until 03:00 — every cron handler in every app was untestable, and unrunnable in an incident. `POST /jobs/run/{name}` added; the body becomes the job's data |
+| **junction** | **A custom action announced nothing.** `callService` gated its one announcement point on `AUTO_EVENT_MAP` — the five CRUD writes — so `pay` changed the row and no event reached the bus or the channel. The browser client had listened for action events since it was written, so the seam had both halves and neither could see the other. Every app in the repo hid it by re-issuing `find()` after an action, which made the *acting* tab correct and every other tab stale in silence. Found by `verify-live.mjs`, whose watcher tab never acts |
+
+The second wave came from the screens built to use the kit's behavioral
+components (`/orders/{id}/`, the products filter bar, `/settings/`, ⌘K):
+
+| package | what |
+| --- | --- |
+| **mesa** | **A click inside `<mesa:portal>` never reached its handler.** Delegation walks from the event target up to a registered root, and only the app container is one; portalled content is appended to `document.body`, outside it. Every menu item, palette row and toast dismiss button in the kit was inert — no error, correct markup, correct ARIA |
+| **mesa** | An assignment inside a component prop compiled to a signal READ — `<Modal onclick={() => open = false}>` threw `Invalid left-hand side in assignment`, so a dialog's Cancel button did nothing |
+| **mesa** | `$: fn(), handler` spliced its output from the wrong string (`$$set_high(sa'`, taken from an import statement) — and threw `Assignment to constant variable` when the watched function was a `const`. Fixed, and the const case is now a compile error |
+| **mesa** | An attribute depending only on a `{@const}` was written once and never updated: a completed step kept `aria-current="step"` while its class said otherwise |
+| **mesa** | `<C aria-label="x">` emitted `{aria-label: 'x'}` — a syntax error in generated code. And `$attributes` was `$$option.props` unfiltered, so forwarding it wrote every declared prop onto the DOM |
+| **ui** | **All four stores were inert.** `toasts`, `commandPalette`, `alert`, `theme` wrote `this.x = …` on a plain object, which notifies no watcher: toasts queued and never rendered, ⌘K flipped a boolean nobody read |
+| **ui** | `DropdownMenu` rendered a `children` snippet its own docs never pass, so every menu opened empty; `Table`'s loading skeleton threw `array.map is not a function`; `RadioGroup` ignored its `id`; `Label` emitted `for=""` |
+| **sierra** | `mesa-plugin` read compiler *warnings* and ignored compiler *errors*, so a page with five diagnosed `bind:` errors was served and silently collected nothing |
+
+And the first wave, from moving the existing markup onto the kit:
+
+| package | what |
+| --- | --- |
+| **mesa** | A `{#snippet}` written inside a component tag never reached the component. VISION §9.5 documents them as same-name props; they fell into the default slot, were hoisted into that slot's scope, and nothing called them — so a `<Table>` with a `row` snippet drew a head and an empty body, silently |
+| **mesa** | A snippet's arguments were read once, when its DOM was built. The table drew its first rows and then ignored the store: paying an order changed the database and the pill still said `pending`. Arguments are getters now |
+| **mesa** | A valueless attribute on a component (`<Table striped>`) compiled to a reference to a variable of that name, not to `true` — a `ReferenceError`, or worse, a silent wrong value where such a local existed |
+| **ui** | `Field` put the error tone on `.field-group`, and `--bg-mix` is `inherits: false` — so no validation message in the kit was ever red. Plus: `Input` had no `oninput` and no `maxlength`, an emptied number field became `0`, and `Select`'s placeholder option submitted its own label |
+| **sierra** | The unexported-snippet warning counted only block directives as nesting, so every kit component's snippet was reported as a route-level mistake, on every build |
+| **example** | `web/index.html` mentioned a literal body tag inside a comment. Vite injects the built script at the first match and does not skip comments, so the tags landed in the comment and **the production build loaded no JavaScript** — a clean build, a plausible `dist/index.html`, an empty console |
+| **mesa** | Component function name collided with a `<script module>` export or a reserved word — clean compile, fine in dev, dead at `vite build` |
+| **sierra** | `make()` defaulted a relation key to `0`, so "no customer picked" was `500 FOREIGN KEY constraint failed` instead of "customer is required" |
+| **sierra** | `resource.service.action()` did not exist — a custom action could not be called at all, and the pipeline routed non-CRUD through the WS-only escape hatch |
+| **sierra** | `title` was read off a `$ref` target, so enum fields named themselves after their type |
+| **litestone** | Validator messages never left the Data boundary; `required` had no message slot; no field label |
+| **litestone** | Transition errors had no `status` → 500 instead of 409/400 |
+| **junction** | `action()` and `restore()` ignored a live socket, against the documented rule |
+| **junction** | The HTTP fallback recursed forever for custom actions — async, so it never settled and nothing pointed at it |
+| **junction** | Startup banner said nothing about the Data realm |
+
+Details are in `docs/changes-archive/<pkg>.md` (all dated 2026-08-04) and in the
+README's *Found by building this* table.
