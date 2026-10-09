@@ -320,7 +320,7 @@ written down.
 
 ## Open questions
 
-- **Does the framework lint the app, or does the app lint itself?** A shipped config is
+- ~~**Does the framework lint the app, or does the app lint itself?**~~ **Answered 2026-10-09 (`FJS-D33`): `FJS-D33` already answers this: the app lints itself, with a `biome.json` that extends `@frontierjs/config/biome` and a `lint` script running `biome check`, and its `bun run check` runs `fli check` first; there is no `fli lint`.** A shipped config is
   an opinion; `fli doctor` is an enforcement. Whether `fli lint` should exist at all,
   or whether that is one indirection too many over a tool the user already ran, is
   unasked.
@@ -340,7 +340,7 @@ written down.
     the one owner of each diagnostic and the rule only relays it, so the editor
     and the terminal show the same list. C leaves every warning silent for anyone
     not in VS Code, including CI.
-- **Is a formatting change a reviewable diff?** `IDEAS/overview.md` 5.7 (`shift`) makes
+- ~~**Is a formatting change a reviewable diff?**~~ **Answered 2026-10-09 (`FJS-D32`): `FJS-D32` already answers this: FrontierJS refuses a formatter (Biome with `formatter.enabled: false`), so there is no repo-wide format run to review.** `IDEAS/overview.md` 5.7 (`shift`) makes
   exactly this argument about codemods — *a reviewable diff, never a silent rewrite* —
   and a repo-wide first format run is the largest silent rewrite this project will ever
   do. If the rule is real it applies here.

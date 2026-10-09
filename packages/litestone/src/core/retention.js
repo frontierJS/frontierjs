@@ -93,9 +93,10 @@ export function parseSize(str) {
 // @param models      array of model AST nodes belonging to this database
 // @param retention   duration string e.g. '30d', '90d', '1y'
 // @param pluralize   the client's table-name rule — see below
+// @param onRemoved   (modelName, rows) — the rows each table lost, when given
 // @returns [{ model, table, removed }] for every table it touched
 
-export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now) {
+export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now, onRemoved = null) {
   const ms = parseDuration(retention)
   if (!ms) return []
 
@@ -131,9 +132,17 @@ export function runSqliteRetention(rawWriteDb, models, retention, pluralize = fa
     if (!exists) continue
 
     try {
-      rawWriteDb.prepare(
-        `DELETE FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
-      ).run(cutoff)
+      // A row can hold what SQLite does not: a File column's object lives in a
+      // store, and only the plugins can release it. A bare DELETE kept every
+      // swept row's bytes for ever (FJS-1921), so when someone is listening the
+      // sweep reads back what it removed and hands it over.
+      const sql = `DELETE FROM ${quoteIdent(table)} WHERE "createdAt" < ?`
+      if (onRemoved) {
+        const rows = rawWriteDb.prepare(`${sql} RETURNING *`).all(cutoff)
+        if (rows.length) onRemoved(model.name, rows)
+      } else {
+        rawWriteDb.prepare(sql).run(cutoff)
+      }
       // sqlite3_changes(), not bun's `.changes` — the latter counts what the
       // FTS and cascade triggers wrote too, so the line said 17 rows removed
       // for one (FJS-320).

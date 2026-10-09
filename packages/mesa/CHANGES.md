@@ -1,5 +1,15 @@
 # Changes — @frontierjs/mesa
 
+## 2026-10-08 — a const reading a member of a call's handle warns that it is read once (`FJS-1969`)
+
+`const list = r.list()` stays eager under FJS-D212, so a static `const` over one of its members (`[...list.rows]`, `list.loading && …`, `list.rows[0]`) is computed once at setup. The handle's getters read signals, so ela's board sat on "Loading" with its rows present, and its settings page said a row was missing that was there. Nothing said so. `analyzeScript` now warns for each top-level `const` that is not derived and reads, outside any function, a member of a binding whose initializer's value is a call. The warning names `$: x = …` to follow the value. It also names destructuring at the call (`const { port } = load()`) for when one read is meant, which is the quiet spelling: that form names no handle to read through. A call through the handle is already derived and stays quiet, and so does a handle that is itself derived. Over the 1149 `.mesa` files in packages, example and fjs-prototypes it fires 4 times, all in prototypes and all the read-once shape. Proof: `test/const-promotion.test.js` § a const reading a member of a call-result handle, whose first case fails at HEAD.
+
+## 2026-10-08 — the component's name avoids the instance script's imports (`FJS-1751`, `FJS-2018`)
+
+The component function is named after its file, and `safeComponentIdent` renamed it only when `<script module>` already used that name. The instance script's imports are hoisted to module scope as well, so two ordinary files declared the name twice: a tree rendering itself (`import PageTree from './PageTree.mesa'` inside `PageTree.mesa`) and a resource whose model has a kit component's name (`Form.mesa` importing the kit's `Form`). Both worked in dev, because the HMR wrap renames the component to `__mesaOrigFn`, and failed `vite build` with `Identifier ... has already been declared`. `moduleScopeNames` now collects the instance imports too, so the component becomes `PageTree_Component` and the import keeps its name. A component renders itself by importing its own file. AGENTS.md has this as a wrong-guess row, and the `<mesa:self>` warning names the import.
+
+Proof: `test/emission.test.js` § the component function name, where both new cases fail at HEAD and one mounts a three-level self-rendering tree. A real `vite build` of both shapes gave 4 PARSE_ERRORs with the HEAD compiler and builds with this one. All 268 `.mesa` files in example, ui and sierra compile byte-identically before and after.
+
 ## 2026-10-08 — reactivity hints are named on `analysis.reactivityHints` (`FJS-D629`)
 
 Each warning the path tier emits is also pushed to `analysis.reactivityHints`, as the same string. A hint is true only of code that re-renders in a browser, and Sierra's static build withholds it for a component no published script contains. Telling hints from the other warnings by their wording would put them all back the first time one was reworded. Documented in `docs/EXTERNAL_REACTIVITY.md`. Proof: `test/import-watch.test.js` asserts the list equals the hint warnings and carries nothing else.

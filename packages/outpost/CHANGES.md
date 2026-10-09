@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-10-08 — three audit holes closed (`FJS-1856`, `FJS-1857`, `FJS-1858`)
+
+A malformed percent-escape on 8181 is a 400, not a `URIError` out of `handle()`. `/exec` with `timeout_s` of `0`, `null` or `NaN` runs under the 300s default, and `spawnRun` no longer treats a non-positive bound as no timer. The heartbeat and reports sign their `x-service-method` (toolbelt's canonical string has a seventh line). `FJS-1834` closed under `FJS-D618` (A): a host label that names an app answers only from that app; a label that names none still tries the path.
+
 ## 2026-10-06 — a signed command cannot replay while its timestamp is fresh (`FJS-1833`)
 
 The nonce memory forgot a nonce after one tolerance (300s), but a timestamp is accepted up to 300s either side of this clock. A request signed by a sender running 300s ahead was still fresh 599s after it arrived, so once its nonce was swept the same `/exec` ran again. The memory now holds a nonce for twice the tolerance. `audit-signature.test.js` replays at T+599 and is a plain test now; it goes red with the memory at one tolerance. `bun run test` 129/129, `verify:docker` green.

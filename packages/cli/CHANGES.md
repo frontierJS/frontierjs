@@ -1,5 +1,9 @@
 # Changes — @frontierjs/cli
 
+## 2026-10-08 — `fli advise --strict` (`FJS-1825`)
+
+Passes litestone's new `--strict` through, so a CI step or a grading harness gets exit 1 on an error or warn rule and never on a suggestion. Plain `fli advise` still exits 0 whatever it prints; the command page says why that 0 is not *clean*.
+
 ## 2026-10-08 — `threat-row`: every `THREATS.md` row names a test that is in the tree (`FJS-D656`)
 
 A repo-scope rule, severity error. It reads the table in the root `THREATS.md` whose header has a *Proved by* column and fails a row that names no test there, a path that is not in the tree, or a path that is not a test (graded by `kindOf` in `core/file-kind.js`). A dead path in *Enforced at* is left to `doc-cites-dead`. A tree with no `THREATS.md` skips. Proof: `test/checks.test.js` § threat-row, 3/3, and the rule over this repo answers no findings across the eleven rows.

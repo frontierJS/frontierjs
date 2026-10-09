@@ -2600,6 +2600,30 @@ function readsName(node, name, enter) {
   return found
 }
 
+// The first member read `node` makes, outside any function, on one of `roots` —
+// `list.rows` in `[...list.rows]`. A member that is CALLED is left out: a call
+// through a local binding already promotes the const that makes it.
+function memberReadOn(node, roots) {
+  let found = null
+  const walk = (n, key, parent) => {
+    if (found || !n || typeof n !== 'object') return
+    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassBody)$/.test(n.type)) return
+    if (n.type === 'MemberExpression' && n.object.type === 'Identifier' && roots.has(n.object.name) &&
+        !(key === 'callee' && parent?.type === 'CallExpression')) {
+      found = { root: n.object.name, prop: !n.computed && n.property.type === 'Identifier' ? n.property.name : null }
+      return
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'type') continue
+      const c = n[k]
+      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k, n) })
+      else if (c?.type) walk(c, k, n)
+    }
+  }
+  walk(node, null, null)
+  return found
+}
+
 // `onDestroy(fn)`, `$.onDestroy(fn)`, and the same for `onCleanup`.
 const _callsHook = (call, names) => {
   const c = call?.callee
@@ -3190,6 +3214,10 @@ function watchSigName(path) {
   const { root, dotPath } = splitWatchPath(path)
   return dotPath ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}` : `$$watch_${root}`
 }
+
+// Whether `root` reads through a watch proxy: `$$proxy_x` for an import or a
+// const, `$$proxy_x()` for a signal-backed `let` or prop.
+const isProxyAccessor = (acc, root) => acc === `$$proxy_${root}` || acc === `$$proxy_${root}()`
 
 const watchRootsOf = (paths) => new Set(paths.map((path) => splitWatchPath(path).root))
 
@@ -4011,6 +4039,40 @@ export function analyzeScript(raw, ast) {
     // decided inside the callee — so it is derived on the strength of the call
     // alone and its dependencies are whatever the memo tracks at runtime.
     v.isDerived = v.deps.length > 0 || opaqueLocalCall.has(v.name)
+  }
+
+  // A static `const` over a MEMBER of a call's handle is computed once, and the
+  // handle's getters read signals: `const rows = [...list.rows]` under `const
+  // list = r.list()` left a board on "Loading" with its rows present, and
+  // `const current = list.rows[0]` said a row was missing that was there
+  // (FJS-1969). Often the one read is meant, so this warns, and destructuring at
+  // the call is the spelling that says so — it names no handle to read through.
+  const handleInit = new Map()
+  const topConsts = []
+  for (const node of ast.body) {
+    const decl = node.type === 'VariableDeclaration' ? node
+      : node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'VariableDeclaration' ? node.declaration
+      : null
+    if (!decl) continue
+    for (const d of decl.declarations) {
+      if (d.id.type !== 'Identifier') continue
+      if (yieldsCall(d.init)) handleInit.set(d.id.name, d.init)
+      if (decl.kind === 'const' && d.init) topConsts.push(d)
+    }
+  }
+  for (const d of topConsts) {
+    const name = d.id.name
+    if (vars[name]?.isDerived) continue
+    const read = memberReadOn(d.init, new Set([...handleInit.keys()].filter((h) => h !== name)))
+    if (!read) continue
+    const path = read.prop ? `${read.root}.${read.prop}` : `${read.root}[…]`
+    const call = raw.slice(handleInit.get(read.root).start, handleInit.get(read.root).end)
+    warnings.push(
+      `'${name}' reads '${path}' and is read once, when the component is set up — ` +
+      `'${read.root}' holds what ${call.length > 40 ? 'a call' : call} handed back, and a getter on it can move. ` +
+      `Write $: ${name} = … to follow it, or destructure at the call — ` +
+      `const { ${read.prop ?? '…'} } = ${call.length > 40 ? '…' : call} — when one read is meant.`
+    )
   }
 
   // A `const` read in its own initializer, outside any function, is read
@@ -5289,7 +5351,11 @@ export function buildBlock(data, option = {}) {
             // a misspelling read as "the feature does not work" (`FJS-023`).
             ctx.analysis.errors.push(
               `<mesa:${n.elArg}> is not a Mesa element. Known: ` +
-              `${MESA_ELEMENTS.join(', ')}.`
+              `${MESA_ELEMENTS.join(', ')}.` +
+              (n.elArg === 'self'
+                ? ' A component renders itself by importing its own file — ' +
+                  "import Tree from './Tree.mesa' inside Tree.mesa, then <Tree />."
+                : '')
             )
           }
           return
@@ -8030,11 +8096,14 @@ export function emitScript(ctx) {
       `'${dotPath}': [${sigVar}, $fire_${v.name}_${sigVar}]`
     ).join(', ')
 
-    // Mutable proxy variable — re-assigned on signal replacement
+    // A memo, not a `let` an effect reassigns: a read of the bare name — a prop
+    // pushed to a child, `{draft}` — touches no path signal, so under a `let`
+    // it subscribed to nothing and kept the object from before a reassignment.
+    // The child then wrote that stale object back through `bind:` (`FJS-2093`).
     out.push(xNode.raw(
-      `let $$proxy_${v.name} = $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} });`
+      `const $$proxy_${v.name} = $$runtime.createMemo(() => $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} }));`
     ))
-    ctx.accessors[v.name] = `$$proxy_${v.name}`
+    ctx.accessors[v.name] = `$$proxy_${v.name}()`
 
     // Register the whole-object fire fn so rewriteAssignments can rewrite
     // self-assignments (`connectedArr = connectedArr`) inside watch+handler
@@ -8045,16 +8114,13 @@ export function emitScript(ctx) {
       ctx.proxyFireFns[v.name] = `$fire_${v.name}_${wholePath.sigVar}`
     }
 
-    // Re-proxy effect: runs when the let signal is replaced.
+    // A reassignment is a change at every watched path. A watch group holds the
+    // path signal alone and reads no proxy, so it hears it only from here.
     const fireCalls = paths.map(({ sigVar }) =>
       `$fire_${v.name}_${sigVar}();`
     ).join(' ')
     out.push(xNode.raw(
-      `$$runtime.createEffect(() => {` +
-      ` const $$obj = $$runtime.get(${sigR});` +
-      ` $$proxy_${v.name} = $$runtime.localWatchProxy($$obj, { ${signalMapEntries} });` +
-      ` ${fireCalls}` +
-      ` });`
+      `$$runtime.createEffect(() => { $$proxy_${v.name}(); ${fireCalls} });`
     ))
   }
 
@@ -8708,16 +8774,20 @@ export function emitScript(ctx) {
       .map((dep) => {
         const { root } = splitWatchPath(dep)
         const acc = ctx.accessors[root]
-        if (acc === `$$proxy_${root}`) {
+        if (isProxyAccessor(acc, root)) {
           const sigVar = watchSigName(dep)
           // $$runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
           // the root is a proxied import or a local const/var (watchPath), and a
           // TRACKED OBJECT when the root is a local `let` (track). Calling it
           // directly threw "$$watch_o_a is not a function" on mount for every
           // local-let path watch — get() already reads both shapes.
+          //
+          // The value is read untracked: through a `let`'s proxy memo it would
+          // subscribe the memo as well, and a reassignment, which also fires
+          // the path signal, ran the handler twice.
           const declared = requireWatchSig(sigVar, dep)
           return declared
-            ? { subscribe: `$$runtime.get(${declared})`, value: rewriteExpr(dep, ctx.accessors) }
+            ? { subscribe: `$$runtime.get(${declared})`, value: `$$runtime.untrack(() => ${rewriteExpr(dep, ctx.accessors)})` }
             : { subscribe: null, value: rewriteExpr(dep, ctx.accessors) }
         }
         if (acc) return { subscribe: acc, value: acc }
@@ -8817,7 +8887,7 @@ export function emitScript(ctx) {
         .map((dep) => {
           const { root } = splitWatchPath(dep)
           const acc = ctx.accessors[root]
-          if (acc === `$$proxy_${root}`) {
+          if (isProxyAccessor(acc, root)) {
             return requireWatchSig(watchSigName(dep), dep)
           }
           // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
@@ -9623,12 +9693,18 @@ export async function compile(source, config = {}) {
 
   /**
    * Top-level bindings the emitted module already has, so the component
-   * function can avoid them. Only <script module> can introduce these — the
-   * instance script's declarations live inside the component function.
+   * function can avoid them: everything <script module> declares, and the
+   * instance script's IMPORTS — hoisted to module scope, so a tree importing
+   * its own file (FJS-1751) or Form.mesa importing the kit's Form (FJS-2018)
+   * redeclared the component and failed only at `vite build`. The instance
+   * script's other declarations live inside the component function.
    */
   function moduleScopeNames(ctx) {
     if (ctx._moduleScopeNames) return ctx._moduleScopeNames
     const names = new Set()
+    for (const imp of ctx.analysis?.imports ?? []) {
+      for (const sp of imp.specifiers ?? []) if (sp.local?.name) names.add(sp.local.name)
+    }
     const src = ctx.scriptModuleNodes?.[0]?.content
     if (src) {
       let ast

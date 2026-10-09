@@ -15,6 +15,10 @@ import { test, expect, describe } from 'bun:test'
 import { createClient } from '../src/core/client.js'
 import { parse } from '../src/core/parser.js'
 import { generateDDL } from '../src/core/ddl.js'
+import { setEngine, clearEngine, currentEngine } from '../src/core/engine.js'
+import { createSqliteWasmEngine } from '../src/engines/sqlite-wasm.js'
+import { existsSync } from 'fs'
+import { join } from 'path'
 
 // 2^53 + 1 — the first integer a JS number cannot represent. `9007199254740993`
 // and `9007199254740992` are the same double, which is the whole defect.
@@ -347,5 +351,51 @@ describe('a wide key', () => {
     await db.event.create({ data: { id: BIG, name: 'gone' } })
     await db.event.delete({ where: { id: BIG } })
     expect(await db.event.count()).toBe(0)
+  })
+})
+
+// `FJS-1991`: SQLite's own wasm build is the browser's engine, and `@big` asks
+// every statement it touches for `safeIntegers(true)` — a method the engine did
+// not have, so a model declaring one was a TypeError at its first statement in
+// a browser. Run here against the package's node build of the same wasm, with
+// the OPFS pool stubbed because `:memory:` never reaches it; the oo1 statement
+// under test is the browser's, byte for byte.
+describe('on the sqlite-wasm engine', () => {
+  const WASM = join(import.meta.dir, '../node_modules/@sqlite.org/sqlite-wasm/dist/node.mjs')
+
+  async function onWasm(fn: () => Promise<void>) {
+    const before = currentEngine()
+    const engine = await createSqliteWasmEngine({
+      load: async () => {
+        const init = (await import(WASM)).default
+        return { default: async () => { const s = await init(); s.installOpfsSAHPoolVfs ??= async () => ({}); return s } }
+      },
+    })
+    clearEngine(); setEngine(engine)
+    try { await fn() } finally { clearEngine(); if (before) setEngine(before) }
+  }
+
+  test.skipIf(!existsSync(WASM))('a value past 2^53 round-trips, and a value that fits is still digits', async () => {
+    await onWasm(async () => {
+      const db = await client()
+      const made = await db.post.create({ data: { title: 'w', snowflake: BIG } })
+      expect(made.snowflake).toBe(BIG)
+      await db.post.create({ data: { title: 's', snowflake: SMALL } })
+
+      const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
+      expect(rows.map((r: any) => r.snowflake)).toEqual([BIG, String(SMALL)])
+      // A column that is not wide is a number, as it is on bun.
+      expect(rows.map((r: any) => typeof r.id)).toEqual(['number', 'number'])
+      expect(await db.post.count()).toBe(2)
+    })
+  })
+
+  test.skipIf(!existsSync(WASM))('an EXPLAIN answers its rows as arrays through .values()', async () => {
+    await onWasm(async () => {
+      const db = await client()
+      const plan = db.$db.query('EXPLAIN QUERY PLAN SELECT * FROM post WHERE id = 1').values()
+      expect(Array.isArray(plan[0])).toBe(true)
+      expect(plan.some((r: unknown[]) => String(r.at(-1)).includes('post'))).toBe(true)
+    })
   })
 })

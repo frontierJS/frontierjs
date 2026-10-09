@@ -3,7 +3,7 @@
 // the paths that assemble their own SQL.
 
 import { modelToTableName } from './ddl.js'
-import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg } from './query.js'
+import { coerceBooleans, deserializeRow, buildWhere, parseSelectArg, quoteIdent } from './query.js'
 import { ValidationError } from './validate.js'
 import { buildPolicyFilter } from './policy.js'
 import { CapabilityNotDeclaredError } from './errors.js'
@@ -388,35 +388,40 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
         ? buildPolicyFilter(rel.targetModel, 'read', ctx)
         : null
 
+      const sdExtra = shapes[rel.targetModel].softDelete ? ` AND "deletedAt" IS NULL` : ''
+      // Default _count behavior mirrors normal reads — exclude templates.
+      // The relInclude here is `spec`, parsed above; we don't currently
+      // surface withTemplates/onlyTemplates on _count selectors (matches
+      // soft-delete: no withDeleted on _count either).
+      const targetHt = shapes[rel.targetModel].hasTemplates
+      const htExtra  = targetHt ? ` AND "${targetHt}" = 0` : ''
+      // The window, same terms: no flag is surfaced here, so it is always
+      // read at `now`. Bound rather than inlined — the two above are literals
+      // because a column name and a constant are all they need.
+      const cntWin   = shapes[rel.targetModel].effective
+      const cntBinds = []
+      let   effExtra = ''
+      if (cntWin?.imposed) {
+        const at = cntWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
+        if (cntWin.from) { effExtra += ` AND ("${cntWin.from}" IS NULL OR "${cntWin.from}" <= ?)`; cntBinds.push(at) }
+        if (cntWin.to)   { effExtra += ` AND ("${cntWin.to}" IS NULL OR "${cntWin.to}" > ?)`;      cntBinds.push(at) }
+      }
+
       if (rel.kind === 'manyToMany') {
-        // M2M: count via join table — where filters not supported on join table, skip
-        sql = countPolicy
+        // M2M: count via join table — where filters not supported on join table, skip.
+        // A join row outlives its target's removal, expiry and turn into a
+        // template, so any of those joins through to the target the way the
+        // policy does — the count otherwise counts what the include leaves out.
+        const targetExtra = `${sdExtra}${htExtra}${effExtra}${countPolicy ? ` AND (${countPolicy.sql})` : ''}`
+        sql = targetExtra
           ? `SELECT j."${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" j ` +
             `WHERE j."${rel.selfKey}" IN (${ph}) ` +
-            `AND j."${rel.targetKey}" IN (SELECT "${rel.targetPk ?? 'id'}" FROM "${modelToTable(rel.targetModel)}" WHERE ${countPolicy.sql}) ` +
+            `AND j."${rel.targetKey}" IN (SELECT "${rel.targetPk ?? 'id'}" FROM "${modelToTable(rel.targetModel)}" WHERE 1=1${targetExtra}) ` +
             `GROUP BY j."${rel.selfKey}"`
           : `SELECT "${rel.selfKey}" as __pk, COUNT(*) as __n FROM "${rel.joinTable}" WHERE "${rel.selfKey}" IN (${ph}) GROUP BY "${rel.selfKey}"`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
-          [...pkValues, ...(countPolicy?.params ?? [])])
+          [...pkValues, ...cntBinds, ...(countPolicy?.params ?? [])])
       } else {
-        const sdExtra = shapes[rel.targetModel].softDelete ? ` AND "deletedAt" IS NULL` : ''
-        // Default _count behavior mirrors normal reads — exclude templates.
-        // The relInclude here is `spec`, parsed above; we don't currently
-        // surface withTemplates/onlyTemplates on _count selectors (matches
-        // soft-delete: no withDeleted on _count either).
-        const targetHt = shapes[rel.targetModel].hasTemplates
-        const htExtra  = targetHt ? ` AND "${targetHt}" = 0` : ''
-        // The window, same terms: no flag is surfaced here, so it is always
-        // read at `now`. Bound rather than inlined — the two above are literals
-        // because a column name and a constant are all they need.
-        const cntWin   = shapes[rel.targetModel].effective
-        const cntBinds = []
-        let   effExtra = ''
-        if (cntWin?.imposed) {
-          const at = cntWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
-          if (cntWin.from) { effExtra += ` AND ("${cntWin.from}" IS NULL OR "${cntWin.from}" <= ?)`; cntBinds.push(at) }
-          if (cntWin.to)   { effExtra += ` AND ("${cntWin.to}" IS NULL OR "${cntWin.to}" > ?)`;      cntBinds.push(at) }
-        }
         // Build optional where filter using buildWhere
         let whereExtra = ''
         /** @type {any[]} */
@@ -697,11 +702,25 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // The target is aliased `t` here, so the @from correlation has to be too.
       const m2mFrom = targetFrom ? `, ${fromSelectExpr(targetFrom, true)}` : ''
 
+      // A join row outlives its target's removal, expiry and turn into a
+      // template, so the target's lifecycle filters apply here as they do on
+      // every other branch. `htClause` and `effWhere` name bare columns, so
+      // they are re-scoped through a subquery the way the policy is.
+      const lifeParts = []
+      if (targetSoftDelete && nestedMode !== 'withDeleted')
+        lifeParts.push(`${quoteIdent(tcol('deletedAt'))} IS ${nestedMode === 'onlyDeleted' ? 'NOT NULL' : 'NULL'}`)
+      if (htClause) lifeParts.push(htClause)
+      if (effWhere) lifeParts.push(effWhere.sql)
+      const m2mPk      = quoteIdent(tcol(rel.targetPk ?? 'id'))
+      const lifeClause = lifeParts.length
+        ? ` AND t.${m2mPk} IN (SELECT ${m2mPk} FROM ${quoteIdent(modelToTable(rel.targetModel))} WHERE ${lifeParts.join(' AND ')})`
+        : ''
+
       const rawRows = runInclude(relDb, rel.targetModel, 'include',
         `SELECT t.*, j."${rel.selfKey}" AS __jSelfKey${edgeSelect}${m2mFrom} FROM "${modelToTable(rel.targetModel)}" t ` +
-        `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t."${tcol(rel.targetPk ?? 'id')}" ` +
-        `WHERE j."${rel.selfKey}" IN (${ph})${rwM.clause}${policyInClause}`,
-        [...pkValues, ...rwM.params, ...policyParams])
+        `INNER JOIN "${rel.joinTable}" j ON j."${rel.targetKey}" = t.${m2mPk} ` +
+        `WHERE j."${rel.selfKey}" IN (${ph})${lifeClause}${rwM.clause}${policyInClause}`,
+        [...pkValues, ...(effWhere?.params ?? []), ...rwM.params, ...policyParams])
 
       // Strip __jSelfKey before processing so it doesn't leak into the output row
       const selfKeys = rawRows.map(r => { const k = r.__jSelfKey; delete r.__jSelfKey; return k })

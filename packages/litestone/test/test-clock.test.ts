@@ -203,8 +203,8 @@ describe('what the clock moves — FJS-531', () => {
     const db  = env.db.asSystem()
     await db.entry.create({ data: { body: 'old' } })
 
-    expect(db.$retain().reduce((n: number, r: { removed: number }) => n + r.removed, 0)).toBe(0)
+    expect((await db.$retain()).reduce((n: number, r: { removed: number }) => n + r.removed, 0)).toBe(0)
     env.clock.advance('100d')
-    expect(db.$retain().reduce((n: number, r: { removed: number }) => n + r.removed, 0)).toBe(1)
+    expect((await db.$retain()).reduce((n: number, r: { removed: number }) => n + r.removed, 0)).toBe(1)
   })
 })

@@ -4043,6 +4043,19 @@ describe('a soft-deleted row keeps its @unique slot, and every write says so', (
     expect(r.title).toBe('updated')
   })
 
+  test('a conflict on a column the where does not name is refused, not answered null (FJS-2029)', async () => {
+    // The race fallback updated by `where`, found nothing there, and handed
+    // that `null` back as the answer — no row written, no error raised.
+    const db = await makeDb(S, 'sdu-other-key')
+    await db.doc.create({ data: { id: 1, code: 'a', team: 'a', slot: 1 } })
+    const err = await db.doc.upsert({
+      where: { id: 50 }, create: { id: 50, code: 'a', team: 'b', slot: 2 }, update: { title: 'nope' },
+    }).catch((e: any) => e)
+    expect(err?.name).toBe('UniqueConflictError')
+    expect(err.fields).toEqual(['code'])
+    expect(await db.doc.count()).toBe(1)
+  })
+
   test('the two ways to release a slot both work', async () => {
     const a = await buried('sdu-release-rename')
     // 1. the row still owns the value — move it, deliberately, with the flag
@@ -7170,6 +7183,21 @@ describe('audit log redaction', () => {
     const modelLog = calls.find(e => e.model === 'vault' && e.field == null)
     expect(JSON.parse(modelLog.after).emailF).toBe('[personal]')
     expect(row.emailF).toBe(SECRETS[4])
+    db.$close()
+  })
+
+  // Erasing a person is itself a write the trail records: the tombstone's
+  // update and the delete each carry a `before`, which would be a second copy
+  // of every forgotten value (FJS-1485).
+  test('the erasure line keeps no @personal value — update and delete before', async () => {
+    const { calls, row, db } = await captureCreate()
+    await db.asSystem().vault.update({ where: { id: row.id }, data: { emailF: null, plain: 'erased' } })
+    await db.asSystem().vault.delete({ where: { id: row.id } })
+    await flush()
+    const erasure = calls.filter(e => e.model === 'vault' && e.field == null && e.operation !== 'create')
+    expect(erasure.length).toBeGreaterThanOrEqual(2)
+    expect(JSON.stringify(erasure)).not.toContain(SECRETS[4])
+    expect(JSON.stringify(calls)).not.toContain(SECRETS[4])
     db.$close()
   })
 
@@ -24597,6 +24625,37 @@ describe('@version — runtime', () => {
     await db.order.create({ data: { id: 1, title: 'A' } })
     const out = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'sys' } })
     expect(out).toMatchObject({ status: 'sys', version: 2 })
+    db.$close()
+  })
+
+  // A job that read the row, did slow work and wrote back is a second editor;
+  // stating the version it read is how it says so (FJS-2069, FJS-D659).
+  test('asSystem() checks a version the caller supplies', async () => {
+    const db = await makeDb(SCHEMA, 'ver-system-supplied')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    const job = await db.asSystem().order.findUnique({ where: { id: 1 } })
+    await db.order.update({ where: { id: 1 }, data: { status: 'person', version: 1 } })
+
+    let err: any = null
+    try { await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'job', version: job.version } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('VersionConflictError')
+    expect(err.expected).toBe(1)
+    expect(err.actual).toBe(2)
+    expect((await db.order.findUnique({ where: { id: 1 } }))?.status).toBe('person')
+
+    const fresh = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'job', version: 2 } })
+    expect(fresh).toMatchObject({ status: 'job', version: 3 })
+    db.$close()
+  })
+
+  test('asSystem() refuses a supplied version that is not one', async () => {
+    const db = await makeDb(SCHEMA, 'ver-system-malformed')
+    await db.order.create({ data: { id: 1, title: 'A' } })
+    let err: any = null
+    try { await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'x', version: '1' } }) } catch (e) { err = e }
+    expect(err?.name).toBe('VersionRequiredError')
     db.$close()
   })
 

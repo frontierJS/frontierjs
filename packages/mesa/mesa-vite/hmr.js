@@ -68,6 +68,9 @@ export function injectHMR(js, id, root, clientId) {
   // string, and a filename may legally contain an apostrophe.
   const shortName = id.split('/').pop().replace(/'/g, "\\'")
 
+  // Renaming the component also hides any collision on its name, so a module
+  // that redeclares it parses here and fails `vite build` (FJS-1751). The
+  // compiler's safeComponentIdent is what keeps that name free.
   let out = js.replace(RE_DEFAULT_FN, 'function __mesaOrigFn(__anchor, __props, __block)')
 
   // Registration goes after pop_component(), and takes __hmrMark explicitly so

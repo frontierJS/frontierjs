@@ -379,7 +379,7 @@ is which subset earns a name.
   name, since sibling types would rebuild the `timestamptz` trap. The *do not teach
   both* half survives as work: `@date`/`@datetime`/`@time` stay as string-shaped
   validators and the docs must say in one line which is which.
-- **Does a zone belong on the principal?** Yes for the *viewer's* answer, and it
+- ~~**Does a zone belong on the principal?**~~ **Answered 2026-10-09 (`FJS-D143`): FJS-D143 already answers this: the viewer's zone is a claim on the principal through `sessionFields` and `toDataPrincipal()`, and the tenant's is `$.config` under `FJS-D126`. Nothing in `packages/auth` carries the claim yet, so the ruling is unbuilt.** Yes for the *viewer's* answer, and it
   joins `sessionFields` and `toDataPrincipal()` — both halves of that hand-copied
   pair, so a bridge-index change rather than a schema one. The *tenant's* answer
   does not go there: it is `$.config` (`FJS-D126`).

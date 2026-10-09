@@ -28,14 +28,27 @@ test('signature: a signed request verifies', async function () {
   assert.ok(result.ok, JSON.stringify(result))
 })
 
-test('signature: the canonical string has six lines, and the query is the third', async function () {
+test('signature: the canonical string has seven lines, the query is the third and the service method the fourth', async function () {
   const line = canonicalRequest({
     method: 'POST', path: '/exec', timestamp: '1700000000', nonce: 'n-1', bodyHash: await sha256Hex(''),
   })
   assert.equal(line, [
-    'POST', '/exec', '', '1700000000', 'n-1',
+    'POST', '/exec', '', '', '1700000000', 'n-1',
     'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   ].join('\n'))
+})
+
+test('signature: the service method is signed, and a rewritten header does not verify (FJS-1858)', async function () {
+  const sent = await sign({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY, serviceMethod: 'heartbeat' })
+  const ok   = await verify({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY, headers: { ...sent, 'x-service-method': 'heartbeat' } })
+  assert.ok(ok.ok, JSON.stringify(ok))
+
+  const swapped = await verify({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY, headers: { ...sent, 'X-Service-Method': 'delete' } })
+  assert.equal(swapped.ok, false)
+  // Added after signing, where the signer sent none.
+  const bare  = await sign({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY })
+  const added = await verify({ secret: SECRET, method: 'POST', path: '/servers/7', body: BODY, headers: { ...bare, 'x-service-method': 'delete' } })
+  assert.equal(added.ok, false)
 })
 
 test('signature: a query signs on its own line', async function () {

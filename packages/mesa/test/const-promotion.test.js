@@ -351,3 +351,56 @@ describe('a const reached from its own initializer (FJS-1064)', () => {
     expect(ctx.analysis.errors.join('\n')).toMatch(/'a' reads itself in its own initializer/)
   })
 })
+
+// ─── a const over a member of a call's handle ────────────────────────────────
+
+// `const list = r.list()` stays eager (FJS-D212), so `const rows = [...list.rows]`
+// over it is computed once — and the handle's getters read signals, so the
+// page sat on "Loading" with its rows present (FJS-1969). The read is often a
+// snapshot on purpose, so it warns rather than refuses, and destructuring at
+// the call is the spelling that says so.
+describe('a const reading a member of a call-result handle (FJS-1969)', () => {
+  const warned = async (script) =>
+    (await compile(`<script>\n${script}\n</script><p>{out}</p>`, { debug: false, css: false, warning: () => {} }))
+      .analysis.warnings.filter((w) => /read once/.test(w))
+
+  it('warns for each const that reads through the handle, naming $:', async () => {
+    const w = await warned(`import { r } from './r.js'
+const list = r.list()
+const out = [...list.rows]
+const busy = list.loading && 'loading'
+const current = list.rows[0]`)
+    expect(w).toHaveLength(3)
+    expect(w[0]).toMatch(/'out' reads 'list\.rows'/)
+    expect(w[0]).toMatch(/\$: out = /)
+    expect(w[2]).toMatch(/'current' reads 'list\.rows'/)
+  })
+
+  it('is quiet where the read follows the handle', async () => {
+    expect(await warned(`import { r } from './r.js'
+const list = r.list()
+$: out = list.rows
+const sorted = () => [...list.rows]`)).toEqual([])
+  })
+
+  it('is quiet over a handle that is itself derived, since the const promotes with it', async () => {
+    expect(await warned(`import { r } from './r.js'
+export let id
+const list = r.list(id)
+const out = list.rows`)).toEqual([])
+  })
+
+  it('is quiet for a destructure at the call — the snapshot spelled on purpose', async () => {
+    expect(await warned(`import { load } from './c.js'
+const { port: out } = load()`)).toEqual([])
+  })
+
+  it('is quiet for a call through the handle, which is already derived', async () => {
+    expect(await warned(`import { r } from './r.js'
+const list = r.list()
+const out = list.more()`)).toEqual([])
+    expect(await warned(`import { r } from './r.js'
+const list = r.list()
+const out = String(list)`)).toEqual([])
+  })
+})

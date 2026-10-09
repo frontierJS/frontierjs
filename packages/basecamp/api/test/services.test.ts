@@ -656,9 +656,9 @@ describe('an outpost endpoint takes a signature or nothing', () => {
   beforeAll(async () => { SECRET = await enrollMachine(machine.id as string) })
 
   /** The same headers conduit sends, from the same module it signs with. */
-  async function signed(path: string, body: unknown) {
+  async function signed(path: string, body: unknown, serviceMethod = 'heartbeat') {
     return signRequest({
-      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      secret: SECRET, method: 'POST', path, serviceMethod, body: JSON.stringify(body),
       // Stated, because the kit is pure and takes neither.
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
@@ -694,7 +694,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     // becoming the second.
     const body = { server_id: machine.id, volumes: [] }
     const req  = env.http.post('/volumes').set('x-service-method', 'report')
-    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
+    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body, 'report'))) req.set(k, v)
 
     expect((await req.send(body)).status).toBe(401)
   })
@@ -705,7 +705,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     // anonymous: `drain` is what a machine must never be able to call.
     const path = `/servers/${machine.id}`
     const req  = env.http.post(path).set('x-service-method', 'drain')
-    for (const [k, v] of Object.entries(await signed(path, {}))) req.set(k, v)
+    for (const [k, v] of Object.entries(await signed(path, {}, 'drain'))) req.set(k, v)
 
     expect((await req.send({})).status).toBe(401)
     const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
@@ -754,7 +754,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const path = `/servers/${machine.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     const hs   = await signRequest({
-      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce,
     })
     for (const [k, v] of Object.entries(hs)) req.set(k, v)
@@ -776,7 +776,7 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     const path = `/servers/${machine.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     const hs   = await signRequest({
-      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce,
     })
     for (const [k, v] of Object.entries(hs)) req.set(k, v)
@@ -2239,7 +2239,7 @@ describe('a server keeps its readings, and only its own workspace may read them'
     const path = `/servers/${box.id}`
     const req  = env.http.post(path).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      secret: SECRET, serviceMethod: 'heartbeat', method: 'POST', path, body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) req.set(k, v)
     const res = await req.send(body)
@@ -2414,7 +2414,7 @@ describe('a machine\'s disk is kept over time, folded', () => {
     const path = '/cleanup'
     const req  = env.http.post(path).set('x-service-method', 'report')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: SECRET, method: 'POST', path, body: JSON.stringify(payload),
+      secret: SECRET, serviceMethod: 'report', method: 'POST', path, body: JSON.stringify(payload),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) req.set(k, v)
     const res = await req.send(payload)

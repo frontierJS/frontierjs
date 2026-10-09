@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-10-08 — `/signature` signs the service method (`FJS-1858`)
+
+The canonical string is seven lines: `serviceMethod` sits between the query and the timestamp, empty when a request carries none. `signRequest` takes it; `verifyRequest` reads `x-service-method` off the headers it is given, so no receiver changes. Still `v1`.
+
 ## 2026-10-08 — `/trace`: the one reading of a `traceparent` (`FJS-D660`)
 
 `parseTraceparent(header)` moved here from conduit unchanged, so junction can take a request's correlation id from the trace id without holding a second reading of the spec. Conduit re-exports it. Proof: `test/specs/trace.spec.js` (3 cases, 12 refused headers); 613 pass.

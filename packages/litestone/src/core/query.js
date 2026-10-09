@@ -10,6 +10,7 @@ import { ValidationError } from './validate.js'
 // to name them with.
 import { boundingBox, isPoint } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'
+import { parseCell } from '@frontierjs/toolbelt/cells'
 import { pointColumns } from './parser.js'
 
 // What a vector IS, and the refusals a query vector shares with a stored one.
@@ -2331,16 +2332,32 @@ export function coerceBooleans(row, boolFields) {
   return out
 }
 
+// A Boolean value as the 1/0 it is stored as, or undefined when it is not one.
+// Text takes `parseCell`'s spellings, the ones `loadRows` and a where filter
+// take; truthiness stored the text 'false' as 1 (FJS-2031).
+/** @param {unknown} v @returns {1 | 0 | undefined} */
+export function booleanBind(v) {
+  if (v === true  || v === 1) return 1
+  if (v === false || v === 0) return 0
+  if (typeof v !== 'string' || v.trim() === '') return undefined
+  const cell = parseCell(v, 'boolean')
+  return 'value' in cell ? (cell.value ? 1 : 0) : undefined
+}
+
 // Serialize: true/false → 1/0 on Boolean fields
 /** @param {Record<string, any> | null | undefined} data @param {any} boolFields */
 export function serializeBooleans(data, boolFields) {
   if (!data || !boolFields.size) return data
   const out = { ...data }
+  const errors = []
   for (const field of boolFields) {
     if (field in out && out[field] !== null && out[field] !== undefined) {
-      out[field] = out[field] ? 1 : 0
+      const bound = booleanBind(out[field])
+      if (bound === undefined) errors.push({ path: [field], message: "must be a boolean — true, false, or the text 'true', 'false', '1' or '0'" })
+      else out[field] = bound
     }
   }
+  if (errors.length) throw new ValidationError(errors)
   return out
 }
 

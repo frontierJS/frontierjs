@@ -192,7 +192,7 @@ useful.
 
 ## Open questions
 
-- **Does `asSystem()` bypass it?** Same question `@@transitions` raises, and the answer
+- ~~**Does `asSystem()` bypass it?**~~ **Answered 2026-10-09 (`FJS-D502`): `FJS-D502` already answers this: `asSystem()` lifts authority and holds integrity rules, so a cascade holds under it, and `sys.sql` is the one bypass that says it is one.** Same question `@@transitions` raises, and the answer
   should probably match. An integrity rule a bypass can skip is not an integrity rule.
   Note the shipped transition check *does* bypass under `ctx.isSystem`
   (`client.js:1950`), so "match transitions" currently means "bypass" — which may be

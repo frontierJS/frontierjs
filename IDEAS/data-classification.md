@@ -191,17 +191,17 @@ that exists.
 
 ## 6. Open questions for the owner
 
-- **Ruled by the owner, 2026-10-08:** the column word is **`@personal`**, not
+- ~~**The column word and the model word**~~ **Answered 2026-10-08 (`FJS-D657`):** the column word is **`@personal`**, not
   `@pii` — PII is the narrower US sense (data that identifies), and erase must
   null a `coverLetter` that identifies nobody. No did-you-mean for `@pii`. The
   model word is **`@@person`**, not `@@subject` (§5). `subject` gets a
   `VOCABULARY.md` row as the role.
-- **Q1 — Ruled C by the owner's Q2 and naming calls, 2026-10-08.** One word or a ladder? **A** `@personal` binary · **B**
+- ~~**Q1 — One word or a ladder?**~~ **Answered 2026-10-08 (`FJS-D657`): C, by the owner's Q2 and naming calls.** **A** `@personal` binary · **B**
   `@sensitivity(level)` · **C** `@personal(category?)`, read through
   `buildFieldPolicyMap`.
   **Recommend C** — every word has a graded effect; the ladder can come later as
   a widening of the argument.
-- **Q2 — Ruled by the owner, 2026-10-08: the category list is closed**,
+- ~~**Q2 — Is the category list open or closed?**~~ **Answered 2026-10-08 (`FJS-D657`): closed**,
   refused by name. The list itself, from prior art (2026-10-08):
 
   | Category | Covers | GDPR | CPRA sensitive | fideslang | In our apps |
@@ -232,7 +232,7 @@ that exists.
   Sources: fideslang taxonomy (`ethyca.github.io/fideslang`), GDPR Arts. 9–10,
   Cal. Civ. Code § 1798.140, Open edX OEP-30 (`pii_types`, 15 values with an
   `other` escape — the shape this list refuses).
-- **Q2a — Ruled by the owner, 2026-10-08: `@@person(child)`.** Every row of
+- ~~**Q2a — How does a model say its people are children?**~~ **Answered 2026-10-08 (`FJS-D657`): `@@person(child)`.** Every row of
   the model is a child in the legal sense (`model Student`, `model Child`). It
   feeds the data map only — parental consent under COPPA and GDPR Art. 8, the
   lowered CPRA sale age — and enforces nothing. `child`, not `minor`: the
@@ -246,10 +246,10 @@ that exists.
   `demographic` column, refused here for the reason retention was. fideslang
   has no child data subject; it files children as a DATA category
   (`user.childrens`), the column-grain reading this refuses.
-- **Q3 — Ruled by the owner, 2026-10-08: A.** Does `@personal` imply `@omit` from the client audience? **A** no,
+- ~~**Q3 — Does `@personal` imply `@omit` from the client audience?**~~ **Answered 2026-10-08 (`FJS-D657`): A.** **A** no,
   reads follow the gate as written · **B** yes. **Recommend A** — `FJS-D205`
   keeps visibility a separate axis; implying it hides a recruiter's email.
-- **Q4 — Ruled by the owner, 2026-10-08: warn, on `@@person` models only.**
+- ~~**Q4 — Does a personal-looking column with no `@personal` warn?**~~ **Answered 2026-10-08 (`FJS-D657`): warn, on `@@person` models only.**
   A column on a `@@person` model named like personal data (the names
   `REDACT_DEFAULTS.PII` holds today) and carrying no `@personal` is a parse
   WARNING naming the attribute to add — the shape of `FJS-D322`, which warns
@@ -263,8 +263,8 @@ that exists.
   warning on every model (B), and a `fli check` advisory in its place (C).
   **Out of scope, owed as its own defect:** `REDACT_DEFAULTS.SECRETS` guesses
   by name too, where `@secret`/`@hashed` already declare it.
-- **Q5 — Ruled (above):** `@@person` is the kind, `subject` is the role.
-- **Q6 — Ruled by the owner, 2026-10-08: A, one invariant.** Invariant 7
+- ~~**Q5 — `@@person` or `@@subject`?**~~ **Answered 2026-10-08 (`FJS-D657`):** `@@person` is the kind, `subject` is the role.
+- ~~**Q6 — One invariant or two?**~~ **Answered 2026-10-08 (`FJS-D657`): A, one invariant.** Invariant 7
   becomes *`@encrypted`/`@guarded`/`@secret`/`@hashed` log as `[redacted]` and
   `@personal` as `[personal]`, in field entries and in `before`/`after`
   snapshots*. `@hashed` joined the trail's set in `FJS-1250`'s fix
@@ -275,7 +275,7 @@ that exists.
   `litestone.test.ts`; `fli ws:invariants` regenerates the snapshot's
   *Covers*. Refused: `@personal` alone with `@hashed` left unstated (B); a
   separate invariant for `@personal` (C).
-- **Q7 — Ruled by the owner, 2026-10-08: A.** One human, two person models. An `@@auth` model is a person by
+- ~~**Q7 — One human, two person models.**~~ **Answered 2026-10-08 (`FJS-D657`): A.** An `@@auth` model is a person by
   derivation, not by a second declaration. A `Candidate` who also signs in is
   then two person rows for one human, and a relation between two person
   models is either *the same person* (`Candidate.user`)
@@ -295,7 +295,7 @@ that exists.
   source ontology names the shape (UFO: Candidate and User as two roles of
   one kind, Person), but *role* is the auth `role` column, so B's word is not
   free either.
-- **Q8 — Ruled by the owner, 2026-10-08: A, deferred to `forgetting.md`'s ruling with the constraint recorded.** `@@person` beside `@@personal`. `forgetting.md` Q2 proposes
+- ~~**Q8 — `@@person` beside `@@personal`.**~~ **Answered 2026-10-08 (`FJS-D657`): A, deferred to `forgetting.md`'s ruling with the constraint recorded.** `forgetting.md` Q2 proposes
   `@@personal` for *delete this model's rows on forget*. Two model words two
   letters apart, both legal on the same schema, one marking where the walk
   STARTS and one what it DELETES — a slip between them parses and does the
@@ -306,7 +306,7 @@ that exists.
   `Restrict` gets the by-name refusal `forgetting.md` already plans). What
   is left for a model word is a non-relator row ABOUT the person — a note, a
   message body.
-- **Q9 — Filed as [FJS-2060](../ISSUES.md#fjs-2060).** The misleading parse error:
+- ~~**Q9 — The misleading parse error.**~~ Filed as [FJS-2060](../ISSUES.md#fjs-2060):
   `@pii(x)` reports *unknown function*. Q4's `SECRETS` half is
   [FJS-2059](../ISSUES.md#fjs-2059).
 

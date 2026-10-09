@@ -90,8 +90,27 @@ function checkAccept(mime, accept, model, field, claimed) {
   }
 }
 
+// ─── Uploading from disk ──────────────────────────────────────────────────────
+
+// A string is never read as a path: Junction types a File column `any`, so a
+// JSON body naming `/etc/hostname` would upload the server's own file, and a
+// system import of untrusted rows carries the same `./x` (FJS-2061). The class
+// instance is the authority, and JSON cannot construct one.
+class FromPath {
+  constructor(path) {
+    if (typeof path !== 'string' || !path) throw new Error('fromPath(path): path must be a non-empty string')
+    this.path = path
+    Object.freeze(this)
+  }
+}
+
+/** Upload a file from the server's disk into a File column. Code only — a request body cannot spell it. */
+export function fromPath(path) { return new FromPath(path) }
+
 // ─── Detect a file value (vs. an already-stored JSON ref or null) ─────────────
 
+// A string that is not a stored ref answers true so that serialize() refuses
+// it by name; answering false would store it as the column's ref.
 function isFileValue(v) {
   if (v == null) return false
   if (typeof File !== 'undefined' && v instanceof File) return true
@@ -99,15 +118,14 @@ function isFileValue(v) {
   if (v instanceof Buffer)      return true
   if (v instanceof Uint8Array)  return true
   if (v instanceof ArrayBuffer) return true
-  if (typeof v === 'string' && !v.trimStart().startsWith('{') && (
-    v.startsWith('/') || v.startsWith('./') || v.startsWith('../') || v.startsWith('~/')
-  )) return true
+  if (v instanceof FromPath)    return true
+  if (typeof v === 'string' && !v.trimStart().startsWith('{')) return true
   return false
 }
 
 // ─── Extract bytes from any file value ───────────────────────────────────────
 
-async function readValue(value, fieldName) {
+async function readValue(value, fieldName, model) {
   if (typeof File !== 'undefined' && value instanceof File) {
     const bytes = new Uint8Array(await value.arrayBuffer())
     return { bytes, mime: value.type || 'application/octet-stream', filename: value.name || fieldName, size: bytes.length }
@@ -124,10 +142,21 @@ async function readValue(value, fieldName) {
     const bytes = Buffer.from(value)
     return { bytes, mime: 'application/octet-stream', filename: fieldName, size: bytes.length }
   }
+  if (value instanceof FromPath) {
+    const { path } = value
+    if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
+    const bytes = readFileSync(path)
+    return { bytes, mime: guessMime(path), filename: basename(path), size: bytes.length }
+  }
   if (typeof value === 'string') {
-    if (!existsSync(value)) throw new Error(`@file: file not found: ${value}`)
-    const bytes = readFileSync(value)
-    return { bytes, mime: guessMime(value), filename: basename(value), size: bytes.length }
+    const err = new Error(
+      `${model}.${fieldName}: a File column takes bytes (a File, Blob or Buffer) or a stored ref, and a string is neither. ` +
+      'A string is never read as a path; code uploading from the server\'s disk passes fromPath(path)'
+    )
+    err.name  = 'ValidationError'
+    err.field = fieldName
+    err.model = model
+    throw err
   }
   throw new Error(`@file: unsupported value type for field "${fieldName}"`)
 }
@@ -214,10 +243,10 @@ class FileStoragePlugin extends ExternalRefPlugin {
 
   // ── ExternalRefPlugin contract ────────────────────────────────────────────
 
-  // serialize: Buffer/File/path → upload → return ref object
+  // serialize: Buffer/File/fromPath → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._fieldMap[model]?.[field] ?? {}
-    const { bytes, mime, filename, size } = await readValue(value, field)
+    const { bytes, mime, filename, size } = await readValue(value, field, model)
     // The stored type is the evidence and never the claim: `mime` is what the
     // client or the filename SAID, and it is also what gets persisted on the ref
     // and handed to the provider as `contentType`, which is what a public bucket
@@ -270,8 +299,12 @@ class FileStoragePlugin extends ExternalRefPlugin {
     const fields = this._fieldMap[model]
     if (!fields || !args.data) return
 
-    // Which fields carry incoming file values?
-    const rawFields = Object.entries(fields).filter(([field]) => isFileValue(args.data[field]))
+    // Which fields carry incoming file values? An array is never a file value
+    // itself, so a File[] field is picked by its items (FJS-2095).
+    const rawFields = Object.entries(fields).filter(([field, opts]) => {
+      const value = args.data[field]
+      return opts.isArray && Array.isArray(value) ? value.some(isFileValue) : isFileValue(value)
+    })
     if (!rawFields.length) return
 
     // Stash old refs for cleanup after write — ONE combined SELECT for all
@@ -286,8 +319,14 @@ class FileStoragePlugin extends ExternalRefPlugin {
           const oldRow = ctx.readDb.query(`SELECT ${colSql} FROM "${model}" WHERE ${whereSql}`).get(...params)
           for (const [field, opts] of stashFields) {
             if (opts.isArray) {
+              // A ref the new array carries forward is still in use; cleaning it
+              // up would delete the file an append keeps.
+              const kept = new Set([].concat(args.data[field])
+                .map(item => typeof item === 'string' ? this._parseRef(item) : item)
+                .filter(item => item && !isFileValue(item) && item.key)
+                .map(item => item.key))
               for (const oldRef of this._parseRefArray(oldRow?.[field])) {
-                if (oldRef) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
+                if (oldRef && !kept.has(oldRef.key)) this._stash(ctx, model, `${field}[${JSON.stringify(oldRef)}]`, oldRef)
               }
             } else {
               const oldRef = this._parseRef(oldRow?.[field])
@@ -311,7 +350,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
               : Promise.resolve(item)
           )
         )
-        args.data[field] = JSON.stringify(refs)
+        args.data[field] = refs
         continue
       }
       const ref = await this.serialize(value, { field, model, id, ctx })

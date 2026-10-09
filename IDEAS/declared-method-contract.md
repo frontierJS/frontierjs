@@ -137,7 +137,7 @@ code saying the contract belongs in the seed. **Tier:** Assessment.
 
 ## Open questions
 
-- **Is `method` the word?** Junction says *custom method*; Ash says *action*; `@@transitions` says *move*. Run `decision-rules` on the noun before any grammar.
+- ~~**Is `method` the word?**~~ **Answered 2026-10-09 (`FJS-D02`): FJS-D02 already answers this: a custom service method is a `method`, there is no fourth noun, and `action` is refused by name.** Junction says *custom method*; Ash says *action*; `@@transitions` says *move*. Run `decision-rules` on the noun before any grammar.
   - **Recommend A** — FJS-D02 already answers this: a custom service method is a `method`, there is no fourth noun, and `action` is refused by name.
 - **How coarse may a scope be?** `self`, a relation from `self`, a model, or a named `@@scope` — and which of those is too broad to grade.
   - **A** — `self` and a relation path from `self` only; anything wider is a declared `asSystem`.

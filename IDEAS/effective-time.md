@@ -463,7 +463,7 @@ re-answered wrongly.*
     3's zone; asked, a day window never spends one, which is also why phase 3
     has no caller. C fails no question in § V; A and D both fail the ninth.
 
-- **Does shape 2 ever get a noun?** An obligation with no column cannot be
+- ~~**Does shape 2 ever get a noun?**~~ **Answered 2026-10-09 (`FJS-D353`): FJS-D353 already answers this: the noun is `@@commitment`, a transition owed at a time, and `FJS-D362` lets it reach the parent, so shape 2 is `@@commitment(subscription.lapse, on: dueOn + graceDays, …)` on `Invoice` in `example/db/schema.lite`.** An obligation with no column cannot be
   declared by this. `IDEAS/ontology.md` § Open questions holds that question and
   this paper does not close it.
   - **Recommend A** — FJS-D353 already answers this: the noun is `@@commitment`, a transition owed at a time, and `FJS-D362` lets it reach the parent, so shape 2 is `@@commitment(subscription.lapse, on: dueOn + graceDays, …)` on `Invoice` in `example/db/schema.lite`.

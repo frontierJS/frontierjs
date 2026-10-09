@@ -995,7 +995,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 3, memory: 10 } })
     const path = `/servers/${serverId}`
     const headers = await signRequest({
-      secret, method: 'POST', path, query: '', body,
+      secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       // The kit is pure — the clock and the nonce belong to the caller. A fresh
       // nonce per call, or the second heartbeat in a row is refused as a replay
       // and every assertion below reads as a key that did not work.
@@ -1134,7 +1134,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
     })
     const path = `/servers/${m.id}`
     const headers = await signRequest({
-      secret: m.secret, method: 'POST', path, query: '', body,
+      secret: m.secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     const req = env.http.post(path).set('x-service-method', 'heartbeat')
@@ -1154,7 +1154,7 @@ describe('a machine signs with its OWN key, and only its own', () => {
       outpost_url: 'http://203.0.113.5:8180' })
     const again = env.http.post(path).set('x-service-method', 'heartbeat')
     for (const [k, v] of Object.entries(await signRequest({
-      secret: m.secret, method: 'POST', path, query: '', body: plain,
+      secret: m.secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body: plain,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))) again.set(k, v as string)
     expect((await again.send(JSON.parse(plain))).status).toBe(200)

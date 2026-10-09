@@ -69,9 +69,11 @@ export function stampFromAuth(data, list, auth, stamped = null) {
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }
 
+// An explicit null beats a default (FJS-2032), so a data move can write a row
+// whose author is gone; `fillsNull` is tenancy's claim column, where it cannot.
 /**
  * @param {Row | null | undefined} data
- * @param {{ field: string, authField: string }[] | null | undefined} list
+ * @param {{ field: string, authField: string, fillsNull?: boolean }[] | null | undefined} list
  * @param {Row | null | undefined} auth
  * @param {Set<string> | null} [stamped]
  */
@@ -79,8 +81,10 @@ export function applyAuthDefaults(data, list, auth, stamped = null) {
   if (!list?.length || !auth) return data
   /** @type {Row} */
   const stamps = {}
-  for (const { field, authField } of list)
-    if (data?.[field] == null && auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
+  for (const { field, authField, fillsNull } of list) {
+    const open = fillsNull ? data?.[field] == null : data?.[field] === undefined
+    if (open && auth[authField] != null) { stamps[field] = auth[authField]; noteStamp(stamped, data, field) }
+  }
   return Object.keys(stamps).length ? { ...(data ?? {}), ...stamps } : data
 }
 

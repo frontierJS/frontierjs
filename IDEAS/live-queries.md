@@ -356,7 +356,7 @@ result deserves its own noun. It probably does not.
     and B makes an `around.created` hook a declaration that never fires with
     nothing saying so. A hook that means only the network keys on the method it
     wraps, which is how a hook already avoids methods it does not mean.
-- **Does this want a `live:` declaration on the service**, the way `channel:` is
+- ~~**Does this want a `live:` declaration on the service**~~ **Answered 2026-10-09 (`FJS-D175`): FJS-D175 already answers this: every broadcast is graded per recipient at publish by the Data boundary, so there is no service whose policy a broadcast cannot satisfy, and `channel:` stays the one declaration.**, the way `channel:` is
   declared? That would let the server refuse to broadcast for services where
   per-subscriber policy cannot be satisfied — which is the security constraint above,
   expressed as a declaration instead of a warning.

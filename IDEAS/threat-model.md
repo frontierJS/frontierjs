@@ -42,8 +42,8 @@ A **boundary** here is the line one adversary must cross. A boundary's
 
 **Probed by running, 2026-10-08:** `cd packages/outpost && bun test
 test/audit-static.test.js test/audit-signature.test.js` — 20 pass, and the
-passes include `test.failing` rows for FJS-1834, FJS-1856, FJS-1857 and
-FJS-1858, so all four holes are **still open on this tree**. The rest of the
+passes included `test.failing` rows for FJS-1834, FJS-1856, FJS-1857 and
+FJS-1858; all four closed 2026-10-08, so none is open on this tree. The rest of the
 table is read from source and the register, not run.
 
 ## 2. The gap, as a failure a real app hits
@@ -111,14 +111,33 @@ all at seams between packages.
 
 ## 5. Open questions for the owner
 
-- **Is the operator an adversary at all?** If yes, B11 needs a promise beyond
+- ~~**Is the operator an adversary at all?**~~ **Answered 2026-10-09 (`FJS-D656`): B11 is Trusted: the operator is promised Invariant 7 redaction and nothing more, and anything more is a new ruling.** If yes, B11 needs a promise beyond
   redaction (e.g. `asSystem()` writes are announced with a reason). If no, the
   table says so in one row, so no audit spends a run on it.
-- **`FJS-D618`** decides B6's promise; this paper cannot write that row until
-  it is ruled.
-- **Does the agent (B5) ever see more than the human at the same level?**
-  `narrow` suggests *less only*; no ruling says it.
+- ~~**`FJS-D618` decides B6's promise**~~ Ruled A 2026-10-08: a host that names an app is that app's origin.
+- ~~**Does the agent (B5) ever see more than the human at the same level?**~~ No: `FJS-D656`, `narrow` only removes.
 - **Origin's `cross-process.js` sense** — rename to *writer* in the same
-  change that blesses Origin, or leave it?
-- **Where do the F1/F2 litestone audit findings stand?** This paper cites
-  memory, not a re-probe; the B3 row needs one before `THREATS.md` is seeded.
+  change that blesses Origin, or leave it? The field is not internal:
+  `decode()` (`packages/litestone/src/core/cross-process.js:231`) hands it to
+  every `onEvent` observer, and the value is `${pid}:${random}`
+  (`client.js:9313`), a process, never a place.
+  - **A** — rename to `writer` throughout `cross-process.js`: the column, the
+    recorder's parameter, the decoded field. The events table is litestone's
+    own file, so an existing one is deleted, not migrated.
+  - **B** — keep `origin`; the `VOCABULARY.md` row notes the litestone-internal
+    sense beside the two live ones.
+  - **C** — rename to `process`, naming what the value is rather than its role.
+  - **Recommend A** — §4's table already makes the case: it is ours and leaves
+    the module, so it is a third sense of a word kept for the browser's. *Writer*
+    names its one use, skipping your own writes, where *process* would collide
+    with the Node global. Out of scope here: `RequestMeta.origin` (`'internal'`
+    in `packages/junction/src/testing/index.ts:430`) and the audit trail's
+    `origin` column (`audit-log.js:201`) are a fourth sense the §4 sweep did not
+    list. They want their own row before Origin is blessed.
+- ~~**Where do the F1/F2 litestone audit findings stand?**~~ **Answered
+  2026-10-08 by re-probe:** both closed — F1 as `FJS-634` (a crafted `where`
+  key refused; `quoteIdent` the one owner, `FJS-D169`) and F2 as `FJS-638`
+  (every write verb through the FIFO lock, `FJS-D170`/`FJS-D171`), both in
+  `ISSUES_ARCHIVE.md`. Their suites — `identifier-refusals`, `unknown-args`,
+  `write-autocommit`, `transition-race` — pass 88/0 on 2026-10-08. `THREATS.md`
+  B3 is seeded and cites `FJS-634` and those tests.

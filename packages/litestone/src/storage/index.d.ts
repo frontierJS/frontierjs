@@ -19,6 +19,8 @@ export interface FileStorageOptions {
 }
 
 export declare function FileStorage(options?: FileStorageOptions): Plugin
+/** A File column value read from the server's disk. A string is never read as a path. */
+export declare function fromPath(path: string): { readonly path: string }
 export declare function fileUrl(ref: FileRef | string | null | undefined): string | null
 export declare function fileUrls(refs: (FileRef | string)[] | string | null | undefined): string[]
 export declare function useStorage(options: FileStorageOptions): {

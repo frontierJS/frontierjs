@@ -901,6 +901,43 @@ describe('the component function name', () => {
     }
   })
 
+  // An instance-script import is hoisted to module scope beside the component
+  // function, so it collides the same way. Two ordinary shapes hit it, and both
+  // ran in dev and failed `vite build`: a tree rendering itself (FJS-1751) and
+  // a resource whose model shares a name with the kit component it imports —
+  // Form.mesa importing the kit's Form (FJS-2018).
+  it('does not collide with an instance-script import of the same name', async () => {
+    for (const [file, script] of [
+      ['PageTree.mesa', `import PageTree from './PageTree.mesa'`],
+      ['Form.mesa',     `import Form from '@frontierjs/ui/components/forms/Form.mesa'`],
+      ['Form.mesa',     `import { Form } from './kit.js'`],
+    ]) {
+      const ctx = await compile(`<script>${script}</script><p>hi</p>`, file)
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), script)
+        .not.toThrow()
+      expect(ctx.result, script).toMatch(/export default function \w+_Component\(/)
+    }
+  })
+
+  it('renders itself through an import of its own file', async () => {
+    const ctx = await compile(
+      `<script>
+        import Tree from './Tree.mesa'
+        export let depth = 0
+      </script>
+      <span>{depth}</span>{#if depth < 2}<Tree depth={depth + 1} />{/if}`,
+      'Tree.mesa',
+    )
+    expect(ctx.analysis.errors).toEqual([])
+    // The self-import is stripped and rebound to the component, which is what
+    // the module graph does with a module importing its own default export.
+    const self = ctx.result.match(/export default function (\w+)\(/)[1]
+    const code = ctx.result.replace(/^import\s+.+?from\s+'[^']+';?$/gm, '')
+      .replace(/^export default\s+/m, '')
+    const Tree = new Function('$$runtime', `${code}\nconst Tree = ${self}\nreturn Tree`)($rt)
+    expect(mount(Tree).textContent.replace(/\s+/g, '')).toBe('012')
+  })
+
   it('is not a reserved word', async () => {
     for (const word of ['new', 'class', 'function', 'delete', 'await']) {
       const ctx = await compile(`<p>hi</p>`, `${word}.mesa`)

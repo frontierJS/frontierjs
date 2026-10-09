@@ -9,6 +9,10 @@ import { describe, test, expect } from 'bun:test'
 import { parse } from '../src/core/parser.js'
 import { checkRules, RULES, VISIBILITY, visibilityFor, PER_CALLER } from '../src/core/advise.js'
 import { CATALOG } from '../src/core/catalog.js'
+import { spawnSync } from 'child_process'
+import { mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join, resolve } from 'path'
 
 const findings = (src: string, id?: string) => {
   const out = parse(src)
@@ -766,5 +770,75 @@ describe('an index over a Json column', () => {
         city String @generated("addr ->> 'city'")
         @@index([city])
       }`, 'index-over-a-json-document')).toHaveLength(0)
+  })
+})
+
+describe('check-without-an-operation-in-a-write-rule', () => {
+  // FJS-1940: a bare check() takes the operation of the rule it sits in, so
+  // @@allow('create', check(inbox)) asks whether the caller may create an INBOX
+  // — and the writer of it almost always meant "may see the inbox".
+  const schema = (rules: string) => `
+    model Inbox {
+      id   Int    @id
+      name String
+      @@allow('read', auth() != null)
+      @@allow('create', auth().isAdmin == true)
+    }
+    model Message {
+      id      Int   @id
+      inbox   Inbox @relation(fields: [inboxId], references: [id])
+      inboxId Int
+      ${rules}
+    }`
+
+  test('fires on a bare check() in a create, update, delete, write or all rule', () => {
+    for (const op of ['create', 'update', 'delete', 'write', 'all', 'read, create']) {
+      const f = findings(schema(`@@allow('${op}', check(inbox))`), 'check-without-an-operation-in-a-write-rule')
+      expect(f.length).toBe(1)
+      expect(f[0].model).toBe('Message')
+      expect(f[0].message).toContain(`check(inbox, 'read')`)
+    }
+  })
+
+  test('fires inside a larger expression and on a deny', () => {
+    expect(findings(schema(`@@allow('update', auth() != null && check(inbox))`),
+      'check-without-an-operation-in-a-write-rule').length).toBe(1)
+    expect(findings(schema(`@@deny('delete', !check(inbox))`),
+      'check-without-an-operation-in-a-write-rule').length).toBe(1)
+  })
+
+  test('is silent on a read rule and on a check() that names its operation', () => {
+    expect(findings(schema(`
+      @@allow('read', check(inbox))
+      @@allow('create', check(inbox, 'read'))
+      @@allow('update', check(inbox, 'update'))`), 'check-without-an-operation-in-a-write-rule')).toEqual([])
+  })
+})
+
+// Spawned, because the exit code IS the assertion: the base44 grader read a
+// default-mode 0 as clean over a required @system column (FJS-1825).
+describe('advise --strict', () => {
+  const CLI = resolve(import.meta.dir, '..', 'src', 'tools', 'cli.js')
+  const exitOf = (src: string, ...args: string[]) => {
+    const dir = mkdtempSync(join(tmpdir(), 'advise-strict-'))
+    try {
+      writeFileSync(join(dir, 'schema.lite'), src)
+      return spawnSync('bun', [CLI, 'advise', '--schema', join(dir, 'schema.lite'), ...args], { encoding: 'utf8' }).status
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  }
+  const WARNS = `model Project {\n  id Int @id\n  apiToken String @system\n}\n`
+  const SUGGESTS = `model Note {\n  id Int @id\n  deletedAt DateTime?\n}\n`
+
+  test('exits 1 on a warn rule, as text and as json', () => {
+    expect(exitOf(WARNS, '--strict')).toBe(1)
+    expect(exitOf(WARNS, '--strict', '--json')).toBe(1)
+  })
+
+  test('without it, the same finding exits 0', () => {
+    expect(exitOf(WARNS)).toBe(0)
+  })
+
+  test('a suggestion alone never fails', () => {
+    expect(exitOf(SUGGESTS, '--strict')).toBe(0)
   })
 })

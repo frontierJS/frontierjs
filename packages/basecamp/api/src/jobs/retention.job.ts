@@ -34,7 +34,7 @@ export default defineJob(
   'retention',
   async (ctx) => {
     const { db }  = runsAsApp(ctx, 'retention')
-    const swept   = db.$retain() as Swept[]
+    const swept   = (await db.$retain()) as Swept[]
     const removed = swept.reduce((n: number, r: Swept) => n + r.removed, 0)
 
     for (const row of swept.filter((r: Swept) => r.error))

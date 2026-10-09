@@ -208,6 +208,7 @@ const HELP = `
     ${cyan('litestone catalog --reference')}           write docs/reference.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone advise')}                       what this schema says wrong, and what it never said
     ${dim('  --json')}                                 both lists as data
+    ${dim('  --strict')}                               exit 1 on an error or warn rule (CI)
     ${cyan('litestone validate')}                     which STORED rows this schema would now refuse
     ${dim('  --only=A,B')}                             just these models
     ${dim('  --json')}                                 the report as data
@@ -1931,8 +1932,15 @@ async function cmdAdvise(cfg) {
   const rules  = checkRules(parsed)
   const missed = checkOpportunities(parsed)
 
+  // Exit 0 read as "clean" to the base44 grader, which passed a required
+  // @system column nothing fills (FJS-1825). The default still never fails; a
+  // caller that wants a verdict asks for one, and only a defect earns it — a
+  // word nobody declared is a suggestion, never a failure.
+  const failed = flag('strict') && rules.some(r => r.severity === 'error' || r.severity === 'warn')
+
   if (flag('json')) {
     process.stdout.write(JSON.stringify({ rules, opportunities: missed }, null, 2) + '\n')
+    if (failed) process.exitCode = 1
     return
   }
 
@@ -1966,8 +1974,9 @@ async function cmdAdvise(cfg) {
 
   if (!rules.length && !missed.length)
     console.log(`  ${green('✓')}  nothing to say about this schema.\n`)
-  else
-    console.log(`  ${dim('neither list is a build failure. `fli test:access --strict` and `release:check` are the gates.')}\n`)
+  else if (!flag('strict'))
+    console.log(`  ${dim('neither list is a build failure. `--strict` fails on an error or warn rule.')}\n`)
+  if (failed) process.exitCode = 1
 }
 
 

@@ -856,7 +856,8 @@ new row is version 1 whatever the payload says, and every write bumps it.
 One per model, `Int`, non-optional, never the `@id` — each refused at parse,
 because a nullable version is a row that cannot be compared and that is a hole in
 the guarantee. `updateMany` / `upsert` / `upsertMany` bump without requiring, and
-`asSystem()` skips the check.
+`asSystem()` may leave the version out — a migration read nothing — but one it
+states is checked, so a job that read the row first passes the version it read.
 
 It reaches the client as `x-version`, `readOnly` in the update schema and absent
 from the create schema, so Sierra's `createResource` remembers the version of

@@ -4038,11 +4038,18 @@ function expandTenancy(schema) {
     const tag = model.attributes.find(a => a.kind === 'tenant')
     if (tag?.mode === 'none') continue
 
-    // A log row is appended, never policied — jsonl and trail models have no
-    // policy engine to deny with, so scoping one would be a rule that reads as
-    // enforcement and is not.
+    // jsonl and trail models have no policy engine to deny with, so a scope
+    // generated onto one reads as enforcement and is not. A trail row is the
+    // audit log's own and passes; a jsonl model naming a tenant is refused,
+    // since skipping it let every tenant read and write the file (FJS-1920).
     const dbName = model.attributes.find(a => a.kind === 'db')?.name
     const driver = dbName ? drivers[dbName] : 'sqlite'
+    if (driver === 'jsonl' && (tag || model.fields.some(f => f.name === t.column)))
+      errors.push(
+        `Model '${model.name}': row tenancy on '${dbName}', which is 'driver jsonl' — that driver runs no ` +
+        `access rule, so every tenant would read and write these rows and a create would stamp no ` +
+        `${tag?.column ?? t.column}. Move the model to a sqlite database, or write @@tenant(none) if its rows ` +
+        `span tenants on purpose.`)
     if (driver === 'jsonl' || driver === 'trail') continue
     if (model.attributes.some(a => a.kind === 'external')) continue
 
@@ -5792,6 +5799,14 @@ function validate(schema) {
         if (model.attributes.some(a => a.kind === kind))
           errors.push(`Model '${model.name}': @@${kind} is not supported on jsonl databases`)
       }
+      // The driver runs no access layer, so a rule here is stated and never
+      // enforced: an anonymous caller creates and reads every row (FJS-1920).
+      for (const kind of ['gate', 'allow', 'deny']) {
+        if (model.attributes.some(a => a.kind === kind))
+          errors.push(
+            `Model '${model.name}': @@${kind} on '${dbAttr.name}', which is 'driver jsonl' — that driver runs ` +
+            `no access rule, so every caller would read and write these rows. Move the model to a sqlite database.`)
+      }
       // Also check field-level features
       for (const field of model.fields) {
         if (field.attributes.some(a => a.kind === 'sequence'))
@@ -7490,17 +7505,6 @@ function validate(schema) {
 
   // ── @allow / @@deny validation ──────────────────────────────────────────────
   for (const model of schema.models) {
-    for (const attr of model.attributes) {
-      if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
-      // Operations already validated by normalizePolicyOps at parse time.
-      // Warn if model is on a jsonl database — policies aren't supported there.
-      const dbAttr = model.attributes.find(a => a.kind === 'db')
-      if (dbAttr) {
-        const dbDef = schema.databases.find(d => d.name === dbAttr.name)
-        if (dbDef?.driver === 'jsonl')
-          errors.push(`Model '${model.name}': @@${attr.kind} policies are not supported on jsonl databases`)
-      }
-    }
     // Warn if @@deny exists with no @@allow — probably a mistake, and the
     // wording matters. A deny DOES restrict the operations it names: measured,
     // a lone `@@deny('update', …)` filters an update out. What stays open is

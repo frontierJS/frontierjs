@@ -18,7 +18,7 @@ import {
   buildWhere, buildOrderBy, buildRelationOrderBy, buildWindowCols, rawClause, isNamedAgg,
   buildNamedAggExpr, extractNamedAggs, parseSelectArg, trimAllToSelect, vectorOrderPlan,
   orderByAfterVector, vectorQueryBytes, deserializeRow, serializeRow, coerceBooleans,
-  serializeBooleans, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
+  serializeBooleans, booleanBind, encodeCursor, decodeCursor, normalizeOrderBy, buildCursorWhere,
   extractCursorValues, cursorOrderSql, filterableKeysFor, sortableKeysFor,
   aggregatableKeysFor, LIKE_SQL, likePattern,
   sqlFragment, ident, and, join as sqlJoin,
@@ -365,7 +365,7 @@ function authStamped(row, modelName, ctx) {
  * @property {Record<string, string[]>} coFk    child model → the FK columns a nested write propagates
  * @property {{ field: string, generate: () => string } | null} autoId
  * @property {{ field: string, generate: () => unknown }[]} generatedDefaults
- * @property {{ field: string, authField: string }[]} authDefaults
+ * @property {{ field: string, authField: string, fillsNull: boolean }[]} authDefaults
  * @property {{ field: string, value: unknown }[]} literalDefaults
  * @property {{ field: string, sourceField: string }[]} fieldRefDefaults
  * @property {{ field: string, authField: string }[]} createdBy
@@ -1085,7 +1085,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function serializeEdgeValue(value, desc) {
     if (value == null) return null
     const tn = desc.type?.name
-    if (tn === 'Boolean') return value ? 1 : 0
+    if (tn === 'Boolean') {
+      const bound = booleanBind(value)
+      if (bound === undefined) throw new ValidationError([{ path: [desc.field], message: 'must be a boolean' }])
+      return bound
+    }
     if (tn === 'Json')    return JSON.stringify(value)
     return value
   }
@@ -2454,6 +2458,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   const _fieldsByName = new Map(shape.model.fields.map(f => [f.name, f]))
   const _authDefaultOf = new Map(shape.authDefaults.map(d => [d.field, d.authField]))
+  const _authFillsNull = new Set(shape.authDefaults.filter(d => d.fillsNull).map(d => d.field))
   const NUMERIC_TYPES = new Set(['Int', 'Float', 'BigInt', 'Decimal'])
 
   function refuseOp(key, msg) { throw new ValidationError([{ path: [key], message: msg }]) }
@@ -2939,6 +2944,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // principal could fill, and it reached the INSERT as SQLite's raw
       // NOT NULL — a 500 for what an anonymous caller asked (FJS-1793).
       const authField = _authDefaultOf.get(f.name)
+      if (authField && data?.[f.name] === null && !_authFillsNull.has(f.name)) {
+        missing.push({ path: [f.name], message: `${f.name} is required — a null beats its auth().${authField} default; omit ${f.name} to take the principal's` })
+        continue
+      }
       if (authField && data?.[f.name] == null) {
         if (!ctx.auth && !ctx.isSystem) refuseAnonymousAuthDefault(f.name, authField)
         missing.push({
@@ -5564,13 +5573,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
     // ── @version — take the caller's expected version off the payload ───────
     // It is a precondition, not a value to write: the column is bumped by SQL
-    // below, never SET to what arrived. asSystem() skips the check for the
-    // same reason it skips gates — a migration or a job is not a second editor.
+    // below, never SET to what arrived. asSystem() may leave it out, since a
+    // migration read nothing and has no version to state; one it DOES state is
+    // checked, because a job that read the row and wrote back after slow work
+    // is a second editor and would otherwise overwrite a save in between
+    // (FJS-D659).
     const _versionField = shape.version
     let   _expectVersion = null
     if (_versionField) {
       const supplied = data?.[_versionField]
-      if (!ctx.isSystem && !_bypassVersion) {
+      if (!_bypassVersion && (!ctx.isSystem || supplied != null)) {
         if (!Number.isInteger(supplied))
           throw new VersionRequiredError(modelName, _versionField)
         _expectVersion = supplied
@@ -7275,6 +7287,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       } catch (e) {
         if (e instanceof SoftDeletedUniqueError) throw e
         if (isUniqueConflict(e)) {
+          // A race leaves a row at `where`. No row there means the conflict is
+          // on a column the where does not name, and the update would match
+          // nothing and answer `null` having written nothing (FJS-2029).
+          if (!await this.findFirst({ where, ..._upFlags })) throw e
           return this.update({ where, data: updateData, include, select, system, _bypassVersion: true, ..._upFlags })
         }
         throw e
@@ -8981,13 +8997,23 @@ function makeLockPrimitive(rawWriteDb) {
     return (dbAttr?.name ?? 'main') === dbName
   })
 
-  function _runRetention({ jsonl = true } = {}) {
+  // A swept row is a deleted row, and the plugins hear it the way they hear an
+  // ORM delete: FileStorage releases the objects a File column held, which a
+  // raw DELETE leaves in the store for ever (FJS-1921).
+  async function _runRetention({ jsonl = true } = {}) {
+    const gone  = []
+    const swept = _sweepRetention({ jsonl, onRemoved: pluginRunner.hasPlugins ?(model, rows) => gone.push([model, rows]) : null })
+    for (const [model, rows] of gone) await pluginRunner.afterDelete(model, rows, ctx)
+    return swept
+  }
+
+  function _sweepRetention({ jsonl, onRemoved }) {
     const swept = []
     for (const [dbName, conn] of Object.entries(dbRegistry)) {
       if (!conn.retention && !conn.maxSize) continue
 
       if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
-        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now))
+        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now, onRemoved))
           swept.push({ database: dbName, driver: 'sqlite', ...r })
         continue
       }
@@ -9014,8 +9040,6 @@ function makeLockPrimitive(rawWriteDb) {
     return swept
   }
 
-  _runRetention({ jsonl: false })
-
   // ── $retain ────────────────────────────────────────────────────────────────
   //
   // The startup pass, on demand — and the reason it exists is that startup is
@@ -9032,15 +9056,13 @@ function makeLockPrimitive(rawWriteDb) {
   //
   // `asSystem()` for raw SQL's reason (`FJS-D52`): it deletes rows through no
   // gate, no row policy and no `@@softDelete`, so the bypass is said at the call
-  // site rather than assumed. Answers one row per table it touched.
-  function $retain() {
+  // site rather than assumed. Resolves to one row per table it touched, once
+  // the plugins have released what the swept rows held.
+  async function $retain() {
     // Stamped so *is the sweep running at all* is answerable. A retention job
     // that stopped firing removes nothing and reports nothing, which is the
     // same silence `FJS-327` and `FJS-328` were about one realm over.
-    // Stamped without changing what this returns: `_runRetention` is
-    // synchronous, and wrapping it in a promise makes every caller's result a
-    // thenable instead of the summary it has always been.
-    const out = _runRetention()
+    const out = await _runRetention()
     ctx._logStats.lastRetainAt = new Date().toISOString()
     return out
   }
@@ -9724,6 +9746,9 @@ function makeLockPrimitive(rawWriteDb) {
 
   // Init plugins — runs onInit for all plugins with schema + ctx
   pluginRunner.init(schema, ctx)
+
+  // The boot pass waits for the plugins, since a swept row's files are theirs.
+  await _runRetention({ jsonl: false })
 
   // Track jsonl table instances so _closeAll can close their index dbs
   const jsonlTables = []

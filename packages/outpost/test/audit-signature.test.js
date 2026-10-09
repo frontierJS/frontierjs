@@ -58,8 +58,7 @@ describe('FINDING — replay after the nonce is forgotten', () => {
 
 describe('FINDING — what the outbound signature leaves uncovered', () => {
 
-  // FJS-1858: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('x-service-method, the header junction dispatches on, is not in the canonical string', async () => {
+  test('x-service-method, the header junction dispatches on, is not in the canonical string', async () => {
     let sent
     const reporter = createReporter(CONFIG, {
       inspector: { volumes: async () => [], disk: async () => ({}) },
@@ -82,8 +81,7 @@ describe('FINDING — what the outbound signature leaves uncovered', () => {
 
 describe('FINDING — /exec timeout_s: 0 disables the bound', () => {
 
-  // FJS-1857: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a step with timeout_s 0 is run with no timer at all', async () => {
+  test('a step with timeout_s 0 is run with no timer at all', async () => {
     const { createDocker } = await import('../src/docker.js')
     const seen = []
     const docker = createDocker({ run: async (argv, opts) => { seen.push(opts); return { exitCode: 0, stdout: '', stderr: '' } } })

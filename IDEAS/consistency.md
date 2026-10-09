@@ -156,16 +156,15 @@ must not use *sync* for replication, announce or outbox delivery.
 
 ## Open questions for the owner
 
-- **`asSystem()` and a supplied version** — **A** check it when present
+- ~~**`asSystem()` and a supplied version**~~ **Answered 2026-10-09 (`FJS-D659`): check it when present; a missing version stays exempt.** — **A** check it when present
   (above); **B** keep the exemption and document that a job must re-read inside
   a transaction. *Recommend A* — the value arriving is the caller saying it read
   first; ignoring it is the silent kind of permissive.
-- **Where the page lives** — **A** `docs/CONSISTENCY.md` at the root, beside
+- ~~**Where the page lives**~~ **Answered 2026-10-09 (`FJS-D659`): `docs/CONSISTENCY.md` at the root, beside `TESTING.md`.** — **A** `docs/CONSISTENCY.md` at the root, beside
   `TESTING.md`; **B** a section of `litestone/docs/concurrency.md`. *Recommend A*
   — four of the rows are Junction's and two are Sierra's.
-- **Second host** — refuse at boot when `announce crossProcess` is declared and
+- ~~**Second host**~~ **Answered 2026-10-09 (`FJS-D659`): documented now, refused when outpost knows the fleet shape.** — refuse at boot when `announce crossProcess` is declared and
   a second host is detectable, or only document it? Detection is the hard part;
   *recommend* document now, refuse when `outpost` knows the fleet shape.
-- **`resync`** — rename to say what it means (*reload*), given the sweep above?
-  That is a rename with every caller moved, if taken. — **ruled `FJS-D661`: `reconnected`**,
-  named for what happened, beside `connect`/`disconnect`/`reconnecting`.
+- ~~**`resync`**~~ **Answered 2026-10-09 (`FJS-D661`): renamed `reconnected`, named for what happened, beside `connect`/`disconnect`/`reconnecting`.** — rename to say what it means (*reload*), given the sweep above?
+  That is a rename with every caller moved, if taken.

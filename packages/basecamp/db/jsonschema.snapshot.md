@@ -957,7 +957,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cronExpression` | `string`? | — | — | — | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
 | `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `timeoutSeconds` | `integer` = `300` | — | — | — | — |
+| `timeoutSeconds` | `integer` = `300` | — | — | `minimum: 5` `maximum: 3600` | — |
 | `retryLimit` | `integer` = `3` | — | — | — | — |
 | `retryCount` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `lastRunAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |

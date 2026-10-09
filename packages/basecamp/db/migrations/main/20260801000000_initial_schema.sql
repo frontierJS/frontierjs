@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS "oauth_flow" (
   "provider" TEXT NOT NULL,
   "verifier" TEXT NOT NULL,
   "returnTo" TEXT,
+  "invitation" TEXT,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;

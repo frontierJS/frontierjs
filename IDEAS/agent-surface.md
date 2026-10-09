@@ -351,7 +351,7 @@ are in the ruling rather than restated here.
   nobody behind it is then not a caller with special standing; it is a caller whose
   every protected move waits. What remains open is **who may approve** — which is a
   grid question, not a ladder one, and therefore `IDEAS/permission-sets.md`.
-- **Custom methods are the interesting tools and they dispatch by header**
+- ~~**Custom methods are the interesting tools and they dispatch by header**~~ **Answered 2026-10-09 (`FJS-D02`): FJS-D02 already answers this: a custom method is a method of the service and `X-Service-Method` is only its HTTP wire spelling, so the projection names it directly (`toolName`); the grading half is `FJS-D408`'s declared `gate:` plus the move floor, both built.**
   (`X-Service-Method`). MCP has no such concept, so the projection must name them
   directly — `posts.publish` — which is an argument that the header dispatch was
   always an HTTP-shaped decision leaking into the service model. *Half answered

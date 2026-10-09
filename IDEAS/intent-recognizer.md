@@ -509,7 +509,7 @@ the customer-facing word can be loose while the verdict stays precise.
   declaration. A screen index moves ahead of the Data work.
 - ~~**How often does a request classify as a subtype?**~~ **1 in 60.** Not a
   dependency.
-- **Who may call a custom method?** The surface register names a method and not its
+- ~~**Who may call a custom method?**~~ **Answered 2026-10-09 (`FJS-D436`): FJS-D436 already answers this: a custom method's grade is `customMethodGrade`, which `example/api/surface.snapshot.md` now prints per method (`invoices.settle` — any signed-in caller, floor read gate 1) and which `@frontierjs/mcp` imports under `FJS-D258`'s amendment, so both readers use one owner.** The surface register names a method and not its
   grade, and run 1's one wrong answer lived there. Whether that belongs in
   `surface.snapshot.md` or in what `@frontierjs/mcp` projects is the same question
   for both readers.

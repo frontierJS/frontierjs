@@ -78,3 +78,40 @@ describe('a Boolean column filtered by text', () => {
     expect(await count({ live: null })).toBe(0)
   })
 })
+
+// The write side of the same column (`FJS-2031`). It was coerced by
+// truthiness, so `'false'` — a non-empty string — was stored as 1 and read back
+// `true`, where `loadRows` reading the same cell stored 0. A write now takes
+// the spellings the filter and `loadRows` take and refuses the rest.
+describe('a Boolean column written as text', () => {
+
+  const live = async (v: unknown) => (await db.item.create({ data: { id: 9, name: 'x', live: v, label: '' } })).live
+
+  test("'false' and '0' store false, 'true' and '1' store true", async () => {
+    expect(await live('false')).toBe(false)
+    await db.item.delete({ where: { id: 9 } })
+    expect(await live('0')).toBe(false)
+    await db.item.delete({ where: { id: 9 } })
+    expect(await live('TRUE')).toBe(true)
+    await db.item.delete({ where: { id: 9 } })
+    expect(await live('1')).toBe(true)
+  })
+
+  test('an update parses the same way', async () => {
+    expect((await db.item.update({ where: { id: 1 }, data: { live: 'false' } })).live).toBe(false)
+    expect((await db.item.update({ where: { id: 2 }, data: { live: '1' } })).live).toBe(true)
+  })
+
+  test('the number a stored row holds still writes', async () => {
+    expect(await live(0)).toBe(false)
+    await db.item.delete({ where: { id: 9 } })
+    expect(await live(1)).toBe(true)
+  })
+
+  test('anything else is refused, never stored by truthiness', async () => {
+    for (const v of ['no', 'off', 'yes', '', 2, {}]) {
+      await expect(live(v)).rejects.toMatchObject({ name: 'ValidationError', errors: [{ path: ['live'] }] })
+    }
+    expect(await count({})).toBe(2)
+  })
+})

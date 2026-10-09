@@ -119,7 +119,7 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
       // same file opened twice. `query_only` is the same guarantee from inside.
       if (readonly) db.exec('PRAGMA query_only = ON')
 
-      return wrap(db)
+      return wrap(db, sqlite3.capi)
     },
     // Not part of the contract — the host's own escape for `pool.wipeFiles()`
     // and friends, which is how a device discards a database it must not keep.
@@ -137,23 +137,41 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
 // the caller did. `core/client.js` caches statements for the life of the
 // connection, which is what makes that a certainty rather than a risk.
 
-function wrap(db) {
+function wrap(db, capi) {
   const prepare = (sql) => {
     const stmt = db.prepare(sql)
+    let wide = false
+    const read = (shape) => wide ? wideRow(stmt, capi, shape) : stmt.get(shape)
     return {
       get(...params) {
         try {
           bind(stmt, params)
-          return stmt.step() ? stmt.get({}) : undefined
+          return stmt.step() ? read({}) : undefined
         } finally { stmt.reset() }
       },
       all(...params) {
         try {
           bind(stmt, params)
           const rows = []
-          while (stmt.step()) rows.push(stmt.get({}))
+          while (stmt.step()) rows.push(read({}))
           return rows
         } finally { stmt.reset() }
+      },
+      // An EXPLAIN reads its plan positionally, so a row is an array here.
+      values(...params) {
+        try {
+          bind(stmt, params)
+          const rows = []
+          while (stmt.step()) rows.push(read([]))
+          return rows
+        } finally { stmt.reset() }
+      },
+      // bun's meaning: every INTEGER this statement returns is a BigInt.
+      // `core/databases.js`'s `wideStmt` calls it on every statement of a model
+      // declaring `@big` and narrows each row back itself.
+      safeIntegers(on = true) {
+        wide = !!on
+        return this
       },
       run(...params) {
         try {
@@ -190,6 +208,22 @@ function wrap(db) {
 function bind(stmt, params) {
   stmt.clearBindings()
   if (params.length) stmt.bind(params)
+}
+
+// oo1's own read answers a Number for every integer that fits a double and a
+// BigInt only past that, so a `@big` value of 42 would come back a number while
+// bun's `safeIntegers` hands back 42n — and `narrowRow` turns only a BigInt into
+// the digits a wide column promises. So the INTEGER cells are read as int64
+// here, and every other storage class through oo1 as before.
+function wideRow(stmt, capi, row) {
+  const positional = Array.isArray(row)
+  for (let i = 0, n = stmt.columnCount; i < n; i++) {
+    const v = capi.sqlite3_column_type(stmt.pointer, i) === capi.SQLITE_INTEGER
+      ? capi.sqlite3_column_int64(stmt.pointer, i)
+      : stmt.get(i)
+    row[positional ? i : capi.sqlite3_column_name(stmt.pointer, i)] = v
+  }
+  return row
 }
 
 function sqlite3Export(db) {

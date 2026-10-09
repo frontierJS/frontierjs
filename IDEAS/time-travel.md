@@ -294,6 +294,27 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
     paper says: the outbox lives in the app database, so a row delivered after the
     checkpoint comes back undelivered and the relay sends it again. B's list has
     to name those rows.
+- **FJS-D665 — After a restore, may the outbox relay send a row the backup recorded
+  as undelivered, or does it hold those rows for an operator?** Probed for `FJS-1927`:
+  `db/jobs.db` is a layout file (`FJS-D493`), so `backup` copies it beside `app.db` and
+  `restore --from-backup` puts both back. Caravan's dedup on `occurrenceKey('outbox', id)`
+  rewinds with the delivered mark, and a relay pass over the restored pair reports
+  `delivered: 1` for a row that had already gone out, which queues the mail job
+  a second time. Litestone cannot name `OutboxMessage` (Invariant 1), so the
+  fix belongs either to junction or to a fact that litestone exposes.
+  - **A** — litestone stamps a restored database with the time its backup was
+    taken, a generic fact on the client. The relay holds every undelivered row created
+    before that time until an operator releases or drops it, and B's
+    `--dry-run` list stays as the read surface. Restoring after a disaster, with the
+    live files gone, is safe under this option.
+  - **B** — the paper's B and nothing more: the list is printed, the relay
+    resends, and handlers stay idempotent (the `deliverOutbox` contract already says so).
+  - **C** — restore carries the live database's `deliveredAt` marks forward into the
+    restored copy, through a schema attribute that names the table to keep at present.
+    It has nothing to carry when the live file is the thing that was lost.
+  - **Recommend A** — a duplicate mail, webhook or charge cannot be undone, so
+    *strictness follows cost* calls for a hold rather than a warning. A is also the one
+    option that still holds when no live file survives, which is when most restores happen.
 - **Does a multi-database app checkpoint atomically?** Tenants are db-per-tenant, and
   a logger database is a database. A checkpoint of "the app" is a set of files, and a
   partial restore across them is a new failure mode.

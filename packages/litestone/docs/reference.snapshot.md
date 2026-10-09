@@ -2044,3 +2044,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `unit-in-the-column-name` — the unit is in the identifier, where nothing can read it
 
 *info*. timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
+
+### `check-without-an-operation-in-a-write-rule` — a bare check() in a write rule asks the parent the same write
+
+*warn*. check(rel) with no operation takes the operation of the rule it sits in, so @@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether they may see it. Chained, that climbs to whoever may write the root; against a parent held only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.

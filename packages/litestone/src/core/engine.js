@@ -50,8 +50,13 @@
 //   Stmt.get(...args)    →  row | undefined | null
 //   Stmt.all(...args)    →  row[]
 //   Stmt.run(...args)    →  { changes }
+//   Stmt.values(...args) →  row[] of arrays   an EXPLAIN, see wrapDb's singleUse
+//   Stmt.safeIntegers(b)                    every INTEGER a BigInt — `@big`, see wideStmt
 //   Stmt.finalize()      optional — see wrapDb's close, `FJS-640`
-//   Stmt.safeIntegers(b) optional — `@big`, see wideStmt
+//
+// The last two owed are reached only by a model declaring `@big` and by an
+// EXPLAIN, so an engine without them passes every ordinary drive and throws a
+// TypeError at the first statement of the schema that uses one (`FJS-1991`).
 //
 // `path` is a filesystem path or `':memory:'`. An engine with no filesystem
 // reads it as an opaque name for a database, which is what OPFS does with it.

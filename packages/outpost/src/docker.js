@@ -32,17 +32,18 @@ export async function spawnRun(argv, { timeoutMs = 600_000, cwd } = {}) {
   const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', cwd })
 
   // A command with no bound is a queue that stalls forever on one wedged pull
-  // — the same failure caravan names for a job with no timeout.
-  const timer = timeoutMs
-    ? setTimeout(() => { try { proc.kill() } catch {} }, timeoutMs)
-    : null
+  // — the same failure caravan names for a job with no timeout. So 0, null and
+  // NaN are not "no timer": a bound that can be switched off by a number on the
+  // wire is not one (`FJS-1857`).
+  const bound = timeoutMs > 0 ? timeoutMs : 600_000
+  const timer = setTimeout(() => { try { proc.kill() } catch {} }, bound)
 
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ])
   const exitCode = await proc.exited
-  if (timer) clearTimeout(timer)
+  clearTimeout(timer)
 
   return { exitCode, stdout, stderr }
 }
@@ -388,8 +389,11 @@ export function createDocker({
 
     /** An operator's script, run as this process's user. There is no sandbox
      *  and Basecamp says so on the screen that submits one. */
-    async exec({ command, timeoutSeconds = 300 }) {
+    async exec({ command, timeoutSeconds }) {
       if (!command) throw new Error('exec needs a command')
+      // `timeout_s` is the caller's number, and `0` or `null` from a Job saved
+      // that way must not reach `run` as "never kill" (`FJS-1857`).
+      if (!(timeoutSeconds > 0)) timeoutSeconds = 300
       const result = await run(['sh', '-c', command], { timeoutMs: timeoutSeconds * 1_000 })
       return { exit_code: result.exitCode, stdout: result.stdout, stderr: result.stderr }
     },

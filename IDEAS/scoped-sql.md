@@ -244,7 +244,7 @@ around is worse than the current honest raw one.
   - **Recommend A** — the ORM already writes with every gate, transition, audit
     entry and announcement. A trigger path is a second write owner beside it that
     runs none of the hooks, which Invariant 4 forbids for the announcement alone.
-- **Is this how `db.sql` should behave for an unauthenticated client?** Argued above
+- ~~**Is this how `db.sql` should behave for an unauthenticated client?**~~ **Answered 2026-10-09 (`FJS-D52`): `FJS-D52` already answers this: on a schema that declares access rules, `db.sql` with no identity throws, and only `asSystem().sql` reaches the base tables.** Argued above
   as "unchanged" — there is no identity to scope by — but that means the least
   restricted path is the one with no auth on it, which reads oddly out of context and
   should be a `DECISIONS.md` line rather than an implicit fallthrough.

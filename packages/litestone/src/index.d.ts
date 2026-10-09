@@ -753,7 +753,7 @@ export interface LitestoneClient {
    * refuses it by name. The cutoff is a rolling instant — the duration back from
    * the moment it runs, `d` a flat 24 hours — with no calendar and no zone.
    */
-  $retain(): RetainResult[]
+  $retain(): Promise<RetainResult[]>
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>

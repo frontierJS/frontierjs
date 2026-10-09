@@ -135,21 +135,17 @@ writer. They share the correlation id and nothing else: no export of the trail
 
 ## 6. Open questions for the owner
 
-- **A's rename**: `correlationId` → `traceId` across junction, litestone's trail
+- ~~**A's rename**~~ **Answered 2026-10-09 (`FJS-D661`): kept; an adopted `x-request-id` is not a trace id, so `traceId` would be false there.** `correlationId` → `traceId` across junction, litestone's trail
   column, caravan's `correlation_id`, MCP and conduit in one change — or keep
-  `correlationId` as the name and only change its value? — **ruled `FJS-D661`: kept**;
-  an adopted `x-request-id` is not a trace id, so `traceId` would be false there.
-- **Inbound trust**: a public endpoint adopting a caller's trace id lets a
+  `correlationId` as the name and only change its value?
+- ~~**Inbound trust**~~ **Answered 2026-10-09 (`FJS-D660`): adopt when well-formed.** A public endpoint adopting a caller's trace id lets a
   client choose the id its trail rows are filed under. Adopt always, adopt only
   behind a configured proxy, or adopt into `traceparent` but mint our own
-  correlationId and record the link? — **ruled `FJS-D660`: adopt when well-formed**.
-- **`x-request-id` vs `traceparent`** when both arrive and disagree — which wins?
-  — **ruled `FJS-D660`: `traceparent`**.
-- **Is B a junction plugin or its own package?** Junction is Bun-only and
+  correlationId and record the link?
+- ~~**`x-request-id` vs `traceparent`**~~ **Answered 2026-10-09 (`FJS-D660`): `traceparent` wins.** Which wins when both arrive and disagree?
+- ~~**Is B a junction plugin or its own package?**~~ **Answered 2026-10-09 (`FJS-D662`): a junction plugin, `otlp()`.** Junction is Bun-only and
   already owns `/metrics`; a package would be the first observability battery
-  outside it. — **ruled `FJS-D662`: a junction plugin, `otlp()`**.
-- **Health → readiness rename** — worth the churn, or is the `fli check`
-  collision tolerable because the two never share a reader? — **ruled `FJS-D661`:
-  `registerReadiness`**.
-- **`@@log(audit)` → `@@trail`?** The seed is where the word is first met. —
-  **ruled `FJS-D661`: renamed, with `@trail`, `driver trail` and `db.auditTrail`**.
+  outside it.
+- ~~**Health → readiness rename**~~ **Answered 2026-10-09 (`FJS-D661`): renamed to `registerReadiness`.** Worth the churn, or is the `fli check`
+  collision tolerable because the two never share a reader?
+- ~~**`@@log(audit)` → `@@trail`?**~~ **Answered 2026-10-09 (`FJS-D661`): renamed, with `@trail`, `driver trail` and `db.auditTrail`.** The seed is where the word is first met.

@@ -326,21 +326,21 @@ describe this package as "a README and nothing else", which stopped being true o
 
 ## Open questions
 
-- **Is `@zoned` an attribute or does the type system carry it?** `Date` versus
+- ~~**Is `@zoned` an attribute or does the type system carry it?**~~ **Answered 2026-10-09 (`FJS-D143`): FJS-D143 already answers this: the kind is an attribute beside `DateTime`, and keeping the name rules out a family of types, because siblings would rebuild `timestamptz` inside `.lite`.** `Date` versus
   `DateTime` is already a type-level distinction and `ZonedDateTime` could be a fourth
   type rather than `DateTime` plus an attribute. The record above picks the attribute
   because it keeps `DateTime` untouched, which is worth more than symmetry — but the
   framework should not end up teaching both.
   - **Recommend A** — FJS-D143 already answers this: the kind is an attribute beside `DateTime`, and keeping the name rules out a family of types, because siblings would rebuild `timestamptz` inside `.lite`.
-- **Can a row policy compare against a zoned column?** SQLite has no zone support, so
+- ~~**Can a row policy compare against a zoned column?**~~ **Answered 2026-10-09 (`FJS-D143`): FJS-D143 already answers this, by measurement: a zoned comparison is never a SQL predicate, because `datetime('now','America/New_York')` answers NULL, so *rows from today* is a window the framework computes and binds.** SQLite has no zone support, so
   *"rows from today"* as a declared policy may be unrepresentable. Finding out early is
   worth more than designing around it late.
   - **Recommend A** — FJS-D143 already answers this, by measurement: a zoned comparison is never a SQL predicate, because `datetime('now','America/New_York')` answers NULL, so *rows from today* is a window the framework computes and binds.
-- **Does `Duration` earn a scalar type, or is `@retain(90d)` enough?** The duration is
+- ~~**Does `Duration` earn a scalar type, or is `@retain(90d)` enough?**~~ **Answered 2026-10-09 (`FJS-D348`): FJS-D348 already answers this: a stored duration is `Int @unit(d)`, and `FJS-D355` uses exactly that for `graceDays` and `dunningDays` in `example/db/schema.lite`, so no `Duration` scalar is needed.** The duration is
   a real value; whether an application ever stores one in a column is a different
   question and nothing in the repo does yet.
   - **Recommend A** — FJS-D348 already answers this: a stored duration is `Int @unit(d)`, and `FJS-D355` uses exactly that for `graceDays` and `dunningDays` in `example/db/schema.lite`, so no `Duration` scalar is needed.
-- **How much of `Instant` should exist at all**, given a bare ISO string already works
+- ~~**How much of `Instant` should exist at all**~~ **Answered 2026-10-09 (`FJS-D268`): FJS-D268 already answers this: no `Instant` class exists, and `@frontierjs/toolbelt/datetime` is functions over an epoch millisecond, so the stored column stays a string and the escape hatch survives by construction.**, given a bare ISO string already works
   and `DateTime` columns will keep arriving as strings? The escape hatch — *the column
   is still a string and you may ignore all of this* — has to survive.
   - **Recommend A** — FJS-D268 already answers this: no `Instant` class exists, and `@frontierjs/toolbelt/datetime` is functions over an epoch millisecond, so the stored column stays a string and the escape hatch survives by construction.

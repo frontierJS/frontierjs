@@ -29,7 +29,7 @@ import { ClientClosedError } from './errors.js'
  * owes) — stated structurally, because naming the server engine's type here
  * would be the ninth file to name it (`FJS-D305`).
  * @typedef {object} RawDb
- * @property {(sql: string) => Stmt & { finalize?: () => void, values?: (...params: any[]) => any[] }} prepare
+ * @property {(sql: string) => Stmt & { finalize?: () => void, values: (...params: any[]) => any[][] }} prepare
  * @property {(sql: string) => Stmt}                        query
  * @property {(sql: string, ...params: any[]) => unknown}   run
  * @property {() => void}                                   close
@@ -105,8 +105,6 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
     const s = rawDb.prepare(sql)
     /** @param {(...a: any[]) => any} f */
     const once = (f) => (/** @type {any[]} */ ...a) => { try { return f.apply(s, a) } finally { try { s.finalize?.() } catch {} } }
-    // @ts-expect-error — `values()` is not in the surface an engine owes (engine.js) and
-    // `engines/sqlite-wasm.js` has none, so an EXPLAIN's `.values()` there is a TypeError.
     return { get: once(s.get), all: once(s.all), values: once(s.values), run: once(s.run) }
   }
   /** @param {string} sql */
@@ -193,9 +191,10 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
  * @returns {Stmt}
  */
 function wideStmt(plain, bigFields) {
-  // The statement comes from `$plain`, the cache, so it is bun's own and has
-  // `safeIntegers`; a view's statement never reaches here — `wideDb` unwraps.
-  // Named here because bun-types 1.3 declares the open option and not the method.
+  // The statement comes from `$plain`, the cache, so it is the engine's own and
+  // has `safeIntegers` (`engine.js` § The surface an engine owes); a view's
+  // statement never reaches here — `wideDb` unwraps. Named here because
+  // bun-types 1.3 declares the open option and not the method.
   const stmt = /** @type {Stmt & { safeIntegers: (on: boolean) => unknown }} */ (plain)
   stmt.safeIntegers(true)
   return {

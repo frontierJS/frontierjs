@@ -119,9 +119,12 @@ export function buildLiteralDefaultMap(schema) {
 }
 
 // ─── Auth default map ────────────────────────────────────────────────────────
-// { modelName: [{ field, authField }] }
+// { modelName: [{ field, authField, fillsNull }] }
 // For fields with @default(auth().someField) — value stamped from ctx.auth at create time.
 // These are runtime-only; no SQL DEFAULT expression is emitted in DDL.
+// `fillsNull` marks the claim column row tenancy generates: the tenancy create
+// deny passes a null column, so a null left standing there is a row in no
+// tenant. A declared default is beaten by an explicit null like any default.
 
 export function buildAuthDefaultMap(schema) {
   const map = {}
@@ -130,7 +133,7 @@ export function buildAuthDefaultMap(schema) {
       const def = field.attributes.find(a => a.kind === 'default')
       if (def?.value?.kind !== 'call' || def.value.fn !== 'auth') continue
       if (!map[model.name]) map[model.name] = []
-      map[model.name].push({ field: field.name, authField: def.value.field })
+      map[model.name].push({ field: field.name, authField: def.value.field, fillsNull: def.generated === 'tenancy' })
     }
   }
   return map

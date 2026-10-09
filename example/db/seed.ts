@@ -28,6 +28,7 @@
 
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { toMinor }             from '@frontierjs/toolbelt/units'
+import { fromPath }            from '@frontierjs/litestone/storage'
 import { sys, db, DEV_KEY, shops, DEFAULT_SHOP, TIME_ZONE_FLOOR } from '../api/src/core/db.ts'
 import { move }                from '../api/src/domain/shop'
 import { priceBasket, BASE }   from '../api/src/domain/shop'
@@ -85,9 +86,10 @@ const DEMO = {
 // write, deliberately: a variant table with one variant per product proves
 // nothing, and a filter bar over four rows has nothing to narrow.
 //
-// The pictures are seeded BY PATH. A `File` column accepts a filesystem path,
-// a Buffer, a Blob or a browser File and hands the bytes to the storage
-// provider, so the seed states `db/seed-media/fjs-tee-navy.png` and the plugin
+// The pictures are seeded BY PATH, through `fromPath`. A `File` column hands
+// the bytes of a Buffer, a Blob, a browser File or a `fromPath(…)` to the
+// storage provider, and never reads a bare string as a path (FJS-2061), so the
+// seed states `fromPath('./db/seed-media/fjs-tee-navy.png')` and the plugin
 // does the upload, the key and the stored reference. db/seed-media/ is
 // committed; what the plugin writes under db/public/ is not.
 
@@ -426,7 +428,7 @@ async function seedCatalog() {
           // The plugin reads this path, uploads the bytes and stores the ref.
           // Relative to the process CWD, which is the example root — the same
           // assumption `database audit` already makes about its own path.
-          file:      `./db/seed-media/${c.image}`,
+          file:      fromPath(`./db/seed-media/${c.image}`),
           alt:       `${p.name} — ${c.color}`,
           position:  p.colors.indexOf(c),
         } })

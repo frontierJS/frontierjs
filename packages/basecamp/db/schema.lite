@@ -1698,7 +1698,7 @@ model Job {
   cronExpression String?
   trigger        String       @default("manual")
   triggerConfig  Json         @default("{}")
-  timeoutSeconds Int          @default(300)
+  timeoutSeconds Int          @default(300) @gte(5) @lte(3600)
   retryLimit     Int          @default(3)
   // The engine's record of the last run, written by `startRun`/`finishRun`.
   retryCount     Int          @default(0) @system

@@ -12205,6 +12205,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d618"></a>2026-10-09 · `FJS-D618` — Does `FJS-D345`'s *a port is an origin* mean each app on 8181 is its own origin, so the path fallback runs only when the host label names no app — Yes: when the host label names an app, the path reading is not tried.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no: slugs on 8181 share one origin, and this is documented).
+
+The paper's recommendation, taken as written: the hostname reading exists only to give each app its own origin.
+
 ### <a id="fjs-d658"></a>2026-10-08 · `FJS-D658` — How `analytics:` reaches a static page — The build writes the vendor's own tag into every prerendered page's `<head>`, and the island entry resolves the provider so `track()` reaches it. A custom provider object is refused on that target.
 
 Asked in chat while closing `FJS-2058`, which found `FJS-D608`'s *wire `sierra/analytics` into site-kit* had nothing to land on: a static page never loads `virtual:sierra`, the only place `initAnalytics` runs. **A** was picked over **B** (a small analytics module on every static page — `track()` everywhere, but a page with no island stops shipping zero JavaScript), **C** (refuse `analytics:` on `static` until `FJS-1539` gives the head a mechanism) and **D** (site-kit writes the tag, a second owner beside `sierra/analytics`, which `FJS-D608` ruled against).

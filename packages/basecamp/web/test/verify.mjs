@@ -584,7 +584,7 @@ async function apiCall(path, { method = 'GET', body, workspace, header, outpost 
     if (!secret) throw new Error(
       `no enrolled key for machine ${machine ?? '(none named)'} — call enrollAs() before signing as it`)
     Object.assign(headers, await signRequest({
-      secret, method, path, body: payload ?? '',
+      secret, method, path, serviceMethod: headers['x-service-method'], body: payload ?? '',
       // The kit is pure — the clock and the nonce belong to whoever is calling.
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     }))

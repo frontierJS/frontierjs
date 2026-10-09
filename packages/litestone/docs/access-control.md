@@ -50,7 +50,8 @@ auth().field          — field on auth object (e.g. auth().id, auth().role)
 auth().level          — the gate's grade for THIS model, getLevel(auth, model); on no principal
 auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
-check(field)          — delegates to related model's read policy
+check(field)          — delegates to the related model's policy for THIS rule's operation
+check(field, 'read')  — delegates to the related model's read policy, whatever the rule's operation
 relation.column       — a column ONE relation away (to-one only)
 field == value        field != value  field > value  field >= value  field < value  field <= value
 value in list         membership — the list is always the RIGHT operand
@@ -427,6 +428,15 @@ model Deploy {
   @@allow('update', check(app, 'read'))  // updatable by anyone who may READ the app
 }
 ```
+
+**A bare `check(parent)` asks the parent the rule's own operation.** In a read
+rule that is read; in `@@allow('create', check(inbox))` it is *may this caller
+create an inbox*, which is almost never what a child's write rule means. Chained
+through two models it climbs to whoever may write the root, so the child is
+writable by admins only. Write `check(inbox, 'read')` for *a member of it*, and
+name the write operation when the inherited question is the one meant.
+`litestone advise` warns on every bare `check()` in a rule that is not read-only
+(`check-without-an-operation-in-a-write-rule`).
 
 It compiles **the parent's row policy and nothing else**, which is the one thing
 about it worth knowing, because the section above sets the opposite expectation:
@@ -1042,7 +1052,10 @@ model Post {
 Filled only through a scoped client (`db.$setAuth(user)`).
 
 A value in the payload wins, so a create with no principal may still name the
-column. One that does not, on a REQUIRED column, is refused by name before
+column. An explicit `null` is a value: it writes a row with no owner, and on a
+required column it is refused by name. The one exception is the claim column
+`tenancy { strategy row }` generates, where a null is still stamped — left
+standing it would be a row in no tenant. One that does not, on a REQUIRED column, is refused by name before
 SQLite sees it: an anonymous caller gets `AccessDeniedError` with `status: 401`,
 since a signed-in caller would have succeeded, and `asSystem()` or a principal
 missing the claim gets a `ValidationError` on the field. An optional column is

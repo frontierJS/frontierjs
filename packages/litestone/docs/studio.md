@@ -219,6 +219,7 @@ parser accepts — measured, each case parses clean and is still wrong:
 | `unique-on-an-optional-column` | SQLite counts NULLs as distinct, so the constraint applies only to rows that have a value |
 | `index-another-index-already-covers` | a prefix of a longer index, or a duplicate of what `@unique` built. A `@@softDelete` model is exempt: there every `@@index` is partial and every UNIQUE is not |
 | `declared-and-unreferenced` | an enum or type nothing uses |
+| `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow('create', check(inbox))` asks who may create an inbox, not who may see one |
 
 The rules live in `src/core/advise.js` and run on the **proposed** schema in the
 preview, with anything already true of the file marked as such — a warning that

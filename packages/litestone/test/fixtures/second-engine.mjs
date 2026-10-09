@@ -37,7 +37,11 @@ import { setEngine, currentEngine } from '../../src/core/engine.js'
 const wrap = (raw) => {
   const stmt = (sql) => {
     const s = raw.prepare(sql)
-    return { get: (...a) => s.get(...a), all: (...a) => s.all(...a), run: (...a) => s.run(...a) }
+    return {
+      get: (...a) => s.get(...a), all: (...a) => s.all(...a), run: (...a) => s.run(...a),
+      values:       (...a) => { s.setReturnArrays(true); try { return s.all(...a) } finally { s.setReturnArrays(false) } },
+      safeIntegers(on = true) { s.setReadBigInts(!!on); return this },
+    }
   }
   return {
     prepare: stmt,

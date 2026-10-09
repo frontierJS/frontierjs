@@ -127,6 +127,13 @@ export interface OutgoingMail {
   html?:    string
 }
 
+// Junction's `AppMail` is `{}` until its mail module is imported, which is what
+// augments it to `IMail`. An app with no mailer — in-app notifications alone —
+// never imports it, and junction's App was then unassignable to this one
+// (`mail` has no `send`), so `app.configure(notificationsPlugin(…))` failed
+// `tsc`. Imported here for its augmentation alone: no runtime import.
+import type {} from '@frontierjs/junction/mail'
+
 export interface App {
   // `Promise<unknown>` and not `Promise<void>`: junction's `IMail.send` answers
   // a `SendResult` receipt, and under `strictFunctionTypes` a `void` return here

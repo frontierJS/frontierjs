@@ -122,19 +122,40 @@ nouns (D194: transient is not retryable). *User-facing vs operator* is the
 
 ## 5. Open questions for the owner
 
-- **Q1 — does a fault cross to the browser by kind?** **A** — `kind` on the
+- ~~**Q1 — does a fault cross to the browser by kind?**~~ **Answered 2026-10-09 (`FJS-D655`): A: toFrameworkError carries fault.kind beside retryable; sanitizeError still owns the message.** **A** — `kind` on the
   wire beside `retryable` (lets a form say "provider down, retry in 30 s").
   **B** — `retryable` only; kind stays server-side. **Recommend A** — the
   client already branches on `retryable` (`field-rules.js:1704`) and a kind is
   not a secret; `sanitizeError` still owns message redaction.
-- **Q2 — caravan rename `failed` → `dead`?** **A** — rename (B above).
+- ~~**Q2 — caravan rename `failed` → `dead`?**~~ **Answered 2026-10-09 (`FJS-D655`): A: caravan failed becomes dead, the word webhooks already uses.** **A** — rename (B above).
   **B** — keep `failed`, rename webhooks/outbox to it. **Recommend A** —
   webhooks already uses `failed` for a non-terminal attempt, so `failed`
   cannot be the terminal word without a second rename.
-- **Q3 — does an indeterminate fault inside a job park or die?** **A** —
+- ~~**Q3 — does an indeterminate fault inside a job park or die?**~~ **Answered 2026-10-09 (`FJS-D655`): A: dead at once; a reconcile hook waits for a stressor that needs one.** **A** —
   dead immediately. **B** — park pending a reconcile hook (`onIndeterminate`).
   **Recommend A** now; B is a new option and earns its place only when a
   stressor (Quo/Telnyx) needs reconciliation.
 - **Q4 — `claimIdempotency` across the caravan hop:** should a job's
   dispatch id become the conduit `Idempotency-Key` by default, turning the
-  indeterminate POST into a retryable one? Probably yes; separate paper.
+  indeterminate POST into a retryable one? Conduit's `idempotency: { auto }`
+  (`packages/conduit/src/types.ts:185`) mints one key per `send()`, so every
+  attempt inside a send shares it and a caravan retry, being a new send, mints
+  another — the duplicate it exists to stop, one hop out.
+  - **A** — `auto` reaches the job: a send inside a running job, to a target
+    declaring `auto`, derives its key from the job's `id` plus the request
+    (method, path, body), so a retried job re-sends the same key for the same
+    request and a different request never shares one. A fault on a keyed
+    request is no longer indeterminate, and `FJS-D655`'s dead-at-once applies
+    to the rest.
+  - **B** — the handler states it: ``idempotency_key: `${job.id}:charge` ``
+    per call, documented in caravan's README; nothing derived.
+  - **C** — every non-idempotent send inside a job carries the job-derived key,
+    whatever the target declares.
+  - **Recommend A** — `auto` is already the target's own claim that it
+    collapses duplicates, and already the one place a key is minted; A widens
+    what one key covers from a send to a job inside that owner, with no new
+    option. B leaves the default as the double charge `FJS-D194` was written
+    against. C mints for a target that ignores the header, which conduit's own
+    comment names as four charges. Two identical POSTs in one job collapse
+    under A; a job that means two passes explicit keys. Proof: a job whose
+    POST times out after the target commits, retried, reaches the target once.

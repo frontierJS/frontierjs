@@ -1,5 +1,13 @@
 # Changes — example
 
+## 2026-10-08 — the retention job awaits `$retain()` (`FJS-1921`)
+
+`$retain()` resolves now, once the plugins have released what the swept rows held, so `api/src/jobs/retention.job.ts` awaits it before counting what it removed.
+
+## 2026-10-08 — the seed uploads its photographs with `fromPath` (`FJS-2061`)
+
+A File column no longer reads a bare string as a path, so `db/seed.ts` wraps each `./db/seed-media/…` in `fromPath(…)` from `@frontierjs/litestone/storage`. `verify:catalog` still seeds and serves all 19.
+
 ## 2026-10-08 — `desktop/shell/src/main.rs` regenerated for `FJS_DESKTOP_URL`
 
 The generator's shell now loads `FJS_DESKTOP_URL` in a debug build (`fli desktop:dev`), and this file is compared to its output byte for byte.

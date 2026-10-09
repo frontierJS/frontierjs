@@ -250,6 +250,7 @@ in the browser (the loader is Sierra's).
 | `{ok && <b/>}` · `{xs.map(x => <li/>)}` | `{#if}` · `{#each}` | refused by name |
 | `$store.name` auto-subscribe | `$: store.name` then `{store.name}` | `$store is not defined` |
 | `<svelte:window>` | `<mesa:window>` | renders a literal `<svelte>` element |
+| `<svelte:self>` · `<mesa:self>` for a tree | `import Tree from './Tree.mesa'` inside `Tree.mesa`, then `<Tree />` | a literal `<svelte>` element · `mesa:self` renders nothing, and the warning names the import |
 | `transition:fade` · `use:action` | `{@attach $.fade()}` · `{@attach action}` | an inert attribute |
 | `className=` · Vue `:label="x"` | `class=` · `label={x}` | a `classname` attribute · the prop never arrives |
 | `{$context.form}` in markup | `const form = $context.form` in the script | refused |

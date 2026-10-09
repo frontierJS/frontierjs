@@ -49,16 +49,23 @@ export function createStaticServer({ staticDir = '/var/lib/outpost/static' } = {
    * Which app this request is for, and what is left of the path once the label
    * has been taken off it.
    *
-   * Both readings are ANSWERED, in order, rather than one being chosen: a
+   * Both readings are listed, in order, rather than one being chosen: a
    * machine reached at `outpost.internal` would otherwise have every request
    * read as app `outpost` and a path route would never be tried, which is a
-   * whole port that works until somebody gives the box a domain name.
+   * whole port that works until somebody gives the box a domain name. The
+   * host reading is final only when its label IS an app (`handle`), so a
+   * label that names nothing still falls through to the path.
    */
   function candidates(url, host) {
-    const segments = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    // `%E0` is a path no file has, and the port has no authentication in front
+    // of it: a malformed escape is the caller's mistake, answered as one
+    // rather than thrown out of `handle` as a 500 and a stack (`FJS-1856`).
+    let segments
+    try { segments = url.pathname.split('/').filter(Boolean).map(decodeURIComponent) }
+    catch { return null }
     const byHost   = labelFromHost(host)
     const out      = []
-    if (byHost)          out.push({ label: byHost,      rest: segments })
+    if (byHost)          out.push({ label: byHost,      rest: segments, byHost: true })
     if (segments.length) out.push({ label: segments[0], rest: segments.slice(1) })
     return out
   }
@@ -89,6 +96,13 @@ export function createStaticServer({ staticDir = '/var/lib/outpost/static' } = {
     return null
   }
 
+  /** Whether a label has an app published under it — a `hosts/` entry that resolves inside the root. */
+  async function isApp(label) {
+    if (!/^[a-z0-9][a-z0-9._-]*$/i.test(label ?? '')) return false
+    const base = await fsp.realpath(join(hostsDir, label)).catch(() => null)
+    return !!base && base.startsWith(root)
+  }
+
   async function settle(base, segments) {
     const target = resolve(base, ...segments)
     if (target !== base && !target.startsWith(base + '/')) return null
@@ -117,11 +131,19 @@ export function createStaticServer({ staticDir = '/var/lib/outpost/static' } = {
 
     const url   = new URL(req.url)
     const tries = candidates(url, req.headers.get('host'))
+    if (!tries)
+      return new Response('malformed percent-encoding in the path\n', { status: 400, headers: { 'content-type': 'text/plain; charset=utf-8' } })
     if (!tries.length)
       return NOT_FOUND('no app named here — reach one by hostname, or by /<slug>/ on this port')
 
     let file = null
-    for (const t of tries) if ((file = await locate(t.label, t.rest))) break
+    for (const t of tries) {
+      if ((file = await locate(t.label, t.rest))) break
+      // A port is an origin (`FJS-D345`, `FJS-D618`): a host that names an app
+      // makes that app's origin, so a request that app cannot answer is a 404
+      // rather than a second try at another app's files under its hostname.
+      if (t.byHost && await isApp(t.label)) break
+    }
     if (!file) return NOT_FOUND(`nothing published at ${url.pathname} for '${tries[0].label}'`)
 
     // The release's own digest, which is the directory holding the file. Two

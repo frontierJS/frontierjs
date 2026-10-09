@@ -30,6 +30,11 @@
  *            absent until `FJS-678`: a signed `GET /transfer?to=alice` verified
  *            unchanged against `?to=mallory`, and a receiver that wanted to
  *            include the query could not, because the signer had excluded it
+ *   service method  the `X-Service-Method` header, which junction dispatches on:
+ *            `POST /servers/7` is `heartbeat` or `delete` by that header alone, so
+ *            a signature that left it out verified unchanged under any other
+ *            method (`FJS-1858`). Always a line, empty when the request carries
+ *            none, for the reason the query is
  *   timestamp  the receiver rejects anything outside its freshness window
  *   nonce      …and anything it has already seen inside that window
  *   sha256(body)  a bodyless request signs the hash of the empty string, so
@@ -157,10 +162,10 @@ function splitTarget(path, query) {
  * signs an empty line rather than omitting one, so the number of lines is
  * fixed and a query cannot be smuggled into the path.
  *
- * @param {{method: string, path: string, query?: string|object, timestamp: string|number, nonce: string, bodyHash: string}} parts
+ * @param {{method: string, path: string, query?: string|object, serviceMethod?: string, timestamp: string|number, nonce: string, bodyHash: string}} parts
  * @returns {string}
  */
-export function canonicalRequest({ method, path, query, timestamp, nonce, bodyHash }) {
+export function canonicalRequest({ method, path, query, serviceMethod, timestamp, nonce, bodyHash }) {
   const target = splitTarget(path, query)
 
   for (const [name, value] of Object.entries({ method, path: target.path, timestamp, nonce, bodyHash })) {
@@ -174,8 +179,12 @@ export function canonicalRequest({ method, path, query, timestamp, nonce, bodyHa
   if (canonical.includes('\n'))
     throw new TypeError('canonicalRequest: query must not contain a newline — it is the separator')
 
+  const dispatch = String(serviceMethod ?? '').trim()
+  if (dispatch.includes('\n'))
+    throw new TypeError('canonicalRequest: serviceMethod must not contain a newline — it is the separator')
+
   return [
-    String(method).toUpperCase(), target.path, canonical, String(timestamp), nonce, bodyHash,
+    String(method).toUpperCase(), target.path, canonical, dispatch, String(timestamp), nonce, bodyHash,
   ].join('\n')
 }
 
@@ -224,11 +233,11 @@ async function hmacHex(secret, message) {
  *
  * @param {{
  *   secret: string, method: string, path: string, query?: string|object,
- *   body?: string|Uint8Array, prefix?: string, timestamp: string|number, nonce: string
+ *   serviceMethod?: string, body?: string|Uint8Array, prefix?: string, timestamp: string|number, nonce: string
  * }} opts
  * @returns {Promise<Record<string,string>>}
  */
-export async function signRequest({ secret, method, path, query, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
+export async function signRequest({ secret, method, path, query, serviceMethod, body = '', prefix = 'X-Fjs', timestamp, nonce }) {
   if (!secret)    throw new TypeError('signRequest: secret is required')
   if (!timestamp) throw new TypeError('signRequest: timestamp is required — seconds, from the caller\'s clock')
   if (!nonce)     throw new TypeError('signRequest: nonce is required — one per request, from the caller')
@@ -238,7 +247,7 @@ export async function signRequest({ secret, method, path, query, body = '', pref
 
   const ts  = String(timestamp)
   const sig = await hmacHex(secret, canonicalRequest({
-    method, path, query, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
+    method, path, query, serviceMethod, timestamp: ts, nonce, bodyHash: await sha256Hex(body),
   }))
   return {
     [`${prefix}-Signature`]: `${PREFIX}${sig}`,
@@ -284,13 +293,7 @@ export async function verifyRequest({
   // pass one would silently grade every timestamp against zero.
   if (!Number.isFinite(now)) throw new TypeError('verifyRequest: now is required — seconds, from the receiver\'s clock')
 
-  const get = name => {
-    const key = `${prefix}-${name}`.toLowerCase()
-    if (typeof headers?.get === 'function') return headers.get(key) ?? undefined
-    // A plain object: header names arrive in whatever case the sender used.
-    for (const [k, v] of Object.entries(headers ?? {})) if (k.toLowerCase() === key) return v
-    return undefined
-  }
+  const get = name => headerValue(headers, `${prefix}-${name}`)
 
   const signature = get('Signature')
   const timestamp = get('Timestamp')
@@ -321,8 +324,11 @@ export async function verifyRequest({
   if (!signature.startsWith(PREFIX))
     return { ok: false, reason: `signature is not v${SIGNATURE_VERSION}, which is the only version this side understands` }
 
+  // Read off the request rather than passed in: the receiver's job is to check
+  // the header it is about to dispatch on, and a parameter is a way to forget.
+  const serviceMethod = headerValue(headers, 'x-service-method')
   const expected = await hmacHex(secret, canonicalRequest({
-    method, path, query, timestamp, nonce, bodyHash: await sha256Hex(body),
+    method, path, query, serviceMethod, timestamp, nonce, bodyHash: await sha256Hex(body),
   }))
   if (!timingSafeEqual(signature.slice(PREFIX.length), expected))
     return { ok: false, reason: 'signature does not match' }
@@ -332,6 +338,14 @@ export async function verifyRequest({
   if (seenNonce && await seenNonce(nonce)) return { ok: false, reason: 'nonce has already been used' }
 
   return { ok: true }
+}
+
+/** One header off a Headers or a plain object, whatever case the sender used. */
+function headerValue(headers, name) {
+  const key = name.toLowerCase()
+  if (typeof headers?.get === 'function') return headers.get(key) ?? undefined
+  for (const [k, v] of Object.entries(headers ?? {})) if (k.toLowerCase() === key) return v
+  return undefined
 }
 
 /** Constant-time compare of two hex strings of equal expected length. */

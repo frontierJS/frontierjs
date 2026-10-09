@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-10-08 — the retention job awaits `$retain()` (`FJS-1921`)
+
+`$retain()` resolves now, once the plugins have released what the swept rows held, so `api/src/jobs/retention.job.ts` awaits it before counting what it removed.
+
 ## 2026-10-08 — the desktop shell can load the dev server (`fli desktop:dev`)
 
 `desktop/shell/src/main.rs` takes the generator's new `dev_url()`: a debug build loads `FJS_DESKTOP_URL` instead of the bundle when it is set, so `fli desktop:dev` opens the window on `web/`'s Vite at 8020 with HMR. A release build ignores the variable. Proof is in cli's entry of the same date.

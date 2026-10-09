@@ -18,7 +18,7 @@
  */
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClient } from '../src/index.js'
@@ -56,7 +56,7 @@ const bodies = async (sys: any, model: string) =>
 describe('the sweep names the TABLE', () => {
   test('a multi-word model is swept — it never was', async () => {
     const { sys } = await seeded()
-    const swept = sys.$retain()
+    const swept = await sys.$retain()
 
     expect(await bodies(sys, 'auditEvent')).toEqual(['fresh'])
     expect(swept.find((r: { model: string }) => r.model === 'AuditEvent'))
@@ -65,13 +65,13 @@ describe('the sweep names the TABLE', () => {
 
   test('the single-word control is swept too, as it always was', async () => {
     const { sys } = await seeded()
-    sys.$retain()
+    await sys.$retain()
     expect(await bodies(sys, 'log')).toEqual(['fresh'])
   })
 
   test('a model with no createdAt is left alone rather than failing', async () => {
     const { sys } = await seeded()
-    const swept = sys.$retain()
+    const swept = await sys.$retain()
     expect(swept.some((r: { model: string }) => r.model === 'Setting')).toBe(false)
     expect((await sys.setting.findMany()).length).toBe(1)
   })
@@ -88,21 +88,21 @@ describe('$retain() — because startup is not a schedule', () => {
     await sys.auditEvent.create({ data: { body: 'stale', createdAt: ago(200) } })
     expect((await sys.auditEvent.findMany()).length).toBe(1)
 
-    expect(sys.$retain().find((r: { model: string }) => r.model === 'AuditEvent')?.removed).toBe(1)
+    expect((await sys.$retain()).find((r: { model: string }) => r.model === 'AuditEvent')?.removed).toBe(1)
     expect((await sys.auditEvent.findMany()).length).toBe(0)
   })
 
   test('answers one row per table it touched, and is quiet when there is nothing', async () => {
     const { sys } = await seeded()
-    sys.$retain()
-    const second = sys.$retain()
+    await sys.$retain()
+    const second = await sys.$retain()
     expect(second.every((r: { removed: number }) => r.removed === 0)).toBe(true)
     expect(second.map((r: { model: string }) => r.model).sort()).toEqual(['AuditEvent', 'Log'])
   })
 
   test('each row names the database it swept and its driver, as RetainResult declares', async () => {
     const { sys } = await seeded()
-    for (const r of sys.$retain()) {
+    for (const r of await sys.$retain()) {
       expect(typeof r.database).toBe('string')
       expect(['sqlite', 'jsonl', 'trail']).toContain(r.driver)
     }
@@ -115,7 +115,7 @@ describe('$retain() — because startup is not a schedule', () => {
     // 89 days and 23 hours: inside 90 flat days from NOW, whatever the calendar
     // or the zone would say about it.
     await sys.log.create({ data: { body: 'just-inside', createdAt: new Date(Date.now() - (90 * 86_400_000 - 3_600_000)).toISOString() } })
-    sys.$retain()
+    await sys.$retain()
     expect(await bodies(sys, 'log')).toEqual(['just-inside'])
   })
 })
@@ -148,7 +148,7 @@ describe('the jsonl half', () => {
     await sys.entry.create({ data: { body: 'fresh', createdAt: ago(1)   } })
     expect((await sys.entry.findMany()).length).toBe(2)
 
-    const swept = sys.$retain()
+    const swept = await sys.$retain()
     expect(swept.find((r: { model: string }) => r.model === 'Entry')?.removed).toBe(1)
 
     const file = swept.find((r: { model: string }) => r.model === 'Entry')!.table as string
@@ -188,7 +188,7 @@ describe('the jsonl half', () => {
     await sys.entry.create({ data: { body: 'old',   createdAt: ago(200) } })
     await sys.entry.create({ data: { body: 'fresh', createdAt: ago(1)   } })
 
-    const file  = sys.$retain().find((r: { model: string }) => r.model === 'Entry')!.table as string
+    const file  = (await sys.$retain()).find((r: { model: string }) => r.model === 'Entry')!.table as string
     const index = file + '.index.db'
     expect(existsSync(index)).toBe(true)    // the compaction kept it
 
@@ -208,5 +208,58 @@ describe('the jsonl half', () => {
     rmSync(index, { force: true })
     await sys.entry.create({ data: { body: 'later', createdAt: ago(0) } })
     expect(existsSync(index)).toBe(true)
+  })
+})
+
+// A sweep is a DELETE, and a row that held a File held bytes outside SQLite.
+// The ORM's delete hands its rows to the plugins and FileStorage removes the
+// objects; the sweep's raw DELETE handed them to nothing, so the bytes a
+// retention exists to forget were the ones it kept (FJS-1921).
+describe('a swept row takes its files with it', () => {
+  const FILE_SCHEMA = (dir: string) => `
+    database main { path "${join(dir, 'app.db')}" }
+    database raws { path "${join(dir, 'raws.db')}"  retention 30d }
+    model Batch { id Int @id @default(autoincrement())  body File  createdAt DateTime @default(now())  @@db(raws) }
+  `
+  // What the store holds, by content, so the test does not depend on the key pattern.
+  const stored = (dir: string) => {
+    const root = join(dir, 'objects')
+    if (!existsSync(root)) return []
+    return (readdirSync(root, { recursive: true }) as string[])
+      .filter(f => statSync(join(root, f)).isFile())
+      .map(f => readFileSync(join(root, f), 'utf8')).sort()
+  }
+
+  async function open(dir: string) {
+    const { FileStorage } = await import('../src/storage/file-storage.js')
+    const files = FileStorage({ provider: 'local', localPath: join(dir, 'objects') })
+    return createClient({ schema: FILE_SCHEMA(dir), plugins: [files] })
+  }
+
+  test('$retain() removes the object of every row it deletes, and only those', async () => {
+    const dir = tmp()
+    const db: any = await open(dir)
+    const sys = db.asSystem()
+    await sys.batch.create({ data: { body: Buffer.from('old'),   createdAt: ago(31) } })
+    await sys.batch.create({ data: { body: Buffer.from('fresh'), createdAt: ago(1) } })
+    expect(stored(dir)).toEqual(['fresh', 'old'])
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: { model: string }) => r.model === 'Batch')?.removed).toBe(1)
+    expect(stored(dir)).toEqual(['fresh'])
+    db.$close()
+  })
+
+  test('the startup pass removes them too', async () => {
+    const dir = tmp()
+    const first: any = await open(dir)
+    await first.asSystem().batch.create({ data: { body: Buffer.from('old'), createdAt: ago(31) } })
+    expect(stored(dir)).toEqual(['old'])
+    first.$close()
+
+    const db: any = await open(dir)
+    expect(await db.asSystem().batch.count()).toBe(0)
+    expect(stored(dir)).toEqual([])
+    db.$close()
   })
 })

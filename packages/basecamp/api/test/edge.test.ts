@@ -687,7 +687,7 @@ describe('sync', () => {
     const body = { outpost_version: '0.4.1', health: { cpu: 3, memory: 10 } }
     const path = `/servers/${online1.id}`
     const headers = await signRequest({
-      secret, method: 'POST', path, query: '', body: JSON.stringify(body),
+      secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body: JSON.stringify(body),
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     const req = env.http.post(path).set('x-service-method', 'heartbeat')

@@ -5,10 +5,15 @@ alias: advise
 examples:
   - fli advise
   - fli advise --json
+  - fli advise --strict
 flags:
   json:
     type: boolean
     description: Both lists as data
+    defaultValue: false
+  strict:
+    type: boolean
+    description: Exit 1 on an error or warn rule
     defaultValue: false
 ---
 
@@ -17,11 +22,12 @@ if (!requireSchema($)) return
 
 const { schema } = resolveDb($, flag)
 
-// Not a gate and it never exits non-zero on a finding. `fli test:access
-// --strict` and `fli release:check` are the two that fail a branch; this one
-// reads.
+// A report by default, which exits 0 over every finding; a harness that read
+// that 0 as clean shipped a create that could never succeed (FJS-1825).
+// `--strict` is the verdict, and only a rule earns it — a word nobody
+// declared never fails.
 await $.stream({
-  command: `${litestone($)} advise --schema ${schema}${flag.json ? ' --json' : ''}`,
+  command: `${litestone($)} advise --schema ${schema}${flag.json ? ' --json' : ''}${flag.strict ? ' --strict' : ''}`,
 })
 ```
 
@@ -68,3 +74,9 @@ A rule carries a severity because it is a defect. A suggestion carries a
 the row's owner and declares no `@@allow`), and `possible` where it is asking.
 Nothing here distinguishes a catalog from a possession, so it says so rather
 than guessing.
+
+**That difference is what `--strict` reads.** It exits 1 when any rule fires at
+`error` or `warn` and never on a suggestion, so a CI step or a grading harness
+gets a verdict on what is wrong without failing on what was never said. Without
+it the exit is 0 whatever is printed, and reading that 0 as *clean* is the
+mistake the flag exists to stop.

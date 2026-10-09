@@ -36,10 +36,15 @@ model User {
 ## Usage
 
 ```js
-// Create with file — pass a Blob, File, Buffer, or ReadableStream
+// Create with file — pass a File, Blob, Buffer, Uint8Array or ArrayBuffer
 const user = await db.user.create({
   data: { email: 'alice@example.com', avatar: avatarFile }
 })
+
+// From the server's disk — code only. A string is never read as a path, under
+// asSystem() too, so a request body naming /etc/passwd is refused (FJS-2061).
+import { fromPath } from '@frontierjs/litestone/storage'
+await db.user.update({ where: { id: 1 }, data: { avatar: fromPath('./seed/alice.jpg') } })
 
 // Update file — old object deleted automatically (unless @keepVersions)
 const updated = await db.user.update({

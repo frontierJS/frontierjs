@@ -13,7 +13,7 @@
 import { S3Provider }     from './providers/s3.js'
 import { LocalProvider }  from './providers/local.js'
 
-export { FileStorage }    from './file-storage.js'
+export { FileStorage, fromPath } from './file-storage.js'
 
 // ─── Provider factory ─────────────────────────────────────────────────────────
 

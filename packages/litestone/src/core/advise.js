@@ -953,6 +953,47 @@ export const RULES = [
       return out
     },
   },
+
+  {
+    id:       'check-without-an-operation-in-a-write-rule',
+    severity: 'warn',
+    title:    'a bare check() in a write rule asks the parent the same write',
+    blurb:    'check(rel) with no operation takes the operation of the rule it sits in, so ' +
+              "@@allow('create', check(inbox)) asks whether the caller may create an INBOX, not whether " +
+              'they may see it. Chained, that climbs to whoever may write the root; against a parent held ' +
+              'only by @@gate it restricts nothing. Read rules are exempt: there the inherited op is read.',
+    run(schema) {
+      const out = []
+      const checksIn = (node, acc = []) => {
+        if (!node || typeof node !== 'object') return acc
+        if (Array.isArray(node)) { for (const n of node) checksIn(n, acc); return acc }
+        if (node.type === 'check') { acc.push(node); return acc }
+        for (const v of Object.values(node)) checksIn(v, acc)
+        return acc
+      }
+      for (const model of schema.models ?? []) {
+        for (const a of model.attributes ?? []) {
+          if ((a.kind !== 'allow' && a.kind !== 'deny') || a.generated) continue
+          const writes = (a.operations ?? []).filter(op => op !== 'read')
+          if (!writes.length) continue
+          for (const c of checksIn(a.expr)) {
+            if (c.operation) continue
+            const target = model.fields?.find(f => f.name === c.field)?.type?.name ?? c.field
+            const ops    = writes.join(', ')
+            out.push({
+              model: model.name, field: c.field,
+              message: `${model.name}: @@${a.kind}('${a.operations.join(', ')}', …) holds check(${c.field}) with no ` +
+                `operation, so it asks whether the caller may ${ops} the ${target} — not whether they may see ` +
+                `it. Write check(${c.field}, 'read') for "a member of it", or check(${c.field}, '${writes[0]}') ` +
+                `to keep the inherited question and say so. A ${target} held by @@gate alone answers a delegated ` +
+                `write as no restriction at all.`,
+            })
+          }
+        }
+      }
+      return out
+    },
+  },
 ]
 
 /** Every rule, over one schema. */

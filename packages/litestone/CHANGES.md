@@ -1,5 +1,120 @@
 # Changes — @frontierjs/litestone
 
+## 2026-10-08 — A Boolean write parses text and refuses what it cannot read (`FJS-2031`)
+
+`serializeBooleans` stored `value ? 1 : 0`, so the text `'false'` — a non-empty string — was written as 1 and read back `true`, through `asSystem()` and a scoped principal alike. `loadRows` reading the same cell stored 0, and a where filter on `'false'` matched the false rows, so the write path was the one disagreeing.
+
+- **A Boolean takes `true`/`false`, the stored `1`/`0`, or text `parseCell` reads as a boolean** — `'true'`, `'false'`, `'1'`, `'0'`, any case. That is the set `loadRows` already took, through the same function.
+- **Anything else is a `ValidationError` on the field**: `'no'`, `'off'`, `'yes'`, `''`, `2`, an object. Each was stored as true before. An `@edge` Boolean goes through the same `booleanBind`.
+
+Proof: `test/boolean-filter.test.ts` § *a Boolean column written as text* — create, update, the numeric pair, and the refusals (red before: `Expected: false, Received: true`). create, createMany, upsertMany, updateMany and upsert were probed and all go through `writeData`.
+
+## 2026-10-08 — An explicit null beats `@default(auth().x)` (`FJS-2032`)
+
+`applyAuthDefaults` filled a column whenever the payload held `== null`, so `note.create({ data: { authorId: null } })` under a principal wrote the principal's id. The docs say a value in the payload wins a default, and Invariant 9 says an explicit null clears; the ela data move had no way to write a Note or Task whose author was gone, and under a non-User system principal it failed as `ForeignKeyError authorId "system" names no User`.
+
+- **A declared `@default(auth().x)` fills only an absent or `undefined` key.** An explicit null is written, and on a required column it is refused by name (`ownerId is required — a null beats its auth().id default`) rather than reporting a principal with no claim.
+- **The claim column `tenancy { strategy row }` generates still fills a null.** The tenancy create deny passes a null column, so leaving the null standing would land a tenant caller's row in no tenant. `buildAuthDefaultMap` marks it `fillsNull` from the attribute's `generated: 'tenancy'`.
+
+Proof: `test/auth-default-null.test.ts` — create, createMany, upsertMany, upsert and a nested create each write the null (red before: `Received: "u1"`); an omitted or undefined key is still stamped; a tenant caller's `workspaceId: null` lands in its tenant, which goes red with `fillsNull` stubbed off.
+
+## 2026-10-08 — `litestone advise --strict` exits 1 on an error or warn rule (`FJS-1825`)
+
+`advise` exits 0 over everything it prints, by design: it is a report. The base44 stressor graded *advise exits 0* as clean, so a PostHog schema whose `Project.apiToken` advise had warned about since August settled green and no person could create a Project.
+
+- **`--strict` is the verdict**, in text and `--json`: exit 1 when any rule fires at `error` or `warn`. An `info` rule and every *declared by nobody* suggestion still exit 0, because a word a schema never said is not a defect.
+- **The default is unchanged.** The flag is the same spelling five other litestone commands use for *exit 1 in CI*.
+
+Proof: `test/advise.test.ts` § *advise --strict*, spawned so the exit code is what is asserted; before the flag existed it was ignored and the warned schema exited 0.
+
+## 2026-10-08 — `litestone advise` warns on a bare `check()` in a write rule, and the access guide says what one asks (`FJS-1940`)
+
+A bare `check(rel)` delegates with the operation of the rule it sits in, while `docs/access-control.md`'s reference line said it delegated to the related model's read policy. The chatwoot stressor wrote `@@allow('create', check(inbox))` meaning *a member of the inbox*, and got *may create an inbox*: chained up to the organization that was admin-only, so the first agent reply was a 403, and against an organization held by `@@gate` alone it restricted nothing. Only that last case was reported, by a boot warning in `createClient`.
+
+- **New advise rule `check-without-an-operation-in-a-write-rule`** (warn): any `check()` with no operation in an `@@allow`/`@@deny` naming an operation other than read. The message names the parent and gives both spellings, `check(rel, 'read')` and the write op stated outright. Read-only rules and a `check()` that names its op are silent; no `.lite` in the tree trips it.
+- **The reference line now gives both forms**, and § *Delegating* says the bare form asks the parent the rule's own operation, citing the rule.
+
+Proof: `test/advise.test.ts` § *check-without-an-operation-in-a-write-rule*, red before the rule for every write op, inside a larger expression and on a deny, and silent on a read rule and a named op.
+
+## 2026-10-08 — erasing a person adds no copy of a `@personal` value to the audit trail (`FJS-1485`)
+
+jazzhr measured every forgotten email in the trail twice: in the create's `after` and in the erasure's own line, the tombstone update's or the delete's `before`. `FJS-D657`'s `@personal` writes `[personal]` into every snapshot the trail keeps, so both copies are gone, and a kept id or a bearer line's `subjectId` now joins only to a create line that names nobody.
+
+Proof: `test/litestone.test.ts` § *the erasure line keeps no @personal value — update and delete before*, red with the `[personal]` mark removed. The halves the trail cannot reach, a deleted value left in the file's freed pages and an address in a queued job's payload, belong to the unbuilt erase walk (`FJS-D663`) and are filed on their own.
+
+## 2026-10-08 — `asSystem()` checks a `@version` the caller states, and still lets one it leaves out through (`FJS-2069`)
+
+`prepareUpdate` skipped the whole `@version` branch under `ctx.isSystem`, so a supplied version was dropped unread. A job that read a row, did slow work and wrote it back with the version it read overwrote a person's save made in between, with no error. The exemption is right for a migration, which read nothing and states no version, and wrong for a writer that did read.
+
+- **Under `asSystem()`, a version that is present is the precondition** exactly as for any other caller: a moved row throws `VersionConflictError` (409), and a value that is not an integer throws `VersionRequiredError` rather than being ignored.
+- **An absent version stays exempt** (`FJS-D659`), so migrations and backfills are unchanged. `docs/CONSISTENCY.md`'s lost-update row and the README say so.
+
+Proof: `test/litestone.test.ts` § *@version — runtime*, *asSystem() checks a version the caller supplies* and *refuses a supplied version that is not one*, both red before the fix.
+
+## 2026-10-08 — a retention sweep removes the files of the rows it deletes, and `$retain()` resolves once they are gone (`FJS-1921`)
+
+`runSqliteRetention` ran a bare `DELETE … WHERE createdAt < ?`. FileStorage releases an object from `onAfterDelete`, and the sweep called no plugin, so a `retention 30d` database with a `File` column emptied its table and kept every upload in the store indefinitely. Those bytes are what a retention policy exists to forget.
+
+- **When a plugin is installed, the sweep adds `RETURNING *`** and gives each table's removed rows to `afterDelete`, the same hook an ORM delete fires. With no plugins the statement stays a bare DELETE.
+- **The boot pass runs after `pluginRunner.init`** rather than before the runner exists, and `createClient` awaits it.
+- **`$retain()` returns a promise** of the same summary, because releasing an object is async. `index.d.ts` says `Promise<RetainResult[]>`, and the example and basecamp retention jobs await it. The asSystem refusal still throws synchronously.
+
+Proof: `test/retention.test.ts` § *a swept row takes its files with it*, covering `$retain()` and the startup pass against a real local provider. Both were red before the fix, and passing no `onRemoved` turns both red again.
+
+## 2026-10-08 — a model declaring `@big` reads and writes on the sqlite-wasm engine, and an EXPLAIN's `.values()` answers there (`FJS-1991`)
+
+`wideStmt` calls `safeIntegers(true)` on every statement of a model with a `@big` column, and `wrapDb`'s `singleUse` hands an EXPLAIN's `.values()` straight to the engine's statement. `engines/sqlite-wasm.js` had neither, so the browser threw a TypeError at the first statement of such a model, while `engine.js` listed `safeIntegers` as optional and `values` not at all.
+
+- **The wasm statement grows both.** `safeIntegers(on)` flips the statement to read every INTEGER cell with `sqlite3_column_int64`, a BigInt, which is what `narrowRow` turns into digits. oo1's own read answers a Number whenever the value fits a double, so a `@big` holding 42 would otherwise come back `42` where bun answers `'42'`. `values()` reads each row as an array.
+- **`engine.js` lists both as owed**, and the `node:sqlite` conformance fixture in `test/fixtures/second-engine.mjs` implements them with `setReadBigInts` and `setReturnArrays`. That removes the package's one `@ts-expect-error`, at `singleUse`.
+
+Proof: `test/big-int.test.ts` § *on the sqlite-wasm engine* runs the package's node build of the same wasm with the OPFS pool stubbed. Both cases were red before the fix. Stubbing `wideRow` back to oo1's read turns the *fits is still digits* assertion red on its own. `bun run test:browser` passes 28 of 28.
+
+## 2026-10-08 — an `upsert` whose create collides on a column its `where` does not name is refused with `UniqueConflictError` (`FJS-2029`)
+
+`upsert`'s slow path catches a unique conflict on the create and retries as an update, which is right for a race and nothing else. With `where: { id: 50 }` and a `create` carrying a `slug` another row holds, the update by `id` matched nothing and `upsert` answered `null` having written nothing. The fallback now reads `where` again first, and rethrows the create's `UniqueConflictError` when no row is there.
+
+The same shape reached a row hidden by a template or a global filter: the insert collides on its `id`, the update cannot see it, and the answer was `null`. It is now the `UniqueConflictError` `create` gives for the same data, so `test/verbs-rules.test.ts` promotes `templates × upsert` and `globalFilter × upsert` from `on` to `ref` and reads that error as a refusal.
+
+Proof: `test/litestone.test.ts` § *a soft-deleted row keeps its @unique slot*, the FJS-2029 case, red before the fix; the race case beside it still resolves to an update.
+
+## 2026-10-08 — an update giving a File[] column files uploads them, and keeps the files the new array still names (`FJS-2095`)
+
+FileStorage overrides `onBeforeUpdate` to skip cleanup for `keepVersions`, and picked its fields with `isFileValue(args.data[field])`. That is false for an array, so `photos: [Buffer, Buffer]` uploaded nothing and the column stored the Buffers' JSON, `[{"type":"Buffer","data":[98]},…]`. The override's `isArray` branch could not be reached, and it stringified its refs, which validation refuses for an array column.
+
+- **A `File[]` field is picked by its items**: an update whose array holds any file value uploads those items and passes stored refs through. The refs are assigned as an array, the way the create path does it.
+- **Cleanup skips any old ref the new array still carries**, matched by `key`. Without that, an append (`[kept, Buffer]`) would delete the kept file once the field was reachable.
+
+Proof: `test/file-array-update.test.ts`, two cases, both red before the fix. Stubbing the keep check turns the append case red on its own.
+
+## 2026-10-08 — an include and a `_count` through an implicit many-to-many leave out the removed, expired and template targets (`FJS-2002`)
+
+The m2m branch of `resolveIncludes` built its WHERE from the join key, the include's `where` and the read policy, and nothing else. A join row outlives its target's `remove()`, its expiry and its turn into a template, so `message.findMany({ include: { tasks: true } })` returned a soft-removed task while `where: { tasks: { none: {} } }` over the same rows said there was none, and a has-many include of the same shape returned nothing. The m2m `_count` read the join table alone unless the target was policied, so it counted the same rows.
+
+- **The m2m include** now appends the target's soft-delete clause (honoring `withDeleted` and `onlyDeleted`), its `@@hasTemplates` clause and its imposed `@@expires`/`@@effective` window, through a subquery on the target's key the way the policy is already applied, because those clauses name bare columns and the join table sits beside the aliased target.
+- **The m2m `_count`** joins through to the target whenever any of those clauses or the policy applies, using the same clauses the has-many count uses.
+
+Proof: `test/m2m-include-lifecycle.test.ts`, four cases. All four were red before the fix. `include.js` gives up one hand-quoted identifier, so its `test/sql-idents.test.ts` ceiling drops to 66.
+
+## 2026-10-08 — a File column never reads a string off the disk; `fromPath(path)` uploads from it (`FJS-2061`)
+
+FileStorage took any string starting `/`, `./`, `../` or `~/` as a file to upload and read it with `readFileSync`, whoever was calling. Junction types a File column `any`, so a principal's create naming `/etc/hostname` stored the server's own file and answered its public URL. Owner ruled no path sniffing at all, under `asSystem()` too, since a system import of untrusted rows carries the same `./x`.
+
+- **A string that is not a stored ref is refused** by `serialize()` as a `ValidationError` naming the column and `fromPath`. Before, a string not shaped like a path went into the column as its ref.
+- **`fromPath(path)`** (`@frontierjs/litestone/storage`) is the one way to upload from the server's disk. It returns a frozen class instance, and a JSON body cannot build one. A plain `{ path }` object is refused like any other object.
+- `docs/file-storage.md` drops `ReadableStream` from the accepted values, since `readValue` never read one.
+
+Proof: `test/file-from-path.test.ts`. The path cases and the update case were red before the fix: four path shapes through `$setAuth`, plus `asSystem()`, an update, the wrapper, and a forged wrapper.
+
+## 2026-10-08 — a jsonl model carrying an access rule or a tenant is a parse error (`FJS-1920`)
+
+The jsonl driver runs no access layer, and the parser let a schema say one anyway: `@@gate` on a jsonl model parsed clean, and row tenancy skipped every jsonl model without a word, so under `tenancy { strategy row }` an anonymous caller created and read every tenant's rows, a user wrote into another tenant, and a create stamped no tenant column. Owner ruled refuse at parse; the driver does not grow an access layer.
+
+- **`@@gate`, `@@allow` and `@@deny` on a jsonl model** are one refusal in the jsonl model check of `validate()`, naming the database and `driver jsonl`. The separate `@@allow`/`@@deny` refusal in the policy loop is folded into it.
+- **Row tenancy** (`expandTenancy`) refuses a jsonl model that holds the tenant column or declares `@@tenant(column:)`/`@@tenant(via:)`, and names `@@tenant(none)` as the way to say its rows span tenants. A jsonl model with no tenant column stays unscoped and valid, as does a trail model, so the synthesized audit-trail model parses unchanged.
+
+Proof: `test/tenancy.test.ts`, four cases replacing *does not scope a jsonl or logger model*, three red before.
+
 ## 2026-10-08 — every `.lite` word names the axis it serves (`FJS-D635`)
 
 `AXES` in `src/core/catalog.js` places each word on `shape`, `access`, `life`, `evolution` or `battery`, keyed `level:word` like `TIERS`, and `axisFor(row)` answers. `catalog.test.ts` § *axes* fails a word on no axis, a word on two, and a key naming a word that is gone. It is a table beside `TIERS` and not a `group` map: `stamp`, `operate` and `declare` each hold words from more than one axis. `battery` holds `@hardDelete` and `@keepVersions`, the two File-storage knobs; `evolution` holds `@@external` alone.

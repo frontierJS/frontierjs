@@ -35,8 +35,7 @@ describe('FINDING — another app answers under this app’s hostname', () => {
     await release('admin', 'admin', [{ path: 'index.html', content: '<h1>admin</h1>' }, { path: 'app.js', content: 'admin()' }])
   })
 
-  // FJS-1834: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('shop.fleet.test/admin/index.html serves the admin app as origin shop.fleet.test', async () => {
+  test('shop.fleet.test/admin/index.html serves the admin app as origin shop.fleet.test', async () => {
     // The host already named an app (shop). The path reading is still tried
     // when shop has no such file, so admin's HTML — a stranger's script —
     // runs as same-origin with shop's.
@@ -44,10 +43,15 @@ describe('FINDING — another app answers under this app’s hostname', () => {
     expect(res.status).toBe(404)                       // FAILS: 200, body is admin's
   })
 
-  // FJS-1834: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('…and its assets too', async () => {
+  test('…and its assets too', async () => {
     const res = await serve('shop.fleet.test', '/admin/app.js')
     expect(res.status).toBe(404)                       // FAILS: 200, 'admin()'
+  })
+
+  test('a host label that names no app still falls through to the path (FJS-D618)', async () => {
+    const res = await serve('outpost.internal', '/admin/index.html')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('<h1>admin</h1>')
   })
 })
 
@@ -57,8 +61,7 @@ describe('FINDING — a malformed percent-encoding throws out of handle()', () =
     await release('shop', 'shop', [{ path: 'index.html', content: '<h1>shop</h1>' }])
   })
 
-  // FJS-1856: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('GET /%E0 is a 4xx, not an unhandled URIError', async () => {
+  test('GET /%E0 is a 4xx, not an unhandled URIError', async () => {
     // `candidates` maps every segment through `decodeURIComponent` with no
     // try/catch. Under Bun.serve an uncaught throw is a 500 with a stack in
     // the log, on a port with no authentication in front of it.

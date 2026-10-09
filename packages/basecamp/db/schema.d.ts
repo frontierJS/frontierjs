@@ -481,6 +481,14 @@ export interface OauthFlow {
    * what is stored here is known good and the way back decides nothing.
    */
   returnTo?: string | null
+  /**
+   * The oauthLink invitation this flow is answering, when it was started from
+   * the mailed link. The callback attaches only if the provider returns the
+   * subject the invitation stored: the token proves the mailbox and the
+   * subject proves the identity, and neither proves the other (FJS-D611).
+   * @guarded
+   */
+  invitation?: string | null
   expiresAt: string
   createdAt: string
 }
@@ -504,6 +512,13 @@ export interface OauthFlowCreate {
    * what is stored here is known good and the way back decides nothing.
    */
   returnTo?: string | null
+  /**
+   * The oauthLink invitation this flow is answering, when it was started from
+   * the mailed link. The callback attaches only if the provider returns the
+   * subject the invitation stored: the token proves the mailbox and the
+   * subject proves the identity, and neither proves the other (FJS-D611).
+   */
+  invitation?: string | null
   expiresAt: string
 }
 
@@ -513,6 +528,7 @@ export interface OauthFlowUpdate {
   provider?: string
   verifier?: string
   returnTo?: string | null
+  invitation?: string | null
   expiresAt?: string
 }
 
@@ -522,6 +538,7 @@ export interface OauthFlowWhere extends WhereBase {
   provider?: string | WhereOp<string> | null
   verifier?: string | WhereOp<string> | null
   returnTo?: string | WhereOp<string> | null
+  invitation?: string | WhereOp<string> | null
   expiresAt?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   AND?: OauthFlowWhere[]

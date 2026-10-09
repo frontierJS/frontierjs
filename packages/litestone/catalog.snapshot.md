@@ -197,3 +197,4 @@ Shapes the parser accepts and something later refuses.
 | `json-path-outside-the-declared-type` | error | a @generated column reads a member the Json column's type does not declare |
 | `index-over-a-json-document` | warn | an index over a Json column indexes the document, not anything inside it |
 | `unit-in-the-column-name` | info | the unit is in the identifier, where nothing can read it |
+| `check-without-an-operation-in-a-write-rule` | warn | a bare check() in a write rule asks the parent the same write |

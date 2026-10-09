@@ -48,7 +48,9 @@ export function createReporter(config, {
         // `path` carries its own query when it has one, which `signRequest`
         // splits — one canonical string whether a caller holds them apart or
         // joined (`FJS-678`).
-        secret: config.secret, method: 'POST', path, body: payload,
+        // `serviceMethod` is signed because the header it names is what
+        // junction dispatches on (`FJS-1858`).
+        secret: config.secret, method: 'POST', path, serviceMethod, body: payload,
         timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
       })),
       },

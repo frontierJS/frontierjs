@@ -26,7 +26,7 @@ import { sys }       from '../core/db.ts'
 export default defineJob(
   'retention',
   async () => {
-    const swept   = sys.$retain()
+    const swept   = await sys.$retain()
     const removed = swept.reduce((n, r) => n + r.removed, 0)
 
     // A pass that removed nothing is the normal case and says nothing. A pass

@@ -177,7 +177,10 @@ describe('tenancy { strategy row } — desugaring', () => {
     expect(r.warnings.filter(w => w.startsWith('tenancy:'))).toHaveLength(1)
   })
 
-  it('does not scope a jsonl or logger model — there is no policy engine there', () => {
+  // The jsonl driver runs no access layer, so a scope generated onto one of its
+  // models was a rule the schema stated and nothing ran: a stranger created and
+  // read every tenant's rows, and a create stamped no tenant (FJS-1920).
+  it('refuses a jsonl model holding the tenant column — the driver cannot scope it', () => {
     const r = parse(`
       tenancy { strategy row  column wid }
       database main { path "./app.db" }
@@ -185,8 +188,49 @@ describe('tenancy { strategy row } — desugaring', () => {
       model A       { id Int @id  wid Int  @@db(main) }
       model ApiCall { wid Int  path String  @@db(logs) }
     `)
-    const log = r.schema.models.find((m: any) => m.name === 'ApiCall')!
-    expect(log.attributes.filter((a: any) => a.generated === 'tenancy')).toHaveLength(0)
+    expect(r.valid).toBe(false)
+    const err = r.errors.find((e: string) => e.includes('ApiCall'))!
+    expect(err).toContain('driver jsonl')
+    expect(err).toContain('@@tenant(none)')
+  })
+
+  it('refuses @@tenant(column:) on a jsonl model', () => {
+    const r = parse(`
+      tenancy { strategy row  column wid }
+      database logs { path "./logs/"  driver jsonl }
+      model ApiCall { owner Int  path String  @@db(logs)  @@tenant(column: "owner") }
+    `)
+    expect(r.errors.join(' ')).toContain('driver jsonl')
+  })
+
+  it('refuses @@gate and @@allow on a jsonl model, and a client will not open it', async () => {
+    for (const rule of ['@@gate("8")', `@@allow('read', auth() != null)`]) {
+      const text = `
+        database rawj { path "./rawj/" driver jsonl }
+        model Note { id String @id @default(uuid())  text String  @@db(rawj)  ${rule} }
+      `
+      const r = parse(text)
+      expect(r.errors.join(' ')).toContain(`Model 'Note': @@${rule.slice(2, rule.indexOf('('))}`)
+      expect(r.errors.join(' ')).toContain('driver jsonl')
+      await expect(createClient({ schema: text, databases: ':memory:' })).rejects.toThrow('driver jsonl')
+    }
+  })
+
+  it('leaves a jsonl model with no tenant column, or @@tenant(none), unscoped and valid', () => {
+    const r = parse(`
+      tenancy { strategy row  column wid }
+      database main { path "./app.db" }
+      database logs { path "./logs/"  driver jsonl }
+      database audit { path "./audit/" driver trail }
+      model A       { id Int @id  wid Int  @@db(main)  @@trail(audit) }
+      model Hit     { path String  @@db(logs) }
+      model ApiCall { wid Int  path String  @@db(logs)  @@tenant(none) }
+    `)
+    expect(r.errors).toEqual([])
+    for (const name of ['Hit', 'ApiCall']) {
+      const m = r.schema.models.find((m: any) => m.name === name)!
+      expect(m.attributes.filter((a: any) => a.generated === 'tenancy')).toHaveLength(0)
+    }
   })
 
   it('does not fire the "@@deny with no @@allow" warning about its own rules', () => {

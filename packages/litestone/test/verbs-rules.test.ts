@@ -24,7 +24,10 @@
 //             row to be right or wrong about, so it throws where the bulk verb
 //             beside it narrows. `upsertMany` × softDelete is the other —
 //             `SoftDeletedUniqueError`, because the conflict target matched a
-//             row no read returns (FJS-278)
+//             row no read returns (FJS-278). A row hidden by a template
+//             or a filter answers `upsert` with `UniqueConflictError`, as
+//             `create` does: the insert collides and the update reaches
+//             nothing, which answered `null` having written nothing (FJS-2029)
 //   -         the verb cannot be formed against this rule (says why)
 //   ###:on    known defect FJS-### — asserted STILL BROKEN, so a fix turns this
 //             file red and says to promote the cell
@@ -64,8 +67,8 @@ rule         | findMany findFirst findUnique findFirstOrThrow findUniqueOrThrow 
 gate         | on       on        on         on                on                on    on     on               on        on      on             on     on     on     on     on     on         on         on         on
 policy       | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
 softDelete   | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         ref        on         on
-templates    | on       on        on         on                on                on    on     on               on        on      on             on     on     on     on     on     on         on         on         on
-globalFilter | on       on        on         on                on                on    on     on               on        on      on             on     on     on     on     on     on         on         on         on
+templates    | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
+globalFilter | on       on        on         on                on                on    on     on               on        on      on             on     on     ref    on     on     on         on         on         on
 `
 
 // ─── the fixtures ─────────────────────────────────────────────────────────────
@@ -223,7 +226,7 @@ async function observe(db: any, rule: Rule, verb: string): Promise<Cell['code'] 
     const n = e?.constructor?.name ?? 'thrown'
     if (n === 'AccessDeniedError') return rule.refuses ? 'on' : 'ref'
     if (e?.code === 'NOT_FOUND' || n === 'NotFoundError') return 'on'
-    if (n === 'SoftDeletedUniqueError') return 'ref'
+    if (n === 'SoftDeletedUniqueError' || n === 'UniqueConflictError') return 'ref'
     return `!${n}`
   }
 }

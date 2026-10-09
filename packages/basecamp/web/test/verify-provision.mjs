@@ -673,7 +673,7 @@ try {
     const body = JSON.stringify({ outpost_version: '0.4.1', health: { cpu: 4, memory: 12 } })
     const path = `/servers/${serverId}`
     const headers = await signRequest({
-      secret, method: 'POST', path, query: '', body,
+      secret, method: 'POST', path, serviceMethod: 'heartbeat', query: '', body,
       timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
     })
     return fetch(API + path, {
