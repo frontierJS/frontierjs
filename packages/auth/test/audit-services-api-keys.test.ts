@@ -98,16 +98,14 @@ describe('expiresAt from the caller', () => {
 
 describe('scopes from the caller', () => {
 
-  // FJS-1850: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('a scope that is not a string is refused', async () => {
+  test('a scope that is not a string is refused', async () => {
     const u = await person()
     const t = await u.login()
     const res = await mint(t, { name: 'objscope', scopes: [{ admin: true }, 42] })
     expect(res.status).toBe(400)
   })
 
-  // FJS-1850: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing("scopes: [''] does not mint an unscoped key", async () => {
+  test("scopes: [''] does not mint an unscoped key", async () => {
     // A caller that ASKED for a scope list and gave an empty name got a key
     // with the owner's whole standing — `['']` joins to '' which is stored as
     // null, and `[' ']` splits back to [] which `caller()` reads as unscoped.
@@ -125,8 +123,7 @@ describe('scopes from the caller', () => {
 
 describe('an UNSCOPED key holds its owner’s whole standing at the credential services', () => {
 
-  // FJS-D615: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an unscoped key cannot mint another key', async () => {
+  test('an unscoped key cannot mint another key', async () => {
     const u = await person()
     const t = await u.login()
     const key = ((await mint(t, { name: 'root' })).body as any).key as string
@@ -134,8 +131,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     expect(res.status).toBe(403)
   })
 
-  // FJS-D615: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an unscoped key cannot sign its owner out of every session', async () => {
+  test('an unscoped key cannot sign its owner out of every session', async () => {
     const u = await person()
     const t = await u.login()
     const key = ((await mint(t, { name: 'root' })).body as any).key as string
@@ -144,8 +140,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     expect((await me(t)).status).toBe(200)
   })
 
-  // FJS-D615: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an unscoped key cannot change the password', async () => {
+  test('an unscoped key cannot change the password', async () => {
     const u = await person()
     const t = await u.login()
     const key = ((await mint(t, { name: 'root' })).body as any).key as string
@@ -154,8 +149,7 @@ describe('an UNSCOPED key holds its owner’s whole standing at the credential s
     expect(res.status).toBe(403)
   })
 
-  // FJS-D615: asserts the fixed behavior, so it fails until the fix lands; drop .failing then.
-  test.failing('an unscoped key cannot revoke the other keys', async () => {
+  test('an unscoped key cannot revoke the other keys', async () => {
     const u = await person()
     const t = await u.login()
     const a = (await mint(t, { name: 'a' })).body as any

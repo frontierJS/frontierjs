@@ -153,7 +153,7 @@ export function renderPrincipalSnapshot(
         if (d.headers?.length) out.push(`| Named by header | ${d.headers.map(h => `\`${h}\``).join(', ')} |`)
         if (d.session) out.push(`| Beside a session | ${d.session === 'merge'
           ? 'merged onto the person, who is the trail\'s actor (`session: \'merge\'`)'
-          : 'refused, 400 — one caller per request (`FJS-D831`)'} |`)
+          : 'refused, 400 — one caller per request (`FJS-D832`)'} |`)
         out.push('')
 
         // The rows above are a row-reading resolver's, and their absence is the

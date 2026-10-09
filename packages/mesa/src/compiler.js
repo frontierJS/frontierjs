@@ -5077,6 +5077,7 @@ export function buildBlock(data, option = {}) {
   const binds = xNode.block()
   const result = {}
   const inuseBefore = Object.assign({}, ctx.inuse)
+  const closeConsts = constScope(ctx)
 
   if (!option.parentElement) option.parentElement = '$$parentElement'
   if (option.each?.blockPrefix) binds.push(option.each.blockPrefix)
@@ -5664,70 +5665,13 @@ export function buildBlock(data, option = {}) {
             w.writeLine(`$$runtime.createEffect(() => { $$runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
           }))
         } else if (n.value.startsWith('@const ')) {
-          // {@const name = expr} — block-scoped derived constant.
-          // If the expression is reactive (reads signals), wraps in createMemo so
-          // the value stays current even when only the signal changes.
-          // If purely derived from block-local vars (e.g. each item properties), plain const.
-          // Usage: {@const total = price * qty}
-          const constExpr = n.value.slice('@const '.length).trim()
-          const eqIdx = constExpr.indexOf('=')
-          // A pattern is split by the parser: its own defaults hold `=`, so the
-          // first one is not the assignment.
-          let pattern = null
-          if (/^[[{]/.test(constExpr)) {
-            try {
-              const decl = acorn.parse(`const ${constExpr}`, { ecmaVersion: 'latest' }).body[0].declarations[0]
-              if (decl.init) {
-                pattern = {
-                  names: patternBindingNames([decl.id]),
-                  source: constExpr.slice(0, decl.id.end - 6),
-                  value: constExpr.slice(decl.init.start - 6, decl.init.end - 6),
-                }
-              }
-            } catch {}
-          }
-          if (eqIdx === -1 || (!pattern && /^[[{]/.test(constExpr))) {
-            ctx.analysis.errors.push(`{@const}: expected assignment form: {@const name = expr}`)
-          } else if (pattern) {
-            // One memo holds the values the pattern names; each name reads its
-            // own key, so a name that is not used wakes nothing.
-            const rewritten = ctx.accessors ? rewriteExpr(pattern.value, ctx.accessors) : pattern.value
-            ctx.detectDependency(pattern.value)
-            const isReactive = rewritten !== pattern.value
-            const memoName = `$$_const_${pattern.names.join('_')}`
-            const { names, source } = pattern
-            if (isReactive) {
-              if (ctx.accessors) names.forEach(nm => { ctx.accessors[nm] = `${memoName}().${nm}` })
-              binds.push(xNode('constTag', { memoName, names, source, rewritten }, (w, nd) => {
-                w.writeLine(`const ${nd.memoName} = $$runtime.createMemo(() => { const ${nd.source} = ${nd.rewritten}; return { ${nd.names.join(', ')} }; });`)
-                w.writeLine(`const { ${nd.names.join(', ')} } = ${nd.memoName}();`)
-              }))
-            } else {
-              binds.push(xNode('constTag', { source, rewritten }, (w, nd) => {
-                w.writeLine(`const ${nd.source} = ${nd.rewritten};`)
-              }))
-            }
-          } else {
-            const constName = constExpr.slice(0, eqIdx).trim()
-            const constVal  = constExpr.slice(eqIdx + 1).trim()
-            const rewritten = ctx.accessors ? rewriteExpr(constVal, ctx.accessors) : constVal
-            ctx.detectDependency(constVal)
-            // Check if the rewritten expression contains any signal reads.
-            // If so, wrap in createMemo so the const stays reactive when signals change.
-            const isReactive = rewritten !== constVal  // rewriteExpr changed something
-            const memoName = `$$_const_${constName}`
-            if (isReactive) {
-              // Register as an accessor so template reads call the memo getter
-              if (ctx.accessors) ctx.accessors[constName] = `${memoName}()`
-              binds.push(xNode('constTag', { constName, memoName, rewritten, isReactive }, (w, nd) => {
-                w.writeLine(`const ${nd.memoName} = $$runtime.createMemo(() => ${nd.rewritten});`)
-                w.writeLine(`const ${nd.constName} = ${nd.memoName}();`)
-              }))
-            } else {
-              binds.push(xNode('constTag', { constName, rewritten, isReactive }, (w, nd) => {
-                w.writeLine(`const ${nd.constName} = ${nd.rewritten};`)
-              }))
-            }
+          const decl = constDeclaration(ctx, n.value)
+          if (decl.error) ctx.analysis.errors.push(decl.error)
+          else {
+            ctx.detectDependency(decl.value)
+            binds.push(xNode('constTag', { lines: decl.lines }, (w, nd) => {
+              for (const l of nd.lines) w.writeLine(l)
+            }))
           }
         } else {
           // An unknown {@tag} used to be dropped in silence — this branch was a
@@ -5753,7 +5697,7 @@ export function buildBlock(data, option = {}) {
     labelRequest?.resolve()
   }
 
-  go(data, true, rootTemplate)
+  try { go(data, true, rootTemplate) } finally { closeConsts() }
 
   let innerBlock = null
   if (binds.body.length) {
@@ -6192,6 +6136,84 @@ export function parseRenderTag(value) {
     rawArgs,
     args: rawArgs ? splitArgs(rawArgs) : [],
   }
+}
+
+/**
+ * A block's `{@const}` scope: what `constDeclaration` writes into
+ * `ctx.accessors` while it is open is put back when it closes. The DOM
+ * builder opens one per `buildBlock` and `lower()` one per block body, since
+ * that is where the declaration's JavaScript `const` lives; a read past the
+ * block called a memo that was not in scope there, and the ReferenceError was
+ * contained into a blank (FJS-2273).
+ */
+export function constScope(ctx) {
+  const outer = ctx._constScope
+  const frame = ctx._constScope = []
+  return () => {
+    ctx._constScope = outer
+    if (!ctx.accessors) return
+    for (const { name, prev } of frame.reverse()) {
+      if (prev === undefined) delete ctx.accessors[name]
+      else ctx.accessors[name] = prev
+    }
+  }
+}
+
+/**
+ * `{@const name = expr}` or `{@const { a, b } = expr}`, read once for every
+ * target: `{ names, value, code, lines }` with `lines` the statements that
+ * declare it, or `{ error }`. A value that reads reactive state is a memo, and
+ * each name it binds is then read through the memo; a value that reads none
+ * is a plain `const`, and its names shadow an outer accessor as themselves.
+ * Either way the names stay registered until the open `constScope` closes.
+ */
+export function constDeclaration(ctx, tagValue) {
+  const constExpr = tagValue.slice('@const '.length).trim()
+  const eqIdx = constExpr.indexOf('=')
+  // A pattern is split by the parser: its own defaults hold `=`, so the
+  // first one is not the assignment.
+  let pattern = null
+  if (/^[[{]/.test(constExpr)) {
+    try {
+      const decl = acorn.parse(`const ${constExpr}`, { ecmaVersion: 'latest' }).body[0].declarations[0]
+      if (decl.init) {
+        pattern = {
+          names: patternBindingNames([decl.id]),
+          source: constExpr.slice(0, decl.id.end - 6),
+          value: constExpr.slice(decl.init.start - 6, decl.init.end - 6),
+        }
+      }
+    } catch {}
+  }
+  if (eqIdx === -1 || (!pattern && /^[[{]/.test(constExpr))) {
+    return { error: '{@const}: expected assignment form: {@const name = expr}' }
+  }
+  const names = pattern ? pattern.names : [constExpr.slice(0, eqIdx).trim()]
+  const value = pattern ? pattern.value : constExpr.slice(eqIdx + 1).trim()
+  const code = ctx.accessors ? rewriteExpr(value, ctx.accessors) : value
+  const memo = code !== value ? `$$_const_${names.join('_')}` : null
+  const register = (name, read) => {
+    if (!ctx.accessors) return
+    ctx._constScope?.push({ name, prev: ctx.accessors[name] })
+    ctx.accessors[name] = read
+  }
+  let lines
+  if (memo && pattern) {
+    // One memo holds the values the pattern names; each name reads its
+    // own key, so a name that is not used wakes nothing.
+    names.forEach((nm) => register(nm, `${memo}().${nm}`))
+    lines = [
+      `const ${memo} = $$runtime.createMemo(() => { const ${pattern.source} = ${code}; return { ${names.join(', ')} }; });`,
+      `const { ${names.join(', ')} } = ${memo}();`,
+    ]
+  } else if (memo) {
+    register(names[0], `${memo}()`)
+    lines = [`const ${memo} = $$runtime.createMemo(() => ${code});`, `const ${names[0]} = ${memo}();`]
+  } else {
+    for (const nm of names) if (ctx.accessors?.[nm] !== undefined) register(nm, nm)
+    lines = [`const ${pattern ? pattern.source : names[0]} = ${code};`]
+  }
+  return { names, value, code, lines }
 }
 
 export function makeRenderTag(data, label) {
@@ -6901,6 +6923,99 @@ export function componentAttributes(node) {
 }
 
 /**
+ * The two halves of `bind:attr={target}` on an ELEMENT: a getter reading
+ * `target` and a setter writing the control's value back into it, or null
+ * with the refusal reported when `target` cannot be written. The DOM path
+ * and the IR both read it, so a binding one target accepts the other does too.
+ */
+export function elementBindTarget(ctx, attr, varName) {
+  const varEntry = ctx.analysis?.vars?.[varName]
+
+  // Rule 22 — bind: is only valid on export let props.
+  if (varEntry?.isProp && varEntry.kind !== 'let') {
+    const keyword = varEntry.kind
+    const reason = keyword === 'const'
+      ? 'immutable prop — component cannot reassign it'
+      : 'non-reactive prop — snapshot at mount, ignores parent updates'
+    ctx.analysis.errors.push(
+      `bind:${attr}={${varName}} — cannot two-way bind \`export ${keyword} ${varName}\` (${reason}). Use \`export let\` for two-way binding.`
+    )
+    return null
+  }
+
+  // The same refusal for a LOCAL immutable binding. The setter below is
+  // emitted as `name = $$v` whatever the target is, so a bare `const` or an
+  // import compiled clean and threw `TypeError: Assignment to constant
+  // variable` on the first keystroke — the one shape acorn cannot catch,
+  // since assignment to a const is a runtime error and not a parse error
+  // (Invariant 15's blind spot). Only a BARE IDENTIFIER is graded:
+  // `bind:value={draft[key]}` is a legitimate write through the else branch.
+  if (/^[A-Za-z_$][\w$]*$/.test(varName)) {
+    const importedLocals = new Set(
+      (ctx.analysis?.imports ?? []).flatMap((d) => (d.specifiers ?? []).map((sp) => sp.local?.name))
+    )
+    const immutable = varEntry?.kind === 'var'
+      // `var` is Mesa's opt-out from reactivity (RULE 13), so this one throws
+      // nothing: the write lands and no reader re-runs. What is missing is
+      // the OTHER direction — the DOM is written once at mount and never
+      // again — so `bind:` here means half of what it means one line away,
+      // selected by a keyword the template cannot see. The refusal names the
+      // road rather than only the rule: telling someone to declare it `let`
+      // answers a question they did not ask, since re-rendering is the thing
+      // the `var` was chosen to avoid.
+      ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`on:input={e => { ${varName} = e.target.value }}\`.`
+      : varEntry?.kind === 'const'
+      ? (varEntry.isDerived
+          // A derived const is the documented case for the writable derived
+          // form: derive a default, let a control override it (VISION §4.5).
+          ? `\`const ${varName}\` is derived and authoritative. Use the writable derived form so a control can override it: \`$: ${varName} = ...\``
+          : `\`const ${varName}\` cannot be reassigned. Declare it \`let\`.`)
+      : importedLocals.has(varName)
+        ? `\`${varName}\` is an imported binding and cannot be reassigned. Copy it into a \`let\` first.`
+        // A function declaration IS assignable, so this one does not throw —
+        // it writes a binding no signal is behind and the control goes dead
+        // in silence, which is the worse of the two.
+        : ctx.script?.rootFunctions?.[varName]
+          ? `\`${varName}\` is a function, not reactive state. Declare a \`let\` to bind to.`
+          : null
+    if (immutable) {
+      ctx.analysis.errors.push(
+        `bind:${attr}={${varName}} — cannot two-way bind: ${immutable}`
+      )
+    return null
+    }
+  }
+
+  let getter, setter
+
+  if (varEntry && varEntry.kind === 'let') {
+    getter = `() => $$runtime.get($$sig_${varName})`
+    setter = `$$set_${varName}`
+  } else {
+    const rw = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
+    getter = `() => (${rw})`
+
+    // The WRITE target has to be rewritten too, not just the read.
+    //
+    // `bind:value={draft[key]}` used to emit
+    //     getter: () => ($$runtime.get($$sig_draft)[key])
+    //     setter: ($$v) => { draft[key] = $$v }
+    // — the getter resolved, the setter referred to a name that no longer
+    // exists once `draft` became `$$sig_draft`, so every keystroke threw
+    // `ReferenceError: draft is not defined`. Binding to any object property,
+    // which is what a form bound to a draft record does, was broken.
+    //
+    // Only member expressions are rewritten. The rewritten form stays a legal
+    // assignment target (`$$runtime.get($$sig_draft)[key] = $$v` is fine),
+    // whereas a bare identifier could rewrite to a call expression, and
+    // `$$runtime.get($$sig_x) = $$v` is a syntax error.
+    const isMemberTarget = /[.[]/.test(varName)
+    setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v; }`
+  }
+  return { getter, setter }
+}
+
+/**
  * The setter a `bind:` or `bind:this` writes back through, or null once the
  * reason is reported: a component's entry from `componentAttributes`, or
  * `{ kind: 'bind-this', target }` for `bind:this` on an element. Both targets
@@ -7256,89 +7371,9 @@ export function bindProp(prop, node, element) {
     const { directive, modifiers } = parseModifiers(name)
     const attr = directive.startsWith('bind:') ? directive.slice(5) : directive.slice(1)
     const varName = prop.value ? unwrapExp(prop.value) : attr
-    const varEntry = ctx.analysis?.vars?.[varName]
-
-    // Rule 22 — bind: is only valid on export let props.
-    if (varEntry?.isProp && varEntry.kind !== 'let') {
-      const keyword = varEntry.kind
-      const reason = keyword === 'const'
-        ? 'immutable prop — component cannot reassign it'
-        : 'non-reactive prop — snapshot at mount, ignores parent updates'
-      ctx.analysis.errors.push(
-        `bind:${attr}={${varName}} — cannot two-way bind \`export ${keyword} ${varName}\` (${reason}). Use \`export let\` for two-way binding.`
-      )
-      return null
-    }
-
-    // The same refusal for a LOCAL immutable binding. The setter below is
-    // emitted as `name = $$v` whatever the target is, so a bare `const` or an
-    // import compiled clean and threw `TypeError: Assignment to constant
-    // variable` on the first keystroke — the one shape acorn cannot catch,
-    // since assignment to a const is a runtime error and not a parse error
-    // (Invariant 15's blind spot). Only a BARE IDENTIFIER is graded:
-    // `bind:value={draft[key]}` is a legitimate write through the else branch.
-    if (/^[A-Za-z_$][\w$]*$/.test(varName)) {
-      const importedLocals = new Set(
-        (ctx.analysis?.imports ?? []).flatMap((d) => (d.specifiers ?? []).map((sp) => sp.local?.name))
-      )
-      const immutable = varEntry?.kind === 'var'
-        // `var` is Mesa's opt-out from reactivity (RULE 13), so this one throws
-        // nothing: the write lands and no reader re-runs. What is missing is
-        // the OTHER direction — the DOM is written once at mount and never
-        // again — so `bind:` here means half of what it means one line away,
-        // selected by a keyword the template cannot see. The refusal names the
-        // road rather than only the rule: telling someone to declare it `let`
-        // answers a question they did not ask, since re-rendering is the thing
-        // the `var` was chosen to avoid.
-        ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`on:input={e => { ${varName} = e.target.value }}\`.`
-        : varEntry?.kind === 'const'
-        ? (varEntry.isDerived
-            // A derived const is the documented case for the writable derived
-            // form: derive a default, let a control override it (VISION §4.5).
-            ? `\`const ${varName}\` is derived and authoritative. Use the writable derived form so a control can override it: \`$: ${varName} = ...\``
-            : `\`const ${varName}\` cannot be reassigned. Declare it \`let\`.`)
-        : importedLocals.has(varName)
-          ? `\`${varName}\` is an imported binding and cannot be reassigned. Copy it into a \`let\` first.`
-          // A function declaration IS assignable, so this one does not throw —
-          // it writes a binding no signal is behind and the control goes dead
-          // in silence, which is the worse of the two.
-          : ctx.script?.rootFunctions?.[varName]
-            ? `\`${varName}\` is a function, not reactive state. Declare a \`let\` to bind to.`
-            : null
-      if (immutable) {
-        ctx.analysis.errors.push(
-          `bind:${attr}={${varName}} — cannot two-way bind: ${immutable}`
-        )
-        return null
-      }
-    }
-
-    let getter, setter
-
-    if (varEntry && varEntry.kind === 'let') {
-      getter = `() => $$runtime.get($$sig_${varName})`
-      setter = `$$set_${varName}`
-    } else {
-      const rw = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
-      getter = `() => (${rw})`
-
-      // The WRITE target has to be rewritten too, not just the read.
-      //
-      // `bind:value={draft[key]}` used to emit
-      //     getter: () => ($$runtime.get($$sig_draft)[key])
-      //     setter: ($$v) => { draft[key] = $$v }
-      // — the getter resolved, the setter referred to a name that no longer
-      // exists once `draft` became `$$sig_draft`, so every keystroke threw
-      // `ReferenceError: draft is not defined`. Binding to any object property,
-      // which is what a form bound to a draft record does, was broken.
-      //
-      // Only member expressions are rewritten. The rewritten form stays a legal
-      // assignment target (`$$runtime.get($$sig_draft)[key] = $$v` is fine),
-      // whereas a bare identifier could rewrite to a call expression, and
-      // `$$runtime.get($$sig_x) = $$v` is a syntax error.
-      const isMemberTarget = /[.[]/.test(varName)
-      setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v; }`
-    }
+    const target = elementBindTarget(ctx, attr, varName)
+    if (!target) return null
+    const { getter, setter } = target
 
     // bind:value|mask({"pattern"}) or bind:value|mask({reactiveExpr})
     const maskMod = attr === 'value' && modifiers.find(m => m.name === 'mask')

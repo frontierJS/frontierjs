@@ -27,6 +27,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d837"></a>2026-10-09 · `FJS-D837` — What the kit is called and what one entry holds — `@frontierjs/toolbelt/aria`, keyed by the css `VOCAB` term; an entry is `{ role, requires: [relationships], tracks: { state: attribute } }`.
+
+Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. **A** was picked over **B** (`@frontierjs/toolbelt/a11y`, the same entry, plus the page-level kind as entries keyed by layout), **C** (no kit noun: a `role` and `aria` column added to each `ANATOMY` entry in `packages/css/vocabulary.js`).
+
+The paper's recommendation, taken as written: WAI-ARIA is the field's existing name for exactly what one entry holds (role, required owned and labelling elements, state attributes), so the noun is discovered rather than coined. B stretches it over the page-level kind the first question gives to sierra, and C is the home § *Why not `css/vocabulary.js`* already rules out.
+
 ### <a id="fjs-d823"></a>2026-10-09 · `FJS-D823` — The remaining nouns — The `template` key takes the Layout helper's own word (`stack`, `split`, `grid`), and roles get no author-facing names, since position is the only way an author states one.
 
 Asked in [`IDEAS/site-kit-structure.md`](IDEAS/site-kit-structure.md) § Open questions. **B** was picked over **A** (the names in § *The proposed shape*: templates `content`, `media`, `columns`, `grid`, and roles `header`, `body`, `media`, `card`), **C** (adopt ksite's six `block-with-*` names unchanged).
@@ -1367,6 +1373,52 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d619"></a>2026-10-09 · `FJS-D619` — Is a workspace roster meant for viewers, and if so what of a colleague's `User` row does it carry — Yes: the roster projects `User` to name, email and avatar.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no: the roster is graded at the `User` read policy).
+
+The paper's recommendation, taken as written: colleagues see colleagues. The defect is that the whole row goes out.
+
+### <a id="fjs-d616"></a>2026-10-09 · `FJS-D616` — Should `GET /auth/email/verify` change anything — The link stays a GET that lands on a page, and the page POSTs the token.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the GET keeps consuming the token, for mail ergonomics).
+
+The paper's recommendation, taken as written: scanners already consume the token, and a GET that writes breaks HTTP's own contract.
+
+### <a id="fjs-d615"></a>2026-10-09 · `FJS-D615` — Is an empty or blank scope list an unscoped key, and does an unscoped key reach the credential services at all — A, and the credential services refuse every API key, scoped or not: managing credentials takes a session.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (a blank or non-string entry is refused at `create`. An unscoped key stays its owner at the credential services), **B** (a blank entry means unscoped, as today, and is documented).
+
+The paper's recommendation, taken as written: the normalization fails open, and a key that can mint keys cannot be contained by revoking it.
+
+### <a id="fjs-d835"></a>2026-10-09 · `FJS-D835` — `asSystem()` inside an episode — Allowed, as built: a service's `asSystem()` is the service's decision for every caller, the subject included, and the trail names the operator.
+
+Asked in [`IDEAS/shipped/support-mode.md`](IDEAS/shipped/support-mode.md) § Open questions. **A** was picked over **B** (refused: litestone throws on `asSystem()` while the context carries an episode), **C** (allowed, and each `asSystem()` inside an episode writes a trail entry naming the call).
+
+The paper's recommendation, taken as written: the episode's ceiling is the subject's, and the subject's own call through that service bypasses the same way, so B makes an operator unable to see what the subject sees. What an episode must not reach is already refused by name (`refuseDelegated`), and a narrower lift is `FJS-D575`'s `system: ['@@gate']`, which keeps the audit actor.
+
+### <a id="fjs-d834"></a>2026-10-09 · `FJS-D834` — Reads — Inside an episode, every model with `@@trail` logs reads whatever its `reads` setting, decided in litestone's logger off the `episodeId` that `installLogContext` already hands it.
+
+Asked in [`IDEAS/shipped/support-mode.md`](IDEAS/shipped/support-mode.md) § Open questions. **B** was picked over **A** (reads stay opt-in per model; an app that wants the DSAR answer declares `reads: true` where it matters), **C** (inside an episode, every model logs reads, `@@trail` or not, into the default trail).
+
+The paper's recommendation, taken as written: the condition already reaches the logger, so the rule's home is the one read-logging check that exists, not a new seat. Under A an operator reading a record leaves nothing, and the DSAR answer is incomplete without anything saying so. C writes a trail for models the app never declared one for.
+
+### <a id="fjs-d832"></a>2026-10-09 · `FJS-D832` — A request carrying a session AND a bearer grant is refused unless the grant states `session: 'merge'`; merged, the person is the trail's actor.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions as `FJS-D664`. **C** was picked over **A** (refuse always: a live grant beside a session is a 400 and an app meaning both composes by hand) and **B** (keep the merge and have litestone grade a `@default(auth().x)` stamp on a session-holding principal as `FJS-D576`'s read).
+
+The paper's recommendation, taken as written. `bearerClaim` merged a grant's claims onto whatever session the request also carried, so an org-A agent presenting an org-B widget token was one principal holding both standings, and `@default(auth().contactId)` stamped B's contact on a thread A's own rule admitted — a 201 where typing the same id is a 422 (`FJS-1987`). A merged principal is two standings under one name, which is the confused deputy, and the mistake it allows breaks tenant separation, so the default refuses (*ergonomics vs. strictness*). A junction-wide refusal breaks the other real lane: `example`'s store sends `x-cart-token` on every call, signed in or not, so under **A** every shopper who signs in mid-basket is a 400. *Paved road vs. the workaround* asks for a flag only where the road has two lanes, and chatwoot's and ela's hand-written refusals are the measurement that it does.
+
+**The refusal runs BEFORE the grant is read**, so it says nothing about whether the token works — a dead token beside a session is the same 400 as a live one, and the shape of a request is not an oracle for which tokens exist (`FJS-D696`'s reason one step earlier). `describe()` carries `session`, and `junction principal` prints *Beside a session* for every bearer, so a `merge` is on the committed snapshot where a reviewer reads it (the silence question).
+
+**Under `merge` the person is the actor.** `FJS-D342` made the grant row the actor because a bearer principal carries no id; a person holding a grant as well has one, and `actorType` already filed that row as `user` while `actorId` named the link. Litestone's precedence is now operator, then the principal's id, then the grant (`audit-log.js`), with the grant's subject kept as `subjectId`. Two grants on one request were settled by `FJS-D819` the same way: first in the app's stated order.
+
+**Not changed:** `ctx.locals[BEARER]` and `bearerOf()` are set under `merge` exactly as for a guest, so a service reading the grant reads it either way. The stressor copies that refuse by hand (chatwoot `visitor.ts`, ela and sstime `principal.ts`) are retired on each app's re-drive, not here.
+
+The nine, answered after the code (late, and named as such): one origin — the option, read by `describe()`, read by the snapshot; no new noun; the problem's own complexity, both lanes measured in the tree; one declared behavior for every bearer; not derivable, since whether a signed-in caller legitimately holds a grant is an app fact; owned inside `bearerClaim` and inside litestone's one `actorId` line; a 400 that names the shape; a refusal because the mistake breaks tenant separation; and the test below plus the committed snapshot row are what turn a silent merge red.
+
+*Pinned:* `packages/junction/test/bearer-claim.test.ts` § a session beside a grant · `packages/litestone/test/actor-type.test.ts`.
 
 ### <a id="fjs-d830"></a>2026-10-09 · `FJS-D830` — Should `capabilities { }` also NARROW — No: the block carries labels only, and the grantable set narrows by derivation. A move marked `@system` or `@gate(8)` is already left out by `packages/litestone/src/core/capabilities.js`.
 
@@ -3612,6 +3664,18 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d592"></a>2026-10-09 · `FJS-D592` — Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`) — `@@extensible(column, declaredBy: Model, scope: field)`, `field` a foreign key on the extended model whose twin is on the declarer. The key is unique on `[scope, key]` (and the tenant, under row tenancy), and the pool is per scope row, the way FJS-1290 made it per tenant. Allocation, the mirror, the filter rewrite and `$declaredFields` read the scope off the row, the payload or the where; a where that pins no scope is refused. A write that changes the scope column re-mirrors the row against the new scope's declarations.
+
+Asked in [`IDEAS/shipped/tenant-declared-fields.md`](IDEAS/shipped/tenant-declared-fields.md) § Open questions. **B** was picked over **A** (no. A schema per parent row is the per-tenant schema § *What it must not become* refuses. The app keeps its own declaring model and checks values in a `validated` hook; document that shape, and say in the doc that `@@extensible` is per tenant only), **C** (B, plus the declared kind is enforced on write: a value that is not its declaration's kind (a select not among its options) is refused beside `column.key`, the way `@required(where:)` refuses beside its field. Keys stay open (*declaring is not a whitelist*); kinds stop being advisory).
+
+The paper's recommendation, taken as written: it is D365's ruling again, for columns instead of moves: the schema owns the shape and a ROW owns the members. B also gives the pool's index an equality to lead with that the tenancy deny cannot spoil: `parentId = ?` seeks, and `FJS-1724`'s deny does not. A is what the notion run already pays for: about 70 lines of checking, no filter on the wire, and a move that skips the check. C is the honest product answer for Notion, but it reverses this paper's whitelist argument for kinds, so it should be its own ruling once B has a second user. The move is the open edge either way: under a scoped declaration, `parentId` decides which columns a row has, as it decides who may read it (notion Q1).
+
+### <a id="fjs-d833"></a>2026-10-09 · `FJS-D833` — **Still open — is `Payslip` a relator with a key over two of three relata, or a — A document the run owns: no `@@relator`, the `@@unique([payRunId, employeeId])` stays, and the copies and `@immutable` figures are what say it records a relationship rather than being one.
+
+Asked in [`IDEAS/shipped/relators.md`](IDEAS/shipped/relators.md) § Open questions. **B** was picked over **A** (A relator: `@@relator([payRunId, employeeId], once)` replaces the hand-written `@@unique` in `example/db/schema.lite`, and `payWindow` is a term it references rather than a relatum), **C** (Make the tell a rule: a model that copies columns off a relatum is never a relator, so `Payslip`, `OrderLine` and `StocktakeCount` resolve together as documents).
+
+The paper's recommendation, taken as written: Under `FJS-D350` a word lands only if it generates or refuses, and `once` here would generate exactly the unique already written, so A buys a label. The copied period and the frozen figures are § 2's tell, and `FJS-D162` already treats a payslip as a document. C is the same answer, made binding before a second case has tested it.
 
 ### <a id="fjs-d831"></a>2026-10-09 · `FJS-D831` — **Still open, and now live — does the absence of the word come to mean — A narrow opportunity in `packages/litestone/src/core/opportunities.js`: it fires only where a hand-written `@@unique` over two required cascading foreign keys is the DDL `@@relator(…, once)` would emit. It names the word and carries confidence, never severity.
 
@@ -10712,6 +10776,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d838"></a>2026-10-09 · `FJS-D838` — A preview build has no `data-fjs-loc` — A preview build stamps `data-fjs-loc`, behind a named `site-kit build --preview` mode that production cannot reach by default.
+
+Asked in [`IDEAS/anchored-feedback.md`](IDEAS/anchored-feedback.md) § Open questions. **A** was picked over **B** (the anchor stores a selector and a quote, and the dev server maps it to a `loc` at handoff).
+
+The paper's recommendation, taken as written: the handoff is the payoff, and a selector is the anchor Pinmark shows drifting. Leaking source paths is acceptable on a link handed to a reviewer and not in production, which is what the named mode and a `dist/` check for an absent panel are for.
+
+### <a id="fjs-d836"></a>2026-10-09 · `FJS-D836` — Is `sierra` a reader or does the page-level kind go somewhere else — Sierra emits the shell-level facts itself (`lang` on `<html>`, the skip link to `<main>`), and landmarks and heading order are asserted by the browser drive on rendered pages.
+
+Asked in [`IDEAS/accessibility.md`](IDEAS/accessibility.md) § Open questions. **C** was picked over **A** (sierra is a reader: the prerender tap that grades a route's reads against `@@gate` also grades its landmarks, heading order and skip link, and fails the build), **B** (a `fli check` rule over the app's layout and route files, at review).
+
+The paper's recommendation, taken as written: `lang` and the skip link are facts sierra can write rather than check, which is the derive-instead-of-restate answer. Landmarks and heading order exist only in rendered output: A sees the prerendered routes and none of the SPA ones, and B reads source text that a layout chain and `{#if}` rearrange, so both would pass routes they never saw.
+
 ### <a id="fjs-d821"></a>2026-10-09 · `FJS-D821` — Server-side render for prerendered pages vs — The same function at prerender and in the browser.
 
 Asked in [`IDEAS/markdown-kit.md`](IDEAS/markdown-kit.md) § Open questions. **B** was picked over **A** (client-only: `Cell` renders the markdown in the browser).
@@ -12857,6 +12933,32 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d842"></a>2026-10-09 · `FJS-D842` — Config sprawl is the default outcome — Each config file has a closed key table, and its loader refuses an unknown key by name, pointing at the bucket it belongs in (`.lite`, env, or the other config file).
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **B** was picked over **A** (the three-bucket test as prose, as today; nothing refuses an unknown key in `frontier.config.js` or `junction.config.js`), **C** (B, plus a `fli check` rule that flags a config key whose value a schema read could produce (a model list, a plural)).
+
+The paper's recommendation, taken as written: the closed table is the teeth: a key nothing reads is a typo or a restated fact, and both are silent today. C is a heuristic over values and would grade on guesses, so it waits until a real restated key shows up.
+
+### <a id="fjs-d841"></a>2026-10-09 · `FJS-D841` — A linked worktree of an app takes N×10000 on every port, N the lowest free of 1–5 among its repo's linked worktrees: branch 1's 8120 is 18120 and its 7122 is 17122.
+
+Asked in [`IDEAS/workbench-branches.md`](IDEAS/workbench-branches.md) § 6, for a Workbench branch, but it holds for any second checkout of an app. Picked over the scaffold's answer, a free SERVICE digit, because a fixed project already spends that digit on its own servers (basecamp's 8121 mail sink, 8122 DigitalOcean stand-in), so a slot would land a branch's API on its parent's sink. Also refused: the 7xxx block (it is `test`, and the parent's drives run there), a trailing zero (8120 becomes 80120, past 65535), and the Workbench handing out ports itself (a second owner beside `claimSession`).
+
+Every digit of the schema keeps its meaning inside a branch, so a port reads as its parent's with the leading digit dropped. `claimSession` (`packages/cli/core/ports.js`) owns it, keeps N in the lock like a slot, and detects a linked worktree by `git rev-parse --git-common-dir` differing from `--git-dir`. Five is the ceiling (a sixth puts 8120 at 68120); 3–5 sit in Linux's ephemeral range and can find a port held by an outgoing socket, which `strictPort` refuses loudly, and lowest-free reaches them only when 1 and 2 are taken.
+
+The nine (§ V): origin — `claimSession` alone; concept — none, *linked worktree* is git's word; complexity — the problem's, two checkouts of one app wanting one port; predictability — the parent's port plus a leading digit; derived — N is assigned once and kept, like a slot, so it does not move when another worktree goes; owner — `claimSession`, which already owns the slot; boundary — `FLI_PORT_*`, as today, graded by cli's ports tests; failure — a sixth worktree is refused naming the five holders, an ephemeral collision is `strictPort`'s refusal; silence — **a port written as a literal ignores the offset and reaches the parent's server**, with nothing to say so until `FJS-2277` closes. No § IV adjudication is in tension. Tier: Register.
+
+### <a id="fjs-d840"></a>2026-10-09 · `FJS-D840` — Executable config cannot be audited — JS, but the default export must be a plain object literal — no imports, no computation, no `process.env` reads — enforced by a `fli check` rule. The loader resolves a relative path against the config file, so a file needs no `fileURLToPath` of its own, and an env override with a fallback (`process.env.JOBS_DB ?? …`) is refused like any other env read.
+
+Asked in [`IDEAS/app-manifest.md`](IDEAS/app-manifest.md) § Open questions. **B** was picked over **A** (arbitrary JS, as built: `loadFrontierConfig` (`packages/cli/core/utils.js`) `import()`s `frontier.config.js` and `junction.config.js` is loaded the same way), **C** (`frontier.config.json` (or `.toml`), parsed rather than run).
+
+The paper's recommendation, taken as written: it makes the file readable without running it and keeps the comments that carry basecamp's `frontier.config.js`, which JSON would strip. A value that needs computing is a secret (env) or derivable (`.lite`), which is the three-bucket test doing its job.
+
+### <a id="fjs-d839"></a>2026-10-09 · `FJS-D839` — Where the store runs — No store in V1: the reviewer's `localStorage` and a share link, as § *V1* lays out; A or B is chosen in V2.
+
+Asked in [`IDEAS/anchored-feedback.md`](IDEAS/anchored-feedback.md) § Open questions. **C** was picked over **A** (one hosted FJS app serving every site's reviews (Kobami runs one)), **B** (Basecamp as the store, a pin becomes a to-do in the client's project; it is where Kobami's client feedback already goes and where `daily-check` reads, but it needs a server proxy and puts site-kit behind a vendor).
+
+ship the pin, the thread and the handoff before any server: a static preview needs nothing deployed, the anchor and ids are V2's so the store imports V1, and a merge by id makes a link a transfer rather than an overwrite.
 
 ### <a id="fjs-d828"></a>2026-10-09 · `FJS-D828` — How does a tile know a port is *its* — Ask who holds the port (`pidsOnPort` in `core/ports.js`) and match the holder to the tile: inside the GUI child's process group, else a working directory under the row's `dir`.
 

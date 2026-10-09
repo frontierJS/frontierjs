@@ -4,7 +4,7 @@
 // per cause; each schema is the shape the base44 stressor measured.
 import { describe, test, expect } from 'bun:test'
 import { parse } from '../src/core/parser.js'
-import { generateFactory, makeTestClient } from '../src/testing.js'
+import { generateFactory, makeTestClient, createTestEnv } from '../src/testing.js'
 
 const row = (src: string, seq = 1, model = 'T') => {
   const r = parse(src)
@@ -239,6 +239,30 @@ describe('withParents() builds what the schema insists on', () => {
     expect(line.chargeId).not.toBeNull()
   })
 
+  test('a @@check that one of two keys is set wires the first', async () => {
+    const { factories } = await makeTestClient(`
+      model User { id Int @id @default(autoincrement()); name String; apps App[] }
+      model Run  { id Int @id @default(autoincrement()); label String; apps App[] }
+      model App  { id Int @id @default(autoincrement()); slug String
+        ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
+        runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
+        @@check("ownerId IS NOT NULL OR runId IS NOT NULL") }`, { autoFactories: true })
+    const app = await factories.app.withParents().createOne()
+    expect(app.ownerId).not.toBeNull()
+    expect(app.runId).toBeNull()
+  })
+
+  test('a @@check with a scalar branch fills the scalar and builds no parent', async () => {
+    const { factories } = await makeTestClient(`
+      model User    { id Int @id @default(autoincrement()); name String; contacts Contact[] }
+      model Contact { id Int @id @default(autoincrement()); email String?
+        userId Int?; user User? @relation(fields: [userId], references: [id])
+        @@check("userId IS NOT NULL OR email IS NOT NULL") }`, { autoFactories: true })
+    const c = await factories.contact.withParents().createOne()
+    expect(c.userId).toBeNull()
+    expect(c.email).not.toBeNull()
+  })
+
   test('eight chains below one @unique @regex slug seed eight teams', async () => {
     const { factories } = await makeTestClient(`
       model Team   { id Int @id @default(autoincrement()); slug String @unique @regex("^[a-z0-9][a-z0-9-]{0,62}$"); runners Runner[] }
@@ -247,6 +271,29 @@ describe('withParents() builds what the schema insists on', () => {
     const rows = await factories.runner.withParents({ fresh: true }).createMany(8)
     expect(new Set(rows.map((r: any) => r.teamId)).size).toBe(8)
   })
+})
+
+// The ladder's create row builds its parents apart from withParents(), so a
+// rule withParents() honors and that path does not is a model whose create is
+// never asked at any level.
+test('the gate ladder builds the parents a create needs — @@arc, a keys-only @@check, @required(where:)', async () => {
+  const env = await createTestEnv({ schema: `
+    enum Kind { owned loose }
+    model User { id Int @id @default(autoincrement()); name String; a A[]; b B[]; c C[] }
+    model Run  { id Int @id @default(autoincrement()); label String; a A[]; b B[] }
+    model A { id Int @id @default(autoincrement())
+      ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
+      runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
+      @@arc([ownerId, runId]); @@gate("4.4.4.8") }
+    model B { id Int @id @default(autoincrement())
+      ownerId Int?; owner User? @relation(fields: [ownerId], references: [id])
+      runId Int?;   run   Run?  @relation(fields: [runId],   references: [id])
+      @@check("ownerId IS NOT NULL OR runId IS NOT NULL"); @@gate("4.4.4.8") }
+    model C { id Int @id @default(autoincrement()); kind Kind @default(owned)
+      ownerId Int? @required(where: kind == 'owned'); owner User? @relation(fields: [ownerId], references: [id])
+      @@gate("4.4.4.8") }` })
+  try { expect(await env.verifyGateLadder()).toEqual([]) }
+  finally { env.close() }
 })
 
 describe('generateFactory reads a check against what the database stamps', () => {

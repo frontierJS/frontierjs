@@ -9,11 +9,17 @@
 //
 //   GET  /workbench               pins        the pins, each with its git state and run status
 //   GET  /workbench               status      every pin's run status — the grid's poll, no git
-//   GET  /workbench/:id           transcript  one chat, folded from its log
+//   GET  /workbench/:id           transcript  one chat, folded from its log, with its checks and review
+//   GET  /workbench/:id           diff        the checkout's working tree against HEAD, a branch's against its base
 //   POST /workbench               pin         { path }
 //   POST /workbench/:id           send        { prompt } — queued behind a run in progress
+//   POST /workbench/:id           check       the checkout's own `fli done`, now
+//   POST /workbench/:id           review      a read-only Claude Code session over the tree, now
+//   POST /workbench/:id           fork        { slug? } — a branch: the tree snapshotted into a worktree, pinned
+//   POST /workbench/:id           land        a branch's work into its parent's tree, uncommitted
+//   POST /workbench/:id           archive     { discard? } — a branch's worktree removed, its git branch kept
 //   POST /workbench/:id           stop · fresh · seen · unpin
-//   POST /workbench/:id           configure   { name?, budget?, hooks? }
+//   POST /workbench/:id           configure   { name?, budget?, hooks?, review? }
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
@@ -21,11 +27,11 @@ import { dirname }                 from 'node:path'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { env, localMachineRefusal } from '../../core/env.ts'
 import { describeRepo }            from '../../core/local-git.ts'
-import { createWorkbench }         from '../../core/workbench.ts'
+import { createWorkbench, doneScript } from '../../core/workbench.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 
-const READS  = ['pins', 'status', 'transcript']
-const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen']
+const READS  = ['pins', 'status', 'transcript', 'diff']
+const WRITES = ['pin', 'unpin', 'configure', 'send', 'stop', 'fresh', 'seen', 'check', 'review', 'fork', 'land', 'archive']
 
 export function createWorkbenchService(app: BasecampApp) {
   const wb = createWorkbench({ dir: env.WORKBENCH_DIR || undefined, bin: env.CLAUDE_BIN, env })
@@ -61,6 +67,7 @@ export function createWorkbenchService(app: BasecampApp) {
         pins: await Promise.all(pins.map(async p => ({
           ...p,
           git:    await describeRepo(dirname(p.path), p.path),
+          checkable: !!doneScript(p.path),
           status: await wb.status(p),
         }))),
       }
@@ -76,6 +83,11 @@ export function createWorkbenchService(app: BasecampApp) {
       return wb.transcript(p.id)
     },
 
+    async diff() {
+      const p = pinned()
+      return wb.diff(p.id)
+    },
+
     async pin() {
       offered()
       const r = wb.pin(body().path)
@@ -85,8 +97,30 @@ export function createWorkbenchService(app: BasecampApp) {
 
     async unpin() {
       const p = pinned()
-      wb.unpin(p.id)
+      const r = wb.unpin(p.id)
+      if (r) throw new Conflict(r.refused)
       return { id: p.id }
+    },
+
+    async fork() {
+      const p = pinned()
+      const r = wb.fork(p.id, { slug: body().slug })
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r.pin
+    },
+
+    async land() {
+      const p = pinned()
+      const r = wb.land(p.id)
+      if ('refused' in r) throw new Conflict(r.refused, { files: r.files ?? [] })
+      return r
+    },
+
+    async archive() {
+      const p = pinned()
+      const r = wb.archive(p.id, { discard: body().discard })
+      if ('refused' in r) throw new Conflict(r.refused, { pending: r.pending ?? 0 })
+      return r
     },
 
     async configure() {
@@ -100,6 +134,20 @@ export function createWorkbenchService(app: BasecampApp) {
       const p = pinned()
       const r = await wb.send(p.id, String(body().prompt ?? ''))
       if ('refused' in r) throw new BadRequest(r.refused)
+      return r
+    },
+
+    async check() {
+      const p = pinned()
+      const r = wb.check(p.id)
+      if ('refused' in r) throw new Conflict(r.refused)
+      return r
+    },
+
+    async review() {
+      const p = pinned()
+      const r = await wb.review(p.id)
+      if ('refused' in r) throw new Conflict(r.refused)
       return r
     },
 

@@ -97,7 +97,7 @@ describe('actorType grades the principal it was handed', () => {
   })
 
   test('a person holding a grant as well is the actor, and the grant\'s subject is the subject', async () => {
-    // Junction's `session: 'merge'` (`FJS-D831`): the grant is a thing the
+    // Junction's `session: 'merge'` (`FJS-D832`): the grant is a thing the
     // person held, not who acted. Filed as a user under the person's id, with
     // what the grant was for kept as the subject.
     const dir = mkdtempSync(join(tmpdir(), 'fjs-actor-'))

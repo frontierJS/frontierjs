@@ -267,7 +267,7 @@ has copied it. `--check` matches the precedent already set by
 
 ## Open questions and known hazards
 
-- **Executable config cannot be audited.** `vite.config.js` is why nothing can
+- ~~**Executable config cannot be audited.**~~ **Answered 2026-10-09 (`FJS-D840`): B — JS, but the default export must be a plain object literal — no imports, no computation, no `process.env` reads — enforced by a `fli check` rule. The loader resolves a relative path against the config file, so a file needs no `fileURLToPath` of its own, and an env override with a fallback (`process.env.JOBS_DB ?? …`) is refused like any other env read.** `vite.config.js` is why nothing can
   statically reason about a Vite app, and `package.json` is JSON deliberately. Options:
   require `frontier.config.js` to export a **plain object literal** — no imports, no
   computation, no env reads, enforced by doctor (precedent: the workflow `meta` rule) —
@@ -276,13 +276,16 @@ has copied it. `--check` matches the precedent already set by
   - **A** — arbitrary JS, as built: `loadFrontierConfig` (`packages/cli/core/utils.js`)
     `import()`s `frontier.config.js` and `junction.config.js` is loaded the same way.
   - **B** — JS, but the default export must be a plain object literal — no imports,
-    no computation, no `process.env` reads — enforced by a `fli check` rule.
+    no computation, no `process.env` reads — enforced by a `fli check` rule. The
+    loader resolves a relative path against the config file, so a file needs no
+    `fileURLToPath` of its own, and an env override with a fallback
+    (`process.env.JOBS_DB ?? …`) is refused like any other env read.
   - **C** — `frontier.config.json` (or `.toml`), parsed rather than run.
   - **Recommend B** — it makes the file readable without running it and keeps the
     comments that carry basecamp's `frontier.config.js`, which JSON would strip. A
     value that needs computing is a secret (env) or derivable (`.lite`), which is the
     three-bucket test doing its job.
-- **Config sprawl is the default outcome.** webpack and Vite both got here. The
+- ~~**Config sprawl is the default outcome.**~~ **Answered 2026-10-09 (`FJS-D842`): B — each config file has a closed key table, and its loader refuses an unknown key by name, pointing at the bucket it belongs in (`.lite`, env, or the other config file).** webpack and Vite both got here. The
   three-bucket test is the only defense proposed and it needs teeth.
   - **A** — the three-bucket test as prose, as today; nothing refuses an unknown key
     in `frontier.config.js` or `junction.config.js`.

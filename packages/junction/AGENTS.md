@@ -291,7 +291,13 @@ token the request already signed in with rather than refusing it as a dead link.
 A policy compares ids, never the token:
 `@@allow('read', clientId == auth().portalClientId)`. Two grants on one request
 each keep their row: `$.locals[BEARER]` is the first in the list's order and
-`bearerOf($, 'csatLink')` reads the other.
+`bearerOf($, 'csatLink')` reads the other. **A session beside a grant is a 400**,
+before the grant is read: a person who also presents a link is two standings,
+and merged, a `@default(auth().contactId)` stamps the link's contact on a row
+the person's own rule admitted. An app whose signed-in callers still hold a
+grant — a basket the shopper opened before signing in — states
+`session: 'merge'` on that `bearerClaim`, and the person is then the trail's
+actor (`FJS-D832`).
 
 **A claim decides rows, never standing: a bearer is still STRANGER(0).** A model
 it reads is gated at 0 for that operation and its `@@allow` does the scoping; a

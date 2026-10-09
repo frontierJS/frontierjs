@@ -59,7 +59,14 @@ every tool in the field leads with.
 
 **Recommended order: 1 → 2 → 3 → 4**, because each reuses code that already exists.
 Together they turn *a run ended* into *a run ended, here is the diff, the checks are
-green, and it cost $0.80*. Then build #6 as a project of its own.
+green, and it cost $0.80*. Then build #6 as a project of its own —
+[`workbench-branches.md`](workbench-branches.md) is its design.
+
+**1–4 built on 2026-10-09.** The checks are the checkout's own `fli done`, which
+already carries what `fli proves` names. The review is opt-in per pin, because
+each review is paid, and it has a button as well. A line comment waits above the
+message box and goes with the next message. Verified against a stand-in claude
+only; no real `claude -p` has run through any of it yet.
 
 **Not on the list:** agent-to-agent messaging, other agents (Codex, Gemini), cloud
 VMs, and a live channel in place of the 1.5-second poll. The poll holds until there

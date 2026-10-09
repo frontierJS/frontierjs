@@ -66,6 +66,8 @@ describe('askArgv', () => {
     expect(askArgv({ work: { hooks: true } })).not.toContain('--settings')
     expect(askArgv({ work: {} })[askArgv({ work: {} }).indexOf('--max-budget-usd') + 1]).toBe(String(WORK_BUDGET_USD))
     expect(askArgv({ work: {}, session: SESSION }).slice(-2)).toEqual(['--resume', SESSION])
+    expect(askArgv({ work: {}, session: SESSION, fork: true }).slice(-3)).toEqual(['--resume', SESSION, '--fork-session'])
+    expect(askArgv({ work: {}, fork: true })).not.toContain('--fork-session')
   })
 
 })

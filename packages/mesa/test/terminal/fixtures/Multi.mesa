@@ -1,0 +1,5 @@
+<script>
+  export let multiple = false
+</script>
+
+<select multiple={multiple}><option>a</option></select>

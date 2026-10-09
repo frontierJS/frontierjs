@@ -130,14 +130,33 @@ describe('terminal target', () => {
         'rowspan on <td> at U.mesa:1:12 has no terminal lowering')
     })
 
-    it('bind:value', async () => {
-      await refusal(`<script>let v = ''</script>\n<input bind:value={v} />\n`, 'B.mesa',
-        'bind:value at B.mesa:2:8 has no terminal lowering')
+    // `bind:value` is heard back only from a control, and only plain: a mask
+    // reformats as the person types, which no terminal field does.
+    it('an element bind: other than a plain bind:value on a control', async () => {
+      await refusal(`<script>let v = false</script>\n<input type="checkbox" bind:checked={v} />\n`, 'B.mesa',
+        'bind:checked at B.mesa:2:24 has no terminal lowering')
+      await refusal(`<script>let v = ''</script>\n<input bind:value|mask({"99"})={v} />\n`, 'K.mesa',
+        'bind:value|mask({"99"}) at K.mesa:2:8 has no terminal lowering')
+      await refusal(`<script>let v = ''</script>\n<div bind:value={v}></div>\n`, 'V.mesa',
+        'bind:value on <div> at V.mesa:2:6 has no terminal lowering')
+    })
+
+    // A live `multiple` is checked where it is written, in the runtime.
+    it('a static multiple on a <select>', async () => {
+      await refusal(`<select multiple><option>a</option></select>\n`, 'M.mesa',
+        'multiple on <select> at M.mesa:1:1 has no terminal lowering')
+      await expect(terminal(`<script>let m = false</script>\n<select multiple={m}><option>a</option></select>\n`, 'L.mesa')).resolves.toBeTruthy()
     })
 
     it('on:dblclick', async () => {
       await refusal(`<div on:dblclick={() => {}}></div>\n`, 'D.mesa',
         'on:dblclick at D.mesa:1:6 has no terminal lowering')
+    })
+
+    // A browser moves live text into a field only until someone types.
+    it('live text in a <textarea> with no value=', async () => {
+      await refusal(`<script>let t = 'a'</script>\n<textarea>{t}</textarea>\n`, 'T.mesa',
+        'live text in <textarea> without value= at T.mesa:2:1 has no terminal lowering')
     })
 
     it('{#await}', async () => {
@@ -308,6 +327,32 @@ describe('terminal target', () => {
     ].join('\n    '))
   })
 
+  it('binds an element value after its handlers, through the getter and setter the DOM path writes', async () => {
+    const { result } = await terminal(`<script>let v = ''\nlet d = {}\nconst f = () => {}</script>
+<select bind:value={v} on:change={f}><option>a</option></select>
+<input bind:value={d.name} />
+`, 'V.mesa')
+    expect(result).toContain([
+      "$$tui.on($$el0, 'change', f);",
+      "$$tui.bind($$el0, 'value', () => $$runtime.get($$sig_v), $$set_v);",
+    ].join('\n    '))
+    expect(result).toContain("$$tui.bind($$el2, 'value', () => ($$runtime.get($$sig_d).name), ($$v) => { $$runtime.get($$sig_d).name = $$v; });")
+  })
+
+  it('reports an element bind:value it cannot write in the same words on both targets, and wires nothing', async () => {
+    const source = `<script>const c = 1</script>\n<input bind:value={c} />\n`
+    const said = async (target) => {
+      const out = []
+      const { result } = await compile(source, { target, filename: 'C.mesa', dev: false, warning: (w) => out.push(w.message) })
+      return { out, result }
+    }
+    const dom = await said(undefined)
+    const tui = await said('terminal')
+    expect(tui.out).toEqual(dom.out)
+    expect(tui.out).toEqual(['bind:value={c} — cannot two-way bind: `const c` cannot be reassigned. Declare it `let`.'])
+    expect(tui.result).not.toMatch(/\$\$tui\.bind/)
+  })
+
   it('reports an element bind:this with no setter in the same words on both targets, and wires nothing', async () => {
     const source = `<script>const c = 1</script>\n<div bind:this={c}></div>\n<p bind:this></p>\n`
     const said = async (target) => {
@@ -394,7 +439,6 @@ describe('terminal target', () => {
 `, { filename: 'H.mesa', dev: false, warning: () => {} })
     expect(terminalOffenses(ir).map((o) => [o.what, o.shape, o.loc])).toEqual([
       ['colspan on <td>', 'colspan on <td>', 'H.mesa:5:12'],
-      ['bind:value',   'bind:',             'H.mesa:6:8'],
       ['bind:checked', 'bind:',             'H.mesa:6:23'],
       ['on:mouseenter', 'on:mouseenter',    'H.mesa:7:41'],
       ['<svg>',        '<svg>',             'H.mesa:8:59'],

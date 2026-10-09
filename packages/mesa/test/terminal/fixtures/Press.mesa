@@ -1,0 +1,29 @@
+<script>
+  let value = ''
+  let held = 0
+  let moved = 0
+  let around = 0
+  let target = '-'
+  let row = 0
+  let scrolls = 0
+  let kept = 'kept'
+  let start = '-'
+  let drops = 0
+
+  const hold = (e) => e.preventDefault()
+  const heard = (e) => { around++; target = e.target.__tag }
+</script>
+
+<p>value {value} held {held} moved {moved}</p>
+<p>around {around} target {target} row {row} scrolls {scrolls} start {start}</p>
+<div on:mousedown={heard}>
+  <input name="a" on:input={(e) => value = e.target.value} />
+  <button type="button" on:mousedown={hold} on:click={() => held++}>Hold</button>
+  <button type="button" on:click={() => moved++}>Move</button>
+</div>
+<p on:mousedown={() => row++}>Row</p>
+<div on:drop={() => drops++}>
+  <p on:dragenter={() => drops++} on:dragover|preventDefault={() => drops++} on:dragleave={() => drops++}>Drop drops {drops}</p>
+</div>
+<textarea name="t" on:scroll={() => scrolls++} on:focus={(e) => start = JSON.stringify(e.target.value)}>one</textarea>
+<textarea name="v" value={kept}>{kept}</textarea>

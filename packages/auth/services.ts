@@ -111,26 +111,45 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
   }
 
   /**
-   * The caller, or a 401 — and a 403 for an API key that carries scopes. Every
+   * The caller, or a 401 — and a 403 for any API key, scoped or not. Every
    * method below except `account.get` starts here.
    *
-   * A scope narrows a key at the APP's own checks (`FJS-D407`), and no scope an
-   * app declares names these services, so without this a key scoped to
-   * `search` has its owner's whole standing here: it mints itself an unscoped
-   * key, signs its owner out of every session — it has no `sessionId`, so
-   * *others* is all of them — and revokes the owner's other keys (`FJS-1446`).
-   * Reading is refused too: a session list is IPs and devices, which is not
-   * what a key handed out for one purpose was handed out for.
+   * Managing credentials takes a session (`FJS-D615`). A key that reaches
+   * these services mints itself another key, signs its owner out of every
+   * session — it has no `sessionId`, so *others* is all of them — and revokes
+   * the owner's other keys (`FJS-1446`), so revoking a leaked key does not
+   * contain it: the key it minted is still live. A scope does not help here,
+   * since no scope an app declares names these services. Reading is refused
+   * too: a session list is IPs and devices, which is not what a key was
+   * handed out for.
    */
   function caller(ctx: ServiceContext): SessionContext {
     const user = identify(ctx)
-    if (user.scopes?.length) {
+    if (user.authMethod === 'apiKey') {
       throw new Forbidden(
-        `An API key with scopes (${user.scopes.join(', ')}) cannot manage this account's ` +
-        `credentials — sign in, or use a key issued without scopes.`
+        `An API key cannot manage this account's credentials — sign in to do it.`
       )
     }
     return user
+  }
+
+  /**
+   * A scope list a key can be minted with, or a 400 naming the bad entry.
+   *
+   * A scope is stored space-joined and read back split, so a blank entry
+   * vanishes on the way back and the key is unscoped — `['']` asked for a
+   * narrowed key and got its owner's whole standing (`FJS-1850`). An entry
+   * holding whitespace comes back as two scopes the caller never named.
+   */
+  function scopeList(scopes: unknown): string[] | undefined {
+    if (scopes === undefined) return undefined
+    if (!Array.isArray(scopes)) throw new BadRequest('scopes must be an array')
+    for (const s of scopes) {
+      if (typeof s !== 'string' || !s || /\s/.test(s)) {
+        throw new BadRequest(`scopes must be non-blank strings without spaces, got ${JSON.stringify(s)}`)
+      }
+    }
+    return scopes
   }
 
   /**
@@ -243,8 +262,8 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // A UI needs what the request will be graded as, which is the session; the
     // row is the `users` service's answer and is a different question.
     async get(ctx: ServiceContext) {
-      // A scoped key may still ask who holds it — how a page opened from a
-      // key learns whose link it is.
+      // A key may still ask who holds it — how a page opened from a key
+      // learns whose link it is.
       const user = identify(ctx)
       // `me` is the address, and the caller's own id is accepted because a
       // link built from `session.userId` is the obvious second spelling.
@@ -404,15 +423,15 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // The sharpest one. A key minted here authenticates as the subject for as
       // long as it lives, which is the episode's ceiling escaped for good.
       refuseDelegated(ctx, user, 'create an API key')
-      const { name, scopes, expiresAt } = (ctx.data ?? {}) as {
-        name?: string; scopes?: string[]; expiresAt?: string
+      const { name, scopes: asked, expiresAt } = (ctx.data ?? {}) as {
+        name?: string; scopes?: unknown; expiresAt?: string
       }
-      if (scopes !== undefined && !Array.isArray(scopes)) throw new BadRequest('scopes must be an array')
+      const scopes = scopeList(asked)
 
       // Scopes NARROW: a key authenticates as its owner and a scope list is
       // subtractive at the app's own check. A caller cannot mint themselves
-      // standing they do not have by asking for it here, because a scoped
-      // caller never reaches this line (`caller`).
+      // standing they do not have by asking for it here, because no key
+      // reaches this line (`caller`).
       const { id, key } = await auth.createApiKey(user.userId, {
         ...(name      ? { name }   : {}),
         ...(scopes    ? { scopes } : {}),

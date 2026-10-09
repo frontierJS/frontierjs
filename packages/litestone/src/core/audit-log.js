@@ -196,7 +196,7 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     // on the principal — one is deliberately hidden from it, the other is a
     // row this package never read. A person holding a grant as well is the
     // actor over it: the grant is a thing they held, and `actorType` already
-    // files the row as a user (`FJS-D831`).
+    // files the row as a user (`FJS-D832`).
     actorId:   from?.operatorId ?? ctx.auth?.id ?? from?.bearerId ?? null,
     actorType: from?.operatorId ? (from.operatorType ?? 'support') : actorTypeOf(ctx),
     subjectId: from?.operatorId ? (ctx.auth?.id ?? null)

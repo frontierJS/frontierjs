@@ -3809,7 +3809,7 @@ export interface BearerClaimOptions {
    *  same reason `membershipClaim` carries it: once installed this is the only
    *  static answer to *how does a request name its grant*. */
   namedBy?: string
-  /** What a request carrying a SESSION as well as this grant is (`FJS-D831`).
+  /** What a request carrying a SESSION as well as this grant is (`FJS-D832`).
    *  `refuse`, the default: a 400 before the grant is read — one caller per
    *  request, because a merged principal is two standings under one name and
    *  a `@default(auth().x)` then stamps the grant's value on a row the
@@ -3928,7 +3928,7 @@ export function bearerClaim(opts: BearerClaimOptions): BearerResolver {
     // works. A request is one caller: a person who also presents a grant is
     // two standings, and merged they put the grant's ids on rows the person's
     // own rule admitted (`FJS-1987`). An app whose signed-in callers still
-    // hold a grant states `session: 'merge'` (`FJS-D831`).
+    // hold a grant states `session: 'merge'` (`FJS-D832`).
     if (user && (opts.session ?? 'refuse') !== 'merge') throw new BadRequest(
       opts.from.headerName === 'authorization'
         ? `This request is signed in and also carries a key. Send one or the other.`
@@ -4208,7 +4208,7 @@ export interface PrincipalDescription {
   /** The request headers a caller names this principal with. */
   headers?: string[]
   /** A bearer: what a request carrying a session as well is — refused, or
-   *  merged onto the person (`FJS-D831`). Stated so the snapshot shows a
+   *  merged onto the person (`FJS-D832`). Stated so the snapshot shows a
    *  `merge` where a reviewer reads it. */
   session?: 'refuse' | 'merge'
 }

@@ -737,6 +737,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `uptime-monitoring.md` — Uptime monitoring: Basecamp watches the URL, not only the machine
 - `version-compatibility.md` — Version compatibility: what a version number here promises
 - `workbench.md` — the Workbench after V1: what comes next, ranked against prior art
+- `workbench-branches.md` — a branch per chat in the Workbench: a linked worktree pinned beside its parent, Land and Archive
 
 ### assessment
 

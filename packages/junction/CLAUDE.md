@@ -70,7 +70,9 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   (`FJS-D522`, `FJS-D694`, `test/principal-list.test.ts`). **A grant is minted by
   the caller's own create and a link redeemed for a cookie through `bearerClaim`'s
   `mint`/`redeem`**, never a second write below the boundary (`FJS-D819`,
-  `test/bearer-claim.test.ts`).
+  `test/bearer-claim.test.ts`). **A session beside a grant is a 400 before the
+  grant is read, unless the grant states `session: 'merge'`** (`FJS-D832`, same
+  file § a session beside a grant).
 - **A test names no port** — `port: 0`, then read `app.http.port` (`FJS-900`,
   `test/test-ports.test.ts`).
 - **The whole package typechecks to zero, `test/` included** — junction has no

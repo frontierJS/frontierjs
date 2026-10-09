@@ -80,7 +80,7 @@ somewhere, swap two keys in `tokenStorage`, and hope the tab holding the way bac
 survives. Clearing a column needs none of that.
 
 **The record is the audit trail, not a second table.** `Session` already carries
-`@@log(audit)`, so stamping these columns writes an entry with `before` and `after`, and
+`@@trail(audit)`, so stamping these columns writes an entry with `before` and `after`, and
 `token` is `@guarded` so Invariant 7 redacts it there. The trail is the thing that
 outlives the row by construction — which is what a trail is — so the episode needs no
 model to survive logout. `episodeId` on the entry is the session's own id: stable, and
@@ -227,7 +227,7 @@ none is load-bearing, so they are recorded here rather than in the build order.
 | --- | --- | --- |
 | **`SupportSession` model** (`@@gate("8")`, two indexes, a sweep column) | a QUERYABLE episode list — *every support session this quarter* as a table read rather than a trail read, since a jsonl trail joins to nothing and its `before`/`after` are JSON strings — plus `endedBy` | the first time somebody asks for the report. It is additive: the columns stay, the model gains an id they point at |
 | **`db.$audit()` on a refused start** | a record of an attempt nobody was entitled to make. A refusal is not a write, so the logger sees nothing — the same reason a failed sign-in needs it | when the capability grant becomes wide enough that a refusal means something |
-| **A `litestone advise` rule for declared trails** | an app whose `@@log` names a DECLARED model keeps only the columns that model declares and drops the rest — measured: `written: 1, dropped: 0`, no error. So a hand-declared trail records episodes with the operator missing | when a second app declares its own trail model. Every scaffolded app uses the auto-model and is unaffected |
+| **A `litestone advise` rule for declared trails** | an app whose `@@trail` names a DECLARED model keeps only the columns that model declares and drops the rest — measured: `written: 1, dropped: 0`, no error. So a hand-declared trail records episodes with the operator missing | when a second app declares its own trail model. Every scaffolded app uses the auto-model and is unaffected |
 | **`fli check` rule + `access.snapshot.md` section** | findability — *who may impersonate* as a committed diff | with the next `fli check` batch. It grades a thing that must exist first |
 
 **What is NOT cuttable is three lines long**, and it is worth stating as a set because
@@ -375,15 +375,15 @@ all of the risk.
 - ~~**Does the subject get told?**~~ **Answered 2026-10-04 by `FJS-D574`:** `support.started`
   reaches `onCredentialChanged` for the subject, through the helper that writes the trail
   entry — not a new notification file, since auth cannot import notifications.
-- **Reads.** `@@log(audit, reads: true)` is opt-in and high volume; *who looked at my
+- ~~**Reads.**~~ **Answered 2026-10-09 (`FJS-D834`): B — inside an episode, every model with `@@trail` logs reads whatever its `reads` setting, decided in litestone's logger off the `episodeId` that `installLogContext` already hands it.** `@@trail(audit, reads: true)` is opt-in and high volume; *who looked at my
   record* is the DSAR question and it is a READ. Probably: reads are logged for the
   duration of an episode regardless of the model's setting, which is a rule with no home
   yet.
   - **A** — reads stay opt-in per model; an app that wants the DSAR answer declares `reads: true` where it matters.
-  - **B** — inside an episode, every model with `@@log` logs reads whatever its `reads` setting, decided in litestone's logger off the `episodeId` that `installLogContext` already hands it.
-  - **C** — inside an episode, every model logs reads, `@@log` or not, into the default trail.
+  - **B** — inside an episode, every model with `@@trail` logs reads whatever its `reads` setting, decided in litestone's logger off the `episodeId` that `installLogContext` already hands it.
+  - **C** — inside an episode, every model logs reads, `@@trail` or not, into the default trail.
   - **Recommend B** — the condition already reaches the logger, so the rule's home is the one read-logging check that exists, not a new seat. Under A an operator reading a record leaves nothing, and the DSAR answer is incomplete without anything saying so. C writes a trail for models the app never declared one for.
-- **`asSystem()` inside an episode.** A service that legitimately bypasses rules would
+- ~~**`asSystem()` inside an episode.**~~ **Answered 2026-10-09 (`FJS-D835`): A — allowed, as built: a service's `asSystem()` is the service's decision for every caller, the subject included, and the trail names the operator.** A service that legitimately bypasses rules would
   bypass the subject's ceiling too. The trail still names the operator; whether an episode
   should refuse `asSystem()` outright is `FJS-519`'s shape one layer up.
   - **A** — allowed, as built: a service's `asSystem()` is the service's decision for every caller, the subject included, and the trail names the operator.

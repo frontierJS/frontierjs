@@ -1095,12 +1095,13 @@ name when it declares none.
 
 ### `workbench` · model `workbench`
 
-- **methods** — `pins`, `status`, `transcript`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`
-- **custom methods** — `pins`, `status`, `transcript`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`
+- **methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`
+- **custom methods** — `pins`, `status`, `transcript`, `diff`, `pin`, `unpin`, `configure`, `send`, `stop`, `fresh`, `seen`, `check`, `review`
 - **who may call** —
   - `pins` — standing 5 or above — declared `gate: 5`
   - `status` — standing 5 or above — declared `gate: 5`
   - `transcript` — standing 5 or above — declared `gate: 5`
+  - `diff` — standing 5 or above — declared `gate: 5`
   - `pin` — standing 5 or above — declared `gate: 5`
   - `unpin` — standing 5 or above — declared `gate: 5`
   - `configure` — standing 5 or above — declared `gate: 5`
@@ -1108,6 +1109,8 @@ name when it declares none.
   - `stop` — standing 5 or above — declared `gate: 5`
   - `fresh` — standing 5 or above — declared `gate: 5`
   - `seen` — standing 5 or above — declared `gate: 5`
+  - `check` — standing 5 or above — declared `gate: 5`
+  - `review` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -69,7 +69,7 @@ model Task {
   messages    Message[]
 
   @@cascade(completedAt -> messages.completedAt)
-  @@cascade(archived    -> messages.archived, mirror)
+  @@cascade(archived    -> messages.archived, always)
 }
 ```
 
@@ -108,17 +108,21 @@ unset value is `false`, not null.
 | Mode | Guard | Semantics | Fits |
 | --- | --- | --- | --- |
 | **`once`** (default) | `AND "target" IS <unset>` — null if nullable, else the field's `@default` | one-way door; idempotent and monotonic. Clearing the parent does nothing | `completedAt`, `deletedAt`, `publishedAt` |
-| **`mirror`** | `AND "target" IS NOT ?` | the child always tracks the parent, in both directions | `archived`, `locked`, `tenantId`, an enum status |
+| **`always`** | `AND "target" IS NOT ?` | the child always equals the parent — a set and a clear both propagate | `archived`, `locked`, `tenantId`, an enum status |
 
 ```sql
 -- once,  DateTime?              -- once,  Boolean @default(false)
 … AND "completedAt" IS NULL      … AND "archived" = 0
--- mirror, any type
+-- always, any type
 … AND "archived" IS NOT ?        -- SQLite IS NOT is null-safe; no IS DISTINCT FROM needed
 ```
 
+The second mode is `always` and not `mirror`: the cascade is one-way, parent to child, so
+*mirror* promises a reflection it does not give, and the word belongs to `@@mirror` — a
+model whose rows a sync holds equal to a source outside the database (`FJS-D829`).
+
 Both modes are idempotent by construction — `once` because a stamped row no longer
-matches, `mirror` because an equal row no longer matches. `once` is the default
+matches, `always` because an equal row no longer matches. `once` is the default
 because it is the mode that cannot destroy a value a child set for itself.
 
 Everything else stays deliberately narrow:
@@ -144,7 +148,7 @@ Checked at parse time, so a mismatch is a schema error and never a runtime surpr
    becoming a trigger engine.
 3. **`once` needs an unset value.** The target must be nullable or carry a `@default`;
    otherwise there is nothing to test. Reject.
-4. **`mirror` needs nullability to match.** A nullable source into a `NOT NULL` target
+4. **`always` needs nullability to match.** A nullable source into a `NOT NULL` target
    propagates null and fails at runtime. Reject.
 5. **Warn, do not reject:** a `once` target with `@default(now())` is stamped at
    create, so the cascade can never fire. Silent no-op otherwise, and the kind of
@@ -245,18 +249,18 @@ useful.
   - **B** — both directions in `@@cascade`.
   - **Recommend A** — the upward case is already derivable on read, so a stored copy
     would restate it and could drift from it.
-- **Does `mirror` fight `@@transitions`?** A mirrored enum writes a child's status
+- **Does `always` fight `@@transitions`?** An `always` cascade of an enum writes a child's status
   without going through its transition table. Either the cascade respects transitions
   on the child (and can therefore fail mid-write) or it is a declared bypass. The
   second is simpler and has to be written down.
   - **A** — the cascade respects the child's transitions, and the whole write rolls
     back when any child cannot move.
-  - **B** — a declared bypass: `mirror` writes the child's status off its machine.
-  - **C** — a schema error: `mirror` into a field the child's `@@transitions` governs
+  - **B** — a declared bypass: `always` writes the child's status off its machine.
+  - **C** — a schema error: `always` into a field the child's `@@transitions` governs
     does not parse.
   - **Recommend C** — B is the integrity bypass `FJS-D502` refused to give even
     `asSystem()`, and A fails at runtime on data the schema could have refused at
-    parse. C stays until a product needs a mirrored status, and A is the answer then.
+    parse. C stays until a product needs a cascaded status, and A is the answer then.
 - **Does this open the door to triggers generally?** It should not, and the boundary
   is type rule 2 plus: no computed values, no conditions beyond the mode guard, no
   side effects. A cascade that can send email is a framework inside the framework —
@@ -278,7 +282,7 @@ useful.
 - `packages/litestone/docs/soft-delete.md` — the shipped special case
 - `packages/litestone/docs/schema.md` § Derived & generated — why `@from`/`@@expr`
   cannot express this
-- `DECISIONS.md` — where the `asSystem()`, `updateMany`, `mirror`-vs-transitions and
+- `DECISIONS.md` — where the `asSystem()`, `updateMany`, `always`-vs-transitions and
   child-audit rulings land
 - `CLAUDE.md` § Invariants 6 and 7 — the declare-in-the-schema and redaction rules this
   has to satisfy

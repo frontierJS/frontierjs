@@ -30,6 +30,7 @@
 // holds there — it is the account's own Claude Code, minus the prompts — so
 // the two levers left are what this file still owns: the budget, and whether
 // the repo's own hooks run (a Stop hook that blocks spends the run's turns).
+// The workbench's REVIEWER is the read-only default again, with its own prompt.
 
 import { spawn, spawnSync } from 'node:child_process'
 
@@ -39,6 +40,22 @@ export const ASK_BASH  = ['git status:*', 'git diff:*', 'git log:*', 'git show:*
 // A press is a question, not a work session; a loop that reads the whole tree
 // stops here rather than on the account's limit.
 export const ASK_BUDGET_USD = 2
+
+// The workbench's reviewer: a fresh read-only session over what a work run
+// left in the tree. Fresh, because a reviewer that resumes the builder's
+// session grades the change by the builder's own account of it.
+export const REVIEW_RULES = [
+  'You are reviewing a change another Claude Code session just made in this checkout. You are read-only: Read, Grep, Glob, and git, rg and ls in Bash.',
+  'The change is the working tree against HEAD: run `git diff HEAD` and `git status --short`, and read an untracked file whole. Another session may share this tree, so a change unrelated to the request is not this change.',
+  'Look for correctness bugs: a wrong condition, a missed case, a broken caller, a test that cannot fail. Skip style. Each finding is `file:line` and one or two sentences on what goes wrong and when.',
+  'Reply with the findings, most severe first, or the one line "No findings." when there are none. The reply goes back to the builder as its next message, so write it to them.',
+].join('\n\n')
+
+/** The reviewer's prompt: the rules, then what the builder was asked to do. */
+export function reviewPrompt({ request = '' } = {}) {
+  const asked = String(request).trim()
+  return [REVIEW_RULES, asked ? `The builder was asked:\n\n${asked.slice(0, 4000)}` : null].filter(Boolean).join('\n\n')
+}
 
 // The tail is what was just run and what failed; a CI log's head is setup.
 export const ASK_MAX_LINES = 1500
@@ -93,7 +110,10 @@ const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // A work run builds rather than answers; the operator sets it per checkout.
 export const WORK_BUDGET_USD = 10
 
-export function askArgv({ session = null, edit = null, work = null } = {}) {
+// `fork` resumes `session` under a NEW id filed under the run's own directory,
+// which is what lets `claude --resume` from a workbench branch's folder find it;
+// a plain resume from there answers but stays filed under the old directory.
+export function askArgv({ session = null, edit = null, work = null, fork = false } = {}) {
   if (work) {
     const argv = [
       '-p',
@@ -104,6 +124,7 @@ export function askArgv({ session = null, edit = null, work = null } = {}) {
     ]
     if (!work.hooks) argv.push('--settings', JSON.stringify({ disableAllHooks: true }))
     if (session) argv.push('--resume', session)
+    if (session && fork) argv.push('--fork-session')
     return argv
   }
   if (edit) {

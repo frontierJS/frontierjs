@@ -54,7 +54,6 @@ function spelling(u) {
     case 'block':        return `{#${n.name}}`
     case 'render':       return '{@render}'
     case 'html':         return '{@html}'
-    case 'const':        return '{@const}'
     case 'debug':        return '{@debug}'
     case 'js-text':      return '{*…}'
     case 'systag':       return `{${n.value.match(/^@[\w-]*/)?.[0] ?? '@'}}`
@@ -90,11 +89,16 @@ function directiveShape(name) {
 const blank = (n) => n.kind === 'comment' ||
   (n.kind === 'text' && n.parts.every((p) => p.kind === 'static' && !p.value.trim()))
 
+/** The attributes `tags.js` says a tag cannot be painted without, that `n` lacks. */
+const missing = (n) => (TERMINAL_TAGS[n.tag]?.requires ?? []).filter((a) => !n.attrs.some((x) => x.name === a))
+const paints = (n) => !!TERMINAL_TAGS[n.tag] && !missing(n).length
+
 const ariaHidden = (n) => n.attrs.some((a) => a.name === 'aria-hidden' && a.value === 'true')
 
 /**
  * The elements the terminal leaves out rather than refuses: a tag missing
- * from `tags.js` on an element that is, or sits inside, a static
+ * from `tags.js`, or lacking an attribute it `requires`, on an element that
+ * is, or sits inside, a static
  * `aria-hidden="true"`. The author has said a reader needs nothing there —
  * the icon in an alert, a sort arrow beside a header — so the terminal paints
  * what assistive technology reads. Lexical: a component called inside one is
@@ -106,12 +110,31 @@ export function terminalDropped(ir) {
   const walk = (children, hidden) => eachNode(children, (n) => {
     if (n.kind !== 'element' && n.kind !== 'dynamic-element') return
     const h = hidden || ariaHidden(n)
-    if (h && n.kind === 'element' && !TERMINAL_TAGS[n.tag]) { dropped.add(n); return false }
+    if (h && n.kind === 'element' && !paints(n)) { dropped.add(n); return false }
     if (h && !hidden) { walk(n.children, true); return false }
   })
   walk(ir.children, false)
   return dropped
 }
+
+/**
+ * A field's text is its value, never its children: the engine's field is a
+ * layout leaf, and adding a child to one aborts the process. Static text is
+ * the starting value, which a `value=` beside it writes over as the property
+ * does in a browser, less the one newline HTML drops after the open tag. Live
+ * text without a `value=` is refused, since a browser moves a field's text
+ * into it only until someone types, and a terminal writing it would overwrite
+ * what was typed.
+ */
+const isField = (n) => ['input', 'textarea'].includes(TERMINAL_TAGS[n.tag]?.role)
+// The roles a person changes the value of, so the only ones a `bind:value`
+// hears back from.
+const CONTROLS = ['input', 'textarea', 'select']
+const hasValue = (n) => n.attrs.some((a) => a.name === 'value')
+const liveText = (n) => n.children.some((c) => !blank(c) && !(c.kind === 'text' && c.static))
+const fieldText = (n) => n.children
+  .filter((c) => c.kind === 'text').flatMap((c) => c.parts).map((p) => p.value).join('')
+  .replace(/^\r?\n/, '')
 
 const elementOffenses = (n, add) => {
   for (const d of n.directives) add(d.name, directiveShape(d.name), d.loc)
@@ -137,6 +160,7 @@ export function terminalOffenses(ir) {
     switch (n.kind) {
       case 'element':
         if (!TERMINAL_TAGS[n.tag]) add(`<${n.tag}>`, `<${n.tag}>`, n.loc)
+        for (const a of missing(n)) add(`<${n.tag}> without ${a}`, `<${n.tag}> without ${a}`, n.loc)
         if (n.tag === 'tr') {
           const cells = n.children.filter((c) => !blank(c))
           if (cells.length === 1 && cells[0].kind === 'element') alone.add(cells[0])
@@ -144,7 +168,17 @@ export function terminalOffenses(ir) {
         for (const a of n.attrs) {
           if (!TERMINAL_TAGS[n.tag]?.refuses?.includes(a.name)) continue
           if (a.name === 'colspan' && alone.has(n)) continue
+          // A live `multiple` is checked when it is written, since the kit's
+          // `<Select>` passes `multiple={multiple}`, false unless asked.
+          if (a.name === 'multiple' && typeof a.value === 'object') continue
           add(`${a.name} on <${n.tag}>`, `${a.name} on <${n.tag}>`, n.loc)
+        }
+        if (!CONTROLS.includes(TERMINAL_TAGS[n.tag]?.role)) {
+          for (const b of n.binds) add(`bind:${b.name} on <${n.tag}>`, 'bind: on a non-control', b.loc)
+        }
+        if (isField(n) && !hasValue(n) && liveText(n)) {
+          add(`live text in <${n.tag}> without value=`, `live text in <${n.tag}>`, n.loc)
+          return false
         }
         elementOffenses(n, add)
         return
@@ -170,6 +204,7 @@ export function terminalOffenses(ir) {
       case 'each':
       case 'snippet':
       case 'render':
+      case 'const':
         return
       case 'unlowered':
         return add(spelling(n), n.what === 'component' ? 'component' : spelling(n), n.loc)
@@ -249,6 +284,8 @@ export function buildTerminal(ctx) {
       const key = IDENT.test(a.name) ? a.name : q1(a.name)
       return `${key}: ${a.value === true ? 'true' : q1(htmlEntitiesToText(a.value))}`
     })
+    const field = isField(n)
+    if (field && fieldText(n)) attrs.push(`value: ${q1(htmlEntitiesToText(fieldText(n)))}`)
     line(ind, `const ${el} = $$tui.element(${tag}${attrs.length ? `, { ${attrs.join(', ')} }` : ''});`)
     line(ind, `$$tui.append(${parent}, ${el});`)
     // A live attribute is a static one that moves: the same owner, written
@@ -267,11 +304,12 @@ export function buildTerminal(ctx) {
     }
     // `n.styles` and `n.classes` are CSS, and a terminal paints no CSS: they
     // are inert here as a static `style` or `class` and the scoped rules are.
-    emitChildren(n.children, el, ind)
+    if (!field) emitChildren(n.children, el, ind)
     for (const h of n.handlers) {
       dep(h.expr)
       line(ind, `$$tui.on(${el}, '${h.event}', ${h.expr.code}${listenerOptions(h)});`)
     }
+    for (const b of n.binds) line(ind, `$$tui.bind(${el}, ${q1(b.name)}, ${b.getter}, ${b.setter});`)
     if (n.ref) line(ind, `${n.ref}(${el});`)
     // The DOM path's owner, handed the renderable: it waits for mount the
     // way `$.onMount` does, so an attachment written for the DOM throws when
@@ -346,6 +384,7 @@ export function buildTerminal(ctx) {
         ? `(${params}) => { const ${n.item.pattern} = ${itemParam}; return (${n.key.code}); }`
         : `(${params}) => (${n.key.code})`
     }
+    for (const [outer, name] of n.lifts) line(ind, `const ${name} = $$runtime.createKeyedEquals(() => ${outer});`)
     line(ind, `$$tui.eachBlock(${m}, () => (${n.items.code}), ${keyFn}, (${params}) => {`)
     if (n.item.pattern) {
       line(ind + 1, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
@@ -427,6 +466,7 @@ export function buildTerminal(ctx) {
       case 'slot':      return emitSlot(n, parent, ind)
       case 'render':    return emitRender(n, parent, ind)
       case 'dynamic-element': return emitDynamicElement(n, parent, ind)
+      case 'const':     dep(n.value); for (const l of n.lines) line(ind, l); return
       default:          throw new Error(`terminal emitter reached a ${n.kind} node that terminalOffenses passed`)
     }
   }

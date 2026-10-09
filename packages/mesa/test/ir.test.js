@@ -13,7 +13,7 @@ const ir = async (source, filename) => (await compile(source, { ...quiet, filena
 
 const stat = (value) => ({ kind: 'static', value })
 const el = (tag, loc, children, extra = {}) => ({
-  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], classes: [], ref: null, attachments: [], children, selfClosing: false, ...extra,
+  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], classes: [], ref: null, attachments: [], binds: [], children, selfClosing: false, ...extra,
 })
 const text = (...parts) => ({ kind: 'text', parts, static: parts.every((p) => p.kind === 'static') })
 
@@ -76,6 +76,7 @@ describe('lower()', () => {
             item: { name: 'it' },
             index: 'i',
             key: { raw: 'it', code: 'it', reads: [] },
+            lifts: [],
             children: [
               text(stat('\n      ')),
               el('li', 'Counter.mesa:17:7', [
@@ -169,6 +170,7 @@ describe('lower()', () => {
         item: { pattern: '[a, b]', names: ['a', 'b'], fn: '$$pat1' },
         index: 'i',
         key: { raw: 'a', code: 'a', reads: [] },
+        lifts: [],
         children: [
           text(stat('\n    ')),
           el('li', 'E.mesa:6:5', [
@@ -243,5 +245,36 @@ describe('lower()', () => {
 `, quiet)
     expect(ctx.result).toContain('const $$pat1 = () => {')
     expect(ctx.result).not.toContain('$$pat2')
+  })
+
+  it('closes a {@const} with its block, before the DOM builder reads the same names', async () => {
+    const ctx = await compile(`<script>
+  let n = 1
+  const x = 'outer'
+</script>
+<p>{x}</p>
+{#if n}{@const x = n * 2}<b>{x}</b>{/if}
+`, quiet)
+    const branch = ctx.ir.children.find((c) => c.kind === 'if').branches[0].children
+    expect(branch[0]).toEqual({
+      kind: 'const',
+      loc: '<mesa>:6:8',
+      names: ['x'],
+      value: { raw: 'n * 2', code: '$$runtime.get($$sig_n) * 2', reads: ['n'] },
+      lines: ['const $$_const_x = $$runtime.createMemo(() => $$runtime.get($$sig_n) * 2);', 'const x = $$_const_x();'],
+    })
+    expect(branch[1].children[0].parts[0].expr.code).toBe('$$_const_x()')
+    // The <p> before the block is built after lower() ran over the whole tree.
+    expect(ctx.result.match(/\$\$_const_x\(\)/g)).toHaveLength(2)
+  })
+
+  it('carries a row comparison lifted out of the row', async () => {
+    const tree = await ir(`<script>
+  let rows = [{ id: 1 }]
+  let sel = 1
+</script>
+{#each rows as r}<i>{r.id === sel}</i>{/each}
+`, 'L.mesa')
+    expect(tree.children[0].lifts).toEqual([['$$runtime.get($$sig_sel)', '$$sel1']])
   })
 })

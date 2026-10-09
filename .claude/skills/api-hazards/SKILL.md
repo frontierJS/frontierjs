@@ -83,6 +83,7 @@ Detail: `references/auth-and-the-principal.md`
 - **`IAuth.sessionFor(userId)` is how a principal is rebuilt without a credential**
 - **A bearer token is the credentials list's last entry: `verifySession`, then `verifyApiKey` when that answers null**
 - **`bearerClaim` refuses a presented token that does not work (401); no token stays anonymous**
+- **`bearerClaim` refuses a session beside a grant (400), BEFORE the grant is read** — a dead token beside a session is the same 400, so the request's shape is not an oracle for which tokens exist. A store whose signed-in shoppers still send the basket header states `session: 'merge'` or every one of them is refused (`FJS-D832`).
 
 ## Jobs and the clock
 Detail: `references/jobs-and-the-clock.md`

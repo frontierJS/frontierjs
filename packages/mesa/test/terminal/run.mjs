@@ -100,6 +100,48 @@ function makeT(rows, tmp) {
     type:  async (text) => { await need().setup.mockInput.typeText(text); await settle() },
     tab:   async (modifiers) => { need().setup.mockInput.pressTab(modifiers); await settle() },
     enter: async () => { need().setup.mockInput.pressEnter(); await settle() },
+    /** A left press and release on the first cell of `text` in the current frame. */
+    click: async (text) => {
+      const { x, y } = await t.at(text)
+      await need().setup.mockMouse.click(x, y)
+      await settle()
+    },
+    /** The pointer moved onto the first cell of `text`, no button held. */
+    hover: async (text) => {
+      const { x, y } = await t.at(text)
+      await need().setup.mockMouse.moveTo(x, y)
+      await settle()
+    },
+    /** A wheel turn over the first cell of `text`. */
+    wheel: async (text, direction = 'down') => {
+      const { x, y } = await t.at(text)
+      await need().setup.mockMouse.scroll(x, y, direction)
+      await settle()
+    },
+    /** A left press on the first cell of `from`, moved onto `to`, released there. */
+    drag: async (from, to) => {
+      const a = await t.at(from)
+      const b = await t.at(to)
+      await need().setup.mockMouse.drag(a.x, a.y, b.x, b.y)
+      await settle()
+    },
+    /** The cell attributes (`TextAttributes` bits) of the first cell of `text`. */
+    attributesAt: async (text) => {
+      const { x, y } = await t.at(text)
+      let col = 0
+      for (const span of need().setup.captureSpans().lines[y].spans) {
+        if (x < col + span.width) return span.attributes
+        col += span.width
+      }
+      return 0
+    },
+    /** Where `text` first appears in the frame, as cell coordinates. */
+    at: async (text) => {
+      const lines = (await t.frame()).split('\n')
+      const y = lines.findIndex((l) => l.includes(text))
+      if (y < 0) throw new Error(`${JSON.stringify(text)} is not in the frame`)
+      return { x: lines[y].indexOf(text), y }
+    },
     /** Flush Mesa and paint, for a state change made without a key. */
     settle,
 

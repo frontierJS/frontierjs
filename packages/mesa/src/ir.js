@@ -26,7 +26,7 @@
 import {
   rewriteExpr, rewriteTextResult, extractKeywords, parseModifiers, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, routeSlots, componentAttributes, styleSource, classSource,
-  bindSetter, snippetParam, parseRenderTag,
+  bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -76,9 +76,12 @@ function styleValue(ctx, p, prop) {
 /** An element's attributes by what each is. `ref` is `bind:this`'s setter
  *  and `attachments` the `{@attach}` expressions, both handed the target's own
  *  node — a DOM element or a terminal renderable. An attachment may write
- *  state through a callback in its options, so it is lowered as a write. */
+ *  state through a callback in its options, so it is lowered as a write.
+ *  `binds` holds a plain `bind:value`, `{ name, getter, setter }` from
+ *  `elementBindTarget`; any other element `bind:`, and one with a modifier,
+ *  stays a directive for a target to refuse by name. */
 function lowerAttributes(ctx, n) {
-  const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = []
+  const attrs = [], handlers = [], directives = [], styles = [], classes = [], attachments = [], binds = []
   let ref = null
   for (const p of n.attributes) {
     let name = p.name
@@ -117,6 +120,11 @@ function lowerAttributes(ctx, n) {
       classes.push({ name: cls, expr: read(ctx, classSource(p, cls)), loc })
       continue
     }
+    if (name === 'bind:value' || name === ':value') {
+      const target = elementBindTarget(ctx, 'value', p.value ? unwrapExp(p.value) : 'value')
+      if (target) binds.push({ name: 'value', ...target, loc })
+      continue
+    }
     if (name === 'this' || name[0] === ':' || DIRECTIVE_PREFIXES.some((pre) => name.startsWith(pre))) {
       directives.push({ name, raw, loc })
       continue
@@ -131,7 +139,7 @@ function lowerAttributes(ctx, n) {
     }
     attrs.push({ name, value: p.type === 'attribute' ? true : p.value })
   }
-  return { attrs, handlers, directives, styles, classes, ref, attachments }
+  return { attrs, handlers, directives, styles, classes, ref, attachments, binds }
 }
 
 // ─── components and slots ─────────────────────────────────────────────────────
@@ -294,6 +302,15 @@ function unlowered(ctx, what, node) {
   return { kind: 'unlowered', what, loc: ctx.posOf(node.start), node }
 }
 
+/** `{@const}`: `lines` are the statements that declare it, the DOM path's
+ *  own, and its names read through them until the block closes. A malformed
+ *  one is reported and lowers to nothing, as it emits nothing on the DOM. */
+function lowerConst(ctx, n) {
+  const decl = constDeclaration(ctx, n.value)
+  if (decl.error) { ctx.analysis?.errors.push(decl.error); return null }
+  return { kind: 'const', loc: ctx.posOf(n.start), names: decl.names, value: expr(ctx, decl.value, decl.code), lines: decl.lines }
+}
+
 function lowerText(ctx, n) {
   const loc = ctx.posOf(n.start)
   if (!n.value.includes('{')) return { kind: 'text', parts: [{ kind: 'static', value: n.value }], static: true }
@@ -350,6 +367,9 @@ function lowerEach(ctx, n) {
     item: isDestructure ? { pattern: destructurePattern, names: patNames, fn: frame.patFn } : { name: itemName },
     index: indexName,
     key,
+    // A row's `x === outer` is read through `$$selN(x)`, which the target
+    // declares beside the block as the DOM path does: `[outer code, name]`.
+    lifts: frame.lift ? [...frame.lift.names] : [],
     children,
     else: n.elseBlock ? lowerChildren(ctx, n.elseBlock) : null,
   }
@@ -361,19 +381,14 @@ function lowerEach(ctx, n) {
  */
 function lowerDynamicElement(ctx, n) {
   const at = n.attributes.find((a) => a.name === 'this')
-  const { attrs, handlers, directives, styles, classes, ref, attachments } = lowerAttributes(ctx, n)
+  const lowered = lowerAttributes(ctx, n)
   const tag = !at ? null : at.type === 'exp' ? read(ctx, unwrapExp(at.value)) : expr(ctx, at.value, JSON.stringify(at.value))
   return {
     kind: 'dynamic-element',
     tag,
     loc: ctx.posOf(n.start),
-    attrs,
-    handlers,
-    directives: directives.filter((d) => d.name !== 'this'),
-    styles,
-    classes,
-    ref,
-    attachments,
+    ...lowered,
+    directives: lowered.directives.filter((d) => d.name !== 'this'),
     children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
   }
 }
@@ -399,25 +414,19 @@ function lowerNode(ctx, n) {
       if (n.name === 'component') return unlowered(ctx, 'component', n)
       if (/^[A-Z]/.test(n.name)) return lowerComponent(ctx, n)
       if (n.name === 'slot') return lowerSlot(ctx, n)
-      const { attrs, handlers, directives, styles, classes, ref, attachments } = lowerAttributes(ctx, n)
       return {
         kind: 'element',
         tag: n.name,
         loc: ctx.posOf(n.start),
-        attrs,
-        handlers,
-        directives,
-        styles,
-        classes,
-        ref,
-        attachments,
-        children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? []),
+        ...lowerAttributes(ctx, n),
+        children: n.closedTag ? [] : lowerChildren(ctx, n.body ?? [], false),
         selfClosing: !!n.closedTag,
       }
     }
     case 'systag': {
       const tag = n.value.match(/^@([\w-]*)/)?.[1]
       if (tag === 'render') return lowerRender(ctx, n)
+      if (tag === 'const') return lowerConst(ctx, n)
       return unlowered(ctx, SYSTAGS[tag] ?? 'systag', n)
     }
     case 'snippet':
@@ -440,8 +449,13 @@ function lowerNode(ctx, n) {
  * through its accessor, which a prop or a variable of the same name keeps,
  * and a `{@render}` finds it in `_irSnippets`. Both are put back on the way
  * out, so a sibling body does not see them.
+ *
+ * A `{@const}` lives to the end of its BLOCK, the function a target builds
+ * the body in, and an element's children are built in its parent's: so an
+ * element passes `block` false and its consts close with the enclosing body.
  */
-function lowerChildren(ctx, body) {
+function lowerChildren(ctx, body, block = true) {
+  const closeConsts = block ? constScope(ctx) : null
   const names = body.filter((n) => n.type === 'snippet').map((n) => n.name)
   const outer = ctx._irSnippets
   const claimed = []
@@ -465,6 +479,7 @@ function lowerChildren(ctx, body) {
       ctx._irSnippets = outer
       for (const name of claimed) delete ctx.accessors[name]
     }
+    closeConsts?.()
   }
   return out
 }

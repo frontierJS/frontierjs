@@ -1,0 +1,23 @@
+<script>
+  let items = [{ id: 1, name: 'ann', size: [2, 3] }, { id: 2, name: 'bo', size: [4, 5] }]
+  let active = 0
+  let n = 2
+  let y = 'signal'
+  const x = 'outer'
+</script>
+
+<button on:click={() => active = (active + 1) % items.length}>next</button>
+<button on:click={() => n++}>more</button>
+{#each items as item, i (item.id)}
+  {@const isActive = i === active}
+  {@const [w, h] = item.size}
+  <p>{isActive ? '>' : ' '} {item.name} {w * h}</p>
+{/each}
+{#if n}
+  {@const x = n * 2}
+  {@const y = 'plain'}
+  <p>in {x} {y}</p>
+{/if}
+<p>out {x} {y}</p>
+<div>{@const z = n + 1}</div>
+<p>z {z}</p>

@@ -75,9 +75,17 @@ half of the same trap. On the junction side the `validated` stage, not `around`,
 is where the digest joins the payload: a `@guarded` column is absent from the
 client's schema and a digest added before validation is an unknown key.
 
-**Left open, in order.** `FJS-D664` (session + grant on one request) is unchanged
-and now has a stated sibling — two grants on one request, first-in-order is the
-trail's actor. `FJS-D548` / `FJS-1503` (the socket keeps the upgrade's cookie)
+**Later the same day, `FJS-D664` ruled as `FJS-D832`.** The owner took **C**:
+`bearerClaim({ session: 'refuse' | 'merge' })`, default refuse, and the
+refusal moved BEFORE the grant lookup so a request's shape says nothing about
+which tokens exist. The one surprise was in litestone: `actorType` already
+filed a merged principal as `user` while `actorId` named the link, so the
+precedence became operator, person, grant — one line in `audit-log.js`, one
+test. `example`'s basket states `merge`; `FJS-1987` closed on it.
+
+**Left open, in order.** `FJS-D664` is ruled (above); the three hand-written
+refusals (chatwoot, ela, sstime) retire on their re-drives. Two grants on one
+request was settled by `FJS-D819` — first-in-order is the trail's actor. `FJS-D548` / `FJS-1503` (the socket keeps the upgrade's cookie)
 is what every redeem-then-navigate page still hits; AGENTS.md says reload. The
 stressor copies this retires are not yet retired: chatwoot `visitor.ts`, ela and
 sstime `principal.ts`, notion/lago/jazzhr redeem routes and nullable digests —

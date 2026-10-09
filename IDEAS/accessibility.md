@@ -99,7 +99,7 @@ and pretending otherwise would be a check that fails open.
 
 ## Open questions
 
-- **Is `sierra` a reader or does the page-level kind go somewhere else?** A skip
+- ~~**Is `sierra` a reader or does the page-level kind go somewhere else?**~~ **Answered 2026-10-09 (`FJS-D836`): C — sierra emits the shell-level facts itself (`lang` on `<html>`, the skip link to `<main>`), and landmarks and heading order are asserted by the browser drive on rendered pages.** A skip
   link and a heading order are properties of a route's rendered output, and
   sierra already taps a prerendered route's reads to grade them against `@@gate`.
   The same tap could grade a page's landmarks. That may be a `fli check` rule
@@ -116,7 +116,7 @@ and pretending otherwise would be a check that fails open.
     heading order exist only in rendered output: A sees the prerendered routes
     and none of the SPA ones, and B reads source text that a layout chain and
     `{#if}` rearrange, so both would pass routes they never saw.
-- **What the kit is called and what one entry holds.** Coining a noun is a
+- ~~**What the kit is called and what one entry holds.**~~ **Answered 2026-10-09 (`FJS-D837`): A — `@frontierjs/toolbelt/aria`, keyed by the css `VOCAB` term; an entry is `{ role, requires: [relationships], tracks: { state: attribute } }`.** Coining a noun is a
   decision-rules matter and is deliberately not made here.
   - **A** — `@frontierjs/toolbelt/aria`, keyed by the css `VOCAB` term; an entry
     is `{ role, requires: [relationships], tracks: { state: attribute } }`.

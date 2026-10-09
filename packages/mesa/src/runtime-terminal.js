@@ -50,7 +50,65 @@ import { TERMINAL_TAGS, TERMINAL_EVENTS } from './terminal/tags.js'
 setRenderEnvironment(false, true)
 
 const core = await import('@opentui/core').catch(missingPeer('@opentui/core', 'the terminal target'))
-const { BoxRenderable, TextRenderable, InputRenderable, TextAttributes } = core
+const { BoxRenderable, TextRenderable, InputRenderable, TextareaRenderable, TextAttributes } = core
+
+/**
+ * `<textarea>`: the engine's multi-line field, given the half of its one-line
+ * subclass's contract it lacks — a `value`, and `input` and `change` emitted
+ * as `InputRenderable` emits them, so one `inputSource` reads both. The
+ * engine's own content event arrives a microtask after the edit and reads the
+ * text then, so two quick edits would report the second text twice; `input`
+ * here fires at the edit, from the two places a person edits: a key and a
+ * paste. Enter types a new line and emits no `enter`, so the field never
+ * submits its form.
+ */
+class FieldArea extends TextareaRenderable {
+  __committed = ''
+  get value() { return this.plainText }
+  set value(v) {
+    if (v === this.plainText) return
+    this.setText(v)
+    this.cursorOffset = v.length
+  }
+  handleKeyPress(key) { return this.#edited(() => super.handleKeyPress(key)) }
+  handlePaste(event) { this.#edited(() => super.handlePaste(event)) }
+  #edited(run) {
+    const before = this.plainText
+    const out = run()
+    if (this.plainText !== before) this.emit('input', this.plainText)
+    return out
+  }
+  focus() { super.focus(); this.__committed = this.plainText }
+  blur() {
+    if (!this.isDestroyed && this.plainText !== this.__committed) {
+      this.__committed = this.plainText
+      this.emit('change', this.plainText)
+    }
+    super.blur()
+  }
+}
+
+/**
+ * `<select>`: one row showing the chosen option's text, padded to the widest
+ * option so the row keeps its width as the choice moves, as a browser's does.
+ * The options are hidden children, built by the template like any others, so
+ * an `{#each}` of them needs nothing of its own. Which one is chosen is read
+ * off them (`chosen`) each frame, before layout, so options that arrive after
+ * the value are matched to it as they land (`FJS-1320`).
+ */
+class SelectBox extends BoxRenderable {
+  // What was last written as the value, or NONE once a person picks.
+  __wanted = NONE
+  __picked = null
+  onLifecyclePass = () => {
+    const all = options(this)
+    const width = Math.max(0, ...all.map((o) => optionLabel(o).length))
+    const pick = chosen(this)
+    set_text(this.__label, (pick ? optionLabel(pick) : '').padEnd(width) + ' \u25BE')
+  }
+}
+
+const NONE = Symbol('none')
 
 // ─── the current renderer ─────────────────────────────────────────────
 
@@ -63,7 +121,7 @@ function needRenderer(what) {
 
 // ─── attributes ───────────────────────────────────────────────────────
 
-const BITS = { bold: 'BOLD', italic: 'ITALIC', dim: 'DIM', underline: 'UNDERLINE' }
+const BITS = { bold: 'BOLD', italic: 'ITALIC', dim: 'DIM', underline: 'UNDERLINE', inverse: 'INVERSE' }
 
 function bitsOf(spec) {
   let bits = 0
@@ -141,6 +199,7 @@ export function element(tag, attrs = {}) {
         // flexBasis 0 is what makes the share equal: an auto basis starts each
         // cell at its content's width, and the columns drift row to row.
         ...(spec.cell && { flexGrow: 1, flexBasis: 0, paddingRight: 1 }),
+        ...(spec.hidden && { visible: false }),
       })
       break
     case 'rule':
@@ -154,16 +213,34 @@ export function element(tag, attrs = {}) {
       node.add(tail)
       node.__tail = tail
       // The frame has no other focus cue for a button: the brackets invert
-      // while it is focused, and the characters never change. `destroy` blurs
-      // a focused node after its children are already gone, so the blur
-      // listener must not write into a freed text buffer.
-      const cue = (bits) => { if (!open.isDestroyed) open.attributes = tail.attributes = bits }
-      node.on('focused', () => cue(TextAttributes.INVERSE))
-      node.on('blurred', () => cue(TextAttributes.NONE))
+      // while it is focused, and the characters never change.
+      focusCue(node, [open, tail])
       break
     }
+    case 'select': {
+      node = new SelectBox(r, { flexDirection: 'row', focusable: true })
+      const label = text('')
+      node.add(label)
+      // The options land before the label, where they take no room.
+      node.__tail = node.__label = label
+      focusCue(node, [label])
+      node.__keyAction = (name) => name === 'up' || name === 'down' ? step(node, name === 'up' ? -1 : 1) : false
+      Object.defineProperty(node, 'value', {
+        get: () => { const o = chosen(node); return o ? String(optionValue(o)) : '' },
+        configurable: true,
+      })
+      break
+    }
+    case 'image':
+      node = new BoxRenderable(r, { flexDirection: 'row', visible: false })
+      node.__label = text('')
+      node.add(node.__label)
+      break
     case 'input':
       node = new InputRenderable(r, {})
+      break
+    case 'textarea':
+      node = new FieldArea(r, {})
       break
     default:
       throw new Error(`[Mesa] <${tag}> has terminal role '${spec.role}', which this runtime does not build`)
@@ -171,11 +248,12 @@ export function element(tag, attrs = {}) {
   node.__tag = tag
   node.__bits = bits
   node.__attrs = {}
-  node.__canFocus = spec.role === 'button' || spec.role === 'input'
+  const field = spec.role === 'input' || spec.role === 'textarea'
+  node.__canFocus = spec.role === 'button' || spec.role === 'select' || field
   // A handler written for the DOM reads `e.target.name`, and the engine has
-  // no `name` of its own; `value` it already has on an input.
+  // no `name` of its own; `value` it already has on a field.
   Object.defineProperty(node, 'name', { get: () => node.__attrs.name, configurable: true })
-  if (spec.role === 'input') inputSource(node)
+  if (field) inputSource(node)
   if (spec.role === 'button') activatable(node)
   else if (node.__canFocus) focusSource(node)
   for (const name in attrs) set_attribute(node, name, attrs[name])
@@ -197,13 +275,25 @@ export function set_attribute(node, name, value) {
   const present = value != null && value !== false
   if (present) node.__attrs[name] = value
   else delete node.__attrs[name]
-  if (node instanceof InputRenderable) {
+  if (node instanceof TextareaRenderable) {
     if (name === 'value') {
       node.__muted = true
       try { node.value = present ? String(value) : '' } finally { node.__muted = false }
       return
     }
     if (name === 'placeholder') { node.placeholder = present ? String(value) : ''; return }
+  }
+  if (node instanceof SelectBox) {
+    if (name === 'multiple' && present) throw new Error('[Mesa] <select multiple> has no terminal lowering')
+    // The DOM path writes an absent value as `el.value = ''`, which chooses
+    // the option whose value is empty.
+    if (name === 'value') { node.__wanted = present ? value : ''; return }
+  }
+  if (name === 'alt' && node.__tag === 'img') {
+    const str = present ? String(value) : ''
+    set_text(node.__label, str)
+    node.visible = str !== ''
+    return
   }
   if (name === 'disabled') {
     // A disabled control takes no focus and no activation, and gives up the
@@ -261,6 +351,63 @@ export function marker() {
   return m
 }
 
+/** Invert `texts` while `node` holds focus. `destroy` blurs a focused node
+ *  after its children are already gone, so the blur listener must not write
+ *  into a freed text buffer. */
+function focusCue(node, texts) {
+  const cue = (bits) => { for (const t of texts) if (!t.isDestroyed) t.attributes = bits }
+  node.on('focused', () => cue(TextAttributes.INVERSE))
+  node.on('blurred', () => cue(TextAttributes.NONE))
+}
+
+// ─── options ──────────────────────────────────────────────────────────
+
+const options = (select) => descendants(select, (n) => n.__tag === 'option')
+
+/** An option's text as a browser reads it: its `label`, else its text with
+ *  the whitespace collapsed. */
+function optionLabel(o) {
+  if (o.__attrs.label != null) return String(o.__attrs.label)
+  return descendants(o, (n) => n instanceof TextRenderable)
+    .map((t) => t.plainText).join('').replace(/\s+/g, ' ').trim()
+}
+
+/** The value an option stands for, unstringified, so `<option value={obj}>`
+ *  binds the object as the DOM path's `__value` does. A bare `value` is ''. */
+function optionValue(o) {
+  if (!('value' in o.__attrs)) return optionLabel(o)
+  return o.__attrs.value === true ? '' : o.__attrs.value
+}
+
+/**
+ * The option a select holds, by the DOM path's rule. A written value chooses
+ * the option equal to it, and none when no option is: strictly, except that
+ * a string also matches an option's value as a string, as `el.value = v`
+ * does. With nothing written, a person's pick, then the last option marked
+ * `selected`, then the first that is not disabled.
+ */
+function chosen(select) {
+  const all = options(select)
+  const v = select.__wanted
+  if (v !== NONE) return all.find((o) => optionValue(o) === v || (typeof v === 'string' && String(optionValue(o)) === v)) ?? null
+  if (select.__picked && all.includes(select.__picked)) return select.__picked
+  return all.findLast((o) => 'selected' in o.__attrs) ?? all.find((o) => !disabled(o)) ?? null
+}
+
+/** Up or Down on a select: the next option that is not disabled, as a
+ *  browser's closed select moves, firing `input` then `change`. Never wraps. */
+function step(select, by) {
+  const all = options(select).filter((o) => !disabled(o))
+  const now = chosen(select)
+  const next = now ? all[all.indexOf(now) + by] : all[0]
+  if (!next || next === now) return true
+  select.__wanted = NONE
+  select.__picked = next
+  dispatch(select, 'input')
+  dispatch(select, 'change')
+  return true
+}
+
 // ─── events ───────────────────────────────────────────────────────────
 
 /** What a DOM-written handler reads off `e.key`, from the engine's key name. */
@@ -295,6 +442,8 @@ export function on(node, event, handler, { capture = false, once = false } = {})
   if (!handler) return
   ;((node.__listeners ??= {})[event] ??= []).push({ fn: handler, capture, once })
   if (event === 'click') activatable(node)
+  if (event === 'mousedown') pressSource(node)
+  if (event === 'mousemove') moveSource(node)
 }
 
 function fire(node, e, phase) {
@@ -358,7 +507,8 @@ function focusSource(node) {
     const fields = keyFields(k)
     if (dispatch(node, 'keydown', fields).defaultPrevented) { k.preventDefault(); return }
     if (types(fields) && dispatch(node, 'keypress', fields).defaultPrevented) { k.preventDefault(); return }
-    if (!node.__activatable || node instanceof InputRenderable || !ACTIVATE_KEYS.has(k.name)) return
+    if (node.__keyAction?.(k.name)) { k.preventDefault(); return }
+    if (!node.__activatable || node instanceof TextareaRenderable || !ACTIVATE_KEYS.has(k.name)) return
     k.preventDefault()
     activate(node, fields)
   }
@@ -375,11 +525,50 @@ function activatable(node) {
   node.__canFocus = true
   node.focusable = !disabled(node)
   focusSource(node)
+  pressSource(node)
+}
+
+/** A press, from a node that fires `click` or that something listens to
+ *  `mousedown` on: `mousedown` at the element under the pointer, then `click`
+ *  at the nearest activatable node above it. Preventing `mousedown` keeps the
+ *  engine from focusing the pressed node, its default in a browser too, and
+ *  the `click` still fires. */
+function pressSource(node) {
+  if (node.__pressSource) return
+  node.__pressSource = true
   node.onMouseDown = (e) => {
-    // The engine bubbles a press through every ancestor's slot; `dispatch`
-    // carries the click up instead, so an activatable ancestor hears it once.
-    e.stopPropagation()
-    activate(node, { button: 0, raw: e })
+    const { target, fields } = pointer(node, e)
+    if (dispatch(target, 'mousedown', fields).defaultPrevented) e.preventDefault()
+    for (let n = target; n; n = n.parent) if (n.__activatable) { activate(n, fields); return }
+  }
+}
+
+/** `mousemove` at the element under the pointer, from a node something
+ *  listens to it on. Only a move with no button held: the engine sends a drag
+ *  to the node the press began on rather than the one under the pointer, so a
+ *  drag sends none. */
+function moveSource(node) {
+  if (node.__moveSource) return
+  node.__moveSource = true
+  node.onMouseMove = (e) => {
+    const { target, fields } = pointer(node, e)
+    dispatch(target, 'mousemove', fields)
+  }
+}
+
+/** The element a mouse event happened to, and its DOM fields. The engine
+ *  sends one event through every ancestor's slot, and the first slot delivers
+ *  for the whole path, so an ancestor that listens hears it once. */
+function pointer(node, e) {
+  e.stopPropagation()
+  let target = e.target
+  while (target && !target.__tag) target = target.parent
+  return {
+    target: target ?? node,
+    fields: {
+      button: e.button ?? 0, shiftKey: !!e.modifiers?.shift, ctrlKey: !!e.modifiers?.ctrl,
+      altKey: !!e.modifiers?.alt, metaKey: false, raw: e,
+    },
   }
 }
 
@@ -418,16 +607,43 @@ function inputSource(node) {
 /**
  * Enter in a single-line field submits its form by HTML's rule: through the
  * form's first submit button when it has one, which a disabled button blocks,
- * and otherwise only when the field is the form's one field. A `<textarea>`
- * never submits, since Enter there is a new line.
+ * and otherwise only when the field is the form's one field.
  */
 function implicitSubmit(field) {
-  if (field.__tag !== 'input') return
   const form = formOf(field)
   if (!form) return
   const [button] = descendants(form, (n) => n.__tag === 'button' && submits(n))
   if (button) { activate(button, {}); return }
   if (descendants(form, (n) => n.__tag === 'input').length === 1) dispatch(form, 'submit', { submitter: null })
+}
+
+/**
+ * `bind:value` on a control: `get` written as the value from an effect, and
+ * the control's value handed to `set` on each `input` and `change`, as the
+ * DOM path's `bindInput` does. A select's value is its chosen option's,
+ * unstringified, or null when none is; a bound value no option equals
+ * chooses none. A number or range input reads back a number, and `undefined`
+ * for an empty or half-typed box (`FJS-857`).
+ */
+export function bind(node, name, get, set) {
+  if (name !== 'value' || !(node instanceof SelectBox || node instanceof TextareaRenderable)) {
+    throw new Error(`[Mesa] bind:${name} on <${node.__tag}> has no terminal lowering`)
+  }
+  const read = () => {
+    if (node instanceof SelectBox) { const o = chosen(node); return o ? optionValue(o) : null }
+    const type = node.__attrs.type
+    if (type !== 'number' && type !== 'range') return node.value
+    const n = Number(node.value)
+    return node.value.trim() === '' || Number.isNaN(n) ? undefined : n
+  }
+  const handler = () => set(read())
+  on(node, 'input', handler)
+  on(node, 'change', handler)
+  createEffect(() => {
+    const v = get()
+    if (node instanceof SelectBox) node.__wanted = v
+    else set_attribute(node, 'value', v ?? '')
+  })
 }
 
 // ─── blocks ───────────────────────────────────────────────────────────

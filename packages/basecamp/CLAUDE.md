@@ -128,7 +128,13 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           message is a detached `claude -p` with permissions bypassed, writing
           its own log under WORKBENCH_DIR (~/.config/basecamp/workbench), so a
           `bun --watch` restart neither kills a run nor loses its status. Not in
-          the database — a pin is a folder on this machine. verify:provision
+          the database — a pin is a folder on this machine. A run ending with
+          nothing queued starts the checkout's OWN `fli done` as its own process
+          (core/workbench-check.ts, only where the checkout carries done.js) and,
+          where the pin asks, a read-only reviewer; each is stamped with when it
+          started and hidden once a newer message is sent. core/workbench-diff.ts
+          is the diff panel — the TREE against HEAD, so another session's edits
+          show there too. verify:provision
           drives it against a stand-in claude (CLAUDE_BIN). Never an agent's
           or a key's: `NOT_FOR_AGENTS` and `OFF_LIMITS` in
           services/api-keys/scopes.ts, proved by verify:mcp

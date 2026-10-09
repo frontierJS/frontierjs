@@ -589,7 +589,7 @@ describe('a grant is minted by the caller and a link redeemed for the cookie', (
 // rule admitted — an agent of one org opened a thread in their inbox naming
 // another org's contact, which naming by hand is a 422 (`FJS-1987`). The
 // default refuses; an app whose signed-in callers still hold a grant says so
-// (`FJS-D831`).
+// (`FJS-D832`).
 describe('a session beside a grant', () => {
   const SESSION = { auth: { user: { userId: 'u1', id: 'u1', role: 'user' } as never } }
 

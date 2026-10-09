@@ -371,16 +371,16 @@ describe('api-keys', () => {
 
 // ─── registration ─────────────────────────────────────────────────────────
 
-// ─── a scoped key ─────────────────────────────────────────────────────────
+// ─── an API key ───────────────────────────────────────────────────────────
 //
-// A scope list narrows a key at the app's own checks, and nothing here reads
-// one — so without a refusal a key scoped to `search` minted an unscoped key,
-// listed and revoked every session and revoked its owner's other keys
-// (`FJS-1446`). The same requests from a session and from an unscoped key are
-// asserted beside each refusal, because a guard that refused everybody would
-// look identical from the refused side (`FJS-351`).
+// Managing credentials takes a session (`FJS-D615`). A key that reached these
+// services minted another key, listed and revoked every session and revoked
+// its owner's other keys (`FJS-1446`), so revoking a leaked key did not
+// contain it. Scoped and unscoped are refused alike; the same request from a
+// session is asserted beside each refusal, because a guard that refused
+// everybody would look identical from the refused side (`FJS-351`).
 
-describe('a scoped key reaches none of the credential services', () => {
+describe('an API key reaches none of the credential services', () => {
   const email = 'scoped@example.com'
   let session: string
   let scoped:  string
@@ -397,34 +397,40 @@ describe('a scoped key reaches none of the credential services', () => {
     const res = await request(app).get('/account/me').auth(scoped)
     expect(res.status).toBe(200)
     expect((res.body as any).scopes).toEqual(['search'])
+    expect((await request(app).get('/account/me').auth(whole)).status).toBe(200)
   })
 
   test('it cannot mint a key, scoped or not', async () => {
-    expect((await request(app).post('/api-keys').auth(scoped).send({ name: 'escape' })).status).toBe(403)
-    expect((await request(app).post('/api-keys').auth(scoped).send({ name: 'same', scopes: ['search'] })).status).toBe(403)
-    expect((await request(app).post('/api-keys').auth(whole).send({ name: 'fine' })).status).toBe(201)
+    for (const key of [scoped, whole]) {
+      expect((await request(app).post('/api-keys').auth(key).send({ name: 'escape' })).status).toBe(403)
+      expect((await request(app).post('/api-keys').auth(key).send({ name: 'same', scopes: ['search'] })).status).toBe(403)
+    }
+    expect((await request(app).post('/api-keys').auth(session).send({ name: 'fine' })).status).toBe(201)
   })
 
   test('it cannot list or revoke sessions, and its owner stays signed in', async () => {
-    expect((await request(app).get('/sessions').auth(scoped)).status).toBe(403)
-    const res = await request(app).post('/sessions').set('x-service-method', 'revokeOthers').auth(scoped).send({})
-    expect(res.status).toBe(403)
+    for (const key of [scoped, whole]) {
+      expect((await request(app).get('/sessions').auth(key)).status).toBe(403)
+      const res = await request(app).post('/sessions').set('x-service-method', 'revokeOthers').auth(key).send({})
+      expect(res.status).toBe(403)
+    }
     expect((await request(app).get('/account/me').auth(session)).status).toBe(200)
-    expect((await request(app).get('/sessions').auth(whole)).status).toBe(200)
+    expect((await request(app).get('/sessions').auth(session)).status).toBe(200)
   })
 
   test('it cannot list or revoke keys, connections or the second factor', async () => {
     const list = await request(app).get('/api-keys').auth(session)
     const id   = (list.body as any).data.find((k: any) => k.name === 'whole').id
 
-    expect((await request(app).get('/api-keys').auth(scoped)).status).toBe(403)
-    expect((await request(app).delete(`/api-keys/${id}`).auth(scoped)).status).toBe(403)
+    for (const key of [scoped, whole]) {
+      expect((await request(app).get('/api-keys').auth(key)).status).toBe(403)
+      expect((await request(app).delete(`/api-keys/${id}`).auth(key)).status).toBe(403)
+      expect((await request(app).get('/connections').auth(key)).status).toBe(403)
+      expect((await request(app).delete('/connections/github').auth(key)).status).toBe(403)
+      expect((await request(app).post('/account').set('x-service-method', 'confirmTotp').auth(key).send({ code: '000000' })).status).toBe(403)
+    }
     expect((await request(app).get('/account/me').auth(whole)).status).toBe(200)
-
-    expect((await request(app).get('/connections').auth(scoped)).status).toBe(403)
-    expect((await request(app).delete('/connections/github').auth(scoped)).status).toBe(403)
-    expect((await request(app).post('/account').set('x-service-method', 'confirmTotp').auth(scoped).send({ code: '000000' })).status).toBe(403)
-    expect((await request(app).get('/connections').auth(whole)).status).toBe(200)
+    expect((await request(app).get('/connections').auth(session)).status).toBe(200)
   })
 })
 

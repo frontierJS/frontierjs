@@ -1,0 +1,56 @@
+<script>
+  let heard = '-'
+  let changed = '-'
+  let inputs = 0
+  let state = 'progress'
+  let states = []
+  const STATES = [
+    { value: 'backlog', label: 'Backlog' },
+    { value: 'progress', label: 'In Progress' },
+    { value: 'done', label: 'Done' },
+  ]
+  const load = () => { states = STATES }
+  const reset = () => { state = 'backlog' }
+  const ALPHA = { id: 'a1' }
+  const BETA = { id: 'b2' }
+  let obj = BETA
+  let none = null
+  let city = ''
+  let qty = 2
+  let num = '2'
+  let spaced = ' wide   gap '
+</script>
+
+<p>heard {heard} changed {changed} inputs {inputs}</p>
+<p>state {state} obj {obj?.id} kind {typeof qty} qty {qty} city {city}</p>
+<input name="city" list="cities" bind:value={city} />
+<datalist id="cities">
+  Suggested:
+  <option value="Paris"></option>
+  <option>Rome</option>
+</datalist>
+<select name="size" on:input={(e) => { inputs++; heard = e.target.value }}
+        on:change={(e) => { changed = e.target.value }}>
+  <option value="s">Small</option>
+  <option value="m" disabled>Medium</option>
+  <option value="l" selected>Large</option>
+  <optgroup label="Odd">
+    <option value="xl">Extra   large</option>
+  </optgroup>
+</select>
+<select bind:value={state}>
+  {#each states as s (s.value)}
+    <option value={s.value}>{s.label}</option>
+  {/each}
+</select>
+<button type="button" on:click={load}>Load</button>
+<button type="button" on:click={reset}>Reset</button>
+<select bind:value={obj}>
+  <option value={ALPHA}>Alpha</option>
+  <option value={BETA}>Beta</option>
+</select>
+<p>bound null: <select bind:value={none}><option value="">Pick one</option><option value="x">Ex</option></select></p>
+<p>one-way null: <select value={null}><option value="">Pick two</option><option value="y">Why</option></select></p>
+<input type="number" bind:value={qty} />
+<select bind:value={num}>{#each [1, 2] as n}<option value={n}>N{n}</option>{/each}</select>
+<select><option>{spaced}</option></select>

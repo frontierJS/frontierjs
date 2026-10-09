@@ -4306,6 +4306,30 @@ let sel = 0</script>
     expect(out).not.toContain('isActive is not defined')
   })
 
+  // FJS-2273: the memo's name stayed registered past the block that declared
+  // it, so a same-named read after an {#if} called a function not in scope
+  // there and rendered blank; and a const that read no state was shadowed BY
+  // the outer signal of the same name.
+  describe('scope', () => {
+    let runtime
+    beforeEach(async () => { runtime = await import('../src/runtime.js') })
+
+    it('ends with its block, and a plain value shadows an outer signal', async () => {
+      const fn = await compileAndExec(`
+<script>
+let n = 2
+let y = 'signal'
+const x = 'outer'
+</script>
+{#if n}{@const x = n * 2}{@const y = 'plain'}<p id="in">{x} {y}</p>{/if}
+<p id="out">{x} {y}</p>`, runtime)
+      const app = mount(fn, runtime)
+      expect(app.find('#in').textContent).toBe('4 plain')
+      expect(app.find('#out').textContent).toBe('outer signal')
+      app.destroy()
+    })
+  })
+
   it('error on missing = in @const', async () => {
     const ctx = await compile(
       `{#each [1] as x}{@const bad}{/each}`,

@@ -1,0 +1,14 @@
+<script>
+  let name = 'ada'
+</script>
+
+<p>top</p>
+<img src="logo.png" alt="the logo" />
+<p>before</p>
+<img src="spacer.gif" alt="" />
+<p>after</p>
+<img src="me.png" alt={name} on:error={() => name = 'failed'} />
+<p>next</p>
+<span aria-hidden="true"><img src="icon.svg" /></span>
+<span>a <mark>hit</mark> here</span>
+<button on:click={() => name = name ? '' : 'bo'}>swap</button>

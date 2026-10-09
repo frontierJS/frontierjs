@@ -524,8 +524,10 @@ does the same for that parent, down the chain. Relation cycles (self-references,
 them, and the error states both cures.
 
 A nullable key the schema still insists on gets a parent too: the first column of
-an `@@arc([a, b])` (the other stays null, so exactly one is set), and a key under
-`@required(where:)`. A composite relation — `@relation(fields: [projectId, teamId],
+an `@@arc([a, b])` (the other stays null, so exactly one is set), a key under
+`@required(where:)`, and the first key of a `@@check("a IS NOT NULL OR b IS NOT
+NULL")` whose every branch names a key. A branch on a scalar is filled instead, and
+no parent is built. `verifyGateLadder`'s create row reads the same set. A composite relation — `@relation(fields: [projectId, teamId],
 references: [id, teamId])` — fills every column of its key from the one parent, and
 a single-column relation over one of those columns (`team` beside `project`) is not
 wired separately, because it would point the column at a second, unrelated row.

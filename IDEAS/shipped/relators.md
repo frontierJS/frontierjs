@@ -453,7 +453,7 @@ because the argument is what the record cites.
     ship with no true positive to point at, and a rule whose first firing is
     hypothetical is one nobody trusts when it finally fires.
 
-- **Still open — is `Payslip` a relator with a key over two of three relata, or a
+- ~~****Still open — is `Payslip` a relator with a key over two of three relata, or a**~~ **Answered 2026-10-09 (`FJS-D833`): B — A document the run owns: no `@@relator`, the `@@unique([payRunId, employeeId])` stays, and the copies and `@immutable` figures are what say it records a relationship rather than being one.**
   document that records one?** It copies `periodStart`/`periodEnd` off the run, which by
   § 2's tell argues document; its key argues class 2 with the run as the
   discriminator. Both emit identical DDL. Whichever way it resolves is the

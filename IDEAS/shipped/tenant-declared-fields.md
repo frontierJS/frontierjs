@@ -359,7 +359,7 @@ test passes with the promotion silently not happening. The assertion is the
 
 ## Open questions
 
-- **Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`)**
+- ~~**Q1 — does `@@extensible` take `FJS-D365`'s `scope:`, so a declaration is keyed per PARENT ROW as well as per tenant? (`FJS-D592`)**~~ **Answered 2026-10-09 (`FJS-D592`): B — `@@extensible(column, declaredBy: Model, scope: field)`, `field` a foreign key on the extended model whose twin is on the declarer. The key is unique on `[scope, key]` (and the tenant, under row tenancy), and the pool is per scope row, the way FJS-1290 made it per tenant. Allocation, the mirror, the filter rewrite and `$declaredFields` read the scope off the row, the payload or the where; a where that pins no scope is refused. A write that changes the scope column re-mirrors the row against the new scope's declarations.**
   Measured in the notion stressor (PLAN § Q6, 2026-10-05; `FJS-1758`). A
   Notion database is a row whose columns its users declare, and one workspace
   holds fifty of them. The declarer that says so, unique on

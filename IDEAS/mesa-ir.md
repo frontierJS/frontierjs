@@ -652,6 +652,272 @@ with the terminal backend as its second consumer, not ahead of it.
    `ir.test.js`. *Ergonomics vs. strictness* decides `class:` by cost, as it
    decided `style:`; none is in tension for `keypress` or the unset handler,
    both of which follow the DOM path. Tier: Assessment.
+   *Twelfth slice 2026-10-09, `on:mousedown`, `on:scroll` and a field's
+   text:* `mousedown` joins `TERMINAL_EVENTS` and bubbles. The engine sends a
+   press through every ancestor's slot and then, unless the event was
+   prevented, focuses the nearest focusable node above the one pressed
+   (`dispatchMouseEvent`, measured in 0.5.17). So `pressSource`, which a
+   `mousedown` listener and every activatable node now share, is the one
+   reader: the first slot reached stops the engine's walk, dispatches
+   `mousedown` at the nearest element under the pointer, hands a prevention
+   on to the engine event, and then activates the nearest activatable node
+   above, so the `click` still fires as in a browser. That is the kit's
+   show-password `holdFocus`. `scroll` is in the table, does not bubble, and
+   is never sent: no terminal node scrolls, so a handler waits as it would
+   on a page whose element never overflows. `CodeInput`'s `syncScroll`
+   already returns without its `aria-hidden` paint layer, which the terminal
+   leaves out. On the way, a crash that the compile-time report could not
+   see: a `<textarea>` with child text aborted the process
+   (`Nodes with measure functions cannot have children`), and the kit's
+   `Textarea` and `CodeInput` both write `>{value}</textarea>` beside
+   `value=`. A field's text is now its value and never a child. Static text
+   is the starting value, which a `value=` overwrites, as the property
+   does. Live text with no `value=` is refused by name, since a browser
+   moves it into the field only until someone types. Probing that found
+   `FJS-2266`: the engine's `InputRenderable` is one line and strips
+   newlines, so a terminal `<textarea>` joins its lines. That is filed, not
+   fixed here. Proved by `specs/press.spec.mjs` (`Press.mesa`), 7/7, driven
+   by the harness's new `t.click(text)` and `t.wheel(text)`, which press a
+   cell found in the frame, and by the refusal case in
+   `terminal-emit.test.js`. Breaks: not handing the prevention on fails 2
+   of 7, not wiring a `mousedown` listener's source 1, not stopping the
+   engine's walk 3, not walking the target up to an element 2, and emitting
+   a field's children aborts the drive. Two breaks passed green and were
+   cut rather than kept: a guard skipping static text beside `value=`
+   changed nothing, since the live `value` writes over it, and dropping the
+   first newline was invisible on a field that strips every newline. The
+   corpus stayed identical apart from sources edited since the baseline.
+   Report: 274 of 533 (51%), ui 50 of 135. `example`'s routes stay at 1.
+   Five stop at `<datalist>` (`Input.mesa:289`), and the rest at `<select>`,
+   `<mesa:window>`, `<img>` and resource components with no import.
+   *The nine, decided before the first edit for the two events and
+   mid-slice for the field's text, written after:* (1) origin: none new.
+   Press handling had one owner per activatable node, and now has one for
+   any node. (2) concept: none. (3) complexity: the problem's. (4)
+   predictability: a `mousedown` handler written for the browser prevents
+   the same default here. One order differs and was already there: the
+   `click` fires on the press and the engine's focus move comes after it,
+   where a browser focuses on the press and clicks on the release. (5)
+   derived: the event table, read by both compiler and runtime. (6) owner:
+   the engine owns focus-on-press, and Mesa only forwards the prevention.
+   Moving focus itself would be a second copy of `autoFocus`. (7) boundary:
+   `isField` in `emit.js` is the one test of a field's text. (8) failure: a
+   `scroll` handler is accepted and silent, and that is true only while no
+   role scrolls. Live text in a field is refused by name rather than
+   written over typing. (9) must stay true: a prevented press keeps focus,
+   and the click still fires. A role that scrolls must send `scroll`. A
+   field takes no child. What fails: `press.spec`, the refusal case. That a
+   scrolling role sends `scroll` is asserted by nothing until one exists
+   (`none`). *Ergonomics vs. strictness* decides `scroll`, as it decided
+   `class:`. None is in tension for the press or a field's text, both of
+   which follow HTML. Tier: Assessment.
+   *`FJS-2266` 2026-10-09, a `<textarea>` of many lines:* `textarea` is a
+   role of its own, built on `FieldArea`, a subclass in `runtime-terminal.js`
+   of the engine's `TextareaRenderable`, the multi-line class its one-line
+   `InputRenderable` extends. It adds the half of that subclass's contract the
+   base lacks: a `value` (a write moves the cursor to the end and an equal
+   write is skipped, so a handler writing the value back on each key leaves
+   the cursor where the person was typing), and `input` and `change` emitted
+   under the engine's own names, so one `inputSource` reads both fields.
+   `input` is raised from `handleKeyPress` and `handlePaste`, the two places a
+   person edits, when the text moved. The engine's `content-changed` was
+   measured and refused: it arrives a microtask after the edit and reads the
+   text then, so Enter then `y` reported `x\nya` twice. Enter types a new
+   line and emits no `enter`, so `implicitSubmit` lost its `__tag` guard, and
+   a field never activates on Enter or Space even when a `click` listener
+   made it activatable. The emitter drops the newline after the open tag, as
+   HTML does. Height is the line count; `rows` paints nothing. Proved by
+   `specs/textarea.spec.mjs` (`Area.mesa`), 9/9. Breaks: the role reverted
+   fails 7, no `input` at the edit 3, Enter activating a field 3,
+   `set_attribute` not reaching the field 5, the cursor left at the start 2,
+   and the open-tag newline kept, no `change` on leaving and the equal-write
+   guard removed 1 each. The kit's `Textarea` paints `value="one\ntwo"` on
+   two rows (`bun run tui --frame`). The corpus moved only sources edited
+   since the baseline. Report: 275 of 534, the one new file the fixture.
+   *The nine, decided before the first edit except the event source, which
+   the probe decided, and written after:* (1) origin: none new; `FieldArea` keeps the engine's
+   event names so the source has one reader. (2) concept: none; `textarea` is
+   a row in the role table. (3) complexity: the problem's. (4)
+   predictability: Enter, `value`, `input` and `change` behave as a
+   browser's textarea; a program write fires nothing. (5) derived: the role
+   from the table, read by emitter and runtime. (6) owner: `set_attribute`
+   for `value`, `inputSource` for the events. (7) boundary:
+   `instanceof TextareaRenderable` is the one test of a field in the
+   runtime, `isField` in the emitter. (8) failure: `rows` and `cols` are
+   inert, as `style` is. (9) must stay true: a textarea's value keeps its
+   newlines and Enter never submits. What fails: `textarea.spec`. None of §
+   IV is in tension. Tier: Assessment.
+   *Slice 13 2026-10-09, `<select>`, `<option>`, `<optgroup>`, `<datalist>`
+   and an element's `bind:value`:* the kit's `Input` stopped only at its
+   `<datalist>`, and its `Select` needed all four, so they land together.
+   `<datalist>`, `<option>` and `<optgroup>` are boxes marked `hidden` in
+   the table, never laid out, as a browser never paints them; a datalist's
+   suggestions are not offered, and `list=` is inert. `<select>` is a role:
+   `SelectBox` in `runtime-terminal.js`, one row showing the chosen option's
+   text padded to the widest option, focusable, inverted while focused. Its
+   options are hidden children the template builds as any others, so an
+   `{#each}` of them needs nothing new. Which option is chosen is derived,
+   never stored: `chosen()` reads the children by the DOM path's rule (a
+   written value picks the equal option, strictly, or a string matching a
+   value's string as `el.value = v` does, and none when nothing equals it;
+   with nothing written, a person's pick, then the last `selected`, then the
+   first option not disabled), and the label is repainted from it in the
+   engine's `onLifecyclePass`, before layout each frame, so options landing
+   after the value are matched to it (`FJS-1320`'s case) with no observer.
+   Up and Down step past a disabled option, never wrap, and fire `input`
+   then `change`, as a closed select does on Linux and Windows. The two
+   null rules are the DOM path's: a bound `null` chooses nothing
+   (`bindInput` writes `selectedIndex = -1`), a one-way `value={null}`
+   chooses the empty option (`set_attribute` writes `el.value = ''`). A
+   static `multiple` is refused at compile; a live one is checked where it
+   is written, since the kit passes `multiple={multiple}`, and throws by
+   name when on. Element `bind:value` is IR `element.binds [{name, getter,
+   setter}]` from `elementBindTarget`, cut out of the DOM `bindProp` so both
+   targets refuse the same targets in the same words (corpus identical
+   1068/1068 across the move); `$$tui.bind` is `bindInput`'s twin,
+   including the number read (`FJS-857`). `bind:checked`, `bind:files`, a
+   `|mask`, and `bind:value` on a tag that is not a control stay refused by
+   name. Proved by `specs/select.spec.mjs` (`Pick.mesa`, `Multi.mesa`),
+   19/19, and four cases in `terminal-emit.test.js`. All 17 deliberate
+   breaks fail it: two passed green at first (a datalist not hidden, an
+   option's text not collapsed) and each was given the case it lacked, a
+   datalist's fallback text and an option's live text with a run of
+   spaces, rather than cut, since both are what a browser does. Report: 313
+   of 536 (58%, from 51%), ui 54 of 135. `example` routes 1 → 8; the widest
+   next blocker is `{@const}` in `Combobox.mesa` (14 routes). Two of the 8
+   list ✓ and refuse to open (`FJS-2271`). Not done: no open list, no
+   type-ahead, no pick by mouse (a press focuses), `size` inert.
+   *The nine, decided before the first edit and written after:* (1) origin:
+   one fewer. `elementBindTarget` is the one getter and setter for an
+   element bind, and the select keeps no copy of its options or its choice.
+   (2) concept: none. `select` is a row in the role table and `hidden` a
+   layout hint beside `indent` and `cell`. (3) complexity: the problem's.
+   The choice rule is HTML's selectedness, plus the DOM path's two null
+   rules. (4) predictability: keys, events, late options and the null rules
+   act as the browser's closed select. What differs: no list opens, a press
+   only focuses, and a datalist offers nothing. (5) derived: the chosen
+   option and the row's width, each frame, from the children. (6) owner:
+   `elementBindTarget` beside `bindSetter`; `set_attribute` still owns a
+   written `value`; `$$tui.bind` is `bindInput`'s twin. (7) boundary:
+   `chosen()` is the one answer to which option a select holds, and
+   `CONTROLS` in `emit.js` the one list of what a `bind:value` hears back
+   from. (8) failure: a datalist is inert rather than refused, and a live
+   `multiple` throws when written rather than at compile. *Ergonomics vs.
+   strictness* decides both: a suggestion is an affordance the typed value
+   does without, and refusing the live spelling would refuse every kit
+   select for a mode none of them uses. (9) must stay true: a select holds
+   the option the DOM path would for the same writes, and a datalist paints
+   nothing. What fails: `select.spec`, the refusal cases. That the two
+   targets choose the same option is asserted by two parallel specs, not
+   one shared case (`none` for the equivalence itself). Tier: Assessment.
+   *Slice 14 2026-10-09, `{@const}`:* the IR's `const` node carries the
+   statements that declare it, `lines`, which the terminal writes where the
+   tag sits, as the DOM path does. `constDeclaration(ctx, value)` in
+   compiler.js is the one reading of the tag for both targets: parse,
+   rewrite, memo or plain const, and the statements. Cutting it out found
+   `FJS-2273` on the DOM path: the name stayed registered after its block
+   closed, so `{x}` after an `{#if}` that declared `x` called a memo not in
+   scope there and rendered blank, and a const reading no state was
+   shadowed by an outer signal of the same name. `constScope(ctx)` is the
+   fix: `buildBlock` opens one around its body, `lower()` one per block
+   body, and an element's children stay in the enclosing scope because
+   they are built in the same function. Corpus identical, 1068/1068. The
+   Combobox fixture then found `FJS-2274`: a row's `i === active` becomes a
+   lifted `$$selN(i)` that only the DOM path declared, so the IR's `each`
+   now carries `lifts` and the terminal declares them beside its block.
+   Proved by `specs/consts.spec.mjs` (`Consts.mesa`), 4/4, the `scope`
+   case in `compiler.test.js` and two in `ir.test.js`. All 9 breaks fail
+   something. Two are DOM-only and fail only vitest: a `buildBlock` that
+   never closes its scope, and a `lower()` that never closes its own.
+   *Slice 15 2026-10-09, `on:mousemove`:* Combobox's next gate, one line
+   later. `moveSource` in `runtime-terminal.js` takes the engine's `move`
+   and dispatches `mousemove` at the element under the pointer, bubbling.
+   It shares `pointer()` with `pressSource`: the target and the DOM fields,
+   and the stop, since the engine sends one event through every ancestor's
+   slot. A move with a button held sends nothing, because the engine sends
+   a drag to the node the press began on, not to the node under the
+   pointer. Proved by `specs/hover.spec.mjs` (`Hover.mesa`), 4/4, with a
+   harness verb `t.hover(text)`. All 4 breaks fail it; dropping the stop
+   also fails `press`. Report after both: 319 of 538 (59%), ui 56 of 135.
+   `example` routes stay at 8 of 34: the 14 Combobox held now stop at
+   `<img>` in `FileField.mesa` (11) and `<mark>` in `MultiSelect.mesa` (3).
+   *Slice 16 2026-10-09, `<img>` and `<mark>`, the rule the owner chose
+   in session:* an image is its `alt` text, as a browser shows one it cannot
+   load. `image` is a role: a row holding one text, laid out only while the
+   alt is non-empty, so `alt=""` takes no room and a live alt that empties
+   takes its row away. `requires: ['alt']` in the table refuses an `<img>`
+   with no `alt` at compile, by name: there is nothing to show, and nothing
+   a screen reader could say either. Under a static `aria-hidden="true"`
+   such an image is left out instead, by the same `terminalDropped` rule as
+   a tag the table lacks. `on:error` is heard and never sent, the rule
+   `scroll` already follows, since a terminal loads no image. `<mark>` is an
+   inline box in inverse video, which is how a terminal highlights (a pager's
+   search). Proved by `specs/image.spec.mjs` (`Image.mesa`), 8/8, with a
+   harness verb `t.attributesAt(text)` reading a cell's attribute bits. All
+   7 breaks fail it. Report: 329 of 539 (61%), ui 60 of 135. Routes 9 of 34
+   list ✓ (`/cart/` joined), but `/cart/` is a `FJS-2271` case and fails to
+   open, so 6 open. The 11 FileField routes now stop at `on:dragover` in
+   `FileUpload.mesa:137`. The rest stop at a param route (9), `<svg>`,
+   `on:touchstart`, `on:focusin`, `<mesa:window>` and `<details>`.
+   *The nine for slice 16, answered late:* (1) origin: none new. `alt` is
+   read where the attribute is written, by `set_attribute`. (2) concept: one
+   table field, `requires`, the inverse of `refuses` beside it. (3)
+   complexity: the problem's. (4) predictability: an image acts as a
+   browser's that failed to load, and a missing alt is refused as an
+   unknown tag is. (5) derived: the text is the attribute. (6) owner:
+   `tags.js` for what is required, `set_attribute` for the value. (7)
+   boundary: `requires` is data the report and the emitter read through
+   one `missing()`. (8) failure: a refusal for a missing alt, because a
+   silent blank is the wrong this target exists to avoid. *Ergonomics vs.
+   strictness*: strict, because the fix is one attribute that also serves
+   every screen reader. (9) must stay true: an image paints its alt and
+   nothing else, and one without an alt never compiles outside
+   `aria-hidden`. What fails: `image.spec`. Tier: Assessment.
+   *Slice 17 2026-10-09, the drop-target events, the rule the owner chose
+   in session:* `dragenter`, `dragover`, `dragleave` and `drop` are heard
+   and never sent, four rows in `TERMINAL_EVENTS`, bubbling as a browser's.
+   Nothing outside a terminal can be dropped into it, and the kit's drop
+   zone wraps a field the keyboard reaches. A drag source stays refused: a
+   drag inside the screen is the engine's `onMouseDrop`, and that lowering
+   is not built. Proved by `specs/press.spec.mjs`, 8/8, with a harness verb
+   `t.drag(from, to)`; the assertion also reads the press the drag began
+   with, so a drag that missed cannot pass it. Both breaks fail it: the
+   table row removed, and a runtime that dispatches on the engine's
+   `drag`/`up`, which do reach the drop node. Report unchanged at 329 of
+   539: `FileUpload.mesa` was held by `<progress>` at line 211 behind the
+   event, so the 11 FileField routes now stop there.
+   *The nine for slice 17, answered late:* (1) origin: none new; the table
+   is the one place an event is named. (2) concept: none; "heard and never
+   sent" is the rule `scroll` and `error` follow. (3) complexity: four table
+   rows. `dragenter` is unused in the corpus and joins under the same
+   reason, so the next drop zone is not a fifth slice. (4) predictability:
+   a drop zone waits as a page's does when nothing is dragged onto it. (5)
+   derived: nothing restated. (6) owner: `TERMINAL_EVENTS`; the runtime
+   needs no code, since an event never sent has no dispatch. (7) boundary:
+   a component cannot tell the terminal from a browser nobody drags into.
+   (8) failure: silence, not a refusal, because the zone wraps a field the
+   keyboard reaches; a drag source is refused, because what it moves may
+   have no other path. (9) must stay true: no drag gesture sends a
+   drop-target event until a drag-source lowering is built. What fails:
+   `press.spec`. *Ergonomics vs. strictness*: ergonomics, bounded to the
+   target side. Tier: Assessment.
+   *The nine for slices 14 and 15, answered late, after both were green:*
+   (1) origin: one fewer. `constDeclaration` is the one reading of a `{@const}`, and
+   `pointer()` the one reading of a mouse event. (2) concept: none. (3)
+   complexity: the problem's. (4) predictability: better on both targets. A
+   const ends with its block, as its emitted JavaScript `const` already
+   did. (5) derived: the terminal's statements come from the DOM path's
+   own. (6) owner: `constScope` and `constDeclaration` sit beside
+   `parseRenderTag`, the other template tag both targets read. (7)
+   boundary: the `const` node's `lines` and the `each` node's `lifts` are
+   named IR fields. (8) failure: a drag sends no `mousemove` rather than a
+   wrong target. *Ergonomics vs. strictness*: the kit's one listener is a
+   hover cursor, which a drag does not use. (9) must stay true: a
+   `{@const}` reads the same value on both targets and nothing past its
+   block, and a move lands once on the element under the pointer. What
+   fails: the corpus diff, `consts.spec`, `hover.spec`, and the `scope`
+   cases. That a drag sends nothing is asserted by nothing (`none`). Tier:
+   Assessment.
    *The nine for slice 4 and the props move, answered late:* (1) one fewer
    origin. (2) none new. (3) the problem's. (4) an attribute that reaches no
    child now says so, as `on:` and `class:` already did. (5) both targets

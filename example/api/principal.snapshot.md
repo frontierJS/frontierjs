@@ -40,6 +40,7 @@ the whole mechanism** — no query can reach two tenants because no connection h
 | Capability grants | — (the grid grades nobody, or grades them from elsewhere) |
 | Read alongside | — |
 | Named by header | `x-cart-token` |
+| Beside a session | merged onto the person, who is the trail's actor (`session: 'merge'`) |
 
 **The grant decides which rows, never the standing.** A bearer is STRANGER(0);
 the row a token digests to is read, and a dead one is a 401 — forged, expired,

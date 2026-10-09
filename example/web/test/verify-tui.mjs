@@ -6,9 +6,9 @@
  * Three runs of Sierra's shell (`@frontierjs/sierra/tui`) from `web/`:
  * `--list`, which says per route whether it lowers and names the first
  * blocker, run again over `fixtures/tui-imports/` for which import mounts a
- * file; `--frame /reports/`, the one route that lowers today, painted; and
- * the interactive shell under a pty, opened, left with Esc and quit with
- * Ctrl+C, which must exit 0 with the terminal given back.
+ * file; `--frame /reports/` painted; and the interactive shell under a pty,
+ * `/reports/` opened, left with Esc and quit with Ctrl+C, which must exit 0
+ * with the terminal given back.
  *
  * Traps:
  * - The API is pointed at a port nothing holds, so the frame is the same with
@@ -89,7 +89,10 @@ const until = async (pred, ms = 15000) => {
 
 check(await until(() => plain(out).includes('/reports/')), 'the shell lists the route', plain(out).slice(-500))
 let mark = out.length
-shell.stdin.write('\r')
+// The shell lists the routes `--list` marks, in its order, with the first
+// focused; a Tab paints no text, so the moves go together.
+const lowered = rows.filter((l) => l.startsWith('✓ ')).map((l) => l.slice(2).trim())
+shell.stdin.write('\t'.repeat(Math.max(0, lowered.indexOf('/reports/'))) + '\r')
 check(await until(() => plain(out.slice(mark)).includes('administrator-only')), 'Enter opens it', plain(out.slice(mark)).slice(-500))
 mark = out.length
 shell.stdin.write('\x1b')

@@ -3280,7 +3280,7 @@ describe('the workbench', () => {
   // machine. Asserted before the LOCAL_MACHINE refusal is reached, so a test
   // env with no LOCAL_MACHINE cannot pass this by refusing for the other reason.
   test('an agent is refused it at any standing, over /mcp', async () => {
-    for (const method of ['pins', 'send', 'transcript'])
+    for (const method of ['pins', 'send', 'transcript', 'diff', 'check', 'review'])
       await expect(env.as(owner).service('workbench').call(method, 'abc', { prompt: 'hi' }, { transport: 'mcp' }))
         .rejects.toThrow(/not offered to an agent/)
   })

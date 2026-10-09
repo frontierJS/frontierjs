@@ -123,7 +123,9 @@ core/
                 `ask.js`, which resolves a question against the registers.
                 WORK mode is the other end — every permission, a budget, hooks
                 optional — for basecamp's workbench (`core/workbench.ts` there),
-                which reads this file's argv and event reader by import
+                which reads this file's argv and event reader by import. Its
+                REVIEWER is the read-only default with `reviewPrompt`, a fresh
+                session rather than the builder's resumed one
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
                 which run `ask-claude.js` in EDIT mode scoped to the Vite root,

@@ -17,7 +17,7 @@ the trail naming a grant, and `example`'s basket re-modelled onto all three
 · `verify:pay` 24). Built 2026-10-09 (`FJS-D819`): the cookie redemption (`FJS-D340`) as
 `bearerClaim(...).redeem()`, the mint as `.mint()` / `.mintOnCreate()` over a
 `@guarded` digest named in `system:`, `lastUsedAt` stamped once per redeem rather
-than per request, and the `Grant` trait imported from litestone (`FJS-2176`).
+than per request, and the `Grant` trait imported from litestone (`FJS-2176`). Ruled 2026-10-09 (`FJS-D832`): a session beside a grant is refused before the grant is read unless the grant states `session: 'merge'`, and merged the person is the trail's actor.
 NOT built: the portal schema below, which is maid.tech's own app, and the
 emailed one-time code (`FJS-D341`). **The portal half was first built by the jazzhr
 stressor's Phase 3 (2026-09-29), in app code** (`fjs-prototypes/jazzhr/api/src/lib/portal.ts`,

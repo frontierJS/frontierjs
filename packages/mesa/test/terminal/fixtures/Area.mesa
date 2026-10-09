@@ -1,0 +1,28 @@
+<script>
+  let heard = '-'
+  let inputs = 0
+  let changed = '-'
+  let submits = 0
+  let start = '-'
+  let note = 'x'
+  let writes = 0
+  let typed = '-'
+
+  const onInput = (e) => { inputs++; heard = JSON.stringify(e.target.value) }
+  const onChange = (e) => { changed = JSON.stringify(e.target.value) }
+  const onNote = (e) => { writes++; note = e.target.value; typed = JSON.stringify(note) }
+  const set = () => { note = 'p\nq' }
+</script>
+
+<p>heard {heard} inputs {inputs}</p>
+<p>changed {changed} submits {submits}</p>
+<p>start {start} writes {writes} typed {typed}</p>
+<form on:submit|preventDefault={() => submits++} on:input={onInput} on:change={onChange}>
+  <textarea name="t" on:click={() => {}}></textarea>
+  <button>Save</button>
+</form>
+<textarea name="s" on:focus={(e) => start = JSON.stringify(e.target.value)}>
+first
+second</textarea>
+<button type="button" on:click={set}>Set</button>
+<textarea name="n" value={note} on:input={onNote}></textarea>

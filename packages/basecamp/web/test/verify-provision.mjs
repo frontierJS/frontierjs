@@ -113,6 +113,15 @@ for (const name of ['alpha', 'beta']) {
 const ALPHA = join(SSH_HOME, 'code', 'alpha')
 writeFileSync(join(ALPHA, 'README'), 'x')
 writeFileSync(join(ALPHA, 'frontier.config.js'), 'export default {}')
+// A stand-in for the checkout's own `fli done`, which the workbench runs after
+// a run ends: one unfinished item and one drive, whatever the tree holds.
+mkdirSync(join(ALPHA, 'packages', 'cli', 'core'), { recursive: true })
+writeFileSync(join(ALPHA, 'packages', 'cli', 'core', 'done.js'), `export function runDone(root) {
+  return { root, changed: 2, unfinished: 1,
+    items:  [{ check: 'snapshots', subject: 'a', ok: false, message: 'a.snapshot.md is stale' }],
+    drives: [{ changed: 'a screen', tier: 'path', on: [], run: ['cd web && bun run verify'] }] }
+}
+`)
 gitIn(ALPHA, 'add', '.'); gitIn(ALPHA, 'commit', '-q', '-m', 'first commit')
 gitIn(ALPHA, 'remote', 'add', 'origin', 'https://me:tok_secret@example.test/alpha.git')
 writeFileSync(join(ALPHA, 'dirty.txt'), 'y')
@@ -998,6 +1007,44 @@ try {
   check('the resume command is offered for a terminal',
     await evaluate(`[...${card}.querySelectorAll('button')].some(b => /Copy resume/.test(b.textContent))`))
 
+  // After the run: the checkout's own fli done, the running cost, a review,
+  // and the diff a line comment is made on.
+  const checks = await until(`${card}.querySelector('.workbench-checks')?.textContent ?? ''`, t => /unfinished/.test(t),
+    'the checks strip never showed fli done\'s report', 15_000)
+  check('a finished run runs the checkout\'s fli done and the card says what is unfinished',
+    /1 unfinished/.test(checks) && /1 drive to run/.test(checks), checks.replace(/\s+/g, ' '))
+  await evaluate(`${card}.querySelector('.workbench-checks').open = true`)
+  check('…and opening it lists the item and the drive to run',
+    await evaluate(`/a\\.snapshot\\.md is stale/.test(${card}.querySelector('.workbench-checks').textContent)
+      && /cd web && bun run verify/.test(${card}.querySelector('.workbench-checks').textContent)`))
+  check('the card totals what its runs cost', /\$0\.42 total/.test(await evaluate(`${card}.textContent`)))
+  check('and the header totals today across cards',
+    /today \$0\.42/.test(await evaluate(`document.getElementById('workbench-today')?.textContent ?? ''`)))
+
+  await evaluate(`[...${card}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Review').click()`)
+  const reviewed = await until(`${card}.querySelector('.workbench-review')?.textContent ?? ''`, t => /Done: /.test(t),
+    'the review never answered', 15_000)
+  check('Review runs a read-only session and the card shows its reply', /read-only/.test(reviewed), reviewed.replace(/\s+/g, ' ').slice(0, 200))
+  await until(`${card}.textContent`, t => /\$0\.84 total/.test(t), 'the review\'s cost never reached the total')
+  check('…and its cost reaches the total', true)
+  await evaluate(`[...${card}.querySelectorAll('.workbench-review button')].find(b => /Use as message/.test(b.textContent)).click()`)
+  check('"Use as message" puts the reply in the message box rather than sending it',
+    await until(`${card}.querySelector('textarea').value`, v => /^A read-only reviewer/.test(v), 'the reply never reached the draft') && true)
+
+  await evaluate(`(() => { const d = ${card}.querySelector('.workbench-diff-panel'); d.open = true })()`)
+  const files = await until(`[...${card}.querySelectorAll('.workbench-file code')].map(c => c.textContent).join(' ')`,
+    t => /claude-was-here\.txt/.test(t), 'the diff never listed the file the run wrote')
+  check('the diff lists the tree\'s changes, untracked files included', /dirty\.txt/.test(files), files)
+  await evaluate(`(() => { const f = [...${card}.querySelectorAll('.workbench-file')].find(f => /dirty\.txt/.test(f.textContent)); f.open = true
+    f.querySelector('.workbench-line').click() })()`)
+  await until(`!!${card}.querySelector('.workbench-comment input')`, v => v, 'a click on a line opened no comment box')
+  await evaluate(`(() => { const i = ${card}.querySelector('.workbench-comment input')
+    i.value = 'why this file?'; i.dispatchEvent(new Event('input', { bubbles: true }))
+    ${card}.querySelector('.workbench-comment button[type=submit]').click() })()`)
+  const pending = await until(`${card}.querySelector('.workbench-comments')?.textContent ?? ''`, t => /why this file\?/.test(t),
+    'the comment never joined the next message')
+  check('a line comment waits above the message box, naming the file and line', /dirty\.txt:1/.test(pending), pending.replace(/\s+/g, ' '))
+
   await click('#workbench-grid article[data-state]')
   await until(`${card}.querySelector('.section-header').textContent`, t => !/\bnew\b/.test(t), 'opening the card did not mark it seen')
   check('clicking the card marks it seen', true)
@@ -1011,6 +1058,11 @@ try {
   await until(`${card}.dataset.state`, s => s === 'error', 'stop did not end the run')
   check('Stop ends a run and the chat says it was stopped',
     /Stopped\./.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`)))
+  check('the line comment went with that message, and left the box',
+    /My comments on the diff:[\s\S]*dirty\.txt:1[\s\S]*why this file\?[\s\S]*slow one/.test(await evaluate(`${card}.querySelector('.workbench-log').textContent`))
+      && !(await evaluate(`!!${card}.querySelector('.workbench-comments')`)))
+  check('a new message hides the checks and review it made stale',
+    !(await evaluate(`!!${card}.querySelector('.workbench-checks') || !!${card}.querySelector('.workbench-review')`)))
 
   // Two messages sent, so two notches; a fold clamps one side and leaves the
   // other open, and a click on one message flips it against the mode.

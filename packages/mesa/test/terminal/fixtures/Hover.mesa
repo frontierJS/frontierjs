@@ -1,0 +1,14 @@
+<script>
+  let rows = ['ann', 'bo', 'cy']
+  let active = -1
+  let moves = 0
+  let heard = 0
+  let picked = '-'
+</script>
+
+<p>active {active} moves {moves} heard {heard} picked {picked}</p>
+<ul on:mousemove={() => heard++}>
+  {#each rows as row, i}
+    <li on:mousemove={() => { moves++; if (active !== i) active = i }} on:click={() => picked = row}>{i === active ? '>' : ' '} {row}</li>
+  {/each}
+</ul>

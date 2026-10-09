@@ -78,6 +78,10 @@ export interface AppConfig {
      * bucket; set wrongly, the caller picks their own key. The option existed
      * on the transport and reached it from nowhere — no config key, and
      * `app.ts` never passed one (`FJS-744`).
+     *
+     * Undeclared, `FJS_TRUST_PROXY` in the environment supplies a hop count:
+     * `fli deploy` and outpost pass it to a container they put Caddy in front
+     * of (`FJS-D617`). A declared value wins over it.
      */
     trustProxy?:  TrustProxy
     // Security headers. On unless declared false — the opt-out an app writes

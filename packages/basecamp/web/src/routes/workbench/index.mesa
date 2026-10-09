@@ -11,7 +11,11 @@ title: Workbench
   //
   // The status is POLLED. A run writes its log on the API's disk and the poll
   // reads only what is new, so a second is cheap; a transcript is refetched
-  // only when its log grew.
+  // only when its `rev` moved — the log, the review, or the checks.
+  //
+  // When a run ends the card grows what came after it: the checks strip (the
+  // checkout's own `fli done`), a reviewer's reply, and the diff, whose line
+  // comments ride along with the next message.
   import { ago }       from '../../datetime.js'
   import { workbench } from '../../resources/Workbench.mesa'
 
@@ -39,8 +43,8 @@ title: Workbench
   let loaded      = false
   let pinning     = false
 
-  // Sizes the transcripts were fetched at; a poll answering a bigger log is
-  // the cue to fetch again.
+  // The revs the transcripts were fetched at; a poll answering another is the
+  // cue to fetch again.
   const fetchedAt = {}
   const lastState = {}
 
@@ -60,9 +64,9 @@ title: Workbench
     await Promise.all(pins.map(p => refreshTranscript(p.id)))
   }
 
-  async function refreshTranscript(id, size = status[id]?.size ?? 0) {
-    if (fetchedAt[id] === size && transcripts[id]) return
-    fetchedAt[id] = size
+  async function refreshTranscript(id, rev = status[id]?.rev ?? '') {
+    if (fetchedAt[id] === rev && transcripts[id]) return
+    fetchedAt[id] = rev
     try {
       // Read before the redraw: a reader who scrolled up to an earlier turn is
       // not yanked to the bottom by every log line a working run adds.
@@ -103,9 +107,12 @@ title: Workbench
       }
       // The chat first: a card that says done before its answer is drawn reads
       // as a run that finished with nothing to say.
-      await Promise.all(answer.status.map(s => refreshTranscript(s.id, s.size)))
+      await Promise.all(answer.status.map(s => refreshTranscript(s.id, s.rev)))
       status = next
       retitle()
+      // A diff is not re-read while a run is still moving the tree under it.
+      for (const s of answer.status)
+        if (diffOpen[s.id] && s.state !== 'working' && diffRev[s.id] !== s.rev) loadDiff(s.id)
       // A finished run changed the tree; the branch and dirty count follow.
       if (ended) loadPins()
     } catch {}
@@ -160,9 +167,10 @@ title: Workbench
 
   async function send(p, e) {
     e?.preventDefault()
-    const prompt = (drafts[p.id] ?? '').trim()
+    const prompt = composed(p.id)
     if (!prompt) return
-    drafts = { ...drafts, [p.id]: '' }
+    drafts   = { ...drafts, [p.id]: '' }
+    comments = { ...comments, [p.id]: [] }
     document.getElementById(`workbench-draft-${p.id}`)?.style.removeProperty('block-size')
     scrollToEnd(p.id)
     if (await act('send', p, { prompt })) {
@@ -194,6 +202,8 @@ title: Workbench
   }
 
   async function stop(p)   { await act('stop', p) }
+  async function check(p)  { if (await act('check', p)) fetchedAt[p.id] = -1 }
+  async function review(p) { if (await act('review', p)) fetchedAt[p.id] = -1 }
   async function fresh(p)  { if (await act('fresh', p)) { fetchedAt[p.id] = -1; await loadPins() } }
   async function unpin(p)  {
     if (!confirm(`Unpin ${p.name}? Its chat here is forgotten; Claude Code keeps the session.`)) return
@@ -203,6 +213,7 @@ title: Workbench
     const out = await act('configure', p, {
       budget: Number(form.budget.value),
       hooks:  form.hooks.checked,
+      review: form.review.checked,
     })
     if (out) await loadPins()
   }
@@ -232,6 +243,79 @@ title: Workbench
   }
 
   const money = (n) => n == null ? '' : `$${n.toFixed(2)}`
+
+  // Across every card, so the header answers what today has cost so far.
+  const spentToday = () => Object.values(status).reduce((n, s) => n + (s.spent?.today ?? 0), 0)
+
+  // ─── after a run: checks and review ──────────────────────────────────
+
+  const CHECKS_TONE  = { running: 'info', pass: 'success', fail: 'danger', error: 'danger' }
+  function checksLabel(c) {
+    if (c.state === 'running') return 'checking…'
+    if (c.state === 'error')   return 'checks failed to run'
+    if (c.state === 'pass')    return `checks ✓ · ${c.changed} changed`
+    return `${c.unfinished} unfinished · ${c.changed} changed`
+  }
+
+  const reviewReply = (id) => (transcripts[id]?.review?.items ?? [])
+    .filter(it => it.kind === 'text').map(it => it.text).join('\n\n')
+
+  // Into the draft rather than sent, so the reply can be cut down first.
+  function useReview(p) {
+    const reply = reviewReply(p.id)
+    if (!reply) return
+    drafts = { ...drafts, [p.id]: `A read-only reviewer read the change and said:\n\n${reply}` }
+    document.getElementById(`workbench-draft-${p.id}`)?.focus()
+  }
+
+  // ─── the diff ────────────────────────────────────────────────────────
+  // Read when the panel opens, and again when the card's rev moves while it
+  // is open. A click on a line opens a comment on it; the comments wait above
+  // the message box and go with the next message.
+
+  let diffs      = {}
+  let diffOpen   = {}
+  let comments   = {}
+  let commenting = {}
+  const diffRev  = {}
+
+  async function loadDiff(id) {
+    diffRev[id] = status[id]?.rev
+    try { diffs = { ...diffs, [id]: await workbench.service.invoke('diff', id) } } catch (err) { error = err.message }
+  }
+
+  function toggleDiff(p, open) {
+    diffOpen = { ...diffOpen, [p.id]: open }
+    if (open) loadDiff(p.id)
+  }
+
+  const SIGN = { add: '+', del: '−', ctx: ' ' }
+  const LINE_TONE = { add: 'success', del: 'danger', ctx: '' }
+
+  function openComment(p, f, l, key) {
+    commenting = { ...commenting, [p.id]: { key, path: f.path, line: l.new ?? l.old, code: l.text, text: '' } }
+    afterDraw(() => document.getElementById(`workbench-comment-${p.id}`)?.focus())
+  }
+
+  function addComment(p, e) {
+    e?.preventDefault()
+    const c = commenting[p.id]
+    if (!c?.text.trim()) return
+    comments   = { ...comments, [p.id]: [...(comments[p.id] ?? []), { ...c, text: c.text.trim() }] }
+    commenting = { ...commenting, [p.id]: null }
+  }
+
+  function dropComment(p, i) {
+    comments = { ...comments, [p.id]: (comments[p.id] ?? []).filter((_, k) => k !== i) }
+  }
+
+  function composed(id) {
+    const draft = (drafts[id] ?? '').trim()
+    const list  = comments[id] ?? []
+    if (!list.length) return draft
+    const lines = list.map(c => `- ${c.path}:${c.line} — \`${c.code.trim().slice(0, 120)}\`\n  ${c.text}`)
+    return [`My comments on the diff:\n\n${lines.join('\n')}`, draft].filter(Boolean).join('\n\n')
+  }
 
   // ─── folding ─────────────────────────────────────────────────────────
   // The card's mode folds a side; a click on one message flips it against
@@ -317,7 +401,10 @@ title: Workbench
 
 <div class="section-header">
   <h1>Workbench</h1>
-  <Button variant="ghost" href="/git-activity/local/">Local repos</Button>
+  <span class="cluster">
+    {#if spentToday() > 0}<span class="text-sm text-muted" id="workbench-today">today {money(spentToday())}</span>{/if}
+    <Button variant="ghost" href="/git-activity/local/">Local repos</Button>
+  </span>
 </div>
 
 {#if !offered}
@@ -390,7 +477,53 @@ title: Workbench
               {:else}
                 idle
               {/if}
+              {#if status[p.id]?.spent?.total}
+                <span title="Every run and review in this checkout">· {money(status[p.id].spent.total)} total</span>
+              {/if}
             </div>
+
+            {#if status[p.id]?.checks}
+              <details class="text-sm workbench-checks" id={`workbench-checks-${p.id}`}>
+                <summary class="cluster">
+                  <Pill tone={CHECKS_TONE[status[p.id].checks.state]}>{checksLabel(status[p.id].checks)}</Pill>
+                  {#if status[p.id].checks.drives}<Pill tone="info">{status[p.id].checks.drives} drive{status[p.id].checks.drives === 1 ? '' : 's'} to run</Pill>{/if}
+                  <span class="text-muted">fli done</span>
+                </summary>
+                {#if transcripts[p.id]?.checks?.error}
+                  <p class="text-danger">{transcripts[p.id].checks.error}</p>
+                {/if}
+                {#each transcripts[p.id]?.checks?.report?.items ?? [] as item}
+                  <div class={item.ok ? 'text-muted' : 'text-danger'}>{item.ok ? '✓' : '✗'} <strong>{item.check}</strong> {item.message}</div>
+                {/each}
+                {#each transcripts[p.id]?.checks?.report?.drives ?? [] as d}
+                  <div class="workbench-drive">
+                    <div>{d.changed}</div>
+                    {#each d.run as cmd}<code>{cmd}</code>{/each}
+                  </div>
+                {/each}
+              </details>
+            {/if}
+
+            {#if transcripts[p.id]?.review}
+              <div class="workbench-review muted stack" id={`workbench-review-${p.id}`}>
+                <div class="cluster text-sm">
+                  <strong>Review</strong>
+                  {#if transcripts[p.id].review.state === 'working'}
+                    <span class="text-muted">reading the change…</span>
+                  {:else if transcripts[p.id].review.state === 'error'}
+                    <span class="text-danger">stopped with an error</span>
+                  {/if}
+                  {#if status[p.id]?.review?.cost != null}<span class="text-muted">{money(status[p.id].review.cost)}</span>{/if}
+                </div>
+                {#if reviewReply(p.id)}
+                  <div class="workbench-text text-sm">{reviewReply(p.id)}</div>
+                  <div><Button size="xs" variant="outlined" onclick={() => useReview(p)}>Use as message</Button></div>
+                {/if}
+                {#each (transcripts[p.id].review.items ?? []).filter(it => it.kind === 'error') as it}
+                  <div class="text-sm text-danger">{it.text}</div>
+                {/each}
+              </div>
+            {/if}
 
             {#if transcripts[p.id]?.items?.length}
               <div class="cluster text-sm workbench-folds" role="group" aria-label={`Collapse messages in ${p.name}`}>
@@ -460,6 +593,65 @@ title: Workbench
               {/if}
             </div>
 
+            <details class="text-sm workbench-diff-panel" on:toggle={(e) => toggleDiff(p, e.target.open)}>
+              <summary>
+                Diff{diffs[p.id] ? ` · ${diffs[p.id].total} file${diffs[p.id].total === 1 ? '' : 's'}` : ''}
+              </summary>
+              {#if diffs[p.id]}
+                <p class="text-muted">The working tree against HEAD — another session's edits show here too. Click a line to comment on it.</p>
+                {#if !diffs[p.id].files.length}<p class="text-muted">Nothing changed.</p>{/if}
+                {#each diffs[p.id].files as f, fi (f.path)}
+                  <details class="workbench-file">
+                    <summary class="cluster">
+                      <code>{f.path}</code>
+                      <span class="text-success">+{f.adds}</span>
+                      <span class="text-danger">−{f.dels}</span>
+                      {#if f.status !== 'modified'}<span class="text-muted">{f.status}</span>{/if}
+                    </summary>
+                    <div class="workbench-diff">
+                      {#each f.hunks as h, hi}
+                        <div class="workbench-hunk text-muted">{h.header}</div>
+                        {#each h.lines as l, li}
+                          <button type="button" class={`workbench-line ${LINE_TONE[l.kind]}`}
+                                  title="Comment on this line" on:click={() => openComment(p, f, l, `${fi}:${hi}:${li}`)}>
+                            <span class="workbench-ln">{l.new ?? l.old}</span><span>{SIGN[l.kind]}</span><span class="workbench-code">{l.text}</span>
+                          </button>
+                          {#if commenting[p.id]?.key === `${fi}:${hi}:${li}`}
+                            <form class="cluster workbench-comment" on:submit={(e) => addComment(p, e)}>
+                              <label class="visually-hidden" for={`workbench-comment-${p.id}`}>Comment on {f.path} line {l.new ?? l.old}</label>
+                              <input class="field" id={`workbench-comment-${p.id}`} placeholder="Comment for Claude…"
+                                     value={commenting[p.id].text}
+                                     on:input={(e) => commenting = { ...commenting, [p.id]: { ...commenting[p.id], text: e.target.value } }}
+                                     on:keydown={(e) => { if (e.key === 'Escape') commenting = { ...commenting, [p.id]: null } }} />
+                              <Button size="xs" type="submit">Add</Button>
+                            </form>
+                          {/if}
+                        {/each}
+                      {/each}
+                      {#if f.cut}<div class="text-muted">… more lines than the panel shows</div>{/if}
+                    </div>
+                  </details>
+                {/each}
+                {#if diffs[p.id].cut && diffs[p.id].files.length < diffs[p.id].total}
+                  <p class="text-muted">{diffs[p.id].total - diffs[p.id].files.length} more file(s) not listed.</p>
+                {/if}
+              {:else if diffOpen[p.id]}
+                <p class="text-muted">Reading the tree…</p>
+              {/if}
+            </details>
+
+            {#if comments[p.id]?.length}
+              <div class="stack text-sm workbench-comments" aria-label={`Comments going with the next message to ${p.name}`}>
+                {#each comments[p.id] as c, i}
+                  <div class="cluster">
+                    <code>{c.path}:{c.line}</code>
+                    <span>{c.text}</span>
+                    <Button size="xs" variant="ghost" aria-label="Remove this comment" onclick={() => dropComment(p, i)}>×</Button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
             <form class="stack" on:submit={(e) => send(p, e)}>
               <label class="visually-hidden" for={`workbench-draft-${p.id}`}>Message to Claude in {p.name}</label>
               <textarea class="field" rows="3" id={`workbench-draft-${p.id}`}
@@ -468,13 +660,19 @@ title: Workbench
                         on:input={(e) => { drafts = { ...drafts, [p.id]: e.target.value }; fit(e.target) }}
                         on:keydown={(e) => keydown(p, e)}></textarea>
               <div class="cluster">
-                <Button type="submit" disabled={!(drafts[p.id] ?? '').trim()}>
+                <Button type="submit" disabled={!composed(p.id)}>
                   {status[p.id]?.state === 'working' ? 'Queue' : 'Send'}
                 </Button>
                 {#if status[p.id]?.state === 'working'}
                   <Button variant="outlined" tone="danger" onclick={() => stop(p)}>Stop</Button>
                 {:else}
                   <Button variant="ghost" onclick={() => fresh(p)} disabled={!p.session}>New chat</Button>
+                  {#if p.checkable}
+                    <Button variant="ghost" onclick={() => check(p)}
+                            disabled={status[p.id]?.checks?.state === 'running'}>Check</Button>
+                  {/if}
+                  <Button variant="ghost" onclick={() => review(p)}
+                          disabled={status[p.id]?.review?.state === 'working'}>Review</Button>
                 {/if}
                 {#if transcripts[p.id]?.resume}
                   <CopyButton text={transcripts[p.id].resume} label="Copy resume" />
@@ -488,6 +686,8 @@ title: Workbench
                 <Input label="Budget per message (USD)" name="budget" type="number" min="1" max="500" step="1" value={String(p.budget)} />
                 <Checkbox label="Run this checkout's own hooks" name="hooks" checked={p.hooks}
                           description="Off by default: a Stop hook that blocks spends the run's turns on itself." />
+                <Checkbox label="Review each finished run" name="review" checked={p.review}
+                          description="A fresh read-only Claude Code session reads the change, up to $2 a review." />
                 <div class="cluster">
                   <Button type="submit" variant="outlined">Save</Button>
                   <Button variant="ghost" tone="danger" onclick={() => unpin(p)}>Unpin</Button>
@@ -577,5 +777,43 @@ title: Workbench
   .workbench-notch:hover,
   .workbench-notch[aria-current='true'] { background: var(--tone-ink); block-size: 6px; }
   .workbench-now { min-block-size: 1.5em; overflow-wrap: anywhere; }
+
+  .workbench-checks summary { cursor: pointer; }
+  .workbench-drive { margin-block-start: var(--space-xs); }
+  .workbench-drive code { display: block; overflow-wrap: anywhere; }
+  .workbench-review {
+    padding: var(--space-xs) var(--space-sm);
+    border: var(--border-width) solid var(--tint-rule);
+    border-radius: var(--card-radius);
+    background: var(--tint-surface);
+  }
+
+  .workbench-file > summary { cursor: pointer; }
+  .workbench-file code { overflow-wrap: anywhere; }
+  .workbench-diff {
+    max-block-size: 50vh;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .workbench-hunk { padding-block: 2px; }
+  .workbench-line {
+    display: grid;
+    grid-template-columns: 3.5em 1.2em 1fr;
+    inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .workbench-line.success, .workbench-line.danger { background: var(--tint-surface); }
+  .workbench-line:hover { outline: var(--border-width) solid var(--tint-rule); }
+  .workbench-ln { color: var(--ink-mute); text-align: end; padding-inline-end: var(--space-xs); }
+  .workbench-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .workbench-comment { padding-block: var(--space-xs); }
+  .workbench-comment input { flex: 1; }
   .workbench-card textarea { resize: vertical; inline-size: 100%; }
 </style>

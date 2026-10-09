@@ -1,6 +1,7 @@
 // src/seeder.js — Factory + Seeder system for Litestone
 
 import { modelToAccessor } from './core/ddl.js'
+import { parseSql } from './check-sql.js'
 import { ValidationError } from './core/validate.js'
 import { UniqueConflictError, ForeignKeyError } from './core/errors.js'
 import { parseCell } from '@frontierjs/toolbelt/cells'
@@ -92,6 +93,39 @@ function _machineWalk(schema, modelName, data) {
     moves.push(...path)
   }
   return moves
+}
+
+// The nullable foreign keys a row cannot leave null, so each gets a parent
+// whatever `optional` says. Every path that builds parents reads this one set,
+// because a path holding its own copy builds a row the table refuses the day a
+// rule lands in the other — the gate ladder's create fixture did, for every arc.
+//
+// `@@arc([a, b])` wants exactly one of two set, `@required(where:)` wants one
+// set on its condition, and `@@check("a IS NOT NULL OR b IS NOT NULL")` over
+// keys alone wants one set always. The first key named is the one wired. A
+// disjunction with a scalar branch is not here: the factory fills the scalar,
+// and never moves a key, which would point at no row.
+export function insistedKeys(def) {
+  const keys = new Set()
+  for (const f of def.fields)
+    for (const a of f.attributes)
+      if (a.kind === 'relation' && a.fields) for (const k of a.fields) keys.add(k)
+  const out = new Set()
+  for (const a of def.attributes ?? []) {
+    if (a.kind === 'arc' && !a.optional) out.add(a.fields[0])
+    if (a.kind !== 'check') continue
+    let ast
+    try { ast = parseSql(a.expr) } catch { continue }
+    const branches = []
+    const flat = n => n.t === 'or' ? (flat(n.a), flat(n.b)) : branches.push(n)
+    flat(ast)
+    if (branches.length > 1 &&
+        branches.every(n => n.t === 'isnull' && n.not && n.a.t === 'col' && keys.has(n.a.name)))
+      out.add(branches[0].a.name)
+  }
+  for (const f of def.fields)
+    if (keys.has(f.name) && f.attributes.some(a => a.kind === 'required')) out.add(f.name)
+  return out
 }
 
 export class Factory {
@@ -324,22 +358,14 @@ export class Factory {
     }
     rels.sort((a, b) => b.fks.length - a.fks.length)
 
-    // `@@arc([a, b])` wants exactly one of two nullable columns set, and the
-    // nullable skip below would leave both null. The first named is the one wired.
-    const arcFirst = new Set((def.attributes ?? [])
-      .filter(a => a.kind === 'arc' && !a.optional)
-      .map(a => a.fields[0]))
+    const insisted = insistedKeys(def)
 
     const claimed  = new Set()
     const pinnedTo = new Set()
     for (const { field, fks, pks } of rels) {
       const fkDefs   = fks.map(fk => def.fields.find(f => f.name === fk))
       const nullable = fkDefs.some(f => f?.type.optional)
-      // A nullable FK the schema still insists on — the arc's first column, or
-      // one under `@required(where:)` — gets a parent whatever `optional` says.
-      const insisted = arcFirst.has(fks[0]) ||
-        fkDefs.some(f => f?.attributes.some(a => a.kind === 'required'))
-      if (nullable && !optional && !insisted) continue
+      if (nullable && !optional && !fks.some(fk => insisted.has(fk))) continue
       if (fks.some(fk => claimed.has(fk))) continue
       if (clone._relations[field.name]) {           // already wired explicitly
         for (const fk of fks) claimed.add(fk)

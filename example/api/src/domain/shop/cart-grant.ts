@@ -56,7 +56,7 @@ export const cartKey = () => process.env.ENCRYPTION_KEY ?? 'dev-encryption-key-c
  *
  * `session: 'merge'`: the store sends the header on every call, signed in or
  * not, so a shopper who signs in mid-basket is one person still holding their
- * basket. The default would 400 every one of them (`FJS-D831`).
+ * basket. The default would 400 every one of them (`FJS-D832`).
  */
 export const cartClaim = bearerClaim({
   from:    header(CART_HEADER),
